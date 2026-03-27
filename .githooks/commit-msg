@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Conventional Commits — commit-msg hook
+# Validates that commit messages follow the conventional commits format.
+
+commit_msg_file="$1"
+commit_msg=$(head -1 "$commit_msg_file")
+
+# Allow merge commits and fixup/squash commits
+if echo "$commit_msg" | grep -qE "^Merge |^fixup! |^squash! "; then
+  exit 0
+fi
+
+# Validate conventional commit prefix
+# Allowed: feat, fix, docs, refactor, test, ci, style, perf, build, chore
+# Optionally followed by a scope in parentheses, optionally with ! for breaking change
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|refactor|test|ci|style|perf|build|chore)(\(.+\))?\!?: .+"; then
+  echo ""
+  echo "ERROR: Commit message does not follow Conventional Commits format."
+  echo ""
+  echo "  Your message:  $commit_msg"
+  echo ""
+  echo "  Expected format: <type>[optional scope][!]: <description>"
+  echo ""
+  echo "  Allowed types:"
+  echo "    feat:      A new feature"
+  echo "    fix:       A bug fix"
+  echo "    docs:      Documentation only changes"
+  echo "    refactor:  Code change that neither fixes a bug nor adds a feature"
+  echo "    test:      Adding or correcting tests"
+  echo "    ci:        Changes to CI configuration files and scripts"
+  echo "    style:     Code style changes (formatting, semicolons, etc.)"
+  echo "    perf:      Performance improvements"
+  echo "    build:     Changes to build system or external dependencies"
+  echo "    chore:     Other changes that don't modify src or test files"
+  echo ""
+  echo "  Examples:"
+  echo "    feat: add user authentication"
+  echo "    fix(api): handle null response from upstream"
+  echo "    docs: update README with setup instructions"
+  echo "    feat!: redesign public API (breaking change)"
+  echo ""
+  exit 1
+fi
+
+exit 0

@@ -80,8 +80,47 @@ Each spec section follows:
 - Error responses use `ProblemDetails` format
 - Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`
 
+## Branching Strategy
+
+- `main` — stable releases only. Never push directly. Protected branch.
+- `develop` — integration branch. PRs from feature branches merge here.
+- `feat/xxx`, `fix/xxx`, `docs/xxx` — feature branches off `develop`.
+- All work happens on feature branches. PRs go to `develop`.
+- `develop` → `main` only via PR when ready for release.
+
+## Git Hooks Setup
+
+After cloning the repository, configure git to use the project hooks:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+- `commit-msg` hook enforces conventional commits (see Conventions below).
+- `pre-push` hook blocks direct pushes to `main` or `master`.
+
+## PR Workflow
+
+- Every PR must include a Spec Change Proposal (or mark N/A).
+- Every PR must include a version impact assessment (patch / minor / major).
+- CI must pass before merge.
+- At least one review required.
+- Use the PR template at `.github/pull_request_template.md`.
+
+## Versioning
+
+- Semantic versioning (`major.minor.patch`).
+- Auto-bumped on merge to `main` via GitHub Actions (`.github/workflows/version-bump.yml`).
+- Conventional commits determine bump type:
+  - `feat:` → minor
+  - `fix:`, `docs:`, `refactor:`, etc. → patch
+  - `BREAKING CHANGE` or `feat!:` → major
+- Version sources: `Directory.Build.props` (.NET) and `package.json` (client).
+
 ## Common Pitfalls
 - Don't write aspirational specs — write factual specs describing what IS
 - Don't skip spec verification after implementation
 - Don't add features without updating the spec
 - Don't hardcode configuration values — use `appsettings.json` or environment variables
+- Don't push directly to `main` — always use a feature branch and PR
+- Don't forget to run `git config core.hooksPath .githooks` after cloning

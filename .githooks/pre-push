@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# Pre-push hook — block direct pushes to protected branches.
+# All changes to main/master must go through pull requests.
+#
+# Checks BOTH the current branch AND the remote ref targets from stdin,
+# so `git push origin HEAD:main` is also blocked.
+
+protected_branches=("main" "master")
+
+# Check 1: Block if currently on a protected branch
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+for branch in "${protected_branches[@]}"; do
+  if [ "$current_branch" = "$branch" ]; then
+    echo ""
+    echo "ERROR: Direct pushes to '$branch' are not allowed."
+    echo "Please create a feature branch and open a PR."
+    echo ""
+    exit 1
+  fi
+done
+
+# Check 2: Block if any push target ref is a protected branch
+# Git provides lines of: <local ref> <local sha> <remote ref> <remote sha>
+while read -r _ _ remote_ref _; do
+  for branch in "${protected_branches[@]}"; do
+    if [ "$remote_ref" = "refs/heads/$branch" ]; then
+      echo ""
+      echo "ERROR: Direct pushes to '$branch' are not allowed."
+      echo "You tried to push to remote ref '$remote_ref'."
+      echo "Please create a feature branch and open a PR."
+      echo ""
+      exit 1
+    fi
+  done
+done
+
+exit 0
