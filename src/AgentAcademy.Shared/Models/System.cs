@@ -1,0 +1,78 @@
+namespace AgentAcademy.Shared.Models;
+
+/// <summary>
+/// Basic health check result returned by the health endpoint.
+/// </summary>
+public record HealthResult(
+    string Status,
+    string Uptime,
+    DateTime Timestamp
+);
+
+/// <summary>
+/// Detailed health check response including dependency statuses.
+/// </summary>
+public record HealthCheckResponse(
+    string Status,
+    List<DependencyStatus> Dependencies,
+    double Uptime,
+    DateTime Timestamp
+);
+
+/// <summary>
+/// Information about an available LLM model.
+/// </summary>
+public record ModelInfo(
+    string Id,
+    string Name
+);
+
+/// <summary>
+/// Security permissions granted to an agent, controlling tool and resource access.
+/// </summary>
+public record PermissionPolicy(
+    bool AllowFileAccess,
+    bool AllowMcpServers,
+    bool AllowShellExecution,
+    bool AllowUrlFetch,
+    List<string> AllowedToolCategories
+);
+
+/// <summary>
+/// Health status of an individual external dependency (e.g., database, LLM provider).
+/// </summary>
+public record DependencyStatus(
+    string Name,
+    string Status,
+    string? Detail = null
+);
+
+/// <summary>
+/// Aggregated token and cost usage for a collaboration session.
+/// </summary>
+public record UsageSummary(
+    long TotalInputTokens,
+    long TotalOutputTokens,
+    decimal TotalCost,
+    int RequestCount,
+    List<string> Models
+);
+
+/// <summary>
+/// Record of an error encountered by an agent during collaboration.
+/// </summary>
+public record ErrorRecord(
+    string AgentId,
+    string RoomId,
+    string ErrorType,
+    string Message,
+    bool Recoverable,
+    DateTime Timestamp
+);
+
+/// <summary>
+/// Wrapper for plan content text.
+/// </summary>
+public record PlanContent(
+    string Content
+);

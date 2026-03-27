@@ -1,5 +1,7 @@
 # Agent Academy
 
+[![CI](https://github.com/darinh/agent-academy/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/darinh/agent-academy/actions/workflows/ci.yml)
+
 A multi-agent collaboration platform that orchestrates AI agents to work together on software engineering tasks.
 
 Built with ASP.NET Core 8, React 19, and the GitHub Copilot SDK.
