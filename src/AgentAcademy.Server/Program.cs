@@ -21,6 +21,7 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();
 builder.Services.AddSingleton<ConsoleNotificationProvider>();
+builder.Services.AddSingleton<DiscordNotificationProvider>();
 
 var app = builder.Build();
 
@@ -35,6 +36,9 @@ using (var scope = app.Services.CreateScope())
 var notificationManager = app.Services.GetRequiredService<NotificationManager>();
 var consoleProvider = app.Services.GetRequiredService<ConsoleNotificationProvider>();
 notificationManager.RegisterProvider(consoleProvider);
+
+var discordProvider = app.Services.GetRequiredService<DiscordNotificationProvider>();
+notificationManager.RegisterProvider(discordProvider);
 
 if (app.Environment.IsDevelopment())
 {

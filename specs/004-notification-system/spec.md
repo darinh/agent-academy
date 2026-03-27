@@ -18,8 +18,8 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 │  SendToAllAsync()      → fan-out broadcast   │
 │  RequestInputFromAnyAsync() → first-wins     │
 ├──────────┬──────────┬────────────────────────┤
-│ Console  │  Slack?  │  Discord?  │  Custom?  │
-│ Provider │ (future) │  (future)  │  (future) │
+│ Console  │ Discord  │  Slack?    │  Custom?  │
+│ Provider │ Provider │  (future)  │  (future) │
 └──────────┴──────────┴────────────┴───────────┘
 ```
 
@@ -84,7 +84,45 @@ Defined in `AgentAcademy.Shared.Models.Notifications`:
 In `Program.cs`:
 - `NotificationManager` registered as singleton
 - `ConsoleNotificationProvider` registered as singleton
-- Console provider registered with manager at startup
+- `DiscordNotificationProvider` registered as singleton
+- All providers registered with manager at startup
+
+### Discord Provider
+
+The `DiscordNotificationProvider` connects to Discord via the Discord.Net library (`DiscordSocketClient`).
+
+**Configuration** (via `ConfigureAsync`):
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `BotToken` | `secret` | Yes | Discord bot token from developer portal |
+| `GuildId` | `string` | Yes | Discord server (guild) ID |
+| `ChannelId` | `string` | Yes | Target text channel ID |
+
+**Connection lifecycle**:
+- `ConfigureAsync` — validates and stores bot token, guild ID, channel ID
+- `ConnectAsync` — creates `DiscordSocketClient`, logs in with bot token, waits for Ready event (30s timeout)
+- `DisconnectAsync` — stops and disposes the client; implements `IAsyncDisposable`
+
+**Notification delivery** (`SendNotificationAsync`):
+- Formats as a Discord embed with type-based color coding:
+  - 🔵 Blue — AgentThinking
+  - 🟡 Gold — NeedsInput
+  - 🟢 Green — TaskComplete
+  - 🔴 Red — TaskFailed, Error
+  - 🟣 Purple — SpecReview
+- Includes Room and Agent fields when present
+- Action buttons rendered as Discord button components
+
+**Input collection** (`RequestInputAsync`):
+- **Choice mode**: Sends buttons for each choice, waits for `InteractionCreated` event on the sent message
+- **Freeform mode**: Sends prompt embed, waits for next non-bot text message in the channel
+- Returns `null` on timeout or cancellation
+
+**Error handling**:
+- Send failures are logged and return `false` (never throw)
+- `IsConnected` reflects actual `DiscordSocketClient.ConnectionState`
+- Disconnections are logged via the client's `Disconnected` event
+- Connection uses `SemaphoreSlim` to prevent concurrent connect/disconnect races
 
 ## Interfaces & Contracts
 
@@ -96,8 +134,10 @@ In `Program.cs`:
 | `src/AgentAcademy.Server/Notifications/INotificationProvider.cs` | Provider interface |
 | `src/AgentAcademy.Server/Notifications/NotificationManager.cs` | Provider orchestrator |
 | `src/AgentAcademy.Server/Notifications/ConsoleNotificationProvider.cs` | Reference provider |
+| `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs` | Discord bot provider |
 | `src/AgentAcademy.Server/Controllers/NotificationController.cs` | REST API |
-| `tests/AgentAcademy.Server.Tests/NotificationManagerTests.cs` | Unit tests |
+| `tests/AgentAcademy.Server.Tests/NotificationManagerTests.cs` | Manager unit tests |
+| `tests/AgentAcademy.Server.Tests/DiscordNotificationProviderTests.cs` | Discord provider unit tests |
 
 ## Invariants
 
@@ -109,12 +149,14 @@ In `Program.cs`:
 
 ## Known Gaps
 
-- No webhook-based notification support yet (Slack, Discord providers)
+- No webhook-based notification support yet (Slack provider)
 - No persistent notification history or delivery tracking
 - No retry/backoff on transient provider failures
 - No authentication on notification API endpoints (will be covered by system-wide auth)
 - `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
+- Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
 
 ## Revision History
 
+- **2025-07-27**: Discord provider — `DiscordNotificationProvider` with embed notifications, button-based choices, freeform input, connection lifecycle management; 36 unit tests
 - **2025-07-11**: Initial implementation — interface, manager, console provider, REST API, tests

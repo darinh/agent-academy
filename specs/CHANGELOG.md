@@ -5,6 +5,21 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **004-notification-system (Discord provider)**: Discord notification provider via Discord.Net library
+  - `DiscordNotificationProvider` implementing `INotificationProvider` with full lifecycle management
+  - Embed-based notifications with type-based color coding (blue/gold/green/red/purple)
+  - Two-way messaging: button-based choice selection and freeform text input collection
+  - Connection management with `SemaphoreSlim`, 30s Ready timeout, graceful disconnect
+  - `IAsyncDisposable` implementation for proper client cleanup
+  - Config schema with BotToken (secret), GuildId, ChannelId fields
+  - DI registration in `Program.cs` as singleton
+  - 36 unit tests covering configuration validation, embed formatting, schema, edge cases
+  - NuGet: `Discord.Net` 3.19.1
+
+### Changed
+- **004-notification-system**: Updated spec to document Discord provider; removed Discord from "Known Gaps"
+
+### Added
 - **001-domain-model (persistence)**: EF Core + SQLite persistence layer
   - 9 entity classes in `src/AgentAcademy.Server/Data/Entities/` — mutable EF Core counterparts to the immutable Shared records
   - `AgentAcademyDbContext` with 9 DbSets, relationships, indexes matching v1 schema
