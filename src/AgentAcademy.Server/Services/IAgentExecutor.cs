@@ -1,0 +1,46 @@
+using AgentAcademy.Shared.Models;
+
+namespace AgentAcademy.Server.Services;
+
+/// <summary>
+/// Abstraction for running an agent against a prompt and returning
+/// the complete response text. Implementations manage session lifecycle,
+/// model selection, and streaming aggregation internally.
+/// </summary>
+public interface IAgentExecutor
+{
+    /// <summary>
+    /// True when backed by a real LLM provider (e.g., Copilot SDK).
+    /// False for stub/mock implementations that return canned responses.
+    /// </summary>
+    bool IsFullyOperational { get; }
+
+    /// <summary>
+    /// Sends <paramref name="prompt"/> to the agent and returns the
+    /// complete response. The implementation may stream internally but
+    /// this method returns only after the full response is assembled.
+    /// </summary>
+    Task<string> RunAsync(
+        AgentDefinition agent,
+        string prompt,
+        string? roomId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Invalidates (disposes) the cached session for a specific agent
+    /// in a specific room. The next <see cref="RunAsync"/> call will
+    /// create a fresh session.
+    /// </summary>
+    Task InvalidateSessionAsync(string agentId, string? roomId);
+
+    /// <summary>
+    /// Invalidates all cached sessions associated with a room.
+    /// Called when a room is closed or reset.
+    /// </summary>
+    Task InvalidateRoomSessionsAsync(string roomId);
+
+    /// <summary>
+    /// Releases all managed resources (sessions, client connections).
+    /// </summary>
+    Task DisposeAsync();
+}

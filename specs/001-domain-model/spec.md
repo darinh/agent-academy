@@ -133,13 +133,78 @@ All types live in `AgentAcademy.Shared.Models` namespace. They are:
 - Timestamps use `DateTime` (UTC by convention)
 - Optional fields use nullable types (`string?`, `T?`)
 
+## Data Persistence
+
+> **Status: Implemented** — EF Core with SQLite, entity classes in `src/AgentAcademy.Server/Data/Entities/`.
+
+### Architecture
+
+The shared domain types (`AgentAcademy.Shared.Models`) are immutable C# records designed for API serialization. EF Core requires mutable classes with parameterless constructors, so **separate entity classes** live in `AgentAcademy.Server.Data.Entities`. The mapping between API DTOs and persistence entities is handled by the service layer.
+
+### Entity Classes
+
+| Entity | Table | Primary Key | Domain Model Equivalent |
+|--------|-------|-------------|------------------------|
+| `RoomEntity` | `rooms` | `Id` (string) | `RoomSnapshot` |
+| `MessageEntity` | `messages` | `Id` (string) | `ChatEnvelope` |
+| `TaskEntity` | `tasks` | `Id` (string) | `TaskSnapshot` |
+| `TaskItemEntity` | `task_items` | `Id` (string) | `TaskItem` |
+| `AgentLocationEntity` | `agent_locations` | `AgentId` (string) | `AgentLocation` |
+| `BreakoutRoomEntity` | `breakout_rooms` | `Id` (string) | `BreakoutRoom` |
+| `BreakoutMessageEntity` | `breakout_messages` | `Id` (string) | (breakout-scoped `ChatEnvelope`) |
+| `PlanEntity` | `plans` | `RoomId` (string) | `PlanContent` |
+| `ActivityEventEntity` | `activity_events` | `Id` (string) | `ActivityEvent` |
+
+### Key Differences from API DTOs
+
+- Entities store **enums as strings** (not typed enums) for SQLite compatibility and v1 schema alignment
+- `TaskEntity.PreferredRoles` is a JSON string (`"[]"`) — not a `List<string>`
+- `PlanEntity` uses `RoomId` as its primary key (one plan per room)
+- `AgentLocationEntity` uses `AgentId` as its primary key (one location per agent)
+- Navigation properties exist on entities for EF Core relationships (e.g., `RoomEntity.Messages`)
+- `DeliveryHint` (an owned type on `ChatEnvelope`) is **not persisted** — it was not in the v1 schema
+
+### Relationships
+
+- `Room → Messages` (one-to-many, cascade delete)
+- `Room → Tasks` (one-to-many, set null on delete)
+- `Room → BreakoutRooms` (one-to-many, cascade delete)
+- `Room → ActivityEvents` (one-to-many, set null on delete)
+- `Room → Plan` (one-to-one, cascade delete)
+- `BreakoutRoom → BreakoutMessages` (one-to-many, cascade delete)
+
+### Indexes (matching v1 schema)
+
+| Index | Table | Column(s) |
+|-------|-------|-----------|
+| `idx_messages_room` | `messages` | `RoomId` |
+| `idx_messages_sentAt` | `messages` | `SentAt` |
+| `idx_tasks_room` | `tasks` | `RoomId` |
+| `idx_task_items_agent` | `task_items` | `AssignedTo` |
+| `idx_task_items_room` | `task_items` | `RoomId` |
+| `idx_breakout_rooms_parent` | `breakout_rooms` | `ParentRoomId` |
+| `idx_activity_room` | `activity_events` | `RoomId` |
+| `idx_activity_time` | `activity_events` | `OccurredAt` |
+
+### Configuration
+
+Connection string in `appsettings.json`:
+```json
+"ConnectionStrings": {
+    "DefaultConnection": "Data Source=agent-academy.db"
+}
+```
+
+Auto-migration runs on startup via `db.Database.Migrate()`.
+
 ## Known Gaps
 
-- No persistence mapping (EF Core entity configuration) defined yet
+- ~~No persistence mapping (EF Core entity configuration) defined yet~~ ✅ Resolved
 - No validation attributes or FluentValidation rules specified
 - `INotificationProvider` interface not yet defined (will be added with notification service implementation)
-- Event sourcing vs. CRUD approach not decided
+- ~~Event sourcing vs. CRUD approach not decided~~ → CRUD via EF Core
 - `MetricsEntry.Data` uses `Dictionary<string, object>` — may need a more specific type
+- No DTO ↔ Entity mapping layer yet (will be added with service implementations)
 
 ## Revision History
 
@@ -147,3 +212,4 @@ All types live in `AgentAcademy.Shared.Models` namespace. They are:
 |------|--------|------|
 | Initial | Created domain model spec with planned types | scaffold-solution |
 | 2025-07-25 | Ported all types from v1 TypeScript to C# records; added notification types; marked Implemented | domain-models |
+| 2025-07-27 | Added EF Core persistence layer: entity classes, DbContext, SQLite migration, indexes | ef-core-db |

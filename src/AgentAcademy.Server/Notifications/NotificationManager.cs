@@ -1,0 +1,117 @@
+using System.Collections.Concurrent;
+using AgentAcademy.Shared.Models;
+
+namespace AgentAcademy.Server.Notifications;
+
+/// <summary>
+/// Manages multiple <see cref="INotificationProvider"/> instances. Thread-safe.
+/// Broadcasts notifications to all connected providers and collects input from the first
+/// provider that can supply it.
+/// </summary>
+public sealed class NotificationManager
+{
+    private readonly ConcurrentDictionary<string, INotificationProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<NotificationManager> _logger;
+
+    public NotificationManager(ILogger<NotificationManager> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Registers a provider. Overwrites any existing provider with the same <see cref="INotificationProvider.ProviderId"/>.
+    /// </summary>
+    public void RegisterProvider(INotificationProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        _providers[provider.ProviderId] = provider;
+        _logger.LogInformation("Registered notification provider '{ProviderId}' ({DisplayName})",
+            provider.ProviderId, provider.DisplayName);
+    }
+
+    /// <summary>
+    /// Returns the provider with the given ID, or null if not found.
+    /// </summary>
+    public INotificationProvider? GetProvider(string providerId)
+    {
+        _providers.TryGetValue(providerId, out var provider);
+        return provider;
+    }
+
+    /// <summary>
+    /// Returns all registered providers.
+    /// </summary>
+    public IReadOnlyList<INotificationProvider> GetAllProviders()
+        => _providers.Values.ToList().AsReadOnly();
+
+    /// <summary>
+    /// Sends a notification to all connected providers. Individual provider failures
+    /// are logged and do not prevent delivery to remaining providers.
+    /// </summary>
+    /// <returns>The number of providers that successfully delivered the message.</returns>
+    public async Task<int> SendToAllAsync(NotificationMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var successCount = 0;
+        var providers = _providers.Values.Where(p => p.IsConnected).ToList();
+
+        foreach (var provider in providers)
+        {
+            try
+            {
+                var sent = await provider.SendNotificationAsync(message, cancellationToken);
+                if (sent)
+                {
+                    successCount++;
+                }
+                else
+                {
+                    _logger.LogWarning("Provider '{ProviderId}' returned false for notification '{Title}'",
+                        provider.ProviderId, message.Title);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Failed to send notification via provider '{ProviderId}'", provider.ProviderId);
+            }
+        }
+
+        if (providers.Count > 0 && successCount == 0)
+        {
+            _logger.LogWarning("Notification '{Title}' was not delivered by any provider", message.Title);
+        }
+
+        return successCount;
+    }
+
+    /// <summary>
+    /// Requests input from the first connected provider that can supply it.
+    /// Tries each connected provider; returns the first non-null response.
+    /// Note: iteration order over providers is not guaranteed to match registration order.
+    /// </summary>
+    /// <returns>The first non-null <see cref="UserResponse"/>, or null if no provider could collect input.</returns>
+    public async Task<UserResponse?> RequestInputFromAnyAsync(InputRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        foreach (var provider in _providers.Values.Where(p => p.IsConnected))
+        {
+            try
+            {
+                var response = await provider.RequestInputAsync(request, cancellationToken);
+                if (response is not null)
+                {
+                    return response;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Failed to request input via provider '{ProviderId}'", provider.ProviderId);
+            }
+        }
+
+        return null;
+    }
+}

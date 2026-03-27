@@ -9,6 +9,8 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [000](./000-system-overview/spec.md) | System Overview | Planned |
 | [001](./001-domain-model/spec.md) | Domain Model | Planned |
 | [002](./002-development-workflow/spec.md) | Development Workflow | Implemented |
+| [003](./003-agent-system/spec.md) | Agent Execution System | Implemented |
+| [004](./004-notification-system/spec.md) | Notification System | Implemented |
 
 ## Conventions
 
