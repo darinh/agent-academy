@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
@@ -13,6 +14,15 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<AgentAcademyDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")
         ?? "Data Source=agent-academy.db"));
+
+// Agent catalog (singleton — loaded from Config/agents.json)
+builder.Services.AddAgentCatalog();
+
+// Activity broadcaster (singleton — shared across scoped WorkspaceRuntime instances)
+builder.Services.AddSingleton<ActivityBroadcaster>();
+
+// Workspace runtime (scoped — one per request, uses scoped DbContext)
+builder.Services.AddScoped<WorkspaceRuntime>();
 
 // Agent execution — CopilotExecutor falls back to StubExecutor internally
 // if the Copilot CLI is not available.
@@ -30,6 +40,10 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
     db.Database.Migrate();
+
+    // Initialize workspace runtime (create default room + agent locations)
+    var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+    await runtime.InitializeAsync();
 }
 
 // Register built-in notification providers
