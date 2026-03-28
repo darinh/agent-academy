@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Config;
+using AgentAcademy.Server.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -17,10 +18,14 @@ namespace AgentAcademy.Server.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly GitHubAuthOptions _authOptions;
+    private readonly CopilotTokenProvider _tokenProvider;
 
-    public AuthController(GitHubAuthOptions authOptions)
+    public AuthController(
+        GitHubAuthOptions authOptions,
+        CopilotTokenProvider tokenProvider)
     {
         _authOptions = authOptions;
+        _tokenProvider = tokenProvider;
     }
 
     /// <summary>
@@ -86,6 +91,8 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        if (User.Identity?.IsAuthenticated == true)
+            _tokenProvider.ClearToken();
         return Ok(new { message = "Logged out." });
     }
 }

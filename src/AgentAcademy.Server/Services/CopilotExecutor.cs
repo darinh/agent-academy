@@ -11,6 +11,13 @@ namespace AgentAcademy.Server.Services;
 /// Runs agent prompts through the GitHub Copilot SDK, managing one
 /// <see cref="CopilotSession"/> per agent-per-room combination.
 /// Sessions are cached with a 10-minute sliding TTL and disposed on expiry.
+///
+/// Token resolution chain:
+/// 1. User's OAuth token (from <see cref="CopilotTokenProvider"/> — captured at login)
+/// 2. Static config token (<c>Copilot:GitHubToken</c> in appsettings / user-secrets)
+/// 3. Environment variables (<c>COPILOT_GITHUB_TOKEN</c>, <c>GH_TOKEN</c>, <c>GITHUB_TOKEN</c>)
+/// 4. Copilot CLI login state (SDK default)
+/// 5. <see cref="StubExecutor"/> fallback (canned responses)
 /// </summary>
 public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 {
@@ -20,11 +27,13 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     private readonly ILogger<CopilotExecutor> _logger;
     private readonly ILogger<StubExecutor> _stubLogger;
-    private readonly string? _githubToken;
+    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly string? _configToken;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     private CopilotClient? _client;
+    private string? _activeToken;
     private bool _clientFailed;
     private StubExecutor? _fallback;
     private Timer? _cleanupTimer;
@@ -33,11 +42,13 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     public CopilotExecutor(
         ILogger<CopilotExecutor> logger,
         ILogger<StubExecutor> stubLogger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        CopilotTokenProvider tokenProvider)
     {
         _logger = logger;
         _stubLogger = stubLogger;
-        _githubToken = configuration["Copilot:GitHubToken"];
+        _configToken = configuration["Copilot:GitHubToken"];
+        _tokenProvider = tokenProvider;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -166,22 +177,43 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     private async Task<CopilotClient?> EnsureClientAsync(CancellationToken ct)
     {
-        if (_clientFailed) return null;
-        if (_client is not null) return _client;
-
+        // All reads/writes to _client, _activeToken, and _clientFailed are
+        // serialized through _clientLock to prevent races where a concurrent
+        // token change disposes the client while another thread uses it.
         await _clientLock.WaitAsync(ct);
         try
         {
-            if (_clientFailed) return null;
-            if (_client is not null) return _client;
+            var token = ResolveToken();
 
-            var hasToken = !string.IsNullOrWhiteSpace(_githubToken);
+            // Existing client with matching token — reuse.
+            if (_client is not null && !_clientFailed && _activeToken == token)
+                return _client;
+
+            // Token changed since last client creation — dispose old client
+            // and reset failure state so we try the new token.
+            if (_client is not null && _activeToken != token)
+            {
+                _logger.LogInformation(
+                    "Token changed — recreating CopilotClient (old source: {Old}, new source: {New})",
+                    DescribeTokenSource(_activeToken),
+                    DescribeTokenSource(token));
+                await DisposeClientSafe();
+            }
+
+            // If we already failed with this exact token, don't retry.
+            if (_clientFailed && _activeToken == token) return null;
+
+            // Reset failure state for new token attempts.
+            _clientFailed = false;
+            _activeToken = token;
+
+            var hasToken = !string.IsNullOrWhiteSpace(token);
             _logger.LogInformation(
                 "Starting CopilotClient (token source: {Source})...",
-                hasToken ? "config" : "env/CLI login");
+                DescribeTokenSource(token));
 
             var options = hasToken
-                ? new CopilotClientOptions { GitHubToken = _githubToken }
+                ? new CopilotClientOptions { GitHubToken = token }
                 : null;
             var client = new CopilotClient(options);
             await client.StartAsync();
@@ -198,6 +230,53 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         finally
         {
             _clientLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Resolves the best available GitHub token.
+    /// Priority: user OAuth token → config token → null (env/CLI fallback).
+    /// </summary>
+    private string? ResolveToken()
+    {
+        // 1. User's OAuth token (captured at login, survives background orchestration)
+        var userToken = _tokenProvider.Token;
+        if (!string.IsNullOrWhiteSpace(userToken))
+            return userToken;
+
+        // 2. Static config token (Copilot:GitHubToken in appsettings / user-secrets)
+        if (!string.IsNullOrWhiteSpace(_configToken))
+            return _configToken;
+
+        // 3. null → SDK falls back to env vars or CLI login
+        return null;
+    }
+
+    private string DescribeTokenSource(string? token)
+    {
+        if (token is null) return "env/CLI login";
+        if (token == _tokenProvider.Token) return "user OAuth";
+        return "config";
+    }
+
+    private async Task DisposeClientSafe()
+    {
+        if (_client is not null)
+        {
+            var old = _client;
+            _client = null;
+            try { await old.DisposeAsync(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Error disposing old CopilotClient"); }
+        }
+
+        // Clear all sessions — they belong to the old client.
+        foreach (var key in _sessions.Keys.ToList())
+        {
+            if (_sessions.TryRemove(key, out var entry))
+            {
+                _sessionLocks.TryRemove(key, out _);
+                await DisposeSessionSafe(entry);
+            }
         }
     }
 

@@ -11,6 +11,11 @@ All changes to specifications are documented here.
 - **005-workspace-runtime**: Agent room placement — `CreateTaskAsync` auto-joins `AutoJoinDefaultRoom` agents into new task rooms (skips Working agents, best-effort error handling)
 
 ### Added
+- **003-agent-system (Auth → SDK)**: Automatic Copilot SDK activation on GitHub OAuth login
+  - `CopilotTokenProvider` singleton: captures OAuth access token during login, clears on logout
+  - `CopilotExecutor` token resolution chain: user OAuth → config token → env/CLI → stub
+  - Token-change-aware client lifecycle: old CopilotClient disposed + sessions cleared when token changes
+  - `AuthController.Logout` clears stored token
 - **003-agent-system (SSE)**: SSE activity stream as alternative to SignalR
   - `GET /api/activity/stream` endpoint with replay, bounded channel, nginx-safe headers
   - `useActivitySSE.ts` client hook with auto-reconnect and `enabled` param

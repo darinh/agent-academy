@@ -90,6 +90,16 @@ if (gitHubAuthEnabled)
 
                 var user = await response.Content.ReadFromJsonAsync<JsonElement>();
                 context.RunClaimActions(user);
+
+                // Capture the OAuth token for the Copilot SDK.
+                // This makes the token available to CopilotExecutor
+                // during background orchestration (where HttpContext is null).
+                if (!string.IsNullOrEmpty(context.AccessToken))
+                {
+                    var tokenProvider = context.HttpContext.RequestServices
+                        .GetRequiredService<CopilotTokenProvider>();
+                    tokenProvider.SetToken(context.AccessToken);
+                }
             }
         };
     });
@@ -119,6 +129,9 @@ builder.Services.AddSingleton<ActivityBroadcaster>();
 
 // Workspace runtime (scoped — one per request, uses scoped DbContext)
 builder.Services.AddScoped<WorkspaceRuntime>();
+
+// Copilot token provider (singleton — captures OAuth token for SDK activation)
+builder.Services.AddSingleton<CopilotTokenProvider>();
 
 // Agent execution — CopilotExecutor falls back to StubExecutor internally
 // if the Copilot CLI is not available.

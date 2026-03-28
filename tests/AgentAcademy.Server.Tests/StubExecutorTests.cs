@@ -131,7 +131,8 @@ public class AgentExecutorInterfaceTests
         var executor = new CopilotExecutor(
             NullLogger<CopilotExecutor>.Instance,
             NullLogger<StubExecutor>.Instance,
-            new ConfigurationBuilder().Build());
+            new ConfigurationBuilder().Build(),
+            new CopilotTokenProvider());
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
     }
 }

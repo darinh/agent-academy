@@ -62,9 +62,13 @@ public interface IAgentExecutor
 **NuGet**: `GitHub.Copilot.SDK` v0.2.0
 
 Key behaviors:
-- **Lazy client initialization**: `CopilotClient` is created on first use and cached as a singleton.
-- **Token configuration**: Reads `Copilot:GitHubToken` from `IConfiguration`. When set, passes it to `CopilotClientOptions.GitHubToken`. When empty, falls back to environment variables (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) or CLI login.
-- **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0).
+- **Lazy client initialization**: `CopilotClient` is created on first use and cached.
+- **Token resolution chain**: Resolved in priority order via `ResolveToken()`:
+  1. **User OAuth token** — from `CopilotTokenProvider` (captured during GitHub OAuth login)
+  2. **Config token** — `Copilot:GitHubToken` from `IConfiguration` (appsettings / user-secrets)
+  3. **Environment / CLI** — `null` passed to SDK, which checks `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, or copilot CLI login state
+- **Token-change awareness**: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt.
+- **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0). Safe because no SDK tools are registered in session config. Must be revisited when tool calling is wired up.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity.
@@ -73,6 +77,48 @@ Key behaviors:
 - **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails, delegates to `StubExecutor`.
 - **Request timeout**: 2-minute timeout per `SendAsync` call.
 - **Graceful disposal**: All sessions and the client are disposed on shutdown.
+
+### Token Provider: `CopilotTokenProvider`
+
+**File**: `src/AgentAcademy.Server/Services/CopilotTokenProvider.cs`
+
+Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
+- `SetToken(string)` — called during `OnCreatingTicket` in the OAuth flow to capture the user's access token.
+- `ClearToken()` — called by `AuthController.Logout` to remove the stored token.
+- `Token` — volatile read; available to the executor even during background orchestration (where `HttpContext` is null).
+
+### Authentication Flow → Copilot SDK Activation
+
+```
+┌────────────────┐     ┌───────────────────┐     ┌──────────────────┐
+│  User Browser  │────▶│  GitHub OAuth      │────▶│  OnCreatingTicket │
+│  GET /login    │     │  (GitHub.com)      │     │  (Program.cs)     │
+└────────────────┘     └───────────────────┘     └────────┬─────────┘
+                                                          │ SetToken()
+                                                          ▼
+                                                 ┌──────────────────┐
+                                                 │ CopilotToken     │
+                                                 │ Provider          │
+                                                 │ (singleton)       │
+                                                 └────────┬─────────┘
+                                                          │ Token
+                                                          ▼
+┌──────────────────┐     ┌───────────────────┐   ┌──────────────────┐
+│  Agent           │────▶│  CopilotExecutor  │──▶│  CopilotClient   │
+│  Orchestrator    │     │  ResolveToken()   │   │  (SDK CLI proc)  │
+│  (background)    │     └───────────────────┘   └──────────────────┘
+└──────────────────┘
+```
+
+**OAuth Configuration** (in `Program.cs`):
+- `SaveTokens = false` — the token is captured in `OnCreatingTicket` via `CopilotTokenProvider.SetToken()`, not stored in the cookie
+- Scopes: `read:user`, `user:email`
+- GitHub App credentials stored in user-secrets (`GitHub:ClientId`, `GitHub:ClientSecret`, `GitHub:AppId`)
+
+**Behavior**:
+- Before any user logs in: executor uses config token or env vars; falls back to `StubExecutor` if none available
+- After user logs in: OAuth token is captured → executor creates/recreates `CopilotClient` with user's token → agents produce real responses
+- On logout: token is cleared → executor falls back to config token or stub on next call
 
 ### Implementation: `StubExecutor`
 
@@ -125,8 +171,9 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
 ## Known Gaps
 
+- **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy.
 - **No token/usage tracking**: `CopilotExecutor` does not yet track input/output tokens or cost. The v1 `AgentEventTracker` integration is pending.
-- **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up.
+- **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up. When enabled, `OnPermissionRequest` must be changed from `ApproveAll` to a restrictive handler.
 - **Session compaction**: The SDK may support session compaction for long conversations. Not yet implemented.
 
 ## SSE Activity Stream
@@ -175,3 +222,4 @@ Both hooks are always called (React Rules of Hooks), but only the active one cre
 | Initial | Created agent execution system — interface, CopilotExecutor, StubExecutor | copilot-executor |
 | 2026-03-28 | Fixed CopilotExecutor auth: added OnPermissionRequest + IConfiguration token support | copilot-auth-sse |
 | 2026-03-28 | Added SSE activity stream as SignalR alternative | copilot-auth-sse |
+| 2026-03-28 | OAuth token → Copilot SDK activation: CopilotTokenProvider, token-change-aware executor, SaveTokens=true | auth-sdk-flow |

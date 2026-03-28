@@ -37,3 +37,6 @@ out/
 
 # Logs
 *.log
+
+# Session handoff (ephemeral — not documentation)
+.github/next-session.md

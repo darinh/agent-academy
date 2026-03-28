@@ -124,3 +124,46 @@ git config core.hooksPath .githooks
 - Don't hardcode configuration values — use `appsettings.json` or environment variables
 - Don't push directly to `main` — always use a feature branch and PR
 - Don't forget to run `git config core.hooksPath .githooks` after cloning
+
+## Session Handoff Protocol
+
+Agents use `.github/next-session.md` for continuity across sessions.
+
+### On Session Start
+When the user greets you (e.g., "hey", "hello", "hi"), **immediately** check if `.github/next-session.md` exists. If it does:
+1. Read it and use it as your starting context.
+2. Tell the user what was left in progress and what you're picking up.
+3. Delete the file after reading it (it's a one-time handoff, not permanent docs).
+
+### On Session End (automatic)
+Write `.github/next-session.md` when any of these are true:
+- You've completed a large task and there are known next steps.
+- You sense the context window is getting large (long conversation, many tool calls). Don't wait to be asked — proactively write the file and tell the user: *"Context is getting heavy. I've written the handoff to `.github/next-session.md` — start a new session and I'll pick up where we left off."*
+- The user says they're ending the session.
+
+### Handoff File Format
+```markdown
+# Session Handoff
+
+## Status
+[What was just completed — be specific about commits, branches, files changed]
+
+## In Progress
+[What was actively being worked on when the session ended, if anything]
+
+## Next Steps
+[Prioritized list of what the next agent should do]
+
+## Context
+[Key decisions made, architectural notes, gotchas discovered — anything the next agent needs to avoid re-deriving from scratch]
+
+## Prompt
+[A ready-to-paste prompt the next agent can execute immediately, e.g.:
+"Work in ~/projects/agent-academy on develop. The X feature is done. Next: implement Y. Check file Z for context. Use the anvil agent."]
+```
+
+### Rules
+- The file is `.github/next-session.md` — always this path, never somewhere else.
+- It is gitignored (add it to `.gitignore` if not already there).
+- It is ephemeral — read once, then delete. Not documentation.
+- Write it proactively. The user should never have to ask for it.
