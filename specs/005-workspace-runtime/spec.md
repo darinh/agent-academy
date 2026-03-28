@@ -59,6 +59,7 @@ Task creation:
 - If `RoomId` is null: creates new room with normalized title as ID
 - Adds system messages (TaskAssignment + Coordination)
 - Publishes TaskCreated and PhaseChanged events
+- **Auto-join**: When a new room is created, all agents with `AutoJoinDefaultRoom = true` are moved into the room via `MoveAgentAsync`. Agents currently in `Working` state are skipped to avoid disrupting in-flight breakout work. Failures are caught and logged per-agent (best-effort) so task creation always succeeds.
 
 ### Message Management
 
@@ -142,10 +143,11 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 6. Breakout room closure always moves agent back to Idle
 7. Activity events are both persisted to DB and buffered in-memory
 8. Agent catalog is sorted by name (case-insensitive) at load time
+9. Task room creation auto-joins all `AutoJoinDefaultRoom` agents (except those in Working state)
 
 ## Known Gaps
 
-- No real-time push (SignalR/SSE) — activity subscribers are in-process only
+- No real-time push to external clients — SignalR hub exists (`/hubs/activity`) and `ActivityHubBroadcaster` forwards events to connected clients, but activity subscribers are also available in-process
 - No room cleanup for stale completed rooms (v1 had `cleanupStaleRooms`)
 - No agent knowledge persistence (v1 had file-based knowledge storage)
 - No task item management (v1 had `createTaskItem`, `updateTaskStatus`, etc.)

@@ -22,14 +22,15 @@ App.tsx (FluentProvider + AppShell)
 │   └── CreateSection
 └── Shell (when workspace is active)
     ├── SidebarPanel.tsx
-    │   ├── Room list
-    │   ├── Agent roster (with role colors)
+    │   ├── Room list (each card shows agents in that room via agentLocations)
+    │   ├── Per-agent thinking spinner (spinning ring around status dot)
     │   └── Switch Project button
     └── Main workspace
-        ├── Workspace header + phase pill
-        ├── Tab bar (chat, plan, timeline, dashboard, overview)
+        ├── Workspace header + phase pill + UserBadge
+        ├── Tab bar (chat, tasks, plan, timeline, dashboard, overview)
         └── Tab content panels
-            ├── ChatPanel.tsx
+            ├── ChatPanel.tsx (with SignalR connection status bar)
+            ├── TaskListPanel.tsx
             ├── PlanPanel.tsx
             ├── TimelinePanel.tsx
             ├── DashboardPanel.tsx
@@ -46,6 +47,8 @@ Central hook that owns all workspace state. Components receive state and callbac
 - `ov` — `WorkspaceOverview` from `/api/overview`
 - `recentActivity` — activity feed
 - `roomId` — selected room
+- `thinkingByRoom` — `Map<roomId, Map<agentId, {name, role}>>` populated by SignalR `AgentThinking`/`AgentFinished` events
+- `connectionStatus` — SignalR connection state (`"connected"` | `"connecting"` | `"reconnecting"` | `"disconnected"`)
 - `err`, `busy` — error/loading state
 - `tab` — active tab (persisted in localStorage)
 - `sidebarOpen` — sidebar collapse state (persisted in localStorage)
@@ -54,8 +57,9 @@ Central hook that owns all workspace state. Components receive state and callbac
 - `room` — selected room object (falls back to first room)
 - `roster` — room participants or configured agents fallback
 - `activity` — filtered activity for current room
+- `thinkingAgentList` — thinking agents for the current room (derived from `thinkingByRoom`)
 
-**Refresh:** Polls `/api/overview` every 30 seconds. Manual refresh available via `handleManualRefresh()`.
+**Refresh:** Polls `/api/overview` every 120 seconds as a fallback. Primary updates arrive via SignalR (`useActivityHub` hook). On refresh, stale thinking entries are reconciled against `agentLocations` (agents no longer in Working state are cleared).
 
 ### Workspace Gating (App.tsx)
 
@@ -129,9 +133,41 @@ Defined in `theme.ts`. Each agent role maps to accent/foreground/avatar colors:
 - Dark gradient background with glassmorphism panels
 - `index.css` provides minimal resets; all component styles use Griffel `makeStyles`
 
+## Real-Time Updates
+
+### SignalR Integration (`useActivityHub.ts`)
+
+The frontend connects to the server's SignalR hub at `/hubs/activity` via `@microsoft/signalr`. The Vite dev server proxies WebSocket connections to the backend on port 5066 (`ws: true` for `/hubs`).
+
+**Connection lifecycle:**
+- Auto-reconnect with backoff: `[0, 2s, 5s, 10s, 30s]`
+- Initial connection retries on failure (same backoff schedule)
+- Connection status exposed as `ConnectionStatus` type
+- ChatPanel status bar shows live connection state with color indicators
+
+**Event handling in `useWorkspace`:**
+
+| Event Type | Action |
+|------------|--------|
+| `AgentThinking` | Add agent to `thinkingByRoom` map (scoped by `roomId`) |
+| `AgentFinished` | Remove agent from `thinkingByRoom` map |
+| `MessagePosted` | Trigger refresh |
+| `RoomCreated` | Trigger refresh |
+| `TaskCreated` | Trigger refresh |
+| `PhaseChanged` | Trigger refresh |
+| `PresenceUpdated` | Trigger refresh |
+
+### Sidebar Agent Display
+
+Each room card in the sidebar shows the agents currently located in that room, determined by `agentLocations` data (not the synthetic participant list). Agents are displayed below the room name, separated by a horizontal line, with a colored status dot and name.
+
+When an agent is in the thinking state (populated via SignalR events), a spinning ring animates around their status dot in the same color. The spinning ring uses a CSS `@keyframes` animation (`aa-spin`) with a wrapper DOM element (Griffel does not support `::after` pseudo-elements with border properties).
+
+Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear correctly across all room cards — not just the selected room.
+
 ## Future Work
 
-- Real-time updates via SignalR (currently polling every 30s)
+- Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
 - SSE activity stream integration
 - Notification setup wizard (component exists, not yet wired)
 - TaskStatePanel integration

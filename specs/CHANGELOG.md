@@ -4,6 +4,24 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **006-orchestrator**: Multi-round conversation loop — `RunConversationRoundAsync` now loops up to 3 rounds per trigger when non-PASS responses are produced in rooms with active tasks, preventing single-round stalls
+- **005-workspace-runtime**: Agent room placement — `CreateTaskAsync` auto-joins `AutoJoinDefaultRoom` agents into new task rooms (skips Working agents, best-effort error handling)
+
+### Added
+- **300-frontend-ui (SignalR)**: Real-time activity event streaming via `@microsoft/signalr`
+  - `useActivityHub.ts` hook: connects to `/hubs/activity` with auto-reconnect + initial retry
+  - `useWorkspace.ts`: handles AgentThinking/AgentFinished (per-room thinking state), triggers refresh on MessagePosted/RoomCreated/TaskCreated/PhaseChanged/PresenceUpdated
+  - Polling reduced from 30s to 120s (fallback only)
+  - ChatPanel status bar shows live connection state (connected/connecting/reconnecting/disconnected)
+
+### Changed
+- **300-frontend-ui (Sidebar)**: Agents now shown inside room cards instead of separate roster box
+  - Each room card displays agents located in that room via `agentLocations` data
+  - Thinking agents get a spinning ring animation around their status dot
+  - Thinking state tracked per-room so spinners work across all room cards
+  - Room list always visible (was hidden with only 1 room)
+
 ### Added
 - **010-task-management (Phases 1-3)**: Task model extension, API endpoints, and frontend task list
   - Phase 1: Fixed auto-spec task creation on onboard when `!hasSpecs`

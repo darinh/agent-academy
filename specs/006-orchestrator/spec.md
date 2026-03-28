@@ -25,6 +25,7 @@ Each round in the main collaboration room follows this sequence:
 3. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run
 4. **Sequential execution**: Agents run one at a time so each sees prior responses
 5. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed
+6. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
 
 ### Task Assignment Workflow
 
@@ -123,6 +124,7 @@ Registered as a singleton. Uses `IServiceScopeFactory` to create scoped `Workspa
 | `BreakoutTimeout` | 300s | Breakout room agent timeout |
 | `MaxBreakoutRounds` | 5 | Max iterations per breakout |
 | `MaxFixRounds` | 2 | Extra rounds after review rejection |
+| `MaxRoundsPerTrigger` | 3 | Max conversation rounds per human message |
 | `MaxTaggedAgents` | 6 | Cap on tagged agents per round |
 
 ### Parsing Records
@@ -154,4 +156,5 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-03-28 | Multi-round continuation loop (up to 3 rounds per trigger) | fix-orchestrator-stall |
 | 2025-07-21 | Initial implementation — ported from v1 TypeScript | Port orchestrator |
