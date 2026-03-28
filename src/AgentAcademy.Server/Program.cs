@@ -3,7 +3,13 @@ using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Hubs;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.EntityFrameworkCore;
+using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +29,81 @@ builder.Services.AddCors(options =>
               .AllowCredentials(); // Required for SignalR
     });
 });
+
+// GitHub OAuth — opt-in: only enabled when ClientId + ClientSecret are configured
+var gitHubClientId = builder.Configuration["GitHub:ClientId"] ?? "";
+var gitHubClientSecret = builder.Configuration["GitHub:ClientSecret"] ?? "";
+var gitHubAuthEnabled = !string.IsNullOrEmpty(gitHubClientId) && !string.IsNullOrEmpty(gitHubClientSecret);
+
+if (gitHubAuthEnabled)
+{
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = "GitHub";
+    })
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/api/auth/login";
+        options.LogoutPath = "/api/auth/logout";
+        options.Cookie.Name = "AgentAcademy.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.ExpireTimeSpan = TimeSpan.FromDays(7);
+        options.SlidingExpiration = true;
+
+        // Return 401 for API calls instead of redirecting
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = 401;
+            return Task.CompletedTask;
+        };
+    })
+    .AddOAuth("GitHub", options =>
+    {
+        options.ClientId = gitHubClientId;
+        options.ClientSecret = gitHubClientSecret;
+        options.CallbackPath = builder.Configuration["GitHub:CallbackPath"] ?? "/api/auth/callback";
+        options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
+        options.TokenEndpoint = "https://github.com/login/oauth/access_token";
+        options.UserInformationEndpoint = "https://api.github.com/user";
+        options.Scope.Add("read:user");
+        options.Scope.Add("user:email");
+        options.SaveTokens = false;
+        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+
+        options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "login");
+        options.ClaimActions.MapJsonKey("urn:github:name", "name");
+        options.ClaimActions.MapJsonKey("urn:github:avatar", "avatar_url");
+
+        options.Events = new OAuthEvents
+        {
+            OnCreatingTicket = async context =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
+
+                using var response = await context.Backchannel.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.HttpContext.RequestAborted);
+                response.EnsureSuccessStatusCode();
+
+                var user = await response.Content.ReadFromJsonAsync<JsonElement>();
+                context.RunClaimActions(user);
+            }
+        };
+    });
+
+    builder.Services.AddAuthorization(options =>
+    {
+        options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+    });
+}
+
+// Flag for controllers to check
+builder.Services.AddSingleton(new GitHubAuthOptions(gitHubAuthEnabled));
 
 // Database
 builder.Services.AddDbContext<AgentAcademyDbContext>(options =>
@@ -87,6 +168,12 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
+
+if (gitHubAuthEnabled)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
 
 app.MapControllers();
 app.MapHub<ActivityHub>("/hubs/activity");

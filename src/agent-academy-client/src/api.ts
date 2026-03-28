@@ -1,8 +1,22 @@
 /**
  * Client-side API functions for Agent Academy.
  *
- * Covers workspace, collaboration, activity, plan, filesystem, and notification endpoints.
+ * Covers auth, workspace, collaboration, activity, plan, filesystem, and notification endpoints.
  */
+
+// ── Auth types ─────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  login: string;
+  name?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface AuthStatus {
+  authEnabled: boolean;
+  authenticated: boolean;
+  user?: AuthUser | null;
+}
 
 // ── Core types ─────────────────────────────────────────────────────────
 
@@ -240,7 +254,7 @@ export interface ApiError {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 
 function apiUrl(path: string) {
   return `${apiBaseUrl}${path}`;
@@ -248,6 +262,7 @@ function apiUrl(path: string) {
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
@@ -268,6 +283,16 @@ export function getOverview(): Promise<WorkspaceOverview> {
 
 export function getHealth(): Promise<HealthResult> {
   return request<HealthResult>(apiUrl("/healthz"));
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────
+
+export function getAuthStatus(): Promise<AuthStatus> {
+  return request<AuthStatus>(apiUrl("/api/auth/status"));
+}
+
+export function logout(): Promise<void> {
+  return request<void>(apiUrl("/api/auth/logout"), { method: "POST" });
 }
 
 export function getConfiguredAgents(): Promise<AgentDefinition[]> {

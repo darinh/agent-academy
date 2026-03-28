@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -80,6 +81,7 @@ public class SystemController : ControllerBase
     /// GET /healthz — health check.
     /// </summary>
     [HttpGet("/healthz")]
+    [AllowAnonymous]
     public IActionResult GetHealth()
     {
         var uptime = DateTime.UtcNow - StartedAt;

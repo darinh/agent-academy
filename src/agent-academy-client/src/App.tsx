@@ -19,8 +19,8 @@ import {
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { getActiveWorkspace, switchWorkspace, getTasks } from "./api";
-import type { OnboardResult, WorkspaceMeta, TaskSnapshot } from "./api";
+import { getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus } from "./api";
+import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
@@ -29,6 +29,7 @@ import TimelinePanel from "./TimelinePanel";
 import DashboardPanel from "./DashboardPanel";
 import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
 import TaskListPanel from "./TaskListPanel";
+import LoginPage from "./LoginPage";
 
 export default function App() {
   return (
@@ -67,6 +68,16 @@ function AppShell() {
   const [switchError, setSwitchError] = useState("");
   const [allTasks, setAllTasks] = useState<TaskSnapshot[]>([]);
   const [tasksError, setTasksError] = useState(false);
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+
+  // Check auth status on mount
+  useEffect(() => {
+    let cancelled = false;
+    getAuthStatus()
+      .then((status) => { if (!cancelled) setAuth(status); })
+      .catch(() => { if (!cancelled) setAuth({ authEnabled: false, authenticated: false }); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Fetch tasks when workspace is active and tab is "tasks"
   useEffect(() => {
@@ -156,8 +167,14 @@ function AppShell() {
       : `${roomName} | Agent Academy`;
   }, [room?.name, room?.currentPhase]);
 
-  if (loading) {
+  // Wait for auth check before rendering anything
+  if (auth === null || loading) {
     return <div className={s.root} />;
+  }
+
+  // Show login page if auth is enabled but user is not authenticated
+  if (auth.authEnabled && !auth.authenticated) {
+    return <LoginPage />;
   }
 
   return (
