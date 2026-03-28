@@ -158,10 +158,39 @@ public class WorkspaceRuntimeTests : IDisposable
 
         var room = await _runtime.GetRoomAsync("main");
         Assert.NotNull(room);
-        // Only agents with AutoJoinDefaultRoom = true should be participants
-        Assert.Equal(2, room.Participants.Count);
+        // All agents get location entries in the default room at init
+        Assert.Equal(3, room.Participants.Count);
         Assert.Contains(room.Participants, p => p.AgentId == "planner-1");
         Assert.Contains(room.Participants, p => p.AgentId == "engineer-1");
+        Assert.Contains(room.Participants, p => p.AgentId == "reviewer-1");
+    }
+
+    [Fact]
+    public async Task GetRoom_ParticipantsReflectAgentLocations()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create a task room — AutoJoinDefaultRoom agents get moved there
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            Title: "Test Task",
+            Description: "Testing participant locations",
+            SuccessCriteria: "Participants reflect actual locations",
+            RoomId: null,
+            PreferredRoles: ["Planner"]
+        ));
+
+        // Task room should have the moved agents
+        var taskRoom = await _runtime.GetRoomAsync(result.Room.Id);
+        Assert.NotNull(taskRoom);
+        Assert.Contains(taskRoom.Participants, p => p.AgentId == "planner-1");
+        Assert.Contains(taskRoom.Participants, p => p.AgentId == "engineer-1");
+
+        // Default room should only have agents NOT moved (reviewer-1 has AutoJoinDefaultRoom=false)
+        var mainRoom = await _runtime.GetRoomAsync("main");
+        Assert.NotNull(mainRoom);
+        Assert.Contains(mainRoom.Participants, p => p.AgentId == "reviewer-1");
+        Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "planner-1");
+        Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "engineer-1");
     }
 
     // ── Message Management ──────────────────────────────────────

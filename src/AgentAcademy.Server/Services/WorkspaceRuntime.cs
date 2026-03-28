@@ -160,10 +160,17 @@ public sealed class WorkspaceRuntime
             .OrderBy(r => r.Name)
             .ToListAsync();
 
+        // Pre-load all agent locations to avoid N+1 queries
+        var allLocations = await _db.AgentLocations.ToListAsync();
+        var locationsByRoom = allLocations
+            .GroupBy(l => l.RoomId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var snapshots = new List<RoomSnapshot>();
         foreach (var room in rooms)
         {
-            snapshots.Add(await BuildRoomSnapshotAsync(room));
+            var locations = locationsByRoom.GetValueOrDefault(room.Id, []);
+            snapshots.Add(await BuildRoomSnapshotAsync(room, locations));
         }
         return snapshots;
     }
@@ -923,7 +930,8 @@ public sealed class WorkspaceRuntime
         return evt;
     }
 
-    private async Task<RoomSnapshot> BuildRoomSnapshotAsync(RoomEntity room)
+    private async Task<RoomSnapshot> BuildRoomSnapshotAsync(
+        RoomEntity room, List<AgentLocationEntity>? preloadedLocations = null)
     {
         // Get recent messages (last MaxRecentMessages)
         var messages = await _db.Messages
@@ -941,10 +949,11 @@ public sealed class WorkspaceRuntime
 
         var activeTask = activeTaskEntity is null ? null : BuildTaskSnapshot(activeTaskEntity);
 
-        // Build participants from configured agents
-        var participants = BuildParticipants(
-            activeTask?.PreferredRoles ?? [],
-            room.UpdatedAt);
+        // Build participants from actual agent locations in this room
+        var preferredRoles = activeTask?.PreferredRoles ?? [];
+        var locations = preloadedLocations
+            ?? await _db.AgentLocations.Where(l => l.RoomId == room.Id).ToListAsync();
+        var participants = BuildParticipants(locations, preferredRoles);
 
         return new RoomSnapshot(
             Id: room.Id,
@@ -960,21 +969,27 @@ public sealed class WorkspaceRuntime
     }
 
     private List<AgentPresence> BuildParticipants(
-        List<string> preferredRoles, DateTime observedAt)
+        List<AgentLocationEntity> locations, List<string> preferredRoles)
     {
-        return _catalog.Agents
-            .Where(a => a.AutoJoinDefaultRoom || preferredRoles.Contains(a.Role))
-            .Select(a => new AgentPresence(
-                AgentId: a.Id,
-                Name: a.Name,
-                Role: a.Role,
-                Availability: preferredRoles.Contains(a.Role)
-                    ? AgentAvailability.Preferred
-                    : AgentAvailability.Ready,
-                IsPreferred: preferredRoles.Contains(a.Role),
-                LastActivityAt: observedAt,
-                ActiveCapabilities: [.. a.CapabilityTags]
-            ))
+        var agentMap = _catalog.Agents.ToDictionary(a => a.Id);
+
+        return locations
+            .Where(l => agentMap.ContainsKey(l.AgentId))
+            .Select(l =>
+            {
+                var a = agentMap[l.AgentId];
+                return new AgentPresence(
+                    AgentId: a.Id,
+                    Name: a.Name,
+                    Role: a.Role,
+                    Availability: preferredRoles.Contains(a.Role)
+                        ? AgentAvailability.Preferred
+                        : AgentAvailability.Ready,
+                    IsPreferred: preferredRoles.Contains(a.Role),
+                    LastActivityAt: l.UpdatedAt,
+                    ActiveCapabilities: [.. a.CapabilityTags]
+                );
+            })
             .ToList();
     }
 

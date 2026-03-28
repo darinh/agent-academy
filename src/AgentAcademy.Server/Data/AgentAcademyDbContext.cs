@@ -123,6 +123,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.RoomId).IsRequired();
             entity.Property(e => e.State).IsRequired().HasDefaultValue("Idle");
             entity.Property(e => e.UpdatedAt).IsRequired();
+            entity.HasIndex(e => e.RoomId);
         });
 
         // ── Breakout Rooms ────────────────────────────────────
