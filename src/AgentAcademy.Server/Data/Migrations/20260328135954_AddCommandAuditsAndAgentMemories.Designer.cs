@@ -3,6 +3,7 @@ using System;
 using AgentAcademy.Server.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AgentAcademy.Server.Data.Migrations
 {
     [DbContext(typeof(AgentAcademyDbContext))]
-    partial class AgentAcademyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260328135954_AddCommandAuditsAndAgentMemories")]
+    partial class AddCommandAuditsAndAgentMemories
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.25");

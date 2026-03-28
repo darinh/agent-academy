@@ -23,6 +23,29 @@
         "GitIdentity": {
           "AuthorName": "Aristotle (Planner)",
           "AuthorEmail": "aristotle@agent-academy.local"
+        },
+        "Permissions": {
+          "Allowed": [
+            "LIST_*",
+            "READ_FILE",
+            "SEARCH_CODE",
+            "REMEMBER",
+            "RECALL",
+            "LIST_MEMORIES",
+            "FORGET",
+            "CLAIM_TASK",
+            "RELEASE_TASK",
+            "UPDATE_TASK",
+            "APPROVE_TASK",
+            "REQUEST_CHANGES",
+            "SHOW_REVIEW_QUEUE",
+            "LINK_TASK_TO_SPEC",
+            "SHOW_UNLINKED_CHANGES"
+          ],
+          "Denied": [
+            "RUN_BUILD",
+            "RUN_TESTS"
+          ]
         }
       },
       {
@@ -45,6 +68,23 @@
         "GitIdentity": {
           "AuthorName": "Archimedes (Architect)",
           "AuthorEmail": "archimedes@agent-academy.local"
+        },
+        "Permissions": {
+          "Allowed": [
+            "LIST_*",
+            "READ_FILE",
+            "SEARCH_CODE",
+            "REMEMBER",
+            "RECALL",
+            "LIST_MEMORIES",
+            "FORGET",
+            "SHOW_DIFF",
+            "GIT_LOG"
+          ],
+          "Denied": [
+            "RUN_BUILD",
+            "RUN_TESTS"
+          ]
         }
       },
       {
@@ -68,6 +108,28 @@
         "GitIdentity": {
           "AuthorName": "Hephaestus (Engineer)",
           "AuthorEmail": "hephaestus@agent-academy.local"
+        },
+        "Permissions": {
+          "Allowed": [
+            "LIST_*",
+            "READ_FILE",
+            "SEARCH_CODE",
+            "REMEMBER",
+            "RECALL",
+            "LIST_MEMORIES",
+            "FORGET",
+            "RUN_BUILD",
+            "RUN_TESTS",
+            "SHOW_DIFF",
+            "GIT_LOG",
+            "CLAIM_TASK",
+            "RELEASE_TASK",
+            "UPDATE_TASK"
+          ],
+          "Denied": [
+            "APPROVE_TASK",
+            "REQUEST_CHANGES"
+          ]
         }
       },
       {
@@ -91,6 +153,28 @@
         "GitIdentity": {
           "AuthorName": "Athena (Engineer)",
           "AuthorEmail": "athena@agent-academy.local"
+        },
+        "Permissions": {
+          "Allowed": [
+            "LIST_*",
+            "READ_FILE",
+            "SEARCH_CODE",
+            "REMEMBER",
+            "RECALL",
+            "LIST_MEMORIES",
+            "FORGET",
+            "RUN_BUILD",
+            "RUN_TESTS",
+            "SHOW_DIFF",
+            "GIT_LOG",
+            "CLAIM_TASK",
+            "RELEASE_TASK",
+            "UPDATE_TASK"
+          ],
+          "Denied": [
+            "APPROVE_TASK",
+            "REQUEST_CHANGES"
+          ]
         }
       },
       {
@@ -115,6 +199,25 @@
         "GitIdentity": {
           "AuthorName": "Socrates (Reviewer)",
           "AuthorEmail": "socrates@agent-academy.local"
+        },
+        "Permissions": {
+          "Allowed": [
+            "LIST_*",
+            "READ_FILE",
+            "SEARCH_CODE",
+            "REMEMBER",
+            "RECALL",
+            "LIST_MEMORIES",
+            "FORGET",
+            "APPROVE_TASK",
+            "REQUEST_CHANGES",
+            "SHOW_REVIEW_QUEUE",
+            "SHOW_DIFF",
+            "GIT_LOG",
+            "RUN_BUILD",
+            "RUN_TESTS"
+          ],
+          "Denied": []
         }
       },
       {
@@ -138,6 +241,25 @@
         "GitIdentity": {
           "AuthorName": "Thucydides (Writer)",
           "AuthorEmail": "thucydides@agent-academy.local"
+        },
+        "Permissions": {
+          "Allowed": [
+            "LIST_*",
+            "READ_FILE",
+            "SEARCH_CODE",
+            "REMEMBER",
+            "RECALL",
+            "LIST_MEMORIES",
+            "FORGET",
+            "SHOW_DIFF",
+            "GIT_LOG"
+          ],
+          "Denied": [
+            "RUN_BUILD",
+            "RUN_TESTS",
+            "APPROVE_TASK",
+            "REQUEST_CHANGES"
+          ]
         }
       }
     ]

@@ -3,7 +3,7 @@
 ## Purpose
 Defines a unified command pipeline through which agents interact with the platform, codebase, and each other. Every agent action — reading files, moving between rooms, sending messages, managing tasks — flows through a structured envelope with authorization, audit trails, and consistent error handling.
 
-> **Status: Planned** — This is a design specification. No command pipeline code exists yet. Agents currently communicate via free-text responses parsed by the orchestrator.
+> **Status: Implemented (Phase 1A)** — Command envelope, parser, pipeline, authorization, audit trail, and Phase 1A handlers (LIST_ROOMS, LIST_AGENTS, LIST_TASKS, READ_FILE, SEARCH_CODE) are implemented. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET) are implemented. Runs in parallel with existing free-text parsing.
 
 ## Motivation
 Today, agents have no formalized way to interact with the platform. The orchestrator parses free-text blocks like `TASK ASSIGNMENT:` from agent responses. This creates:
@@ -335,15 +335,16 @@ Minimal surfaces ship with the commands they support — not as a separate phase
 
 ## Known Gaps
 
-- **Permission configuration**: The permission model is described as a table but not yet formalized as configuration schema. Need to decide: hardcoded in handlers, agent catalog property, or separate RBAC config.
-- **Command discovery**: How do agents learn what commands are available? Options: included in startup prompt, discoverable via `HELP` command, or both.
+- ~~**Permission configuration**: Resolved — permissions are co-located in `agents.json` as `Permissions` property with `Allowed` and `Denied` arrays supporting wildcard patterns.~~
+- **Command discovery**: How do agents learn what commands are available? Options: included in startup prompt, discoverable via `HELP` command, or both. Currently not included in startup prompts.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?).
 - **Rate limiting**: No rate limiting defined for commands. An agent could spam READ_FILE in a tight loop.
 - **Frontend command palette**: Design is described but not specified. Needs wireframes and interaction model.
-- **Migration from free-text parsing**: The orchestrator currently parses `TASK ASSIGNMENT:` blocks as free text. Migration path to structured commands needs to be defined (parallel operation? hard cutover?).
+- ~~**Migration from free-text parsing**: Resolved — command pipeline runs in parallel with existing TASK ASSIGNMENT/WORK REPORT/REVIEW parsing. No migration needed for Phase 1.~~
 
 ## Revision History
 
 | Date | Change | Task |
 |------|--------|------|
 | 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system |
+| 2026-03-28 | Implemented Phase 1A: envelope, parser, pipeline, authorization, audit, read handlers, memory handlers | command-system-phase1 |

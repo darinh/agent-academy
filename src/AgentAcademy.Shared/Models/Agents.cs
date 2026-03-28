@@ -22,7 +22,8 @@ public record AgentDefinition(
     List<string> CapabilityTags,
     List<string> EnabledTools,
     bool AutoJoinDefaultRoom,
-    AgentGitIdentity? GitIdentity = null
+    AgentGitIdentity? GitIdentity = null,
+    CommandPermissionSet? Permissions = null
 );
 
 /// <summary>

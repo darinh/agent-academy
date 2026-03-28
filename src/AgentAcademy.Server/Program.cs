@@ -1,3 +1,5 @@
+using AgentAcademy.Server.Commands;
+using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Hubs;
@@ -145,6 +147,18 @@ builder.Services.AddSingleton<ProjectScanner>();
 
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)
 builder.Services.AddSingleton<AgentOrchestrator>();
+
+// Command system (singleton pipeline + handlers registered via interface)
+builder.Services.AddSingleton<CommandPipeline>();
+builder.Services.AddSingleton<ICommandHandler, ListRoomsHandler>();
+builder.Services.AddSingleton<ICommandHandler, ListAgentsHandler>();
+builder.Services.AddSingleton<ICommandHandler, ListTasksHandler>();
+builder.Services.AddSingleton<ICommandHandler, ReadFileHandler>();
+builder.Services.AddSingleton<ICommandHandler, SearchCodeHandler>();
+builder.Services.AddSingleton<ICommandHandler, RememberHandler>();
+builder.Services.AddSingleton<ICommandHandler, RecallHandler>();
+builder.Services.AddSingleton<ICommandHandler, ListMemoriesHandler>();
+builder.Services.AddSingleton<ICommandHandler, ForgetHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();

@@ -24,6 +24,8 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<PlanEntity> Plans => Set<PlanEntity>();
     public DbSet<ActivityEventEntity> ActivityEvents => Set<ActivityEventEntity>();
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
+    public DbSet<CommandAuditEntity> CommandAudits => Set<CommandAuditEntity>();
+    public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -205,6 +207,36 @@ public class AgentAcademyDbContext : DbContext
             entity.ToTable("workspaces");
             entity.HasKey(e => e.Path);
             entity.Property(e => e.CreatedAt).IsRequired();
+        });
+
+        // ── Command Audits ───────────────────────────────────
+        modelBuilder.Entity<CommandAuditEntity>(entity =>
+        {
+            entity.ToTable("command_audits");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CorrelationId).IsRequired();
+            entity.Property(e => e.AgentId).IsRequired();
+            entity.Property(e => e.Command).IsRequired();
+            entity.Property(e => e.ArgsJson).IsRequired().HasDefaultValue("{}");
+            entity.Property(e => e.Status).IsRequired().HasDefaultValue("Success");
+            entity.Property(e => e.Timestamp).IsRequired();
+
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_cmd_audits_agent");
+            entity.HasIndex(e => e.Timestamp).HasDatabaseName("idx_cmd_audits_time");
+            entity.HasIndex(e => e.CorrelationId).HasDatabaseName("idx_cmd_audits_correlation");
+        });
+
+        // ── Agent Memories ───────────────────────────────────
+        modelBuilder.Entity<AgentMemoryEntity>(entity =>
+        {
+            entity.ToTable("agent_memories");
+            entity.HasKey(e => new { e.AgentId, e.Key });
+            entity.Property(e => e.Category).IsRequired();
+            entity.Property(e => e.Value).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_agent_memories_agent");
+            entity.HasIndex(e => e.Category).HasDatabaseName("idx_agent_memories_category");
         });
     }
 }

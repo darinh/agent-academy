@@ -1,5 +1,8 @@
 using System.Text.RegularExpressions;
+using AgentAcademy.Server.Commands;
+using AgentAcademy.Server.Data;
 using AgentAcademy.Shared.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -30,6 +33,7 @@ public sealed class AgentOrchestrator
     private readonly IAgentExecutor _executor;
     private readonly ActivityBroadcaster _activityBus;
     private readonly SpecManager _specManager;
+    private readonly CommandPipeline _commandPipeline;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<string> _queue = new();
@@ -42,12 +46,14 @@ public sealed class AgentOrchestrator
         IAgentExecutor executor,
         ActivityBroadcaster activityBus,
         SpecManager specManager,
+        CommandPipeline commandPipeline,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
         _executor = executor;
         _activityBus = activityBus;
         _specManager = specManager;
+        _commandPipeline = commandPipeline;
         _logger = logger;
     }
 
@@ -144,7 +150,8 @@ public sealed class AgentOrchestrator
                 {
                     var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
                     var taskItems = await runtime.GetActiveTaskItemsAsync();
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems)
+                    var plannerMemories = await LoadAgentMemoriesAsync(planner.Id);
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -163,7 +170,9 @@ public sealed class AgentOrchestrator
                 if (!string.IsNullOrWhiteSpace(plannerResponse) && !IsPassResponse(plannerResponse))
                 {
                     hadNonPassResponse = true;
-                    await PostAgentMessageAsync(runtime, planner, roomId, plannerResponse);
+
+                    // Process commands and post remaining text
+                    await ProcessAndPostAgentResponseAsync(runtime, planner, roomId, plannerResponse);
 
                     // Collect @-mentioned agents for the next step
                     foreach (var a in ParseTaggedAgents(runtime, plannerResponse))
@@ -204,7 +213,8 @@ public sealed class AgentOrchestrator
                 var response = "";
                 try
                 {
-                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext);
+                    var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
+                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories);
                     response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
                 }
                 catch (Exception ex)
@@ -219,7 +229,9 @@ public sealed class AgentOrchestrator
                 if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response))
                 {
                     hadNonPassResponse = true;
-                    await PostAgentMessageAsync(runtime, agent, roomId, response);
+
+                    // Process commands and post remaining text
+                    await ProcessAndPostAgentResponseAsync(runtime, agent, roomId, response);
 
                     foreach (var assignment in ParseTaskAssignments(response))
                     {
@@ -361,7 +373,8 @@ public sealed class AgentOrchestrator
             var response = "";
             try
             {
-                var prompt = BuildBreakoutPrompt(agent, currentBr, round);
+                var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
+                var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories);
                 response = await RunAgentWithTimeoutAsync(agent, prompt, breakoutRoomId, BreakoutTimeout);
             }
             catch (Exception ex)
@@ -372,8 +385,15 @@ public sealed class AgentOrchestrator
 
             if (!string.IsNullOrWhiteSpace(response))
             {
-                await runtime.PostBreakoutMessageAsync(
-                    breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
+                // Process commands from breakout response
+                var pipelineResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                var textToPost = pipelineResult.RemainingText;
+
+                if (!string.IsNullOrWhiteSpace(textToPost))
+                {
+                    await runtime.PostBreakoutMessageAsync(
+                        breakoutRoomId, agent.Id, agent.Name, agent.Role, textToPost);
+                }
             }
 
             var report = ParseWorkReport(response);
@@ -527,16 +547,24 @@ public sealed class AgentOrchestrator
             var response = "";
             try
             {
+                var fixMemories = await LoadAgentMemoriesAsync(agent.Id);
                 response = await RunAgentWithTimeoutAsync(
-                    agent, BuildBreakoutPrompt(agent, updatedBr, round),
+                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories),
                     breakoutRoomId, BreakoutTimeout);
             }
             catch { continue; }
 
             if (!string.IsNullOrWhiteSpace(response))
             {
-                await runtime.PostBreakoutMessageAsync(
-                    breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
+                // Process commands from fix-round response
+                var pipelineResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                var textToPost = pipelineResult.RemainingText;
+
+                if (!string.IsNullOrWhiteSpace(textToPost))
+                {
+                    await runtime.PostBreakoutMessageAsync(
+                        breakoutRoomId, agent.Id, agent.Name, agent.Role, textToPost);
+                }
             }
 
             var report = ParseWorkReport(response);
@@ -702,9 +730,20 @@ public sealed class AgentOrchestrator
 
     private static string BuildConversationPrompt(
         AgentDefinition agent, RoomSnapshot room, string? specContext,
-        List<TaskItem>? activeTaskItems = null)
+        List<TaskItem>? activeTaskItems = null,
+        List<AgentMemory>? memories = null)
     {
         var lines = new List<string> { agent.StartupPrompt, "" };
+
+        // Inject agent memories before room context
+        if (memories is { Count: > 0 })
+        {
+            lines.Add("=== YOUR MEMORIES ===");
+            foreach (var m in memories)
+                lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
+            lines.Add("");
+        }
+
         lines.Add("=== CURRENT ROOM CONTEXT ===");
         lines.Add($"Room: {room.Name}");
 
@@ -756,9 +795,20 @@ public sealed class AgentOrchestrator
         return string.Join("\n", lines);
     }
 
-    private static string BuildBreakoutPrompt(AgentDefinition agent, BreakoutRoom br, int round)
+    private static string BuildBreakoutPrompt(AgentDefinition agent, BreakoutRoom br, int round,
+        List<AgentMemory>? memories = null)
     {
         var lines = new List<string> { agent.StartupPrompt, "" };
+
+        // Inject agent memories
+        if (memories is { Count: > 0 })
+        {
+            lines.Add("=== YOUR MEMORIES ===");
+            foreach (var m in memories)
+                lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
+            lines.Add("");
+        }
+
         lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
         lines.Add($"Round: {round}/{MaxBreakoutRounds}");
 
@@ -834,6 +884,76 @@ public sealed class AgentOrchestrator
     }
 
     // ── MESSAGE POSTING ─────────────────────────────────────────
+
+    /// <summary>
+    /// Processes commands from an agent response, posts the remaining text,
+    /// and posts command results as a system message for context visibility.
+    /// </summary>
+    private async Task ProcessAndPostAgentResponseAsync(
+        WorkspaceRuntime runtime, AgentDefinition agent, string roomId, string response)
+    {
+        // Run response through command pipeline
+        var pipelineResult = await ProcessCommandsAsync(agent, response, roomId);
+
+        // Post the remaining text (with commands stripped) as the agent's message
+        var textToPost = pipelineResult.RemainingText;
+        if (!string.IsNullOrWhiteSpace(textToPost) && !IsPassResponse(textToPost))
+        {
+            await PostAgentMessageAsync(runtime, agent, roomId, textToPost);
+        }
+
+        // Post command results as system message so subsequent prompts include them
+        var formattedResults = CommandPipeline.FormatResultsForContext(pipelineResult.Results);
+        if (!string.IsNullOrEmpty(formattedResults))
+        {
+            await runtime.PostSystemStatusAsync(roomId, formattedResults);
+        }
+    }
+
+    /// <summary>
+    /// Runs agent response text through the command pipeline within a new scope.
+    /// </summary>
+    private async Task<CommandPipelineResult> ProcessCommandsAsync(
+        AgentDefinition agent, string responseText, string roomId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            return await _commandPipeline.ProcessResponseAsync(
+                agent.Id, responseText, roomId, agent, scope.ServiceProvider);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
+            return new CommandPipelineResult(new List<CommandEnvelope>(), responseText);
+        }
+    }
+
+    /// <summary>
+    /// Loads an agent's persisted memories from the database.
+    /// </summary>
+    private async Task<List<AgentMemory>> LoadAgentMemoriesAsync(string agentId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var entities = await db.AgentMemories
+                .Where(m => m.AgentId == agentId)
+                .OrderBy(m => m.Category)
+                .ThenBy(m => m.Key)
+                .ToListAsync();
+
+            return entities.Select(e => new AgentMemory(
+                e.AgentId, e.Category, e.Key, e.Value, e.CreatedAt, e.UpdatedAt
+            )).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load memories for agent {AgentId}", agentId);
+            return new List<AgentMemory>();
+        }
+    }
 
     private async Task PostAgentMessageAsync(
         WorkspaceRuntime runtime, AgentDefinition agent, string roomId, string content)

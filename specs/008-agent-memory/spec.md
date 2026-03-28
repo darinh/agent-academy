@@ -3,7 +3,7 @@
 ## Purpose
 Defines a persistent per-agent knowledge store that survives across sessions. Agents can record lessons, decisions, patterns, and risks — then recall them when working on related tasks.
 
-> **Status: Planned** — Design specification. No implementation exists.
+> **Status: Implemented** — Per-agent memory store with REMEMBER (upsert), RECALL (LIKE search), LIST_MEMORIES, and FORGET commands. No memory cap. Memories injected into agent prompts as `=== YOUR MEMORIES ===` section.
 
 ## Motivation
 Agents currently lose all learned context between orchestrator rounds and server restarts. Patterns discovered during code review, architectural decisions made during planning, and gotchas encountered during implementation are lost unless manually documented in specs or conversation.
@@ -95,7 +95,6 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 ```
 
 ### Memory Limits
-- Max 50 memories per agent (oldest auto-evicted when exceeded, with warning)
 - Max 500 characters per value
 - Categories are validated against the allowed set
 
@@ -125,3 +124,4 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 | Date | Change | Task |
 |------|--------|------|
 | 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system |
+| 2026-03-28 | Implemented: REMEMBER, RECALL, LIST_MEMORIES, FORGET. Removed 50-memory cap. LIKE search for RECALL. | command-system-phase1 |

@@ -170,7 +170,10 @@ public enum ActivityEventType
     SubagentFailed,
     AgentPlanChanged,
     AgentSnapshotRewound,
-    ToolIntercepted
+    ToolIntercepted,
+    CommandExecuted,
+    CommandDenied,
+    CommandFailed
 }
 
 /// <summary>
@@ -206,4 +209,15 @@ public enum TaskItemStatus
     Active,
     Done,
     Rejected
+}
+
+/// <summary>
+/// Outcome status for a command envelope.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CommandStatus
+{
+    Success,
+    Error,
+    Denied
 }
