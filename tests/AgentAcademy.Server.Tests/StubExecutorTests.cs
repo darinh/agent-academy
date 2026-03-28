@@ -35,21 +35,25 @@ public class StubExecutorTests
     [InlineData("SoftwareEngineer")]
     [InlineData("Reviewer")]
     [InlineData("TechnicalWriter")]
-    public async Task RunAsync_ReturnsNonEmptyResponse_ForKnownRoles(string role)
+    public async Task RunAsync_ReturnsOfflineNotice_ForKnownRoles(string role)
     {
         var agent = MakeAgent(role);
         var result = await _sut.RunAsync(agent, "Title: Build a widget", "room-1");
 
-        Assert.False(string.IsNullOrWhiteSpace(result));
+        Assert.Contains("offline", result);
+        Assert.Contains(agent.Name, result);
+        Assert.Contains(agent.Role, result);
+        Assert.Contains("Copilot SDK", result);
     }
 
     [Fact]
-    public async Task RunAsync_ReturnsResponse_ForUnknownRole()
+    public async Task RunAsync_ReturnsOfflineNotice_ForUnknownRole()
     {
         var agent = MakeAgent("UnknownRole");
         var result = await _sut.RunAsync(agent, "Do something", null);
 
-        Assert.False(string.IsNullOrWhiteSpace(result));
+        Assert.Contains("offline", result);
+        Assert.Contains("UnknownRole", result);
     }
 
     [Fact]
@@ -67,7 +71,6 @@ public class StubExecutorTests
     public async Task InvalidateSessionAsync_DoesNotThrow()
     {
         await _sut.InvalidateSessionAsync("agent-1", "room-1");
-        // No exception = pass
     }
 
     [Fact]
@@ -83,36 +86,27 @@ public class StubExecutorTests
     }
 
     [Fact]
-    public async Task RunAsync_WithNullRoomId_ReturnsResponse()
+    public async Task RunAsync_WithNullRoomId_ReturnsOfflineNotice()
     {
         var agent = MakeAgent("Architect");
         var result = await _sut.RunAsync(agent, "Title: Design API", null);
 
-        Assert.False(string.IsNullOrWhiteSpace(result));
+        Assert.Contains("offline", result);
+        Assert.Contains(agent.Name, result);
     }
 
-    [Theory]
-    [InlineData("Planner")]
-    [InlineData("Architect")]
-    [InlineData("SoftwareEngineer")]
-    [InlineData("Reviewer")]
-    [InlineData("TechnicalWriter")]
-    public async Task RunAsync_ResponseVariesBetweenCalls(string role)
+    [Fact]
+    public async Task RunAsync_ReturnsDeterministicMessage()
     {
-        // Run enough times that a random selection from 3-4 templates
-        // should produce at least 2 distinct responses.
-        var agent = MakeAgent(role);
+        var agent = MakeAgent("Planner");
         var responses = new HashSet<string>();
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 5; i++)
         {
             var result = await _sut.RunAsync(agent, "Title: test", "room-1");
             responses.Add(result);
         }
 
-        // With 3+ templates and 20 draws, probability of getting only 1
-        // unique response is astronomically low.
-        Assert.True(responses.Count >= 2,
-            $"Expected at least 2 distinct responses for role '{role}', got {responses.Count}");
+        Assert.Single(responses);
     }
 }
 
