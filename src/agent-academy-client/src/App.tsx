@@ -16,7 +16,6 @@ import {
   GridRegular,
   BoardRegular,
   TaskListLtrRegular,
-  SettingsRegular,
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
@@ -32,7 +31,7 @@ import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
 import TaskListPanel from "./TaskListPanel";
 import LoginPage from "./LoginPage";
 import UserBadge from "./UserBadge";
-import NotificationSetupWizard from "./NotificationSetupWizard";
+import SettingsPanel from "./SettingsPanel";
 
 export default function App() {
   return (
@@ -84,6 +83,7 @@ function AppShell() {
   const [tasksError, setTasksError] = useState(false);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Check auth status on mount — retry if backend is still starting
   useEffect(() => {
@@ -309,7 +309,7 @@ function AppShell() {
                   </div>
                 )}
                 {auth?.authenticated && auth.user && (
-                  <UserBadge user={auth.user} onLogout={handleLogout} />
+                  <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
                 )}
               </div>
             </div>
@@ -347,7 +347,6 @@ function AppShell() {
                   <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
                   <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
                   <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
-                  <Tab value="settings" icon={<SettingsRegular />}>Settings</Tab>
                 </TabList>
               </div>
 
@@ -380,15 +379,15 @@ function AppShell() {
                     transitioning={phaseTransitioning}
                   />
                 )}
-                {tab === "settings" && (
-                  <NotificationSetupWizard inline />
-                )}
               </section>
             </>)}
             </>);
             })()}
           </main>
         </div>
+      )}
+      {showSettings && (
+        <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

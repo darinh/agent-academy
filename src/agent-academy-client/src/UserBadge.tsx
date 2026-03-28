@@ -1,11 +1,32 @@
-import { Button, makeStyles, shorthands } from "@fluentui/react-components";
+import {
+  makeStyles,
+  shorthands,
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItem,
+} from "@fluentui/react-components";
+import {
+  SettingsRegular,
+  SignOutRegular,
+} from "@fluentui/react-icons";
 import type { AuthUser } from "./api";
 
 const useLocalStyles = makeStyles({
-  root: {
+  trigger: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
+    cursor: "pointer",
+    ...shorthands.padding("4px", "8px"),
+    ...shorthands.borderRadius("8px"),
+    border: "none",
+    backgroundColor: "transparent",
+    color: "inherit",
+    "&:hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+    },
   },
   avatar: {
     width: "28px",
@@ -17,36 +38,39 @@ const useLocalStyles = makeStyles({
     color: "#dbe7fb",
     fontWeight: 500,
   },
-  logoutBtn: {
-    minWidth: "auto",
-    fontSize: "12px",
-    color: "#7c90b2",
-    height: "28px",
-  },
 });
 
 interface UserBadgeProps {
   user: AuthUser;
   onLogout: () => void;
+  onOpenSettings?: () => void;
 }
 
-export default function UserBadge({ user, onLogout }: UserBadgeProps) {
+export default function UserBadge({ user, onLogout, onOpenSettings }: UserBadgeProps) {
   const s = useLocalStyles();
 
   return (
-    <div className={s.root}>
-      {user.avatarUrl && (
-        <img src={user.avatarUrl} alt="" className={s.avatar} />
-      )}
-      <span className={s.name}>{user.name ?? user.login}</span>
-      <Button
-        className={s.logoutBtn}
-        appearance="subtle"
-        size="small"
-        onClick={onLogout}
-      >
-        Sign out
-      </Button>
-    </div>
+    <Menu>
+      <MenuTrigger disableButtonEnhancement>
+        <button className={s.trigger} aria-label="User menu">
+          {user.avatarUrl && (
+            <img src={user.avatarUrl} alt="" className={s.avatar} />
+          )}
+          <span className={s.name}>{user.name ?? user.login}</span>
+        </button>
+      </MenuTrigger>
+      <MenuPopover>
+        <MenuList>
+          {onOpenSettings && (
+            <MenuItem icon={<SettingsRegular />} onClick={onOpenSettings}>
+              Settings
+            </MenuItem>
+          )}
+          <MenuItem icon={<SignOutRegular />} onClick={onLogout}>
+            Sign out
+          </MenuItem>
+        </MenuList>
+      </MenuPopover>
+    </Menu>
   );
 }

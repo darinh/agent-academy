@@ -36,8 +36,13 @@ const FALLBACK_POLL_MS = 120_000;
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
 
+const VALID_TABS = new Set(["chat", "tasks", "plan", "timeline", "dashboard", "overview"]);
+
 function loadTab(): string {
-  try { return localStorage.getItem(TAB_STORAGE_KEY) ?? "chat"; } catch { return "chat"; }
+  try {
+    const saved = localStorage.getItem(TAB_STORAGE_KEY) ?? "chat";
+    return VALID_TABS.has(saved) ? saved : "chat";
+  } catch { return "chat"; }
 }
 function loadSidebar(): boolean {
   try { return localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "false"; } catch { return true; }
