@@ -12,6 +12,8 @@ namespace AgentAcademy.Server.Controllers;
 public class WorkspaceController : ControllerBase
 {
     private readonly ProjectScanner _scanner;
+    private readonly WorkspaceRuntime _runtime;
+    private readonly AgentOrchestrator _orchestrator;
     private readonly ILogger<WorkspaceController> _logger;
 
     /// <summary>
@@ -22,9 +24,15 @@ public class WorkspaceController : ControllerBase
     private static readonly List<WorkspaceMeta> _workspaces = new();
     private static readonly object _lock = new();
 
-    public WorkspaceController(ProjectScanner scanner, ILogger<WorkspaceController> logger)
+    public WorkspaceController(
+        ProjectScanner scanner,
+        WorkspaceRuntime runtime,
+        AgentOrchestrator orchestrator,
+        ILogger<WorkspaceController> logger)
     {
         _scanner = scanner;
+        _runtime = runtime;
+        _orchestrator = orchestrator;
         _logger = logger;
     }
 
@@ -131,9 +139,11 @@ public class WorkspaceController : ControllerBase
 
     /// <summary>
     /// POST /api/workspaces/onboard — onboard a project (scan + workspace metadata).
+    /// When the project has no specs, automatically creates a specification
+    /// generation task and kicks the orchestrator.
     /// </summary>
     [HttpPost("workspaces/onboard")]
-    public ActionResult<OnboardResult> OnboardProject([FromBody] ScanRequest request)
+    public async Task<ActionResult<OnboardResult>> OnboardProject([FromBody] ScanRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Path))
             return BadRequest(new { code = "missing_path", message = "path is required" });
@@ -162,6 +172,42 @@ public class WorkspaceController : ControllerBase
                     _workspaces.RemoveAt(_workspaces.Count - 1);
 
                 _activeWorkspace = meta;
+            }
+
+            // Auto-create spec generation task when project has no specs
+            if (!scan.HasSpecs)
+            {
+                var taskRequest = new TaskAssignmentRequest(
+                    Title: "Generate Project Specification",
+                    Description:
+                        $"Analyze the codebase at '{resolved}' and generate a comprehensive project specification " +
+                        "in the specs/ directory. The spec should cover: system overview, domain model, API contracts, " +
+                        "services, data persistence, and any other relevant architectural concerns. Each spec section " +
+                        "should follow the standard template with Purpose, Current Behavior, Interfaces & Contracts, " +
+                        "Invariants, Known Gaps, and Revision History.",
+                    SuccessCriteria:
+                        "A complete specs/ directory with numbered sections covering all major system concerns",
+                    RoomId: null,
+                    PreferredRoles: new List<string> { "Planner", "TechnicalWriter" }
+                );
+
+                try
+                {
+                    var taskResult = await _runtime.CreateTaskAsync(taskRequest);
+                    _orchestrator.HandleHumanMessage(taskResult.Room.Id);
+
+                    return StatusCode(201, new OnboardResult(
+                        Scan: scan,
+                        Workspace: meta,
+                        SpecTaskCreated: true,
+                        RoomId: taskResult.Room.Id
+                    ));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Spec task creation failed for '{Path}'; onboard succeeded without it", resolved);
+                    return Ok(new OnboardResult(Scan: scan, Workspace: meta));
+                }
             }
 
             return Ok(new OnboardResult(Scan: scan, Workspace: meta));
@@ -210,4 +256,9 @@ public record SwitchWorkspaceRequest(string Path);
 /// <summary>
 /// Result of onboarding a project.
 /// </summary>
-public record OnboardResult(ProjectScanResult Scan, WorkspaceMeta Workspace);
+public record OnboardResult(
+    ProjectScanResult Scan,
+    WorkspaceMeta Workspace,
+    bool SpecTaskCreated = false,
+    string? RoomId = null
+);

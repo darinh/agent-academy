@@ -168,6 +168,8 @@ export interface WorkspaceMeta {
 export interface OnboardResult {
   scan: ProjectScanResult;
   workspace: WorkspaceMeta;
+  specTaskCreated?: boolean;
+  roomId?: string | null;
 }
 
 export interface HealthResult {
