@@ -126,6 +126,7 @@ const ChatPanel = memo(function ChatPanel(props: {
   thinkingAgents: ThinkingAgent[];
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
+  readOnly?: boolean;
 }) {
   const s = useStyles();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -192,7 +193,7 @@ const ChatPanel = memo(function ChatPanel(props: {
         {STATUS_LABELS[props.connectionStatus]}
       </div>
 
-      {props.room && (
+      {props.room && !props.readOnly && (
         <div className={s.composerShell}>
           <div className={s.composerLabel}>Message the team</div>
           <Textarea

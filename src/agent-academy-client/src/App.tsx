@@ -49,6 +49,7 @@ function AppShell() {
     thinkingAgentList,
     thinkingByRoom,
     connectionStatus,
+    breakoutRooms,
     err,
     busy,
     tab,
@@ -80,6 +81,7 @@ function AppShell() {
   const [allTasks, setAllTasks] = useState<TaskSnapshot[]>([]);
   const [tasksError, setTasksError] = useState(false);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
 
   // Check auth status on mount — retry if backend is still starting
   useEffect(() => {
@@ -183,6 +185,21 @@ function AppShell() {
     [handlePhaseTransition],
   );
 
+  const wrappedRoomSelect = useCallback(
+    (id: string) => {
+      setSelectedWorkspaceId(null);
+      handleRoomSelect(id);
+    },
+    [handleRoomSelect],
+  );
+
+  const handleWorkspaceSelect = useCallback(
+    (breakoutId: string) => {
+      setSelectedWorkspaceId(breakoutId);
+    },
+    [],
+  );
+
   const handleLogout = useCallback(async () => {
     try {
       await logout();
@@ -234,13 +251,16 @@ function AppShell() {
             sidebarOpen={sidebarOpen}
             busy={busy}
             rooms={ov.rooms}
-            room={room}
+            room={selectedWorkspaceId ? null : room}
             agentLocations={ov.agentLocations ?? []}
             configuredAgents={ov.configuredAgents}
+            breakoutRooms={breakoutRooms}
+            selectedWorkspaceId={selectedWorkspaceId}
             thinkingByRoomIds={thinkingByRoomIds}
             onRefresh={handleManualRefresh}
             onToggleSidebar={handleToggleSidebar}
-            onSelectRoom={handleRoomSelect}
+            onSelectRoom={wrappedRoomSelect}
+            onSelectWorkspace={handleWorkspaceSelect}
             workspace={
               workspace
                 ? { name: workspace.projectName ?? workspace.path, path: workspace.path }
@@ -250,11 +270,28 @@ function AppShell() {
           />
 
           <main className={s.workspace} aria-label="Workspace content">
-            <div className={s.workspaceHeader}>
-              <div>
-                <div className={s.workspaceTitle}>{room?.name ?? "No active room"}</div>
-                <div className={s.workspaceSubtitle}>{roomSummary}</div>
-              </div>
+            {(() => {
+              const selectedBreakout = selectedWorkspaceId
+                ? breakoutRooms.find((br) => br.id === selectedWorkspaceId)
+                : null;
+              const selectedAgent = selectedBreakout
+                ? ov.configuredAgents.find((a) => a.id === selectedBreakout.assignedAgentId)
+                : null;
+
+              return (<>
+                <div className={s.workspaceHeader}>
+                  <div>
+                    <div className={s.workspaceTitle}>
+                      {selectedBreakout
+                        ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
+                        : room?.name ?? "No active room"}
+                    </div>
+                    <div className={s.workspaceSubtitle}>
+                      {selectedBreakout
+                        ? selectedBreakout.name
+                        : roomSummary}
+                    </div>
+                  </div>
               <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                 {room && (
                   <div className={s.phasePill}>
@@ -275,51 +312,75 @@ function AppShell() {
               </div>
             </div>
 
-            <div className={s.tabBar}>
-              <TabList
-                selectedValue={tab}
-                onTabSelect={(_, data) => setTab(data.value as string)}
-                size="small"
-              >
-                <Tab value="chat" icon={<ChatRegular />}>Conversation</Tab>
-                <Tab value="tasks" icon={<TaskListLtrRegular />}>Tasks</Tab>
-                <Tab value="plan" icon={<DocumentRegular />}>Plan</Tab>
-                <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
-                <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
-                <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
-              </TabList>
-            </div>
-
-            <section className={s.tabContent}>
-              {tab === "chat" && (
+            {selectedBreakout ? (
+              <section className={s.tabContent}>
                 <ChatPanel
-                  room={room}
+                  room={{
+                    id: selectedBreakout.id,
+                    name: selectedBreakout.name,
+                    status: selectedBreakout.status,
+                    currentPhase: "Implementation",
+                    activeTask: null,
+                    participants: [],
+                    recentMessages: selectedBreakout.recentMessages,
+                    createdAt: selectedBreakout.createdAt,
+                    updatedAt: selectedBreakout.updatedAt,
+                  }}
                   thinkingAgents={thinkingAgentList}
                   connectionStatus={connectionStatus}
                   onSendMessage={handleSendMessage}
+                  readOnly
                 />
-              )}
-              {tab === "tasks" && (
-                <TaskListPanel tasks={allTasks} error={tasksError} />
-              )}
-              {tab === "plan" && (
-                <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
-              )}
-              {tab === "timeline" && (
-                <TimelinePanel activity={activity} />
-              )}
-              {tab === "dashboard" && (
-                <DashboardPanel overview={ov} />
-              )}
-              {tab === "overview" && (
-                <WorkspaceOverviewPanel
-                  overview={ov}
-                  room={room}
-                  onPhaseTransition={wrappedPhaseTransition}
-                  transitioning={phaseTransitioning}
-                />
-              )}
-            </section>
+              </section>
+            ) : (<>
+              <div className={s.tabBar}>
+                <TabList
+                  selectedValue={tab}
+                  onTabSelect={(_, data) => setTab(data.value as string)}
+                  size="small"
+                >
+                  <Tab value="chat" icon={<ChatRegular />}>Conversation</Tab>
+                  <Tab value="tasks" icon={<TaskListLtrRegular />}>Tasks</Tab>
+                  <Tab value="plan" icon={<DocumentRegular />}>Plan</Tab>
+                  <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
+                  <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
+                  <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
+                </TabList>
+              </div>
+
+              <section className={s.tabContent}>
+                {tab === "chat" && (
+                  <ChatPanel
+                    room={room}
+                    thinkingAgents={thinkingAgentList}
+                    connectionStatus={connectionStatus}
+                    onSendMessage={handleSendMessage}
+                  />
+                )}
+                {tab === "tasks" && (
+                  <TaskListPanel tasks={allTasks} error={tasksError} />
+                )}
+                {tab === "plan" && (
+                  <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
+                )}
+                {tab === "timeline" && (
+                  <TimelinePanel activity={activity} />
+                )}
+                {tab === "dashboard" && (
+                  <DashboardPanel overview={ov} />
+                )}
+                {tab === "overview" && (
+                  <WorkspaceOverviewPanel
+                    overview={ov}
+                    room={room}
+                    onPhaseTransition={wrappedPhaseTransition}
+                    transitioning={phaseTransitioning}
+                  />
+                )}
+              </section>
+            </>)}
+            </>);
+            })()}
           </main>
         </div>
       )}

@@ -7,7 +7,7 @@ import {
 import { useStyles } from "./useStyles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
-import type { AgentDefinition, AgentLocation, RoomSnapshot } from "./api";
+import type { AgentDefinition, AgentLocation, BreakoutRoom, RoomSnapshot } from "./api";
 
 const PHASE_DOT_COLORS: Record<string, string> = {
   Intake: "#94a3b8",
@@ -27,10 +27,13 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   room: RoomSnapshot | null;
   agentLocations: AgentLocation[];
   configuredAgents: AgentDefinition[];
+  breakoutRooms: BreakoutRoom[];
+  selectedWorkspaceId: string | null;
   thinkingByRoomIds: Map<string, Set<string>>;
   onRefresh: () => void;
   onToggleSidebar: () => void;
   onSelectRoom: (roomId: string) => void;
+  onSelectWorkspace: (breakoutId: string) => void;
   onSwitchProject?: () => void;
   workspace?: { name: string; path: string } | null;
 }) {
@@ -156,6 +159,38 @@ const SidebarPanel = memo(function SidebarPanel(props: {
               })}
             </div>
           </section>
+
+          {/* Agent Workspaces (active breakout rooms) */}
+          {props.breakoutRooms.length > 0 && (
+            <section className={s.section}>
+              <div className={s.sectionHeader}>
+                <div className={s.sectionLabel}>Agent Workspaces</div>
+              </div>
+              <div className={s.roomList}>
+                {props.breakoutRooms.map((br) => {
+                  const agent = props.configuredAgents.find((a) => a.id === br.assignedAgentId);
+                  const rc = agent ? roleColor(agent.role) : { accent: "#94a3b8" };
+                  return (
+                    <button
+                      key={br.id}
+                      className={mergeClasses(s.workspaceButton, s.roomButtonHover, props.selectedWorkspaceId === br.id ? s.roomButtonActive : undefined)}
+                      onClick={() => props.onSelectWorkspace(br.id)}
+                      aria-label={`View workspace: ${br.name}`}
+                      type="button"
+                    >
+                      <div className={s.workspaceIcon} style={{ background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)` }}>
+                        {agent?.name?.charAt(0) ?? "?"}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className={s.workspaceName}>{agent?.name ?? br.assignedAgentId}</div>
+                        <div className={s.workspaceTask}>{br.name}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {props.onSwitchProject && (
             <section className={s.section}>
