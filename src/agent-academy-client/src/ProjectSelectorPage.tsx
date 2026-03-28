@@ -24,15 +24,19 @@ import {
   scanProject,
 } from "./api";
 import type {
+  AuthUser,
   BrowseResult,
   OnboardResult,
   ProjectScanResult,
   WorkspaceMeta,
 } from "./api";
+import UserBadge from "./UserBadge";
 
 interface ProjectSelectorPageProps {
   onProjectSelected: (workspacePath: string) => void;
   onProjectOnboarded?: (result: OnboardResult) => void;
+  user?: AuthUser | null;
+  onLogout?: () => void;
 }
 
 function relativeTime(iso: string): string {
@@ -558,7 +562,7 @@ function CreateSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboard
 
 type SelectorTab = "existing" | "onboard" | "create";
 
-export default function ProjectSelectorPage({ onProjectSelected, onProjectOnboarded }: ProjectSelectorPageProps) {
+export default function ProjectSelectorPage({ onProjectSelected, onProjectOnboarded, user, onLogout }: ProjectSelectorPageProps) {
   const classes = useStyles();
   const [tab, setTab] = useState<SelectorTab>("onboard");
 
@@ -572,6 +576,11 @@ export default function ProjectSelectorPage({ onProjectSelected, onProjectOnboar
 
   return (
     <div className={classes.root}>
+      {user && onLogout && (
+        <div style={{ position: "absolute", top: 16, right: 24 }}>
+          <UserBadge user={user} onLogout={onLogout} />
+        </div>
+      )}
       <div className={classes.container}>
         <div className={classes.header}>
           <h1 className={classes.title}>Agent Academy</h1>

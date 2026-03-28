@@ -19,7 +19,7 @@ import {
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus } from "./api";
+import { getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
@@ -30,6 +30,7 @@ import DashboardPanel from "./DashboardPanel";
 import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
 import TaskListPanel from "./TaskListPanel";
 import LoginPage from "./LoginPage";
+import UserBadge from "./UserBadge";
 
 export default function App() {
   return (
@@ -172,6 +173,13 @@ function AppShell() {
     [handlePhaseTransition],
   );
 
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+      setAuth({ authEnabled: true, authenticated: false });
+    } catch { /* best-effort */ }
+  }, []);
+
   useEffect(() => {
     const roomName = room?.name ?? "Agent Academy";
     const phase = room?.currentPhase ?? "";
@@ -207,6 +215,8 @@ function AppShell() {
         <ProjectSelectorPage
           onProjectSelected={handleProjectSelected}
           onProjectOnboarded={handleProjectOnboarded}
+          user={auth?.authenticated ? auth.user : null}
+          onLogout={handleLogout}
         />
       ) : (
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
@@ -233,19 +243,24 @@ function AppShell() {
                 <div className={s.workspaceTitle}>{room?.name ?? "No active room"}</div>
                 <div className={s.workspaceSubtitle}>{roomSummary}</div>
               </div>
-              {room && (
-                <div className={s.phasePill}>
-                  <span
-                    style={{
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "999px",
-                      backgroundColor: "#6cb6ff",
-                    }}
-                  />
-                  {room.currentPhase}
-                </div>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                {room && (
+                  <div className={s.phasePill}>
+                    <span
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        borderRadius: "999px",
+                        backgroundColor: "#6cb6ff",
+                      }}
+                    />
+                    {room.currentPhase}
+                  </div>
+                )}
+                {auth?.authenticated && auth.user && (
+                  <UserBadge user={auth.user} onLogout={handleLogout} />
+                )}
+              </div>
             </div>
 
             <div className={s.tabBar}>
