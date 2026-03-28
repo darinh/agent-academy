@@ -273,6 +273,7 @@ export function useWorkspace() {
     roster,
     activity,
     thinkingAgentList,
+    thinkingByRoom,
     connectionStatus,
     agentLocations: ov.agentLocations ?? [],
     breakoutRooms: ov.breakoutRooms ?? [],

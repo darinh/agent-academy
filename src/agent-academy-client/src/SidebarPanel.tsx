@@ -7,7 +7,7 @@ import {
 import { useStyles } from "./useStyles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
-import type { AgentPresence, RoomSnapshot } from "./api";
+import type { AgentDefinition, AgentLocation, RoomSnapshot } from "./api";
 
 const PHASE_DOT_COLORS: Record<string, string> = {
   Intake: "#94a3b8",
@@ -25,7 +25,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   busy: boolean;
   rooms: RoomSnapshot[];
   room: RoomSnapshot | null;
-  roster: AgentPresence[];
+  agentLocations: AgentLocation[];
+  configuredAgents: AgentDefinition[];
+  thinkingByRoomIds: Map<string, Set<string>>;
   onRefresh: () => void;
   onToggleSidebar: () => void;
   onSelectRoom: (roomId: string) => void;
@@ -33,7 +35,16 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   workspace?: { name: string; path: string } | null;
 }) {
   const s = useStyles();
-  const phaseDotColor = PHASE_DOT_COLORS[props.room?.currentPhase ?? ""] ?? "#94a3b8";
+
+  // Build a map of roomId → agents in that room
+  const agentsByRoom = new Map<string, AgentDefinition[]>();
+  for (const loc of props.agentLocations) {
+    const agent = props.configuredAgents.find((a) => a.id === loc.agentId);
+    if (!agent) continue;
+    const list = agentsByRoom.get(loc.roomId) ?? [];
+    list.push(agent);
+    agentsByRoom.set(loc.roomId, list);
+  }
 
   return (
     <aside className={mergeClasses(s.sidebar, !props.sidebarOpen && s.sidebarCollapsed)}>
@@ -89,54 +100,62 @@ const SidebarPanel = memo(function SidebarPanel(props: {
       {/* Body */}
       {props.sidebarOpen ? (
         <div className={s.sidebarBody}>
-          {props.room && (
-            <div>
-              <div className={s.sidebarRoomHeader}>
-                <span className={s.sidebarRoomDot} style={{ backgroundColor: phaseDotColor }} />
-                <span>{props.room.name}</span>
-              </div>
-              {props.roster.map((agent) => {
-                const rc = roleColor(agent.role);
-                return (
-                  <div key={agent.agentId} className={s.agentListItem}>
-                    <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
-                    <span>{agent.name}</span>
-                    {agent.role && (
-                      <span style={{ color: rc.accent, fontSize: "11px" }}>· {agent.role}</span>
-                    )}
-                  </div>
-                );
-              })}
+          <section className={s.section} style={{ borderTop: "none" }}>
+            <div className={s.sectionHeader}>
+              <div className={s.sectionLabel}>Rooms</div>
             </div>
-          )}
-
-          {props.rooms.length > 1 && (
-            <section className={s.section}>
-              <div className={s.sectionHeader}>
-                <div className={s.sectionLabel}>All rooms</div>
-              </div>
-              <div className={s.roomList}>
-                {props.rooms.map((candidate) => {
-                  const dotColor = PHASE_DOT_COLORS[candidate.currentPhase] ?? "#94a3b8";
-                  return (
-                    <button
-                      key={candidate.id}
-                      className={mergeClasses(s.roomButton, s.roomButtonHover, props.room?.id === candidate.id ? s.roomButtonActive : undefined)}
-                      onClick={() => props.onSelectRoom(candidate.id)}
-                      aria-label={`Select room ${candidate.name}`}
-                      type="button"
-                    >
-                      <div className={s.roomButtonIcon}>{initials(candidate.name)}</div>
+            <div className={s.roomList}>
+              {props.rooms.map((candidate) => {
+                const dotColor = PHASE_DOT_COLORS[candidate.currentPhase] ?? "#94a3b8";
+                const roomAgents = agentsByRoom.get(candidate.id) ?? [];
+                return (
+                  <button
+                    key={candidate.id}
+                    className={mergeClasses(s.roomButton, s.roomButtonHover, props.room?.id === candidate.id ? s.roomButtonActive : undefined)}
+                    onClick={() => props.onSelectRoom(candidate.id)}
+                    aria-label={`Select room ${candidate.name}`}
+                    type="button"
+                  >
+                    <div className={s.roomButtonIcon}>{initials(candidate.name)}</div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                         <div className={s.roomButtonName}>{candidate.name}</div>
                         <span style={{ width: "6px", height: "6px", borderRadius: "999px", backgroundColor: dotColor, flexShrink: 0 }} />
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
+                      {roomAgents.length > 0 && (
+                        <div className={s.roomAgentList}>
+                          {roomAgents.map((agent) => {
+                            const rc = roleColor(agent.role);
+                            const isThinking = props.thinkingByRoomIds.get(candidate.id)?.has(agent.id) ?? false;
+                            return (
+                              <div key={agent.id} className={s.roomAgentItem}>
+                                <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "16px", height: "16px", flexShrink: 0 }}>
+                                  <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
+                                  {isThinking && (
+                                    <span
+                                      style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        borderRadius: "999px",
+                                        border: `2px solid transparent`,
+                                        borderTopColor: rc.accent,
+                                        animation: "aa-spin 0.8s linear infinite",
+                                      }}
+                                    />
+                                  )}
+                                </span>
+                                <span>{agent.name}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           {props.onSwitchProject && (
             <section className={s.section}>

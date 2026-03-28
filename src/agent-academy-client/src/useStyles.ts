@@ -170,6 +170,21 @@ export const useStyles = makeStyles({
     ...shorthands.borderRadius("999px"),
     flexShrink: 0,
   },
+  roomAgentList: {
+    marginTop: "6px",
+    paddingTop: "6px",
+    borderTop: "1px solid rgba(155, 176, 210, 0.12)",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px",
+  },
+  roomAgentItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "12px",
+    color: "#a1b3d2",
+  },
   taskCard: {
     border: "1px solid rgba(255, 255, 255, 0.06)",
     backgroundColor: "rgba(255, 255, 255, 0.03)",

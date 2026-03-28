@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FluentProvider,
   webDarkTheme,
@@ -45,9 +45,9 @@ function AppShell() {
   const {
     ov,
     room,
-    roster,
     activity,
     thinkingAgentList,
+    thinkingByRoom,
     connectionStatus,
     err,
     busy,
@@ -61,6 +61,15 @@ function AppShell() {
     handleSendMessage,
     handlePhaseTransition,
   } = useWorkspace();
+
+  // Per-room thinking sets for sidebar; per-active-room set for other uses
+  const thinkingByRoomIds = useMemo(() => {
+    const result = new Map<string, Set<string>>();
+    for (const [rid, agentMap] of thinkingByRoom) {
+      result.set(rid, new Set(agentMap.keys()));
+    }
+    return result;
+  }, [thinkingByRoom]);
 
   const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
@@ -226,7 +235,9 @@ function AppShell() {
             busy={busy}
             rooms={ov.rooms}
             room={room}
-            roster={roster}
+            agentLocations={ov.agentLocations ?? []}
+            configuredAgents={ov.configuredAgents}
+            thinkingByRoomIds={thinkingByRoomIds}
             onRefresh={handleManualRefresh}
             onToggleSidebar={handleToggleSidebar}
             onSelectRoom={handleRoomSelect}
