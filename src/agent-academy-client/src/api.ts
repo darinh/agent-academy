@@ -1,0 +1,338 @@
+/**
+ * Client-side API functions for Agent Academy.
+ *
+ * Covers workspace, collaboration, activity, plan, filesystem, and notification endpoints.
+ */
+
+// ── Core types ─────────────────────────────────────────────────────────
+
+export type CollaborationPhase =
+  | "Intake" | "Planning" | "Discussion"
+  | "Validation" | "Implementation" | "FinalSynthesis";
+
+export type RoomStatus = "Idle" | "Active" | "AttentionRequired" | "Completed" | "Archived";
+export type MessageSenderKind = "System" | "Agent" | "User";
+export type TaskStatus = "Queued" | "Active" | "Blocked" | "AwaitingValidation" | "Completed" | "Cancelled";
+export type TaskItemStatus = "Pending" | "Active" | "Done" | "Rejected";
+export type ActivityEventType =
+  | "AgentLoaded" | "AgentThinking" | "AgentFinished"
+  | "RoomCreated" | "RoomClosed" | "TaskCreated"
+  | "PhaseChanged" | "MessagePosted" | "MessageSent"
+  | "PresenceUpdated" | "RoomStatusChanged"
+  | "ArtifactEvaluated" | "QualityGateChecked" | "IterationRetried"
+  | "CheckpointCreated" | "AgentErrorOccurred" | "AgentWarningOccurred"
+  | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
+  | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted";
+
+export interface ActivityEvent {
+  id: string;
+  type: ActivityEventType;
+  severity: "Info" | "Warning" | "Error";
+  roomId?: string | null;
+  actorId?: string | null;
+  taskId?: string | null;
+  message: string;
+  correlationId?: string | null;
+  occurredAt: string;
+}
+
+export interface AgentDefinition {
+  id: string;
+  name: string;
+  role: string;
+  summary: string;
+  startupPrompt: string;
+  model?: string | null;
+  capabilityTags: string[];
+  enabledTools: string[];
+  autoJoinDefaultRoom: boolean;
+}
+
+export interface AgentPresence {
+  agentId: string;
+  name: string;
+  role: string;
+  availability: string;
+  isPreferred: boolean;
+  lastActivityAt: string;
+  activeCapabilities: string[];
+}
+
+export interface AgentLocation {
+  agentId: string;
+  roomId: string;
+  state: string;
+  breakoutRoomId?: string | null;
+  updatedAt: string;
+}
+
+export interface ChatEnvelope {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderName: string;
+  senderRole?: string | null;
+  senderKind: MessageSenderKind;
+  kind: string;
+  content: string;
+  sentAt: string;
+  correlationId?: string | null;
+  replyToMessageId?: string | null;
+}
+
+export interface TaskSnapshot {
+  id: string;
+  title: string;
+  description: string;
+  successCriteria: string;
+  status: TaskStatus;
+  currentPhase: CollaborationPhase;
+  currentPlan: string;
+  validationStatus: string;
+  validationSummary: string;
+  implementationStatus: string;
+  implementationSummary: string;
+  preferredRoles: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskItem {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskItemStatus;
+  assignedTo: string;
+  roomId: string;
+  breakoutRoomId?: string | null;
+  evidence?: string | null;
+  feedback?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RoomSnapshot {
+  id: string;
+  name: string;
+  status: RoomStatus;
+  currentPhase: CollaborationPhase;
+  activeTask?: TaskSnapshot | null;
+  participants: AgentPresence[];
+  recentMessages: ChatEnvelope[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BreakoutRoom {
+  id: string;
+  name: string;
+  parentRoomId: string;
+  assignedAgentId: string;
+  tasks: TaskItem[];
+  status: RoomStatus;
+  recentMessages: ChatEnvelope[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceOverview {
+  configuredAgents: AgentDefinition[];
+  rooms: RoomSnapshot[];
+  recentActivity: ActivityEvent[];
+  agentLocations: AgentLocation[];
+  breakoutRooms: BreakoutRoom[];
+  generatedAt: string;
+}
+
+export interface PlanContent {
+  content: string;
+}
+
+export interface ProjectScanResult {
+  path: string;
+  projectName?: string | null;
+  techStack: string[];
+  hasSpecs: boolean;
+  hasReadme: boolean;
+  isGitRepo: boolean;
+  gitBranch?: string | null;
+  detectedFiles: string[];
+}
+
+export interface WorkspaceMeta {
+  path: string;
+  projectName?: string | null;
+  lastAccessedAt?: string | null;
+}
+
+export interface OnboardResult {
+  scan: ProjectScanResult;
+  workspace: WorkspaceMeta;
+}
+
+export interface HealthResult {
+  status: string;
+  uptime: string;
+  timestamp: string;
+}
+
+export interface TaskAssignmentRequest {
+  title: string;
+  description: string;
+  successCriteria: string;
+  roomId?: string | null;
+  preferredRoles: string[];
+  correlationId?: string | null;
+}
+
+export interface TaskAssignmentResult {
+  correlationId: string;
+  room: RoomSnapshot;
+  task: TaskSnapshot;
+  activity: ActivityEvent;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  type: "directory" | "file";
+  path: string;
+}
+
+export interface BrowseResult {
+  path: string;
+  entries: DirectoryEntry[];
+}
+
+export interface ApiError {
+  error: string;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+function apiUrl(path: string) {
+  return `${apiBaseUrl}${path}`;
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...init?.headers },
+    ...init,
+  });
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(body?.error ?? `Request failed: ${res.status}`);
+  }
+
+  return (await res.json()) as T;
+}
+
+// ── System / Overview ──────────────────────────────────────────────────
+
+export function getOverview(): Promise<WorkspaceOverview> {
+  return request<WorkspaceOverview>(apiUrl("/api/overview"));
+}
+
+export function getHealth(): Promise<HealthResult> {
+  return request<HealthResult>(apiUrl("/healthz"));
+}
+
+export function getConfiguredAgents(): Promise<AgentDefinition[]> {
+  return request<AgentDefinition[]>(apiUrl("/api/agents/configured"));
+}
+
+// ── Activity ───────────────────────────────────────────────────────────
+
+export function getRecentActivity(): Promise<ActivityEvent[]> {
+  return request<ActivityEvent[]>(apiUrl("/api/activity/recent"));
+}
+
+// ── Rooms ──────────────────────────────────────────────────────────────
+
+export function getRooms(): Promise<RoomSnapshot[]> {
+  return request<RoomSnapshot[]>(apiUrl("/api/rooms"));
+}
+
+export function getRoom(roomId: string): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}`));
+}
+
+// ── Collaboration ──────────────────────────────────────────────────────
+
+export function submitTask(req: TaskAssignmentRequest): Promise<TaskAssignmentResult> {
+  return request<TaskAssignmentResult>(apiUrl("/api/tasks"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function sendHumanMessage(roomId: string, content: string): Promise<ChatEnvelope> {
+  return request<ChatEnvelope>(apiUrl(`/api/rooms/${roomId}/human`), {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function transitionPhase(
+  roomId: string,
+  targetPhase: CollaborationPhase,
+  reason?: string,
+): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}/phase`), {
+    method: "POST",
+    body: JSON.stringify({ roomId, targetPhase, reason: reason ?? "" }),
+  });
+}
+
+// ── Plan ───────────────────────────────────────────────────────────────
+
+export function getPlan(roomId: string): Promise<PlanContent | null> {
+  return fetch(apiUrl(`/api/rooms/${roomId}/plan`))
+    .then(async (res) => {
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Failed to load plan");
+      return (await res.json()) as PlanContent;
+    });
+}
+
+export function setPlan(roomId: string, content: string): Promise<void> {
+  return request(apiUrl(`/api/rooms/${roomId}/plan`), {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function deletePlan(roomId: string): Promise<void> {
+  return request(apiUrl(`/api/rooms/${roomId}/plan`), {
+    method: "DELETE",
+  });
+}
+
+// ── Workspace / Project ────────────────────────────────────────────────
+
+export function listWorkspaces(): Promise<WorkspaceMeta[]> {
+  return Promise.resolve([]);
+}
+
+export function scanProject(dirPath: string): Promise<ProjectScanResult> {
+  return request<ProjectScanResult>(apiUrl("/api/workspaces/scan"), {
+    method: "POST",
+    body: JSON.stringify({ path: dirPath }),
+  });
+}
+
+export function onboardProject(dirPath: string): Promise<OnboardResult> {
+  return request<OnboardResult>(apiUrl("/api/workspaces/onboard"), {
+    method: "POST",
+    body: JSON.stringify({ path: dirPath }),
+  });
+}
+
+export function browseDirectory(dirPath?: string): Promise<BrowseResult> {
+  const params = new URLSearchParams();
+  if (dirPath) params.set("path", dirPath);
+  const qs = params.toString();
+  return request<BrowseResult>(apiUrl(`/api/filesystem/browse${qs ? `?${qs}` : ""}`));
+}
