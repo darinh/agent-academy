@@ -1,13 +1,17 @@
 import { useState } from 'react'
+import { FluentProvider, webDarkTheme } from '@fluentui/react-components'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
+import NotificationSetupWizard from './NotificationSetupWizard'
 import './App.css'
 
 function App() {
   const [count, setCount] = useState(0)
+  const [showWizard, setShowWizard] = useState(false)
 
   return (
+    <FluentProvider theme={webDarkTheme}>
     <>
       <section id="center">
         <div className="hero">
@@ -26,6 +30,12 @@ function App() {
           onClick={() => setCount((count) => count + 1)}
         >
           Count is {count}
+        </button>
+        <button
+          className="counter"
+          onClick={() => setShowWizard(true)}
+        >
+          🔔 Setup Discord Notifications
         </button>
       </section>
 
@@ -114,7 +124,12 @@ function App() {
 
       <div className="ticks"></div>
       <section id="spacer"></section>
+
+      {showWizard && (
+        <NotificationSetupWizard onClose={() => setShowWizard(false)} />
+      )}
     </>
+    </FluentProvider>
   )
 }
 

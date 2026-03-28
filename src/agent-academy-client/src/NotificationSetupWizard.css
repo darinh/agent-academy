@@ -1,0 +1,197 @@
+/* NotificationSetupWizard – step-by-step Discord bot setup */
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.wizard-panel {
+  background: var(--colorNeutralBackground1, #292929);
+  color: var(--colorNeutralForeground1, #e0e0e0);
+  border: 1px solid var(--colorNeutralStroke1, #444);
+  border-radius: 12px;
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 32px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Step indicator ───────────────────────────────────────────────── */
+.wizard-steps {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.wizard-step-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--colorNeutralStroke1, #444);
+  transition: background 0.25s;
+}
+
+.wizard-step-dot[data-active="true"] {
+  background: var(--colorBrandBackground, #479ef5);
+}
+
+.wizard-step-dot[data-done="true"] {
+  background: var(--colorPaletteGreenBackground3, #0e7a0d);
+}
+
+/* ── Header ───────────────────────────────────────────────────────── */
+.wizard-header {
+  margin-bottom: 20px;
+}
+
+.wizard-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.wizard-header .step-label {
+  font-size: 0.8rem;
+  color: var(--colorNeutralForeground3, #999);
+}
+
+/* ── Content ──────────────────────────────────────────────────────── */
+.wizard-body p,
+.wizard-body li {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--colorNeutralForeground2, #ccc);
+}
+
+.wizard-body ol {
+  padding-left: 20px;
+  margin: 12px 0;
+}
+
+.wizard-body a {
+  color: var(--colorBrandForegroundLink, #479ef5);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.wizard-body code {
+  background: var(--colorNeutralBackground3, #1e1e1e);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* ── Input fields ─────────────────────────────────────────────────── */
+.wizard-field {
+  margin: 16px 0;
+}
+
+.wizard-field label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.wizard-field input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--colorNeutralStroke1, #444);
+  border-radius: 6px;
+  background: var(--colorNeutralBackground3, #1e1e1e);
+  color: var(--colorNeutralForeground1, #e0e0e0);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+
+  &:focus {
+    border-color: var(--colorBrandStroke1, #479ef5);
+  }
+}
+
+/* ── Invite link display ──────────────────────────────────────────── */
+.invite-link-box {
+  background: var(--colorNeutralBackground3, #1e1e1e);
+  border: 1px solid var(--colorNeutralStroke1, #444);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  word-break: break-all;
+  font-size: 0.82rem;
+  font-family: monospace;
+}
+
+.invite-link-box a {
+  color: var(--colorBrandForegroundLink, #479ef5);
+}
+
+/* ── Status badge ─────────────────────────────────────────────────── */
+.wizard-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin: 12px 0;
+}
+
+.wizard-status[data-status="idle"] {
+  background: var(--colorNeutralBackground3, #1e1e1e);
+  color: var(--colorNeutralForeground3, #999);
+}
+
+.wizard-status[data-status="loading"] {
+  background: var(--colorNeutralBackground3, #1e1e1e);
+  color: var(--colorBrandForeground1, #479ef5);
+}
+
+.wizard-status[data-status="success"] {
+  background: rgba(14, 122, 13, 0.15);
+  color: var(--colorPaletteGreenForeground1, #54b054);
+}
+
+.wizard-status[data-status="error"] {
+  background: rgba(196, 43, 28, 0.15);
+  color: var(--colorPaletteRedForeground1, #e37d7d);
+}
+
+/* ── Footer / actions ─────────────────────────────────────────────── */
+.wizard-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--colorNeutralStroke1, #444);
+}
+
+/* ── Error banner ─────────────────────────────────────────────────── */
+.wizard-error {
+  background: rgba(196, 43, 28, 0.12);
+  color: var(--colorPaletteRedForeground1, #e37d7d);
+  border: 1px solid rgba(196, 43, 28, 0.3);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin: 12px 0;
+}
+
+/* ── Action button row (step 4) ───────────────────────────────────── */
+.wizard-action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
