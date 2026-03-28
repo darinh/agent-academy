@@ -1,6 +1,9 @@
+using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -14,25 +17,20 @@ public class WorkspaceController : ControllerBase
     private readonly ProjectScanner _scanner;
     private readonly WorkspaceRuntime _runtime;
     private readonly AgentOrchestrator _orchestrator;
+    private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceController> _logger;
-
-    /// <summary>
-    /// Tracks the active workspace in-memory. A proper WorkspaceManager service
-    /// will replace this when workspace persistence is ported.
-    /// </summary>
-    private static volatile WorkspaceMeta? _activeWorkspace;
-    private static readonly List<WorkspaceMeta> _workspaces = new();
-    private static readonly object _lock = new();
 
     public WorkspaceController(
         ProjectScanner scanner,
         WorkspaceRuntime runtime,
         AgentOrchestrator orchestrator,
+        AgentAcademyDbContext db,
         ILogger<WorkspaceController> logger)
     {
         _scanner = scanner;
         _runtime = runtime;
         _orchestrator = orchestrator;
+        _db = db;
         _logger = logger;
     }
 
@@ -40,32 +38,30 @@ public class WorkspaceController : ControllerBase
     /// GET /api/workspace — get the active workspace.
     /// </summary>
     [HttpGet("workspace")]
-    public IActionResult GetActiveWorkspace()
+    public async Task<IActionResult> GetActiveWorkspace()
     {
-        return Ok(new
-        {
-            active = _activeWorkspace,
-            dataDir = _activeWorkspace?.Path
-        });
+        var entity = await _db.Workspaces.FirstOrDefaultAsync(w => w.IsActive);
+        var active = entity is null ? null : ToMeta(entity);
+        return Ok(new { active, dataDir = active?.Path });
     }
 
     /// <summary>
     /// GET /api/workspaces — list known workspaces.
     /// </summary>
     [HttpGet("workspaces")]
-    public ActionResult<List<WorkspaceMeta>> ListWorkspaces()
+    public async Task<ActionResult<List<WorkspaceMeta>>> ListWorkspaces()
     {
-        lock (_lock)
-        {
-            return Ok(_workspaces.ToList());
-        }
+        var entities = await _db.Workspaces
+            .OrderByDescending(w => w.LastAccessedAt)
+            .ToListAsync();
+        return Ok(entities.Select(ToMeta).ToList());
     }
 
     /// <summary>
     /// PUT /api/workspace — switch the active workspace by path.
     /// </summary>
     [HttpPut("workspace")]
-    public IActionResult SetActiveWorkspace([FromBody] SwitchWorkspaceRequest request)
+    public async Task<IActionResult> SetActiveWorkspace([FromBody] SwitchWorkspaceRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Path))
             return BadRequest(new { code = "missing_path", message = "path required" });
@@ -76,26 +72,7 @@ public class WorkspaceController : ControllerBase
         try
         {
             var scan = _scanner.ScanProject(resolved);
-            var meta = new WorkspaceMeta(
-                Path: scan.Path,
-                ProjectName: scan.ProjectName,
-                LastAccessedAt: DateTime.UtcNow
-            );
-
-            lock (_lock)
-            {
-                // Remove existing entry for this path if present
-                _workspaces.RemoveAll(w =>
-                    string.Equals(w.Path, meta.Path, StringComparison.Ordinal));
-                _workspaces.Insert(0, meta);
-
-                // Cap at 20 recent workspaces
-                while (_workspaces.Count > 20)
-                    _workspaces.RemoveAt(_workspaces.Count - 1);
-
-                _activeWorkspace = meta;
-            }
-
+            var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
             return Ok(meta);
         }
         catch (DirectoryNotFoundException ex)
@@ -154,25 +131,7 @@ public class WorkspaceController : ControllerBase
         try
         {
             var scan = _scanner.ScanProject(resolved);
-            var meta = new WorkspaceMeta(
-                Path: scan.Path,
-                ProjectName: scan.ProjectName,
-                LastAccessedAt: DateTime.UtcNow
-            );
-
-            // Set as active workspace and track it
-            lock (_lock)
-            {
-                _workspaces.RemoveAll(w =>
-                    string.Equals(w.Path, meta.Path, StringComparison.Ordinal));
-                _workspaces.Insert(0, meta);
-
-                // Cap at 20 recent workspaces
-                while (_workspaces.Count > 20)
-                    _workspaces.RemoveAt(_workspaces.Count - 1);
-
-                _activeWorkspace = meta;
-            }
+            var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
 
             // Auto-create spec generation task when project has no specs
             if (!scan.HasSpecs)
@@ -222,6 +181,62 @@ public class WorkspaceController : ControllerBase
             return Problem("Failed to onboard project.");
         }
     }
+
+    /// <summary>
+    /// Upserts a workspace in the DB and marks it as active.
+    /// </summary>
+    private async Task<WorkspaceMeta> UpsertWorkspaceAsync(string path, string? projectName)
+    {
+        var now = DateTime.UtcNow;
+
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+
+        // Deactivate all other workspaces
+        await _db.Workspaces
+            .Where(w => w.IsActive)
+            .ExecuteUpdateAsync(s => s.SetProperty(w => w.IsActive, false));
+
+        var entity = await _db.Workspaces.FindAsync(path);
+        if (entity is null)
+        {
+            entity = new WorkspaceEntity
+            {
+                Path = path,
+                ProjectName = projectName,
+                IsActive = true,
+                LastAccessedAt = now,
+                CreatedAt = now
+            };
+            _db.Workspaces.Add(entity);
+        }
+        else
+        {
+            entity.ProjectName = projectName;
+            entity.IsActive = true;
+            entity.LastAccessedAt = now;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Cap at 20 workspaces (trim oldest after save so count is accurate)
+        var count = await _db.Workspaces.CountAsync();
+        if (count > 20)
+        {
+            var stale = await _db.Workspaces
+                .Where(w => !w.IsActive)
+                .OrderBy(w => w.LastAccessedAt)
+                .Take(count - 20)
+                .ToListAsync();
+            _db.Workspaces.RemoveRange(stale);
+            await _db.SaveChangesAsync();
+        }
+
+        await transaction.CommitAsync();
+        return ToMeta(entity);
+    }
+
+    private static WorkspaceMeta ToMeta(WorkspaceEntity entity) =>
+        new(Path: entity.Path, ProjectName: entity.ProjectName, LastAccessedAt: entity.LastAccessedAt);
 
     /// <summary>
     /// Validates that the resolved path is within the user's home directory.

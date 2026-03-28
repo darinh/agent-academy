@@ -23,6 +23,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<BreakoutMessageEntity> BreakoutMessages => Set<BreakoutMessageEntity>();
     public DbSet<PlanEntity> Plans => Set<PlanEntity>();
     public DbSet<ActivityEventEntity> ActivityEvents => Set<ActivityEventEntity>();
+    public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -196,6 +197,14 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_activity_room");
             entity.HasIndex(e => e.OccurredAt).HasDatabaseName("idx_activity_time");
+        });
+
+        // ── Workspaces ───────────────────────────────────────
+        modelBuilder.Entity<WorkspaceEntity>(entity =>
+        {
+            entity.ToTable("workspaces");
+            entity.HasKey(e => e.Path);
+            entity.Property(e => e.CreatedAt).IsRequired();
         });
     }
 }
