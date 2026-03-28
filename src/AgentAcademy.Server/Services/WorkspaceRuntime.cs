@@ -315,6 +315,29 @@ public sealed class WorkspaceRuntime
 
         await _db.SaveChangesAsync();
 
+        // Auto-join agents into the new task room so GetIdleAgentsInRoomAsync finds them.
+        // Only move agents that aren't actively working (preserve breakout assignments).
+        if (isNewRoom)
+        {
+            foreach (var agent in _catalog.Agents.Where(a => a.AutoJoinDefaultRoom))
+            {
+                try
+                {
+                    var loc = await _db.AgentLocations.FindAsync(agent.Id);
+                    if (loc is not null && loc.State == nameof(AgentState.Working))
+                        continue;
+
+                    await MoveAgentAsync(agent.Id, roomEntity.Id, AgentState.Idle);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to auto-join agent {AgentId} into room {RoomId}; skipping",
+                        agent.Id, roomEntity.Id);
+                }
+            }
+        }
+
         var roomSnapshot = await BuildRoomSnapshotAsync(roomEntity);
 
         return new TaskAssignmentResult(

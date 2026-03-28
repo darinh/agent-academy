@@ -111,113 +111,141 @@ public sealed class AgentOrchestrator
 
     // ── CONVERSATION ROUND (MC room) ────────────────────────────
 
+    private const int MaxRoundsPerTrigger = 3;
+
     private async Task RunConversationRoundAsync(string roomId)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-
-        var room = await runtime.GetRoomAsync(roomId);
-        if (room is null) return;
-
-        _logger.LogInformation("Conversation round for room {RoomId}", roomId);
-
-        // Load spec context once for all prompts in this round
-        var specContext = _specManager.LoadSpecContext();
-
-        var planner = FindPlanner(runtime);
-        var agentsToRun = new List<AgentDefinition>();
-
-        // Step 1 — Run the planner first
-        if (planner is not null)
+        for (int round = 1; round <= MaxRoundsPerTrigger; round++)
         {
-            await runtime.PublishThinkingAsync(planner, roomId);
-            var plannerResponse = "";
-            try
-            {
-                var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
-                var prompt = BuildConversationPrompt(planner, freshRoom, specContext)
-                    + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
-                    + "by name if they should respond (e.g., '@Archimedes should review').\n"
-                    + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
-                    + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
-                plannerResponse = await RunAgentWithTimeoutAsync(planner, prompt, roomId, McTimeout);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Planner failed");
-            }
-            finally
-            {
-                await runtime.PublishFinishedAsync(planner, roomId);
-            }
+            bool hadNonPassResponse = false;
 
-            if (!string.IsNullOrWhiteSpace(plannerResponse) && !IsPassResponse(plannerResponse))
-            {
-                await PostAgentMessageAsync(runtime, planner, roomId, plannerResponse);
+            using var scope = _scopeFactory.CreateScope();
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
 
-                // Collect @-mentioned agents for the next step
-                foreach (var a in ParseTaggedAgents(runtime, plannerResponse))
+            var room = await runtime.GetRoomAsync(roomId);
+            if (room is null) return;
+
+            _logger.LogInformation(
+                "Conversation round {Round}/{MaxRounds} for room {RoomId}",
+                round, MaxRoundsPerTrigger, roomId);
+
+            // Load spec context once for all prompts in this round
+            var specContext = _specManager.LoadSpecContext();
+
+            var planner = FindPlanner(runtime);
+            var agentsToRun = new List<AgentDefinition>();
+
+            // Step 1 — Run the planner first
+            if (planner is not null)
+            {
+                await runtime.PublishThinkingAsync(planner, roomId);
+                var plannerResponse = "";
+                try
                 {
-                    if (a.Id != planner.Id) agentsToRun.Add(a);
+                    var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext)
+                        + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
+                        + "by name if they should respond (e.g., '@Archimedes should review').\n"
+                        + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
+                        + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
+                    plannerResponse = await RunAgentWithTimeoutAsync(planner, prompt, roomId, McTimeout);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Planner failed");
+                }
+                finally
+                {
+                    await runtime.PublishFinishedAsync(planner, roomId);
                 }
 
-                // Detect and handle task assignments
-                foreach (var assignment in ParseTaskAssignments(plannerResponse))
+                if (!string.IsNullOrWhiteSpace(plannerResponse) && !IsPassResponse(plannerResponse))
                 {
-                    await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                    hadNonPassResponse = true;
+                    await PostAgentMessageAsync(runtime, planner, roomId, plannerResponse);
+
+                    // Collect @-mentioned agents for the next step
+                    foreach (var a in ParseTaggedAgents(runtime, plannerResponse))
+                    {
+                        if (a.Id != planner.Id) agentsToRun.Add(a);
+                    }
+
+                    // Detect and handle task assignments
+                    foreach (var assignment in ParseTaskAssignments(plannerResponse))
+                    {
+                        await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                    }
                 }
             }
-        }
 
-        // Step 2 — Fall back to idle agents if nobody was tagged
-        if (agentsToRun.Count == 0)
-        {
-            agentsToRun.AddRange(
-                (await GetIdleAgentsInRoomAsync(runtime, roomId))
-                    .Where(a => a.Id != planner?.Id)
-                    .Take(3));
-        }
-
-        // Step 3 — Run agents sequentially so each sees the previous response
-        foreach (var agent in agentsToRun)
-        {
-            if (_stopped) break;
-
-            var currentRoom = await runtime.GetRoomAsync(roomId);
-            if (currentRoom is null) break;
-
-            // Skip agents that are already working in a breakout room
-            var location = await runtime.GetAgentLocationAsync(agent.Id);
-            if (location?.State == AgentState.Working) continue;
-
-            await runtime.PublishThinkingAsync(agent, roomId);
-            var response = "";
-            try
+            // Step 2 — Fall back to idle agents if nobody was tagged
+            if (agentsToRun.Count == 0)
             {
-                var prompt = BuildConversationPrompt(agent, currentRoom, specContext);
-                response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Agent {AgentName} failed", agent.Name);
-            }
-            finally
-            {
-                await runtime.PublishFinishedAsync(agent, roomId);
+                agentsToRun.AddRange(
+                    (await GetIdleAgentsInRoomAsync(runtime, roomId))
+                        .Where(a => a.Id != planner?.Id)
+                        .Take(3));
             }
 
-            if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response))
+            // Step 3 — Run agents sequentially so each sees the previous response
+            foreach (var agent in agentsToRun)
             {
-                await PostAgentMessageAsync(runtime, agent, roomId, response);
+                if (_stopped) break;
 
-                foreach (var assignment in ParseTaskAssignments(response))
+                var currentRoom = await runtime.GetRoomAsync(roomId);
+                if (currentRoom is null) break;
+
+                // Skip agents that are already working in a breakout room
+                var location = await runtime.GetAgentLocationAsync(agent.Id);
+                if (location?.State == AgentState.Working) continue;
+
+                await runtime.PublishThinkingAsync(agent, roomId);
+                var response = "";
+                try
                 {
-                    await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext);
+                    response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Agent {AgentName} failed", agent.Name);
+                }
+                finally
+                {
+                    await runtime.PublishFinishedAsync(agent, roomId);
+                }
+
+                if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response))
+                {
+                    hadNonPassResponse = true;
+                    await PostAgentMessageAsync(runtime, agent, roomId, response);
+
+                    foreach (var assignment in ParseTaskAssignments(response))
+                    {
+                        await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                    }
                 }
             }
-        }
 
-        _logger.LogInformation("Conversation round finished for room {RoomId}", roomId);
+            _logger.LogInformation(
+                "Conversation round {Round} finished for room {RoomId}", round, roomId);
+
+            // Continue with another round only if:
+            // 1. Agents produced non-PASS responses (conversation is progressing)
+            // 2. The room still has an active task (not just casual chat)
+            // 3. We haven't hit the cap
+            if (!hadNonPassResponse || _stopped) break;
+
+            var updatedRoom = await runtime.GetRoomAsync(roomId);
+            if (updatedRoom?.ActiveTask is null) break;
+
+            if (round < MaxRoundsPerTrigger)
+            {
+                _logger.LogInformation(
+                    "Non-PASS responses in room with active task; starting round {NextRound}/{MaxRounds}",
+                    round + 1, MaxRoundsPerTrigger);
+            }
+        }
     }
 
     // ── TASK ASSIGNMENT PARSING ─────────────────────────────────
