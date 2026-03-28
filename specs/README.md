@@ -13,6 +13,8 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [004](./004-notification-system/spec.md) | Notification System | Implemented |
 | [005](./005-workspace-runtime/spec.md) | Workspace Runtime | Implemented |
 | [006](./006-orchestrator/spec.md) | Agent Orchestrator | Implemented |
+| [007](./007-agent-commands/spec.md) | Agent Command System | Planned |
+| [008](./008-agent-memory/spec.md) | Agent Memory System | Planned |
 | [009](./009-spec-management/spec.md) | Spec Management | Implemented |
 | [010](./010-task-management/spec.md) | Task Management & Git Workflow | Partial |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
