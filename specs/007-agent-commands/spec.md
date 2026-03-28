@@ -79,16 +79,18 @@ Per-agent permission boundaries:
 
 ### Tier 1 — Critical Path
 
-#### Phase 1A: Formalized Read Operations
+#### Phase 1A: Formalized Read Operations — IMPLEMENTED
 These formalize existing capabilities with audit trails and structured output.
 
-| Command | Args | Returns | Side Effects |
-|---------|------|---------|-------------|
-| `READ_FILE` | `path`, `startLine?`, `endLine?` | File content, line count | Audit event |
-| `SEARCH_CODE` | `query`, `path?`, `glob?` | Matching lines with file/line refs | Audit event |
-| `LIST_ROOMS` | — | All rooms: id, name, status, phase, participant count, message count, active task | Audit event |
-| `LIST_AGENTS` | — | All agents: id, name, role, location (room/workspace), state, active task item | Audit event |
-| `LIST_TASKS` | `status?`, `assignee?` | Tasks with status, assignee, dependencies, acceptance criteria, spec links, review state | Audit event |
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `READ_FILE` | `path`, `startLine?`, `endLine?` | File content, line count | Audit event | `ReadFileHandler.cs` — validates path, reads lines, protects against traversal |
+| `SEARCH_CODE` | `query`, `path?`, `glob?` | Matching lines with file/line refs | Audit event | `SearchCodeHandler.cs` — grep-based search with optional path/glob filtering |
+| `LIST_ROOMS` | — | All rooms: id, name, status, phase, participant count, message count, active task | Audit event | `ListRoomsHandler.cs` — queries all rooms with preloaded agent locations |
+| `LIST_AGENTS` | — | All agents: id, name, role, location (room/workspace), state, active task item | Audit event | `ListAgentsHandler.cs` — queries agent catalog + locations + presence |
+| `LIST_TASKS` | `status?`, `assignee?` | Tasks with status, assignee, dependencies, acceptance criteria, spec links, review state | Audit event | `ListTasksHandler.cs` — queries tasks with optional filters |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ReadFile,SearchCode,ListRooms,ListAgents,ListTasks}Handler.cs` — committed in `63b596c` (2026-03-28).
 
 #### Phase 1B: Structured State Management
 
@@ -164,14 +166,19 @@ These formalize existing capabilities with audit trails and structured output.
 ### Purpose
 Persistent per-agent key-value store for learned knowledge across sessions.
 
+### Implementation Status
+**IMPLEMENTED** — All memory commands are live as of Phase 1A (commit `63b596c`, 2026-03-28). Memories persisted in `agent_memories` table, injected into agent prompts as `=== YOUR MEMORIES ===` section.
+
 ### Commands
 
-| Command | Args | Returns |
-|---------|------|---------|
-| `REMEMBER` | `category`, `key`, `value` | Confirmation |
-| `RECALL` | `category?`, `key?`, `query?` | Matching memories |
-| `LIST_MEMORIES` | `category?` | All memories (optionally filtered) |
-| `FORGET` | `key` | Confirmation |
+| Command | Args | Returns | Implementation |
+|---------|------|---------|----------------|
+| `REMEMBER` | `category`, `key`, `value` | Confirmation | `RememberHandler.cs` — upsert with validation against 14 allowed categories |
+| `RECALL` | `category?`, `key?`, `query?` | Matching memories | `RecallHandler.cs` — LIKE-based search on key/value, optional category filter |
+| `LIST_MEMORIES` | `category?` | All memories (optionally filtered) | `ListMemoriesHandler.cs` — query all or by category |
+| `FORGET` | `key` | Confirmation | `ForgetHandler.cs` — soft delete by key |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{Remember,Recall,ListMemories,Forget}Handler.cs`
 
 ### Categories by Role
 
@@ -307,21 +314,28 @@ PROPOSE_AGENT_UPDATE:
 - Tier 2 & 3 rollout
 - RBAC middleware extraction
 - Spec verification tooling
-- Frontend command palette + results view
 
 ## Frontend Surfaces
 
-### Command Palette (Primary)
-Agent commands and their results are visible in a searchable palette UI.
+**Status**: NOT IMPLEMENTED. Phase 1A shipped backend-only. Command execution is invisible to users — results are posted as system messages in agent conversation history.
 
-### Task Panel (Dedicated)
+### Command Palette (Primary) — PLANNED
+Agent commands and their results will be visible in a searchable palette UI.
+
+**Required for**: Discovery (knowing what commands exist), inspection (seeing what agents did), debugging (understanding command failures).
+
+### Task Panel (Dedicated) — PLANNED
 Review queue, spec links, task claims — purpose-built UI for structured state management.
 
-### Room Sidebar (Navigation)
-Agent workspaces and room navigation affordances (existing, enhanced with command feedback).
+**Required for**: Task-specific commands (APPROVE_TASK, REQUEST_CHANGES, CLAIM_TASK).
 
-### Implementation Note
-Minimal surfaces ship with the commands they support — not as a separate phase. When `LIST_TASKS` ships, the task panel gets a "Refresh from agent" indicator. When DMs ship, DM threads appear in sidebar.
+### Room Sidebar (Navigation) — EXISTS (enhanced planned)
+Agent workspaces and room navigation affordances exist. Command feedback integration planned.
+
+**Required for**: Navigation commands (MOVE_TO_ROOM, RETURN_TO_MAIN).
+
+### Design Principle (Not Yet Applied)
+Minimal surfaces should ship with the commands they support — not as a separate phase. When backend commands are ready, corresponding UI affordances should be added in the same PR. Phase 1A violated this principle by shipping backend-only due to time constraints.
 
 ## Invariants
 
@@ -335,16 +349,17 @@ Minimal surfaces ship with the commands they support — not as a separate phase
 
 ## Known Gaps
 
-- ~~**Permission configuration**: Resolved — permissions are co-located in `agents.json` as `Permissions` property with `Allowed` and `Denied` arrays supporting wildcard patterns.~~
-- **Command discovery**: How do agents learn what commands are available? Options: included in startup prompt, discoverable via `HELP` command, or both. Currently not included in startup prompts.
+- **Command discovery**: How do agents learn what commands are available? Added to agent startup prompts as of commit `6117b4e` (2026-03-28). No `HELP` command yet — agents must reference startup prompt or remember syntax.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?).
 - **Rate limiting**: No rate limiting defined for commands. An agent could spam READ_FILE in a tight loop.
-- **Frontend command palette**: Design is described but not specified. Needs wireframes and interaction model.
-- ~~**Migration from free-text parsing**: Resolved — command pipeline runs in parallel with existing TASK ASSIGNMENT/WORK REPORT/REVIEW parsing. No migration needed for Phase 1.~~
+- **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
+- **Phase 1B-1E commands**: Task claiming, approvals, build/test execution, DMs, and navigation commands are specified but not implemented.
 
 ## Revision History
 
-| Date | Change | Task |
-|------|--------|------|
-| 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system |
-| 2026-03-28 | Implemented Phase 1A: envelope, parser, pipeline, authorization, audit, read handlers, memory handlers | command-system-phase1 |
+| Date | Change | Task | Commit |
+|------|--------|------|--------|
+| 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system | — |
+| 2026-03-28 | Implemented Phase 1A: envelope, parser, pipeline, authorization, audit, read handlers (LIST_ROOMS, LIST_AGENTS, LIST_TASKS, READ_FILE, SEARCH_CODE), memory handlers (REMEMBER, RECALL, LIST_MEMORIES, FORGET) | command-system-phase1 | `63b596c` |
+| 2026-03-28 | Added command reference to agent startup prompts | command-discoverability | `6117b4e` |
+| 2026-03-28 | Reconciled frontend surface contradiction: Phase 1A shipped backend-only, no UI surfaces implemented. Documented 9 live commands with implementation evidence. Updated Known Gaps to reflect backend-only state. | spec-007-reconciliation | (this change) |
