@@ -635,6 +635,18 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Returns a single breakout room by its ID, or null if not found.
+    /// </summary>
+    public async Task<BreakoutRoom?> GetBreakoutRoomAsync(string breakoutId)
+    {
+        var entity = await _db.BreakoutRooms
+            .Include(br => br.Messages)
+            .FirstOrDefaultAsync(br => br.Id == breakoutId);
+
+        return entity is null ? null : BuildBreakoutRoomSnapshot(entity);
+    }
+
+    /// <summary>
     /// Returns breakout rooms for a given parent room.
     /// </summary>
     public async Task<List<BreakoutRoom>> GetBreakoutRoomsAsync(string parentRoomId)
@@ -890,7 +902,9 @@ public sealed class WorkspaceRuntime
             AssignedAgentId: entity.AssignedAgentId,
             Tasks: [],
             Status: Enum.Parse<RoomStatus>(entity.Status),
-            RecentMessages: entity.Messages?.Select(m => new ChatEnvelope(
+            RecentMessages: entity.Messages?
+                .OrderBy(m => m.SentAt)
+                .Select(m => new ChatEnvelope(
                 Id: m.Id,
                 RoomId: entity.ParentRoomId,
                 SenderId: m.SenderId,
@@ -958,5 +972,122 @@ public sealed class WorkspaceRuntime
     private static string Truncate(string value, int maxLength)
     {
         return value.Length <= maxLength ? value : value[..maxLength] + "...";
+    }
+
+    // ── Orchestrator Support Methods ────────────────────────────
+
+    /// <summary>
+    /// Posts a system status message to a room (no agent sender required).
+    /// </summary>
+    public async Task PostSystemStatusAsync(string roomId, string message)
+    {
+        var room = await _db.Rooms.FindAsync(roomId)
+            ?? throw new InvalidOperationException($"Room '{roomId}' not found");
+
+        var now = DateTime.UtcNow;
+        var entity = CreateMessageEntity(roomId, MessageKind.System, message, null, now);
+        _db.Messages.Add(entity);
+        room.UpdatedAt = now;
+
+        Publish(ActivityEventType.MessagePosted, roomId, null, null,
+            $"System: {Truncate(message, 100)}");
+
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Adds a message to a breakout room's message log.
+    /// </summary>
+    public async Task PostBreakoutMessageAsync(
+        string breakoutRoomId, string senderId, string senderName,
+        string senderRole, string content)
+    {
+        var br = await _db.BreakoutRooms.FindAsync(breakoutRoomId)
+            ?? throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' not found");
+
+        var now = DateTime.UtcNow;
+        var entity = new BreakoutMessageEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            BreakoutRoomId = breakoutRoomId,
+            SenderId = senderId,
+            SenderName = senderName,
+            SenderRole = senderRole,
+            SenderKind = senderId == "system"
+                ? nameof(MessageSenderKind.System)
+                : nameof(MessageSenderKind.Agent),
+            Kind = senderId == "system"
+                ? nameof(MessageKind.System)
+                : nameof(MessageKind.Response),
+            Content = content,
+            SentAt = now
+        };
+        _db.BreakoutMessages.Add(entity);
+
+        br.UpdatedAt = now;
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Creates a task item associated with a breakout room.
+    /// </summary>
+    public async Task<TaskItem> CreateTaskItemAsync(
+        string title, string description, string assignedTo,
+        string roomId, string? breakoutRoomId)
+    {
+        var now = DateTime.UtcNow;
+        var entity = new TaskItemEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Title = title,
+            Description = description,
+            Status = nameof(TaskItemStatus.Pending),
+            AssignedTo = assignedTo,
+            RoomId = roomId,
+            BreakoutRoomId = breakoutRoomId,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        _db.TaskItems.Add(entity);
+        await _db.SaveChangesAsync();
+
+        return new TaskItem(
+            entity.Id, entity.Title, entity.Description,
+            TaskItemStatus.Pending, entity.AssignedTo,
+            entity.RoomId, entity.BreakoutRoomId,
+            null, null, now, now);
+    }
+
+    /// <summary>
+    /// Updates the status of a task item, with optional evidence.
+    /// </summary>
+    public async Task UpdateTaskItemStatusAsync(
+        string taskItemId, TaskItemStatus status, string? evidence = null)
+    {
+        var entity = await _db.TaskItems.FindAsync(taskItemId);
+        if (entity is null) return; // Silently ignore — matches v1 behavior
+
+        entity.Status = status.ToString();
+        entity.UpdatedAt = DateTime.UtcNow;
+        if (evidence is not null) entity.Evidence = evidence;
+
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Returns task items associated with a breakout room.
+    /// </summary>
+    public async Task<List<TaskItem>> GetBreakoutTaskItemsAsync(string breakoutRoomId)
+    {
+        var entities = await _db.TaskItems
+            .Where(t => t.BreakoutRoomId == breakoutRoomId)
+            .ToListAsync();
+
+        return entities.Select(e => new TaskItem(
+            e.Id, e.Title, e.Description,
+            Enum.Parse<TaskItemStatus>(e.Status),
+            e.AssignedTo, e.RoomId, e.BreakoutRoomId,
+            e.Evidence, e.Feedback,
+            e.CreatedAt, e.UpdatedAt)).ToList();
     }
 }

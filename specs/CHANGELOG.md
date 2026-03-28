@@ -5,6 +5,22 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **006-orchestrator**: Agent orchestrator — multi-agent conversation lifecycle manager (Implemented)
+  - `AgentOrchestrator` singleton: queue-based processing, conversation rounds, breakout rooms, review cycles
+  - Ported from v1 TypeScript `CollaborationOrchestrator` with C# async/await patterns
+  - Queue-based message processing with serialized room handling
+  - Planner-first conversation rounds with @-mention agent tagging (max 6)
+  - TASK ASSIGNMENT block parsing → breakout room creation with task items
+  - Breakout loop: up to 5 rounds per agent, WORK REPORT detection for early completion
+  - Review cycle: reviewer verdict parsing (APPROVED/NEEDS FIX), rejection → 2 fix rounds
+  - Prompt builders: conversation, breakout, review — with spec context loading
+  - Message kind inference: role → MessageKind mapping
+  - PASS response detection (PASS, N/A, No comment, Nothing to add)
+  - WorkspaceRuntime extensions: `GetBreakoutRoomAsync`, `PostSystemStatusAsync`, `PostBreakoutMessageAsync`, `CreateTaskItemAsync`, `UpdateTaskItemStatusAsync`, `GetBreakoutTaskItemsAsync`
+  - DI registration as singleton in `Program.cs`
+  - 22 unit tests covering all parsing/detection logic
+
+### Added
 - **004-notification-system (Discord provider)**: Discord notification provider via Discord.Net library
   - `DiscordNotificationProvider` implementing `INotificationProvider` with full lifecycle management
   - Embed-based notifications with type-based color coding (blue/gold/green/red/purple)

@@ -28,6 +28,9 @@ builder.Services.AddScoped<WorkspaceRuntime>();
 // if the Copilot CLI is not available.
 builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
+// Orchestrator (singleton — drives multi-agent conversation lifecycle)
+builder.Services.AddSingleton<AgentOrchestrator>();
+
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();
 builder.Services.AddSingleton<ConsoleNotificationProvider>();
