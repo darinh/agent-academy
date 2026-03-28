@@ -55,6 +55,7 @@ React 19 + Fluent UI ←→ ASP.NET Core 8 Web API ←→ EF Core + SQLite
 ```
 
 - **Backend** (`src/AgentAcademy.Server`): ASP.NET Core Web API with SignalR for real-time communication
+  - `AgentOrchestrator`: Drives multi-agent conversation lifecycle (queue processing, breakout rooms, review cycles)
 - **Shared Models** (`src/AgentAcademy.Shared`): Domain types shared between server and tests
 - **Frontend** (`src/agent-academy-client`): React 19 SPA with Vite and Fluent UI v9
 - **Tests** (`tests/AgentAcademy.Server.Tests`): xUnit integration and unit tests
