@@ -16,6 +16,7 @@ import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot } from "./api";
 import type { ThinkingAgent } from "./useWorkspace";
+import type { ConnectionStatus } from "./useActivityHub";
 
 /* ── Message Bubble ─────────────────────────────────────────────── */
 
@@ -106,9 +107,24 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
 
 /* ── Chat Panel ─────────────────────────────────────────────────── */
 
+const STATUS_LABELS: Record<ConnectionStatus, string> = {
+  connected: "Live — real-time updates active",
+  connecting: "Connecting to live updates…",
+  reconnecting: "Reconnecting…",
+  disconnected: "Disconnected — falling back to polling",
+};
+
+const STATUS_COLORS: Record<ConnectionStatus, string> = {
+  connected: "#34d399",
+  connecting: "#fbbf24",
+  reconnecting: "#fbbf24",
+  disconnected: "#f87171",
+};
+
 const ChatPanel = memo(function ChatPanel(props: {
   room: RoomSnapshot | null;
   thinkingAgents: ThinkingAgent[];
+  connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
 }) {
   const s = useStyles();
@@ -172,8 +188,8 @@ const ChatPanel = memo(function ChatPanel(props: {
       </div>
 
       <div className={s.statusBar}>
-        <span className={s.statusIndicator} />
-        Live updates via polling. SignalR integration coming soon.
+        <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[props.connectionStatus] }} />
+        {STATUS_LABELS[props.connectionStatus]}
       </div>
 
       {props.room && (

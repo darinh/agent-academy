@@ -318,8 +318,6 @@ export const useStyles = makeStyles({
   statusIndicator: {
     width: "10px",
     height: "10px",
-    backgroundColor: "#34d399",
-    boxShadow: "0 0 0 6px rgba(52, 211, 153, 0.12)",
     ...shorthands.borderRadius("999px"),
   },
   composerShell: {

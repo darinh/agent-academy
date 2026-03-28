@@ -14,6 +14,7 @@ import type {
   WorkspaceOverview,
 } from "./api";
 import { workspaceChanged, sameActivityFeed } from "./utils";
+import { useActivityHub, type ConnectionStatus } from "./useActivityHub";
 
 export type ThinkingAgent = { id: string; name: string; role: string };
 
@@ -24,7 +25,7 @@ export interface TaskDraft {
   roomId?: string;
 }
 
-const BACKGROUND_POLL_MS = 30_000;
+const FALLBACK_POLL_MS = 120_000;
 
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
@@ -56,7 +57,8 @@ export function useWorkspace() {
   const [busy, setBusy] = useState(true);
   const [tab, setTabRaw] = useState<string>(loadTab);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
-  const [thinkingAgents] = useState<Map<string, { name: string; role: string }>>(new Map());
+  // Thinking state keyed by roomId → Map<agentId, info>
+  const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
 
   const setTab = useCallback((value: string) => {
     setTabRaw(value);
@@ -88,10 +90,59 @@ export function useWorkspace() {
       .slice(0, 20);
   }, [recentActivity, room]);
 
-  const thinkingAgentList = useMemo<ThinkingAgent[]>(
-    () => Array.from(thinkingAgents.entries(), ([id, info]) => ({ id, ...info })),
-    [thinkingAgents],
-  );
+  const thinkingAgentList = useMemo<ThinkingAgent[]>(() => {
+    const roomMap = thinkingByRoom.get(room?.id ?? "");
+    if (!roomMap?.size) return [];
+    return Array.from(roomMap.entries(), ([id, info]) => ({ id, ...info }));
+  }, [thinkingByRoom, room?.id]);
+
+  // Ref so the SignalR callback always sees current configuredAgents without re-subscribing
+  const agentsRef = useRef(ov.configuredAgents);
+  agentsRef.current = ov.configuredAgents;
+
+  const refreshRef = useRef<(opts?: { showBusy?: boolean }) => Promise<void>>(undefined);
+
+  const handleActivityEvent = useCallback((evt: ActivityEvent) => {
+    switch (evt.type) {
+      case "AgentThinking": {
+        if (!evt.roomId || !evt.actorId) break;
+        const agent = agentsRef.current.find((a) => a.id === evt.actorId);
+        if (agent) {
+          setThinkingByRoom((prev) => {
+            const next = new Map(prev);
+            const roomMap = new Map(prev.get(evt.roomId!) ?? []);
+            roomMap.set(agent.id, { name: agent.name, role: agent.role });
+            next.set(evt.roomId!, roomMap);
+            return next;
+          });
+        }
+        break;
+      }
+      case "AgentFinished":
+        if (evt.roomId && evt.actorId) {
+          setThinkingByRoom((prev) => {
+            const roomMap = prev.get(evt.roomId!);
+            if (!roomMap?.has(evt.actorId!)) return prev;
+            const next = new Map(prev);
+            const newRoomMap = new Map(roomMap);
+            newRoomMap.delete(evt.actorId!);
+            if (newRoomMap.size === 0) next.delete(evt.roomId!);
+            else next.set(evt.roomId!, newRoomMap);
+            return next;
+          });
+        }
+        break;
+      case "MessagePosted":
+      case "RoomCreated":
+      case "TaskCreated":
+      case "PhaseChanged":
+      case "PresenceUpdated":
+        void refreshRef.current?.({ showBusy: false });
+        break;
+    }
+  }, []);
+
+  const connectionStatus: ConnectionStatus = useActivityHub(handleActivityEvent);
 
   const refresh = useCallback(async (opts: { showBusy?: boolean } = {}) => {
     const showBusy = opts.showBusy ?? true;
@@ -105,6 +156,27 @@ export function useWorkspace() {
       setRecentActivity((cur) =>
         sameActivityFeed(cur, next.recentActivity) ? cur : next.recentActivity,
       );
+      // Reconcile thinking state: clear entries for agents no longer in Working state
+      setThinkingByRoom((prev) => {
+        if (prev.size === 0) return prev;
+        const workingIds = new Set(
+          next.agentLocations
+            .filter((loc) => loc.state === "Working")
+            .map((loc) => loc.agentId),
+        );
+        let changed = false;
+        const cleaned = new Map(prev);
+        for (const [rid, roomMap] of cleaned) {
+          for (const agentId of roomMap.keys()) {
+            if (!workingIds.has(agentId)) {
+              roomMap.delete(agentId);
+              changed = true;
+            }
+          }
+          if (roomMap.size === 0) { cleaned.delete(rid); changed = true; }
+        }
+        return changed ? cleaned : prev;
+      });
       setErr("");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Load failed");
@@ -114,12 +186,14 @@ export function useWorkspace() {
     }
   }, []);
 
+  refreshRef.current = refresh;
+
   useEffect(() => {
     void refresh();
 
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") void refresh({ showBusy: false });
-    }, BACKGROUND_POLL_MS);
+    }, FALLBACK_POLL_MS);
 
     return () => {
       clearInterval(poll);
@@ -199,6 +273,7 @@ export function useWorkspace() {
     roster,
     activity,
     thinkingAgentList,
+    connectionStatus,
     agentLocations: ov.agentLocations ?? [],
     breakoutRooms: ov.breakoutRooms ?? [],
     err,

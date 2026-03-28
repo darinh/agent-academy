@@ -48,6 +48,7 @@ function AppShell() {
     roster,
     activity,
     thinkingAgentList,
+    connectionStatus,
     err,
     busy,
     tab,
@@ -283,6 +284,7 @@ function AppShell() {
                 <ChatPanel
                   room={room}
                   thinkingAgents={thinkingAgentList}
+                  connectionStatus={connectionStatus}
                   onSendMessage={handleSendMessage}
                 />
               )}
