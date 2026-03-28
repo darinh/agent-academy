@@ -167,7 +167,8 @@ public sealed class AgentOrchestrator
                     await runtime.PublishFinishedAsync(planner, roomId);
                 }
 
-                if (!string.IsNullOrWhiteSpace(plannerResponse) && !IsPassResponse(plannerResponse))
+                if (!string.IsNullOrWhiteSpace(plannerResponse) && !IsPassResponse(plannerResponse)
+                    && !IsStubOfflineResponse(plannerResponse))
                 {
                     hadNonPassResponse = true;
 
@@ -226,7 +227,8 @@ public sealed class AgentOrchestrator
                     await runtime.PublishFinishedAsync(agent, roomId);
                 }
 
-                if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response))
+                if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response)
+                    && !IsStubOfflineResponse(response))
                 {
                     hadNonPassResponse = true;
 
@@ -385,6 +387,19 @@ public sealed class AgentOrchestrator
 
             if (!string.IsNullOrWhiteSpace(response))
             {
+                // Bail immediately if agent returned a stub offline notice —
+                // retrying will produce the same result every round.
+                if (IsStubOfflineResponse(response))
+                {
+                    _logger.LogWarning(
+                        "Agent {AgentName} returned stub offline notice in breakout — aborting loop",
+                        agent.Name);
+                    await runtime.PostBreakoutMessageAsync(
+                        breakoutRoomId, "system", "LocalAgentHost", "System",
+                        $"⚠️ {agent.Name} is offline. Breakout suspended until the Copilot SDK is reconnected.");
+                    return; // Don't fall through to HandleBreakoutCompleteAsync
+                }
+
                 // Process commands from breakout response
                 var pipelineResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
                 var textToPost = pipelineResult.RemainingText;
@@ -500,6 +515,13 @@ public sealed class AgentOrchestrator
         if (string.IsNullOrWhiteSpace(reviewResponse) || IsPassResponse(reviewResponse))
             return null;
 
+        // If reviewer returned offline notice, skip the review cycle entirely
+        if (IsStubOfflineResponse(reviewResponse))
+        {
+            _logger.LogWarning("Reviewer returned stub offline notice — skipping review cycle");
+            return null;
+        }
+
         try
         {
             await runtime.PostMessageAsync(new PostMessageRequest(
@@ -556,6 +578,15 @@ public sealed class AgentOrchestrator
 
             if (!string.IsNullOrWhiteSpace(response))
             {
+                // Bail if agent returned stub offline notice
+                if (IsStubOfflineResponse(response))
+                {
+                    _logger.LogWarning(
+                        "Agent {AgentName} returned stub offline notice in fix round — aborting",
+                        agent.Name);
+                    return; // Don't fall through to FinalizeBreakoutAsync
+                }
+
                 // Process commands from fix-round response
                 var pipelineResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
                 var textToPost = pipelineResult.RemainingText;
@@ -999,6 +1030,14 @@ public sealed class AgentOrchestrator
                 trimmed == "No comment." ||
                 trimmed == "Nothing to add.");
     }
+
+    /// <summary>
+    /// Detects StubExecutor offline responses. When the Copilot SDK is not
+    /// connected, retrying will produce the same result — abort early instead
+    /// of burning through all breakout/review rounds.
+    /// </summary>
+    internal static bool IsStubOfflineResponse(string response) =>
+        response.Contains("is offline — the Copilot SDK is not connected", StringComparison.Ordinal);
 
     private static string BuildTaskBrief(AgentDefinition agent, List<TaskItem> tasks)
     {

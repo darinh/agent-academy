@@ -25,6 +25,20 @@ public class AgentOrchestratorTests
         Assert.Equal(expected, AgentOrchestrator.IsPassResponse(input));
     }
 
+    // ── Stub Offline Detection ─────────────────────────────────
+
+    [Theory]
+    [InlineData("⚠️ Agent **Socrates** (Reviewer) is offline — the Copilot SDK is not connected. Log in via GitHub OAuth or check server logs to activate.", true)]
+    [InlineData("⚠️ Agent **Hephaestus** (SoftwareEngineer) is offline — the Copilot SDK is not connected. Log in via GitHub OAuth or check server logs to activate.", true)]
+    [InlineData("The agent is offline and cannot respond.", false)]
+    [InlineData("I'll review the code now.", false)]
+    [InlineData("PASS", false)]
+    [InlineData("", false)]
+    public void IsStubOfflineResponse_DetectsCorrectly(string input, bool expected)
+    {
+        Assert.Equal(expected, AgentOrchestrator.IsStubOfflineResponse(input));
+    }
+
     // ── Task Assignment Parsing ─────────────────────────────────
 
     [Fact]
