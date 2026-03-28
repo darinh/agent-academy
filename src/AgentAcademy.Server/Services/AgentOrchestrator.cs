@@ -143,7 +143,8 @@ public sealed class AgentOrchestrator
                 try
                 {
                     var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext)
+                    var taskItems = await runtime.GetActiveTaskItemsAsync();
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -699,7 +700,9 @@ public sealed class AgentOrchestrator
 
     // ── PROMPT BUILDERS ─────────────────────────────────────────
 
-    private static string BuildConversationPrompt(AgentDefinition agent, RoomSnapshot room, string? specContext)
+    private static string BuildConversationPrompt(
+        AgentDefinition agent, RoomSnapshot room, string? specContext,
+        List<TaskItem>? activeTaskItems = null)
     {
         var lines = new List<string> { agent.StartupPrompt, "" };
         lines.Add("=== CURRENT ROOM CONTEXT ===");
@@ -713,6 +716,17 @@ public sealed class AgentOrchestrator
             lines.Add($"Description: {room.ActiveTask.Description}");
             if (!string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria))
                 lines.Add($"Success criteria: {room.ActiveTask.SuccessCriteria}");
+        }
+
+        if (activeTaskItems is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("=== IN-FLIGHT WORK ITEMS ===");
+            foreach (var item in activeTaskItems)
+            {
+                var workspace = item.BreakoutRoomId is not null ? " [in workspace]" : "";
+                lines.Add($"- [{item.Status}] \"{item.Title}\" → assigned to {item.AssignedTo}{workspace}");
+            }
         }
 
         if (specContext is not null)

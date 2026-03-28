@@ -1255,4 +1255,23 @@ public sealed class WorkspaceRuntime
             e.Evidence, e.Feedback,
             e.CreatedAt, e.UpdatedAt)).ToList();
     }
+
+    /// <summary>
+    /// Returns all task items that are not done (Pending or Active).
+    /// </summary>
+    public async Task<List<TaskItem>> GetActiveTaskItemsAsync()
+    {
+        var activeStatuses = new[] { nameof(TaskItemStatus.Pending), nameof(TaskItemStatus.Active) };
+        var entities = await _db.TaskItems
+            .Where(t => activeStatuses.Contains(t.Status))
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync();
+
+        return entities.Select(e => new TaskItem(
+            e.Id, e.Title, e.Description,
+            Enum.Parse<TaskItemStatus>(e.Status),
+            e.AssignedTo, e.RoomId, e.BreakoutRoomId,
+            e.Evidence, e.Feedback,
+            e.CreatedAt, e.UpdatedAt)).ToList();
+    }
 }
