@@ -12,12 +12,27 @@ namespace AgentAcademy.Server.Services;
 /// <see cref="CopilotSession"/> per agent-per-room combination.
 /// Sessions are cached with a 10-minute sliding TTL and disposed on expiry.
 ///
-/// Token resolution chain:
+/// Authentication (IMPORTANT — read before debugging "agent offline" issues):
+///
+/// The primary auth mechanism is GitHub OAuth. When a user logs in via the
+/// browser, the OAuth callback saves the access token into
+/// <see cref="CopilotTokenProvider"/> (a singleton). This token is then used
+/// by all agent interactions, even in background orchestration where there
+/// is no HttpContext. After a server restart, the token is restored from
+/// the auth cookie on the first authenticated HTTP request.
+///
+/// Token resolution chain (checked in order):
 /// 1. User's OAuth token (from <see cref="CopilotTokenProvider"/> — captured at login)
-/// 2. Static config token (<c>Copilot:GitHubToken</c> in appsettings / user-secrets)
+/// 2. Static config token (<c>Copilot:GitHubToken</c> — for non-OAuth deployments only)
 /// 3. Environment variables (<c>COPILOT_GITHUB_TOKEN</c>, <c>GH_TOKEN</c>, <c>GITHUB_TOKEN</c>)
 /// 4. Copilot CLI login state (SDK default)
-/// 5. <see cref="StubExecutor"/> fallback (canned responses)
+/// 5. <see cref="StubExecutor"/> fallback (offline notice, not fake responses)
+///
+/// Common "offline" scenarios:
+/// - Server just restarted and no browser request has restored the token yet
+/// - OAuth is not configured (no GitHub:ClientId/ClientSecret)
+/// - A stale StubExecutor message from before login is visible in chat history
+///   (this is NOT a live connectivity issue — it's a persisted historical message)
 /// </summary>
 public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 {
