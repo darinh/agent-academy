@@ -207,46 +207,6 @@ export interface ApiError {
   error: string;
 }
 
-// ── Notification types ─────────────────────────────────────────────────
-
-export interface ProviderStatus {
-  providerId: string;
-  displayName: string;
-  isConfigured: boolean;
-  isConnected: boolean;
-}
-
-export interface ConfigField {
-  key: string;
-  label: string;
-  type: string;
-  required: boolean;
-  description?: string;
-  placeholder?: string;
-}
-
-export interface ProviderConfigSchema {
-  providerId: string;
-  displayName: string;
-  description: string;
-  fields: ConfigField[];
-}
-
-export interface ConfigureResponse {
-  status: string;
-  providerId: string;
-}
-
-export interface ConnectResponse {
-  status: string;
-  providerId: string;
-}
-
-export interface TestNotificationResponse {
-  sent: number;
-  totalConnected: number;
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
@@ -353,7 +313,6 @@ export function deletePlan(roomId: string): Promise<void> {
 // ── Workspace / Project ────────────────────────────────────────────────
 
 export function listWorkspaces(): Promise<WorkspaceMeta[]> {
-  // The backend doesn't have a list endpoint yet — return empty
   return Promise.resolve([]);
 }
 
@@ -376,44 +335,4 @@ export function browseDirectory(dirPath?: string): Promise<BrowseResult> {
   if (dirPath) params.set("path", dirPath);
   const qs = params.toString();
   return request<BrowseResult>(apiUrl(`/api/filesystem/browse${qs ? `?${qs}` : ""}`));
-}
-
-// ── Notification provider endpoints ────────────────────────────────────
-
-const NOTIF_BASE = "/api/notifications";
-
-export function getNotificationProviders(): Promise<ProviderStatus[]> {
-  return request<ProviderStatus[]>(apiUrl(`${NOTIF_BASE}/providers`));
-}
-
-export function getProviderSchema(id: string): Promise<ProviderConfigSchema> {
-  return request<ProviderConfigSchema>(apiUrl(`${NOTIF_BASE}/providers/${encodeURIComponent(id)}/schema`));
-}
-
-export function configureProvider(
-  id: string,
-  settings: Record<string, string>,
-): Promise<ConfigureResponse> {
-  return request<ConfigureResponse>(
-    apiUrl(`${NOTIF_BASE}/providers/${encodeURIComponent(id)}/configure`),
-    { method: "POST", body: JSON.stringify(settings) },
-  );
-}
-
-export function connectProvider(id: string): Promise<ConnectResponse> {
-  return request<ConnectResponse>(
-    apiUrl(`${NOTIF_BASE}/providers/${encodeURIComponent(id)}/connect`),
-    { method: "POST" },
-  );
-}
-
-export function disconnectProvider(id: string): Promise<ConnectResponse> {
-  return request<ConnectResponse>(
-    apiUrl(`${NOTIF_BASE}/providers/${encodeURIComponent(id)}/disconnect`),
-    { method: "POST" },
-  );
-}
-
-export function testNotification(): Promise<TestNotificationResponse> {
-  return request<TestNotificationResponse>(apiUrl(`${NOTIF_BASE}/test`), { method: "POST" });
 }
