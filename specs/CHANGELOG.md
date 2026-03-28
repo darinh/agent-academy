@@ -5,10 +5,17 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **003-agent-system**: CopilotExecutor now passes `OnPermissionRequest = PermissionHandler.ApproveAll` to `SessionConfig` (required by SDK v0.2.0) — fixes sessions failing to create and silently falling back to stubs
+- **003-agent-system**: CopilotExecutor now accepts `IConfiguration` and reads `Copilot:GitHubToken` for token-based authentication
 - **006-orchestrator**: Multi-round conversation loop — `RunConversationRoundAsync` now loops up to 3 rounds per trigger when non-PASS responses are produced in rooms with active tasks, preventing single-round stalls
 - **005-workspace-runtime**: Agent room placement — `CreateTaskAsync` auto-joins `AutoJoinDefaultRoom` agents into new task rooms (skips Working agents, best-effort error handling)
 
 ### Added
+- **003-agent-system (SSE)**: SSE activity stream as alternative to SignalR
+  - `GET /api/activity/stream` endpoint with replay, bounded channel, nginx-safe headers
+  - `useActivitySSE.ts` client hook with auto-reconnect and `enabled` param
+  - Transport selection via `localStorage` key `aa-transport` (`"signalr"` default, `"sse"` alternative)
+  - `useActivityHub.ts` updated with `enabled` param for conditional activation
 - **300-frontend-ui (SignalR)**: Real-time activity event streaming via `@microsoft/signalr`
   - `useActivityHub.ts` hook: connects to `/hubs/activity` with auto-reconnect + initial retry
   - `useWorkspace.ts`: handles AgentThinking/AgentFinished (per-room thinking state), triggers refresh on MessagePosted/RoomCreated/TaskCreated/PhaseChanged/PresenceUpdated

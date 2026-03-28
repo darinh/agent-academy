@@ -63,6 +63,8 @@ public interface IAgentExecutor
 
 Key behaviors:
 - **Lazy client initialization**: `CopilotClient` is created on first use and cached as a singleton.
+- **Token configuration**: Reads `Copilot:GitHubToken` from `IConfiguration`. When set, passes it to `CopilotClientOptions.GitHubToken`. When empty, falls back to environment variables (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) or CLI login.
+- **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0).
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity.
@@ -124,12 +126,52 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 ## Known Gaps
 
 - **No token/usage tracking**: `CopilotExecutor` does not yet track input/output tokens or cost. The v1 `AgentEventTracker` integration is pending.
-- **No streaming exposure**: Responses are collected internally. Streaming to the frontend via SSE/SignalR is a future feature.
 - **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up.
 - **Session compaction**: The SDK may support session compaction for long conversations. Not yet implemented.
+
+## SSE Activity Stream
+
+> **Status: Implemented** — Alternative to SignalR for environments without WebSocket support.
+
+### Endpoint
+
+**File**: `src/AgentAcademy.Server/Controllers/ActivityController.cs`
+
+`GET /api/activity/stream` — Server-Sent Events stream of `ActivityEvent`.
+
+- Content-Type: `text/event-stream`
+- Event name: `activityEvent`
+- Payload: JSON-serialized `ActivityEvent` (camelCase)
+- On connect, replays recent events from `ActivityBroadcaster` buffer (up to 100)
+- Uses a bounded channel (256 capacity, drop-oldest) to bridge `ActivityBroadcaster` callbacks to the async SSE writer
+- Gracefully handles client disconnect via `CancellationToken`
+- Disables nginx buffering via `X-Accel-Buffering: no` header
+
+### Client Hook
+
+**File**: `src/agent-academy-client/src/useActivitySSE.ts`
+
+`useActivitySSE(onEvent, enabled?)` — Drop-in alternative to `useActivityHub`.
+
+- Uses the browser `EventSource` API
+- Same `ConnectionStatus` type as SignalR hook
+- Auto-reconnects with exponential backoff on connection loss
+- `enabled` parameter (default `true`) allows conditional activation
+
+### Transport Selection
+
+**File**: `src/agent-academy-client/src/useWorkspace.ts`
+
+Transport is selected via `localStorage` key `aa-transport`:
+- `"signalr"` (default) — uses `useActivityHub`
+- `"sse"` — uses `useActivitySSE`
+
+Both hooks are always called (React Rules of Hooks), but only the active one creates a connection. The inactive hook receives `enabled = false` and reports `"disconnected"`.
 
 ## Revision History
 
 | Date | Change | Task |
 |------|--------|------|
 | Initial | Created agent execution system — interface, CopilotExecutor, StubExecutor | copilot-executor |
+| 2026-03-28 | Fixed CopilotExecutor auth: added OnPermissionRequest + IConfiguration token support | copilot-auth-sse |
+| 2026-03-28 | Added SSE activity stream as SignalR alternative | copilot-auth-sse |

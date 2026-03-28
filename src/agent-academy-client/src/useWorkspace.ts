@@ -14,7 +14,13 @@ import type {
   WorkspaceOverview,
 } from "./api";
 import { workspaceChanged, sameActivityFeed } from "./utils";
-import { useActivityHub, type ConnectionStatus } from "./useActivityHub";
+import { useActivityHub } from "./useActivityHub";
+import { useActivitySSE } from "./useActivitySSE";
+import type { ConnectionStatus } from "./useActivityHub";
+
+export type ActivityTransport = "signalr" | "sse";
+
+const TRANSPORT_STORAGE_KEY = "aa-transport";
 
 export type ThinkingAgent = { id: string; name: string; role: string };
 
@@ -35,6 +41,12 @@ function loadTab(): string {
 }
 function loadSidebar(): boolean {
   try { return localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "false"; } catch { return true; }
+}
+function loadTransport(): ActivityTransport {
+  try {
+    const v = localStorage.getItem(TRANSPORT_STORAGE_KEY);
+    return v === "sse" ? "sse" : "signalr";
+  } catch { return "signalr"; }
 }
 
 const empty: WorkspaceOverview = {
@@ -142,7 +154,11 @@ export function useWorkspace() {
     }
   }, []);
 
-  const connectionStatus: ConnectionStatus = useActivityHub(handleActivityEvent);
+  const [transport] = useState<ActivityTransport>(loadTransport);
+  const useSignalR = transport === "signalr";
+  const hubStatus = useActivityHub(handleActivityEvent, useSignalR);
+  const sseStatus = useActivitySSE(handleActivityEvent, !useSignalR);
+  const connectionStatus: ConnectionStatus = useSignalR ? hubStatus : sseStatus;
 
   const refresh = useCallback(async (opts: { showBusy?: boolean } = {}) => {
     const showBusy = opts.showBusy ?? true;

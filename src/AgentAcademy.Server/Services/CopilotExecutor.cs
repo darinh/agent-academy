@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using AgentAcademy.Shared.Models;
 using GitHub.Copilot.SDK;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -19,6 +20,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     private readonly ILogger<CopilotExecutor> _logger;
     private readonly ILogger<StubExecutor> _stubLogger;
+    private readonly string? _githubToken;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
     private readonly SemaphoreSlim _clientLock = new(1, 1);
@@ -30,10 +32,12 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     public CopilotExecutor(
         ILogger<CopilotExecutor> logger,
-        ILogger<StubExecutor> stubLogger)
+        ILogger<StubExecutor> stubLogger,
+        IConfiguration configuration)
     {
         _logger = logger;
         _stubLogger = stubLogger;
+        _githubToken = configuration["Copilot:GitHubToken"];
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -171,8 +175,15 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             if (_clientFailed) return null;
             if (_client is not null) return _client;
 
-            _logger.LogInformation("Starting CopilotClient...");
-            var client = new CopilotClient();
+            var hasToken = !string.IsNullOrWhiteSpace(_githubToken);
+            _logger.LogInformation(
+                "Starting CopilotClient (token source: {Source})...",
+                hasToken ? "config" : "env/CLI login");
+
+            var options = hasToken
+                ? new CopilotClientOptions { GitHubToken = _githubToken }
+                : null;
+            var client = new CopilotClient(options);
             await client.StartAsync();
             _client = client;
             _logger.LogInformation("CopilotClient started successfully");
@@ -234,6 +245,10 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             {
                 Model = agent.Model ?? "gpt-5",
                 Streaming = true,
+                // Safe: no SDK tools are registered in the session config, so
+                // no permission requests fire. Revisit with a restrictive handler
+                // when tool calling is wired up (see spec Known Gaps).
+                OnPermissionRequest = PermissionHandler.ApproveAll,
             };
 
             var session = await client.CreateSessionAsync(config);

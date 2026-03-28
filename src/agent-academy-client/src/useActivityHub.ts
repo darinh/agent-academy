@@ -21,12 +21,23 @@ const INITIAL_RETRY_DELAYS = [0, 2_000, 5_000, 10_000, 30_000];
  * Handles auto-reconnect with exponential backoff.
  * Retries initial connection failures (withAutomaticReconnect only covers post-connect drops).
  */
-export function useActivityHub(onEvent: (evt: ActivityEvent) => void): ConnectionStatus {
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+export function useActivityHub(
+  onEvent: (evt: ActivityEvent) => void,
+  enabled = true,
+): ConnectionStatus {
+  const [status, setStatus] = useState<ConnectionStatus>(
+    enabled ? "connecting" : "disconnected",
+  );
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
   useEffect(() => {
+    if (!enabled) {
+      setStatus("disconnected");
+      return;
+    }
+
+    setStatus("connecting");
     const connection: HubConnection = new HubConnectionBuilder()
       .withUrl("/hubs/activity")
       .withAutomaticReconnect(INITIAL_RETRY_DELAYS)
@@ -66,7 +77,7 @@ export function useActivityHub(onEvent: (evt: ActivityEvent) => void): Connectio
         void connection.stop();
       }
     };
-  }, []);
+  }, [enabled]);
 
   return status;
 }

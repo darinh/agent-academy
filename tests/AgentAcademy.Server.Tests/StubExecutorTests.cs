@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -129,7 +130,8 @@ public class AgentExecutorInterfaceTests
     {
         var executor = new CopilotExecutor(
             NullLogger<CopilotExecutor>.Instance,
-            NullLogger<StubExecutor>.Instance);
+            NullLogger<StubExecutor>.Instance,
+            new ConfigurationBuilder().Build());
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
     }
 }
