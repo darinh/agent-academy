@@ -11,6 +11,13 @@ All changes to specifications are documented here.
   - Phase 3: TaskListPanel component with status grouping, collapsible completed, URL-safe PR links
 
 ### Added
+- **GitHub OAuth**: GitHub App OAuth login with cookie-based sessions
+  - Server: opt-in auth pipeline (AddAuthentication + AddCookie + AddOAuth), FallbackPolicy, AuthController
+  - Client: LoginPage, UserBadge (top-right avatar + sign out), auth gating in App.tsx
+  - Security: open redirect prevention, minimal scopes (read:user + user:email), no token in cookie
+  - Startup resilience: auth status check retries on 502
+
+### Added
 - **010-task-management**: Task management & Git workflow spec — task lifecycle, agent identity, branch/PR workflow, Socrates review pipeline, GitHub integration, frontend task list panel (Planned)
 
 ### Added

@@ -14,7 +14,8 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [005](./005-workspace-runtime/spec.md) | Workspace Runtime | Implemented |
 | [006](./006-orchestrator/spec.md) | Agent Orchestrator | Implemented |
 | [009](./009-spec-management/spec.md) | Spec Management | Implemented |
-| [010](./010-task-management/spec.md) | Task Management & Git Workflow | Planned |
+| [010](./010-task-management/spec.md) | Task Management & Git Workflow | Partial |
+| [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
 
 ## Conventions
 
