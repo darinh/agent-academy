@@ -27,7 +27,7 @@ Defines how Agent Academy sends prompts to LLM providers and receives responses.
                ▼
 ┌──────────────────────────────────┐
 │         StubExecutor             │
-│  • Canned role-based responses  │
+│  • Clear offline error notice   │
 │  • No LLM connection needed     │
 │  • IsFullyOperational = false   │
 └──────────────────────────────────┘
@@ -67,6 +67,7 @@ Key behaviors:
   1. **User OAuth token** — from `CopilotTokenProvider` (captured during GitHub OAuth login)
   2. **Config token** — `Copilot:GitHubToken` from `IConfiguration` (appsettings / user-secrets)
   3. **Environment / CLI** — `null` passed to SDK, which checks `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, or copilot CLI login state
+- **CLI path configuration**: `Copilot:CliPath` in `appsettings.json` controls which copilot binary the SDK uses. Must be set to `"copilot"` (system PATH) or an explicit path to an already-authenticated copilot CLI. The SDK's bundled binary (at `runtimes/linux-x64/native/copilot`) ships with no auth state and will fail to connect. The system copilot CLI (e.g., `~/.local/bin/copilot`) uses existing `copilot auth login` credentials.
 - **Token-change awareness**: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt.
 - **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0). Safe because no SDK tools are registered in session config. Must be revisited when tool calling is wired up.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
@@ -126,15 +127,14 @@ Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
 
 **File**: `src/AgentAcademy.Server/Services/StubExecutor.cs`
 
-Returns canned responses based on `AgentDefinition.Role`:
-- **Planner**: 4 templates about task decomposition and sequencing
-- **Architect**: 4 templates about design patterns and abstractions
-- **SoftwareEngineer**: 4 templates about implementation approaches
-- **Reviewer**: 4 templates about code review concerns
-- **TechnicalWriter**: 3 templates about spec change proposals
-- **Default**: 2 generic templates
+Returns a deterministic offline notice when the Copilot SDK is unavailable:
 
-Templates are randomly selected. `IsFullyOperational` is always `false`.
+```
+⚠️ Agent {Name} ({Role}) is offline — the Copilot SDK is not connected.
+Log in via GitHub OAuth or check server logs to activate.
+```
+
+The message includes the agent's name and role so users can identify which agent is offline. `IsFullyOperational` is always `false`.
 
 ### DI Registration
 
@@ -153,14 +153,14 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 | Test | Validates |
 |------|-----------|
 | `IsFullyOperational_ReturnsFalse` | Stub reports non-operational |
-| `RunAsync_ReturnsNonEmptyResponse_ForKnownRoles` | All 5 known roles produce output |
-| `RunAsync_ReturnsResponse_ForUnknownRole` | Fallback templates work |
+| `RunAsync_ReturnsOfflineNotice_ForKnownRoles` | All 5 known roles produce offline notice with agent name/role |
+| `RunAsync_ReturnsOfflineNotice_ForUnknownRole` | Unknown roles also get offline notice |
 | `RunAsync_ThrowsOnCancellation` | Cancellation token honored |
 | `InvalidateSessionAsync_DoesNotThrow` | No-op is safe |
 | `InvalidateRoomSessionsAsync_DoesNotThrow` | No-op is safe |
 | `DisposeAsync_DoesNotThrow` | No-op is safe |
-| `RunAsync_WithNullRoomId_ReturnsResponse` | Null room handled |
-| `RunAsync_ResponseVariesBetweenCalls` | Random selection works |
+| `RunAsync_WithNullRoomId_ReturnsOfflineNotice` | Null room handled |
+| `RunAsync_ReturnsDeterministicMessage` | Same input always produces same output |
 | `StubExecutor_ImplementsIAgentExecutor` | Interface compliance |
 | `CopilotExecutor_ImplementsIAgentExecutor` | Interface compliance |
 
@@ -225,3 +225,5 @@ Both hooks are always called (React Rules of Hooks), but only the active one cre
 | 2026-03-28 | Fixed CopilotExecutor auth: added OnPermissionRequest + IConfiguration token support | copilot-auth-sse |
 | 2026-03-28 | Added SSE activity stream as SignalR alternative | copilot-auth-sse |
 | 2026-03-28 | OAuth token → Copilot SDK activation: CopilotTokenProvider, token-change-aware executor, SaveTokens=true | auth-sdk-flow |
+| 2026-03-28 | Documented CLI path configuration (Copilot:CliPath, system vs bundled binary) | cli-path-docs |
+| 2026-03-28 | StubExecutor: replaced canned role-based responses with deterministic offline notice | stub-offline-notice |

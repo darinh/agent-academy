@@ -44,7 +44,7 @@ Configured agents (v1 port):
 - `CreateDefaultRoomAsync()` → creates default room if none exists
 
 Each `RoomSnapshot` includes:
-- Participants (built from `AgentCatalogOptions` — agents with `AutoJoinDefaultRoom = true` or matching preferred roles)
+- Participants (built from `AgentLocationEntity` records — agents whose current location matches the room, with preferred-role flag from the active task)
 - Recent messages (last 200 from DB)
 - Active task (most recent active task for the room)
 
