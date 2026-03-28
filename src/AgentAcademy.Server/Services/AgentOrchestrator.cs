@@ -29,6 +29,7 @@ public sealed class AgentOrchestrator
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentExecutor _executor;
     private readonly ActivityBroadcaster _activityBus;
+    private readonly SpecManager _specManager;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<string> _queue = new();
@@ -40,11 +41,13 @@ public sealed class AgentOrchestrator
         IServiceScopeFactory scopeFactory,
         IAgentExecutor executor,
         ActivityBroadcaster activityBus,
+        SpecManager specManager,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
         _executor = executor;
         _activityBus = activityBus;
+        _specManager = specManager;
         _logger = logger;
     }
 
@@ -118,6 +121,9 @@ public sealed class AgentOrchestrator
 
         _logger.LogInformation("Conversation round for room {RoomId}", roomId);
 
+        // Load spec context once for all prompts in this round
+        var specContext = _specManager.LoadSpecContext();
+
         var planner = FindPlanner(runtime);
         var agentsToRun = new List<AgentDefinition>();
 
@@ -129,7 +135,7 @@ public sealed class AgentOrchestrator
             try
             {
                 var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
-                var prompt = BuildConversationPrompt(planner, freshRoom)
+                var prompt = BuildConversationPrompt(planner, freshRoom, specContext)
                     + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                     + "by name if they should respond (e.g., '@Archimedes should review').\n"
                     + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -188,7 +194,7 @@ public sealed class AgentOrchestrator
             var response = "";
             try
             {
-                var prompt = BuildConversationPrompt(agent, currentRoom);
+                var prompt = BuildConversationPrompt(agent, currentRoom, specContext);
                 response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
             }
             catch (Exception ex)
@@ -428,7 +434,8 @@ public sealed class AgentOrchestrator
         {
             var room = await runtime.GetRoomAsync(parentRoomId);
             if (room is null) return null;
-            var prompt = BuildReviewPrompt(reviewer, presentingAgent.Name, workReport);
+            var prompt = BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
+                _specManager.LoadSpecContext());
             reviewResponse = await RunAgentWithTimeoutAsync(reviewer, prompt, parentRoomId, McTimeout);
         }
         catch (Exception ex)
@@ -664,7 +671,7 @@ public sealed class AgentOrchestrator
 
     // ── PROMPT BUILDERS ─────────────────────────────────────────
 
-    private static string BuildConversationPrompt(AgentDefinition agent, RoomSnapshot room)
+    private static string BuildConversationPrompt(AgentDefinition agent, RoomSnapshot room, string? specContext)
     {
         var lines = new List<string> { agent.StartupPrompt, "" };
         lines.Add("=== CURRENT ROOM CONTEXT ===");
@@ -680,7 +687,6 @@ public sealed class AgentOrchestrator
                 lines.Add($"Success criteria: {room.ActiveTask.SuccessCriteria}");
         }
 
-        var specContext = LoadSpecContext();
         if (specContext is not null)
         {
             lines.Add("");
@@ -749,7 +755,8 @@ public sealed class AgentOrchestrator
         return string.Join("\n", lines);
     }
 
-    private static string BuildReviewPrompt(AgentDefinition reviewer, string agentName, string workReport)
+    private static string BuildReviewPrompt(
+        AgentDefinition reviewer, string agentName, string workReport, string? specContext)
     {
         var lines = new List<string> { reviewer.StartupPrompt, "" };
         lines.Add("=== REVIEW REQUEST ===");
@@ -758,7 +765,6 @@ public sealed class AgentOrchestrator
         lines.Add("=== WORK REPORT ===");
         lines.Add(workReport);
 
-        var specContext = LoadSpecContext();
         if (specContext is not null)
         {
             lines.Add("");
@@ -830,46 +836,6 @@ public sealed class AgentOrchestrator
                 Regex.IsMatch(trimmed, @"^N/A$", RegexOptions.IgnoreCase) ||
                 trimmed == "No comment." ||
                 trimmed == "Nothing to add.");
-    }
-
-    /// <summary>
-    /// Loads a summary of the project specification from the specs/ directory.
-    /// Returns a condensed index of spec sections, or null if no specs exist.
-    /// </summary>
-    internal static string? LoadSpecContext()
-    {
-        var specsDir = Path.Combine(Directory.GetCurrentDirectory(), "specs");
-        if (!Directory.Exists(specsDir)) return null;
-
-        try
-        {
-            var sections = new List<string>();
-
-            foreach (var dir in Directory.GetDirectories(specsDir))
-            {
-                var dirName = Path.GetFileName(dir);
-                var specFile = Path.Combine(dir, "spec.md");
-                if (!File.Exists(specFile)) continue;
-
-                var content = File.ReadAllText(specFile);
-                var headingMatch = Regex.Match(content, @"^#\s+(.+)", RegexOptions.Multiline);
-                var heading = headingMatch.Success ? headingMatch.Groups[1].Value : dirName;
-
-                var purposeMatch = Regex.Match(content, @"## Purpose\s*\n([\s\S]*?)(?=\n##|\n$)");
-                var summary = purposeMatch.Success
-                    ? purposeMatch.Groups[1].Value.Trim().Split('\n')[0]
-                    : "";
-
-                sections.Add($"- specs/{dirName}/spec.md: {heading}" +
-                    (string.IsNullOrEmpty(summary) ? "" : $" — {summary}"));
-            }
-
-            return sections.Count == 0 ? null : string.Join("\n", sections);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static string BuildTaskBrief(AgentDefinition agent, List<TaskItem> tasks)

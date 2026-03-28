@@ -28,6 +28,12 @@ builder.Services.AddScoped<WorkspaceRuntime>();
 // if the Copilot CLI is not available.
 builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
+// Spec manager (singleton — reads specs/ directory for prompt injection)
+builder.Services.AddSingleton<SpecManager>();
+
+// Project scanner (singleton — stateless directory scanner)
+builder.Services.AddSingleton<ProjectScanner>();
+
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)
 builder.Services.AddSingleton<AgentOrchestrator>();
 
