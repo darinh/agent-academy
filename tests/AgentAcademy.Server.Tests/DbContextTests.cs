@@ -287,4 +287,102 @@ public class DbContextTests : IDisposable
         Assert.Contains("idx_activity_room", indexes);
         Assert.Contains("idx_activity_time", indexes);
     }
+
+    [Fact]
+    public void Schema_CreatesNotificationConfigsTable()
+    {
+        var tables = _db.Database
+            .SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != '__EFMigrationsHistory' ORDER BY name")
+            .ToList();
+
+        Assert.Contains("notification_configs", tables);
+    }
+
+    [Fact]
+    public void CanInsertAndQueryNotificationConfig()
+    {
+        _db.NotificationConfigs.Add(new NotificationConfigEntity
+        {
+            ProviderId = "discord",
+            Key = "bot_token",
+            Value = "test-token-value",
+            UpdatedAt = DateTime.UtcNow
+        });
+        _db.SaveChanges();
+
+        var loaded = _db.NotificationConfigs
+            .FirstOrDefault(c => c.ProviderId == "discord" && c.Key == "bot_token");
+
+        Assert.NotNull(loaded);
+        Assert.Equal("test-token-value", loaded.Value);
+    }
+
+    [Fact]
+    public void NotificationConfig_EnforcesUniqueProviderKey()
+    {
+        _db.NotificationConfigs.Add(new NotificationConfigEntity
+        {
+            ProviderId = "discord",
+            Key = "channel_id",
+            Value = "123",
+            UpdatedAt = DateTime.UtcNow
+        });
+        _db.SaveChanges();
+
+        _db.NotificationConfigs.Add(new NotificationConfigEntity
+        {
+            ProviderId = "discord",
+            Key = "channel_id",
+            Value = "456",
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        Assert.ThrowsAny<Exception>(() => _db.SaveChanges());
+    }
+
+    [Fact]
+    public void NotificationConfig_AllowsSameKeyDifferentProvider()
+    {
+        _db.NotificationConfigs.Add(new NotificationConfigEntity
+        {
+            ProviderId = "discord",
+            Key = "channel_id",
+            Value = "123",
+            UpdatedAt = DateTime.UtcNow
+        });
+        _db.NotificationConfigs.Add(new NotificationConfigEntity
+        {
+            ProviderId = "slack",
+            Key = "channel_id",
+            Value = "456",
+            UpdatedAt = DateTime.UtcNow
+        });
+        _db.SaveChanges();
+
+        var configs = _db.NotificationConfigs.Where(c => c.Key == "channel_id").ToList();
+        Assert.Equal(2, configs.Count);
+    }
+
+    [Fact]
+    public void NotificationConfig_CanGroupByProvider()
+    {
+        _db.NotificationConfigs.AddRange(
+            new NotificationConfigEntity { ProviderId = "discord", Key = "bot_token", Value = "tok", UpdatedAt = DateTime.UtcNow },
+            new NotificationConfigEntity { ProviderId = "discord", Key = "channel_id", Value = "ch1", UpdatedAt = DateTime.UtcNow },
+            new NotificationConfigEntity { ProviderId = "discord", Key = "guild_id", Value = "g1", UpdatedAt = DateTime.UtcNow }
+        );
+        _db.SaveChanges();
+
+        var groups = _db.NotificationConfigs
+            .GroupBy(c => c.ProviderId)
+            .ToList();
+
+        Assert.Single(groups);
+        Assert.Equal(3, groups[0].Count());
+
+        var dict = groups[0].ToDictionary(c => c.Key, c => c.Value);
+        Assert.Equal("tok", dict["bot_token"]);
+        Assert.Equal("ch1", dict["channel_id"]);
+        Assert.Equal("g1", dict["guild_id"]);
+    }
 }

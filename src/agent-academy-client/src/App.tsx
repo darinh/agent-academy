@@ -16,6 +16,7 @@ import {
   GridRegular,
   BoardRegular,
   TaskListLtrRegular,
+  SettingsRegular,
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
@@ -31,6 +32,7 @@ import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
 import TaskListPanel from "./TaskListPanel";
 import LoginPage from "./LoginPage";
 import UserBadge from "./UserBadge";
+import NotificationSetupWizard from "./NotificationSetupWizard";
 
 export default function App() {
   return (
@@ -345,6 +347,7 @@ function AppShell() {
                   <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
                   <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
                   <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
+                  <Tab value="settings" icon={<SettingsRegular />}>Settings</Tab>
                 </TabList>
               </div>
 
@@ -376,6 +379,9 @@ function AppShell() {
                     onPhaseTransition={wrappedPhaseTransition}
                     transitioning={phaseTransitioning}
                   />
+                )}
+                {tab === "settings" && (
+                  <NotificationSetupWizard inline />
                 )}
               </section>
             </>)}

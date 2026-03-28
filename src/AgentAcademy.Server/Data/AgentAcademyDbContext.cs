@@ -26,6 +26,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
     public DbSet<CommandAuditEntity> CommandAudits => Set<CommandAuditEntity>();
     public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
+    public DbSet<NotificationConfigEntity> NotificationConfigs => Set<NotificationConfigEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -237,6 +238,21 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_agent_memories_agent");
             entity.HasIndex(e => e.Category).HasDatabaseName("idx_agent_memories_category");
+        });
+
+        // ── Notification Configs ────────────────────────────
+        modelBuilder.Entity<NotificationConfigEntity>(entity =>
+        {
+            entity.ToTable("notification_configs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ProviderId).IsRequired();
+            entity.Property(e => e.Key).IsRequired();
+            entity.Property(e => e.Value).IsRequired();
+            entity.Property(e => e.UpdatedAt).IsRequired();
+
+            entity.HasIndex(e => new { e.ProviderId, e.Key })
+                .IsUnique()
+                .HasDatabaseName("idx_notification_configs_provider_key");
         });
     }
 }

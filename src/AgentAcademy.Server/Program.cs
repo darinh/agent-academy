@@ -168,6 +168,9 @@ builder.Services.AddSingleton<DiscordNotificationProvider>();
 // SignalR hub broadcaster (hosted service — bridges ActivityBroadcaster → SignalR)
 builder.Services.AddHostedService<ActivityHubBroadcaster>();
 
+// Notification broadcaster (hosted service — bridges ActivityBroadcaster → NotificationManager)
+builder.Services.AddHostedService<ActivityNotificationBroadcaster>();
+
 var app = builder.Build();
 
 // Auto-migrate database on startup
@@ -188,6 +191,40 @@ notificationManager.RegisterProvider(consoleProvider);
 
 var discordProvider = app.Services.GetRequiredService<DiscordNotificationProvider>();
 notificationManager.RegisterProvider(discordProvider);
+
+// Auto-restore saved notification provider configs from DB (non-blocking)
+_ = Task.Run(async () =>
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    var savedConfigs = db.NotificationConfigs
+        .GroupBy(c => c.ProviderId)
+        .ToList();
+
+    foreach (var group in savedConfigs)
+    {
+        var provider = notificationManager.GetProvider(group.Key);
+        if (provider is null)
+            continue;
+
+        var config = group.ToDictionary(c => c.Key, c => c.Value);
+
+        try
+        {
+            await provider.ConfigureAsync(config);
+            await provider.ConnectAsync();
+            logger.LogInformation("Auto-restored notification provider '{ProviderId}' from saved config",
+                group.Key);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to auto-restore notification provider '{ProviderId}'",
+                group.Key);
+        }
+    }
+});
 
 if (app.Environment.IsDevelopment())
 {

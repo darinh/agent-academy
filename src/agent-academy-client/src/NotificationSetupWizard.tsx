@@ -34,14 +34,16 @@ const BOT_PERMISSIONS = (
 
 interface Props {
   /** Called when the user closes or completes the wizard. */
-  onClose: () => void;
+  onClose?: () => void;
+  /** When true, renders as inline content without the overlay backdrop. */
+  inline?: boolean;
 }
 
 type ConnectionStatus = "idle" | "loading" | "success" | "error";
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export default function NotificationSetupWizard({ onClose }: Props) {
+export default function NotificationSetupWizard({ onClose, inline }: Props) {
   const [step, setStep] = useState(1);
 
   // Step 1
@@ -120,9 +122,10 @@ export default function NotificationSetupWizard({ onClose }: Props) {
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  return (
-    <div className="wizard-overlay" onClick={onClose}>
-      <div className="wizard-panel" onClick={(e) => e.stopPropagation()}>
+  const handleClose = onClose ?? (() => {});
+
+  const panel = (
+    <div className={inline ? "wizard-panel wizard-panel--inline" : "wizard-panel"} onClick={(e) => e.stopPropagation()}>
         {/* Step indicator */}
         <div className="wizard-steps">
           {Array.from({ length: TOTAL_STEPS }, (_, i) => (
@@ -342,21 +345,32 @@ export default function NotificationSetupWizard({ onClose }: Props) {
             </Button>
           )}
 
-          {step === 4 && (
+          {step === 4 && onClose && (
             <Button
               appearance="primary"
               disabled={connectStatus !== "success"}
-              onClick={onClose}
+              onClick={handleClose}
             >
               Done
             </Button>
           )}
 
-          <Button appearance="subtle" onClick={onClose}>
-            Cancel
-          </Button>
+          {onClose && (
+            <Button appearance="subtle" onClick={handleClose}>
+              Cancel
+            </Button>
+          )}
         </div>
       </div>
+  );
+
+  if (inline) {
+    return panel;
+  }
+
+  return (
+    <div className="wizard-overlay" onClick={handleClose}>
+      {panel}
     </div>
   );
 }

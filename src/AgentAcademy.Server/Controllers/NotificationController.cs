@@ -1,6 +1,9 @@
+using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -12,11 +15,13 @@ namespace AgentAcademy.Server.Controllers;
 public class NotificationController : ControllerBase
 {
     private readonly NotificationManager _manager;
+    private readonly AgentAcademyDbContext _db;
     private readonly ILogger<NotificationController> _logger;
 
-    public NotificationController(NotificationManager manager, ILogger<NotificationController> logger)
+    public NotificationController(NotificationManager manager, AgentAcademyDbContext db, ILogger<NotificationController> logger)
     {
         _manager = manager;
+        _db = db;
         _logger = logger;
     }
 
@@ -72,6 +77,18 @@ public class NotificationController : ControllerBase
         try
         {
             await provider.ConfigureAsync(configuration, cancellationToken);
+
+            // Persist config to DB for auto-restore on restart (atomic upsert)
+            var now = DateTime.UtcNow;
+            foreach (var (key, value) in configuration)
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO notification_configs (ProviderId, [Key], Value, UpdatedAt)
+                      VALUES ({0}, {1}, {2}, {3})
+                      ON CONFLICT(ProviderId, [Key]) DO UPDATE SET Value = {2}, UpdatedAt = {3}",
+                    [id, key, value, now],
+                    cancellationToken);
+            }
             return Ok(new { status = "configured", providerId = id });
         }
         catch (Exception ex)
