@@ -18,6 +18,7 @@ import {
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
+import { getActiveWorkspace, switchWorkspace } from "./api";
 import type { OnboardResult, WorkspaceMeta } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
@@ -52,29 +53,52 @@ function AppShell() {
     handleRoomSelect,
     handleManualRefresh,
     handleToggleSidebar,
-    handleTaskSubmit,
     handleSendMessage,
     handlePhaseTransition,
   } = useWorkspace();
 
   const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
-  const [showProjectSelector, setShowProjectSelector] = useState(true);
+  const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [phaseTransitioning, setPhaseTransitioning] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState("");
 
-  // If overview loads successfully, we have a workspace
+  // On mount, check for active workspace — gate UI on this check
   useEffect(() => {
-    if (ov.rooms.length > 0 || ov.configuredAgents.length > 0) {
-      setShowProjectSelector(false);
-    }
-  }, [ov.rooms.length, ov.configuredAgents.length]);
+    getActiveWorkspace()
+      .then((data) => {
+        if (data.active) {
+          setWorkspace(data.active);
+        } else {
+          setShowProjectSelector(true);
+        }
+      })
+      .catch(() => {
+        setShowProjectSelector(true);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
   const handleProjectSelected = useCallback(
-    (workspacePath: string) => {
-      setWorkspace({ path: workspacePath, projectName: workspacePath.split("/").pop() });
-      setShowProjectSelector(false);
-      handleManualRefresh();
+    async (workspacePath: string) => {
+      if (switching) return;
+      setSwitching(true);
+      setSwitchError("");
+      try {
+        const ws = await switchWorkspace(workspacePath);
+        setWorkspace(ws);
+        setShowProjectSelector(false);
+        handleManualRefresh();
+      } catch (e) {
+        setSwitchError(e instanceof Error ? e.message : "Failed to switch workspace");
+      } finally {
+        setSwitching(false);
+      }
     },
-    [handleManualRefresh],
+    [handleManualRefresh, switching],
   );
 
   const handleProjectOnboarded = useCallback(
@@ -103,14 +127,18 @@ function AppShell() {
       : `${roomName} | Agent Academy`;
   }, [room?.name, room?.currentPhase]);
 
+  if (loading) {
+    return <div className={s.root} />;
+  }
+
   return (
     <div className={s.root}>
-      {err && (
+      {(err || switchError) && (
         <div className={s.errorBar}>
           <MessageBar intent="error">
             <MessageBarBody>
               <MessageBarTitle>Error</MessageBarTitle>
-              {err}
+              {err || switchError}
             </MessageBarBody>
           </MessageBar>
         </div>
@@ -132,7 +160,6 @@ function AppShell() {
             onRefresh={handleManualRefresh}
             onToggleSidebar={handleToggleSidebar}
             onSelectRoom={handleRoomSelect}
-            onSubmitTask={handleTaskSubmit}
             workspace={
               workspace
                 ? { name: workspace.projectName ?? workspace.path, path: workspace.path }

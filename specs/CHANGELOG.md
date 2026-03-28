@@ -5,6 +5,25 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **300-frontend-ui**: Frontend UI spec — component architecture, state management, API contracts, onboarding flow, theme/layout
+
+### Fixed
+- **300-frontend-ui**: Fixed critical frontend integration issues from parallel development:
+  - `listWorkspaces()` stub replaced with actual `GET /api/workspaces` call
+  - Added `getActiveWorkspace()` and `switchWorkspace()` API wrappers
+  - Fixed `BrowseResult`/`DirectoryEntry` types to match server contract (`current`/`isDirectory` vs `path`/`type`)
+  - Workspace UI now gated behind explicit `getActiveWorkspace()` check instead of overview heuristic
+  - `handleProjectSelected()` now calls `PUT /api/workspace` to activate on server
+  - Added "Switch Project" button to sidebar
+  - Removed TaskComposer from sidebar (tasks go through chat input)
+  - Updated role colors to match v1 palette (Planner=#b794ff, Architect=#ffbe70, etc.)
+  - Added `TechnicalWriter` role to theme
+  - Fixed viewport layout (removed `width: 1126px` constraint from index.css)
+  - Removed unused App.css (Vite starter template)
+  - Cleaned up dead exports from useWorkspace.ts
+  - Improved onboard dialog messaging (differentiates existing specs vs auto-generation)
+
+### Added
 - **006-orchestrator**: Agent orchestrator — multi-agent conversation lifecycle manager (Implemented)
   - `AgentOrchestrator` singleton: queue-based processing, conversation rounds, breakout rooms, review cycles
   - Ported from v1 TypeScript `CollaborationOrchestrator` with C# async/await patterns

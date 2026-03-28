@@ -300,7 +300,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
 
   const handleSelectBrowsedDir = useCallback(() => {
     if (browseResult) {
-      const selectedPath = browseResult.path;
+      const selectedPath = browseResult.current;
       setDirPath(selectedPath);
       setBrowsing(false);
       setBrowseResult(null);
@@ -374,11 +374,11 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
         <div className={classes.browserWrap}>
           <div className={classes.browserHeader}>
             <span style={{ fontWeight: 600, color: "#6cb6ff" }}>\ud83d\udcc1</span>
-            <span style={{ flex: 1 }}>{browseResult.path}</span>
+            <span style={{ flex: 1 }}>{browseResult.current}</span>
           </div>
           <div className={classes.browserList}>
             {browseResult.entries
-              .filter((e) => e.type === "directory")
+              .filter((e) => e.isDirectory)
               .map((entry) => (
                 <button
                   key={entry.path}
@@ -463,12 +463,23 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                       </div>
                     )}
                     <div className={classes.dialogSpecNote}>
-                      <span className={classes.dialogSpecIcon}>\ud83d\udcdd</span>
+                      <span className={classes.dialogSpecIcon}>{scanResult.hasSpecs ? "\u2705" : "\ud83d\udcdd"}</span>
                       <div>
-                        <Body1Strong>The agent team will analyze this codebase.</Body1Strong>
-                        <Body1 style={{ display: "block", color: "#a1b3d2", marginTop: "4px" }}>
-                          A project specification will be generated for review.
-                        </Body1>
+                        {scanResult.hasSpecs ? (
+                          <>
+                            <Body1Strong>Existing specification found.</Body1Strong>
+                            <Body1 style={{ display: "block", color: "#a1b3d2", marginTop: "4px" }}>
+                              The agent team will use the existing specs/ directory.
+                            </Body1>
+                          </>
+                        ) : (
+                          <>
+                            <Body1Strong>No specification found — one will be generated automatically.</Body1Strong>
+                            <Body1 style={{ display: "block", color: "#a1b3d2", marginTop: "4px" }}>
+                              The agent team will analyze this codebase and create a project specification for review.
+                            </Body1>
+                          </>
+                        )}
                       </div>
                     </div>
                     {onboardError && <div className={classes.dialogError}>{onboardError}</div>}

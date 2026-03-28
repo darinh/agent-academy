@@ -194,12 +194,13 @@ export interface TaskAssignmentResult {
 
 export interface DirectoryEntry {
   name: string;
-  type: "directory" | "file";
   path: string;
+  isDirectory: boolean;
 }
 
 export interface BrowseResult {
-  path: string;
+  current: string;
+  parent: string | null;
   entries: DirectoryEntry[];
 }
 
@@ -312,8 +313,27 @@ export function deletePlan(roomId: string): Promise<void> {
 
 // ── Workspace / Project ────────────────────────────────────────────────
 
+export function getActiveWorkspace(): Promise<{ active: WorkspaceMeta | null; dataDir: string | null }> {
+  return fetch(apiUrl("/api/workspace"))
+    .then(async (res) => {
+      if (!res.ok) return { active: null, dataDir: null };
+      return (await res.json()) as { active: WorkspaceMeta | null; dataDir: string | null };
+    });
+}
+
 export function listWorkspaces(): Promise<WorkspaceMeta[]> {
-  return Promise.resolve([]);
+  return fetch(apiUrl("/api/workspaces"))
+    .then(async (res) => {
+      if (!res.ok) return [];
+      return (await res.json()) as WorkspaceMeta[];
+    });
+}
+
+export function switchWorkspace(wsPath: string): Promise<WorkspaceMeta> {
+  return request<WorkspaceMeta>(apiUrl("/api/workspace"), {
+    method: "PUT",
+    body: JSON.stringify({ path: wsPath }),
+  });
 }
 
 export function scanProject(dirPath: string): Promise<ProjectScanResult> {

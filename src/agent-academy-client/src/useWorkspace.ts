@@ -25,7 +25,6 @@ export interface TaskDraft {
 }
 
 const BACKGROUND_POLL_MS = 30_000;
-const EVENT_REFRESH_DEBOUNCE_MS = 1_000;
 
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
@@ -57,7 +56,7 @@ export function useWorkspace() {
   const [busy, setBusy] = useState(true);
   const [tab, setTabRaw] = useState<string>(loadTab);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
-  const [thinkingAgents, setThinkingAgents] = useState<Map<string, { name: string; role: string }>>(new Map());
+  const [thinkingAgents] = useState<Map<string, { name: string; role: string }>>(new Map());
 
   const setTab = useCallback((value: string) => {
     setTabRaw(value);
@@ -113,13 +112,6 @@ export function useWorkspace() {
       if (showBusy) setBusy(false);
     }
   }, []);
-
-  const scheduleRefresh = useCallback(() => {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    refreshTimer.current = setTimeout(() => {
-      void refresh({ showBusy: false });
-    }, EVENT_REFRESH_DEBOUNCE_MS);
-  }, [refresh]);
 
   useEffect(() => {
     void refresh();
@@ -220,7 +212,5 @@ export function useWorkspace() {
     handleToggleSidebar,
     handleTaskSubmit,
     handleSendMessage,
-    scheduleRefresh,
-    setThinkingAgents,
   };
 }

@@ -1,17 +1,13 @@
-import { memo, useState, useEffect } from "react";
-import type { FormEvent } from "react";
+import { memo } from "react";
 import {
   Button,
-  Field,
-  Input,
   mergeClasses,
   Spinner,
-  Textarea,
 } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { initials } from "./utils";
+import { roleColor } from "./theme";
 import type { AgentPresence, RoomSnapshot } from "./api";
-import type { TaskDraft } from "./useWorkspace";
 
 const PHASE_DOT_COLORS: Record<string, string> = {
   Intake: "#94a3b8",
@@ -21,78 +17,6 @@ const PHASE_DOT_COLORS: Record<string, string> = {
   Validation: "#fbbf24",
   FinalSynthesis: "#f472b6",
 };
-
-/* ── Task Composer ───────────────────────────────────────────────── */
-
-const TaskComposer = memo(function TaskComposer(props: {
-  room: RoomSnapshot | null;
-  onSubmitTask: (draft: TaskDraft) => Promise<boolean>;
-}) {
-  const s = useStyles();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [successCriteria, setSuccessCriteria] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    setTitle("");
-    setDescription("");
-    setSuccessCriteria("");
-  }, [props.room?.id]);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const created = await props.onSubmitTask({
-        title,
-        description,
-        successCriteria,
-        roomId: props.room?.id,
-      });
-      if (created) {
-        setTitle("");
-        setDescription("");
-        setSuccessCriteria("");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className={s.taskCard}>
-      <div className={s.taskCardTitle}>Start a new task</div>
-      <form className={s.form} onSubmit={(e) => void handleSubmit(e)}>
-        <Field label="Title" required size="small">
-          <Input className={s.fieldInput} value={title} onChange={(_, d) => setTitle(d.value)} />
-        </Field>
-        <Field label="Description" required size="small">
-          <Textarea
-            className={s.fieldInput}
-            value={description}
-            onChange={(_, d) => setDescription(d.value)}
-            resize="vertical"
-            rows={3}
-          />
-        </Field>
-        <Field label="Success criteria" size="small">
-          <Textarea
-            className={s.fieldInput}
-            value={successCriteria}
-            onChange={(_, d) => setSuccessCriteria(d.value)}
-            resize="vertical"
-            rows={2}
-          />
-        </Field>
-        <Button appearance="primary" type="submit" disabled={submitting}>
-          {submitting ? "Submitting…" : props.room?.activeTask ? "Replace task" : props.room ? "Assign in room" : "Create room"}
-        </Button>
-      </form>
-    </div>
-  );
-});
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */
 
@@ -105,7 +29,6 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onRefresh: () => void;
   onToggleSidebar: () => void;
   onSelectRoom: (roomId: string) => void;
-  onSubmitTask: (draft: TaskDraft) => Promise<boolean>;
   onSwitchProject?: () => void;
   workspace?: { name: string; path: string } | null;
 }) {
@@ -172,13 +95,18 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                 <span className={s.sidebarRoomDot} style={{ backgroundColor: phaseDotColor }} />
                 <span>{props.room.name}</span>
               </div>
-              {props.roster.map((agent) => (
-                <div key={agent.agentId} className={s.agentListItem}>
-                  <span className={s.agentStateDot} style={{ backgroundColor: "#34d399" }} />
-                  <span>{agent.name}</span>
-                  {agent.role && <span style={{ color: "#7c90b2", fontSize: "11px" }}>· {agent.role}</span>}
-                </div>
-              ))}
+              {props.roster.map((agent) => {
+                const rc = roleColor(agent.role);
+                return (
+                  <div key={agent.agentId} className={s.agentListItem}>
+                    <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
+                    <span>{agent.name}</span>
+                    {agent.role && (
+                      <span style={{ color: rc.accent, fontSize: "11px" }}>· {agent.role}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -210,9 +138,18 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             </section>
           )}
 
-          <section className={s.section}>
-            <TaskComposer room={props.room} onSubmitTask={props.onSubmitTask} />
-          </section>
+          {props.onSwitchProject && (
+            <section className={s.section}>
+              <Button
+                appearance="subtle"
+                size="small"
+                onClick={props.onSwitchProject}
+                style={{ width: "100%", justifyContent: "flex-start", gap: "8px" }}
+              >
+                ⇄ Switch Project
+              </Button>
+            </section>
+          )}
         </div>
       ) : (
         <div className={s.compactSidebar}>
