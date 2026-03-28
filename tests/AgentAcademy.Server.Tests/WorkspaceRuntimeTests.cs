@@ -486,6 +486,11 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.NotNull(loc);
         Assert.Equal(AgentState.Working, loc.State);
         Assert.Equal(breakout.Id, loc.BreakoutRoomId);
+
+        // Agent in breakout should NOT appear in parent room participants
+        var room = await _runtime.GetRoomAsync("main");
+        Assert.NotNull(room);
+        Assert.DoesNotContain(room.Participants, p => p.AgentId == "engineer-1");
     }
 
     [Fact]
@@ -504,9 +509,14 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Equal(AgentState.Idle, loc.State);
         Assert.Null(loc.BreakoutRoomId);
 
-        // Breakout room should be removed
+        // Breakout room should be archived (not visible in active list)
         var breakouts = await _runtime.GetBreakoutRoomsAsync("main");
         Assert.Empty(breakouts);
+
+        // But still retrievable by ID (soft-deleted, not hard-deleted)
+        var archived = await _runtime.GetBreakoutRoomAsync(breakout.Id);
+        Assert.NotNull(archived);
+        Assert.Equal(RoomStatus.Archived, archived.Status);
     }
 
     [Fact]

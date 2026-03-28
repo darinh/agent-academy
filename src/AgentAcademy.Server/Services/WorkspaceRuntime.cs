@@ -756,17 +756,15 @@ public sealed class WorkspaceRuntime
         var entity = await _db.BreakoutRooms.FindAsync(breakoutId)
             ?? throw new InvalidOperationException($"Breakout room '{breakoutId}' not found");
 
+        if (entity.Status != nameof(RoomStatus.Active))
+            return; // Already archived — no-op to prevent corrupting agent state
+
         // Move agent back to idle in parent room
         await MoveAgentAsync(entity.AssignedAgentId, entity.ParentRoomId, AgentState.Idle);
 
-        // Remove breakout messages
-        var messages = await _db.BreakoutMessages
-            .Where(m => m.BreakoutRoomId == breakoutId)
-            .ToListAsync();
-        _db.BreakoutMessages.RemoveRange(messages);
-
-        // Remove breakout room
-        _db.BreakoutRooms.Remove(entity);
+        // Soft-delete: archive instead of removing (preserves messages for history)
+        entity.Status = nameof(RoomStatus.Archived);
+        entity.UpdatedAt = DateTime.UtcNow;
 
         Publish(ActivityEventType.RoomClosed, entity.ParentRoomId, entity.AssignedAgentId, null,
             $"Breakout room closed: {entity.Name}");
@@ -793,7 +791,7 @@ public sealed class WorkspaceRuntime
     {
         var entities = await _db.BreakoutRooms
             .Include(br => br.Messages)
-            .Where(br => br.ParentRoomId == parentRoomId)
+            .Where(br => br.ParentRoomId == parentRoomId && br.Status == nameof(RoomStatus.Active))
             .ToListAsync();
 
         return entities.Select(BuildBreakoutRoomSnapshot).ToList();
@@ -974,7 +972,7 @@ public sealed class WorkspaceRuntime
         var agentMap = _catalog.Agents.ToDictionary(a => a.Id);
 
         return locations
-            .Where(l => agentMap.ContainsKey(l.AgentId))
+            .Where(l => agentMap.ContainsKey(l.AgentId) && l.BreakoutRoomId is null)
             .Select(l =>
             {
                 var a = agentMap[l.AgentId];
@@ -1087,6 +1085,7 @@ public sealed class WorkspaceRuntime
     {
         var entities = await _db.BreakoutRooms
             .Include(br => br.Messages)
+            .Where(br => br.Status == nameof(RoomStatus.Active))
             .ToListAsync();
         return entities.Select(BuildBreakoutRoomSnapshot).ToList();
     }
@@ -1167,6 +1166,9 @@ public sealed class WorkspaceRuntime
     {
         var br = await _db.BreakoutRooms.FindAsync(breakoutRoomId)
             ?? throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' not found");
+
+        if (br.Status != nameof(RoomStatus.Active))
+            throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' is archived");
 
         var now = DateTime.UtcNow;
         var entity = new BreakoutMessageEntity
