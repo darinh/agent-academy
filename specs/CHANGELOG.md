@@ -5,6 +5,12 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **010-task-management (Phases 1-3)**: Task model extension, API endpoints, and frontend task list
+  - Phase 1: Fixed auto-spec task creation on onboard when `!hasSpecs`
+  - Phase 2: Extended TaskSnapshot/TaskEntity with 15 new fields; TaskSize, PullRequestStatus enums; AgentGitIdentity; EF migration; 7 API endpoints; InProgressStatuses for room queries
+  - Phase 3: TaskListPanel component with status grouping, collapsible completed, URL-safe PR links
+
+### Added
 - **010-task-management**: Task management & Git workflow spec — task lifecycle, agent identity, branch/PR workflow, Socrates review pipeline, GitHub integration, frontend task list panel (Planned)
 
 ### Added
