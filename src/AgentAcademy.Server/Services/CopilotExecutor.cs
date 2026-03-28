@@ -29,6 +29,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly ILogger<StubExecutor> _stubLogger;
     private readonly CopilotTokenProvider _tokenProvider;
     private readonly string? _configToken;
+    private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
     private readonly SemaphoreSlim _clientLock = new(1, 1);
@@ -48,6 +49,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _logger = logger;
         _stubLogger = stubLogger;
         _configToken = configuration["Copilot:GitHubToken"];
+        _cliPath = configuration["Copilot:CliPath"];
         _tokenProvider = tokenProvider;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
@@ -208,13 +210,15 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             _activeToken = token;
 
             var hasToken = !string.IsNullOrWhiteSpace(token);
+            var hasCliPath = !string.IsNullOrWhiteSpace(_cliPath);
             _logger.LogInformation(
-                "Starting CopilotClient (token source: {Source})...",
-                DescribeTokenSource(token));
+                "Starting CopilotClient (token source: {Source}, CLI: {Cli})...",
+                DescribeTokenSource(token),
+                hasCliPath ? _cliPath : "bundled");
 
-            var options = hasToken
-                ? new CopilotClientOptions { GitHubToken = token }
-                : null;
+            var options = new CopilotClientOptions();
+            if (hasToken) options.GitHubToken = token;
+            if (hasCliPath) options.CliPath = _cliPath;
             var client = new CopilotClient(options);
             await client.StartAsync();
             _client = client;
