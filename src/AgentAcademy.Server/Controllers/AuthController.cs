@@ -66,15 +66,13 @@ public class AuthController : ControllerBase
     /// Redirects the browser to GitHub's authorization page.
     /// </summary>
     [HttpGet("login")]
-    public IActionResult Login([FromQuery] string? returnUrl = "/")
+    public IActionResult Login()
     {
         if (!_authOptions.Enabled)
             return BadRequest(new { error = "GitHub authentication is not configured." });
 
-        // Prevent open redirect attacks — only allow local paths
-        var redirect = !string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl)
-            ? returnUrl
-            : "/";
+        // After OAuth completes on the backend, redirect to the frontend app
+        var redirect = _authOptions.FrontendUrl.TrimEnd('/') + "/";
 
         return Challenge(
             new AuthenticationProperties { RedirectUri = redirect },

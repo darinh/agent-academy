@@ -55,7 +55,7 @@ const useLocalStyles = makeStyles({
 export default function LoginPage() {
   const s = useLocalStyles();
 
-  const loginUrl = `${apiBaseUrl}/api/auth/login?returnUrl=/`;
+  const loginUrl = `${apiBaseUrl}/api/auth/login`;
 
   return (
     <div className={s.root}>

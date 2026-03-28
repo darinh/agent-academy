@@ -103,7 +103,8 @@ if (gitHubAuthEnabled)
 }
 
 // Flag for controllers to check
-builder.Services.AddSingleton(new GitHubAuthOptions(gitHubAuthEnabled));
+var gitHubFrontendUrl = builder.Configuration["GitHub:FrontendUrl"] ?? "http://localhost:5173";
+builder.Services.AddSingleton(new GitHubAuthOptions(gitHubAuthEnabled, gitHubFrontendUrl));
 
 // Database
 builder.Services.AddDbContext<AgentAcademyDbContext>(options =>
