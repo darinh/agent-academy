@@ -64,22 +64,36 @@ function AppShell() {
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
 
-  // On mount, check for active workspace — gate UI on this check
+  // On mount, check for active workspace — retry on failure (backend may still be starting)
   useEffect(() => {
-    getActiveWorkspace()
-      .then((data) => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    async function checkWorkspace(attempt: number) {
+      if (cancelled) return;
+      try {
+        const data = await getActiveWorkspace();
+        if (cancelled) return;
         if (data.active) {
           setWorkspace(data.active);
         } else {
           setShowProjectSelector(true);
         }
-      })
-      .catch(() => {
-        setShowProjectSelector(true);
-      })
-      .finally(() => {
         setLoading(false);
-      });
+      } catch {
+        if (cancelled) return;
+        if (attempt < 3) {
+          retryTimer = setTimeout(() => void checkWorkspace(attempt + 1), 2000);
+        } else {
+          setShowProjectSelector(true);
+          setLoading(false);
+        }
+      }
+    }
+    void checkWorkspace(0);
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   const handleProjectSelected = useCallback(

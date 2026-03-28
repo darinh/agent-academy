@@ -105,6 +105,7 @@ export function useWorkspace() {
       setRecentActivity((cur) =>
         sameActivityFeed(cur, next.recentActivity) ? cur : next.recentActivity,
       );
+      setErr("");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Load failed");
     } finally {

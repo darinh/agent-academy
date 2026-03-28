@@ -78,6 +78,7 @@ const useStyles = makeStyles({
     fontSize: "32px",
     fontWeight: 760,
     letterSpacing: "-0.03em",
+    lineHeight: "1.3",
     background: "linear-gradient(135deg, #6cb6ff, #b794ff)",
     WebkitBackgroundClip: "text",
     WebkitTextFillColor: "transparent",
@@ -346,7 +347,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
               <Button
                 appearance="transparent"
                 size="small"
-                icon={<span>\ud83d\udd0d</span>}
+                icon={<span>{"🔍"}</span>}
                 onClick={() => doScan(dirPath)}
                 disabled={scanning || !dirPath.trim()}
               />
@@ -373,7 +374,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
       {browsing && browseResult && (
         <div className={classes.browserWrap}>
           <div className={classes.browserHeader}>
-            <span style={{ fontWeight: 600, color: "#6cb6ff" }}>\ud83d\udcc1</span>
+            <span style={{ fontWeight: 600, color: "#6cb6ff" }}>{"📁"}</span>
             <span style={{ flex: 1 }}>{browseResult.current}</span>
           </div>
           <div className={classes.browserList}>
@@ -386,7 +387,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                   onClick={() => handleBrowse(entry.path)}
                   disabled={browseLoading}
                 >
-                  <span>\ud83d\udcc1</span>
+                  <span>{"📁"}</span>
                   <span>{entry.name}</span>
                 </button>
               ))}
@@ -436,7 +437,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
           <div className={classes.actionRow}>
             <Button
               appearance="primary"
-              icon={<span>\ud83d\ude80</span>}
+              icon={<span>{"🚀"}</span>}
               onClick={() => { setOnboardError(null); setDialogOpen(true); }}
             >
               Onboard Project
@@ -543,7 +544,7 @@ function CreateSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboard
       <div className={classes.actionRow}>
         <Button
           appearance="primary"
-          icon={creating ? <Spinner size="tiny" /> : <span>\u2795</span>}
+          icon={creating ? <Spinner size="tiny" /> : <span>{"➕"}</span>}
           onClick={handleCreate}
           disabled={!dirPath.trim() || creating}
         >
@@ -582,9 +583,9 @@ export default function ProjectSelectorPage({ onProjectSelected, onProjectOnboar
           selectedValue={tab}
           onTabSelect={(_, data) => setTab(data.value as SelectorTab)}
         >
-          <Tab value="existing" icon={<span>\ud83d\udcc2</span>}>Load Existing</Tab>
-          <Tab value="onboard" icon={<span>\ud83d\udd0d</span>}>Onboard Project</Tab>
-          <Tab value="create" icon={<span>\u2795</span>}>Create New</Tab>
+          <Tab value="existing" icon={<span>{"📂"}</span>}>Load Existing</Tab>
+          <Tab value="onboard" icon={<span>{"🔍"}</span>}>Onboard Project</Tab>
+          <Tab value="create" icon={<span>{"➕"}</span>}>Create New</Tab>
         </TabList>
 
         <div className={classes.panel}>
