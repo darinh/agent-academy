@@ -111,13 +111,15 @@ Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
 ```
 
 **OAuth Configuration** (in `Program.cs`):
-- `SaveTokens = false` — the token is captured in `OnCreatingTicket` via `CopilotTokenProvider.SetToken()`, not stored in the cookie
+- `SaveTokens = true` — the OAuth access token persists in the encrypted auth cookie, surviving server restarts
+- Token restoration middleware: on the first authenticated request after a server restart, extracts the token from the cookie and populates `CopilotTokenProvider`
 - Scopes: `read:user`, `user:email`
 - GitHub App credentials stored in user-secrets (`GitHub:ClientId`, `GitHub:ClientSecret`, `GitHub:AppId`)
 
 **Behavior**:
 - Before any user logs in: executor uses config token or env vars; falls back to `StubExecutor` if none available
 - After user logs in: OAuth token is captured → executor creates/recreates `CopilotClient` with user's token → agents produce real responses
+- On server restart: first authenticated request restores the token from the auth cookie via middleware — no re-login needed
 - On logout: token is cleared → executor falls back to config token or stub on next call
 
 ### Implementation: `StubExecutor`

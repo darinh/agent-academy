@@ -69,7 +69,7 @@ if (gitHubAuthEnabled)
         options.UserInformationEndpoint = "https://api.github.com/user";
         options.Scope.Add("read:user");
         options.Scope.Add("user:email");
-        options.SaveTokens = false;
+        options.SaveTokens = true;
         options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
         options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
@@ -187,6 +187,22 @@ if (gitHubAuthEnabled)
 {
     app.UseAuthentication();
     app.UseAuthorization();
+
+    // Restore the Copilot SDK token from the auth cookie on the first
+    // authenticated request after a server restart. Without this, the
+    // user would need to log out and back in every time the server restarts.
+    var tokenProvider = app.Services.GetRequiredService<CopilotTokenProvider>();
+    app.Use(async (context, next) =>
+    {
+        if (tokenProvider.Token is null
+            && context.User.Identity?.IsAuthenticated == true)
+        {
+            var accessToken = await context.GetTokenAsync("access_token");
+            if (!string.IsNullOrEmpty(accessToken))
+                tokenProvider.SetToken(accessToken);
+        }
+        await next();
+    });
 }
 
 app.MapControllers();
