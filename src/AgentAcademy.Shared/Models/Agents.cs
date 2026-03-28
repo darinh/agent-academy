@@ -1,6 +1,14 @@
 namespace AgentAcademy.Shared.Models;
 
 /// <summary>
+/// Git identity for agent commit attribution.
+/// </summary>
+public record AgentGitIdentity(
+    string AuthorName,
+    string AuthorEmail
+);
+
+/// <summary>
 /// Defines an agent's identity, capabilities, and configuration.
 /// Loaded from the agent catalog at startup.
 /// </summary>
@@ -13,7 +21,8 @@ public record AgentDefinition(
     string? Model,
     List<string> CapabilityTags,
     List<string> EnabledTools,
-    bool AutoJoinDefaultRoom
+    bool AutoJoinDefaultRoom,
+    AgentGitIdentity? GitIdentity = null
 );
 
 /// <summary>

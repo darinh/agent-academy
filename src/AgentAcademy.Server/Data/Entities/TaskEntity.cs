@@ -22,6 +22,23 @@ public class TaskEntity
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
+    // Extended task metadata
+    public string? Size { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public string? AssignedAgentId { get; set; }
+    public string? AssignedAgentName { get; set; }
+    public bool UsedFleet { get; set; }
+    public string FleetModels { get; set; } = "[]";
+    public string? BranchName { get; set; }
+    public string? PullRequestUrl { get; set; }
+    public int? PullRequestNumber { get; set; }
+    public string? PullRequestStatus { get; set; }
+    public string? ReviewerAgentId { get; set; }
+    public int ReviewRounds { get; set; }
+    public string TestsCreated { get; set; } = "[]";
+    public int CommitCount { get; set; }
+
     // Navigation properties
     public RoomEntity? Room { get; set; }
 }

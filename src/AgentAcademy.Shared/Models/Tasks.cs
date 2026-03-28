@@ -1,8 +1,8 @@
 namespace AgentAcademy.Shared.Models;
 
 /// <summary>
-/// Snapshot of a task's current state, including phase tracking and
-/// workstream progress for validation and implementation.
+/// Snapshot of a task's current state, including phase tracking,
+/// workstream progress, agent assignment, and git/PR metadata.
 /// </summary>
 public record TaskSnapshot(
     string Id,
@@ -18,7 +18,22 @@ public record TaskSnapshot(
     string ImplementationSummary,
     List<string> PreferredRoles,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    TaskSize? Size = null,
+    DateTime? StartedAt = null,
+    DateTime? CompletedAt = null,
+    string? AssignedAgentId = null,
+    string? AssignedAgentName = null,
+    bool UsedFleet = false,
+    List<string>? FleetModels = null,
+    string? BranchName = null,
+    string? PullRequestUrl = null,
+    int? PullRequestNumber = null,
+    PullRequestStatus? PullRequestStatus = null,
+    string? ReviewerAgentId = null,
+    int ReviewRounds = 0,
+    List<string>? TestsCreated = null,
+    int CommitCount = 0
 );
 
 /// <summary>

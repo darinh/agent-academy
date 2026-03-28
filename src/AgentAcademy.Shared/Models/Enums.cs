@@ -81,8 +81,39 @@ public enum TaskStatus
     Active,
     Blocked,
     AwaitingValidation,
+    InReview,
+    ChangesRequested,
+    Approved,
+    Merging,
     Completed,
     Cancelled
+}
+
+/// <summary>
+/// Estimated effort size for a task.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskSize
+{
+    XS,
+    S,
+    M,
+    L,
+    XL
+}
+
+/// <summary>
+/// Status of a pull request in the review pipeline.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PullRequestStatus
+{
+    Open,
+    ReviewRequested,
+    ChangesRequested,
+    Approved,
+    Merged,
+    Closed
 }
 
 /// <summary>

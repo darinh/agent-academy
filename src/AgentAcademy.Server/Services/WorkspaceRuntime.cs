@@ -17,6 +17,19 @@ public sealed class WorkspaceRuntime
 {
     private const int MaxRecentMessages = 200;
 
+    /// <summary>
+    /// Task statuses that represent active/in-progress work (not terminal, not queued).
+    /// </summary>
+    private static readonly HashSet<string> InProgressStatuses = new(StringComparer.Ordinal)
+    {
+        nameof(Shared.Models.TaskStatus.Active),
+        nameof(Shared.Models.TaskStatus.InReview),
+        nameof(Shared.Models.TaskStatus.ChangesRequested),
+        nameof(Shared.Models.TaskStatus.Approved),
+        nameof(Shared.Models.TaskStatus.Merging),
+        nameof(Shared.Models.TaskStatus.AwaitingValidation),
+    };
+
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceRuntime> _logger;
     private readonly AgentCatalogOptions _catalog;
@@ -268,6 +281,7 @@ public sealed class WorkspaceRuntime
             ImplementationSummary = task.ImplementationSummary,
             PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
             RoomId = roomEntity.Id,
+            StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -327,6 +341,102 @@ public sealed class WorkspaceRuntime
     {
         var entity = await _db.Tasks.FindAsync(taskId);
         return entity is null ? null : BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Assigns an agent to a task. Validates the agent exists in the catalog.
+    /// </summary>
+    public async Task<TaskSnapshot> AssignTaskAsync(string taskId, string agentId, string agentName)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+        if (agent is not null)
+        {
+            entity.AssignedAgentId = agent.Id;
+            entity.AssignedAgentName = agent.Name;
+        }
+        else
+        {
+            entity.AssignedAgentId = agentId;
+            entity.AssignedAgentName = agentName;
+        }
+
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Updates a task's status. Automatically sets StartedAt/CompletedAt as appropriate.
+    /// </summary>
+    public async Task<TaskSnapshot> UpdateTaskStatusAsync(string taskId, Shared.Models.TaskStatus status)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+        var now = DateTime.UtcNow;
+        entity.Status = status.ToString();
+        entity.UpdatedAt = now;
+
+        if (status == Shared.Models.TaskStatus.Active && entity.StartedAt is null)
+            entity.StartedAt = now;
+
+        if (status == Shared.Models.TaskStatus.Completed || status == Shared.Models.TaskStatus.Cancelled)
+            entity.CompletedAt = now;
+        else
+            entity.CompletedAt = null;
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Records a branch name on a task.
+    /// </summary>
+    public async Task<TaskSnapshot> UpdateTaskBranchAsync(string taskId, string branchName)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+        entity.BranchName = branchName;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Records PR information on a task.
+    /// </summary>
+    public async Task<TaskSnapshot> UpdateTaskPrAsync(
+        string taskId, string url, int number, Shared.Models.PullRequestStatus status)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+        entity.PullRequestUrl = url;
+        entity.PullRequestNumber = number;
+        entity.PullRequestStatus = status.ToString();
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Marks a task as complete with final metadata.
+    /// </summary>
+    public async Task<TaskSnapshot> CompleteTaskAsync(
+        string taskId, int commitCount, List<string>? testsCreated = null)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+        var now = DateTime.UtcNow;
+        entity.Status = nameof(Shared.Models.TaskStatus.Completed);
+        entity.CompletedAt = now;
+        entity.CommitCount = commitCount;
+        if (testsCreated is not null)
+            entity.TestsCreated = JsonSerializer.Serialize(testsCreated);
+        entity.UpdatedAt = now;
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
     }
 
     // ── Message Management ──────────────────────────────────────
@@ -465,7 +575,7 @@ public sealed class WorkspaceRuntime
 
         // Update active task phase if one exists
         var activeTask = await _db.Tasks
-            .Where(t => t.RoomId == roomId && t.Status == nameof(Shared.Models.TaskStatus.Active))
+            .Where(t => t.RoomId == roomId && InProgressStatuses.Contains(t.Status))
             .OrderByDescending(t => t.CreatedAt)
             .FirstOrDefaultAsync();
 
@@ -802,7 +912,7 @@ public sealed class WorkspaceRuntime
 
         // Get active task for this room
         var activeTaskEntity = await _db.Tasks
-            .Where(t => t.RoomId == room.Id && t.Status == nameof(Shared.Models.TaskStatus.Active))
+            .Where(t => t.RoomId == room.Id && InProgressStatuses.Contains(t.Status))
             .OrderByDescending(t => t.CreatedAt)
             .FirstOrDefaultAsync();
 
@@ -861,7 +971,22 @@ public sealed class WorkspaceRuntime
             ImplementationSummary: entity.ImplementationSummary,
             PreferredRoles: JsonSerializer.Deserialize<List<string>>(entity.PreferredRoles) ?? [],
             CreatedAt: entity.CreatedAt,
-            UpdatedAt: entity.UpdatedAt
+            UpdatedAt: entity.UpdatedAt,
+            Size: string.IsNullOrEmpty(entity.Size) ? null : Enum.Parse<TaskSize>(entity.Size),
+            StartedAt: entity.StartedAt,
+            CompletedAt: entity.CompletedAt,
+            AssignedAgentId: entity.AssignedAgentId,
+            AssignedAgentName: entity.AssignedAgentName,
+            UsedFleet: entity.UsedFleet,
+            FleetModels: JsonSerializer.Deserialize<List<string>>(entity.FleetModels) ?? [],
+            BranchName: entity.BranchName,
+            PullRequestUrl: entity.PullRequestUrl,
+            PullRequestNumber: entity.PullRequestNumber,
+            PullRequestStatus: string.IsNullOrEmpty(entity.PullRequestStatus) ? null : Enum.Parse<Shared.Models.PullRequestStatus>(entity.PullRequestStatus),
+            ReviewerAgentId: entity.ReviewerAgentId,
+            ReviewRounds: entity.ReviewRounds,
+            TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
+            CommitCount: entity.CommitCount
         );
     }
 

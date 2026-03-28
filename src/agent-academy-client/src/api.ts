@@ -12,8 +12,15 @@ export type CollaborationPhase =
 
 export type RoomStatus = "Idle" | "Active" | "AttentionRequired" | "Completed" | "Archived";
 export type MessageSenderKind = "System" | "Agent" | "User";
-export type TaskStatus = "Queued" | "Active" | "Blocked" | "AwaitingValidation" | "Completed" | "Cancelled";
+export type TaskStatus =
+  | "Queued" | "Active" | "Blocked" | "AwaitingValidation"
+  | "InReview" | "ChangesRequested" | "Approved" | "Merging"
+  | "Completed" | "Cancelled";
 export type TaskItemStatus = "Pending" | "Active" | "Done" | "Rejected";
+export type TaskSize = "XS" | "S" | "M" | "L" | "XL";
+export type PullRequestStatus =
+  | "Open" | "ReviewRequested" | "ChangesRequested"
+  | "Approved" | "Merged" | "Closed";
 export type ActivityEventType =
   | "AgentLoaded" | "AgentThinking" | "AgentFinished"
   | "RoomCreated" | "RoomClosed" | "TaskCreated"
@@ -36,6 +43,11 @@ export interface ActivityEvent {
   occurredAt: string;
 }
 
+export interface AgentGitIdentity {
+  authorName: string;
+  authorEmail: string;
+}
+
 export interface AgentDefinition {
   id: string;
   name: string;
@@ -46,6 +58,7 @@ export interface AgentDefinition {
   capabilityTags: string[];
   enabledTools: string[];
   autoJoinDefaultRoom: boolean;
+  gitIdentity?: AgentGitIdentity | null;
 }
 
 export interface AgentPresence {
@@ -95,6 +108,21 @@ export interface TaskSnapshot {
   preferredRoles: string[];
   createdAt: string;
   updatedAt: string;
+  size?: TaskSize | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  assignedAgentId?: string | null;
+  assignedAgentName?: string | null;
+  usedFleet?: boolean;
+  fleetModels?: string[];
+  branchName?: string | null;
+  pullRequestUrl?: string | null;
+  pullRequestNumber?: number | null;
+  pullRequestStatus?: PullRequestStatus | null;
+  reviewerAgentId?: string | null;
+  reviewRounds?: number;
+  testsCreated?: string[];
+  commitCount?: number;
 }
 
 export interface TaskItem {
@@ -268,6 +296,53 @@ export function submitTask(req: TaskAssignmentRequest): Promise<TaskAssignmentRe
   return request<TaskAssignmentResult>(apiUrl("/api/tasks"), {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+export function getTasks(): Promise<TaskSnapshot[]> {
+  return request<TaskSnapshot[]>(apiUrl("/api/tasks"));
+}
+
+export function getTask(taskId: string): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}`));
+}
+
+export function assignTask(taskId: string, agentId: string, agentName: string): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/assign`), {
+    method: "PUT",
+    body: JSON.stringify({ agentId, agentName }),
+  });
+}
+
+export function updateTaskStatus(taskId: string, status: TaskStatus): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/status`), {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function updateTaskBranch(taskId: string, branchName: string): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/branch`), {
+    method: "PUT",
+    body: JSON.stringify({ branchName }),
+  });
+}
+
+export function updateTaskPr(
+  taskId: string, url: string, number: number, status: PullRequestStatus,
+): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/pr`), {
+    method: "PUT",
+    body: JSON.stringify({ url, number, status }),
+  });
+}
+
+export function completeTask(
+  taskId: string, commitCount: number, testsCreated?: string[],
+): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/complete`), {
+    method: "PUT",
+    body: JSON.stringify({ commitCount, testsCreated }),
   });
 }
 

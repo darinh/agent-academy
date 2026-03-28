@@ -15,11 +15,12 @@ import {
   TimelineRegular,
   GridRegular,
   BoardRegular,
+  TaskListLtrRegular,
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { getActiveWorkspace, switchWorkspace } from "./api";
-import type { OnboardResult, WorkspaceMeta } from "./api";
+import { getActiveWorkspace, switchWorkspace, getTasks } from "./api";
+import type { OnboardResult, WorkspaceMeta, TaskSnapshot } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
@@ -27,6 +28,7 @@ import PlanPanel from "./PlanPanel";
 import TimelinePanel from "./TimelinePanel";
 import DashboardPanel from "./DashboardPanel";
 import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
+import TaskListPanel from "./TaskListPanel";
 
 export default function App() {
   return (
@@ -63,6 +65,19 @@ function AppShell() {
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
+  const [allTasks, setAllTasks] = useState<TaskSnapshot[]>([]);
+  const [tasksError, setTasksError] = useState(false);
+
+  // Fetch tasks when workspace is active and tab is "tasks"
+  useEffect(() => {
+    if (showProjectSelector || tab !== "tasks") return;
+    let cancelled = false;
+    setTasksError(false);
+    getTasks()
+      .then((tasks) => { if (!cancelled) setAllTasks(tasks); })
+      .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } });
+    return () => { cancelled = true; };
+  }, [showProjectSelector, tab]);
 
   // On mount, check for active workspace — retry on failure (backend may still be starting)
   useEffect(() => {
@@ -210,6 +225,7 @@ function AppShell() {
                 size="small"
               >
                 <Tab value="chat" icon={<ChatRegular />}>Conversation</Tab>
+                <Tab value="tasks" icon={<TaskListLtrRegular />}>Tasks</Tab>
                 <Tab value="plan" icon={<DocumentRegular />}>Plan</Tab>
                 <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
                 <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
@@ -224,6 +240,9 @@ function AppShell() {
                   thinkingAgents={thinkingAgentList}
                   onSendMessage={handleSendMessage}
                 />
+              )}
+              {tab === "tasks" && (
+                <TaskListPanel tasks={allTasks} error={tasksError} />
               )}
               {tab === "plan" && (
                 <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />

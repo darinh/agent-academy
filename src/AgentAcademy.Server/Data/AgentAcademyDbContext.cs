@@ -81,12 +81,21 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
 
+            // Extended task metadata
+            entity.Property(e => e.UsedFleet).HasDefaultValue(false);
+            entity.Property(e => e.FleetModels).IsRequired().HasDefaultValue("[]");
+            entity.Property(e => e.ReviewRounds).HasDefaultValue(0);
+            entity.Property(e => e.TestsCreated).IsRequired().HasDefaultValue("[]");
+            entity.Property(e => e.CommitCount).HasDefaultValue(0);
+
             entity.HasOne(e => e.Room)
                 .WithMany(r => r.Tasks)
                 .HasForeignKey(e => e.RoomId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_tasks_room");
+            entity.HasIndex(e => e.AssignedAgentId).HasDatabaseName("idx_tasks_agent");
+            entity.HasIndex(e => e.Status).HasDatabaseName("idx_tasks_status");
         });
 
         // ── Task Items ────────────────────────────────────────
