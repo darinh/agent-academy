@@ -70,13 +70,26 @@ function AppShell() {
   const [tasksError, setTasksError] = useState(false);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
 
-  // Check auth status on mount
+  // Check auth status on mount — retry if backend is still starting
   useEffect(() => {
     let cancelled = false;
-    getAuthStatus()
-      .then((status) => { if (!cancelled) setAuth(status); })
-      .catch(() => { if (!cancelled) setAuth({ authEnabled: false, authenticated: false }); });
-    return () => { cancelled = true; };
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    async function checkAuth(attempt: number) {
+      if (cancelled) return;
+      try {
+        const status = await getAuthStatus();
+        if (!cancelled) setAuth(status);
+      } catch {
+        if (cancelled) return;
+        if (attempt < 3) {
+          retryTimer = setTimeout(() => void checkAuth(attempt + 1), 2000);
+        } else {
+          setAuth({ authEnabled: false, authenticated: false });
+        }
+      }
+    }
+    void checkAuth(0);
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   // Fetch tasks when workspace is active and tab is "tasks"
