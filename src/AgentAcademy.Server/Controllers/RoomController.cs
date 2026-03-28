@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace AgentAcademy.Server.Controllers;
 
 /// <summary>
-/// Room CRUD endpoints.
+/// Room CRUD, artifacts, usage, errors, and evaluation endpoints.
 /// </summary>
 [ApiController]
 [Route("api/rooms")]
@@ -48,7 +48,7 @@ public class RoomController : ControllerBase
         {
             var room = await _runtime.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { error = $"Room '{roomId}' not found" });
+                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
             return Ok(room);
         }
@@ -57,5 +57,59 @@ public class RoomController : ControllerBase
             _logger.LogError(ex, "Failed to get room '{RoomId}'", roomId);
             return Problem("Failed to retrieve room.");
         }
+    }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/artifacts — artifacts produced in a room.
+    /// Artifact tracking will be wired when AgentEventTracker is ported.
+    /// </summary>
+    [HttpGet("{roomId}/artifacts")]
+    public IActionResult GetRoomArtifacts(string roomId)
+    {
+        // AgentEventTracker is not yet ported — return empty list.
+        return Ok(Array.Empty<ArtifactRecord>());
+    }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/usage — token usage stats for a room.
+    /// Usage tracking will be wired when AgentEventTracker is ported.
+    /// </summary>
+    [HttpGet("{roomId}/usage")]
+    public IActionResult GetRoomUsage(string roomId)
+    {
+        // AgentEventTracker is not yet ported — return zeroed summary.
+        return Ok(new UsageSummary(
+            TotalInputTokens: 0,
+            TotalOutputTokens: 0,
+            TotalCost: 0m,
+            RequestCount: 0,
+            Models: new List<string>()
+        ));
+    }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/errors — agent errors in a room.
+    /// Error tracking will be wired when AgentEventTracker is ported.
+    /// </summary>
+    [HttpGet("{roomId}/errors")]
+    public IActionResult GetRoomErrors(string roomId)
+    {
+        // AgentEventTracker is not yet ported — return empty list.
+        return Ok(Array.Empty<ErrorRecord>());
+    }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/evaluations — artifact evaluations for a room.
+    /// Evaluation will be wired when the ArtifactEvaluator service is ported.
+    /// </summary>
+    [HttpGet("{roomId}/evaluations")]
+    public IActionResult GetRoomEvaluations(string roomId)
+    {
+        // ArtifactEvaluator is not yet ported — return empty result.
+        return Ok(new
+        {
+            artifacts = Array.Empty<EvaluationResult>(),
+            aggregateScore = 0.0
+        });
     }
 }

@@ -4,6 +4,8 @@ namespace AgentAcademy.Server.Controllers;
 
 /// <summary>
 /// Directory browser endpoint for workspace exploration.
+/// Ported from v1: only returns directories, supports showHidden param,
+/// returns permissionDenied on EACCES instead of throwing.
 /// </summary>
 [ApiController]
 [Route("api/filesystem")]
@@ -17,74 +19,84 @@ public class FilesystemController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/filesystem/browse?path= — list directory contents.
-    /// Defaults to the user's home directory. Restricted to home directory tree.
+    /// GET /api/filesystem/browse?path=&amp;showHidden=true — list subdirectories.
+    /// Defaults to the user's home directory. Only returns directories.
     /// </summary>
     [HttpGet("browse")]
-    public IActionResult Browse([FromQuery] string? path)
+    public IActionResult Browse(
+        [FromQuery] string? path,
+        [FromQuery] string? showHidden)
     {
         var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         var targetPath = string.IsNullOrWhiteSpace(path)
             ? homeDir
-            : Path.GetFullPath(path);
+            : path;
+
+        // Must be absolute
+        if (!Path.IsPathRooted(targetPath))
+            return BadRequest(new { code = "invalid_path", message = "Path must be absolute" });
+
+        var resolved = Path.GetFullPath(targetPath);
 
         // Security: restrict browsing to home directory tree
-        if (!targetPath.StartsWith(homeDir + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            && targetPath != homeDir)
+        if (!resolved.StartsWith(homeDir + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            && resolved != homeDir)
         {
-            return BadRequest(new { error = "Path must be within the user's home directory" });
+            return BadRequest(new { code = "invalid_path", message = "Path must be within the user's home directory" });
         }
 
-        if (!Directory.Exists(targetPath))
-            return NotFound(new { error = $"Directory not found: {targetPath}" });
+        if (!Directory.Exists(resolved))
+            return NotFound(new { code = "not_found", message = $"Directory not found: {resolved}" });
+
+        var includeHidden = string.Equals(showHidden, "true", StringComparison.Ordinal);
 
         try
         {
             var entries = new List<object>();
 
-            foreach (var dir in Directory.EnumerateDirectories(targetPath))
+            foreach (var dir in Directory.EnumerateDirectories(resolved))
             {
                 var name = Path.GetFileName(dir);
-                // Skip hidden directories
-                if (name.StartsWith('.'))
+
+                // Skip hidden directories unless showHidden=true
+                if (!includeHidden && name.StartsWith('.'))
                     continue;
 
                 entries.Add(new
                 {
                     name,
-                    type = "directory",
                     path = dir,
+                    isDirectory = true,
                 });
             }
 
-            foreach (var file in Directory.EnumerateFiles(targetPath))
-            {
-                var name = Path.GetFileName(file);
-                if (name.StartsWith('.'))
-                    continue;
-
-                entries.Add(new
-                {
-                    name,
-                    type = "file",
-                    path = file,
-                });
-            }
+            // Compute parent (null if at root)
+            var parent = Path.GetDirectoryName(resolved);
 
             return Ok(new
             {
-                path = targetPath,
-                entries = entries.OrderBy(e => e.GetType().GetProperty("name")?.GetValue(e)?.ToString()),
+                current = resolved,
+                parent,
+                entries = entries
+                    .OrderBy(e => ((dynamic)e).name as string)
+                    .ToList(),
             });
         }
         catch (UnauthorizedAccessException)
         {
-            return StatusCode(403, new { error = $"Access denied: {targetPath}" });
+            // Match v1 behavior: return permissionDenied flag instead of error
+            return Ok(new
+            {
+                current = resolved,
+                parent = Path.GetDirectoryName(resolved),
+                entries = Array.Empty<object>(),
+                permissionDenied = true,
+            });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to browse directory '{Path}'", targetPath);
+            _logger.LogError(ex, "Failed to browse directory '{Path}'", resolved);
             return Problem("Failed to browse directory.");
         }
     }

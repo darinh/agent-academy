@@ -30,7 +30,7 @@ public class SystemController : ControllerBase
     }
 
     /// <summary>
-    /// GET / — basic service info.
+    /// GET / — basic service info + endpoint list.
     /// </summary>
     [HttpGet("/")]
     public IActionResult GetRoot()
@@ -38,8 +38,41 @@ public class SystemController : ControllerBase
         return Ok(new
         {
             service = "Agent Academy",
-            status = "running",
-            timestamp = DateTime.UtcNow,
+            message = "Agent Academy API is running.",
+            endpoints = new[]
+            {
+                "GET  /healthz",
+                "GET  /api/overview",
+                "GET  /api/agents/configured",
+                "GET  /api/models",
+                "GET  /api/rooms",
+                "GET  /api/rooms/:roomId",
+                "GET  /api/rooms/:roomId/artifacts",
+                "GET  /api/rooms/:roomId/usage",
+                "GET  /api/rooms/:roomId/errors",
+                "GET  /api/rooms/:roomId/evaluations",
+                "GET  /api/rooms/:roomId/plan",
+                "PUT  /api/rooms/:roomId/plan",
+                "DELETE /api/rooms/:roomId/plan",
+                "POST /api/tasks",
+                "POST /api/rooms/:roomId/messages",
+                "POST /api/rooms/:roomId/human",
+                "POST /api/rooms/:roomId/phase",
+                "POST /api/rooms/:roomId/compact",
+                "GET  /api/workspace",
+                "GET  /api/workspaces",
+                "PUT  /api/workspace",
+                "POST /api/workspaces/scan",
+                "POST /api/workspaces/onboard",
+                "GET  /api/filesystem/browse",
+                "GET  /api/agents/locations",
+                "PUT  /api/agents/:agentId/location",
+                "GET  /api/agents/:agentId/knowledge",
+                "POST /api/agents/:agentId/knowledge",
+                "GET  /api/knowledge",
+                "POST /api/agents/:agentId/run",
+                "GET  /api/activity/recent",
+            },
         });
     }
 
