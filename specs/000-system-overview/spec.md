@@ -68,7 +68,21 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 
 ## Interfaces & Contracts
 
-> Planned — no interfaces implemented yet. See [001-domain-model](../001-domain-model/spec.md) for planned type definitions.
+### SignalR Real-Time Events
+
+The server exposes a SignalR hub at `/hubs/activity` for real-time event streaming.
+
+**Hub**: `ActivityHub` (`AgentAcademy.Server.Hubs`)
+- Thin hub — no custom server methods. Clients connect and receive events.
+
+**Broadcaster**: `ActivityHubBroadcaster` (`AgentAcademy.Server.Hubs`)
+- `IHostedService` that subscribes to `ActivityBroadcaster` on startup.
+- On each `ActivityEvent`, calls `IHubContext<ActivityHub>.Clients.All.SendAsync("activityEvent", evt)`.
+- Errors are logged, not propagated — a SignalR failure won't crash the activity pipeline.
+
+**Client event**: `activityEvent` — receives an `ActivityEvent` record (see [001-domain-model](../001-domain-model/spec.md)).
+
+**CORS**: Default policy allows `http://localhost:5173` with credentials (required for SignalR WebSocket transport).
 
 ## Invariants
 
@@ -87,3 +101,4 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 | Date | Change | Task |
 |------|--------|------|
 | Initial | Created system overview spec | scaffold-solution |
+| 2025-03-28 | Added SignalR hub, CORS, ActivityHubBroadcaster | signalr-hub |
