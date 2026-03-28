@@ -171,6 +171,7 @@ export const useStyles = makeStyles({
     flexShrink: 0,
   },
   roomAgentList: {
+    gridColumn: "1 / -1",
     marginTop: "6px",
     paddingTop: "6px",
     borderTop: "1px solid rgba(155, 176, 210, 0.12)",

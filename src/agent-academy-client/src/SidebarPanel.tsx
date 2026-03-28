@@ -122,35 +122,35 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                         <div className={s.roomButtonName}>{candidate.name}</div>
                         <span style={{ width: "6px", height: "6px", borderRadius: "999px", backgroundColor: dotColor, flexShrink: 0 }} />
                       </div>
-                      {roomAgents.length > 0 && (
-                        <div className={s.roomAgentList}>
-                          {roomAgents.map((agent) => {
-                            const rc = roleColor(agent.role);
-                            const isThinking = props.thinkingByRoomIds.get(candidate.id)?.has(agent.id) ?? false;
-                            return (
-                              <div key={agent.id} className={s.roomAgentItem}>
-                                <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "16px", height: "16px", flexShrink: 0 }}>
-                                  <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
-                                  {isThinking && (
-                                    <span
-                                      style={{
-                                        position: "absolute",
-                                        inset: 0,
-                                        borderRadius: "999px",
-                                        border: `2px solid transparent`,
-                                        borderTopColor: rc.accent,
-                                        animation: "aa-spin 0.8s linear infinite",
-                                      }}
-                                    />
-                                  )}
-                                </span>
-                                <span>{agent.name}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
                     </div>
+                    {roomAgents.length > 0 && (
+                      <div className={s.roomAgentList}>
+                        {roomAgents.map((agent) => {
+                          const rc = roleColor(agent.role);
+                          const isThinking = props.thinkingByRoomIds.get(candidate.id)?.has(agent.id) ?? false;
+                          return (
+                            <div key={agent.id} className={s.roomAgentItem}>
+                              <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "16px", height: "16px", flexShrink: 0 }}>
+                                <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
+                                {isThinking && (
+                                  <span
+                                    style={{
+                                      position: "absolute",
+                                      inset: 0,
+                                      borderRadius: "999px",
+                                      border: `2px solid transparent`,
+                                      borderTopColor: rc.accent,
+                                      animation: "aa-spin 0.8s linear infinite",
+                                    }}
+                                  />
+                                )}
+                              </span>
+                              <span>{agent.name}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </button>
                 );
               })}
