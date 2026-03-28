@@ -9,12 +9,23 @@ import {
   Tab,
   TabList,
 } from "@fluentui/react-components";
+import {
+  ChatRegular,
+  DocumentRegular,
+  TimelineRegular,
+  GridRegular,
+  BoardRegular,
+} from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
 import type { OnboardResult, WorkspaceMeta } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
+import PlanPanel from "./PlanPanel";
+import TimelinePanel from "./TimelinePanel";
+import DashboardPanel from "./DashboardPanel";
+import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
 
 export default function App() {
   return (
@@ -30,6 +41,7 @@ function AppShell() {
     ov,
     room,
     roster,
+    activity,
     thinkingAgentList,
     err,
     busy,
@@ -42,10 +54,12 @@ function AppShell() {
     handleToggleSidebar,
     handleTaskSubmit,
     handleSendMessage,
+    handlePhaseTransition,
   } = useWorkspace();
 
   const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
   const [showProjectSelector, setShowProjectSelector] = useState(true);
+  const [phaseTransitioning, setPhaseTransitioning] = useState(false);
 
   // If overview loads successfully, we have a workspace
   useEffect(() => {
@@ -70,6 +84,15 @@ function AppShell() {
       handleManualRefresh();
     },
     [handleManualRefresh],
+  );
+
+  const wrappedPhaseTransition = useCallback(
+    async (phase: Parameters<typeof handlePhaseTransition>[0]) => {
+      setPhaseTransitioning(true);
+      try { await handlePhaseTransition(phase); }
+      finally { setPhaseTransitioning(false); }
+    },
+    [handlePhaseTransition],
   );
 
   useEffect(() => {
@@ -145,7 +168,11 @@ function AppShell() {
                 onTabSelect={(_, data) => setTab(data.value as string)}
                 size="small"
               >
-                <Tab value="chat">Conversation</Tab>
+                <Tab value="chat" icon={<ChatRegular />}>Conversation</Tab>
+                <Tab value="plan" icon={<DocumentRegular />}>Plan</Tab>
+                <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
+                <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
+                <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
               </TabList>
             </div>
 
@@ -155,6 +182,23 @@ function AppShell() {
                   room={room}
                   thinkingAgents={thinkingAgentList}
                   onSendMessage={handleSendMessage}
+                />
+              )}
+              {tab === "plan" && (
+                <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
+              )}
+              {tab === "timeline" && (
+                <TimelinePanel activity={activity} />
+              )}
+              {tab === "dashboard" && (
+                <DashboardPanel overview={ov} />
+              )}
+              {tab === "overview" && (
+                <WorkspaceOverviewPanel
+                  overview={ov}
+                  room={room}
+                  onPhaseTransition={wrappedPhaseTransition}
+                  transitioning={phaseTransitioning}
                 />
               )}
             </section>
