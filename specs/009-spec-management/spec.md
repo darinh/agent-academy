@@ -67,9 +67,18 @@ The specification is owned by **Thucydides** (agent `tech-writer-1`, role `Techn
 
 ### Spec Change Workflow
 
-#### 1. Planning Phase — Spec Scoping
+#### Plans ARE Spec Change Proposals
 
-When a new task is discussed, Thucydides produces a Spec Change Proposal:
+Every implementation plan must include a Spec Change Proposal. The plan is the formal proposal for how the spec will change — not just a task list. The spec update is a tracked deliverable alongside code changes, validated with the same rigor.
+
+**Workflow**:
+1. **Plan phase**: Plan includes a Spec Change Proposal section identifying affected spec sections, change type, proposed updates, and verification method.
+2. **Implementation phase**: The spec update is a tracked todo item in the plan — code and spec changes are delivered together.
+3. **Validation phase**: Completed work is validated against the plan's spec change proposal. Reviewers verify that (a) every code change has a spec update, (b) every spec claim references actual code, (c) the spec update matches what was proposed.
+
+#### Spec Change Proposal Format
+
+When a new task is planned, the plan includes:
 
 ```
 SPEC CHANGE PROPOSAL:
@@ -92,14 +101,21 @@ Verification Plan: [how to confirm accuracy after implementation]
 | `BUG_FIX_CODE` | Code deviates from spec | No change (spec is correct) | Fix code to match spec |
 | `BUG_FIX_SPEC` | Spec doesn't capture desired behavior | Update spec | Fix code |
 
-#### 2. Implementation Phase — Spec Updates
+#### Implementation Phase — Spec Updates
 
-- Thucydides updates spec files in `specs/` to reflect changes being made
+- Spec updates are tracked todo items in the plan, not afterthoughts
 - Every spec claim must reference actual code (file paths, function names)
 - Engineers reference relevant spec sections during implementation
 - Engineers flag any spec-code divergences discovered during work
 
-#### 3. Validation Phase — Adversarial Review
+#### Validation Phase — Review Against Plan
+
+Completed work is validated against the plan's spec change proposal:
+
+1. **Code ↔ Spec consistency**: Every code change has a corresponding spec update; every spec claim references actual code
+2. **Plan fidelity**: The delivered spec update matches what was proposed in the plan
+3. **No aspirational claims**: Spec describes what IS, not what SHOULD BE
+4. **CHANGELOG updated**: `specs/CHANGELOG.md` has an entry for the change
 
 Socrates (Reviewer) adversarially verifies spec accuracy:
 
@@ -114,9 +130,9 @@ Archimedes (Architect) validates technical accuracy:
 - Verifies type definitions, API contracts, architecture descriptions
 - Challenges technically incorrect or misleading spec claims
 
-#### 4. FinalSynthesis Phase — Spec Confirmation
+#### FinalSynthesis Phase — Spec Confirmation
 
-- Thucydides confirms all spec changes are complete and accurate
+- All spec changes are complete, accurate, and match the plan's spec change proposal
 - `specs/CHANGELOG.md` is updated with the task reference and summary
 
 ### Integration with the Orchestrator
@@ -188,12 +204,14 @@ When specs exist, review prompts include a `Spec Accuracy` section requesting:
 
 1. The spec must always describe actual system behavior, verified against code
 2. Every meaningful code change (non-bugfix) must be accompanied by a spec update
-3. Bug fixes where code deviates from spec do not require spec changes
-4. Bug fixes where behavior is undesirable but matches spec require both spec and code changes
-5. The CHANGELOG.md must have an entry for every spec modification
-6. Spec sections use three-digit numbered folders that are never renumbered
-7. Thucydides is the sole owner of spec content — other agents review but don't write specs
-8. `GetSpecContent` guards against path traversal attacks
+3. Every implementation plan must include a Spec Change Proposal section
+4. The spec update is a tracked deliverable in the plan — validated alongside code changes
+5. Bug fixes where code deviates from spec do not require spec changes
+6. Bug fixes where behavior is undesirable but matches spec require both spec and code changes
+7. The CHANGELOG.md must have an entry for every spec modification
+8. Spec sections use three-digit numbered folders that are never renumbered
+9. Thucydides is the sole owner of spec content — other agents review but don't write specs
+10. `GetSpecContent` guards against path traversal attacks
 
 ## Known Gaps
 

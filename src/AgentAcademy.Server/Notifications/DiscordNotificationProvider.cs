@@ -33,8 +33,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly ConcurrentDictionary<ulong, string> _channelToRoom = new();
     // Maps Discord channel ID → webhook client (for agent-identity messages)
     private readonly ConcurrentDictionary<ulong, DiscordWebhookClient> _webhooks = new();
-    // Discord category ID for the "Agent Academy" room channels
-    private ulong _roomCategoryId;
+    // Discord category ID for the "Agent Academy" room channels (keyed by project name, "__default__" for legacy)
+    private readonly ConcurrentDictionary<string, ulong> _roomCategories = new();
+    private const string DefaultCategoryKey = "__default__";
     // Serializes channel/category creation to prevent duplicates from concurrent calls
     private readonly SemaphoreSlim _channelCreateLock = new(1, 1);
 
@@ -593,38 +594,42 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     // ── Room Channel Routing ──────────────────────────────────────
 
     /// <summary>
-    /// Finds or creates the "Agent Academy" parent category for room channels.
+    /// Finds or creates the parent category for room channels.
+    /// When a project name is provided, uses "AA: {projectName}"; otherwise falls back to "Agent Academy".
     /// </summary>
-    private async Task<ICategoryChannel> FindOrCreateRoomCategoryAsync(SocketGuild guild)
+    private async Task<ICategoryChannel> FindOrCreateRoomCategoryAsync(SocketGuild guild, string? projectName)
     {
-        if (_roomCategoryId != 0)
+        var cacheKey = projectName ?? DefaultCategoryKey;
+
+        if (_roomCategories.TryGetValue(cacheKey, out var cachedId) && cachedId != 0)
         {
-            var existing = guild.GetCategoryChannel(_roomCategoryId);
+            var existing = guild.GetCategoryChannel(cachedId);
             if (existing is not null)
                 return existing;
-            _roomCategoryId = 0;
+            _roomCategories.TryRemove(cacheKey, out _);
         }
 
-        const string categoryName = "Agent Academy";
+        var categoryName = projectName is not null ? $"AA: {projectName}" : "Agent Academy";
 
         var found = guild.CategoryChannels.FirstOrDefault(
             c => c.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
 
         if (found is not null)
         {
-            _roomCategoryId = found.Id;
+            _roomCategories[cacheKey] = found.Id;
             return found;
         }
 
         var created = await guild.CreateCategoryChannelAsync(categoryName);
-        _roomCategoryId = created.Id;
+        _roomCategories[cacheKey] = created.Id;
         _logger.LogInformation("Created Discord category '{CategoryName}'", categoryName);
         return created;
     }
 
     /// <summary>
     /// Finds or creates a Discord text channel for an Agent Academy room,
-    /// under the "Agent Academy" category. Also registers the reverse mapping.
+    /// under the project-specific category (or "Agent Academy" for legacy rooms).
+    /// Also registers the reverse mapping.
     /// </summary>
     private async Task<ITextChannel> FindOrCreateRoomChannelAsync(SocketGuild guild, string roomId)
     {
@@ -637,10 +642,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _channelToRoom.TryRemove(existingChannelId, out _);
         }
 
-        var category = await FindOrCreateRoomCategoryAsync(guild);
-
-        // Resolve a human-readable room name via WorkspaceRuntime
+        // Resolve room name and project name for category scoping
         var roomName = roomId;
+        string? projectName = null;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -648,8 +652,11 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             var room = await runtime.GetRoomAsync(roomId);
             if (room is not null)
                 roomName = room.Name;
+            projectName = await runtime.GetProjectNameForRoomAsync(roomId);
         }
-        catch { /* fall back to roomId */ }
+        catch { /* fall back to roomId, no project scoping */ }
+
+        var category = await FindOrCreateRoomCategoryAsync(guild, projectName);
 
         // Include roomId slug in channel name to prevent collision between rooms with similar names
         var roomIdSlug = roomId.Length > 8 ? roomId[..8] : roomId;
@@ -920,13 +927,16 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 }
             }
 
-            // Rebuild room channel mappings (under "Agent Academy" category)
-            var roomCategory = guild.CategoryChannels.FirstOrDefault(
-                c => c.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase));
-
-            if (roomCategory is not null)
+            // Rebuild room channel mappings from project categories ("AA: *") and legacy "Agent Academy"
+            foreach (var roomCategory in guild.CategoryChannels.Where(
+                         c => c.Name.StartsWith("AA: ", StringComparison.OrdinalIgnoreCase) ||
+                              c.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase)))
             {
-                _roomCategoryId = roomCategory.Id;
+                // Cache the category under the appropriate key
+                var categoryKey = roomCategory.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase)
+                    ? DefaultCategoryKey
+                    : roomCategory.Name[4..]; // Strip "AA: " prefix to get project name
+                _roomCategories[categoryKey] = roomCategory.Id;
 
                 foreach (var channel in guild.TextChannels.Where(c => c.CategoryId == roomCategory.Id))
                 {
