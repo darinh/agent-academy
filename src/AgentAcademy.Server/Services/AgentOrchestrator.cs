@@ -127,6 +127,7 @@ public sealed class AgentOrchestrator
 
             using var scope = _scopeFactory.CreateScope();
             var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
 
             var room = await runtime.GetRoomAsync(roomId);
             if (room is null) return;
@@ -139,6 +140,8 @@ public sealed class AgentOrchestrator
             var specContext = _specManager.LoadSpecContext();
 
             var planner = FindPlanner(runtime);
+            if (planner is not null)
+                planner = await configService.GetEffectiveAgentAsync(planner);
             var agentsToRun = new List<AgentDefinition>();
 
             // Step 1 — Run the planner first
@@ -199,12 +202,14 @@ public sealed class AgentOrchestrator
             }
 
             // Step 3 — Run agents sequentially so each sees the previous response
-            foreach (var agent in agentsToRun)
+            foreach (var catalogAgent in agentsToRun)
             {
                 if (_stopped) break;
 
                 var currentRoom = await runtime.GetRoomAsync(roomId);
                 if (currentRoom is null) break;
+
+                var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
                 // Skip agents that are already working in a breakout room
                 var location = await runtime.GetAgentLocationAsync(agent.Id);
@@ -348,9 +353,11 @@ public sealed class AgentOrchestrator
     {
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
 
-        var agent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == agentId);
-        if (agent is null) return;
+        var catalogAgent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == agentId);
+        if (catalogAgent is null) return;
+        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
         var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
         if (br is null) return;
@@ -420,26 +427,28 @@ public sealed class AgentOrchestrator
                     try { await runtime.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
                     catch { /* ok */ }
                 }
-                await HandleBreakoutCompleteAsync(runtime, breakoutRoomId, br.ParentRoomId);
+                await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
                 return;
             }
         }
 
         // Max rounds reached — present whatever exists
         _logger.LogInformation("Breakout max rounds reached for {AgentName}", agent.Name);
-        await HandleBreakoutCompleteAsync(runtime, breakoutRoomId, br.ParentRoomId);
+        await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
     }
 
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
 
     private async Task HandleBreakoutCompleteAsync(
-        WorkspaceRuntime runtime, string breakoutRoomId, string parentRoomId)
+        WorkspaceRuntime runtime, AgentConfigService configService,
+        string breakoutRoomId, string parentRoomId)
     {
         var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
         if (br is null) return;
 
-        var agent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == br.AssignedAgentId);
-        if (agent is null) return;
+        var catalogAgent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == br.AssignedAgentId);
+        if (catalogAgent is null) return;
+        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
         _logger.LogInformation("Breakout complete: {AgentName} returning from {BreakoutName}", agent.Name, br.Name);
 
@@ -468,7 +477,7 @@ public sealed class AgentOrchestrator
         }
 
         // Ask the reviewer to evaluate
-        var verdict = await RunReviewCycleAsync(runtime, parentRoomId, agent, lastMessage?.Content ?? "");
+        var verdict = await RunReviewCycleAsync(runtime, configService, parentRoomId, agent, lastMessage?.Content ?? "");
 
         // Check for approval — anchored at start to avoid false positives from
         // chatty verdicts like "APPROVED - no fixes needed"
@@ -486,11 +495,12 @@ public sealed class AgentOrchestrator
     }
 
     private async Task<ParsedReviewVerdict?> RunReviewCycleAsync(
-        WorkspaceRuntime runtime, string parentRoomId,
-        AgentDefinition presentingAgent, string workReport)
+        WorkspaceRuntime runtime, AgentConfigService configService,
+        string parentRoomId, AgentDefinition presentingAgent, string workReport)
     {
-        var reviewer = FindReviewer(runtime);
-        if (reviewer is null) return null;
+        var catalogReviewer = FindReviewer(runtime);
+        if (catalogReviewer is null) return null;
+        var reviewer = await configService.GetEffectiveAgentAsync(catalogReviewer);
 
         await runtime.PublishThinkingAsync(reviewer, parentRoomId);
         var reviewResponse = "";

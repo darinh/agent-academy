@@ -132,6 +132,9 @@ builder.Services.AddSingleton<ActivityBroadcaster>();
 // Workspace runtime (scoped — one per request, uses scoped DbContext)
 builder.Services.AddScoped<WorkspaceRuntime>();
 
+// Agent config service (scoped — merges catalog defaults with DB overrides)
+builder.Services.AddScoped<AgentConfigService>();
+
 // Copilot token provider (singleton — captures OAuth token for SDK activation)
 builder.Services.AddSingleton<CopilotTokenProvider>();
 

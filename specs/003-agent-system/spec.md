@@ -219,6 +219,138 @@ Transport is selected via `localStorage` key `aa-transport`:
 
 Both hooks are always called (React Rules of Hooks), but only the active one creates a connection. The inactive hook receives `enabled = false` and reports `"disconnected"`.
 
+## Agent Configuration Overrides
+
+> **Status: Implemented** — DB schema, merge service, and orchestrator integration are compiled and tested.
+
+### Architecture
+
+```
+┌──────────────────────────────────┐
+│      agents.json (catalog)       │
+│  Static agent definitions        │
+│  loaded at startup               │
+└──────────────┬───────────────────┘
+               │ AgentDefinition
+               ▼
+┌──────────────────────────────────┐
+│       AgentConfigService         │
+│  • Reads agent_configs table     │
+│  • Merges overrides + templates  │
+│  • Returns effective definition  │
+└──────────────┬───────────────────┘
+               │ Effective AgentDefinition
+               ▼
+┌──────────────────────────────────┐
+│   AgentOrchestrator / Executor   │
+│  • Uses effective Model          │
+│  • Uses effective StartupPrompt  │
+└──────────────────────────────────┘
+```
+
+### Instruction Layering
+
+The effective startup prompt is built by layering (not direct swap):
+
+```
+Effective = [StartupPromptOverride ?? CatalogStartupPrompt]
+          + [InstructionTemplate.Content, if assigned]
+          + [CustomInstructions, if set]
+```
+
+Each layer is separated by `\n\n`. Whitespace-only values are treated as unset.
+
+### Database Schema
+
+**Table: `agent_configs`**
+
+| Column | Type | Constraint | Description |
+|--------|------|------------|-------------|
+| `AgentId` | TEXT | PK | Matches catalog agent ID |
+| `StartupPromptOverride` | TEXT | nullable | Replaces catalog StartupPrompt |
+| `ModelOverride` | TEXT | nullable | Replaces catalog Model |
+| `CustomInstructions` | TEXT | nullable | Appended after prompt + template |
+| `InstructionTemplateId` | TEXT | FK nullable, SetNull | Links to instruction_templates |
+| `UpdatedAt` | DATETIME | required | Last modification time |
+
+**Table: `instruction_templates`**
+
+| Column | Type | Constraint | Description |
+|--------|------|------------|-------------|
+| `Id` | TEXT | PK | GUID identifier |
+| `Name` | TEXT | required, unique | Human-readable name |
+| `Description` | TEXT | nullable | What this template does |
+| `Content` | TEXT | required | Instruction text appended to prompt |
+| `CreatedAt` | DATETIME | required | Creation time |
+| `UpdatedAt` | DATETIME | required | Last modification time |
+
+**Entities**: `src/AgentAcademy.Server/Data/Entities/AgentConfigEntity.cs`, `InstructionTemplateEntity.cs`
+**Migration**: `20260329224834_AddAgentConfigOverrides`
+
+### Service: `AgentConfigService`
+
+**File**: `src/AgentAcademy.Server/Services/AgentConfigService.cs`
+**DI**: Scoped (uses scoped `AgentAcademyDbContext`)
+
+```csharp
+public sealed class AgentConfigService
+{
+    Task<AgentDefinition> GetEffectiveAgentAsync(AgentDefinition catalogAgent);
+    Task<List<AgentDefinition>> GetEffectiveAgentsAsync(IEnumerable<AgentDefinition> catalogAgents);
+}
+```
+
+| Method | Description |
+|--------|-------------|
+| `GetEffectiveAgentAsync` | Queries DB for override, merges with catalog, returns effective definition |
+| `GetEffectiveAgentsAsync` | Batch version — single query for all agent overrides |
+| `MergeAgent` (internal static) | Pure merge logic for testability |
+| `BuildEffectivePrompt` (internal static) | Layering logic: base + template + custom |
+
+**Behavior**:
+- If no override row exists for an agent → returns catalog definition unchanged
+- Whitespace-only overrides are treated as unset (fall through to catalog)
+- Identity fields (`Id`, `Name`, `Role`, `Summary`, `CapabilityTags`, `EnabledTools`, `AutoJoinDefaultRoom`, `GitIdentity`, `Permissions`) are never modified
+- Only `StartupPrompt` and `Model` can be overridden
+
+### Orchestrator Integration
+
+**File**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
+
+The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFactory` and applies overrides before building prompts or calling the executor:
+
+| Method | Change |
+|--------|--------|
+| `RunConversationRoundAsync` | Resolves effective agent for planner and each conversation participant |
+| `RunBreakoutLoopAsync` | Resolves effective agent before breakout rounds |
+| `HandleBreakoutCompleteAsync` | Resolves effective agent for presenting agent |
+| `RunReviewCycleAsync` | Resolves effective reviewer agent |
+
+`WorkspaceRuntime` continues using `_catalog.Agents` for identity-only operations (location tracking, room assignment, task claims). Config overrides are not needed for these operations.
+
+`CopilotExecutor` is unchanged — it receives the already-merged `AgentDefinition` and uses its `Model` and `StartupPrompt` properties as before.
+
+### Tests
+
+**File**: `tests/AgentAcademy.Server.Tests/AgentConfigServiceTests.cs` — 14 tests
+
+| Test | Validates |
+|------|-----------|
+| `GetEffectiveAgent_NoOverride_ReturnsCatalogUnchanged` | No override → identity pass-through |
+| `GetEffectiveAgent_ModelOverride_ReplacesModel` | Model swap |
+| `GetEffectiveAgent_StartupPromptOverride_ReplacesPrompt` | Prompt replacement |
+| `GetEffectiveAgent_CustomInstructions_AppendedToPrompt` | Custom appended to catalog |
+| `GetEffectiveAgent_InstructionTemplate_AppendedBetweenPromptAndCustom` | Layering order |
+| `GetEffectiveAgent_FullLayering_OverridePromptPlusTemplatePlusCustom` | Override + template + custom |
+| `GetEffectiveAgent_EmptyOverrides_TreatedAsNoOverride` | Whitespace handling |
+| `GetEffectiveAgents_MixedOverrides_AppliedCorrectly` | Bulk query with partial overrides |
+| `BuildEffectivePrompt_NoOverrides_ReturnsCatalogPrompt` | Static pure function |
+| `BuildEffectivePrompt_AllLayers_DoubleNewlineSeparated` | Separator format |
+| `BuildEffectivePrompt_OnlyTemplate_AppendedToCatalog` | Template-only layer |
+| `GetEffectiveAgent_PreservesAllIdentityFields` | Full identity preservation |
+| `AgentConfig_InstructionTemplateFk_SetNullOnDelete` | FK cascade behavior |
+| `InstructionTemplate_NameIsUnique` | Unique constraint enforcement |
+
 ## Revision History
 
 | Date | Change | Task |
@@ -229,3 +361,4 @@ Both hooks are always called (React Rules of Hooks), but only the active one cre
 | 2026-03-28 | OAuth token → Copilot SDK activation: CopilotTokenProvider, token-change-aware executor, SaveTokens=true | auth-sdk-flow |
 | 2026-03-28 | Documented CLI path configuration (Copilot:CliPath, system vs bundled binary) | cli-path-docs |
 | 2026-03-28 | StubExecutor: replaced canned role-based responses with deterministic offline notice | stub-offline-notice |
+| 2026-03-29 | Agent configuration overrides — DB schema, AgentConfigService, orchestrator integration | agent-config-phase1 |

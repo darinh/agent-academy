@@ -27,6 +27,8 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<CommandAuditEntity> CommandAudits => Set<CommandAuditEntity>();
     public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
     public DbSet<NotificationConfigEntity> NotificationConfigs => Set<NotificationConfigEntity>();
+    public DbSet<AgentConfigEntity> AgentConfigs => Set<AgentConfigEntity>();
+    public DbSet<InstructionTemplateEntity> InstructionTemplates => Set<InstructionTemplateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -255,6 +257,34 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => new { e.ProviderId, e.Key })
                 .IsUnique()
                 .HasDatabaseName("idx_notification_configs_provider_key");
+        });
+
+        // ── Agent Configs ───────────────────────────────────
+        modelBuilder.Entity<AgentConfigEntity>(entity =>
+        {
+            entity.ToTable("agent_configs");
+            entity.HasKey(e => e.AgentId);
+            entity.Property(e => e.UpdatedAt).IsRequired();
+
+            entity.HasOne(e => e.InstructionTemplate)
+                .WithMany()
+                .HasForeignKey(e => e.InstructionTemplateId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── Instruction Templates ───────────────────────────
+        modelBuilder.Entity<InstructionTemplateEntity>(entity =>
+        {
+            entity.ToTable("instruction_templates");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired();
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt).IsRequired();
+
+            entity.HasIndex(e => e.Name)
+                .IsUnique()
+                .HasDatabaseName("idx_instruction_templates_name");
         });
     }
 }
