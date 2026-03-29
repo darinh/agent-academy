@@ -104,7 +104,16 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var envelope = await _runtime.PostHumanMessageAsync(roomId, request.Content);
+            // Extract GitHub identity from authenticated user claims
+            string? userId = null;
+            string? userName = null;
+            if (User.Identity?.IsAuthenticated == true)
+            {
+                userId = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+                userName = User.FindFirst("urn:github:name")?.Value ?? userId;
+            }
+
+            var envelope = await _runtime.PostHumanMessageAsync(roomId, request.Content, userId, userName);
 
             // System status + orchestration are best-effort — don't fail the request
             try

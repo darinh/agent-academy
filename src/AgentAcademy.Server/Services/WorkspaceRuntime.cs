@@ -930,8 +930,12 @@ public sealed class WorkspaceRuntime
 
     /// <summary>
     /// Posts a human message to a room.
+    /// When identity parameters are provided, the message is attributed to that user.
+    /// Otherwise falls back to generic "Human" identity.
     /// </summary>
-    public async Task<ChatEnvelope> PostHumanMessageAsync(string roomId, string content)
+    public async Task<ChatEnvelope> PostHumanMessageAsync(
+        string roomId, string content,
+        string? userId = null, string? userName = null)
     {
         if (string.IsNullOrWhiteSpace(roomId))
             throw new ArgumentException("roomId is required", nameof(roomId));
@@ -941,12 +945,15 @@ public sealed class WorkspaceRuntime
         var room = await _db.Rooms.FindAsync(roomId)
             ?? throw new InvalidOperationException($"Room '{roomId}' not found");
 
+        var senderId = userId ?? "human";
+        var senderName = userName ?? "Human";
+
         var now = DateTime.UtcNow;
         var envelope = new ChatEnvelope(
             Id: Guid.NewGuid().ToString("N"),
             RoomId: roomId,
-            SenderId: "human",
-            SenderName: "You",
+            SenderId: senderId,
+            SenderName: senderName,
             SenderRole: "Human",
             SenderKind: MessageSenderKind.User,
             Kind: MessageKind.Response,
@@ -958,8 +965,8 @@ public sealed class WorkspaceRuntime
         {
             Id = envelope.Id,
             RoomId = roomId,
-            SenderId = "human",
-            SenderName = "You",
+            SenderId = senderId,
+            SenderName = senderName,
             SenderRole = "Human",
             SenderKind = nameof(MessageSenderKind.User),
             Kind = nameof(MessageKind.Response),
@@ -972,8 +979,9 @@ public sealed class WorkspaceRuntime
 
         room.UpdatedAt = now;
 
+        // ActorId stays "human" for activity event filtering (broadcaster suppresses echo)
         Publish(ActivityEventType.MessagePosted, roomId, "human", null,
-            $"You: {content}");
+            $"{senderName}: {content}");
 
         await _db.SaveChangesAsync();
 
