@@ -39,7 +39,7 @@ Configured agents (v1 port):
 
 ### Room Management
 
-- `GetRoomsAsync()` → all rooms ordered by name
+- `GetRoomsAsync()` → all rooms, default room first then alphabetically by name
 - `GetRoomAsync(roomId)` → single room snapshot or null
 - `CreateDefaultRoomAsync()` → creates default room if none exists
 
@@ -155,4 +155,5 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 ## Revision History
 
+- **2026-03-29**: Default room ordering — `GetRoomsAsync` now sorts the configured default room first, then remaining rooms alphabetically by name
 - **Initial implementation**: Ported from v1 TypeScript `WorkspaceRuntime.ts` to C# with EF Core persistence

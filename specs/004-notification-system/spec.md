@@ -38,6 +38,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 | `DisconnectAsync()` | `Task` | Tear down connection |
 | `SendNotificationAsync()` | `Task<bool>` | Deliver a notification message |
 | `RequestInputAsync()` | `Task<UserResponse?>` | Collect user input (null if unsupported) |
+| `SendAgentQuestionAsync()` | `Task<(bool, string?)>` | Send agent question to human; returns sent status + error detail |
 | `GetConfigSchema()` | `ProviderConfigSchema` | Describe required configuration fields |
 
 ### NotificationManager
@@ -46,6 +47,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 - **Fan-out delivery**: `SendToAllAsync` sends to every connected provider
 - **Failure isolation**: Individual provider failures are logged, never propagated
 - **Input collection**: `RequestInputFromAnyAsync` tries providers in order, returns first non-null response
+- **Agent questions**: `SendAgentQuestionAsync` returns `(bool Sent, string? Error)` tuple — surfaces actual provider errors instead of generic failure messages; tries all providers before failing
 
 ### Built-in Provider: Console
 
@@ -139,28 +141,95 @@ The `NotificationSetupWizard` component is accessible via the **Settings** tab i
 
 ### Discord Provider
 
-The `DiscordNotificationProvider` connects to Discord via the Discord.Net library (`DiscordSocketClient`).
+The `DiscordNotificationProvider` connects to Discord via the Discord.Net library (`DiscordSocketClient`). Supports room-based channel routing with webhook-based agent identity.
 
 **Configuration** (via `ConfigureAsync`):
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `BotToken` | `secret` | Yes | Discord bot token from developer portal |
 | `GuildId` | `string` | Yes | Discord server (guild) ID |
-| `ChannelId` | `string` | Yes | Target text channel ID |
+| `ChannelId` | `string` | Yes | Fallback notification channel ID |
+
+**Required bot permissions** (server-level role, not per-channel):
+- Manage Channels — create room channels and categories
+- Manage Webhooks — create webhooks for agent identity
+- Send Messages — post in channels
+- Create Public Threads — ASK_HUMAN question threads
+- Send Messages in Threads — reply in threads
 
 **Connection lifecycle**:
 - `ConfigureAsync` — validates and stores bot token, guild ID, channel ID
-- `ConnectAsync` — creates `DiscordSocketClient`, logs in with bot token, waits for Ready event (30s timeout)
+- `ConnectAsync` — creates `DiscordSocketClient`, logs in with bot token, waits for Ready event (30s timeout), rebuilds channel mappings from existing Discord state
 - `DisconnectAsync` — stops and disposes the client; implements `IAsyncDisposable`
 
+#### Room-Based Channel Routing
+
+Each Agent Academy room gets a dedicated Discord channel under an "Agent Academy" category. Messages are routed by `RoomId` from the `NotificationMessage`.
+
+**Discord server structure**:
+```
+📁 Agent Academy (category — auto-created)
+  💬 main-collaboration-room-{roomIdSlug}   ← mirrors AA room
+  💬 task-implement-auth-{roomIdSlug}        ← mirrors AA task room
+📁 aa-{roomName}-{roomIdSlug} (category — ASK_HUMAN)
+  💬 aristotle                               ← agent question channel
+    🧵 What database should I use?           ← question thread
+```
+
+**Channel creation**: Lazy (on first message to a room). Categories and channels are created inside a `_channelCreateLock` semaphore to prevent duplicates.
+
+**Channel naming**: Room name + 8-char roomId slug, sanitized for Discord (lowercase, hyphens, no special chars). Topic includes `(ID: {roomId})` for startup recovery.
+
+**Fallback**: If room channel creation fails (e.g., missing permissions), notifications fall back to the configured `_channelId` default channel. A warning is logged with the specific permissions needed.
+
+**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels are identified by the "Agent Academy" category; agent channels by "aa-" category prefix. Room IDs are parsed from channel topics.
+
+#### Webhook-Based Agent Identity
+
+Messages sent to room channels use Discord webhooks, allowing each agent to appear as a distinct sender with a custom name and avatar.
+
+**Implementation**:
+- One webhook per room channel, named "Agent Academy", cached in `_webhooks` dictionary
+- Webhook creation synchronized inside `_channelCreateLock` (Discord has a 15-webhook-per-channel limit)
+- Agent display names: humanized from agent ID (e.g., `"planner-1"` → `"Planner 1"`) or used as-is if already a name
+- Agent avatars: DiceBear Identicons (`https://api.dicebear.com/9.x/identicon/png?seed={agentName}`)
+- Regular messages: plain text via webhook (clean, native appearance)
+- Error/system messages: compact embed via webhook (colored, timestamped)
+- Fallback: if webhook creation fails, messages fall back to regular bot embed format
+
+#### Bidirectional Message Bridging
+
+Human messages posted in Discord room channels are routed back to the correct Agent Academy room.
+
+**Flow**: Discord message → `OnAgentChannelMessageReceived` → check `_channelToRoom` mapping → `PostHumanMessageAsync(roomId, content)` → `_orchestrator.HandleHumanMessage(roomId)` → agents respond.
+
+- Webhook messages (from the bot itself) are ignored to prevent loops
+- Non-text messages get a hint: "Please reply with text"
+- Successful delivery confirmed with ✅ reaction
+- Failed delivery: error message posted in Discord channel
+- The orchestrator trigger (`HandleHumanMessage`) is critical — without it, messages are stored but agents never respond
+
+#### ASK_HUMAN — Agent-to-Human Question Bridge
+
+Creates a dedicated Discord structure for agent questions with threaded replies.
+
+**Flow**: Agent → `ASK_HUMAN` command → `AskHumanHandler` → `NotificationManager.SendAgentQuestionAsync` → `DiscordProvider.SendAgentQuestionAsync` → category/channel/thread creation → human replies routed back via `PostHumanMessageAsync` + `HandleHumanMessage`.
+
+**Discord structure**: Category per workspace (`aa-{roomName}-{roomIdSlug}`), channel per agent, thread per question. Channel topics include `(Room: {roomId})` for startup recovery.
+
+**Error propagation**: `NotificationManager.SendAgentQuestionAsync` returns `(bool Sent, string? Error)` tuple. The handler surfaces actual error details to the agent (e.g., "Provider 'discord' error: Missing Permissions") instead of a generic "no provider connected" message. Provider failover: tries all connected providers before returning failure, collecting the last error.
+
+**Missing permissions catch**: Specific `Discord.Net.HttpException` catch for error code 50013 logs the exact permissions needed.
+
 **Notification delivery** (`SendNotificationAsync`):
-- Formats as a Discord embed with type-based color coding:
+- Routes by `RoomId` to room-specific channels when available
+- Falls back to configured `_channelId` default channel when no `RoomId` or on permission failure
+- Color coding for embeds (fallback format):
   - 🔵 Blue — AgentThinking
   - 🟡 Gold — NeedsInput
   - 🟢 Green — TaskComplete
   - 🔴 Red — TaskFailed, Error
   - 🟣 Purple — SpecReview
-- Includes Room and Agent fields when present
 - Action buttons rendered as Discord button components
 
 **Input collection** (`RequestInputAsync`):
@@ -170,6 +239,7 @@ The `DiscordNotificationProvider` connects to Discord via the Discord.Net librar
 
 **Error handling**:
 - Send failures are logged and return `false` (never throw)
+- Missing permissions (50013) caught specifically with actionable log message
 - `IsConnected` reflects actual `DiscordSocketClient.ConnectionState`
 - Disconnections are logged via the client's `Disconnected` event
 - Connection uses `SemaphoreSlim` to prevent concurrent connect/disconnect races
@@ -204,7 +274,7 @@ The `DiscordNotificationProvider` connects to Discord via the Discord.Net librar
 
 ## Known Gaps
 
-- No webhook-based notification support yet (Slack provider)
+- No Slack provider implementation yet
 - No persistent notification history or delivery tracking
 - No retry/backoff on transient provider failures
 - No authentication on notification API endpoints (will be covered by system-wide auth)
@@ -212,9 +282,13 @@ The `DiscordNotificationProvider` connects to Discord via the Discord.Net librar
 - Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
 - Provider config values (including secrets) stored in plaintext in SQLite — encryption enhancement pending
 - Settings tab currently shows only Discord wizard; will need expansion for multiple providers
+- DiceBear avatar URLs are an external dependency — consider caching/bundling if availability matters
+- Room channels are not cleaned up when rooms are archived/completed
 
 ## Revision History
 
+- **2026-03-29**: Discord room-based channel routing — per-room Discord channels under "Agent Academy" category, webhook-based agent identity (custom sender name + DiceBear avatar), bidirectional message bridging (Discord replies trigger orchestrator), error propagation via `(bool, string?)` tuple return, graceful permission fallback, missing-permissions catch with actionable logging. 3 adversarial reviews, 7 findings fixed.
+- **2026-03-29**: Discord → orchestrator fix — human messages from Discord now call `HandleHumanMessage(roomId)` to wake up agents (was storing messages without triggering response).
 - **2026-03-28**: Activity bridge — `ActivityNotificationBroadcaster` hosted service wires 7 event types to notification providers; config persistence via `notification_configs` table with atomic upsert; non-blocking auto-restore on startup; Settings tab in frontend with inline wizard mode; 35 new unit tests (commit `691ec89`)
 - **2025-07-27**: Discord provider — `DiscordNotificationProvider` with embed notifications, button-based choices, freeform input, connection lifecycle management; 36 unit tests
 - **2025-07-11**: Initial implementation — interface, manager, console provider, REST API, tests
