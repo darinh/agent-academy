@@ -351,6 +351,105 @@ The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFac
 | `AgentConfig_InstructionTemplateFk_SetNullOnDelete` | FK cascade behavior |
 | `InstructionTemplate_NameIsUnique` | Unique constraint enforcement |
 
+### REST API Endpoints
+
+#### Agent Configuration
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/config` | Returns effective config (merged catalog + DB override) and raw override details |
+| `PUT` | `/api/agents/{agentId}/config` | Creates or updates an agent configuration override |
+| `POST` | `/api/agents/{agentId}/config/reset` | Deletes override, reverts agent to catalog defaults |
+
+**GET `/api/agents/{agentId}/config`** response:
+```json
+{
+  "agentId": "planner-1",
+  "effectiveModel": "claude-opus-4.6",
+  "effectiveStartupPrompt": "...(merged prompt)...",
+  "hasOverride": true,
+  "override": {
+    "startupPromptOverride": "...",
+    "modelOverride": "gpt-5.4",
+    "customInstructions": "...",
+    "instructionTemplateId": "abc-123",
+    "instructionTemplateName": "Verification-First",
+    "updatedAt": "2026-03-29T..."
+  }
+}
+```
+
+**PUT `/api/agents/{agentId}/config`** request — all fields nullable (null clears that override):
+```json
+{
+  "startupPromptOverride": "...",
+  "modelOverride": "gpt-5.4",
+  "customInstructions": "...",
+  "instructionTemplateId": "abc-123"
+}
+```
+
+**Validation**:
+- `agentId` must exist in the agent catalog → `404` if not found
+- `instructionTemplateId` must reference an existing template → `400` if invalid
+
+**POST `/api/agents/{agentId}/config/reset`** — no request body, returns the catalog default config.
+
+#### Instruction Templates
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/instruction-templates` | Lists all templates, ordered by name |
+| `GET` | `/api/instruction-templates/{id}` | Returns a single template |
+| `POST` | `/api/instruction-templates` | Creates a new template |
+| `PUT` | `/api/instruction-templates/{id}` | Updates an existing template |
+| `DELETE` | `/api/instruction-templates/{id}` | Deletes a template (FK SetNull on agent_configs) |
+
+**POST/PUT request**:
+```json
+{
+  "name": "Verification-First",
+  "description": "Agents verify before presenting",
+  "content": "You must verify all code..."
+}
+```
+
+**Validation**:
+- `name` required, must be unique → `409 Conflict` on duplicate
+- `content` required → `400` if empty
+- DELETE returns `404` if template not found; agent_configs referencing the deleted template have `InstructionTemplateId` set to null via FK cascade
+
+**Implementation**: Endpoints on `AgentController` (config) and `InstructionTemplateController` (templates). DTOs are file-local records. Service methods on `AgentConfigService`.
+
+#### CRUD Test Coverage
+
+| Test | Verifies |
+|------|----------|
+| `GetConfigOverride_NoOverride_ReturnsNull` | No DB row returns null |
+| `GetConfigOverride_WithOverride_ReturnsEntity` | DB row with fields |
+| `GetConfigOverride_IncludesTemplateNavigation` | Include() loads template |
+| `UpsertConfig_CreatesNew_WhenNoOverrideExists` | Insert path |
+| `UpsertConfig_UpdatesExisting_WhenOverrideExists` | Update path, single row |
+| `UpsertConfig_NullFields_ClearOverride` | Null clears fields |
+| `UpsertConfig_WithValidTemplate_SetsFK` | FK + navigation loaded |
+| `UpsertConfig_WithInvalidTemplate_ThrowsArgumentException` | Invalid template ID |
+| `UpsertConfig_SetsUpdatedAt` | Timestamp set |
+| `DeleteConfig_ExistingOverride_ReturnsTrueAndRemoves` | Delete path |
+| `DeleteConfig_NoOverride_ReturnsFalse` | Missing row |
+| `CreateTemplate_ReturnsNewTemplate` | Insert with all fields |
+| `CreateTemplate_DuplicateName_ThrowsInvalidOperationException` | Unique name |
+| `GetAllTemplates_ReturnsOrderedByName` | OrderBy(Name) |
+| `GetAllTemplates_Empty_ReturnsEmptyList` | Empty DB |
+| `GetTemplate_Exists_ReturnsTemplate` | Single lookup |
+| `GetTemplate_NotFound_ReturnsNull` | Missing row |
+| `UpdateTemplate_Exists_UpdatesFields` | Update path |
+| `UpdateTemplate_NotFound_ReturnsNull` | Missing row |
+| `UpdateTemplate_DuplicateNameWithOtherTemplate_ThrowsInvalidOperationException` | Name conflict with other |
+| `UpdateTemplate_SameNameOnSameTemplate_Succeeds` | No self-conflict |
+| `DeleteTemplate_Exists_ReturnsTrueAndRemoves` | Delete path |
+| `DeleteTemplate_NotFound_ReturnsFalse` | Missing row |
+| `DeleteTemplate_NullifiesFkOnAgentConfigs` | FK SetNull cascade |
+
 ## Revision History
 
 | Date | Change | Task |
@@ -362,3 +461,4 @@ The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFac
 | 2026-03-28 | Documented CLI path configuration (Copilot:CliPath, system vs bundled binary) | cli-path-docs |
 | 2026-03-28 | StubExecutor: replaced canned role-based responses with deterministic offline notice | stub-offline-notice |
 | 2026-03-29 | Agent configuration overrides — DB schema, AgentConfigService, orchestrator integration | agent-config-phase1 |
+| 2026-03-29 | Agent config API — CRUD endpoints for agent config overrides and instruction templates | agent-config-phase2 |

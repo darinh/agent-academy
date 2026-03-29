@@ -109,4 +109,181 @@ public sealed class AgentConfigService
 
         return string.Join("\n\n", parts);
     }
+
+    // ── Agent Config CRUD ──────────────────────────────────────
+
+    /// <summary>
+    /// Returns the raw DB override for an agent, or null if none exists.
+    /// Includes the navigation to InstructionTemplate for template name resolution.
+    /// </summary>
+    public async Task<Data.Entities.AgentConfigEntity?> GetConfigOverrideAsync(string agentId)
+    {
+        return await _db.AgentConfigs
+            .Include(c => c.InstructionTemplate)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.AgentId == agentId);
+    }
+
+    /// <summary>
+    /// Creates or updates an agent configuration override.
+    /// All override fields are nullable — null clears that field.
+    /// </summary>
+    public async Task<Data.Entities.AgentConfigEntity> UpsertConfigAsync(
+        string agentId,
+        string? startupPromptOverride,
+        string? modelOverride,
+        string? customInstructions,
+        string? instructionTemplateId)
+    {
+        // Validate template exists if provided
+        if (instructionTemplateId is not null)
+        {
+            var templateExists = await _db.InstructionTemplates
+                .AnyAsync(t => t.Id == instructionTemplateId);
+            if (!templateExists)
+                throw new ArgumentException($"Instruction template '{instructionTemplateId}' not found.");
+        }
+
+        var existing = await _db.AgentConfigs
+            .FirstOrDefaultAsync(c => c.AgentId == agentId);
+
+        if (existing is not null)
+        {
+            existing.StartupPromptOverride = startupPromptOverride;
+            existing.ModelOverride = modelOverride;
+            existing.CustomInstructions = customInstructions;
+            existing.InstructionTemplateId = instructionTemplateId;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            existing = new Data.Entities.AgentConfigEntity
+            {
+                AgentId = agentId,
+                StartupPromptOverride = startupPromptOverride,
+                ModelOverride = modelOverride,
+                CustomInstructions = customInstructions,
+                InstructionTemplateId = instructionTemplateId,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.AgentConfigs.Add(existing);
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Re-fetch with template navigation loaded
+        return (await GetConfigOverrideAsync(agentId))!;
+    }
+
+    /// <summary>
+    /// Deletes the configuration override for an agent, reverting to catalog defaults.
+    /// Returns true if an override existed and was deleted.
+    /// </summary>
+    public async Task<bool> DeleteConfigAsync(string agentId)
+    {
+        var existing = await _db.AgentConfigs
+            .FirstOrDefaultAsync(c => c.AgentId == agentId);
+
+        if (existing is null)
+            return false;
+
+        _db.AgentConfigs.Remove(existing);
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    // ── Instruction Template CRUD ──────────────────────────────
+
+    /// <summary>
+    /// Returns all instruction templates ordered by name.
+    /// </summary>
+    public async Task<List<Data.Entities.InstructionTemplateEntity>> GetAllTemplatesAsync()
+    {
+        return await _db.InstructionTemplates
+            .AsNoTracking()
+            .OrderBy(t => t.Name)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Returns a single instruction template by ID, or null if not found.
+    /// </summary>
+    public async Task<Data.Entities.InstructionTemplateEntity?> GetTemplateAsync(string id)
+    {
+        return await _db.InstructionTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id);
+    }
+
+    /// <summary>
+    /// Creates a new instruction template. Throws if name is already taken.
+    /// </summary>
+    public async Task<Data.Entities.InstructionTemplateEntity> CreateTemplateAsync(
+        string name, string? description, string content)
+    {
+        var nameExists = await _db.InstructionTemplates
+            .AnyAsync(t => t.Name == name);
+        if (nameExists)
+            throw new InvalidOperationException($"An instruction template named '{name}' already exists.");
+
+        var now = DateTime.UtcNow;
+        var template = new Data.Entities.InstructionTemplateEntity
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = name,
+            Description = description,
+            Content = content,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        _db.InstructionTemplates.Add(template);
+        await _db.SaveChangesAsync();
+        return template;
+    }
+
+    /// <summary>
+    /// Updates an existing instruction template. Returns null if not found.
+    /// Throws if the new name conflicts with another template.
+    /// </summary>
+    public async Task<Data.Entities.InstructionTemplateEntity?> UpdateTemplateAsync(
+        string id, string name, string? description, string content)
+    {
+        var template = await _db.InstructionTemplates
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (template is null)
+            return null;
+
+        // Check for name conflict with a different template
+        var nameConflict = await _db.InstructionTemplates
+            .AnyAsync(t => t.Name == name && t.Id != id);
+        if (nameConflict)
+            throw new InvalidOperationException($"An instruction template named '{name}' already exists.");
+
+        template.Name = name;
+        template.Description = description;
+        template.Content = content;
+        template.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return template;
+    }
+
+    /// <summary>
+    /// Deletes an instruction template. FK SetNull cascades to agent_configs.
+    /// Returns true if the template existed and was deleted.
+    /// </summary>
+    public async Task<bool> DeleteTemplateAsync(string id)
+    {
+        var template = await _db.InstructionTemplates
+            .FirstOrDefaultAsync(t => t.Id == id);
+
+        if (template is null)
+            return false;
+
+        _db.InstructionTemplates.Remove(template);
+        await _db.SaveChangesAsync();
+        return true;
+    }
 }
