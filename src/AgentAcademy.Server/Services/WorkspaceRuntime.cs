@@ -270,6 +270,9 @@ public sealed class WorkspaceRuntime
         {
             var defaultRoomId = existingForWorkspace.Id;
 
+            // Retire the legacy catalog default room if it was backfilled into this workspace
+            await RetireLegacyDefaultRoomAsync(workspacePath, defaultRoomId);
+
             // Move all agents to this workspace's default room
             await MoveAllAgentsToRoomAsync(defaultRoomId);
             return defaultRoomId;
@@ -322,6 +325,9 @@ public sealed class WorkspaceRuntime
 
         await _db.SaveChangesAsync();
 
+        // Retire the legacy catalog default room if it was backfilled into this workspace
+        await RetireLegacyDefaultRoomAsync(workspacePath, candidateId);
+
         Publish(ActivityEventType.RoomCreated, candidateId, null, null,
             $"Default room created for workspace: {displayName}");
 
@@ -331,6 +337,27 @@ public sealed class WorkspaceRuntime
         // Move all agents to this workspace's default room
         await MoveAllAgentsToRoomAsync(candidateId);
         return candidateId;
+    }
+
+    /// <summary>
+    /// If the legacy catalog default room (e.g. "main") was backfilled into this workspace
+    /// by a migration, clear its WorkspacePath so it stops appearing alongside the real
+    /// workspace default room.
+    /// </summary>
+    private async Task RetireLegacyDefaultRoomAsync(string workspacePath, string workspaceDefaultRoomId)
+    {
+        var legacyRoomId = _catalog.DefaultRoomId;
+        if (legacyRoomId == workspaceDefaultRoomId) return;
+
+        var legacyRoom = await _db.Rooms.FindAsync(legacyRoomId);
+        if (legacyRoom is not null && legacyRoom.WorkspacePath == workspacePath)
+        {
+            legacyRoom.WorkspacePath = null;
+            await _db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Retired legacy default room '{RoomId}' — cleared WorkspacePath (was '{Workspace}')",
+                legacyRoomId, workspacePath);
+        }
     }
 
     /// <summary>

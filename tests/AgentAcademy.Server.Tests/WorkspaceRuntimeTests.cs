@@ -863,4 +863,132 @@ public class WorkspaceRuntimeTests : IDisposable
         var result = await _runtime.GetProjectNameForRoomAsync("orphan-room");
         Assert.Null(result);
     }
+
+    // ── Duplicate main room retirement ─────────────────────────
+
+    [Fact]
+    public async Task EnsureDefaultRoom_RetiresLegacyRoom_WhenBackfilledIntoWorkspace()
+    {
+        var workspacePath = "/home/test/my-project";
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = workspacePath,
+            ProjectName = "My Project",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        // Simulate the migration backfill: legacy "main" room gets WorkspacePath set
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main",
+            Name = "Main Collaboration Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = workspacePath,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        // This should create a workspace default room AND retire the legacy one
+        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+
+        Assert.NotEqual("main", defaultRoomId);
+
+        // Legacy room should have WorkspacePath cleared
+        var legacyRoom = await _db.Rooms.FindAsync("main");
+        Assert.NotNull(legacyRoom);
+        Assert.Null(legacyRoom!.WorkspacePath);
+
+        // Only the workspace default room should appear in room list
+        var rooms = await _runtime.GetRoomsAsync();
+        Assert.Single(rooms);
+        Assert.Equal(defaultRoomId, rooms[0].Id);
+    }
+
+    [Fact]
+    public async Task EnsureDefaultRoom_RetiresLegacyRoom_WhenWorkspaceAlreadyHasDefaultRoom()
+    {
+        var workspacePath = "/home/test/my-project";
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = workspacePath,
+            ProjectName = "My Project",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var now = DateTime.UtcNow;
+
+        // Legacy room backfilled into workspace
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main",
+            Name = "Main Collaboration Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = workspacePath,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+
+        // Workspace already has its own default room
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "my-project-main",
+            Name = "My Project — Main Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = workspacePath,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        // Should find existing workspace room and retire legacy
+        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        Assert.Equal("my-project-main", defaultRoomId);
+
+        var legacyRoom = await _db.Rooms.FindAsync("main");
+        Assert.Null(legacyRoom!.WorkspacePath);
+
+        var rooms = await _runtime.GetRoomsAsync();
+        Assert.Single(rooms);
+        Assert.Equal("my-project-main", rooms[0].Id);
+    }
+
+    [Fact]
+    public async Task EnsureDefaultRoom_DoesNotRetire_WhenLegacyRoomNotBackfilled()
+    {
+        var workspacePath = "/home/test/my-project";
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = workspacePath,
+            ProjectName = "My Project",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        // Legacy room with no workspace (never backfilled)
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main",
+            Name = "Main Collaboration Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = null,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+
+        // Legacy room should still have null WorkspacePath (unchanged)
+        var legacyRoom = await _db.Rooms.FindAsync("main");
+        Assert.Null(legacyRoom!.WorkspacePath);
+    }
 }
