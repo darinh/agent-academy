@@ -345,9 +345,22 @@ public class WorkspaceRuntimeTests : IDisposable
         var envelope = await _runtime.PostHumanMessageAsync("main", "Hello team!");
 
         Assert.Equal("human", envelope.SenderId);
-        Assert.Equal("You", envelope.SenderName);
+        Assert.Equal("Human", envelope.SenderName);
         Assert.Equal(MessageSenderKind.User, envelope.SenderKind);
         Assert.Equal(MessageKind.Response, envelope.Kind);
+    }
+
+    [Fact]
+    public async Task PostHumanMessage_UsesGitHubIdentity_WhenProvided()
+    {
+        await _runtime.InitializeAsync();
+
+        var envelope = await _runtime.PostHumanMessageAsync("main", "Hello team!", "darinious", "Darin");
+
+        Assert.Equal("darinious", envelope.SenderId);
+        Assert.Equal("Darin", envelope.SenderName);
+        Assert.Equal("Human", envelope.SenderRole);
+        Assert.Equal(MessageSenderKind.User, envelope.SenderKind);
     }
 
     [Fact]
