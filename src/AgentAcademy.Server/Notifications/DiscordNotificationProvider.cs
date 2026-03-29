@@ -230,6 +230,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// Sends a notification to a room-specific Discord channel using a webhook
     /// so the agent appears as the sender with a custom name and avatar.
     /// Creates the room channel and webhook on demand.
+    /// Falls back to the configured default channel if creation fails (e.g., missing permissions).
     /// </summary>
     private async Task<bool> SendToRoomChannelAsync(NotificationMessage message)
     {
@@ -240,7 +241,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             return false;
         }
 
-        ITextChannel roomChannel;
+        ITextChannel? roomChannel = null;
         DiscordWebhookClient? webhook = null;
 
         await _channelCreateLock.WaitAsync();
@@ -252,9 +253,28 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             if (!string.IsNullOrEmpty(message.AgentName))
                 webhook = await GetOrCreateWebhookAsync(roomChannel);
         }
+        catch (Discord.Net.HttpException httpEx) when (httpEx.DiscordCode == DiscordErrorCode.MissingPermissions)
+        {
+            _logger.LogWarning(
+                "Cannot create room channel/webhook (Missing Permissions) — falling back to default channel. " +
+                "Grant the bot 'Manage Channels' and 'Manage Webhooks' at the server level.");
+            roomChannel = null;
+        }
         finally
         {
             _channelCreateLock.Release();
+        }
+
+        // Fallback to configured default channel if room channel creation failed
+        if (roomChannel is null)
+        {
+            var fallbackChannel = ResolveChannel();
+            if (fallbackChannel is null)
+                return false;
+
+            var embed = BuildEmbed(message);
+            await (fallbackChannel as ITextChannel)!.SendMessageAsync(embed: embed);
+            return true;
         }
 
         // Use webhook for agent messages (custom sender name/avatar)
