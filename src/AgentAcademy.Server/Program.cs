@@ -189,6 +189,13 @@ using (var scope = app.Services.CreateScope())
     // Initialize workspace runtime (create default room + agent locations)
     var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
     await runtime.InitializeAsync();
+
+    // If a workspace is already active, ensure it has a default room
+    var activeWorkspace = await runtime.GetActiveWorkspacePathAsync();
+    if (activeWorkspace is not null)
+    {
+        await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
+    }
 }
 
 // Register built-in notification providers

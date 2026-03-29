@@ -69,55 +69,54 @@ public sealed class WorkspaceRuntime
     {
         var defaultRoomId = _catalog.DefaultRoomId;
         var activeWorkspace = await GetActiveWorkspacePathAsync();
-        var existing = await _db.Rooms.FindAsync(defaultRoomId);
 
-        if (existing is null)
+        // When a workspace is active, EnsureDefaultRoomForWorkspaceAsync handles room creation.
+        // Only create the legacy "main" room when no workspace exists (first boot).
+        if (activeWorkspace is null)
         {
-            var now = DateTime.UtcNow;
-            var room = new RoomEntity
+            var existing = await _db.Rooms.FindAsync(defaultRoomId);
+
+            if (existing is null)
             {
-                Id = defaultRoomId,
-                Name = _catalog.DefaultRoomName,
-                Status = nameof(RoomStatus.Idle),
-                CurrentPhase = nameof(CollaborationPhase.Intake),
-                WorkspacePath = activeWorkspace,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _db.Rooms.Add(room);
+                var now = DateTime.UtcNow;
+                var room = new RoomEntity
+                {
+                    Id = defaultRoomId,
+                    Name = _catalog.DefaultRoomName,
+                    Status = nameof(RoomStatus.Idle),
+                    CurrentPhase = nameof(CollaborationPhase.Intake),
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                _db.Rooms.Add(room);
 
-            // Add a system welcome message
-            var welcomeMsg = new MessageEntity
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                RoomId = defaultRoomId,
-                SenderId = "system",
-                SenderName = "System",
-                SenderKind = nameof(MessageSenderKind.System),
-                Kind = nameof(MessageKind.System),
-                Content = "Collaboration host started. Agents are loading.",
-                SentAt = now
-            };
-            _db.Messages.Add(welcomeMsg);
+                var welcomeMsg = new MessageEntity
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    RoomId = defaultRoomId,
+                    SenderId = "system",
+                    SenderName = "System",
+                    SenderKind = nameof(MessageSenderKind.System),
+                    Kind = nameof(MessageKind.System),
+                    Content = "Collaboration host started. Agents are loading.",
+                    SentAt = now
+                };
+                _db.Messages.Add(welcomeMsg);
 
-            await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync();
 
-            Publish(ActivityEventType.RoomCreated, defaultRoomId, null, null,
-                $"Default room created: {_catalog.DefaultRoomName}");
+                Publish(ActivityEventType.RoomCreated, defaultRoomId, null, null,
+                    $"Default room created: {_catalog.DefaultRoomName}");
 
-            foreach (var agent in _catalog.Agents)
-            {
-                Publish(ActivityEventType.AgentLoaded, defaultRoomId, agent.Id, null,
-                    $"Agent loaded: {agent.Name} ({agent.Role})");
+                foreach (var agent in _catalog.Agents)
+                {
+                    Publish(ActivityEventType.AgentLoaded, defaultRoomId, agent.Id, null,
+                        $"Agent loaded: {agent.Name} ({agent.Role})");
+                }
+
+                _logger.LogInformation("Created default room '{RoomName}' with {AgentCount} agents",
+                    _catalog.DefaultRoomName, _catalog.Agents.Count);
             }
-
-            _logger.LogInformation("Created default room '{RoomName}' with {AgentCount} agents",
-                _catalog.DefaultRoomName, _catalog.Agents.Count);
-        }
-        else if (existing.WorkspacePath is null && activeWorkspace is not null)
-        {
-            // Backfill legacy room with active workspace
-            existing.WorkspacePath = activeWorkspace;
         }
 
         // Initialize agent locations for any agent not already tracked
