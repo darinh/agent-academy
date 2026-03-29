@@ -175,6 +175,41 @@ public class ActivityNotificationBroadcasterTests
     }
 
     [Fact]
+    public async Task HumanMessagePosted_IsNotForwarded()
+    {
+        var received = new List<NotificationMessage>();
+        var provider = new TestNotificationProvider(received);
+        _notificationManager.RegisterProvider(provider);
+        provider.SetConnected(true);
+
+        await _sut.StartAsync(CancellationToken.None);
+
+        // Human-originated MessagePosted should be suppressed
+        _broadcaster.Broadcast(CreateEvent(ActivityEventType.MessagePosted, "You: hello", actorId: "human"));
+        await Task.Delay(200);
+
+        Assert.Empty(received);
+    }
+
+    [Fact]
+    public async Task AgentMessagePosted_IsForwarded()
+    {
+        var received = new List<NotificationMessage>();
+        var provider = new TestNotificationProvider(received);
+        _notificationManager.RegisterProvider(provider);
+        provider.SetConnected(true);
+
+        await _sut.StartAsync(CancellationToken.None);
+
+        // Agent-originated MessagePosted should still be forwarded
+        _broadcaster.Broadcast(CreateEvent(ActivityEventType.MessagePosted, "Agent response", actorId: "planner-1"));
+        await Task.Delay(200);
+
+        Assert.Single(received);
+        Assert.Equal("Agent response", received[0].Body);
+    }
+
+    [Fact]
     public async Task StopAsync_PreventsForwarding()
     {
         var received = new List<NotificationMessage>();

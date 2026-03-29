@@ -50,12 +50,25 @@ public sealed class WorkspaceRuntime
     // ── Initialization ──────────────────────────────────────────
 
     /// <summary>
+    /// Returns the path of the currently active workspace, or null if none.
+    /// </summary>
+    public async Task<string?> GetActiveWorkspacePathAsync()
+    {
+        var active = await _db.Workspaces
+            .Where(w => w.IsActive)
+            .Select(w => w.Path)
+            .FirstOrDefaultAsync();
+        return active;
+    }
+
+    /// <summary>
     /// Ensures the default room and agent locations exist.
     /// Call once at startup within a scope.
     /// </summary>
     public async Task InitializeAsync()
     {
         var defaultRoomId = _catalog.DefaultRoomId;
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
         var existing = await _db.Rooms.FindAsync(defaultRoomId);
 
         if (existing is null)
@@ -67,6 +80,7 @@ public sealed class WorkspaceRuntime
                 Name = _catalog.DefaultRoomName,
                 Status = nameof(RoomStatus.Idle),
                 CurrentPhase = nameof(CollaborationPhase.Intake),
+                WorkspacePath = activeWorkspace,
                 CreatedAt = now,
                 UpdatedAt = now
             };
@@ -99,6 +113,11 @@ public sealed class WorkspaceRuntime
 
             _logger.LogInformation("Created default room '{RoomName}' with {AgentCount} agents",
                 _catalog.DefaultRoomName, _catalog.Agents.Count);
+        }
+        else if (existing.WorkspacePath is null && activeWorkspace is not null)
+        {
+            // Backfill legacy room with active workspace
+            existing.WorkspacePath = activeWorkspace;
         }
 
         // Initialize agent locations for any agent not already tracked
@@ -152,13 +171,26 @@ public sealed class WorkspaceRuntime
     // ── Room Management ─────────────────────────────────────────
 
     /// <summary>
-    /// Returns all rooms as snapshots, ordered by name.
+    /// Returns rooms for the active workspace as snapshots, ordered by name.
+    /// Rooms without a workspace are included only when no workspace is active.
     /// </summary>
     public async Task<List<RoomSnapshot>> GetRoomsAsync()
     {
-        var defaultRoomId = _catalog.DefaultRoomId;
-        var rooms = await _db.Rooms
-            .OrderBy(r => r.Id == defaultRoomId ? 0 : 1)
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
+
+        IQueryable<RoomEntity> query = _db.Rooms;
+        if (activeWorkspace is not null)
+        {
+            query = query.Where(r => r.WorkspacePath == activeWorkspace);
+        }
+        else
+        {
+            // No active workspace — show rooms without a workspace assignment (legacy)
+            query = query.Where(r => r.WorkspacePath == null);
+        }
+
+        var rooms = await query
+            .OrderBy(r => r.Name.EndsWith("Main Room") ? 0 : 1)
             .ThenBy(r => r.Name)
             .ToListAsync();
 
@@ -201,6 +233,114 @@ public sealed class WorkspaceRuntime
         await InitializeAsync();
         var room = await _db.Rooms.FindAsync(_catalog.DefaultRoomId);
         return await BuildRoomSnapshotAsync(room!);
+    }
+
+    /// <summary>
+    /// Ensures a default room exists for the given workspace.
+    /// Creates one if missing. Moves all agents to the workspace's default room.
+    /// Returns the default room ID.
+    /// </summary>
+    public async Task<string> EnsureDefaultRoomForWorkspaceAsync(string workspacePath)
+    {
+        // Check if this workspace already has a default room (regardless of ID)
+        var existingForWorkspace = await _db.Rooms.FirstOrDefaultAsync(
+            r => r.WorkspacePath == workspacePath && r.Name.EndsWith("Main Room"));
+
+        if (existingForWorkspace is not null)
+        {
+            var defaultRoomId = existingForWorkspace.Id;
+
+            // Move all agents to this workspace's default room
+            await MoveAllAgentsToRoomAsync(defaultRoomId);
+            return defaultRoomId;
+        }
+
+        // Generate a deterministic room ID from the workspace path
+        var slug = Normalize(Path.GetFileName(workspacePath.TrimEnd(Path.DirectorySeparatorChar)));
+        if (string.IsNullOrEmpty(slug)) slug = "project";
+        var candidateId = $"{slug}-main";
+
+        // Check for ID collision with a different workspace's room
+        var collision = await _db.Rooms.FindAsync(candidateId);
+        if (collision is not null && collision.WorkspacePath != workspacePath)
+        {
+            // Use a stable hash (SHA-256 prefix) instead of GetHashCode (non-deterministic)
+            var hash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(workspacePath)))[..8].ToLowerInvariant();
+            candidateId = $"{slug}-{hash}-main";
+        }
+
+        var now = DateTime.UtcNow;
+        var workspace = await _db.Workspaces.FindAsync(workspacePath);
+        var displayName = workspace?.ProjectName ?? slug;
+
+        var room = new RoomEntity
+        {
+            Id = candidateId,
+            Name = $"{displayName} — Main Room",
+            Status = nameof(RoomStatus.Idle),
+            CurrentPhase = nameof(CollaborationPhase.Intake),
+            WorkspacePath = workspacePath,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        _db.Rooms.Add(room);
+
+        var welcomeMsg = new MessageEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomId = candidateId,
+            SenderId = "system",
+            SenderName = "System",
+            SenderKind = nameof(MessageSenderKind.System),
+            Kind = nameof(MessageKind.System),
+            Content = $"Project loaded: {displayName}. Agents are ready.",
+            SentAt = now
+        };
+        _db.Messages.Add(welcomeMsg);
+
+        await _db.SaveChangesAsync();
+
+        Publish(ActivityEventType.RoomCreated, candidateId, null, null,
+            $"Default room created for workspace: {displayName}");
+
+        _logger.LogInformation("Created default room '{RoomId}' for workspace '{Workspace}'",
+            candidateId, workspacePath);
+
+        // Move all agents to this workspace's default room
+        await MoveAllAgentsToRoomAsync(candidateId);
+        return candidateId;
+    }
+
+    /// <summary>
+    /// Moves all configured agents to the specified room in Idle state.
+    /// </summary>
+    private async Task MoveAllAgentsToRoomAsync(string roomId)
+    {
+        foreach (var agent in _catalog.Agents)
+        {
+            var loc = await _db.AgentLocations.FindAsync(agent.Id);
+            if (loc is null)
+            {
+                _db.AgentLocations.Add(new AgentLocationEntity
+                {
+                    AgentId = agent.Id,
+                    RoomId = roomId,
+                    State = nameof(AgentState.Idle),
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                loc.RoomId = roomId;
+                loc.BreakoutRoomId = null;
+                loc.State = nameof(AgentState.Idle);
+                loc.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await _db.SaveChangesAsync();
     }
 
     // ── Task Management ─────────────────────────────────────────
@@ -260,6 +400,7 @@ public sealed class WorkspaceRuntime
         else
         {
             var roomId = $"{Normalize(request.Title)}-{Guid.NewGuid().ToString("N")[..8]}";
+            var activeWorkspace = await GetActiveWorkspacePathAsync();
 
             roomEntity = new RoomEntity
             {
@@ -267,6 +408,7 @@ public sealed class WorkspaceRuntime
                 Name = request.Title,
                 Status = nameof(RoomStatus.Active),
                 CurrentPhase = nameof(CollaborationPhase.Planning),
+                WorkspacePath = activeWorkspace,
                 CreatedAt = now,
                 UpdatedAt = now
             };

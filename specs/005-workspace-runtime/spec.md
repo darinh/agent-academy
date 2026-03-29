@@ -39,9 +39,12 @@ Configured agents (v1 port):
 
 ### Room Management
 
-- `GetRoomsAsync()` → all rooms, default room first then alphabetically by name
+- `GetRoomsAsync()` → rooms for the active workspace, default room first then alphabetically
 - `GetRoomAsync(roomId)` → single room snapshot or null
-- `CreateDefaultRoomAsync()` → creates default room if none exists
+- `CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
+- `EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room, moves all agents there
+
+**Project-scoped rooms**: Rooms are associated with a workspace via `WorkspacePath` (nullable FK to `workspaces.Path`). `GetRoomsAsync()` filters by the active workspace. Rooms without a workspace assignment are only visible when no workspace is active. Each workspace gets its own default room (ID: `{project-slug}-main`), with separate conversation history.
 
 Each `RoomSnapshot` includes:
 - Participants (built from `AgentLocationEntity` records — agents whose current location matches the room, with preferred-role flag from the active task)
@@ -56,7 +59,7 @@ Each `RoomSnapshot` includes:
 
 Task creation:
 - If `RoomId` is provided and room exists: updates existing room to Active/Planning
-- If `RoomId` is null: creates new room with normalized title as ID
+- If `RoomId` is null: creates new room with normalized title as ID, stamped with active workspace's `WorkspacePath`
 - Adds system messages (TaskAssignment + Coordination)
 - Publishes TaskCreated and PhaseChanged events
 - **Auto-join**: When a new room is created, all agents with `AutoJoinDefaultRoom = true` are moved into the room via `MoveAgentAsync`. Agents currently in `Working` state are skipped to avoid disrupting in-flight breakout work. Failures are caught and logged per-agent (best-effort) so task creation always succeeds.
@@ -144,6 +147,8 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 7. Activity events are both persisted to DB and buffered in-memory
 8. Agent catalog is sorted by name (case-insensitive) at load time
 9. Task room creation auto-joins all `AutoJoinDefaultRoom` agents (except those in Working state)
+10. Rooms created while a workspace is active are stamped with that workspace's path
+11. `GetRoomsAsync()` only returns rooms belonging to the active workspace
 
 ## Known Gaps
 
@@ -152,8 +157,10 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 - No agent knowledge persistence (v1 had file-based knowledge storage)
 - No task item management (v1 had `createTaskItem`, `updateTaskStatus`, etc.)
 - Activity event in-memory buffer is per-instance, not shared across scoped instances
+- Legacy rooms (created before project-scoping) have `WorkspacePath = null` — they won't appear when a workspace is active
 
 ## Revision History
 
+- **2026-03-29**: Project-scoped rooms — `WorkspacePath` FK on `RoomEntity`, `GetRoomsAsync` filters by active workspace, `EnsureDefaultRoomForWorkspaceAsync` creates per-project default room with agents, `CreateTaskAsync` stamps new rooms with active workspace path
 - **2026-03-29**: Default room ordering — `GetRoomsAsync` now sorts the configured default room first, then remaining rooms alphabetically by name
 - **Initial implementation**: Ported from v1 TypeScript `WorkspaceRuntime.ts` to C# with EF Core persistence

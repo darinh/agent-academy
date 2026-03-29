@@ -10,6 +10,7 @@ public class RoomEntity
     public string Name { get; set; } = string.Empty;
     public string Status { get; set; } = "Idle";
     public string CurrentPhase { get; set; } = "Intake";
+    public string? WorkspacePath { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

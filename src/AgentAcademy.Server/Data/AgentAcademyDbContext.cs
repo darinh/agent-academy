@@ -42,6 +42,8 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.CurrentPhase).IsRequired().HasDefaultValue("Intake");
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
+            entity.Property(e => e.WorkspacePath).IsRequired(false);
+            entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_rooms_workspace");
         });
 
         // ── Messages ──────────────────────────────────────────

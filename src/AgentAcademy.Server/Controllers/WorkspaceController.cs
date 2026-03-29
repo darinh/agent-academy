@@ -17,6 +17,7 @@ public class WorkspaceController : ControllerBase
     private readonly ProjectScanner _scanner;
     private readonly WorkspaceRuntime _runtime;
     private readonly AgentOrchestrator _orchestrator;
+    private readonly IAgentExecutor _executor;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceController> _logger;
 
@@ -24,12 +25,14 @@ public class WorkspaceController : ControllerBase
         ProjectScanner scanner,
         WorkspaceRuntime runtime,
         AgentOrchestrator orchestrator,
+        IAgentExecutor executor,
         AgentAcademyDbContext db,
         ILogger<WorkspaceController> logger)
     {
         _scanner = scanner;
         _runtime = runtime;
         _orchestrator = orchestrator;
+        _executor = executor;
         _db = db;
         _logger = logger;
     }
@@ -71,8 +74,20 @@ public class WorkspaceController : ControllerBase
 
         try
         {
+            var previousWorkspace = await _runtime.GetActiveWorkspacePathAsync();
             var scan = _scanner.ScanProject(resolved);
             var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
+
+            // On workspace switch: clear agent sessions and set up rooms for new project
+            if (previousWorkspace != scan.Path)
+            {
+                await _executor.InvalidateAllSessionsAsync();
+                await _runtime.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
+                _logger.LogInformation(
+                    "Switched workspace from '{Previous}' to '{Current}' — sessions cleared, default room ensured",
+                    previousWorkspace ?? "(none)", scan.Path);
+            }
+
             return Ok(meta);
         }
         catch (DirectoryNotFoundException ex)
@@ -132,6 +147,9 @@ public class WorkspaceController : ControllerBase
         {
             var scan = _scanner.ScanProject(resolved);
             var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
+
+            // Ensure the workspace has a default room with agents
+            await _runtime.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
 
             // Auto-create spec generation task when project has no specs
             if (!scan.HasSpecs)

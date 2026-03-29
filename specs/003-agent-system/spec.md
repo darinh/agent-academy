@@ -170,6 +170,7 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 - `CopilotExecutor` never leaves the system without an executor — it always falls back to `StubExecutor`.
 - Session keys are deterministic: `{agentId}:{roomId ?? "default"}`.
 - Expired sessions are cleaned up within `CleanupInterval` (2 minutes).
+- All sessions are invalidated on workspace/project switch via `InvalidateAllSessionsAsync()`.
 
 ## Known Gaps
 
@@ -177,6 +178,7 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 - **No token/usage tracking**: `CopilotExecutor` does not yet track input/output tokens or cost. The v1 `AgentEventTracker` integration is pending.
 - **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up. When enabled, `OnPermissionRequest` must be changed from `ApproveAll` to a restrictive handler.
 - **Session compaction**: The SDK may support session compaction for long conversations. Not yet implemented.
+- **No per-project session resume**: Sessions are cleared on project switch. If a user returns to a previous project, agents start fresh — they don't resume their prior conversation context.
 
 ## SSE Activity Stream
 

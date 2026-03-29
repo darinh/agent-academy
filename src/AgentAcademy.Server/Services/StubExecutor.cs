@@ -49,6 +49,11 @@ public sealed class StubExecutor : IAgentExecutor
         return Task.CompletedTask;
     }
 
+    public Task InvalidateAllSessionsAsync()
+    {
+        return Task.CompletedTask;
+    }
+
     public Task DisposeAsync()
     {
         return Task.CompletedTask;

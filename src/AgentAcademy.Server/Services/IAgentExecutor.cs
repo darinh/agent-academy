@@ -40,6 +40,12 @@ public interface IAgentExecutor
     Task InvalidateRoomSessionsAsync(string roomId);
 
     /// <summary>
+    /// Invalidates all cached sessions across all rooms and agents.
+    /// Called on project/workspace switch to give agents a clean slate.
+    /// </summary>
+    Task InvalidateAllSessionsAsync();
+
+    /// <summary>
     /// Releases all managed resources (sessions, client connections).
     /// </summary>
     Task DisposeAsync();

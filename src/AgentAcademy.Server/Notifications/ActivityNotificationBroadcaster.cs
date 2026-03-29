@@ -60,6 +60,11 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
         if (!NotifiableEvents.Contains(evt.Type))
             return;
 
+        // Don't echo human messages back to notification providers — the human
+        // already knows what they said (whether typed in Discord or the web UI).
+        if (evt.Type == ActivityEventType.MessagePosted && evt.ActorId == "human")
+            return;
+
         _ = SendNotificationAsync(evt);
     }
 

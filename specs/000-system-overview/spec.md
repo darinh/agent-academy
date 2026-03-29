@@ -5,7 +5,7 @@ High-level architecture of the Agent Academy platform: what it does, how compone
 
 ## Current Behavior
 
-> **Status: Planned** — Project scaffolded, no features implemented yet.
+> **Status: Implemented** — All core components are operational: room-based collaboration, agent execution via Copilot SDK, real-time SignalR streaming, Discord notifications, project/workspace management, and command system.
 
 Agent Academy is a multi-agent collaboration platform that orchestrates AI agents to work together on software engineering tasks. The system provides:
 
@@ -92,9 +92,9 @@ The server exposes a SignalR hub at `/hubs/activity` for real-time event streami
 
 ## Known Gaps
 
-- No code implemented yet — this is the initial scaffold
-- Architecture diagram is aspirational; actual implementation may evolve
-- Copilot SDK integration approach TBD (depends on SDK capabilities)
+- Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted)
+- No multi-user auth model — single-user token via `CopilotTokenProvider`
+- No session persistence across server restarts — in-memory Copilot SDK sessions are lost
 
 ## Revision History
 
@@ -102,3 +102,4 @@ The server exposes a SignalR hub at `/hubs/activity` for real-time event streami
 |------|--------|------|
 | Initial | Created system overview spec | scaffold-solution |
 | 2025-03-28 | Added SignalR hub, CORS, ActivityHubBroadcaster | signalr-hub |
+| 2026-03-29 | Updated status from Planned to Implemented — all core components operational | project-scoped-rooms |

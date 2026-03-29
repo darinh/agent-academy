@@ -154,6 +154,21 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         }
     }
 
+    public async Task InvalidateAllSessionsAsync()
+    {
+        var keys = _sessions.Keys.ToList();
+        _logger.LogInformation("Invalidating all {Count} agent sessions (workspace switch)", keys.Count);
+
+        foreach (var key in keys)
+        {
+            if (_sessions.TryRemove(key, out var entry))
+            {
+                _sessionLocks.TryRemove(key, out _);
+                await DisposeSessionSafe(entry);
+            }
+        }
+    }
+
     /// <summary>
     /// Domain-level dispose — called by <see cref="IAsyncDisposable.DisposeAsync"/>.
     /// </summary>

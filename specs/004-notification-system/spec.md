@@ -108,6 +108,7 @@ The `ActivityNotificationBroadcaster` is an `IHostedService` that subscribes to 
 | `CommandFailed` | `Error` | "Command failed: {Actor}" |
 
 **Design decisions**:
+- **Human message suppression**: `MessagePosted` events where `ActorId == "human"` are filtered out before forwarding. This prevents Discord from echoing back messages the user just typed (whether from Discord or the web UI). Humans don't need to be notified about their own messages.
 - Noisy events (`AgentThinking`, `AgentFinished`, `PresenceUpdated`, `PhaseChanged`) are excluded
 - Follows the same `IHostedService` pattern as `ActivityHubBroadcaster` (SignalR bridge)
 - Fire-and-forget: exceptions are logged but never propagate to the `ActivityBroadcaster`
