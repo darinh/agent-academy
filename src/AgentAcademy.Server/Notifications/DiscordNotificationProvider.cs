@@ -19,6 +19,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 {
     private readonly ILogger<DiscordNotificationProvider> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AgentOrchestrator _orchestrator;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly SemaphoreSlim _inputLock = new(1, 1);
 
@@ -44,10 +45,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private bool _isConfigured;
     private TaskCompletionSource<bool>? _readyTcs;
 
-    public DiscordNotificationProvider(ILogger<DiscordNotificationProvider> logger, IServiceScopeFactory scopeFactory)
+    public DiscordNotificationProvider(
+        ILogger<DiscordNotificationProvider> logger,
+        IServiceScopeFactory scopeFactory,
+        AgentOrchestrator orchestrator)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
     }
 
     /// <inheritdoc />
@@ -756,6 +761,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 using var scope = _scopeFactory.CreateScope();
                 var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
                 await runtime.PostHumanMessageAsync(roomId, message.Content);
+                _orchestrator.HandleHumanMessage(roomId);
 
                 await message.AddReactionAsync(new Emoji("✅"));
 
@@ -781,6 +787,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             using var scope = _scopeFactory.CreateScope();
             var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
             await runtime.PostHumanMessageAsync(agentInfo.RoomId, message.Content);
+            _orchestrator.HandleHumanMessage(agentInfo.RoomId);
 
             await message.Channel.SendMessageAsync($"✅ Reply received — sent to **{agentInfo.AgentName}**");
 

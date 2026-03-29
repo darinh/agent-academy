@@ -1,4 +1,6 @@
+using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Discord;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,7 +19,8 @@ public class DiscordNotificationProviderTests
     {
         _logger = Substitute.For<ILogger<DiscordNotificationProvider>>();
         _scopeFactory = Substitute.For<IServiceScopeFactory>();
-        _provider = new DiscordNotificationProvider(_logger, _scopeFactory);
+        var orchestrator = CreateMockOrchestrator();
+        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator);
     }
 
     #region Properties
@@ -348,6 +351,19 @@ public class DiscordNotificationProviderTests
         ["ChannelId"] = "123456789012345678",
         ["GuildId"] = "987654321098765432"
     };
+
+    private static AgentOrchestrator CreateMockOrchestrator()
+    {
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var executor = Substitute.For<IAgentExecutor>();
+        var activityBus = new ActivityBroadcaster();
+        var specManager = new SpecManager();
+        var pipeline = new Commands.CommandPipeline(
+            Array.Empty<Commands.ICommandHandler>(),
+            Substitute.For<ILogger<Commands.CommandPipeline>>());
+        var logger = Substitute.For<ILogger<AgentOrchestrator>>();
+        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, logger);
+    }
 
     #endregion
 }
