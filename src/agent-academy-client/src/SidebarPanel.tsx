@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState, useRef, useCallback } from "react";
 import {
   Button,
   mergeClasses,
@@ -8,6 +8,7 @@ import { useStyles } from "./useStyles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
 import type { AgentDefinition, AgentLocation, BreakoutRoom, RoomSnapshot } from "./api";
+import { renameRoom } from "./api";
 
 const PHASE_DOT_COLORS: Record<string, string> = {
   Intake: "#94a3b8",
@@ -112,49 +113,17 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                 const dotColor = PHASE_DOT_COLORS[candidate.currentPhase] ?? "#94a3b8";
                 const roomAgents = agentsByRoom.get(candidate.id) ?? [];
                 return (
-                  <button
+                  <RoomButton
                     key={candidate.id}
-                    className={mergeClasses(s.roomButton, s.roomButtonHover, props.room?.id === candidate.id ? s.roomButtonActive : undefined)}
-                    onClick={() => props.onSelectRoom(candidate.id)}
-                    aria-label={`Select room ${candidate.name}`}
-                    type="button"
-                  >
-                    <div className={s.roomButtonIcon}>{initials(candidate.name)}</div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <div className={s.roomButtonName}>{candidate.name}</div>
-                        <span style={{ width: "6px", height: "6px", borderRadius: "999px", backgroundColor: dotColor, flexShrink: 0 }} />
-                      </div>
-                    </div>
-                    {roomAgents.length > 0 && (
-                      <div className={s.roomAgentList}>
-                        {roomAgents.map((agent) => {
-                          const rc = roleColor(agent.role);
-                          const isThinking = props.thinkingByRoomIds.get(candidate.id)?.has(agent.id) ?? false;
-                          return (
-                            <div key={agent.id} className={s.roomAgentItem}>
-                              <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "16px", height: "16px", flexShrink: 0 }}>
-                                <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
-                                {isThinking && (
-                                  <span
-                                    style={{
-                                      position: "absolute",
-                                      inset: 0,
-                                      borderRadius: "999px",
-                                      border: `2px solid transparent`,
-                                      borderTopColor: rc.accent,
-                                      animation: "aa-spin 0.8s linear infinite",
-                                    }}
-                                  />
-                                )}
-                              </span>
-                              <span>{agent.name}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </button>
+                    room={candidate}
+                    isActive={props.room?.id === candidate.id}
+                    dotColor={dotColor}
+                    roomAgents={roomAgents}
+                    thinkingAgentIds={props.thinkingByRoomIds.get(candidate.id)}
+                    onSelect={() => props.onSelectRoom(candidate.id)}
+                    onRenamed={props.onRefresh}
+                    s={s}
+                  />
                 );
               })}
             </div>
@@ -224,5 +193,120 @@ const SidebarPanel = memo(function SidebarPanel(props: {
     </aside>
   );
 });
+
+/* ── RoomButton — inline-editable room name ──────────────────────── */
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function RoomButton(props: {
+  room: RoomSnapshot;
+  isActive: boolean;
+  dotColor: string;
+  roomAgents: AgentDefinition[];
+  thinkingAgentIds?: Set<string>;
+  onSelect: () => void;
+  onRenamed: () => void;
+  s: ReturnType<typeof useStyles>;
+}) {
+  const { room, isActive, dotColor, roomAgents, thinkingAgentIds, onSelect, onRenamed, s } = props;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(room.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commitRename = useCallback(async () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === room.name) {
+      setEditing(false);
+      setDraft(room.name);
+      return;
+    }
+    try {
+      await renameRoom(room.id, trimmed);
+      onRenamed();
+    } catch { /* revert on failure */ }
+    setEditing(false);
+  }, [draft, room.id, room.name, onRenamed]);
+
+  return (
+    <button
+      className={mergeClasses(s.roomButton, s.roomButtonHover, isActive ? s.roomButtonActive : undefined)}
+      onClick={onSelect}
+      aria-label={`Select room ${room.name}`}
+      type="button"
+    >
+      <div className={s.roomButtonIcon}>{initials(room.name)}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {editing ? (
+            <input
+              ref={inputRef}
+              className={s.roomButtonName}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => void commitRename()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commitRename();
+                if (e.key === "Escape") { setEditing(false); setDraft(room.name); }
+                e.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+              style={{
+                background: "transparent",
+                border: "1px solid #555",
+                borderRadius: "4px",
+                color: "inherit",
+                font: "inherit",
+                padding: "1px 4px",
+                width: "100%",
+                outline: "none",
+              }}
+            />
+          ) : (
+            <div
+              className={s.roomButtonName}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setDraft(room.name);
+                setEditing(true);
+              }}
+              title="Double-click to rename"
+            >
+              {room.name}
+            </div>
+          )}
+          <span style={{ width: "6px", height: "6px", borderRadius: "999px", backgroundColor: dotColor, flexShrink: 0 }} />
+        </div>
+      </div>
+      {roomAgents.length > 0 && (
+        <div className={s.roomAgentList}>
+          {roomAgents.map((agent) => {
+            const rc = roleColor(agent.role);
+            const isThinking = thinkingAgentIds?.has(agent.id) ?? false;
+            return (
+              <div key={agent.id} className={s.roomAgentItem}>
+                <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "16px", height: "16px", flexShrink: 0 }}>
+                  <span className={s.agentStateDot} style={{ backgroundColor: rc.accent }} />
+                  {isThinking && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: "999px",
+                        border: "2px solid transparent",
+                        borderTopColor: rc.accent,
+                        animation: "aa-spin 0.8s linear infinite",
+                      }}
+                    />
+                  )}
+                </span>
+                <span>{agent.name}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </button>
+  );
+}
 
 export default SidebarPanel;

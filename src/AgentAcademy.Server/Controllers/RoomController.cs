@@ -112,4 +112,30 @@ public class RoomController : ControllerBase
             aggregateScore = 0.0
         });
     }
+
+    /// <summary>
+    /// PUT /api/rooms/{roomId}/name — rename a room.
+    /// </summary>
+    [HttpPut("{roomId}/name")]
+    public async Task<ActionResult<RoomSnapshot>> RenameRoom(string roomId, [FromBody] RenameRoomRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { code = "invalid_name", message = "Room name cannot be empty" });
+
+        try
+        {
+            var room = await _runtime.RenameRoomAsync(roomId, request.Name.Trim());
+            if (room is null)
+                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+
+            return Ok(room);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rename room '{RoomId}'", roomId);
+            return Problem("Failed to rename room.");
+        }
+    }
 }
+
+public record RenameRoomRequest(string Name);

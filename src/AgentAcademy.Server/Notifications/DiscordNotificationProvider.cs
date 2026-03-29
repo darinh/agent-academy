@@ -840,6 +840,42 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     }
 
     /// <summary>
+    /// Renames the Discord channel associated with a room.
+    /// Updates both the channel name and topic to reflect the new room name.
+    /// </summary>
+    public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
+    {
+        if (_client is null || !_isConfigured) return;
+
+        if (!_roomChannels.TryGetValue(roomId, out var channelId)) return;
+
+        var guild = _client.GetGuild(_guildId);
+        if (guild is null) return;
+
+        var channel = guild.GetTextChannel(channelId);
+        if (channel is null) return;
+
+        try
+        {
+            var roomIdSlug = roomId.Length > 8 ? roomId[..8] : roomId;
+            var newChannelName = SanitizeChannelName($"{newName}-{roomIdSlug}");
+
+            await channel.ModifyAsync(props =>
+            {
+                props.Name = newChannelName;
+                props.Topic = $"Agent Academy — Room: {newName} (ID: {roomId})";
+            });
+
+            _logger.LogInformation("Renamed Discord channel for room '{RoomId}' to '#{ChannelName}'",
+                roomId, newChannelName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to rename Discord channel for room '{RoomId}'", roomId);
+        }
+    }
+
+    /// <summary>
     /// Sanitizes a name for use as a Discord channel/category name.
     /// Discord channel names: lowercase, hyphens instead of spaces, max 100 chars.
     /// Falls back to a deterministic slug if the name would be empty after sanitization.

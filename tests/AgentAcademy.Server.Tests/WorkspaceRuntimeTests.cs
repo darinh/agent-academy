@@ -197,7 +197,7 @@ public class WorkspaceRuntimeTests : IDisposable
         var rooms = await _runtime.GetRoomsAsync();
         Assert.True(rooms.Count >= 2);
         Assert.Equal(defaultRoomId, rooms[0].Id);
-        Assert.Contains("Main Room", rooms[0].Name);
+        Assert.Contains("Main", rooms[0].Name);
     }
 
     [Fact]
@@ -990,5 +990,70 @@ public class WorkspaceRuntimeTests : IDisposable
         // Legacy room should still have null WorkspacePath (unchanged)
         var legacyRoom = await _db.Rooms.FindAsync("main");
         Assert.Null(legacyRoom!.WorkspacePath);
+    }
+
+    // ── RenameRoomAsync ────────────────────────────────────────
+
+    [Fact]
+    public async Task RenameRoom_UpdatesNameAndPublishesEvent()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-to-rename",
+            Name = "Old Name",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        ActivityEvent? capturedEvent = null;
+        _activityBus.Subscribe(evt =>
+        {
+            if (evt.Type == ActivityEventType.RoomRenamed)
+                capturedEvent = evt;
+        });
+
+        var result = await _runtime.RenameRoomAsync("room-to-rename", "New Name");
+
+        Assert.NotNull(result);
+        Assert.Equal("New Name", result!.Name);
+
+        // Verify DB was updated
+        var room = await _db.Rooms.FindAsync("room-to-rename");
+        Assert.Equal("New Name", room!.Name);
+
+        // Verify activity event was published
+        Assert.NotNull(capturedEvent);
+        Assert.Equal("room-to-rename", capturedEvent!.RoomId);
+        Assert.Contains("New Name", capturedEvent.Message);
+    }
+
+    [Fact]
+    public async Task RenameRoom_ReturnsNull_WhenRoomDoesNotExist()
+    {
+        var result = await _runtime.RenameRoomAsync("nonexistent", "New Name");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task EnsureDefaultRoom_UsesConfiguredDefaultRoomName()
+    {
+        var workspacePath = "/home/test/my-project";
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = workspacePath,
+            ProjectName = "My Project",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var room = await _db.Rooms.FindAsync(defaultRoomId);
+
+        Assert.Equal(_catalog.DefaultRoomName, room!.Name);
     }
 }

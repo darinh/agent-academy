@@ -328,4 +328,18 @@ public class ActivityNotificationBroadcasterTests
     }
 
     #endregion
+
+    // ── ExtractNewNameFromDetail ────────────────────────────────
+
+    [Theory]
+    [InlineData("Room renamed: \"Old Name\" → \"New Name\"", "New Name")]
+    [InlineData("Room renamed: \"A\" → \"B\"", "B")]
+    [InlineData(null, null)]
+    [InlineData("No arrow here", null)]
+    [InlineData("Room renamed: \"Old\" → ", null)]
+    public void ExtractNewNameFromDetail_ParsesCorrectly(string? detail, string? expected)
+    {
+        var result = ActivityNotificationBroadcaster.ExtractNewNameFromDetail(detail);
+        Assert.Equal(expected, result);
+    }
 }

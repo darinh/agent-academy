@@ -66,4 +66,12 @@ public interface INotificationProvider
     /// <remarks>Default implementation returns false (provider does not support agent questions).</remarks>
     Task<bool> SendAgentQuestionAsync(AgentQuestion question, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
+
+    /// <summary>
+    /// Notifies the provider that a room has been renamed, allowing it to update
+    /// any external resources (e.g., Discord channel names).
+    /// </summary>
+    /// <remarks>Default implementation is a no-op.</remarks>
+    Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }
