@@ -114,4 +114,36 @@ public sealed class NotificationManager
 
         return null;
     }
+
+    /// <summary>
+    /// Sends an agent's question to the human via the first connected provider that supports it.
+    /// The provider handles routing the human's reply back to the agent's room.
+    /// </summary>
+    /// <returns>True if any provider successfully sent the question.</returns>
+    public async Task<bool> SendAgentQuestionAsync(AgentQuestion question, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+
+        foreach (var provider in _providers.Values.Where(p => p.IsConnected))
+        {
+            try
+            {
+                var sent = await provider.SendAgentQuestionAsync(question, cancellationToken);
+                if (sent)
+                {
+                    _logger.LogInformation(
+                        "Agent question from '{AgentName}' sent via provider '{ProviderId}'",
+                        question.AgentName, provider.ProviderId);
+                    return true;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Failed to send agent question via provider '{ProviderId}'", provider.ProviderId);
+            }
+        }
+
+        _logger.LogWarning("No connected provider could send agent question from '{AgentName}'", question.AgentName);
+        return false;
+    }
 }

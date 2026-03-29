@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Shared.Models;
 using Discord;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -10,11 +11,13 @@ public class DiscordNotificationProviderTests
 {
     private readonly DiscordNotificationProvider _provider;
     private readonly ILogger<DiscordNotificationProvider> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public DiscordNotificationProviderTests()
     {
         _logger = Substitute.For<ILogger<DiscordNotificationProvider>>();
-        _provider = new DiscordNotificationProvider(_logger);
+        _scopeFactory = Substitute.For<IServiceScopeFactory>();
+        _provider = new DiscordNotificationProvider(_logger, _scopeFactory);
     }
 
     #region Properties
@@ -313,6 +316,26 @@ public class DiscordNotificationProviderTests
     {
         // Should not throw when not connected
         await _provider.DisconnectAsync();
+    }
+
+    #endregion
+
+    #region SendAgentQuestionAsync
+
+    [Fact]
+    public async Task SendAgentQuestionAsync_ThrowsOnNull()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => _provider.SendAgentQuestionAsync(null!));
+    }
+
+    [Fact]
+    public async Task SendAgentQuestionAsync_ReturnsFalseWhenNotConnected()
+    {
+        var question = new AgentQuestion("agent-1", "TestAgent", "room-1", "Test Room", "What should I do?");
+        var result = await _provider.SendAgentQuestionAsync(question);
+
+        Assert.False(result);
     }
 
     #endregion

@@ -94,8 +94,9 @@ These formalize existing capabilities with audit trails and structured output.
 
 #### Phase 1B: Structured State Management
 
-| Command | Args | Returns | Side Effects |
-|---------|------|---------|-------------|
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `ASK_HUMAN` | `question` | Confirmation + delivery status | Sends question to Discord, routes reply to agent's room | `AskHumanHandler.cs` — creates workspace category + agent channel + question thread in Discord, persistent listener routes human reply back via `PostHumanMessageAsync` |
 | `LINK_TASK_TO_SPEC` | `taskId`, `specSection` | Confirmation + link record | Creates bidirectional link |
 | `SHOW_UNLINKED_CHANGES` | `since?` | Tasks/commits without spec links | Audit event |
 | `APPROVE_TASK` | `taskId`, `findings?` | Confirmation | Updates task status, records reviewer |
@@ -355,6 +356,33 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
 - **Phase 1B-1E commands**: Task claiming, approvals, build/test execution, DMs, and navigation commands are specified but not implemented.
 
+## Discord Agent Question Bridge
+
+### Purpose
+Enables any agent to ask the human a question via Discord and receive a routed reply. Designed to unblock agents that need human input (clarification, decisions, credentials).
+
+### Architecture
+```
+Discord Server
+├── #agent-academy              (main notification channel — unchanged)
+├── 📁 {workspace-name}         (category per workspace/room)
+│   ├── #{agent-name}           (channel per agent)
+│   │   └── Thread: "{question}"  (thread per question)
+```
+
+### Flow
+1. Agent uses `ASK_HUMAN: Question: <text>` command
+2. `AskHumanHandler` resolves workspace name and delegates to `NotificationManager`
+3. `DiscordNotificationProvider` lazily creates category → channel → thread
+4. Question posted as embed in the thread
+5. Persistent `MessageReceived` handler routes human replies back to the agent's room via `WorkspaceRuntime.PostHumanMessageAsync`
+6. Agent sees reply as a human message in its next orchestration round
+
+### Implementation Status
+**IMPLEMENTED** — `ASK_HUMAN` command is live. Handler, Discord channel/thread management, and reply routing are implemented. All agents have `ASK_HUMAN` permission.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/AskHumanHandler.cs`, `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs`
+
 ## Revision History
 
 | Date | Change | Task | Commit |
@@ -363,3 +391,4 @@ Minimal surfaces should ship with the commands they support — not as a separat
 | 2026-03-28 | Implemented Phase 1A: envelope, parser, pipeline, authorization, audit, read handlers (LIST_ROOMS, LIST_AGENTS, LIST_TASKS, READ_FILE, SEARCH_CODE), memory handlers (REMEMBER, RECALL, LIST_MEMORIES, FORGET) | command-system-phase1 | `63b596c` |
 | 2026-03-28 | Added command reference to agent startup prompts | command-discoverability | `6117b4e` |
 | 2026-03-28 | Reconciled frontend surface contradiction: Phase 1A shipped backend-only, no UI surfaces implemented. Documented 9 live commands with implementation evidence. Updated Known Gaps to reflect backend-only state. | spec-007-reconciliation | (this change) |
+| 2026-03-29 | Implemented ASK_HUMAN command: Discord agent-to-human question bridge with category-per-workspace, channel-per-agent, thread-per-question architecture. Persistent reply routing via WorkspaceRuntime. | ask-human-command | (this change) |

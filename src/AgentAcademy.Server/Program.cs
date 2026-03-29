@@ -159,6 +159,7 @@ builder.Services.AddSingleton<ICommandHandler, RememberHandler>();
 builder.Services.AddSingleton<ICommandHandler, RecallHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListMemoriesHandler>();
 builder.Services.AddSingleton<ICommandHandler, ForgetHandler>();
+builder.Services.AddSingleton<ICommandHandler, AskHumanHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();

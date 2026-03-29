@@ -57,4 +57,13 @@ public interface INotificationProvider
     /// Returns the configuration schema describing what fields this provider requires.
     /// </summary>
     ProviderConfigSchema GetConfigSchema();
+
+    /// <summary>
+    /// Sends an agent's question to the human via this provider's channel.
+    /// The provider is responsible for routing the human's reply back to the agent's room.
+    /// Returns true if the question was sent successfully.
+    /// </summary>
+    /// <remarks>Default implementation returns false (provider does not support agent questions).</remarks>
+    Task<bool> SendAgentQuestionAsync(AgentQuestion question, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 }

@@ -72,3 +72,15 @@ public record ConfigField(
     string? Description = null,
     string? Placeholder = null
 );
+
+/// <summary>
+/// A question from an agent to the human, delivered via a notification provider (e.g., Discord).
+/// The reply is routed back to the agent's room asynchronously.
+/// </summary>
+public record AgentQuestion(
+    string AgentId,
+    string AgentName,
+    string RoomId,
+    string RoomName,
+    string Question
+);
