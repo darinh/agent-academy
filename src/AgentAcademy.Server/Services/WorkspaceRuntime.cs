@@ -190,7 +190,7 @@ public sealed class WorkspaceRuntime
         }
 
         var rooms = await query
-            .OrderBy(r => r.Name.EndsWith("Main Room") ? 0 : 1)
+            .OrderBy(r => (r.Name.Contains("Main") && (r.Name.Contains("Room") || r.Name.Contains("Collaboration"))) ? 0 : 1)
             .ThenBy(r => r.Name)
             .ToListAsync();
 

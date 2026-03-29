@@ -145,6 +145,100 @@ public class WorkspaceRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRooms_DefaultRoomAlwaysFirst()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create a task room whose name sorts alphabetically before "Main"
+        var task = new TaskAssignmentRequest(
+            Title: "Alpha Feature",
+            Description: "A task that creates a room named before Main alphabetically",
+            SuccessCriteria: "Room exists",
+            RoomId: null,
+            PreferredRoles: []);
+        await _runtime.CreateTaskAsync(task);
+
+        var rooms = await _runtime.GetRoomsAsync();
+        Assert.True(rooms.Count >= 2);
+        // The default main room must be first regardless of alphabetical order
+        Assert.Contains("Main", rooms[0].Name);
+    }
+
+    [Fact]
+    public async Task GetRooms_WorkspaceScopedDefaultRoomFirst()
+    {
+        // Create a workspace and its default room
+        var workspacePath = "/home/test/my-project";
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = workspacePath,
+            ProjectName = "My Project",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+
+        // Create a task room in the same workspace that alphabetically sorts before main
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "aaa-first-alphabetically",
+            Name = "AAA Earlier Room",
+            Status = "Active",
+            CurrentPhase = "Planning",
+            WorkspacePath = workspacePath,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var rooms = await _runtime.GetRoomsAsync();
+        Assert.True(rooms.Count >= 2);
+        Assert.Equal(defaultRoomId, rooms[0].Id);
+        Assert.Contains("Main Room", rooms[0].Name);
+    }
+
+    [Fact]
+    public async Task GetRooms_FilteredByActiveWorkspace()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create two workspaces
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = "/home/test/project-a",
+            ProjectName = "Project A",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        await _runtime.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
+
+        // Add a room for a different workspace
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "other-project-room",
+            Name = "Other Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/project-b",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var rooms = await _runtime.GetRoomsAsync();
+        // Should only see Project A's room, not Project B's or the legacy main (which has null workspace)
+        Assert.All(rooms, r => Assert.Equal("/home/test/project-a",
+            _db.Rooms.Find(r.Id)?.WorkspacePath));
+        Assert.DoesNotContain(rooms, r => r.Id == "other-project-room");
+    }
+
+    [Fact]
     public async Task GetRoom_ReturnsNullForMissing()
     {
         var room = await _runtime.GetRoomAsync("nonexistent");
