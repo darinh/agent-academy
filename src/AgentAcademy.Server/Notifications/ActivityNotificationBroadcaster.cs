@@ -57,6 +57,15 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
 
     private void OnActivityEvent(ActivityEvent evt)
     {
+        // Room rename is a structural event — notify providers to update channels, not send messages
+        if (evt.Type == ActivityEventType.RoomRenamed && evt.RoomId is not null)
+        {
+            var newName = ExtractNewNameFromDetail(evt.Message);
+            if (newName is not null)
+                _ = _notificationManager.NotifyRoomRenamedAsync(evt.RoomId, newName);
+            return;
+        }
+
         if (!NotifiableEvents.Contains(evt.Type))
             return;
 
@@ -66,6 +75,24 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
             return;
 
         _ = SendNotificationAsync(evt);
+    }
+
+    /// <summary>
+    /// Extracts the new room name from a RoomRenamed detail string.
+    /// Expected format: Room renamed: "Old" → "New"
+    /// </summary>
+    internal static string? ExtractNewNameFromDetail(string? detail)
+    {
+        if (detail is null) return null;
+        // Find the last quoted string (after →)
+        var arrowIdx = detail.IndexOf('→');
+        if (arrowIdx < 0) return null;
+        var afterArrow = detail[(arrowIdx + 1)..];
+        var openQuote = afterArrow.IndexOf('"');
+        if (openQuote < 0) return null;
+        var closeQuote = afterArrow.IndexOf('"', openQuote + 1);
+        if (closeQuote < 0) return null;
+        return afterArrow[(openQuote + 1)..closeQuote];
     }
 
     private async Task SendNotificationAsync(ActivityEvent evt)

@@ -219,6 +219,29 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Renames a room and publishes a RoomRenamed activity event.
+    /// Returns the updated snapshot, or null if the room doesn't exist.
+    /// </summary>
+    public async Task<RoomSnapshot?> RenameRoomAsync(string roomId, string newName)
+    {
+        var room = await _db.Rooms.FindAsync(roomId);
+        if (room is null) return null;
+
+        var oldName = room.Name;
+        room.Name = newName;
+        room.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        Publish(ActivityEventType.RoomRenamed, roomId, null, null,
+            $"Room renamed: \"{oldName}\" → \"{newName}\"");
+
+        _logger.LogInformation("Renamed room '{RoomId}' from '{OldName}' to '{NewName}'",
+            roomId, oldName, newName);
+
+        return await BuildRoomSnapshotAsync(room);
+    }
+
+    /// <summary>
     /// Resolves the project name for a room by following
     /// roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName.
     /// Returns null for legacy rooms without a workspace or workspaces without a project name.
@@ -262,22 +285,23 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<string> EnsureDefaultRoomForWorkspaceAsync(string workspacePath)
     {
-        // Check if this workspace already has a default room (regardless of ID)
+        // Check if this workspace already has a dedicated default room (not the legacy catalog room)
         var existingForWorkspace = await _db.Rooms.FirstOrDefaultAsync(
-            r => r.WorkspacePath == workspacePath && r.Name.EndsWith("Main Room"));
+            r => r.WorkspacePath == workspacePath &&
+                 r.Id != _catalog.DefaultRoomId &&
+                 (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")));
 
         if (existingForWorkspace is not null)
         {
             var defaultRoomId = existingForWorkspace.Id;
 
-            // Normalize room name to just "Main Room"
-            const string expectedName = "Main Room";
-            if (existingForWorkspace.Name != expectedName)
+            // Normalize room name to the catalog default
+            if (existingForWorkspace.Name != _catalog.DefaultRoomName)
             {
-                existingForWorkspace.Name = expectedName;
+                existingForWorkspace.Name = _catalog.DefaultRoomName;
                 existingForWorkspace.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Updated default room name to '{RoomName}'", expectedName);
+                _logger.LogInformation("Updated default room name to '{RoomName}'", _catalog.DefaultRoomName);
             }
 
             // Retire the legacy catalog default room if it was backfilled into this workspace
@@ -309,7 +333,7 @@ public sealed class WorkspaceRuntime
         var room = new RoomEntity
         {
             Id = candidateId,
-            Name = "Main Room",
+            Name = _catalog.DefaultRoomName,
             Status = nameof(RoomStatus.Idle),
             CurrentPhase = nameof(CollaborationPhase.Intake),
             WorkspacePath = workspacePath,

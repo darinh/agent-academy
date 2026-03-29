@@ -156,4 +156,23 @@ public sealed class NotificationManager
         _logger.LogWarning("No connected provider could deliver agent question from '{AgentName}'", question.AgentName);
         return (false, lastError ?? "Connected provider(s) could not deliver the question. Check server logs for details.");
     }
+
+    /// <summary>
+    /// Notifies all connected providers that a room has been renamed.
+    /// </summary>
+    public async Task NotifyRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
+    {
+        var connectedProviders = _providers.Values.Where(p => p.IsConnected).ToList();
+        foreach (var provider in connectedProviders)
+        {
+            try
+            {
+                await provider.OnRoomRenamedAsync(roomId, newName, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Failed to notify provider '{ProviderId}' of room rename", provider.ProviderId);
+            }
+        }
+    }
 }

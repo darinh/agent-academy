@@ -389,6 +389,13 @@ export function transitionPhase(
   });
 }
 
+export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}/name`), {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
 // ── Plan ───────────────────────────────────────────────────────────────
 
 export function getPlan(roomId: string): Promise<PlanContent | null> {

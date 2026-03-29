@@ -41,10 +41,16 @@ Configured agents (v1 port):
 
 - `GetRoomsAsync()` → rooms for the active workspace, default room first then alphabetically
 - `GetRoomAsync(roomId)` → single room snapshot or null
+- `RenameRoomAsync(roomId, newName)` → renames a room, publishes `RoomRenamed` activity event, cascades to Discord channel name via `OnRoomRenamedAsync`
 - `CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
-- `EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room, moves all agents there
+- `EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
+- `GetProjectNameForRoomAsync(roomId)` → resolves `roomId → WorkspacePath → ProjectName` (falls back to directory basename)
+
+**Room rename API**: `PUT /api/rooms/{roomId}/name` with `{ "name": "..." }` body. Returns updated `RoomSnapshot`. Frontend: double-click room name in sidebar to edit inline.
 
 **Project-scoped rooms**: Rooms are associated with a workspace via `WorkspacePath` (nullable FK to `workspaces.Path`). `GetRoomsAsync()` filters by the active workspace. Rooms without a workspace assignment are only visible when no workspace is active. Each workspace gets its own default room (ID: `{project-slug}-main`), with separate conversation history.
+
+**Legacy room retirement**: `EnsureDefaultRoomForWorkspaceAsync` calls `RetireLegacyDefaultRoomAsync` to clear `WorkspacePath` on the catalog default room if it was backfilled into a workspace by the `AddWorkspacePathToRooms` migration.
 
 Each `RoomSnapshot` includes:
 - Participants (built from `AgentLocationEntity` records — agents whose current location matches the room, with preferred-role flag from the active task)

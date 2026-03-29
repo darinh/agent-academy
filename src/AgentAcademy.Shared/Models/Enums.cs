@@ -178,7 +178,8 @@ public enum ActivityEventType
     TaskReleased,
     TaskApproved,
     TaskChangesRequested,
-    TaskStatusUpdated
+    TaskStatusUpdated,
+    RoomRenamed
 }
 
 /// <summary>
