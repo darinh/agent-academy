@@ -938,7 +938,7 @@ public class WorkspaceRuntimeTests : IDisposable
         _db.Rooms.Add(new RoomEntity
         {
             Id = "my-project-main",
-            Name = "My Project — Main Room",
+            Name = "Main Room",
             Status = "Idle",
             CurrentPhase = "Intake",
             WorkspacePath = workspacePath,

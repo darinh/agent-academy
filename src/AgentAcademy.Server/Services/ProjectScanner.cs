@@ -79,42 +79,84 @@ public sealed class ProjectScanner
 
     private static string? DetectProjectName(string dirPath)
     {
+        string? raw = null;
+
         // 1. package.json
         var pkg = ReadJson(Path.Combine(dirPath, "package.json"));
         if (pkg?.TryGetProperty("name", out var nameEl) == true
             && nameEl.ValueKind == JsonValueKind.String
             && !string.IsNullOrWhiteSpace(nameEl.GetString()))
         {
-            return nameEl.GetString();
+            raw = nameEl.GetString();
         }
 
         // 2. Cargo.toml — [package] ... name = "..."
-        var cargo = ReadText(Path.Combine(dirPath, "Cargo.toml"));
-        if (cargo is not null)
+        if (raw is null)
         {
-            var m = Regex.Match(cargo, @"\[package\][^\[]*?name\s*=\s*""([^""]+)""", RegexOptions.Singleline);
-            if (m.Success) return m.Groups[1].Value;
+            var cargo = ReadText(Path.Combine(dirPath, "Cargo.toml"));
+            if (cargo is not null)
+            {
+                var m = Regex.Match(cargo, @"\[package\][^\[]*?name\s*=\s*""([^""]+)""", RegexOptions.Singleline);
+                if (m.Success) raw = m.Groups[1].Value;
+            }
         }
 
         // 3. pyproject.toml — name = "..."
-        var pyproj = ReadText(Path.Combine(dirPath, "pyproject.toml"));
-        if (pyproj is not null)
+        if (raw is null)
         {
-            var m = Regex.Match(pyproj, @"name\s*=\s*""([^""]+)""");
-            if (m.Success) return m.Groups[1].Value;
+            var pyproj = ReadText(Path.Combine(dirPath, "pyproject.toml"));
+            if (pyproj is not null)
+            {
+                var m = Regex.Match(pyproj, @"name\s*=\s*""([^""]+)""");
+                if (m.Success) raw = m.Groups[1].Value;
+            }
         }
 
         // 4. go.mod — module <path>
-        var gomod = ReadText(Path.Combine(dirPath, "go.mod"));
-        if (gomod is not null)
+        if (raw is null)
         {
-            var m = Regex.Match(gomod, @"^module\s+(\S+)", RegexOptions.Multiline);
-            if (m.Success) return m.Groups[1].Value;
+            var gomod = ReadText(Path.Combine(dirPath, "go.mod"));
+            if (gomod is not null)
+            {
+                var m = Regex.Match(gomod, @"^module\s+(\S+)", RegexOptions.Multiline);
+                if (m.Success) raw = m.Groups[1].Value;
+            }
         }
 
         // 5. Fallback to directory basename
-        var basename = Path.GetFileName(dirPath);
-        return string.IsNullOrEmpty(basename) ? null : basename;
+        if (raw is null)
+        {
+            var basename = Path.GetFileName(dirPath);
+            raw = string.IsNullOrEmpty(basename) ? null : basename;
+        }
+
+        return raw is not null ? HumanizeProjectName(raw) : null;
+    }
+
+    /// <summary>
+    /// Converts package-manager-style identifiers (kebab-case, snake_case, scoped @org/name)
+    /// into human-readable title case. E.g. "agent-academy" → "Agent Academy",
+    /// "my_cool_app" → "My Cool App", "@scope/my-lib" → "My Lib".
+    /// </summary>
+    internal static string HumanizeProjectName(string raw)
+    {
+        var name = raw;
+
+        // Strip npm scopes: @scope/name → name
+        var slashIdx = name.LastIndexOf('/');
+        if (slashIdx >= 0)
+            name = name[(slashIdx + 1)..];
+
+        // Replace hyphens and underscores with spaces, then title-case each word
+        var words = name.Split(new[] { '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < words.Length; i++)
+        {
+            if (words[i].Length > 0)
+                words[i] = char.ToUpperInvariant(words[i][0]) + words[i][1..];
+        }
+
+        var result = string.Join(' ', words);
+        return string.IsNullOrWhiteSpace(result) ? raw : result;
     }
 
     // ── Tech Stack Detection ────────────────────────────────────

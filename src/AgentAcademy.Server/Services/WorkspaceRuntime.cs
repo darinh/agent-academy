@@ -270,6 +270,16 @@ public sealed class WorkspaceRuntime
         {
             var defaultRoomId = existingForWorkspace.Id;
 
+            // Normalize room name to just "Main Room"
+            const string expectedName = "Main Room";
+            if (existingForWorkspace.Name != expectedName)
+            {
+                existingForWorkspace.Name = expectedName;
+                existingForWorkspace.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Updated default room name to '{RoomName}'", expectedName);
+            }
+
             // Retire the legacy catalog default room if it was backfilled into this workspace
             await RetireLegacyDefaultRoomAsync(workspacePath, defaultRoomId);
 
@@ -295,13 +305,11 @@ public sealed class WorkspaceRuntime
         }
 
         var now = DateTime.UtcNow;
-        var workspace = await _db.Workspaces.FindAsync(workspacePath);
-        var displayName = workspace?.ProjectName ?? slug;
 
         var room = new RoomEntity
         {
             Id = candidateId,
-            Name = $"{displayName} — Main Room",
+            Name = "Main Room",
             Status = nameof(RoomStatus.Idle),
             CurrentPhase = nameof(CollaborationPhase.Intake),
             WorkspacePath = workspacePath,
@@ -309,6 +317,9 @@ public sealed class WorkspaceRuntime
             UpdatedAt = now
         };
         _db.Rooms.Add(room);
+
+        var workspace = await _db.Workspaces.FindAsync(workspacePath);
+        var projectLabel = workspace?.ProjectName ?? slug;
 
         var welcomeMsg = new MessageEntity
         {
@@ -318,7 +329,7 @@ public sealed class WorkspaceRuntime
             SenderName = "System",
             SenderKind = nameof(MessageSenderKind.System),
             Kind = nameof(MessageKind.System),
-            Content = $"Project loaded: {displayName}. Agents are ready.",
+            Content = $"Project loaded: {projectLabel}. Agents are ready.",
             SentAt = now
         };
         _db.Messages.Add(welcomeMsg);
@@ -329,7 +340,7 @@ public sealed class WorkspaceRuntime
         await RetireLegacyDefaultRoomAsync(workspacePath, candidateId);
 
         Publish(ActivityEventType.RoomCreated, candidateId, null, null,
-            $"Default room created for workspace: {displayName}");
+            $"Default room created for workspace: {projectLabel}");
 
         _logger.LogInformation("Created default room '{RoomId}' for workspace '{Workspace}'",
             candidateId, workspacePath);
