@@ -130,10 +130,14 @@ git config core.hooksPath .githooks
 Agents use `.github/next-session.md` for continuity across sessions.
 
 ### On Session Start
-When the user greets you (e.g., "hey", "hello", "hi"), **immediately** check if `.github/next-session.md` exists. If it does:
-1. Read it and use it as your starting context.
-2. Tell the user what was left in progress and what you're picking up.
-3. Delete the file after reading it (it's a one-time handoff, not permanent docs).
+When the user greets you (e.g., "hey", "hello", "hi"), **immediately**:
+
+1. **Check for unmerged work**: Run `git branch --no-merged develop` (or the integration branch). If any feature branches have unmerged commits, tell the user: *"Found unmerged work on branch X (N commits). Want to continue that, merge it, or start fresh?"*
+2. **Read handoff**: Check if `.github/next-session.md` exists. If it does:
+   - Read it and use it as your starting context.
+   - Tell the user what was left in progress and what you're picking up.
+   - Delete the file after reading it (it's a one-time handoff, not permanent docs).
+3. **Log the session**: Insert a row into the `session_log` table in the session database (see Session History below).
 
 ### On Session End (automatic)
 Write `.github/next-session.md` when any of these are true:
@@ -167,3 +171,29 @@ Write `.github/next-session.md` when any of these are true:
 - It is gitignored (add it to `.gitignore` if not already there).
 - It is ephemeral — read once, then delete. Not documentation.
 - Write it proactively. The user should never have to ask for it.
+
+### Session History
+
+Use a `session_log` table in the **session SQL database** to record a persistent history of work across sessions. This survives session boundaries and can be queried later for auditing, context, or review.
+
+```sql
+CREATE TABLE IF NOT EXISTS session_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    branch TEXT,
+    task_summary TEXT NOT NULL,
+    commits TEXT,           -- comma-separated SHAs
+    files_changed TEXT,     -- comma-separated paths
+    tests_before INTEGER,
+    tests_after INTEGER,
+    learnings TEXT,         -- key decisions, gotchas, patterns discovered
+    status TEXT DEFAULT 'in_progress' CHECK(status IN ('in_progress', 'completed', 'abandoned'))
+);
+```
+
+**On session start**: `INSERT INTO session_log (branch, task_summary) VALUES ('{branch}', '{what you''re working on}');`
+
+**On session end**: `UPDATE session_log SET ended_at = CURRENT_TIMESTAMP, commits = '{shas}', files_changed = '{files}', tests_before = N, tests_after = M, learnings = '{notes}', status = 'completed' WHERE id = {id};`
+
+**To review history**: `SELECT * FROM session_log ORDER BY started_at DESC LIMIT 20;`
