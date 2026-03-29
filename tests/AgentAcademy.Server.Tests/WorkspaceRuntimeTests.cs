@@ -760,4 +760,107 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Equal(3, agents.Count);
         Assert.Equal("Aristotle", agents[0].Name);
     }
+
+    // ── GetProjectNameForRoomAsync ──────────────────────────────
+
+    [Fact]
+    public async Task GetProjectNameForRoom_ReturnsProjectName_WhenWorkspaceHasProjectName()
+    {
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = "/home/test/my-project",
+            ProjectName = "My Project",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-1",
+            Name = "Test Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/my-project",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetProjectNameForRoomAsync("room-1");
+        Assert.Equal("My Project", result);
+    }
+
+    [Fact]
+    public async Task GetProjectNameForRoom_ReturnsNull_WhenRoomHasNoWorkspace()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "legacy-room",
+            Name = "Legacy Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = null,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetProjectNameForRoomAsync("legacy-room");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetProjectNameForRoom_ReturnsNull_WhenRoomDoesNotExist()
+    {
+        var result = await _runtime.GetProjectNameForRoomAsync("nonexistent-room");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetProjectNameForRoom_FallsBackToDirectoryBasename_WhenProjectNameIsNull()
+    {
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = "/home/test/cool-app",
+            ProjectName = null,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-no-name",
+            Name = "Room Without Project Name",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/cool-app",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetProjectNameForRoomAsync("room-no-name");
+        Assert.Equal("cool-app", result);
+    }
+
+    [Fact]
+    public async Task GetProjectNameForRoom_ReturnsNull_WhenWorkspaceEntityMissing()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "orphan-room",
+            Name = "Orphan Room",
+            Status = "Idle",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/deleted-project",
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetProjectNameForRoomAsync("orphan-room");
+        Assert.Null(result);
+    }
 }

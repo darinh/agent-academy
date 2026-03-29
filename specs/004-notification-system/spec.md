@@ -165,17 +165,25 @@ The `DiscordNotificationProvider` connects to Discord via the Discord.Net librar
 
 #### Room-Based Channel Routing
 
-Each Agent Academy room gets a dedicated Discord channel under an "Agent Academy" category. Messages are routed by `RoomId` from the `NotificationMessage`.
+Each Agent Academy room gets a dedicated Discord channel under a project-specific category. Rooms are grouped by their workspace's project name — each onboarded project gets its own Discord category. Messages are routed by `RoomId` from the `NotificationMessage`.
 
 **Discord server structure**:
 ```
-📁 Agent Academy (category — auto-created)
-  💬 main-collaboration-room-{roomIdSlug}   ← mirrors AA room
-  💬 task-implement-auth-{roomIdSlug}        ← mirrors AA task room
+📁 AA: Nonogram (category — auto-created per project)
+  💬 nonogram-main-room-{roomIdSlug}         ← mirrors AA room
+  💬 task-implement-solver-{roomIdSlug}       ← mirrors AA task room
+📁 AA: Agent Academy (category — another project)
+  💬 agent-academy-main-room-{roomIdSlug}    ← mirrors AA room
+📁 Agent Academy (category — legacy rooms without workspace)
+  💬 main-collaboration-room-{roomIdSlug}    ← legacy room
 📁 aa-{roomName}-{roomIdSlug} (category — ASK_HUMAN)
   💬 aristotle                               ← agent question channel
     🧵 What database should I use?           ← question thread
 ```
+
+**Project resolution**: When creating a channel for a room, the provider resolves the room's project name via `WorkspaceRuntime.GetProjectNameForRoomAsync(roomId)` which follows the chain: `roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName`. If `ProjectName` is null, falls back to the workspace directory basename.
+
+**Category naming**: Categories are named `"AA: {projectName}"` for workspace-scoped rooms. Legacy rooms (no `WorkspacePath`) use the `"Agent Academy"` category for backward compatibility. Categories are cached in a `_roomCategories` dictionary keyed by project name.
 
 **Channel creation**: Lazy (on first message to a room). Categories and channels are created inside a `_channelCreateLock` semaphore to prevent duplicates.
 
@@ -183,7 +191,7 @@ Each Agent Academy room gets a dedicated Discord channel under an "Agent Academy
 
 **Fallback**: If room channel creation fails (e.g., missing permissions), notifications fall back to the configured `_channelId` default channel. A warning is logged with the specific permissions needed.
 
-**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels are identified by the "Agent Academy" category; agent channels by "aa-" category prefix. Room IDs are parsed from channel topics.
+**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels are identified by categories matching `"AA: *"` prefix or legacy `"Agent Academy"` name; agent channels by `"aa-"` category prefix. Room IDs are parsed from channel topics.
 
 #### Webhook-Based Agent Identity
 

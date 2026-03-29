@@ -219,6 +219,27 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Resolves the project name for a room by following
+    /// roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName.
+    /// Returns null for legacy rooms without a workspace or workspaces without a project name.
+    /// Falls back to the workspace directory basename when ProjectName is null.
+    /// </summary>
+    public async Task<string?> GetProjectNameForRoomAsync(string roomId)
+    {
+        var room = await _db.Rooms.FindAsync(roomId);
+        if (room?.WorkspacePath is null) return null;
+
+        var workspace = await _db.Workspaces.FindAsync(room.WorkspacePath);
+        if (workspace is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(workspace.ProjectName))
+            return workspace.ProjectName;
+
+        // Fallback: directory basename
+        return Path.GetFileName(workspace.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    /// <summary>
     /// Creates the default room if no rooms exist.
     /// </summary>
     public async Task<RoomSnapshot> CreateDefaultRoomAsync()

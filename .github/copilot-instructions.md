@@ -45,17 +45,33 @@ agent-academy/
 
 The `specs/` directory is the single source of truth for what this system does. Every claim in the spec must be verifiable against actual code.
 
-### Before Every Change
-Produce a Spec Change Proposal:
-- Which spec sections are affected
-- Change type: NEW_CAPABILITY | MODIFICATION | BUG_FIX_CODE | BUG_FIX_SPEC
-- What the proposed changes are
-- How to verify accuracy after implementation
+### Plans ARE Spec Change Proposals
 
-### After Every Change
-- Update the affected spec sections to match the delivered code
-- Verify every spec claim against actual code (file paths, function names)
-- Update `specs/CHANGELOG.md`
+Every implementation plan (plan.md) must include a **Spec Change Proposal** section. The plan is not just a task list — it is the formal proposal for how the spec will change. This means:
+
+1. **Before coding**: The plan identifies which spec sections are affected, the change type, and the proposed spec updates.
+2. **During coding**: The spec update is a tracked todo item alongside the code changes — not an afterthought.
+3. **After coding**: Changes are validated against both the plan and the spec change proposal. The spec update is reviewed with the same rigor as code changes.
+
+### Plan Spec Change Proposal Format
+
+Every plan must include:
+```
+## Spec Change Proposal
+- **Sections affected**: [spec section numbers and names]
+- **Change type**: NEW_CAPABILITY | MODIFICATION | BUG_FIX_CODE | BUG_FIX_SPEC
+- **Proposed changes**: [what the spec will say after implementation]
+- **Verification**: [how to confirm spec accuracy against delivered code]
+```
+
+### Validation Checklist
+
+When reviewing completed work, verify:
+- [ ] Every code change has a corresponding spec update
+- [ ] Every spec claim references actual code (file paths, function names, types)
+- [ ] The spec update matches what was proposed in the plan
+- [ ] `specs/CHANGELOG.md` has an entry for the change
+- [ ] No aspirational claims — spec describes what IS, not what SHOULD BE
 
 ### If Spec and Code Diverge
 1. Investigate WHY they diverged
