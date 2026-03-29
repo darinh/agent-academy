@@ -344,6 +344,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
             return true;
         }
+        catch (Discord.Net.HttpException httpEx) when (httpEx.DiscordCode == DiscordErrorCode.MissingPermissions)
+        {
+            _logger.LogError(httpEx,
+                "Discord bot lacks permissions to create channels/threads for agent question from '{AgentName}'. " +
+                "Grant the bot 'Manage Channels', 'Send Messages', and 'Create Public Threads' permissions on the server.",
+                question.AgentName);
+            return false;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Failed to send agent question from '{AgentName}'", question.AgentName);
