@@ -119,12 +119,21 @@ public sealed class NotificationManager
     /// Sends an agent's question to the human via the first connected provider that supports it.
     /// The provider handles routing the human's reply back to the agent's room.
     /// </summary>
-    /// <returns>True if any provider successfully sent the question.</returns>
-    public async Task<bool> SendAgentQuestionAsync(AgentQuestion question, CancellationToken cancellationToken = default)
+    /// <returns>A tuple: Sent=true if delivered, Error=detail message if failed.</returns>
+    public async Task<(bool Sent, string? Error)> SendAgentQuestionAsync(AgentQuestion question, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        foreach (var provider in _providers.Values.Where(p => p.IsConnected))
+        var connectedProviders = _providers.Values.Where(p => p.IsConnected).ToList();
+
+        if (connectedProviders.Count == 0)
+        {
+            _logger.LogWarning("No connected provider could send agent question from '{AgentName}'", question.AgentName);
+            return (false, "No notification provider is connected. Ensure Discord is configured and connected in Settings.");
+        }
+
+        string? lastError = null;
+        foreach (var provider in connectedProviders)
         {
             try
             {
@@ -134,16 +143,17 @@ public sealed class NotificationManager
                     _logger.LogInformation(
                         "Agent question from '{AgentName}' sent via provider '{ProviderId}'",
                         question.AgentName, provider.ProviderId);
-                    return true;
+                    return (true, null);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Failed to send agent question via provider '{ProviderId}'", provider.ProviderId);
+                lastError = $"Provider '{provider.ProviderId}' error: {ex.Message}";
             }
         }
 
-        _logger.LogWarning("No connected provider could send agent question from '{AgentName}'", question.AgentName);
-        return false;
+        _logger.LogWarning("No connected provider could deliver agent question from '{AgentName}'", question.AgentName);
+        return (false, lastError ?? "Connected provider(s) could not deliver the question. Check server logs for details.");
     }
 }

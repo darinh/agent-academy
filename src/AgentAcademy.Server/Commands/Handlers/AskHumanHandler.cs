@@ -50,15 +50,14 @@ public sealed class AskHumanHandler : ICommandHandler
             Question: question
         );
 
-        var sent = await notificationManager.SendAgentQuestionAsync(agentQuestion);
+        var (sent, error) = await notificationManager.SendAgentQuestionAsync(agentQuestion);
 
         if (!sent)
         {
             return command with
             {
                 Status = CommandStatus.Error,
-                Error = "No notification provider is connected that supports agent questions. " +
-                        "Ensure Discord is configured and connected in Settings."
+                Error = error ?? "Failed to send question — check server logs for details."
             };
         }
 
