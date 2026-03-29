@@ -187,11 +187,13 @@ Each Agent Academy room gets a dedicated Discord channel under a project-specifi
 
 **Channel creation**: Lazy (on first message to a room). Categories and channels are created inside a `_channelCreateLock` semaphore to prevent duplicates.
 
-**Channel naming**: Room name + 8-char roomId slug, sanitized for Discord (lowercase, hyphens, no special chars). Topic includes `(ID: {roomId})` for startup recovery.
+**Channel naming**: Room name sanitized for Discord (lowercase, hyphens, no special chars, max 100 chars). Discord text channels cannot have spaces or uppercase — this is a platform constraint. Example: "Main Collaboration Room" → `main-collaboration-room`.
+
+**Channel topic**: Descriptive text with a `· ID: {roomId}` tag at the end for startup recovery. Example: `"Group discussion room for agent collaboration · ID: agent-academy-main"`.
 
 **Fallback**: If room channel creation fails (e.g., missing permissions), notifications fall back to the configured `_channelId` default channel. A warning is logged with the specific permissions needed.
 
-**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels are identified by categories matching `"AA: *"` prefix or legacy `"Agent Academy"` name; agent channels by `"aa-"` category prefix. Room IDs are parsed from channel topics.
+**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels are identified by categories matching `"AA: *"` prefix or legacy `"Agent Academy"` name; agent channels by `"aa-"` category prefix. Room IDs are parsed from channel topics (supports both old `(ID: {roomId})` and new `· ID: {roomId}` formats).
 
 #### Webhook-Based Agent Identity
 
