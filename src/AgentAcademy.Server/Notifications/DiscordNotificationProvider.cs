@@ -304,15 +304,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             }
             else
             {
-                // Clean plain text — the sender name provides agent identity
-                var text = message.Body;
-                if (text.Length > 2000)
-                    text = text[..1997] + "...";
-
-                await webhook.SendMessageAsync(
-                    text: text,
-                    username: agentDisplayName,
-                    avatarUrl: avatarUrl);
+                await SendChunkedWebhookAsync(webhook, message.Body, agentDisplayName, avatarUrl);
             }
 
             return true;
@@ -322,6 +314,37 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         var fallbackEmbed = BuildEmbed(message);
         await roomChannel.SendMessageAsync(embed: fallbackEmbed);
         return true;
+    }
+
+    /// <summary>
+    /// Sends a long message via webhook, splitting into multiple parts if it exceeds
+    /// Discord's 2000-character limit. Parts are labeled (1/N), (2/N), etc.
+    /// </summary>
+    private static async Task SendChunkedWebhookAsync(
+        DiscordWebhookClient webhook, string text, string username, string? avatarUrl)
+    {
+        const int maxLen = 2000;
+        const int suffixReserve = 10; // room for " (XX/XX)"
+        var chunkSize = maxLen - suffixReserve;
+
+        if (text.Length <= maxLen)
+        {
+            await webhook.SendMessageAsync(text: text, username: username, avatarUrl: avatarUrl);
+            return;
+        }
+
+        var chunks = new List<string>();
+        for (var i = 0; i < text.Length; i += chunkSize)
+        {
+            var len = Math.Min(chunkSize, text.Length - i);
+            chunks.Add(text.Substring(i, len));
+        }
+
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            var part = $"{chunks[i]} ({i + 1}/{chunks.Count})";
+            await webhook.SendMessageAsync(text: part, username: username, avatarUrl: avatarUrl);
+        }
     }
 
     /// <inheritdoc />

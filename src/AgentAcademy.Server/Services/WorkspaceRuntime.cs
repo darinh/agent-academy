@@ -697,7 +697,7 @@ public sealed class WorkspaceRuntime
         room.UpdatedAt = now;
 
         Publish(ActivityEventType.MessagePosted, request.RoomId, agent.Id, null,
-            $"{agent.Name}: {Truncate(request.Content, 100)}");
+            $"{agent.Name}: {request.Content}");
 
         await _db.SaveChangesAsync();
 
@@ -749,7 +749,7 @@ public sealed class WorkspaceRuntime
         room.UpdatedAt = now;
 
         Publish(ActivityEventType.MessagePosted, roomId, "human", null,
-            $"You: {Truncate(content, 100)}");
+            $"You: {content}");
 
         await _db.SaveChangesAsync();
 
