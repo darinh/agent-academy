@@ -156,8 +156,10 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<List<RoomSnapshot>> GetRoomsAsync()
     {
+        var defaultRoomId = _catalog.DefaultRoomId;
         var rooms = await _db.Rooms
-            .OrderBy(r => r.Name)
+            .OrderBy(r => r.Id == defaultRoomId ? 0 : 1)
+            .ThenBy(r => r.Name)
             .ToListAsync();
 
         // Pre-load all agent locations to avoid N+1 queries
