@@ -658,15 +658,12 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         var category = await FindOrCreateRoomCategoryAsync(guild, projectName);
 
-        // Include roomId slug in channel name to prevent collision between rooms with similar names
-        var roomIdSlug = roomId.Length > 8 ? roomId[..8] : roomId;
-        var channelName = SanitizeChannelName($"{roomName}-{roomIdSlug}");
+        var channelName = SanitizeChannelName(roomName);
 
         // Search for existing channel in the category — verify topic contains correct roomId
         var found = guild.TextChannels.FirstOrDefault(
             c => c.CategoryId == category.Id &&
-                 c.Name.Equals(channelName, StringComparison.OrdinalIgnoreCase) &&
-                 (c.Topic ?? "").Contains($"(ID: {roomId})"));
+                 (c.Topic ?? "").Contains($"ID: {roomId}"));
 
         if (found is not null)
         {
@@ -678,7 +675,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         var created = await guild.CreateTextChannelAsync(channelName, props =>
         {
             props.CategoryId = category.Id;
-            props.Topic = $"Agent Academy — Room: {roomName} (ID: {roomId})";
+            props.Topic = $"Group discussion room for agent collaboration · ID: {roomId}";
         });
 
         _roomChannels[roomId] = created.Id;
@@ -857,13 +854,12 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         try
         {
-            var roomIdSlug = roomId.Length > 8 ? roomId[..8] : roomId;
-            var newChannelName = SanitizeChannelName($"{newName}-{roomIdSlug}");
+            var newChannelName = SanitizeChannelName(newName);
 
             await channel.ModifyAsync(props =>
             {
                 props.Name = newChannelName;
-                props.Topic = $"Agent Academy — Room: {newName} (ID: {roomId})";
+                props.Topic = $"Group discussion room for agent collaboration · ID: {roomId}";
             });
 
             _logger.LogInformation("Renamed Discord channel for room '{RoomId}' to '#{ChannelName}'",
@@ -977,20 +973,34 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 foreach (var channel in guild.TextChannels.Where(c => c.CategoryId == roomCategory.Id))
                 {
                     var topic = channel.Topic ?? "";
-                    // Topic format: "Agent Academy — Room: {roomName} (ID: {roomId})"
-                    var idMarker = "(ID: ";
-                    var idStart = topic.IndexOf(idMarker, StringComparison.Ordinal);
-                    if (idStart >= 0)
+                    // Parse roomId from topic — supports both formats:
+                    // Old: "Agent Academy — Room: {roomName} (ID: {roomId})"
+                    // New: "... · ID: {roomId}"
+                    string? roomId = null;
+
+                    var oldMarker = "(ID: ";
+                    var oldStart = topic.IndexOf(oldMarker, StringComparison.Ordinal);
+                    if (oldStart >= 0)
                     {
-                        var idValue = topic[(idStart + idMarker.Length)..];
+                        var idValue = topic[(oldStart + oldMarker.Length)..];
                         var idEnd = idValue.IndexOf(')');
                         if (idEnd > 0)
-                        {
-                            var roomId = idValue[..idEnd];
-                            _roomChannels[roomId] = channel.Id;
-                            _channelToRoom[channel.Id] = roomId;
-                            restoredRoomChannels++;
-                        }
+                            roomId = idValue[..idEnd];
+                    }
+
+                    if (roomId is null)
+                    {
+                        var newMarker = "· ID: ";
+                        var newStart = topic.IndexOf(newMarker, StringComparison.Ordinal);
+                        if (newStart >= 0)
+                            roomId = topic[(newStart + newMarker.Length)..].Trim();
+                    }
+
+                    if (roomId is not null)
+                    {
+                        _roomChannels[roomId] = channel.Id;
+                        _channelToRoom[channel.Id] = roomId;
+                        restoredRoomChannels++;
                     }
                 }
             }
