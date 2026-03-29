@@ -160,6 +160,12 @@ builder.Services.AddSingleton<ICommandHandler, RecallHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListMemoriesHandler>();
 builder.Services.AddSingleton<ICommandHandler, ForgetHandler>();
 builder.Services.AddSingleton<ICommandHandler, AskHumanHandler>();
+builder.Services.AddSingleton<ICommandHandler, ClaimTaskHandler>();
+builder.Services.AddSingleton<ICommandHandler, ReleaseTaskHandler>();
+builder.Services.AddSingleton<ICommandHandler, UpdateTaskHandler>();
+builder.Services.AddSingleton<ICommandHandler, ApproveTaskHandler>();
+builder.Services.AddSingleton<ICommandHandler, RequestChangesHandler>();
+builder.Services.AddSingleton<ICommandHandler, ShowReviewQueueHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();

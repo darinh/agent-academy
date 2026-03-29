@@ -173,7 +173,12 @@ public enum ActivityEventType
     ToolIntercepted,
     CommandExecuted,
     CommandDenied,
-    CommandFailed
+    CommandFailed,
+    TaskClaimed,
+    TaskReleased,
+    TaskApproved,
+    TaskChangesRequested,
+    TaskStatusUpdated
 }
 
 /// <summary>

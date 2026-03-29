@@ -469,6 +469,176 @@ public sealed class WorkspaceRuntime
         return BuildTaskSnapshot(entity);
     }
 
+    // ── Task State Commands ──────────────────────────────────────
+
+    /// <summary>
+    /// Claims a task for an agent. Prevents double-claiming by another agent.
+    /// Auto-activates tasks in Queued status.
+    /// </summary>
+    public async Task<TaskSnapshot> ClaimTaskAsync(string taskId, string agentId, string agentName)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        if (!string.IsNullOrEmpty(entity.AssignedAgentId) && entity.AssignedAgentId != agentId)
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
+
+        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+        entity.AssignedAgentId = agent?.Id ?? agentId;
+        entity.AssignedAgentName = agent?.Name ?? agentName;
+
+        var now = DateTime.UtcNow;
+        entity.UpdatedAt = now;
+
+        // Auto-activate queued tasks when claimed
+        if (entity.Status == nameof(Shared.Models.TaskStatus.Queued))
+        {
+            entity.Status = nameof(Shared.Models.TaskStatus.Active);
+            entity.StartedAt ??= now;
+        }
+
+        Publish(ActivityEventType.TaskClaimed, entity.RoomId, agentId, taskId,
+            $"{entity.AssignedAgentName} claimed task: {Truncate(entity.Title, 80)}");
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Releases a task claim. Only the currently assigned agent can release.
+    /// </summary>
+    public async Task<TaskSnapshot> ReleaseTaskAsync(string taskId, string agentId)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        if (string.IsNullOrEmpty(entity.AssignedAgentId))
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is not currently claimed by any agent");
+
+        if (entity.AssignedAgentId != agentId)
+            throw new InvalidOperationException(
+                $"Cannot release task '{taskId}' — claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
+
+        var releasedName = entity.AssignedAgentName ?? agentId;
+        entity.AssignedAgentId = null;
+        entity.AssignedAgentName = null;
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.TaskReleased, entity.RoomId, agentId, taskId,
+            $"{releasedName} released task: {Truncate(entity.Title, 80)}");
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Approves a task after review. Records the reviewer and increments review rounds.
+    /// </summary>
+    public async Task<TaskSnapshot> ApproveTaskAsync(string taskId, string reviewerAgentId, string? findings = null)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var currentStatus = entity.Status;
+        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
+            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to approve");
+
+        var now = DateTime.UtcNow;
+        entity.Status = nameof(Shared.Models.TaskStatus.Approved);
+        entity.ReviewerAgentId = reviewerAgentId;
+        entity.ReviewRounds++;
+        entity.UpdatedAt = now;
+
+        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
+
+        if (!string.IsNullOrWhiteSpace(findings) && !string.IsNullOrEmpty(entity.RoomId))
+        {
+            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
+                $"✅ **Approved** by {reviewerName}\n\n{findings}", null, now);
+            _db.Messages.Add(msgEntity);
+        }
+
+        Publish(ActivityEventType.TaskApproved, entity.RoomId, reviewerAgentId, taskId,
+            $"{reviewerName} approved task: {Truncate(entity.Title, 80)}");
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Requests changes on a task after review. Records the reviewer and increments review rounds.
+    /// </summary>
+    public async Task<TaskSnapshot> RequestChangesAsync(string taskId, string reviewerAgentId, string findings)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var currentStatus = entity.Status;
+        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
+            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to request changes");
+
+        var now = DateTime.UtcNow;
+        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
+        entity.ReviewerAgentId = reviewerAgentId;
+        entity.ReviewRounds++;
+        entity.UpdatedAt = now;
+
+        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
+
+        if (!string.IsNullOrEmpty(entity.RoomId))
+        {
+            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
+                $"🔄 **Changes Requested** by {reviewerName}\n\n{findings}", null, now);
+            _db.Messages.Add(msgEntity);
+        }
+
+        Publish(ActivityEventType.TaskChangesRequested, entity.RoomId, reviewerAgentId, taskId,
+            $"{reviewerName} requested changes on task: {Truncate(entity.Title, 80)}");
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Returns tasks that are pending review (InReview or AwaitingValidation).
+    /// </summary>
+    public async Task<List<TaskSnapshot>> GetReviewQueueAsync()
+    {
+        var reviewStatuses = new[]
+        {
+            nameof(Shared.Models.TaskStatus.InReview),
+            nameof(Shared.Models.TaskStatus.AwaitingValidation)
+        };
+
+        var entities = await _db.Tasks
+            .Where(t => reviewStatuses.Contains(t.Status))
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync();
+
+        return entities.Select(BuildTaskSnapshot).ToList();
+    }
+
+    /// <summary>
+    /// Posts a system note to the room associated with a task.
+    /// No-op if the task has no room.
+    /// </summary>
+    public async Task PostTaskNoteAsync(string taskId, string message)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        if (string.IsNullOrEmpty(entity.RoomId))
+            return;
+
+        await PostSystemStatusAsync(entity.RoomId, message);
+    }
+
     // ── Message Management ──────────────────────────────────────
 
     /// <summary>

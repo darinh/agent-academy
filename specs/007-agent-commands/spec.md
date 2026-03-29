@@ -99,12 +99,12 @@ These formalize existing capabilities with audit trails and structured output.
 | `ASK_HUMAN` | `question` | Confirmation + delivery status | Sends question to Discord, routes reply to agent's room | `AskHumanHandler.cs` — creates workspace category + agent channel + question thread in Discord, persistent listener routes human reply back via `PostHumanMessageAsync` |
 | `LINK_TASK_TO_SPEC` | `taskId`, `specSection` | Confirmation + link record | Creates bidirectional link |
 | `SHOW_UNLINKED_CHANGES` | `since?` | Tasks/commits without spec links | Audit event |
-| `APPROVE_TASK` | `taskId`, `findings?` | Confirmation | Updates task status, records reviewer |
-| `REQUEST_CHANGES` | `taskId`, `findings` | Confirmation | Updates task status, creates feedback |
-| `SHOW_REVIEW_QUEUE` | — | Tasks awaiting review | Audit event |
-| `CLAIM_TASK` | `taskId` | Confirmation | Assigns agent, prevents duplicate work |
-| `RELEASE_TASK` | `taskId` | Confirmation | Unassigns agent |
-| `UPDATE_TASK` | `taskId`, `status?`, `blocker?`, `note?` | Confirmation | Updates task state |
+| `APPROVE_TASK` | `taskId`, `findings?` | Confirmation | Updates task status, records reviewer | `ApproveTaskHandler.cs` — validates InReview/AwaitingValidation state, sets Approved, records reviewer, increments ReviewRounds, posts findings as review message |
+| `REQUEST_CHANGES` | `taskId`, `findings` | Confirmation | Updates task status, creates feedback | `RequestChangesHandler.cs` — validates InReview/AwaitingValidation state, sets ChangesRequested, records reviewer, increments ReviewRounds, posts findings as review message |
+| `SHOW_REVIEW_QUEUE` | — | Tasks awaiting review | Audit event | `ShowReviewQueueHandler.cs` — queries tasks with InReview or AwaitingValidation status, returns summary list |
+| `CLAIM_TASK` | `taskId` | Confirmation | Assigns agent, prevents duplicate work | `ClaimTaskHandler.cs` — validates no other claimant, assigns calling agent, auto-activates Queued tasks |
+| `RELEASE_TASK` | `taskId` | Confirmation | Unassigns agent | `ReleaseTaskHandler.cs` — validates calling agent is current assignee, clears assignment |
+| `UPDATE_TASK` | `taskId`, `status?`, `blocker?`, `note?` | Confirmation | Updates task state | `UpdateTaskHandler.cs` — validates allowed statuses (Active/Blocked/AwaitingValidation/InReview/Queued), handles blocker→Blocked shorthand, posts notes to task room |
 
 #### Phase 1C: Verification
 
