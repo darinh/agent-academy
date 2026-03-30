@@ -60,6 +60,23 @@ public class CollaborationController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/tasks/{taskId}/comments — get all comments for a task.
+    /// </summary>
+    [HttpGet("api/tasks/{taskId}/comments")]
+    public async Task<ActionResult<List<TaskComment>>> GetTaskComments(string taskId)
+    {
+        try
+        {
+            var comments = await _runtime.GetTaskCommentsAsync(taskId);
+            return Ok(comments);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// POST /api/rooms/{roomId}/messages — post a message (agent-to-agent or system).
     /// </summary>
     [HttpPost("api/rooms/{roomId}/messages")]

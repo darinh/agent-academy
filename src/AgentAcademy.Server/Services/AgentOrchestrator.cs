@@ -257,7 +257,8 @@ public sealed class AgentOrchestrator
 
                     foreach (var assignment in ParseTaskAssignments(response))
                     {
-                        await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                        if (await TryHandleTaskAssignmentWithGatingAsync(runtime, agent, roomId, assignment))
+                            await HandleTaskAssignmentAsync(runtime, roomId, assignment);
                     }
                 }
             }
@@ -369,11 +370,43 @@ public sealed class AgentOrchestrator
 
             foreach (var assignment in ParseTaskAssignments(response))
             {
-                await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                if (await TryHandleTaskAssignmentWithGatingAsync(runtime, agent, roomId, assignment))
+                    await HandleTaskAssignmentAsync(runtime, roomId, assignment);
             }
         }
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
+    }
+
+    // ── TASK ASSIGNMENT GATING ──────────────────────────────────
+
+    /// <summary>
+    /// Checks whether an agent is allowed to create a task of the given type.
+    /// Non-planners can only create Bug tasks. Other types are converted into a
+    /// proposal message posted to the room. Returns true if the assignment should proceed.
+    /// </summary>
+    private async Task<bool> TryHandleTaskAssignmentWithGatingAsync(
+        WorkspaceRuntime runtime, AgentDefinition agent, string roomId, ParsedTaskAssignment assignment)
+    {
+        // Planners can create any task type
+        if (string.Equals(agent.Role, "Planner", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Non-planners can file bug reports
+        if (assignment.Type == TaskType.Bug)
+            return true;
+
+        // Non-planners: convert to a proposal instead
+        _logger.LogInformation(
+            "Agent {AgentName} ({Role}) proposed task '{Title}' — only planners can create non-bug tasks",
+            agent.Name, agent.Role, assignment.Title);
+
+        await runtime.PostSystemStatusAsync(roomId,
+            $"💡 **Task proposal from {agent.Name}**: \"{assignment.Title}\"\n" +
+            $"{assignment.Description}\n\n" +
+            $"_Only planners can create tasks. Aristotle, please review and assign if appropriate._");
+
+        return false;
     }
 
     // ── TASK ASSIGNMENT PARSING ─────────────────────────────────
@@ -390,8 +423,9 @@ public sealed class AgentOrchestrator
         {
             var agentMatch = Regex.Match(block, @"Agent:\s*@?(\S+)", RegexOptions.IgnoreCase);
             var titleMatch = Regex.Match(block, @"Title:\s*(.+)", RegexOptions.IgnoreCase);
-            var descMatch = Regex.Match(block, @"Description:\s*([\s\S]*?)(?=Acceptance Criteria:|TASK ASSIGNMENT:|$)", RegexOptions.IgnoreCase);
-            var criteriaMatch = Regex.Match(block, @"Acceptance Criteria:\s*([\s\S]*?)(?=TASK ASSIGNMENT:|$)", RegexOptions.IgnoreCase);
+            var descMatch = Regex.Match(block, @"Description:\s*([\s\S]*?)(?=Acceptance Criteria:|Type:|TASK ASSIGNMENT:|$)", RegexOptions.IgnoreCase);
+            var criteriaMatch = Regex.Match(block, @"Acceptance Criteria:\s*([\s\S]*?)(?=Type:|TASK ASSIGNMENT:|$)", RegexOptions.IgnoreCase);
+            var typeMatch = Regex.Match(block, @"Type:\s*(\S+)", RegexOptions.IgnoreCase);
 
             if (!agentMatch.Success || !titleMatch.Success) continue;
 
@@ -405,11 +439,16 @@ public sealed class AgentOrchestrator
                 }
             }
 
+            var taskType = TaskType.Feature;
+            if (typeMatch.Success)
+                Enum.TryParse(typeMatch.Groups[1].Value.Trim(), ignoreCase: true, out taskType);
+
             assignments.Add(new ParsedTaskAssignment(
                 Agent: agentMatch.Groups[1].Value.Trim(),
                 Title: titleMatch.Groups[1].Value.Trim(),
                 Description: descMatch.Success ? descMatch.Groups[1].Value.Trim() : titleMatch.Groups[1].Value.Trim(),
-                Criteria: criteria));
+                Criteria: criteria,
+                Type: taskType));
         }
 
         return assignments;
@@ -541,8 +580,17 @@ public sealed class AgentOrchestrator
             }
         }
 
-        // Loop exited — agent stopped or room closed
+        // Loop exited — agent stopped or room closed/recalled
         _logger.LogInformation("Breakout loop ended for {AgentName}", agent.Name);
+
+        // If the breakout was recalled (archived externally), skip completion/review flow
+        var finalBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
+        if (finalBr is null || finalBr.Status != RoomStatus.Active)
+        {
+            _logger.LogInformation("Breakout {BreakoutId} was recalled or archived — skipping completion flow", breakoutRoomId);
+            return;
+        }
+
         await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
     }
 
@@ -1210,7 +1258,8 @@ internal record ParsedTaskAssignment(
     string Agent,
     string Title,
     string Description,
-    List<string> Criteria);
+    List<string> Criteria,
+    TaskType Type = TaskType.Feature);
 
 /// <summary>A parsed WORK REPORT: block.</summary>
 internal record ParsedWorkReport(

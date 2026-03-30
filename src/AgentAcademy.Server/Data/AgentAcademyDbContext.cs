@@ -29,6 +29,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<NotificationConfigEntity> NotificationConfigs => Set<NotificationConfigEntity>();
     public DbSet<AgentConfigEntity> AgentConfigs => Set<AgentConfigEntity>();
     public DbSet<InstructionTemplateEntity> InstructionTemplates => Set<InstructionTemplateEntity>();
+    public DbSet<TaskCommentEntity> TaskComments => Set<TaskCommentEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +81,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.Description).IsRequired().HasDefaultValue("");
             entity.Property(e => e.SuccessCriteria).IsRequired().HasDefaultValue("");
             entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
+            entity.Property(e => e.Type).IsRequired().HasDefaultValue("Feature");
             entity.Property(e => e.CurrentPhase).IsRequired().HasDefaultValue("Planning");
             entity.Property(e => e.CurrentPlan).IsRequired().HasDefaultValue("");
             entity.Property(e => e.ValidationStatus).IsRequired().HasDefaultValue("NotStarted");
@@ -122,6 +124,27 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => e.AssignedTo).HasDatabaseName("idx_task_items_agent");
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_task_items_room");
+        });
+
+        // ── Task Comments ─────────────────────────────────────
+        modelBuilder.Entity<TaskCommentEntity>(entity =>
+        {
+            entity.ToTable("task_comments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TaskId).IsRequired();
+            entity.Property(e => e.AgentId).IsRequired();
+            entity.Property(e => e.AgentName).IsRequired();
+            entity.Property(e => e.CommentType).IsRequired().HasDefaultValue("Comment");
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Task)
+                .WithMany()
+                .HasForeignKey(e => e.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.TaskId).HasDatabaseName("idx_task_comments_task");
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_task_comments_agent");
         });
 
         // ── Agent Locations ───────────────────────────────────

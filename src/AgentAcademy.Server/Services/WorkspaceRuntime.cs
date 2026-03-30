@@ -472,6 +472,7 @@ public sealed class WorkspaceRuntime
             Description: request.Description,
             SuccessCriteria: request.SuccessCriteria,
             Status: Shared.Models.TaskStatus.Active,
+            Type: request.Type,
             CurrentPhase: CollaborationPhase.Planning,
             CurrentPlan: $"Plan for: {request.Title}\n\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate",
             ValidationStatus: WorkstreamStatus.Ready,
@@ -525,6 +526,7 @@ public sealed class WorkspaceRuntime
             Description = task.Description,
             SuccessCriteria = task.SuccessCriteria,
             Status = task.Status.ToString(),
+            Type = task.Type.ToString(),
             CurrentPhase = task.CurrentPhase.ToString(),
             CurrentPlan = task.CurrentPlan,
             ValidationStatus = task.ValidationStatus.ToString(),
@@ -628,7 +630,9 @@ public sealed class WorkspaceRuntime
     public async Task<TaskSnapshot?> GetTaskAsync(string taskId)
     {
         var entity = await _db.Tasks.FindAsync(taskId);
-        return entity is null ? null : BuildTaskSnapshot(entity);
+        if (entity is null) return null;
+        var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == taskId);
+        return BuildTaskSnapshot(entity, commentCount);
     }
 
     /// <summary>
@@ -895,6 +899,75 @@ public sealed class WorkspaceRuntime
             return;
 
         await PostSystemStatusAsync(entity.RoomId, message);
+    }
+
+    // ── Task Comments ──────────────────────────────────────────
+
+    /// <summary>
+    /// Adds a comment or finding to a task.
+    /// </summary>
+    public async Task<TaskComment> AddTaskCommentAsync(
+        string taskId, string agentId, string agentName,
+        TaskCommentType commentType, string content)
+    {
+        var task = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var comment = new TaskCommentEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            TaskId = taskId,
+            AgentId = agentId,
+            AgentName = agentName,
+            CommentType = commentType.ToString(),
+            Content = content,
+            CreatedAt = DateTime.UtcNow
+        };
+        _db.TaskComments.Add(comment);
+
+        Publish(ActivityEventType.TaskCommentAdded, task.RoomId, agentId, taskId,
+            $"{agentName} added {commentType.ToString().ToLower()} on task: {task.Title}");
+
+        await _db.SaveChangesAsync();
+
+        return BuildTaskComment(comment);
+    }
+
+    /// <summary>
+    /// Gets all comments for a task, ordered by creation time.
+    /// </summary>
+    public async Task<List<TaskComment>> GetTaskCommentsAsync(string taskId)
+    {
+        var task = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var comments = await _db.TaskComments
+            .Where(c => c.TaskId == taskId)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
+
+        return comments.Select(BuildTaskComment).ToList();
+    }
+
+    /// <summary>
+    /// Gets the count of comments for a task.
+    /// </summary>
+    public async Task<int> GetTaskCommentCountAsync(string taskId)
+    {
+        return await _db.TaskComments.CountAsync(c => c.TaskId == taskId);
+    }
+
+    private static TaskComment BuildTaskComment(TaskCommentEntity entity)
+    {
+        return new TaskComment(
+            Id: entity.Id,
+            TaskId: entity.TaskId,
+            AgentId: entity.AgentId,
+            AgentName: entity.AgentName,
+            CommentType: Enum.TryParse<TaskCommentType>(entity.CommentType, out var ct) ? ct : TaskCommentType.Comment,
+            Content: entity.Content,
+            CreatedAt: entity.CreatedAt
+        );
     }
 
     // ── Message Management ──────────────────────────────────────
@@ -1561,7 +1634,7 @@ public sealed class WorkspaceRuntime
             .ToList();
     }
 
-    private static TaskSnapshot BuildTaskSnapshot(TaskEntity entity)
+    private static TaskSnapshot BuildTaskSnapshot(TaskEntity entity, int commentCount = 0)
     {
         return new TaskSnapshot(
             Id: entity.Id,
@@ -1569,6 +1642,7 @@ public sealed class WorkspaceRuntime
             Description: entity.Description,
             SuccessCriteria: entity.SuccessCriteria,
             Status: Enum.Parse<Shared.Models.TaskStatus>(entity.Status),
+            Type: Enum.TryParse<TaskType>(entity.Type, out var tt) ? tt : TaskType.Feature,
             CurrentPhase: Enum.Parse<CollaborationPhase>(entity.CurrentPhase),
             CurrentPlan: entity.CurrentPlan,
             ValidationStatus: Enum.Parse<WorkstreamStatus>(entity.ValidationStatus),
@@ -1592,7 +1666,8 @@ public sealed class WorkspaceRuntime
             ReviewerAgentId: entity.ReviewerAgentId,
             ReviewRounds: entity.ReviewRounds,
             TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
-            CommitCount: entity.CommitCount
+            CommitCount: entity.CommitCount,
+            CommentCount: commentCount
         );
     }
 

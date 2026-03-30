@@ -62,18 +62,23 @@ Per-agent permission boundaries:
 
 | Agent | Role | Allowed | Denied |
 |-------|------|---------|--------|
-| Aristotle | Planner | All task/room management, read all | Code execution |
-| Archimedes | Architect | Read all, spec commands | Code execution |
-| Hephaestus | SoftwareEngineer | File read/write, build, test, git | Spec write, task approve |
+| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `ADD_TASK_COMMENT` | Code execution |
+| Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT` | Code execution |
+| Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT` | Spec write, task approve |
 | Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
-| Socrates | Reviewer | Read all, approve/reject tasks | File write, code execution |
-| Thucydides | TechnicalWriter | Spec read/write, file read | Code execution, task approve |
+| Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT` | File write, code execution |
+| Thucydides | TechnicalWriter | Spec read/write, file read, `ADD_TASK_COMMENT` | Code execution, task approve |
 
 **Escalation rules:**
 - Tighten standards → Socrates review only
 - Relax standards → Human approval required
 - Self-modification → Socrates + Human approval
 - Socrates cannot modify own review standards
+
+### Task Creation Gating
+- Only agents with the `Planner` role can create tasks via TASK ASSIGNMENT blocks
+- Exception: any agent can create a task with `Type: Bug`
+- Non-planner agents attempting to create non-Bug tasks will have their assignment converted to a proposal message
 
 ## Command Reference
 
@@ -105,6 +110,8 @@ These formalize existing capabilities with audit trails and structured output.
 | `CLAIM_TASK` | `taskId` | Confirmation | Assigns agent, prevents duplicate work | `ClaimTaskHandler.cs` — validates no other claimant, assigns calling agent, auto-activates Queued tasks |
 | `RELEASE_TASK` | `taskId` | Confirmation | Unassigns agent | `ReleaseTaskHandler.cs` — validates calling agent is current assignee, clears assignment |
 | `UPDATE_TASK` | `taskId`, `status?`, `blocker?`, `note?` | Confirmation | Updates task state | `UpdateTaskHandler.cs` — validates allowed statuses (Active/Blocked/AwaitingValidation/InReview/Queued), handles blocker→Blocked shorthand, posts notes to task room |
+| `ADD_TASK_COMMENT` | `taskId`, `type?` (Comment\|Finding\|Evidence\|Blocker, default: Comment), `content` | Comment ID and confirmation | Validates task exists, caller is assignee/reviewer/planner. Creates `TaskCommentEntity`, posts activity event | |
+| `RECALL_AGENT` | `agentId` (name or ID) | Agent info and room transition details | Validates caller has Planner role, target agent is in Working state in a breakout room. Closes breakout room, moves agent to Idle in parent room. Posts recall notices to both breakout and parent rooms | |
 
 #### Phase 1C: Verification — IMPLEMENTED
 

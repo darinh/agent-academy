@@ -175,6 +175,8 @@ builder.Services.AddSingleton<ICommandHandler, ShowDiffHandler>();
 builder.Services.AddSingleton<ICommandHandler, GitLogHandler>();
 builder.Services.AddSingleton<ICommandHandler, RoomHistoryHandler>();
 builder.Services.AddSingleton<ICommandHandler, MoveToRoomHandler>();
+builder.Services.AddSingleton<ICommandHandler, AddTaskCommentHandler>();
+builder.Services.AddSingleton<ICommandHandler, RecallAgentHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();

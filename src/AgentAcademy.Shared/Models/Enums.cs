@@ -91,6 +91,30 @@ public enum TaskStatus
 }
 
 /// <summary>
+/// Categorizes a task by its nature (feature work, bug fix, etc.).
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskType
+{
+    Feature,
+    Bug,
+    Chore,
+    Spike
+}
+
+/// <summary>
+/// Type of comment attached to a task.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskCommentType
+{
+    Comment,
+    Finding,
+    Evidence,
+    Blocker
+}
+
+/// <summary>
 /// Estimated effort size for a task.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -180,6 +204,8 @@ public enum ActivityEventType
     TaskApproved,
     TaskChangesRequested,
     TaskStatusUpdated,
+    TaskCommentAdded,
+    AgentRecalled,
     RoomRenamed,
     DirectMessageSent
 }

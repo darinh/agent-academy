@@ -41,7 +41,8 @@ public sealed class CommandParser
         "APPROVE_TASK", "REQUEST_CHANGES", "SHOW_REVIEW_QUEUE",
         "CLAIM_TASK", "RELEASE_TASK", "UPDATE_TASK",
         "RUN_BUILD", "RUN_TESTS", "SHOW_DIFF", "GIT_LOG",
-        "DM", "ROOM_HISTORY", "MOVE_TO_ROOM"
+        "DM", "ROOM_HISTORY", "MOVE_TO_ROOM",
+        "ADD_TASK_COMMENT", "RECALL_AGENT"
     };
 
     /// <summary>

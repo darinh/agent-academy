@@ -10,6 +10,7 @@ public record TaskSnapshot(
     string Description,
     string SuccessCriteria,
     TaskStatus Status,
+    TaskType Type,
     CollaborationPhase CurrentPhase,
     string CurrentPlan,
     WorkstreamStatus ValidationStatus,
@@ -33,7 +34,8 @@ public record TaskSnapshot(
     string? ReviewerAgentId = null,
     int ReviewRounds = 0,
     List<string>? TestsCreated = null,
-    int CommitCount = 0
+    int CommitCount = 0,
+    int CommentCount = 0
 );
 
 /// <summary>
@@ -63,6 +65,7 @@ public record TaskAssignmentRequest(
     string SuccessCriteria,
     string? RoomId,
     List<string> PreferredRoles,
+    TaskType Type = TaskType.Feature,
     string? CorrelationId = null
 );
 
@@ -75,4 +78,17 @@ public record TaskAssignmentResult(
     RoomSnapshot Room,
     TaskSnapshot Task,
     ActivityEvent Activity
+);
+
+/// <summary>
+/// A comment or finding attached to a task.
+/// </summary>
+public record TaskComment(
+    string Id,
+    string TaskId,
+    string AgentId,
+    string AgentName,
+    TaskCommentType CommentType,
+    string Content,
+    DateTime CreatedAt
 );

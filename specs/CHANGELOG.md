@@ -5,6 +5,16 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **007-agent-commands**: `ADD_TASK_COMMENT` command (Phase 1B) — agents can attach comments/findings/evidence/blocker notes to tasks. Only assignee, reviewer, or planner can comment. Creates `TaskCommentEntity`, posts activity event.
+- **007-agent-commands**: `RECALL_AGENT` command (Phase 1B) — planner can pull agents back from breakout rooms. Validates Planner role + Working state, closes breakout room, moves agent to Idle in parent room, posts recall notices.
+- **007-agent-commands**: Task creation gating — only Planners can create non-Bug tasks via TASK ASSIGNMENT blocks. Non-planner non-Bug assignments converted to proposal messages.
+- **007-agent-commands**: Updated all agent permission sets — `ADD_TASK_COMMENT` added to all agents, `RECALL_AGENT` added to Aristotle.
+- **010-task-management**: `TaskType` enum (Feature, Bug, Chore, Spike) added to task model, defaults to Feature.
+- **010-task-management**: `TaskCommentEntity` for structured task comments (Comment, Finding, Evidence, Blocker types).
+- **010-task-management**: Task creation role restrictions in Orchestration Integration section.
+- **010-task-management**: `GET /api/tasks/{id}/comments` endpoint for listing task comments.
+
+### Added
 - **007-agent-commands**: Phase 1C/1D/1E commands — `RUN_BUILD`, `RUN_TESTS` (with scope filter), `SHOW_DIFF` (optional branch), `GIT_LOG` (optional file/since/count), `ROOM_HISTORY` (read any room without moving), `MOVE_TO_ROOM`. 6 new handlers registered. All agent startup prompts and permissions updated.
 - **007-agent-commands**: Breakout room redesign — open-ended work loops (no round caps), DMs delivered to agents in breakout rooms via breakout messages, DMs injected into breakout prompts. All agent timeouts removed: no per-turn LLM timeout, no orchestrator CancellationToken timeout, no MaxBreakoutRounds, no MaxFixRounds.
 - **005-workspace-runtime**: Task workspace scoping — `GetTasksAsync` and `GetActiveTaskItemsAsync` now filter by active workspace via room→workspace join (was returning all tasks across all projects).

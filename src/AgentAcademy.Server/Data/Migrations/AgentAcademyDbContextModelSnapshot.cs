@@ -573,6 +573,12 @@ namespace AgentAcademy.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Feature");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -605,6 +611,47 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_tasks_status");
 
                     b.ToTable("tasks", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskCommentEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgentName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommentType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Comment");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TaskId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("idx_task_comments_agent");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("idx_task_comments_task");
+
+                    b.ToTable("task_comments", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskItemEntity", b =>
@@ -756,6 +803,17 @@ namespace AgentAcademy.Server.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Room");
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskCommentEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.TaskEntity", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Task");
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.BreakoutRoomEntity", b =>

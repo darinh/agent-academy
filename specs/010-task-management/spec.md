@@ -34,6 +34,7 @@ Add to `TaskSnapshot` and `TaskEntity`:
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `Type` | `TaskType` enum | `Feature`, `Bug`, `Chore`, `Spike` — defaults to `Feature` |
 | `Size` | `TaskSize` enum | `XS`, `S`, `M`, `L`, `XL` — estimated effort |
 | `StartedAt` | `DateTime?` | When work began (first commit or status → Active) |
 | `CompletedAt` | `DateTime?` | When task was marked complete |
@@ -54,11 +55,31 @@ Add to `TaskSnapshot` and `TaskEntity`:
 
 ```csharp
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskType { Feature, Bug, Chore, Spike }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TaskSize { XS, S, M, L, XL }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PullRequestStatus { Open, ReviewRequested, ChangesRequested, Approved, Merged, Closed }
 ```
+
+### TaskCommentEntity
+
+```csharp
+public class TaskCommentEntity
+{
+    public string Id { get; set; }
+    public string TaskId { get; set; }
+    public string AgentId { get; set; }
+    public string AgentName { get; set; }
+    public string CommentType { get; set; } // Comment, Finding, Evidence, Blocker
+    public string Content { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+```
+
+`CommentType` values: `Comment` (general note), `Finding` (review observation), `Evidence` (verification proof), `Blocker` (blocking issue). Only the task's assignee, reviewer, or planner can add comments.
 
 ### Extended TaskStatus
 
@@ -355,6 +376,37 @@ Within each group, sort by `UpdatedAt` descending.
 
 ---
 
+## 6.5. Task Comments
+
+Agents can attach structured comments to tasks to record findings, evidence, and blockers during work.
+
+### Comment Types
+
+| Type | Purpose |
+|------|---------|
+| `Comment` | General note or update (default) |
+| `Finding` | Review observation or code issue |
+| `Evidence` | Verification proof (test results, screenshots, logs) |
+| `Blocker` | Blocking issue that prevents progress |
+
+### Authorization
+
+Only the following agents can comment on a task:
+- The task's assigned agent (assignee)
+- The task's reviewer
+- Any agent with the `Planner` role
+
+### Ordering
+
+Comments are ordered by `CreatedAt` ascending.
+
+### API
+
+- `GET /api/tasks/{id}/comments` — returns all comments for a task, ordered by creation time
+- Command: `ADD_TASK_COMMENT` (see 007-agent-commands, Phase 1B)
+
+---
+
 ## 7. API Endpoints
 
 ### Task Management (extend existing)
@@ -369,6 +421,7 @@ Within each group, sort by `UpdatedAt` descending.
 | `PUT /api/tasks/{id}/pr` | PUT | Record PR info |
 | `PUT /api/tasks/{id}/tests` | PUT | Record tests created |
 | `PUT /api/tasks/{id}/complete` | PUT | Mark complete with final metadata |
+| `GET /api/tasks/{id}/comments` | GET | List task comments, ordered by creation time |
 
 ### GitHub Integration
 
@@ -435,6 +488,13 @@ When a task is created (via `/api/tasks` or auto-spec):
 4. Agent creates a branch (via `IGitOperationsService`)
 5. Agent begins work, posting progress messages to the room
 6. Agent records commits, tests, and progress on the task record
+
+### Task Creation Gating
+
+Task creation via TASK ASSIGNMENT blocks in agent responses is role-gated:
+- Only agents with the `Planner` role can create tasks
+- Exception: any agent can create a task with `Type: Bug`
+- Non-planner agents attempting to create non-Bug tasks will have their TASK ASSIGNMENT block converted to a proposal message posted in the room (not a task)
 
 ### Review Notification Flow
 

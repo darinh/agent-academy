@@ -11,6 +11,7 @@ public class TaskEntity
     public string Description { get; set; } = string.Empty;
     public string SuccessCriteria { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
+    public string Type { get; set; } = "Feature";
     public string CurrentPhase { get; set; } = "Planning";
     public string CurrentPlan { get; set; } = string.Empty;
     public string ValidationStatus { get; set; } = "NotStarted";
