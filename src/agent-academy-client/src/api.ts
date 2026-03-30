@@ -611,6 +611,12 @@ export function resetAgentConfig(agentId: string): Promise<AgentConfigResponse> 
   );
 }
 
+export function getAgentSessions(agentId: string): Promise<BreakoutRoom[]> {
+  return request<BreakoutRoom[]>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/sessions`),
+  );
+}
+
 // ── Instruction template endpoints ─────────────────────────────────────
 
 export function getInstructionTemplates(): Promise<InstructionTemplate[]> {

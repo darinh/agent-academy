@@ -34,6 +34,7 @@ import LoginPage from "./LoginPage";
 import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
+import AgentSessionPanel from "./AgentSessionPanel";
 
 export default function App() {
   return (
@@ -275,7 +276,20 @@ function AppShell() {
 
           <main className={s.workspace} aria-label="Workspace content">
             {(() => {
-              const selectedBreakout = selectedWorkspaceId
+              // Check if an agent session is selected (agent:agentId format)
+              const isAgentView = selectedWorkspaceId?.startsWith("agent:");
+              const selectedAgentId = isAgentView
+                ? selectedWorkspaceId!.slice("agent:".length)
+                : null;
+              const sessionAgent = selectedAgentId
+                ? ov.configuredAgents.find((a) => a.id === selectedAgentId)
+                : null;
+              const sessionAgentLocation = selectedAgentId
+                ? (ov.agentLocations ?? []).find((l) => l.agentId === selectedAgentId)
+                : undefined;
+
+              // Legacy: direct breakout room selection (kept for compatibility)
+              const selectedBreakout = selectedWorkspaceId && !isAgentView
                 ? breakoutRooms.find((br) => br.id === selectedWorkspaceId)
                 : null;
               const selectedAgent = selectedBreakout
@@ -286,18 +300,22 @@ function AppShell() {
                 <div className={s.workspaceHeader}>
                   <div>
                     <div className={s.workspaceTitle}>
-                      {selectedBreakout
-                        ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
-                        : room?.name ?? "No active room"}
+                      {sessionAgent
+                        ? `${sessionAgent.name}'s Sessions`
+                        : selectedBreakout
+                          ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
+                          : room?.name ?? "No active room"}
                     </div>
                     <div className={s.workspaceSubtitle}>
-                      {selectedBreakout
-                        ? selectedBreakout.name
-                        : roomSummary}
+                      {sessionAgent
+                        ? sessionAgent.role
+                        : selectedBreakout
+                          ? selectedBreakout.name
+                          : roomSummary}
                     </div>
                   </div>
               <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                {room && (
+                {room && !sessionAgent && (
                   <div className={s.phasePill}>
                     <span
                       style={{
@@ -316,7 +334,17 @@ function AppShell() {
               </div>
             </div>
 
-            {selectedBreakout ? (
+            {sessionAgent ? (
+              <section className={s.tabContent}>
+                <AgentSessionPanel
+                  agent={sessionAgent}
+                  location={sessionAgentLocation}
+                  thinkingAgents={thinkingAgentList}
+                  connectionStatus={connectionStatus}
+                  onSendMessage={handleSendMessage}
+                />
+              </section>
+            ) : selectedBreakout ? (
               <section className={s.tabContent}>
                 <ChatPanel
                   room={{

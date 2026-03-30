@@ -285,6 +285,31 @@ public class AgentController : ControllerBase
             return Problem("Failed to reset agent configuration.");
         }
     }
+
+    /// <summary>
+    /// GET /api/agents/{agentId}/sessions — breakout room sessions for an agent.
+    /// Returns both active and archived sessions, most recent first.
+    /// </summary>
+    [HttpGet("{agentId}/sessions")]
+    public async Task<ActionResult<List<BreakoutRoom>>> GetAgentSessions(string agentId)
+    {
+        var catalogAgent = _catalog.Agents.FirstOrDefault(a =>
+            a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase) ||
+            a.Name.Equals(agentId, StringComparison.OrdinalIgnoreCase));
+        if (catalogAgent is null)
+            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+
+        try
+        {
+            var sessions = await _runtime.GetAgentSessionsAsync(catalogAgent.Id);
+            return Ok(sessions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sessions for agent '{AgentId}'", agentId);
+            return Problem("Failed to retrieve agent sessions.");
+        }
+    }
 }
 
 /// <summary>

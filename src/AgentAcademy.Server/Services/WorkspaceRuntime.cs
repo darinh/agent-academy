@@ -1863,6 +1863,32 @@ public sealed class WorkspaceRuntime
         return entities.Select(BuildBreakoutRoomSnapshot).ToList();
     }
 
+    /// <summary>
+    /// Returns all breakout rooms (active and archived) assigned to a specific agent,
+    /// ordered by most recent first. Used for agent session history.
+    /// </summary>
+    public async Task<List<BreakoutRoom>> GetAgentSessionsAsync(string agentId)
+    {
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
+        var query = _db.BreakoutRooms
+            .Include(br => br.Messages)
+            .Where(br => br.AssignedAgentId == agentId);
+
+        if (activeWorkspace is not null)
+        {
+            var workspaceRoomIds = await _db.Rooms
+                .Where(r => r.WorkspacePath == activeWorkspace)
+                .Select(r => r.Id)
+                .ToListAsync();
+            query = query.Where(br => workspaceRoomIds.Contains(br.ParentRoomId));
+        }
+
+        var entities = await query
+            .OrderByDescending(br => br.UpdatedAt)
+            .ToListAsync();
+        return entities.Select(BuildBreakoutRoomSnapshot).ToList();
+    }
+
     private MessageEntity CreateMessageEntity(
         string roomId, MessageKind kind, string content,
         string? correlationId, DateTime sentAt)

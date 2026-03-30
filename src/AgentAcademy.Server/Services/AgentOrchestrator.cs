@@ -593,15 +593,12 @@ public sealed class AgentOrchestrator
                     return; // Don't fall through to HandleBreakoutCompleteAsync
                 }
 
-                // Process commands from breakout response
-                var pipelineResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
-                var textToPost = pipelineResult.RemainingText;
+                // Record full agent response in breakout room for activity trail
+                await runtime.PostBreakoutMessageAsync(
+                    breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
 
-                if (!string.IsNullOrWhiteSpace(textToPost))
-                {
-                    await runtime.PostBreakoutMessageAsync(
-                        breakoutRoomId, agent.Id, agent.Name, agent.Role, textToPost);
-                }
+                // Process commands from breakout response
+                await ProcessCommandsAsync(agent, response, breakoutRoomId);
             }
 
             var report = ParseWorkReport(response);
@@ -805,15 +802,12 @@ public sealed class AgentOrchestrator
                     return; // Don't fall through to FinalizeBreakoutAsync
                 }
 
-                // Process commands from fix-round response
-                var pipelineResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
-                var textToPost = pipelineResult.RemainingText;
+                // Record full agent response in breakout room for activity trail
+                await runtime.PostBreakoutMessageAsync(
+                    breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
 
-                if (!string.IsNullOrWhiteSpace(textToPost))
-                {
-                    await runtime.PostBreakoutMessageAsync(
-                        breakoutRoomId, agent.Id, agent.Name, agent.Role, textToPost);
-                }
+                // Process commands from fix-round response
+                await ProcessCommandsAsync(agent, response, breakoutRoomId);
             }
 
             var report = ParseWorkReport(response);

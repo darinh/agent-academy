@@ -129,30 +129,58 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             </div>
           </section>
 
-          {/* Agent Workspaces (active breakout rooms) */}
-          {props.breakoutRooms.length > 0 && (
+          {/* Agent Sessions (grouped by agent, not per breakout room) */}
+          {props.configuredAgents.length > 0 && (
             <section className={s.section}>
               <div className={s.sectionHeader}>
-                <div className={s.sectionLabel}>Agent Workspaces</div>
+                <div className={s.sectionLabel}>Agent Sessions</div>
               </div>
               <div className={s.roomList}>
-                {props.breakoutRooms.map((br) => {
-                  const agent = props.configuredAgents.find((a) => a.id === br.assignedAgentId);
-                  const rc = agent ? roleColor(agent.role) : { accent: "#94a3b8" };
+                {props.configuredAgents.map((agent) => {
+                  const loc = props.agentLocations.find((l) => l.agentId === agent.id);
+                  const agentBreakouts = props.breakoutRooms.filter((br) => br.assignedAgentId === agent.id);
+                  const activeBreakout = agentBreakouts.find((br) => br.status === "Active");
+                  const state = loc?.state ?? "Idle";
+                  const isWorking = state === "Working";
+                  const isThinking = Array.from(props.thinkingByRoomIds.values()).some((s) => s.has(agent.id));
+                  const rc = roleColor(agent.role);
+                  const isSelected = props.selectedWorkspaceId === `agent:${agent.id}`;
+                  const taskName = activeBreakout?.name?.replace(/^BR:\s*/, "") ?? null;
+
                   return (
                     <button
-                      key={br.id}
-                      className={mergeClasses(s.workspaceButton, s.roomButtonHover, props.selectedWorkspaceId === br.id ? s.roomButtonActive : undefined)}
-                      onClick={() => props.onSelectWorkspace(br.id)}
-                      aria-label={`View workspace: ${br.name}`}
+                      key={agent.id}
+                      className={mergeClasses(s.workspaceButton, s.roomButtonHover, isSelected ? s.roomButtonActive : undefined)}
+                      onClick={() => props.onSelectWorkspace(`agent:${agent.id}`)}
+                      aria-label={`View ${agent.name}'s sessions`}
                       type="button"
                     >
-                      <div className={s.workspaceIcon} style={{ background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)` }}>
-                        {agent?.name?.charAt(0) ?? "?"}
-                      </div>
+                      <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <div className={s.workspaceIcon} style={{ background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)` }}>
+                          {agent.name.charAt(0)}
+                        </div>
+                        {isThinking && (
+                          <span style={{
+                            position: "absolute", inset: "-2px", borderRadius: "999px",
+                            border: "2px solid transparent", borderTopColor: rc.accent,
+                            animation: "aa-spin 0.8s linear infinite",
+                          }} />
+                        )}
+                      </span>
                       <div style={{ minWidth: 0 }}>
-                        <div className={s.workspaceName}>{agent?.name ?? br.assignedAgentId}</div>
-                        <div className={s.workspaceTask}>{br.name}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span className={s.workspaceName}>{agent.name}</span>
+                          <span style={{
+                            fontSize: "9px", padding: "1px 5px", borderRadius: "999px",
+                            backgroundColor: isWorking ? rc.accent + "33" : "#ffffff11",
+                            color: isWorking ? rc.accent : "#7c90b2",
+                          }}>
+                            {state}
+                          </span>
+                        </div>
+                        <div className={s.workspaceTask}>
+                          {taskName ?? agent.role}
+                        </div>
                       </div>
                     </button>
                   );
