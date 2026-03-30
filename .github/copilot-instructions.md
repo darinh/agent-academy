@@ -133,10 +133,17 @@ git config core.hooksPath .githooks
   - `BREAKING CHANGE` or `feat!:` → major
 - Version sources: `Directory.Build.props` (.NET) and `package.json` (client).
 
+## Discovery Workflow
+- **Read specs first** — `specs/` has complete API contracts, DB schemas, behavior rules, and test coverage. This is faster than reading source files for understanding the backend.
+- **Read code only when implementing** — or when the spec says "Planned" or has known gaps.
+- **Frontend has no spec** — code exploration is needed for frontend patterns, conventions, and component structure.
+- **Don't read source files to understand APIs** — the spec already documents endpoints, request/response shapes, validation rules, and error codes. Reading `Controllers/*.cs` for discovery is redundant.
+
 ## Common Pitfalls
 - Don't write aspirational specs — write factual specs describing what IS
 - Don't skip spec verification after implementation
 - Don't add features without updating the spec
+- Don't read source code for API discovery when the spec already documents it
 - Don't hardcode configuration values — use `appsettings.json` or environment variables
 - Don't push directly to `main` — always use a feature branch and PR
 - Don't forget to run `git config core.hooksPath .githooks` after cloning

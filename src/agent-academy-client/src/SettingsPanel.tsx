@@ -11,13 +11,22 @@ import {
   PlugConnectedRegular,
   PlugDisconnectedRegular,
   AlertRegular,
+  BotRegular,
+  DocumentTextRegular,
+  AddRegular,
 } from "@fluentui/react-icons";
 import {
   getNotificationProviders,
   disconnectProvider,
+  getConfiguredAgents,
+  getInstructionTemplates,
   type ProviderStatus,
+  type AgentDefinition,
+  type InstructionTemplate,
 } from "./api";
 import NotificationSetupWizard from "./NotificationSetupWizard";
+import AgentConfigCard from "./AgentConfigCard";
+import TemplateCard from "./TemplateCard";
 
 // ── Styles ──────────────────────────────────────────────────────────────
 
@@ -114,6 +123,14 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
+  // Agent config state
+  const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const [templates, setTemplates] = useState<InstructionTemplate[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
+  const [showNewTemplate, setShowNewTemplate] = useState(false);
+
   const fetchProviders = useCallback(async () => {
     try {
       const data = await getNotificationProviders();
@@ -125,9 +142,22 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
     }
   }, []);
 
+  const fetchAgentsAndTemplates = useCallback(async () => {
+    const results = await Promise.allSettled([
+      getConfiguredAgents(),
+      getInstructionTemplates(),
+    ]);
+
+    if (results[0].status === "fulfilled") setAgents(results[0].value);
+    if (results[1].status === "fulfilled") setTemplates(results[1].value);
+
+    setAgentsLoading(false);
+  }, []);
+
   useEffect(() => {
     fetchProviders();
-  }, [fetchProviders]);
+    fetchAgentsAndTemplates();
+  }, [fetchProviders, fetchAgentsAndTemplates]);
 
   const handleDisconnect = useCallback(async (providerId: string) => {
     setDisconnecting(providerId);
@@ -145,6 +175,17 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
     setExpandedProvider(null);
     fetchProviders();
   }, [fetchProviders]);
+
+  const handleAgentSaved = useCallback(() => {
+    setExpandedAgent(null);
+    fetchAgentsAndTemplates();
+  }, [fetchAgentsAndTemplates]);
+
+  const handleTemplateSaved = useCallback(() => {
+    setExpandedTemplate(null);
+    setShowNewTemplate(false);
+    fetchAgentsAndTemplates();
+  }, [fetchAgentsAndTemplates]);
 
   // Close on Escape
   useEffect(() => {
@@ -168,6 +209,84 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       <div className={s.body}>
+        {/* ── Agents Section ───────────────────────────────── */}
+        <div className={s.section}>
+          <div className={s.sectionTitle}>
+            <BotRegular />
+            Agents
+          </div>
+
+          {agentsLoading ? (
+            <Spinner size="small" label="Loading agents…" />
+          ) : agents.length === 0 ? (
+            <div className={s.emptyState}>
+              No agents configured.
+            </div>
+          ) : (
+            agents.map((agent) => (
+              <AgentConfigCard
+                key={agent.id}
+                agent={agent}
+                templates={templates}
+                expanded={expandedAgent === agent.id}
+                onToggle={() =>
+                  setExpandedAgent(
+                    expandedAgent === agent.id ? null : agent.id
+                  )
+                }
+                onSaved={handleAgentSaved}
+              />
+            ))
+          )}
+        </div>
+
+        {/* ── Instruction Templates Section ─────────────────── */}
+        <div className={s.section}>
+          <div className={s.sectionTitle}>
+            <DocumentTextRegular />
+            Instruction Templates
+          </div>
+
+          {agentsLoading ? (
+            <Spinner size="small" label="Loading templates…" />
+          ) : (
+            <>
+              {templates.map((t) => (
+                <TemplateCard
+                  key={t.id}
+                  template={t}
+                  expanded={expandedTemplate === t.id}
+                  onToggle={() =>
+                    setExpandedTemplate(
+                      expandedTemplate === t.id ? null : t.id
+                    )
+                  }
+                  onSaved={handleTemplateSaved}
+                />
+              ))}
+
+              {showNewTemplate ? (
+                <TemplateCard
+                  isNew
+                  expanded
+                  onToggle={() => {}}
+                  onSaved={handleTemplateSaved}
+                  onCancelNew={() => setShowNewTemplate(false)}
+                />
+              ) : (
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<AddRegular />}
+                  onClick={() => setShowNewTemplate(true)}
+                >
+                  Create Template
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+
         {/* ── Notifications Section ─────────────────────────── */}
         <div className={s.section}>
           <div className={s.sectionTitle}>

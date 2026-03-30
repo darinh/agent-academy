@@ -543,3 +543,105 @@ export function disconnectProvider(id: string): Promise<ConnectResponse> {
 export function testNotification(): Promise<TestNotificationResponse> {
   return request<TestNotificationResponse>(apiUrl(`${NOTIF_BASE}/test`), { method: "POST" });
 }
+
+// ── Agent config types ─────────────────────────────────────────────────
+
+export interface AgentConfigOverride {
+  startupPromptOverride?: string | null;
+  modelOverride?: string | null;
+  customInstructions?: string | null;
+  instructionTemplateId?: string | null;
+  instructionTemplateName?: string | null;
+  updatedAt: string;
+}
+
+export interface AgentConfigResponse {
+  agentId: string;
+  effectiveModel: string;
+  effectiveStartupPrompt: string;
+  hasOverride: boolean;
+  override?: AgentConfigOverride | null;
+}
+
+export interface UpsertAgentConfigRequest {
+  startupPromptOverride?: string | null;
+  modelOverride?: string | null;
+  customInstructions?: string | null;
+  instructionTemplateId?: string | null;
+}
+
+// ── Instruction template types ─────────────────────────────────────────
+
+export interface InstructionTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InstructionTemplateRequest {
+  name: string;
+  description?: string | null;
+  content: string;
+}
+
+// ── Agent config endpoints ─────────────────────────────────────────────
+
+export function getAgentConfig(agentId: string): Promise<AgentConfigResponse> {
+  return request<AgentConfigResponse>(apiUrl(`/api/agents/${encodeURIComponent(agentId)}/config`));
+}
+
+export function upsertAgentConfig(
+  agentId: string,
+  req: UpsertAgentConfigRequest,
+): Promise<AgentConfigResponse> {
+  return request<AgentConfigResponse>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/config`),
+    { method: "PUT", body: JSON.stringify(req) },
+  );
+}
+
+export function resetAgentConfig(agentId: string): Promise<AgentConfigResponse> {
+  return request<AgentConfigResponse>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/config/reset`),
+    { method: "POST" },
+  );
+}
+
+// ── Instruction template endpoints ─────────────────────────────────────
+
+export function getInstructionTemplates(): Promise<InstructionTemplate[]> {
+  return request<InstructionTemplate[]>(apiUrl("/api/instruction-templates"));
+}
+
+export function getInstructionTemplate(id: string): Promise<InstructionTemplate> {
+  return request<InstructionTemplate>(apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`));
+}
+
+export function createInstructionTemplate(
+  req: InstructionTemplateRequest,
+): Promise<InstructionTemplate> {
+  return request<InstructionTemplate>(apiUrl("/api/instruction-templates"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function updateInstructionTemplate(
+  id: string,
+  req: InstructionTemplateRequest,
+): Promise<InstructionTemplate> {
+  return request<InstructionTemplate>(
+    apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`),
+    { method: "PUT", body: JSON.stringify(req) },
+  );
+}
+
+export function deleteInstructionTemplate(id: string): Promise<{ status: string; id: string }> {
+  return request<{ status: string; id: string }>(
+    apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`),
+    { method: "DELETE" },
+  );
+}

@@ -450,6 +450,66 @@ The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFac
 | `DeleteTemplate_NotFound_ReturnsFalse` | Missing row |
 | `DeleteTemplate_NullifiesFkOnAgentConfigs` | FK SetNull cascade |
 
+### Frontend: Agent Configuration UI
+
+> **Status: Implemented** — Settings panel with agent config cards and template management.
+
+**Components**:
+
+| File | Purpose |
+|------|---------|
+| `src/agent-academy-client/src/AgentConfigCard.tsx` | Per-agent expandable config card in Settings |
+| `src/agent-academy-client/src/TemplateCard.tsx` | Per-template CRUD card in Settings |
+| `src/agent-academy-client/src/SettingsPanel.tsx` | Settings overlay — Agents, Templates, Notifications sections |
+| `src/agent-academy-client/src/api.ts` | TypeScript types and API functions for config + template endpoints |
+
+**SettingsPanel sections** (top to bottom):
+1. **Agents** — lists all catalog agents as expandable cards
+2. **Instruction Templates** — lists all templates with Create New button
+3. **Notifications** — existing notification provider cards (unchanged)
+
+**AgentConfigCard** (per agent):
+- Collapsed: agent name, role, model badge, "Customized" badge if override exists
+- Expanded: fetches config from `GET /api/agents/{agentId}/config`, shows form:
+  - Model Override (text input, placeholder shows catalog default)
+  - Startup Prompt Override (textarea)
+  - Instruction Template (dropdown populated from template list)
+  - Custom Instructions (textarea)
+  - Save (PUT config) / Reset to Defaults (POST reset with confirmation dialog)
+
+**TemplateCard** (per template):
+- Collapsed: template name, description
+- Expanded: edit form (name, description, content textarea), Save/Delete buttons
+- Delete shows confirmation dialog; FK SetNull cascade clears agent assignments
+- "Create New" variant: inline form with Cancel/Create buttons
+
+**API functions** added to `api.ts`:
+
+| Function | Method | Route |
+|----------|--------|-------|
+| `getAgentConfig(agentId)` | GET | `/api/agents/{agentId}/config` |
+| `upsertAgentConfig(agentId, req)` | PUT | `/api/agents/{agentId}/config` |
+| `resetAgentConfig(agentId)` | POST | `/api/agents/{agentId}/config/reset` |
+| `getInstructionTemplates()` | GET | `/api/instruction-templates` |
+| `getInstructionTemplate(id)` | GET | `/api/instruction-templates/{id}` |
+| `createInstructionTemplate(req)` | POST | `/api/instruction-templates` |
+| `updateInstructionTemplate(id, req)` | PUT | `/api/instruction-templates/{id}` |
+| `deleteInstructionTemplate(id)` | DELETE | `/api/instruction-templates/{id}` |
+
+### Seed Templates
+
+> **Status: Implemented** — 3 built-in templates seeded via EF migration.
+
+**Migration**: `20260330000510_SeedInstructionTemplates`
+
+| Template | Stable ID | Description |
+|----------|-----------|-------------|
+| Verification-First | `b1a2c3d4-...` | Verify all code with builds/tests before presenting |
+| Pushback-Enabled | `c2b3d4e5-...` | Evaluate requests critically, push back on problems |
+| Code Review Focus | `d3c4e5f6-...` | Find real bugs and security issues, ignore style |
+
+Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for idempotency.
+
 ## Revision History
 
 | Date | Change | Task |
@@ -462,3 +522,4 @@ The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFac
 | 2026-03-28 | StubExecutor: replaced canned role-based responses with deterministic offline notice | stub-offline-notice |
 | 2026-03-29 | Agent configuration overrides — DB schema, AgentConfigService, orchestrator integration | agent-config-phase1 |
 | 2026-03-29 | Agent config API — CRUD endpoints for agent config overrides and instruction templates | agent-config-phase2 |
+| 2026-03-30 | Frontend agent config UI — Settings panel with agent config cards, template management, 3 seed templates | agent-config-phase3-4 |
