@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,6 +10,7 @@ import {
   mergeClasses,
   Spinner,
   Textarea,
+  ToggleButton,
 } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
@@ -17,6 +18,95 @@ import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot } from "./api";
 import type { ThinkingAgent } from "./useWorkspace";
 import type { ConnectionStatus } from "./useActivityHub";
+
+/* ── Command Result Helpers ─────────────────────────────────────── */
+
+interface ParsedCommandResult {
+  status: "Success" | "Error" | "Denied";
+  command: string;
+  correlationId: string;
+  error?: string;
+  detail?: string;
+}
+
+function isCommandResultMessage(content: string): boolean {
+  return content.startsWith("=== COMMAND RESULTS ===");
+}
+
+function parseCommandResults(content: string): ParsedCommandResult[] {
+  const results: ParsedCommandResult[] = [];
+  const lines = content.split("\n");
+
+  let current: ParsedCommandResult | null = null;
+  const detailLines: string[] = [];
+
+  const flushCurrent = () => {
+    if (current) {
+      if (detailLines.length > 0) current.detail = detailLines.join("\n").trim();
+      results.push(current);
+      detailLines.length = 0;
+    }
+  };
+
+  for (const line of lines) {
+    if (line.startsWith("=== ")) continue;
+
+    const statusMatch = line.match(/^\[(Success|Error|Denied)\]\s+(\S+)\s+\(([^)]+)\)/);
+    if (statusMatch) {
+      flushCurrent();
+      current = {
+        status: statusMatch[1] as ParsedCommandResult["status"],
+        command: statusMatch[2],
+        correlationId: statusMatch[3],
+      };
+      continue;
+    }
+
+    if (!current) continue;
+
+    if (line.startsWith("  Error: ")) {
+      current.error = line.replace("  Error: ", "");
+    } else {
+      // Capture all remaining lines as detail (strip leading 2-space indent if present)
+      detailLines.push(line.startsWith("  ") ? line.slice(2) : line);
+    }
+  }
+  flushCurrent();
+
+  return results;
+}
+
+/* ── Command Result Bubble ──────────────────────────────────────── */
+
+const CommandResultBubble = memo(function CommandResultBubble(props: {
+  message: ChatEnvelope;
+}) {
+  const s = useStyles();
+  const results = useMemo(() => parseCommandResults(props.message.content), [props.message.content]);
+
+  if (results.length === 0) {
+    return <div className={s.systemMessage}>{props.message.content}</div>;
+  }
+
+  return (
+    <div className={s.commandResultBlock}>
+      {results.map((r, i) => (
+        <details key={i} className={s.commandResultItem}>
+          <summary className={s.commandResultSummary}>
+            <span className={r.status === "Success" ? s.commandStatusOk : s.commandStatusErr}>
+              {r.status === "Success" ? "✅" : r.status === "Denied" ? "🚫" : "❌"}
+            </span>
+            <span className={s.commandName}>{r.command}</span>
+            {r.error && <span className={s.commandError}>{r.error}</span>}
+          </summary>
+          {r.detail && (
+            <pre className={s.commandDetail}>{r.detail}</pre>
+          )}
+        </details>
+      ))}
+    </div>
+  );
+});
 
 /* ── Message Bubble ─────────────────────────────────────────────── */
 
@@ -28,6 +118,9 @@ const MessageBubble = memo(function MessageBubble(props: {
   const s = useStyles();
 
   if (props.message.senderKind === "System") {
+    if (isCommandResultMessage(props.message.content)) {
+      return <CommandResultBubble message={props.message} />;
+    }
     return <div className={s.systemMessage}>{props.message.content}</div>;
   }
 
@@ -105,6 +198,33 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
   );
 });
 
+/* ── Filter Helpers ──────────────────────────────────────────────── */
+
+type MessageFilter = "system" | "commands";
+const FILTER_STORAGE_KEY = "agent-academy-chat-filters";
+
+function loadFilters(): Set<MessageFilter> {
+  try {
+    const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+    if (raw) return new Set(JSON.parse(raw) as MessageFilter[]);
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+function saveFilters(filters: Set<MessageFilter>) {
+  try {
+    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify([...filters]));
+  } catch { /* storage unavailable — filter state lives in memory only */ }
+}
+
+function shouldHideMessage(msg: ChatEnvelope, hidden: Set<MessageFilter>): boolean {
+  if (msg.senderKind !== "System") return false;
+  const isCmdResult = isCommandResultMessage(msg.content);
+  if (isCmdResult && hidden.has("commands")) return true;
+  if (!isCmdResult && hidden.has("system")) return true;
+  return false;
+}
+
 /* ── Chat Panel ─────────────────────────────────────────────────── */
 
 const STATUS_LABELS: Record<ConnectionStatus, string> = {
@@ -133,6 +253,22 @@ const ChatPanel = memo(function ChatPanel(props: {
   const [humanMsg, setHumanMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
+  const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+
+  const toggleFilter = useCallback((filter: MessageFilter) => {
+    setHiddenFilters((cur) => {
+      const next = new Set(cur);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      saveFilters(next);
+      return next;
+    });
+  }, []);
+
+  const filteredMessages = useMemo(
+    () => props.room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
+    [props.room?.recentMessages, hiddenFilters],
+  );
 
   useEffect(() => {
     setHumanMsg("");
@@ -142,7 +278,7 @@ const ChatPanel = memo(function ChatPanel(props: {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-  }, [props.room?.id, props.room?.recentMessages.length, props.thinkingAgents.length]);
+  }, [props.room?.id, filteredMessages.length, props.thinkingAgents.length]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedMsgs((cur) => {
@@ -173,15 +309,41 @@ const ChatPanel = memo(function ChatPanel(props: {
     }
   }, [doSend]);
 
+  const hiddenCount = (props.room?.recentMessages.length ?? 0) - filteredMessages.length;
+
   return (
     <div className={s.conversationLayout}>
+      <div className={s.filterBar}>
+        <ToggleButton
+          size="small"
+          appearance="subtle"
+          checked={!hiddenFilters.has("system")}
+          onClick={() => toggleFilter("system")}
+        >
+          System messages
+        </ToggleButton>
+        <ToggleButton
+          size="small"
+          appearance="subtle"
+          checked={!hiddenFilters.has("commands")}
+          onClick={() => toggleFilter("commands")}
+        >
+          Command results
+        </ToggleButton>
+        {hiddenCount > 0 && (
+          <span className={s.filterCount}>{hiddenCount} hidden</span>
+        )}
+      </div>
+
       <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
-        {props.room?.recentMessages.length ? (
-          props.room.recentMessages.map((msg) => (
+        {filteredMessages.length ? (
+          filteredMessages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />
           ))
         ) : (
-          <Body1 className={s.emptyState}>No messages yet for this room.</Body1>
+          <Body1 className={s.emptyState}>
+            {props.room?.recentMessages.length ? "All messages filtered." : "No messages yet for this room."}
+          </Body1>
         )}
         {props.thinkingAgents.map((agent) => (
           <ThinkingBubble key={agent.id} agent={agent} />

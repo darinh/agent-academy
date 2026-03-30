@@ -356,6 +356,78 @@ export const useStyles = makeStyles({
   },
   thinkingCard: { borderLeftWidth: "3px", borderLeftStyle: "solid", opacity: 0.95 },
   thinkingDots: { display: "inline-flex", gap: "6px", color: "#a1b3d2" },
+
+  /* ── Command Result Styles ────────────────────────────────── */
+  commandResultBlock: {
+    justifySelf: "center",
+    maxWidth: "85%",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "4px",
+    backgroundColor: "rgba(108, 182, 255, 0.05)",
+    border: "1px solid rgba(108, 182, 255, 0.1)",
+    ...shorthands.borderRadius("12px"),
+    ...shorthands.padding("8px", "12px"),
+    fontSize: "12px",
+  },
+  commandResultItem: {
+    cursor: "pointer",
+    ...shorthands.borderRadius("6px"),
+    "&[open]": {
+      backgroundColor: "rgba(255, 255, 255, 0.03)",
+    },
+  },
+  commandResultSummary: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    listStyle: "none",
+    ...shorthands.padding("4px", "6px"),
+    ...shorthands.borderRadius("6px"),
+    "&::-webkit-details-marker": { display: "none" },
+    "&:hover": { backgroundColor: "rgba(255, 255, 255, 0.05)" },
+  },
+  commandStatusOk: { fontSize: "13px" },
+  commandStatusErr: { fontSize: "13px" },
+  commandName: {
+    fontFamily: "monospace",
+    fontWeight: 600,
+    color: "#c3e4ff",
+    fontSize: "12px",
+  },
+  commandError: {
+    color: "#f87171",
+    fontSize: "11px",
+    marginLeft: "auto",
+    fontStyle: "italic",
+  },
+  commandDetail: {
+    margin: 0,
+    ...shorthands.padding("6px", "10px"),
+    fontSize: "11px",
+    color: "#8da3c1",
+    backgroundColor: "rgba(0, 0, 0, 0.15)",
+    ...shorthands.borderRadius("6px"),
+    overflowX: "auto" as const,
+    maxHeight: "120px",
+    whiteSpace: "pre-wrap" as const,
+    wordBreak: "break-word" as const,
+  },
+
+  /* ── Filter Bar ───────────────────────────────────────────── */
+  filterBar: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    ...shorthands.padding("6px", "12px"),
+    borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+    flexShrink: 0,
+  },
+  filterCount: {
+    marginLeft: "auto",
+    color: "#7c90b2",
+    fontSize: "11px",
+  },
   statusBar: {
     display: "flex",
     alignItems: "center",
