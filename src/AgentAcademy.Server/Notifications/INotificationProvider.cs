@@ -68,6 +68,14 @@ public interface INotificationProvider
         => Task.FromResult(false);
 
     /// <summary>
+    /// Posts a direct message to a provider channel for the sending agent.
+    /// Unlike SendAgentQuestionAsync, does NOT create a reply thread — just a channel message.
+    /// </summary>
+    /// <remarks>Default implementation returns false (provider does not support DM display).</remarks>
+    Task<bool> SendDirectMessageAsync(AgentQuestion dm, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    /// <summary>
     /// Notifies the provider that a room has been renamed, allowing it to update
     /// any external resources (e.g., Discord channel names).
     /// </summary>

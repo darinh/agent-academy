@@ -152,7 +152,7 @@ public sealed class DmHandler : ICommandHandler
             context.AgentId, context.AgentName ?? context.AgentId,
             context.AgentRole ?? "Agent", targetAgent.Id, message, roomId);
 
-        // Forward DM to Discord Messages category (same bridge as @Human DMs)
+        // Forward DM to Discord Messages category (channel message, no thread)
         var notificationManager = context.Services.GetRequiredService<NotificationManager>();
         var roomName = roomId;
         try
@@ -164,7 +164,7 @@ public sealed class DmHandler : ICommandHandler
         catch { /* fall back to roomId */ }
 
         // Fire-and-forget — delivery failure shouldn't block the DM
-        _ = notificationManager.SendAgentQuestionAsync(new AgentQuestion(
+        _ = notificationManager.SendDirectMessageDisplayAsync(new AgentQuestion(
             AgentId: context.AgentId,
             AgentName: context.AgentName ?? context.AgentId,
             RoomId: roomId,

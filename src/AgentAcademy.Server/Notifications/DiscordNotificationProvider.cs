@@ -503,6 +503,55 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
     }
 
+    /// <summary>
+    /// Posts a DM as a simple embed in the agent's channel (no thread).
+    /// Used for agent-to-agent DMs where no reply routing is needed.
+    /// </summary>
+    public async Task<bool> SendDirectMessageAsync(AgentQuestion dm, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dm);
+
+        if (!IsConnected || _client is null) return false;
+
+        try
+        {
+            var guild = _client.GetGuild(_guildId);
+            if (guild is null) return false;
+
+            ITextChannel channel;
+
+            await _channelCreateLock.WaitAsync(cancellationToken);
+            try
+            {
+                var category = await FindOrCreateWorkspaceCategoryAsync(guild, dm.RoomId, dm.RoomName);
+                channel = await FindOrCreateAgentChannelAsync(guild, category, dm.AgentId, dm.AgentName, dm.RoomId);
+            }
+            finally
+            {
+                _channelCreateLock.Release();
+            }
+
+            var embed = new EmbedBuilder()
+                .WithDescription(dm.Question)
+                .WithColor(Color.Blue)
+                .WithFooter(dm.AgentName)
+                .WithCurrentTimestamp()
+                .Build();
+
+            await channel.SendMessageAsync(embed: embed);
+
+            _logger.LogInformation("DM posted to #{ChannelName}: {AgentName}",
+                channel.Name, dm.AgentName);
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Failed to send DM for '{AgentName}'", dm.AgentName);
+            return false;
+        }
+    }
+
     #region Private helpers
 
     /// <summary>
