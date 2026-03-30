@@ -605,7 +605,20 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<List<TaskSnapshot>> GetTasksAsync()
     {
-        var entities = await _db.Tasks.OrderByDescending(t => t.CreatedAt).ToListAsync();
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
+        var query = _db.Tasks.AsQueryable();
+
+        if (activeWorkspace is not null)
+        {
+            // Scope tasks to rooms in the active workspace
+            var workspaceRoomIds = await _db.Rooms
+                .Where(r => r.WorkspacePath == activeWorkspace)
+                .Select(r => r.Id)
+                .ToListAsync();
+            query = query.Where(t => t.RoomId != null && workspaceRoomIds.Contains(t.RoomId));
+        }
+
+        var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
         return entities.Select(BuildTaskSnapshot).ToList();
     }
 
@@ -1818,11 +1831,21 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<List<TaskItem>> GetActiveTaskItemsAsync()
     {
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
         var activeStatuses = new[] { nameof(TaskItemStatus.Pending), nameof(TaskItemStatus.Active) };
-        var entities = await _db.TaskItems
-            .Where(t => activeStatuses.Contains(t.Status))
-            .OrderBy(t => t.CreatedAt)
-            .ToListAsync();
+        var query = _db.TaskItems
+            .Where(t => activeStatuses.Contains(t.Status));
+
+        if (activeWorkspace is not null)
+        {
+            var workspaceRoomIds = await _db.Rooms
+                .Where(r => r.WorkspacePath == activeWorkspace)
+                .Select(r => r.Id)
+                .ToListAsync();
+            query = query.Where(t => workspaceRoomIds.Contains(t.RoomId));
+        }
+
+        var entities = await query.OrderBy(t => t.CreatedAt).ToListAsync();
 
         return entities.Select(e => new TaskItem(
             e.Id, e.Title, e.Description,

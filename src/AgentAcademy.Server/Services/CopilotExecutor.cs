@@ -37,7 +37,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 {
     private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(2);
 
     private readonly ILogger<CopilotExecutor> _logger;
