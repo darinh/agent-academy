@@ -6,12 +6,18 @@ import {
   Avatar,
   Body1,
   Body1Strong,
+  Badge,
   Button,
+  Menu,
+  MenuItemCheckbox,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   mergeClasses,
   Spinner,
   Textarea,
-  ToggleButton,
 } from "@fluentui/react-components";
+import type { MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
@@ -255,15 +261,25 @@ const ChatPanel = memo(function ChatPanel(props: {
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
   const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
 
-  const toggleFilter = useCallback((filter: MessageFilter) => {
-    setHiddenFilters((cur) => {
-      const next = new Set(cur);
-      if (next.has(filter)) next.delete(filter);
-      else next.add(filter);
+  // Filters use checkedValues where checked = visible (not hidden)
+  const checkedValues = useMemo(() => {
+    const visible: string[] = [];
+    if (!hiddenFilters.has("system")) visible.push("system");
+    if (!hiddenFilters.has("commands")) visible.push("commands");
+    return { show: visible };
+  }, [hiddenFilters]);
+
+  const onFilterChange = useCallback(
+    (_: unknown, data: MenuCheckedValueChangeData) => {
+      const nowVisible = new Set(data.checkedItems);
+      const next = new Set<MessageFilter>();
+      if (!nowVisible.has("system")) next.add("system");
+      if (!nowVisible.has("commands")) next.add("commands");
+      setHiddenFilters(next);
       saveFilters(next);
-      return next;
-    });
-  }, []);
+    },
+    [],
+  );
 
   const filteredMessages = useMemo(
     () => props.room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
@@ -313,26 +329,24 @@ const ChatPanel = memo(function ChatPanel(props: {
 
   return (
     <div className={s.conversationLayout}>
-      <div className={s.filterBar}>
-        <ToggleButton
-          size="small"
-          appearance="subtle"
-          checked={!hiddenFilters.has("system")}
-          onClick={() => toggleFilter("system")}
-        >
-          System messages
-        </ToggleButton>
-        <ToggleButton
-          size="small"
-          appearance="subtle"
-          checked={!hiddenFilters.has("commands")}
-          onClick={() => toggleFilter("commands")}
-        >
-          Command results
-        </ToggleButton>
-        {hiddenCount > 0 && (
-          <span className={s.filterCount}>{hiddenCount} hidden</span>
-        )}
+      <div className={s.chatHeader}>
+        <Menu checkedValues={checkedValues} onCheckedValueChange={onFilterChange}>
+          <MenuTrigger disableButtonEnhancement>
+            <Button size="small" appearance="subtle" className={s.filterMenuButton}>
+              Filter{hiddenCount > 0 && <Badge size="small" appearance="filled" color="informative" className={s.filterBadge}>{hiddenCount}</Badge>}
+            </Button>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItemCheckbox name="show" value="system">
+                System messages
+              </MenuItemCheckbox>
+              <MenuItemCheckbox name="show" value="commands">
+                Command results
+              </MenuItemCheckbox>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </div>
 
       <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">

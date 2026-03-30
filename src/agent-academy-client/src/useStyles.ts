@@ -281,8 +281,8 @@ export const useStyles = makeStyles({
   conversationLayout: {
     minHeight: 0,
     display: "grid",
-    gridTemplateRows: "minmax(0, 1fr) auto auto",
-    gap: "16px",
+    gridTemplateRows: "auto minmax(0, 1fr) auto auto",
+    gap: "0",
   },
   messageList: {
     minHeight: 0,
@@ -414,19 +414,24 @@ export const useStyles = makeStyles({
     wordBreak: "break-word" as const,
   },
 
-  /* ── Filter Bar ───────────────────────────────────────────── */
-  filterBar: {
+  /* ── Filter Menu ────────────────────────────────────────── */
+  chatHeader: {
     display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    ...shorthands.padding("6px", "12px"),
-    borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+    justifyContent: "flex-end",
+    ...shorthands.padding("4px", "8px"),
     flexShrink: 0,
   },
-  filterCount: {
-    marginLeft: "auto",
-    color: "#7c90b2",
-    fontSize: "11px",
+  filterMenuButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    fontSize: "12px",
+    color: "#8da3c1",
+  },
+  filterBadge: {
+    minWidth: "16px",
+    height: "16px",
+    fontSize: "10px",
   },
   statusBar: {
     display: "flex",
