@@ -84,7 +84,7 @@ public sealed class DmHandler : ICommandHandler
             Question: message
         );
 
-        var (sent, error) = await notificationManager.SendAgentQuestionAsync(agentQuestion);
+        var (sent, error) = await notificationManager.SendDirectMessageDisplayAsync(agentQuestion);
 
         if (!sent)
         {
