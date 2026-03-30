@@ -361,8 +361,9 @@ public class DiscordNotificationProviderTests
         var pipeline = new Commands.CommandPipeline(
             Array.Empty<Commands.ICommandHandler>(),
             Substitute.For<ILogger<Commands.CommandPipeline>>());
+        var gitService = new GitService(Substitute.For<ILogger<GitService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
-        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, logger);
+        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, gitService, logger);
     }
 
     #endregion

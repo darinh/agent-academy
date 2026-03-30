@@ -22,6 +22,7 @@ public sealed class AgentOrchestrator
     private readonly ActivityBroadcaster _activityBus;
     private readonly SpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
+    private readonly GitService _gitService;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
@@ -37,6 +38,7 @@ public sealed class AgentOrchestrator
         ActivityBroadcaster activityBus,
         SpecManager specManager,
         CommandPipeline commandPipeline,
+        GitService gitService,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
@@ -44,6 +46,7 @@ public sealed class AgentOrchestrator
         _activityBus = activityBus;
         _specManager = specManager;
         _commandPipeline = commandPipeline;
+        _gitService = gitService;
         _logger = logger;
     }
 
@@ -480,13 +483,31 @@ public sealed class AgentOrchestrator
             assignment.Title, descriptionWithCriteria,
             agent.Id, roomId, br.Id);
 
+        // Create task branch for the breakout
+        string? taskBranch = null;
+        try
+        {
+            taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
+            var tasks = await runtime.GetTasksAsync();
+            var roomTask = tasks.FirstOrDefault(t => t.Title == assignment.Title ||
+                (t.AssignedAgentId == agent.Id && t.Status is Shared.Models.TaskStatus.Active or Shared.Models.TaskStatus.Queued));
+            if (roomTask != null)
+                await runtime.UpdateTaskBranchAsync(roomTask.Id, taskBranch);
+            await _gitService.ReturnToDevelopAsync(taskBranch);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to create task branch for {Title}", assignment.Title);
+        }
+
+        var branchInfo = taskBranch != null ? $" on branch `{taskBranch}`" : "";
         await runtime.PostSystemStatusAsync(roomId,
-            $"📋 {agent.Name} has been assigned \"{assignment.Title}\" and is heading to breakout room \"{brName}\".");
+            $"📋 {agent.Name} has been assigned \"{assignment.Title}\" and is heading to breakout room \"{brName}\"{branchInfo}.");
 
         // Fire-and-forget — breakout work runs asynchronously
         _ = Task.Run(async () =>
         {
-            try { await RunBreakoutLoopAsync(br.Id, agent.Id); }
+            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Breakout loop failed for {AgentName} in {BreakoutId}", agent.Name, br.Id);
@@ -496,7 +517,7 @@ public sealed class AgentOrchestrator
 
     // ── BREAKOUT ROOM ───────────────────────────────────────────
 
-    private async Task RunBreakoutLoopAsync(string breakoutRoomId, string agentId)
+    private async Task RunBreakoutLoopAsync(string breakoutRoomId, string agentId, string? taskBranch = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
@@ -514,7 +535,7 @@ public sealed class AgentOrchestrator
         var tasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
         await runtime.PostBreakoutMessageAsync(
             breakoutRoomId, "system", "LocalAgentHost", "System",
-            BuildTaskBrief(agent, tasks));
+            BuildTaskBrief(agent, tasks, taskBranch));
 
         for (var round = 1; ; round++)
         {
@@ -527,17 +548,33 @@ public sealed class AgentOrchestrator
                 round, agent.Name);
 
             var response = "";
+            if (taskBranch != null)
+                await _gitService.AcquireRoundLockAsync();
             try
             {
-                var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
-                var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
-                var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms);
-                response = await RunAgentAsync(agent, prompt, breakoutRoomId);
+                if (taskBranch != null)
+                    await _gitService.EnsureBranchInternalAsync(taskBranch);
+
+                try
+                {
+                    var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
+                    var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                    var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms);
+                    response = await RunAgentAsync(agent, prompt, breakoutRoomId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Breakout agent {AgentName} failed in round {Round}", agent.Name, round);
+                    continue;
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                _logger.LogWarning(ex, "Breakout agent {AgentName} failed in round {Round}", agent.Name, round);
-                continue;
+                if (taskBranch != null)
+                {
+                    await _gitService.ReturnToDevelopInternalAsync(taskBranch);
+                    _gitService.ReleaseRoundLock();
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(response))
@@ -1235,13 +1272,15 @@ public sealed class AgentOrchestrator
     internal static bool IsStubOfflineResponse(string response) =>
         response.Contains("is offline — the Copilot SDK is not connected", StringComparison.Ordinal);
 
-    private static string BuildTaskBrief(AgentDefinition agent, List<TaskItem> tasks)
+    private static string BuildTaskBrief(AgentDefinition agent, List<TaskItem> tasks, string? taskBranch = null)
     {
         var lines = new List<string>
         {
             $"Task Brief for {agent.Name}",
             new('=', 40)
         };
+        if (taskBranch != null)
+            lines.Add($"Branch: {taskBranch}");
         foreach (var task in tasks)
         {
             lines.Add($"\nTask: {task.Title}");

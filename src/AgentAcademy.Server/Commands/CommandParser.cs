@@ -42,7 +42,7 @@ public sealed class CommandParser
         "CLAIM_TASK", "RELEASE_TASK", "UPDATE_TASK",
         "RUN_BUILD", "RUN_TESTS", "SHOW_DIFF", "GIT_LOG",
         "DM", "ROOM_HISTORY", "MOVE_TO_ROOM",
-        "ADD_TASK_COMMENT", "RECALL_AGENT"
+        "ADD_TASK_COMMENT", "RECALL_AGENT", "MERGE_TASK"
     };
 
     /// <summary>

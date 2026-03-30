@@ -66,6 +66,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<SpecManager>();
         services.AddSingleton<CommandAuthorizer>();
         services.AddSingleton<CommandPipeline>();
+        services.AddSingleton<GitService>();
         services.AddSingleton<AgentOrchestrator>();
 
         services.AddLogging();

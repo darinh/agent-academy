@@ -148,6 +148,9 @@ builder.Services.AddSingleton<SpecManager>();
 // Project scanner (singleton — stateless directory scanner)
 builder.Services.AddSingleton<ProjectScanner>();
 
+// Git service (singleton — branch management for breakout rooms)
+builder.Services.AddSingleton<GitService>();
+
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)
 builder.Services.AddSingleton<AgentOrchestrator>();
 
@@ -177,6 +180,7 @@ builder.Services.AddSingleton<ICommandHandler, RoomHistoryHandler>();
 builder.Services.AddSingleton<ICommandHandler, MoveToRoomHandler>();
 builder.Services.AddSingleton<ICommandHandler, AddTaskCommentHandler>();
 builder.Services.AddSingleton<ICommandHandler, RecallAgentHandler>();
+builder.Services.AddSingleton<ICommandHandler, MergeTaskHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();
