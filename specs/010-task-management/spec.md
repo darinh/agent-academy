@@ -189,6 +189,33 @@ Author is always the named agent's git identity, never the fleet model.
 
 ---
 
+## 3.5. Branch-Per-Breakout Workflow
+
+When a task is assigned to a breakout room, the platform creates a dedicated task branch to isolate breakout work from `develop`.
+
+### Branch Creation
+
+- Branch name: `task/{slug}-{id}` (unique suffix from task ID prevents collisions from duplicate titles)
+- Created automatically when a task is assigned to a breakout room
+- Agent work on breakout tasks goes on the task branch, not `develop`
+
+### Round-Scoped Git Locking
+
+- A round-scoped git lock serializes breakout rounds to prevent working-tree corruption
+- Only one breakout round can execute git operations at a time
+- The lock is acquired at round start and released at round end
+
+### Completion Flow
+
+1. Agent finishes work in breakout → task status moves to `InReview` (not `Completed`)
+2. Reviewer (Socrates) reviews the work on the task branch
+3. Reviewer approves → executes `MERGE_TASK` command
+4. `MERGE_TASK` squash-merges the task branch to `develop`
+5. On successful merge → task status moves to `Completed`, merge commit SHA recorded
+6. On merge conflict → merge is aborted, error returned to caller
+
+---
+
 ## 4. PR Review Pipeline (Socrates)
 
 ### Review Trigger

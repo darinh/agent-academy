@@ -4,6 +4,11 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **007-agent-commands**: `MERGE_TASK` command (Phase 1B) — squash-merges approved task branches to develop. Validates caller is Reviewer or Planner, task is Approved with a BranchName.
+- **010-task-management**: Branch-per-breakout workflow — task branches (`task/{slug}-{id}`) isolate breakout work from develop. Completion flows through `InReview` → `MERGE_TASK` → squash-merge.
+- **010-task-management**: Round-scoped git locking for concurrent breakout room safety — serializes git operations to prevent working-tree corruption.
+
 ### Changed
 - **specs/README.md**: Added `011-state-recovery` to the index and marked `006-orchestrator` as `Outdated` until its breakout lifecycle details are reconciled with current code.
 - **006-orchestrator**: Marked the section as `Outdated` and documented spec drift around removed timeout and breakout/fix round caps.
