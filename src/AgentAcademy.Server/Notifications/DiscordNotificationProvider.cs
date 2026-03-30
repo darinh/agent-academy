@@ -568,6 +568,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             using var scope = _scopeFactory.CreateScope();
             var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
             projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+
+            // Fall back to active workspace name if room has no workspace link
+            if (projectName is null)
+                projectName = await runtime.GetActiveProjectNameAsync();
         }
         catch { /* fall back to room name */ }
 
@@ -715,6 +719,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             if (room is not null)
                 roomName = room.Name;
             projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+
+            // If room has no workspace link, fall back to the active workspace name
+            if (projectName is null)
+                projectName = await runtime.GetActiveProjectNameAsync();
         }
         catch { /* fall back to roomId, no project scoping */ }
 

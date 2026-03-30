@@ -264,6 +264,24 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Returns the humanized project name of the active workspace.
+    /// Falls back to directory basename when ProjectName is null.
+    /// </summary>
+    public async Task<string?> GetActiveProjectNameAsync()
+    {
+        var workspace = await _db.Workspaces
+            .Where(w => w.IsActive)
+            .FirstOrDefaultAsync();
+        if (workspace is null) return null;
+
+        if (!string.IsNullOrWhiteSpace(workspace.ProjectName))
+            return workspace.ProjectName;
+
+        var basename = Path.GetFileName(workspace.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return ProjectScanner.HumanizeProjectName(basename);
+    }
+
+    /// <summary>
     /// Creates the default room if no rooms exist.
     /// </summary>
     public async Task<RoomSnapshot> CreateDefaultRoomAsync()
