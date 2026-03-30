@@ -57,7 +57,8 @@ public enum MessageKind
     Decision,
     Question,
     Response,
-    SpecChangeProposal
+    SpecChangeProposal,
+    DirectMessage
 }
 
 /// <summary>
@@ -179,7 +180,8 @@ public enum ActivityEventType
     TaskApproved,
     TaskChangesRequested,
     TaskStatusUpdated,
-    RoomRenamed
+    RoomRenamed,
+    DirectMessageSent
 }
 
 /// <summary>

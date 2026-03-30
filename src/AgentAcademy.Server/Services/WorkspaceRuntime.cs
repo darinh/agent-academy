@@ -988,6 +988,140 @@ public sealed class WorkspaceRuntime
         return envelope;
     }
 
+    // ── Direct Messaging ────────────────────────────────────────
+
+    /// <summary>
+    /// Stores a direct message and posts a system notification in the recipient's room.
+    /// </summary>
+    public async Task<string> SendDirectMessageAsync(
+        string senderId, string senderName, string senderRole,
+        string recipientId, string message, string currentRoomId)
+    {
+        var now = DateTime.UtcNow;
+        var messageId = Guid.NewGuid().ToString("N");
+
+        var msgEntity = new MessageEntity
+        {
+            Id = messageId,
+            RoomId = currentRoomId,
+            SenderId = senderId,
+            SenderName = senderName,
+            SenderRole = senderRole,
+            SenderKind = senderId == "human" ? nameof(MessageSenderKind.User) : nameof(MessageSenderKind.Agent),
+            Kind = nameof(MessageKind.DirectMessage),
+            Content = message,
+            SentAt = now,
+            RecipientId = recipientId
+        };
+        _db.Messages.Add(msgEntity);
+
+        // Post system notification in recipient's current room (audit metadata, no content)
+        if (recipientId != "human")
+        {
+            var recipientLocation = await _db.AgentLocations.FindAsync(recipientId);
+            var notifyRoomId = recipientLocation?.RoomId ?? currentRoomId;
+            var notifyRoom = await _db.Rooms.FindAsync(notifyRoomId);
+            if (notifyRoom is not null)
+            {
+                var sysMsg = new MessageEntity
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    RoomId = notifyRoomId,
+                    SenderId = "system",
+                    SenderName = "System",
+                    SenderKind = nameof(MessageSenderKind.System),
+                    Kind = nameof(MessageKind.System),
+                    Content = $"📩 {senderName} sent a direct message to {recipientId}.",
+                    SentAt = now
+                };
+                _db.Messages.Add(sysMsg);
+                notifyRoom.UpdatedAt = now;
+            }
+        }
+
+        Publish(ActivityEventType.DirectMessageSent, currentRoomId, senderId, null,
+            $"DM from {senderName} to {recipientId}");
+
+        await _db.SaveChangesAsync();
+        return messageId;
+    }
+
+    /// <summary>
+    /// Returns recent DMs for an agent (both sent and received), ordered chronologically.
+    /// </summary>
+    public async Task<List<MessageEntity>> GetDirectMessagesForAgentAsync(string agentId, int limit = 20)
+    {
+        return await _db.Messages
+            .Where(m => m.RecipientId != null &&
+                        (m.RecipientId == agentId || m.SenderId == agentId))
+            .OrderByDescending(m => m.SentAt)
+            .Take(limit)
+            .OrderBy(m => m.SentAt)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Returns DM thread summaries for the human user, grouped by agent.
+    /// </summary>
+    public async Task<List<DmThreadSummary>> GetDmThreadsForHumanAsync()
+    {
+        var humanDms = await _db.Messages
+            .Where(m => m.RecipientId != null &&
+                        (m.RecipientId == "human" || m.SenderId == "human"))
+            .OrderByDescending(m => m.SentAt)
+            .Take(500) // Cap to prevent unbounded scans
+            .ToListAsync();
+
+        var threads = new Dictionary<string, DmThreadSummary>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var dm in humanDms)
+        {
+            var agentId = dm.SenderId == "human" ? dm.RecipientId! : dm.SenderId;
+
+            if (!threads.ContainsKey(agentId))
+            {
+                // Find agent name from catalog
+                var agent = _catalog.Agents.FirstOrDefault(
+                    a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
+                var agentName = agent?.Name ?? agentId;
+                var agentRole = agent?.Role ?? "Agent";
+
+                threads[agentId] = new DmThreadSummary(
+                    AgentId: agentId,
+                    AgentName: agentName,
+                    AgentRole: agentRole,
+                    LastMessage: dm.Content.Length > 100 ? dm.Content[..100] + "…" : dm.Content,
+                    LastMessageAt: dm.SentAt,
+                    MessageCount: 0
+                );
+            }
+
+            threads[agentId] = threads[agentId] with
+            {
+                MessageCount = threads[agentId].MessageCount + 1
+            };
+        }
+
+        return threads.Values
+            .OrderByDescending(t => t.LastMessageAt)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns messages in a DM thread between the human and a specific agent.
+    /// </summary>
+    public async Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50)
+    {
+        return await _db.Messages
+            .Where(m => m.RecipientId != null &&
+                        ((m.SenderId == "human" && m.RecipientId == agentId) ||
+                         (m.SenderId == agentId && m.RecipientId == "human")))
+            .OrderByDescending(m => m.SentAt)
+            .Take(limit)
+            .OrderBy(m => m.SentAt)
+            .ToListAsync();
+    }
+
     // ── Phase Management ────────────────────────────────────────
 
     /// <summary>
@@ -1335,9 +1469,9 @@ public sealed class WorkspaceRuntime
     private async Task<RoomSnapshot> BuildRoomSnapshotAsync(
         RoomEntity room, List<AgentLocationEntity>? preloadedLocations = null)
     {
-        // Get recent messages (last MaxRecentMessages)
+        // Get recent messages (last MaxRecentMessages), excluding DMs
         var messages = await _db.Messages
-            .Where(m => m.RoomId == room.Id)
+            .Where(m => m.RoomId == room.Id && m.RecipientId == null)
             .OrderByDescending(m => m.SentAt)
             .Take(MaxRecentMessages)
             .OrderBy(m => m.SentAt)
@@ -1514,14 +1648,14 @@ public sealed class WorkspaceRuntime
 
     private async Task TrimMessagesAsync(string roomId)
     {
-        // Count committed messages only (pending tracked add is +1)
-        var messageCount = await _db.Messages.CountAsync(m => m.RoomId == roomId);
+        // Count committed room messages only (exclude DMs, pending tracked add is +1)
+        var messageCount = await _db.Messages.CountAsync(m => m.RoomId == roomId && m.RecipientId == null);
         var totalAfterSave = messageCount + 1; // account for the pending message
 
         if (totalAfterSave <= MaxRecentMessages) return;
 
         var toRemove = await _db.Messages
-            .Where(m => m.RoomId == roomId)
+            .Where(m => m.RoomId == roomId && m.RecipientId == null)
             .OrderBy(m => m.SentAt)
             .Take(totalAfterSave - MaxRecentMessages)
             .ToListAsync();

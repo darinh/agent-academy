@@ -15,6 +15,7 @@ public class MessageEntity
     public string Kind { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public DateTime SentAt { get; set; }
+    public string? RecipientId { get; set; }
     public string? CorrelationId { get; set; }
     public string? ReplyToMessageId { get; set; }
 

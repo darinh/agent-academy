@@ -16,6 +16,7 @@ import {
   GridRegular,
   BoardRegular,
   TaskListLtrRegular,
+  MailRegular,
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
@@ -32,6 +33,7 @@ import TaskListPanel from "./TaskListPanel";
 import LoginPage from "./LoginPage";
 import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
+import DmPanel from "./DmPanel";
 
 export default function App() {
   return (
@@ -347,6 +349,7 @@ function AppShell() {
                   <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
                   <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
                   <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
+                  <Tab value="directMessages" icon={<MailRegular />}>Messages</Tab>
                 </TabList>
               </div>
 
@@ -377,6 +380,15 @@ function AppShell() {
                     room={room}
                     onPhaseTransition={wrappedPhaseTransition}
                     transitioning={phaseTransitioning}
+                  />
+                )}
+                {tab === "directMessages" && (
+                  <DmPanel
+                    agents={ov.configuredAgents.map((a) => ({
+                      id: a.id,
+                      name: a.name,
+                      role: a.role,
+                    }))}
                   />
                 )}
               </section>

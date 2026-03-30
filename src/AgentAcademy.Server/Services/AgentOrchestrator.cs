@@ -36,10 +36,12 @@ public sealed class AgentOrchestrator
     private readonly CommandPipeline _commandPipeline;
     private readonly ILogger<AgentOrchestrator> _logger;
 
-    private readonly Queue<string> _queue = new();
+    private readonly Queue<QueueItem> _queue = new();
     private readonly object _lock = new();
     private bool _processing;
     private volatile bool _stopped;
+
+    private record QueueItem(string RoomId, string? TargetAgentId = null);
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
@@ -68,7 +70,23 @@ public sealed class AgentOrchestrator
     /// </summary>
     public void HandleHumanMessage(string roomId)
     {
-        lock (_lock) { _queue.Enqueue(roomId); }
+        lock (_lock) { _queue.Enqueue(new QueueItem(roomId)); }
+        _ = ProcessQueueAsync();
+    }
+
+    /// <summary>
+    /// Triggers an immediate round for a specific agent after receiving a DM.
+    /// Finds the agent's current room and runs only that agent.
+    /// </summary>
+    public void HandleDirectMessage(string recipientAgentId)
+    {
+        lock (_lock)
+        {
+            // Dedupe: skip if a DM trigger for this agent is already queued
+            if (_queue.Any(q => q.TargetAgentId == recipientAgentId))
+                return;
+            _queue.Enqueue(new QueueItem(RoomId: "", TargetAgentId: recipientAgentId));
+        }
         _ = ProcessQueueAsync();
     }
 
@@ -86,10 +104,10 @@ public sealed class AgentOrchestrator
         {
             while (!_stopped)
             {
-                string? roomId;
+                QueueItem? item;
                 lock (_lock)
                 {
-                    if (!_queue.TryDequeue(out roomId))
+                    if (!_queue.TryDequeue(out item))
                     {
                         // Atomically clear processing flag while still holding the lock.
                         // Any concurrent HandleHumanMessage that enqueued after the last
@@ -101,11 +119,18 @@ public sealed class AgentOrchestrator
 
                 try
                 {
-                    await RunConversationRoundAsync(roomId);
+                    if (item.TargetAgentId is not null)
+                    {
+                        await RunDirectMessageRoundAsync(item.TargetAgentId);
+                    }
+                    else
+                    {
+                        await RunConversationRoundAsync(item.RoomId);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Orchestrator failed for room {RoomId}", roomId);
+                    _logger.LogError(ex, "Orchestrator failed for {Item}", item);
                 }
             }
         }
@@ -154,7 +179,8 @@ public sealed class AgentOrchestrator
                     var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
                     var taskItems = await runtime.GetActiveTaskItemsAsync();
                     var plannerMemories = await LoadAgentMemoriesAsync(planner.Id);
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories)
+                    var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -220,7 +246,8 @@ public sealed class AgentOrchestrator
                 try
                 {
                     var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
-                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories);
+                    var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms);
                     response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
                 }
                 catch (Exception ex)
@@ -266,6 +293,88 @@ public sealed class AgentOrchestrator
                     round + 1, MaxRoundsPerTrigger);
             }
         }
+    }
+
+    // ── DM ROUND ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs a targeted round for a specific agent after receiving a DM.
+    /// Only the recipient agent runs, with DMs injected into their context.
+    /// </summary>
+    private async Task RunDirectMessageRoundAsync(string recipientAgentId)
+    {
+        _logger.LogInformation("DM round for agent {AgentId}", recipientAgentId);
+
+        using var scope = _scopeFactory.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+
+        // Find the recipient agent in catalog
+        var agents = runtime.GetConfiguredAgents();
+        var catalogAgent = agents.FirstOrDefault(
+            a => string.Equals(a.Id, recipientAgentId, StringComparison.OrdinalIgnoreCase));
+
+        if (catalogAgent is null)
+        {
+            _logger.LogWarning("DM round: agent {AgentId} not found in catalog", recipientAgentId);
+            return;
+        }
+
+        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
+
+        // Find the agent's current room
+        var location = await runtime.GetAgentLocationAsync(agent.Id);
+        if (location?.State == AgentState.Working)
+        {
+            _logger.LogInformation(
+                "DM round: agent {AgentName} is busy (Working state). DM is stored and will be seen on next round.",
+                agent.Name);
+            return;
+        }
+
+        var roomId = location?.RoomId;
+        if (roomId is null)
+        {
+            var rooms = await runtime.GetRoomsAsync();
+            roomId = rooms.FirstOrDefault()?.Id ?? "main";
+        }
+
+        var room = await runtime.GetRoomAsync(roomId);
+        if (room is null) return;
+
+        var specContext = _specManager.LoadSpecContext();
+        var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
+        var directMessages = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+
+        await runtime.PublishThinkingAsync(agent, roomId);
+        var response = "";
+        try
+        {
+            var prompt = BuildConversationPrompt(agent, room, specContext,
+                memories: agentMemories, directMessages: directMessages);
+            response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "DM round: agent {AgentName} failed", agent.Name);
+        }
+        finally
+        {
+            await runtime.PublishFinishedAsync(agent, roomId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response)
+            && !IsStubOfflineResponse(response))
+        {
+            await ProcessAndPostAgentResponseAsync(runtime, agent, roomId, response);
+
+            foreach (var assignment in ParseTaskAssignments(response))
+            {
+                await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+            }
+        }
+
+        _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
     }
 
     // ── TASK ASSIGNMENT PARSING ─────────────────────────────────
@@ -772,7 +881,8 @@ public sealed class AgentOrchestrator
     private static string BuildConversationPrompt(
         AgentDefinition agent, RoomSnapshot room, string? specContext,
         List<TaskItem>? activeTaskItems = null,
-        List<AgentMemory>? memories = null)
+        List<AgentMemory>? memories = null,
+        List<Data.Entities.MessageEntity>? directMessages = null)
     {
         var lines = new List<string> { agent.StartupPrompt, "" };
 
@@ -824,6 +934,20 @@ public sealed class AgentOrchestrator
             foreach (var msg in room.RecentMessages.TakeLast(20))
             {
                 lines.Add($"[{msg.SenderName} ({msg.SenderRole ?? msg.SenderKind.ToString()})]: {msg.Content}");
+            }
+        }
+
+        if (directMessages is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("=== DIRECT MESSAGES ===");
+            lines.Add("These are private messages only you can see. Reply via DM command if needed.");
+            foreach (var dm in directMessages)
+            {
+                var direction = dm.SenderId == agent.Id
+                    ? $"[DM to {dm.RecipientId}]"
+                    : $"[DM from {dm.SenderName}]";
+                lines.Add($"{direction}: {dm.Content}");
             }
         }
 
