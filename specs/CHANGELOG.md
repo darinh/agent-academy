@@ -4,6 +4,11 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **README.md**: Added 011-state-recovery to spec index (was missing despite spec file existing)
+- **README.md**: Marked 006-orchestrator status as "Outdated" (spec documents removed MaxBreakoutRounds/timeout behavior)
+- **011-state-recovery**: Expanded spec with client reconnect UX states (Reconnecting, Instance Mismatch, Success), task comment types (Comment/Finding/Evidence/Blocker) with rendering expectations, and breakout room termination paths (Completion, Recall, Cancel, Stuck Detection)
+
 ### Added
 - **007-agent-commands**: `ADD_TASK_COMMENT` command (Phase 1B) — agents can attach comments/findings/evidence/blocker notes to tasks. Only assignee, reviewer, or planner can comment. Creates `TaskCommentEntity`, posts activity event.
 - **007-agent-commands**: `RECALL_AGENT` command (Phase 1B) — planner can pull agents back from breakout rooms. Validates Planner role + Working state, closes breakout room, moves agent to Idle in parent room, posts recall notices.
