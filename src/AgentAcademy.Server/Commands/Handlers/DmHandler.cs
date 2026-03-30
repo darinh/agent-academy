@@ -152,6 +152,26 @@ public sealed class DmHandler : ICommandHandler
             context.AgentId, context.AgentName ?? context.AgentId,
             context.AgentRole ?? "Agent", targetAgent.Id, message, roomId);
 
+        // Forward DM to Discord Messages category (same bridge as @Human DMs)
+        var notificationManager = context.Services.GetRequiredService<NotificationManager>();
+        var roomName = roomId;
+        try
+        {
+            var rooms = await runtime.GetRoomsAsync();
+            var room = rooms.FirstOrDefault(r => r.Id == context.RoomId);
+            if (room is not null) roomName = room.Name;
+        }
+        catch { /* fall back to roomId */ }
+
+        // Fire-and-forget — delivery failure shouldn't block the DM
+        _ = notificationManager.SendAgentQuestionAsync(new AgentQuestion(
+            AgentId: context.AgentId,
+            AgentName: context.AgentName ?? context.AgentId,
+            RoomId: roomId,
+            RoomName: roomName,
+            Question: $"[DM to {targetAgent.Name}] {message}"
+        ));
+
         // Trigger recipient agent to respond promptly
         var orchestrator = context.Services.GetRequiredService<AgentOrchestrator>();
         orchestrator.HandleDirectMessage(targetAgent.Id);

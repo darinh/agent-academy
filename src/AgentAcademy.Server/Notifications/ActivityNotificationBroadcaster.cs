@@ -74,6 +74,12 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
         if (evt.Type == ActivityEventType.MessagePosted && evt.ActorId == "human")
             return;
 
+        // Don't forward DM system notifications to Discord room channels —
+        // DMs are routed to the Messages category separately via SendAgentQuestionAsync.
+        if (evt.Type == ActivityEventType.MessagePosted
+            && evt.Message.StartsWith("📩 ", StringComparison.Ordinal))
+            return;
+
         _ = SendNotificationAsync(evt);
     }
 
