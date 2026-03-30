@@ -14,18 +14,6 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class AgentOrchestrator
 {
-    /// <summary>Timeout for each agent turn in the main conversation room.</summary>
-    private static readonly TimeSpan McTimeout = TimeSpan.FromSeconds(120);
-
-    /// <summary>Timeout for agent work in a breakout room.</summary>
-    private static readonly TimeSpan BreakoutTimeout = TimeSpan.FromSeconds(300);
-
-    /// <summary>Maximum iterations an agent gets inside a breakout room.</summary>
-    private const int MaxBreakoutRounds = 5;
-
-    /// <summary>Extra rounds granted after a reviewer requests fixes.</summary>
-    private const int MaxFixRounds = 2;
-
     /// <summary>Cap on the number of agents that can be tagged in one round.</summary>
     private const int MaxTaggedAgents = 6;
 
@@ -185,7 +173,7 @@ public sealed class AgentOrchestrator
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
                         + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
-                    plannerResponse = await RunAgentWithTimeoutAsync(planner, prompt, roomId, McTimeout);
+                    plannerResponse = await RunAgentAsync(planner, prompt, roomId);
                 }
                 catch (Exception ex)
                 {
@@ -248,7 +236,7 @@ public sealed class AgentOrchestrator
                     var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                     var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms);
-                    response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
+                    response = await RunAgentAsync(agent, prompt, roomId);
                 }
                 catch (Exception ex)
                 {
@@ -324,10 +312,21 @@ public sealed class AgentOrchestrator
 
         // Find the agent's current room
         var location = await runtime.GetAgentLocationAsync(agent.Id);
-        if (location?.State == AgentState.Working)
+        if (location?.State == AgentState.Working && location.BreakoutRoomId is not null)
         {
+            // Agent is in a breakout room — post the DM as a breakout message
+            // so they see it on their next work round
+            var dms = await runtime.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
+            if (dms.Count > 0)
+            {
+                var latestDm = dms.Last();
+                await runtime.PostBreakoutMessageAsync(
+                    location.BreakoutRoomId,
+                    "system", "System", "System",
+                    $"📩 Direct message from {latestDm.SenderName}: {latestDm.Content}");
+            }
             _logger.LogInformation(
-                "DM round: agent {AgentName} is busy (Working state). DM is stored and will be seen on next round.",
+                "DM round: agent {AgentName} is in breakout room. DM posted to breakout context.",
                 agent.Name);
             return;
         }
@@ -352,7 +351,7 @@ public sealed class AgentOrchestrator
         {
             var prompt = BuildConversationPrompt(agent, room, specContext,
                 memories: agentMemories, directMessages: directMessages);
-            response = await RunAgentWithTimeoutAsync(agent, prompt, roomId, McTimeout);
+            response = await RunAgentAsync(agent, prompt, roomId);
         }
         catch (Exception ex)
         {
@@ -478,22 +477,23 @@ public sealed class AgentOrchestrator
             breakoutRoomId, "system", "LocalAgentHost", "System",
             BuildTaskBrief(agent, tasks));
 
-        for (var round = 1; round <= MaxBreakoutRounds; round++)
+        for (var round = 1; ; round++)
         {
             if (_stopped) break;
 
             var currentBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
             if (currentBr is null || currentBr.Status != RoomStatus.Active) break;
 
-            _logger.LogInformation("Breakout round {Round}/{Max} for {AgentName}",
-                round, MaxBreakoutRounds, agent.Name);
+            _logger.LogInformation("Breakout round {Round} for {AgentName}",
+                round, agent.Name);
 
             var response = "";
             try
             {
                 var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
-                var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories);
-                response = await RunAgentWithTimeoutAsync(agent, prompt, breakoutRoomId, BreakoutTimeout);
+                var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms);
+                response = await RunAgentAsync(agent, prompt, breakoutRoomId);
             }
             catch (Exception ex)
             {
@@ -541,8 +541,8 @@ public sealed class AgentOrchestrator
             }
         }
 
-        // Max rounds reached — present whatever exists
-        _logger.LogInformation("Breakout max rounds reached for {AgentName}", agent.Name);
+        // Loop exited — agent stopped or room closed
+        _logger.LogInformation("Breakout loop ended for {AgentName}", agent.Name);
         await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
     }
 
@@ -619,7 +619,7 @@ public sealed class AgentOrchestrator
             if (room is null) return null;
             var prompt = BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
                 _specManager.LoadSpecContext());
-            reviewResponse = await RunAgentWithTimeoutAsync(reviewer, prompt, parentRoomId, McTimeout);
+            reviewResponse = await RunAgentAsync(reviewer, prompt, parentRoomId);
         }
         catch (Exception ex)
         {
@@ -678,8 +678,8 @@ public sealed class AgentOrchestrator
                 $"Review feedback:\n{reviewMessage.Content}\n\nPlease address the findings and produce an updated WORK REPORT.");
         }
 
-        // Grant fix rounds
-        for (var round = 1; round <= MaxFixRounds; round++)
+        // Grant fix rounds — no cap, agent works until done
+        for (var round = 1; ; round++)
         {
             if (_stopped) break;
             var updatedBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
@@ -689,9 +689,10 @@ public sealed class AgentOrchestrator
             try
             {
                 var fixMemories = await LoadAgentMemoriesAsync(agent.Id);
-                response = await RunAgentWithTimeoutAsync(
-                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories),
-                    breakoutRoomId, BreakoutTimeout);
+                var fixDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                response = await RunAgentAsync(
+                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms),
+                    breakoutRoomId);
             }
             catch { continue; }
 
@@ -860,18 +861,16 @@ public sealed class AgentOrchestrator
         return result.Take(MaxTaggedAgents).ToList();
     }
 
-    private async Task<string> RunAgentWithTimeoutAsync(
-        AgentDefinition agent, string prompt, string roomId, TimeSpan timeout)
+    private async Task<string> RunAgentAsync(
+        AgentDefinition agent, string prompt, string roomId)
     {
-        using var cts = new CancellationTokenSource(timeout);
         try
         {
-            return await _executor.RunAsync(agent, prompt, roomId, cts.Token);
+            return await _executor.RunAsync(agent, prompt, roomId);
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("Agent {AgentName} timed out after {Seconds}s",
-                agent.Name, timeout.TotalSeconds);
+            _logger.LogWarning("Agent {AgentName} was cancelled", agent.Name);
             return "";
         }
     }
@@ -961,7 +960,8 @@ public sealed class AgentOrchestrator
     }
 
     private static string BuildBreakoutPrompt(AgentDefinition agent, BreakoutRoom br, int round,
-        List<AgentMemory>? memories = null)
+        List<AgentMemory>? memories = null,
+        List<Data.Entities.MessageEntity>? directMessages = null)
     {
         var lines = new List<string> { agent.StartupPrompt, "" };
 
@@ -975,7 +975,7 @@ public sealed class AgentOrchestrator
         }
 
         lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
-        lines.Add($"Round: {round}/{MaxBreakoutRounds}");
+        lines.Add($"Round: {round}");
 
         if (br.Tasks.Count > 0)
         {
@@ -996,6 +996,20 @@ public sealed class AgentOrchestrator
             foreach (var msg in br.RecentMessages.TakeLast(10))
             {
                 lines.Add($"[{msg.SenderName}]: {msg.Content}");
+            }
+        }
+
+        if (directMessages is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("=== DIRECT MESSAGES ===");
+            lines.Add("These are private messages only you can see. Reply via DM command if needed.");
+            foreach (var dm in directMessages)
+            {
+                var direction = dm.SenderId == agent.Id
+                    ? $"[DM to {dm.RecipientId}]"
+                    : $"[DM from {dm.SenderName}]";
+                lines.Add($"{direction}: {dm.Content}");
             }
         }
 

@@ -37,7 +37,6 @@ namespace AgentAcademy.Server.Services;
 public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 {
     private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(2);
 
     private readonly ILogger<CopilotExecutor> _logger;
@@ -448,23 +447,10 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         {
             await session.SendAsync(new MessageOptions { Prompt = prompt });
 
-            // Use a separate CTS for the timeout so cancellation of the caller's
-            // token doesn't produce a misleading TimeoutException.
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(RequestTimeout);
-            var timeoutTask = Task.Delay(Timeout.InfiniteTimeSpan, timeoutCts.Token);
+            // Wait for the response — no internal timeout.
+            // Cancellation is handled by the registration at line 418.
+            await done.Task;
 
-            var completedTask = await Task.WhenAny(done.Task, timeoutTask);
-
-            if (completedTask == timeoutTask)
-            {
-                // Distinguish caller cancellation from actual timeout.
-                ct.ThrowIfCancellationRequested();
-                throw new TimeoutException(
-                    $"Copilot response timed out after {RequestTimeout.TotalSeconds}s");
-            }
-
-            await done.Task; // Re-await to propagate exceptions
             return sb.ToString();
         }
         finally

@@ -169,6 +169,12 @@ builder.Services.AddSingleton<ICommandHandler, UpdateTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, ApproveTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, RequestChangesHandler>();
 builder.Services.AddSingleton<ICommandHandler, ShowReviewQueueHandler>();
+builder.Services.AddSingleton<ICommandHandler, RunBuildHandler>();
+builder.Services.AddSingleton<ICommandHandler, RunTestsHandler>();
+builder.Services.AddSingleton<ICommandHandler, ShowDiffHandler>();
+builder.Services.AddSingleton<ICommandHandler, GitLogHandler>();
+builder.Services.AddSingleton<ICommandHandler, RoomHistoryHandler>();
+builder.Services.AddSingleton<ICommandHandler, MoveToRoomHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();
