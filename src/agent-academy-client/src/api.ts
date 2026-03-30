@@ -43,7 +43,8 @@ export type ActivityEventType =
   | "ArtifactEvaluated" | "QualityGateChecked" | "IterationRetried"
   | "CheckpointCreated" | "AgentErrorOccurred" | "AgentWarningOccurred"
   | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
-  | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted";
+  | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
+  | "DirectMessageSent";
 
 export interface ActivityEvent {
   id: string;
@@ -643,5 +644,51 @@ export function deleteInstructionTemplate(id: string): Promise<{ status: string;
   return request<{ status: string; id: string }>(
     apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`),
     { method: "DELETE" },
+  );
+}
+
+// ── Direct Messaging types ─────────────────────────────────────────────
+
+export interface DmThreadSummary {
+  agentId: string;
+  agentName: string;
+  agentRole: string;
+  lastMessage: string;
+  lastMessageAt: string;
+  messageCount: number;
+}
+
+export interface DmMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  sentAt: string;
+  isFromHuman: boolean;
+}
+
+// ── Direct Messaging API ───────────────────────────────────────────────
+
+export function getDmThreads(): Promise<DmThreadSummary[]> {
+  return request<DmThreadSummary[]>(apiUrl("/api/dm/threads"));
+}
+
+export function getDmThreadMessages(agentId: string): Promise<DmMessage[]> {
+  return request<DmMessage[]>(
+    apiUrl(`/api/dm/threads/${encodeURIComponent(agentId)}`),
+  );
+}
+
+export function sendDmToAgent(
+  agentId: string,
+  message: string,
+): Promise<DmMessage> {
+  return request<DmMessage>(
+    apiUrl(`/api/dm/threads/${encodeURIComponent(agentId)}`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    },
   );
 }

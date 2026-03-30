@@ -68,6 +68,7 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_messages_room");
             entity.HasIndex(e => e.SentAt).HasDatabaseName("idx_messages_sentAt");
+            entity.HasIndex(e => new { e.RecipientId, e.SentAt }).HasDatabaseName("idx_messages_recipient_sentAt");
         });
 
         // ── Tasks ─────────────────────────────────────────────

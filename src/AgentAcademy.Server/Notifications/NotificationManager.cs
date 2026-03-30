@@ -158,6 +158,34 @@ public sealed class NotificationManager
     }
 
     /// <summary>
+    /// Posts a DM to the agent's channel (no thread) via the first connected provider.
+    /// </summary>
+    public async Task<(bool Sent, string? Error)> SendDirectMessageDisplayAsync(AgentQuestion dm, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dm);
+
+        var connectedProviders = _providers.Values.Where(p => p.IsConnected).ToList();
+        if (connectedProviders.Count == 0)
+            return (false, "No notification provider is connected.");
+
+        string? lastError = null;
+        foreach (var provider in connectedProviders)
+        {
+            try
+            {
+                var sent = await provider.SendDirectMessageAsync(dm, cancellationToken);
+                if (sent) return (true, null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = $"Provider '{provider.ProviderId}' error: {ex.Message}";
+            }
+        }
+
+        return (false, lastError ?? "Connected provider(s) could not deliver the DM.");
+    }
+
+    /// <summary>
     /// Notifies all connected providers that a room has been renamed.
     /// </summary>
     public async Task NotifyRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)

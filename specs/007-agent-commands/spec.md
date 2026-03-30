@@ -96,7 +96,7 @@ These formalize existing capabilities with audit trails and structured output.
 
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
-| `ASK_HUMAN` | `question` | Confirmation + delivery status | Sends question to Discord, routes reply to agent's room | `AskHumanHandler.cs` — creates workspace category + agent channel + question thread in Discord, persistent listener routes human reply back via `PostHumanMessageAsync` |
+| `ASK_HUMAN` | — | — | — | **DEPRECATED** — replaced by `DM` command. Use `DM: Recipient: @Human` instead. |
 | `LINK_TASK_TO_SPEC` | `taskId`, `specSection` | Confirmation + link record | Creates bidirectional link |
 | `SHOW_UNLINKED_CHANGES` | `since?` | Tasks/commits without spec links | Audit event |
 | `APPROVE_TASK` | `taskId`, `findings?` | Confirmation | Updates task status, records reviewer | `ApproveTaskHandler.cs` — validates InReview/AwaitingValidation state, sets Approved, records reviewer, increments ReviewRounds, posts findings as review message |
@@ -115,11 +115,11 @@ These formalize existing capabilities with audit trails and structured output.
 | `SHOW_DIFF` | `taskId?`, `branch?`, `agentId?` | Git diff output | Audit event |
 | `GIT_LOG` | `file?`, `since?`, `count?` | Commit history | Audit event |
 
-#### Phase 1D: Communication
+#### Phase 1D: Communication — IMPLEMENTED
 
-| Command | Args | Returns | Side Effects |
-|---------|------|---------|-------------|
-| `DM` | `recipient` (agentId or `@Human`), `message` | Delivery confirmation | Creates DM record, audit event |
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `DM` | `recipient` (agentId, agent name, or `@Human`), `message` | Delivery confirmation | Stores DM with RecipientId, posts system notification in recipient's room, triggers immediate agent round or Discord notification | `DmHandler.cs` — routes `@Human` to notification bridge (Discord), agent recipients to DB storage + orchestrator wake-up. Case-insensitive name/ID matching. Self-DM prevented. |
 | `ROOM_HISTORY` | `roomId`, `count?` | Recent messages from any room | Audit event (no movement) |
 
 #### Phase 1E: Navigation
@@ -248,7 +248,7 @@ PROPOSE_AGENT_UPDATE:
 ## Private Communication (DM)
 
 ### Command
-`DM @Human: <message>` — Available to ALL agents.
+`DM: Recipient: @Human/AgentName, Message: <text>` — Available to ALL agents. **IMPLEMENTED**.
 
 ### Use Cases
 - Escalation of blocking issues
@@ -258,12 +258,25 @@ PROPOSE_AGENT_UPDATE:
 - Spec disputes requiring human tiebreaker
 - Review independence (Socrates flagging concerns privately)
 - Platform feedback and feature requests
+- Agent-to-agent private coordination
 
 ### Principles
 - Default communication is open (in rooms)
 - DMs are the exception, not the norm
 - Audit metadata is logged (who, when, that a DM occurred) but content is not visible to other agents
 - Human can see all DMs (agents are not told this)
+- All DM recipients respond promptly (agents are triggered immediately, humans notified via Discord)
+
+### Implementation
+- **Handler**: `src/AgentAcademy.Server/Commands/Handlers/DmHandler.cs`
+- **Data model**: `MessageEntity.RecipientId` (nullable) — null = room message, non-null = DM. `MessageKind.DirectMessage`.
+- **Runtime methods**: `SendDirectMessageAsync`, `GetDirectMessagesForAgentAsync`, `GetDmThreadsForHumanAsync`, `GetDmThreadMessagesAsync` in `WorkspaceRuntime.cs`
+- **Orchestrator**: `HandleDirectMessage(agentId)` triggers targeted agent round via extended `QueueItem(RoomId, TargetAgentId?)` queue.
+- **Context injection**: DMs injected as `=== DIRECT MESSAGES ===` section in agent prompts.
+- **System notification**: "📩 {sender} sent a direct message to {recipient}." posted in recipient's room (audit metadata, no content).
+- **Frontend**: Telegram-style DM panel (`DmPanel.tsx`) with conversation list + chat view. "Messages" tab in tab bar.
+- **API**: `DmController.cs` — `GET /api/dm/threads`, `GET /api/dm/threads/{agentId}`, `POST /api/dm/threads/{agentId}`
+- **Replaces ASK_HUMAN**: The `DM: Recipient: @Human` flow uses the same Discord notification bridge as the former `ASK_HUMAN` command.
 
 ## Safety & Operational Constraints
 
@@ -304,7 +317,7 @@ PROPOSE_AGENT_UPDATE:
 
 ### Phase 3 — Verification + Communication (Tier 1C + 1D)
 - Build/test execution (sandboxed, with timeouts)
-- DM system (extends MessageEntity with RecipientId, adds DirectMessage kind)
+- DM system — **IMPLEMENTED**: extends MessageEntity with RecipientId, adds DirectMessage kind, DmHandler, orchestrator integration, frontend DM panel
 - Room history read (existing data, new access pattern)
 
 ### Phase 4 — Navigation (Tier 1E)
@@ -359,7 +372,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 ## Discord Agent Question Bridge
 
 ### Purpose
-Enables any agent to ask the human a question via Discord and receive a routed reply. Designed to unblock agents that need human input (clarification, decisions, credentials).
+Enables any agent to send a direct message to the human via Discord and receive a routed reply. Designed to unblock agents that need human input (clarification, decisions, credentials). Now accessed via the `DM` command (replaces the deprecated `ASK_HUMAN`).
 
 ### Architecture
 ```
@@ -371,17 +384,18 @@ Discord Server
 ```
 
 ### Flow
-1. Agent uses `ASK_HUMAN: Question: <text>` command
-2. `AskHumanHandler` resolves workspace name and delegates to `NotificationManager`
+1. Agent uses `DM: Recipient: @Human, Message: <text>` command
+2. `DmHandler` stores the DM, then delegates to `NotificationManager.SendAgentQuestionAsync`
 3. `DiscordNotificationProvider` lazily creates category → channel → thread
-4. Question posted as embed in the thread
+4. Message posted as embed in the thread
 5. Persistent `MessageReceived` handler routes human replies back to the agent's room via `WorkspaceRuntime.PostHumanMessageAsync`
 6. Agent sees reply as a human message in its next orchestration round
+7. Human can also reply via the frontend DM panel (`DmPanel.tsx`)
 
 ### Implementation Status
-**IMPLEMENTED** — `ASK_HUMAN` command is live. Handler, Discord channel/thread management, and reply routing are implemented. All agents have `ASK_HUMAN` permission.
+**IMPLEMENTED** — `DM` command replaces `ASK_HUMAN`. Handler (`DmHandler.cs`), Discord bridge, reply routing, and frontend DM panel are implemented. All agents have `DM` permission.
 
-**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/AskHumanHandler.cs`, `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs`
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/DmHandler.cs`, `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs`, `src/AgentAcademy.Server/Controllers/DmController.cs`, `src/agent-academy-client/src/DmPanel.tsx`
 
 ## Revision History
 
@@ -392,3 +406,4 @@ Discord Server
 | 2026-03-28 | Added command reference to agent startup prompts | command-discoverability | `6117b4e` |
 | 2026-03-28 | Reconciled frontend surface contradiction: Phase 1A shipped backend-only, no UI surfaces implemented. Documented 9 live commands with implementation evidence. Updated Known Gaps to reflect backend-only state. | spec-007-reconciliation | (this change) |
 | 2026-03-29 | Implemented ASK_HUMAN command: Discord agent-to-human question bridge with category-per-workspace, channel-per-agent, thread-per-question architecture. Persistent reply routing via WorkspaceRuntime. | ask-human-command | (this change) |
+| 2026-03-30 | Implemented DM command (Phase 1D), replacing ASK_HUMAN. Agent-to-agent and agent-to-human private messaging. MessageEntity.RecipientId + DirectMessage kind. Orchestrator HandleDirectMessage with targeted rounds. System notification in recipient's room. Frontend Telegram-style DM panel. DM API endpoints. 18 tests. | dm-command | (this change) |

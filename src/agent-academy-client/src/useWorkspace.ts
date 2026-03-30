@@ -36,7 +36,7 @@ const FALLBACK_POLL_MS = 120_000;
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
 
-const VALID_TABS = new Set(["chat", "tasks", "plan", "timeline", "dashboard", "overview"]);
+const VALID_TABS = new Set(["chat", "tasks", "plan", "timeline", "dashboard", "overview", "directMessages"]);
 
 function loadTab(): string {
   try {
@@ -154,6 +154,7 @@ export function useWorkspace() {
       case "TaskCreated":
       case "PhaseChanged":
       case "PresenceUpdated":
+      case "DirectMessageSent":
         void refreshRef.current?.({ showBusy: false });
         break;
     }
