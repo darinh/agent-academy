@@ -8,7 +8,7 @@ Documents the supervised restart and state recovery system that enables Agent Ac
 
 **Status: Planned** (Implementation pending)
 
-The state recovery system consists of four components working together:
+The state recovery system consists of six components working together:
 
 ### 1. Wrapper Script Exit Code Contract
 
@@ -101,22 +101,58 @@ When the server restarts, connected clients must detect the restart and refresh 
 **Frontend Reconnect Logic** (planned):
 - Store `instanceId` from initial health check
 - On SignalR reconnect: call `/api/health/instance`
-- If `instanceId` changed: display "Server restarted" banner, refresh room list and active room
-- If `instanceId` unchanged: resume normally
+- If `instanceId` changed: display "Server restarted" banner, refresh room list, active room, task detail, task comments, and direct-message state
+- If `instanceId` unchanged: resume normally without clearing current room selection
+- If the health check fails during reconnect, keep the UI in reconnecting state and retry instead of assuming a clean resume
 
 **File**: `src/agent-academy-client/src/services/healthCheck.ts` (planned)
 
-**Client UX States**:
+#### Client UX States (planned)
 
-| State | Trigger | UI Behavior |
+| State | Trigger | Expected UX |
 |-------|---------|-------------|
-| **Reconnecting** | SignalR connection lost (network/server restart) | Display "Reconnecting..." status indicator, disable message input, show loading spinner |
-| **Instance Mismatch** | `instanceId` changed after reconnect | Display "Server restarted — refreshing..." banner, fetch fresh room list, reload active room state, clear stale cached data |
-| **Success** | `instanceId` matches or reconnect completes | Remove status indicators, re-enable input, resume normal operation |
+| `reconnecting` | SignalR disconnects after a previously healthy connection | Keep current room/task visible, show a reconnect banner or status indicator, and disable mutating actions that require a live server connection |
+| `instance-mismatch` | Reconnect health check returns a different `instanceId` | Show "Server restarted" notice, clear stale transient UI state (thinking indicators, pending breakout presence), then refetch authoritative server state |
+| `resume-success` | Reconnect health check returns the same `instanceId` | Dismiss reconnect UI and continue without a full workspace reset |
+| `crash-recovered` | Health endpoint returns `crashDetected = true` on startup or reconnect | Surface that the previous instance ended unexpectedly and prompt the user to verify in-flight work |
+| `refresh-failed` | Post-restart state reload fails | Keep the banner visible, preserve last known read-only data, and offer retry/manual refresh rather than presenting partial fresh state as authoritative |
 
-The reconnect flow uses SignalR's `onreconnecting` and `onreconnected` callbacks to detect connection state changes. On reconnect, the client immediately fetches `/api/health/instance` to compare `instanceId` values.
+### 5. Task Comment Recovery Surface
 
-### 5. Restart Command
+Task comments are part of the state that must survive reconnect and restart flows.
+
+The reconnect refresh must rehydrate task comments from `GET /api/tasks/{id}/comments` rather than trusting in-memory client state. Per `specs/010-task-management/spec.md`, comments are ordered by `CreatedAt` ascending and use these types:
+
+| Type | Purpose | Rendering expectation after reconnect |
+|------|---------|---------------------------------------|
+| `Comment` | General note or update | Neutral treatment with author, timestamp, and full content |
+| `Finding` | Review observation or code issue | Distinct finding/review styling so unresolved issues remain visually obvious |
+| `Evidence` | Verification proof (tests, logs, screenshots) | Evidence styling that keeps verification artifacts easy to scan |
+| `Blocker` | Blocking issue that prevents progress | High-severity styling so blockers remain prominent after recovery |
+
+Rendering invariants for the client:
+- comments remain ordered oldest-to-newest after refresh
+- type badges or labels remain visible after reconnect so semantic meaning is not lost
+- author and timestamp metadata are preserved for auditability
+- filtering by comment type, when task-detail filtering exists, must operate on the server-refreshed dataset rather than stale cached state
+
+### 6. Breakout Termination and Recovery Paths
+
+Open-ended breakout loops need explicit termination semantics so a restart or reconnect does not leave the system in an ambiguous state.
+
+| Termination Path | Trigger | Required Behavior |
+|------------------|---------|-------------------|
+| `complete` | Agent posts `WORK REPORT:` with status `COMPLETE` | Close breakout, return the agent to the parent-room flow, persist the final work report, and treat the breakout as successfully finished |
+| `recall` | Planner/operator recalls the working agent | Close breakout, move the agent to `Idle` in the parent room, and post recall notices so the termination is visible to the team |
+| `cancel` | Planner/operator explicitly aborts the breakout | Record a cancellation reason, stop further breakout work, close the breakout, and leave the linked task in a non-success terminal state |
+| `stuck-detected` | No meaningful progress signal is observed for a configured threshold, or repeated executor failures prevent forward motion | Mark the breakout as stuck, surface a visible warning in the parent room/UI, and require explicit human/planner follow-up (recall, cancel, or retry) instead of silently discarding the work |
+
+Recovery expectations:
+- reconnect should never invent a successful breakout completion that was not persisted server-side
+- stale client-side `Working` indicators must be cleared when the authoritative server state shows recall, cancel, or stuck status
+- if the termination reason cannot be confirmed after restart, the system should present the breakout as needing operator review rather than assuming success
+
+### 7. Restart Command
 
 The `RESTART_SERVER` agent command triggers a supervised restart.
 
@@ -127,56 +163,14 @@ RESTART_SERVER:
 ```
 
 **Behavior** (planned):
-1. Handler calls `Environment.Exit(75)` after logging the restart reason
-2. Wrapper script detects exit code 75
-3. Wrapper restarts the .NET process
-4. New process detects no crash (clean shutdown with code 75)
-5. Clients reconnect and see "Server restarted" notification
+1. Handler records the restart reason in logs or instance history
+2. Handler calls `Environment.Exit(75)`
+3. Wrapper script detects exit code 75
+4. Wrapper restarts the .NET process
+5. The new process records a new server instance
+6. Clients reconnect and refresh against `/api/health/instance`
 
 **File**: `src/AgentAcademy.Server/Commands/Handlers/RestartServerHandler.cs` (planned)
-
-### 6. Task Comments System
-
-Agents can annotate tasks with structured comments during breakout work using the `ADD_TASK_COMMENT` command.
-
-**Comment Types** (`TaskCommentType` enum, `src/AgentAcademy.Shared/Models/Enums.cs`):
-
-| Type | Purpose | Usage |
-|------|---------|-------|
-| **Comment** | General notes, status updates, questions | Default type for agent observations or progress notes |
-| **Finding** | Issues discovered during work (bugs, tech debt, risks) | Reviewer agents log concerns that don't block completion |
-| **Evidence** | Verification proof (test results, build output, diff summaries) | Agents provide artifacts showing acceptance criteria were met |
-| **Blocker** | Critical issues preventing task completion | Agent signals inability to proceed, triggers escalation |
-
-**Rendering Expectations** (planned):
-
-- **Comment**: Plain text, gray icon, conversational tone
-- **Finding**: Warning icon (⚠️), yellow/amber color, highlighted in task detail view
-- **Evidence**: Checkmark icon (✓), green color, rendered near completion status
-- **Blocker**: Stop icon (🛑), red color, urgent badge, triggers notification to planner
-
-**API Endpoint**: `POST /api/tasks/{id}/comments` (implemented, `src/AgentAcademy.Server/Controllers/TasksController.cs`)
-
-**Access Control**: Only the task assignee, reviewer, or planner can add comments (enforced in `AddTaskCommentHandler`).
-
-**Storage**: `TaskCommentEntity` in `task_comments` table (FK to `task_items.Id`, fields: `Type`, `Content`, `AuthorId`, `CreatedAt`).
-
-### 7. Breakout Room Termination Paths
-
-Breakout rooms end through one of four paths:
-
-| Path | Trigger | Orchestrator Behavior |
-|------|---------|----------------------|
-| **Completion** | Agent produces `WORK REPORT: Status: COMPLETE` | Parse report, update task status to Done, post system message, transition agent to Idle in parent room, close breakout room |
-| **Recall** | Planner issues `RECALL_AGENT` command | Immediately archive breakout room (set `RoomStatus.Archived`), move agent to Idle in parent room, post recall notice, skip completion/review flow |
-| **Cancel** | Human or planner explicitly cancels task | Archive breakout room, update task status to Cancelled, move agent to Idle |
-| **Stuck Detection** | Room status becomes non-Active during loop | Exit breakout loop early if `RoomStatus != Active` detected on round boundary, skip completion flow (logged as "recalled or archived") |
-
-**Implementation**: `AgentOrchestrator.RunBreakoutLoopAsync` checks `breakoutRoom.Status != RoomStatus.Active` before each round and after receiving reviewer feedback (`src/AgentAcademy.Server/Services/AgentOrchestrator.cs`).
-
-**Work Report Parsing**: The orchestrator extracts `Status`, `Files`, and `Evidence` fields from the `WORK REPORT:` block using regex. If status is "COMPLETE", the task is marked Done and evidence is stored.
-
-**No Round Caps**: Breakout loops are open-ended — agents continue until producing a completion report, being recalled, or the room being archived. There is no `MaxBreakoutRounds` or `MaxFixRounds` limit.
 
 ## Interfaces & Contracts
 
@@ -229,6 +223,8 @@ Result: Server exits with code 75, wrapper restarts process
 5. **Client sync**: Frontend `instanceId` must match backend health endpoint after reconnection
 6. **Timestamp consistency**: All `StartedAt` and `ShutdownAt` values are UTC
 7. **Version tracking**: `Version` field matches the running assembly version
+8. **Recovery over guesswork**: After reconnect, client state must be refreshed from authoritative server endpoints before transient UI state is trusted
+9. **Visible termination**: Breakout termination reason must be observable as complete, recall, cancel, or stuck-detected
 
 ## Known Gaps
 
@@ -239,6 +235,8 @@ Result: Server exits with code 75, wrapper restarts process
 - `/api/health/instance` endpoint not yet implemented
 - Frontend health check and reconnect logic not yet implemented
 - `RESTART_SERVER` command handler not yet implemented
+- Breakout cancellation and stuck-detection controls are not yet implemented
+- No persisted termination-reason field currently exists for breakout lifecycle outcomes
 - No mechanism to prevent restart loops (crash → restart → crash → restart)
 - No restart history UI (list of past restarts with timestamps and reasons)
 - No maximum restart count enforcement
@@ -246,3 +244,4 @@ Result: Server exits with code 75, wrapper restarts process
 ## Revision History
 
 - **2026-03-30**: Initial specification — wrapper exit code contract, `ServerInstanceEntity` schema, startup/shutdown hooks, client reconnect protocol, `RESTART_SERVER` command design
+- **2026-03-30**: Expanded planned reconnect UX states, task-comment recovery expectations, and breakout termination paths | spec-doc-gap-fix

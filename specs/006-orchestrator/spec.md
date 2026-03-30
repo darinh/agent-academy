@@ -8,6 +8,17 @@ Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await pat
 
 ## Current Behavior
 
+**Status: Outdated**
+
+This section no longer fully matches the implementation after the breakout-room redesign documented in `specs/CHANGELOG.md` and `specs/007-agent-commands/spec.md`.
+
+Known drift in this document includes:
+- breakout work is no longer capped by `MaxBreakoutRounds`
+- fix-up work is no longer capped by `MaxFixRounds`
+- orchestrator-driven per-turn and breakout timeouts were removed
+
+Until this section is reconciled with code, treat the breakout lifecycle details below as historical rather than authoritative.
+
 ### Queue-Based Processing
 
 Human messages are enqueued by room ID. A single processing loop drains the queue, running one conversation round per room. If the orchestrator is already processing, new messages wait in the FIFO queue.
@@ -156,5 +167,6 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-03-30 | Marked section `Outdated` pending reconciliation with open-ended breakout lifecycle and timeout removal | spec-doc-gap-fix |
 | 2026-03-28 | Multi-round continuation loop (up to 3 rounds per trigger) | fix-orchestrator-stall |
 | 2025-07-21 | Initial implementation — ported from v1 TypeScript | Port orchestrator |
