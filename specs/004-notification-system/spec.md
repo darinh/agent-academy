@@ -169,31 +169,31 @@ Each Agent Academy room gets a dedicated Discord channel under a project-specifi
 
 **Discord server structure**:
 ```
-📁 AA: Nonogram (category — auto-created per project)
-  💬 nonogram-main-room-{roomIdSlug}         ← mirrors AA room
-  💬 task-implement-solver-{roomIdSlug}       ← mirrors AA task room
-📁 AA: Agent Academy (category — another project)
-  💬 agent-academy-main-room-{roomIdSlug}    ← mirrors AA room
-📁 Agent Academy (category — legacy rooms without workspace)
-  💬 main-collaboration-room-{roomIdSlug}    ← legacy room
-📁 aa-{roomName}-{roomIdSlug} (category — ASK_HUMAN)
-  💬 aristotle                               ← agent question channel
-    🧵 What database should I use?           ← question thread
+📁 Nonogram Rooms (category — auto-created per project)
+  💬 main-collaboration-room                   ← mirrors AA room
+  💬 task-implement-solver                     ← mirrors AA task room
+📁 Agent Academy Rooms (category — another project)
+  💬 main-collaboration-room                   ← mirrors AA room
+📁 Agent Academy Messages (category — DM channels)
+  💬 aristotle                                 ← agent DM channel
+    🧵 What database should I use?             ← DM thread
+📁 Rooms (category — legacy rooms without workspace)
+  💬 main-collaboration-room                   ← legacy room
 ```
 
 **Project resolution**: When creating a channel for a room, the provider resolves the room's project name via `WorkspaceRuntime.GetProjectNameForRoomAsync(roomId)` which follows the chain: `roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName`. If `ProjectName` is null, falls back to the workspace directory basename.
 
-**Category naming**: Categories are named `"AA: {projectName}"` for workspace-scoped rooms. Legacy rooms (no `WorkspacePath`) use the `"Agent Academy"` category for backward compatibility. Categories are cached in a `_roomCategories` dictionary keyed by project name.
+**Category naming**: Room categories are named `"{projectName} Rooms"` for workspace-scoped rooms. DM/message categories are named `"{projectName} Messages"`. Legacy rooms (no `WorkspacePath`) use the `"Rooms"` category. Categories are cached in memory keyed by project name.
 
 **Channel creation**: Lazy (on first message to a room). Categories and channels are created inside a `_channelCreateLock` semaphore to prevent duplicates.
 
-**Channel naming**: Room name sanitized for Discord (lowercase, hyphens, no special chars, max 100 chars). Discord text channels cannot have spaces or uppercase — this is a platform constraint. Example: "Main Collaboration Room" → `main-collaboration-room`.
+**Channel naming**: Room channels use the room name in kebab-case. Agent DM channels use the agent name in kebab-case. Discord text channels cannot have spaces or uppercase — this is a platform constraint. Example: "Main Collaboration Room" → `main-collaboration-room`, "Aristotle" → `aristotle`.
 
-**Channel topic**: Descriptive text with a `· ID: {roomId}` tag at the end for startup recovery. Example: `"Group discussion room for agent collaboration · ID: agent-academy-main"`.
+**Channel topic**: Room channels use descriptive text with a `· ID: {roomId}` tag for startup recovery. DM channels use `"Direct messages — {agentName} · Room: {roomId}"`.
 
 **Fallback**: If room channel creation fails (e.g., missing permissions), notifications fall back to the configured `_channelId` default channel. A warning is logged with the specific permissions needed.
 
-**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels are identified by categories matching `"AA: *"` prefix or legacy `"Agent Academy"` name; agent channels by `"aa-"` category prefix. Room IDs are parsed from channel topics (supports both old `(ID: {roomId})` and new `· ID: {roomId}` formats).
+**Startup recovery** (`RebuildChannelMappingAsync`): Scans existing Discord categories to rebuild in-memory channel mappings. Room channels identified by `"* Rooms"` suffix (and legacy `"AA: *"`, `"Agent Academy"`). DM channels identified by `"* Messages"` suffix (and legacy `"aa-*"` prefix). Room IDs parsed from channel topics (supports both old and new formats).
 
 #### Webhook-Based Agent Identity
 
@@ -224,9 +224,9 @@ Human messages posted in Discord room channels are routed back to the correct Ag
 
 Creates a dedicated Discord structure for agent questions with threaded replies.
 
-**Flow**: Agent → `ASK_HUMAN` command → `AskHumanHandler` → `NotificationManager.SendAgentQuestionAsync` → `DiscordProvider.SendAgentQuestionAsync` → category/channel/thread creation → human replies routed back via `PostHumanMessageAsync` + `HandleHumanMessage`.
+**Flow**: Agent → `DM` command → `DmHandler` → `NotificationManager.SendAgentQuestionAsync` → `DiscordProvider.SendAgentQuestionAsync` → category/channel/thread creation → human replies routed back via `PostHumanMessageAsync` + `HandleHumanMessage`.
 
-**Discord structure**: Category per workspace (`aa-{roomName}-{roomIdSlug}`), channel per agent, thread per question. Channel topics include `(Room: {roomId})` for startup recovery.
+**Discord structure**: `"{ProjectName} Messages"` category, channel per agent (kebab-case agent name), thread per DM. Channel topics include `· Room: {roomId}` for startup recovery.
 
 **Error propagation**: `NotificationManager.SendAgentQuestionAsync` returns `(bool Sent, string? Error)` tuple. The handler surfaces actual error details to the agent (e.g., "Provider 'discord' error: Missing Permissions") instead of a generic "no provider connected" message. Provider failover: tries all connected providers before returning failure, collecting the last error.
 

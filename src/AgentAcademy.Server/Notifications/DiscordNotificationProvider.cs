@@ -506,37 +506,46 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     #region Private helpers
 
     /// <summary>
-    /// Finds or creates a Discord category for a workspace/room.
-    /// Category name includes a roomId suffix to prevent collisions between rooms with similar names.
+    /// Finds or creates a Discord category for DM/message channels.
+    /// Category name uses "{ProjectName} Messages" format.
     /// </summary>
     private async Task<ICategoryChannel> FindOrCreateWorkspaceCategoryAsync(
         SocketGuild guild, string roomId, string roomName)
     {
-        if (_workspaceCategories.TryGetValue(roomId, out var existingCategoryId))
+        // Resolve project name for category naming
+        string? projectName = null;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+        }
+        catch { /* fall back to room name */ }
+
+        var cacheKey = projectName ?? roomId;
+
+        if (_workspaceCategories.TryGetValue(cacheKey, out var existingCategoryId))
         {
             var existing = guild.GetCategoryChannel(existingCategoryId);
             if (existing is not null)
                 return existing;
-            // Category was deleted externally — recreate
-            _workspaceCategories.TryRemove(roomId, out _);
+            _workspaceCategories.TryRemove(cacheKey, out _);
         }
 
-        // Include first 8 chars of roomId to avoid name collisions between rooms
-        var roomIdSlug = roomId.Length > 8 ? roomId[..8] : roomId;
-        var categoryName = SanitizeChannelName($"aa-{roomName}-{roomIdSlug}");
+        var displayName = projectName ?? roomName;
+        var categoryName = SanitizeCategoryName($"{displayName} Messages");
 
-        // Search for existing category by name
         var found = guild.CategoryChannels.FirstOrDefault(
             c => c.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
 
         if (found is not null)
         {
-            _workspaceCategories[roomId] = found.Id;
+            _workspaceCategories[cacheKey] = found.Id;
             return found;
         }
 
         var created = await guild.CreateCategoryChannelAsync(categoryName);
-        _workspaceCategories[roomId] = created.Id;
+        _workspaceCategories[cacheKey] = created.Id;
         _logger.LogInformation("Created Discord category '{CategoryName}' for workspace '{RoomId}'", categoryName, roomId);
         return created;
     }
@@ -564,7 +573,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         var created = await guild.CreateTextChannelAsync(channelName, props =>
         {
             props.CategoryId = category.Id;
-            props.Topic = $"Agent Academy — {agentName} questions (Room: {roomId})";
+            props.Topic = $"Direct messages — {agentName} · Room: {roomId}";
         });
 
         _agentChannels[created.Id] = new AgentChannelInfo(agentId, agentName, roomId);
@@ -595,7 +604,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     /// <summary>
     /// Finds or creates the parent category for room channels.
-    /// When a project name is provided, uses "AA: {projectName}"; otherwise falls back to "Agent Academy".
+    /// Uses "{projectName} Rooms" format; falls back to "Rooms" for legacy rooms without a project.
     /// </summary>
     private async Task<ICategoryChannel> FindOrCreateRoomCategoryAsync(SocketGuild guild, string? projectName)
     {
@@ -609,7 +618,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _roomCategories.TryRemove(cacheKey, out _);
         }
 
-        var categoryName = projectName is not null ? $"AA: {projectName}" : "Agent Academy";
+        var categoryName = SanitizeCategoryName(projectName is not null ? $"{projectName} Rooms" : "Rooms");
 
         var found = guild.CategoryChannels.FirstOrDefault(
             c => c.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
@@ -627,8 +636,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     }
 
     /// <summary>
-    /// Finds or creates a Discord text channel for an Agent Academy room,
-    /// under the project-specific category (or "Agent Academy" for legacy rooms).
+    /// Finds or creates a Discord text channel for a room,
+    /// under the project-specific category (or "Rooms" for legacy rooms).
     /// Also registers the reverse mapping.
     /// </summary>
     private async Task<ITextChannel> FindOrCreateRoomChannelAsync(SocketGuild guild, string roomId)
@@ -895,13 +904,26 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         return sanitized.Length > 100 ? sanitized[..100] : sanitized;
     }
 
+    /// <summary>
+    /// Sanitizes a name for use as a Discord category name.
+    /// Categories allow spaces and mixed case but have a 100-char limit.
+    /// </summary>
+    private static string SanitizeCategoryName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "General";
+
+        return name.Length > 100 ? name[..100] : name;
+    }
+
     /// <summary>Routing info for an agent's Discord channel.</summary>
     private sealed record AgentChannelInfo(string AgentId, string AgentName, string RoomId);
 
     /// <summary>
     /// Rebuilds the in-memory channel mappings by scanning existing Discord categories.
-    /// Restores both ASK_HUMAN agent channels (under "aa-" categories) and
-    /// room channels (under "Agent Academy" category). Survives server restarts.
+    /// Restores DM agent channels (under "*Messages" categories) and
+    /// room channels (under "*Rooms" categories). Also supports legacy naming.
+    /// Survives server restarts.
     /// </summary>
     private Task RebuildChannelMappingAsync()
     {
@@ -915,9 +937,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             var restoredAgentChannels = 0;
             var restoredRoomChannels = 0;
 
-            // Rebuild ASK_HUMAN agent channel mappings (under "aa-" categories)
+            // Rebuild DM/message agent channel mappings (under "*Messages" categories, legacy "aa-*")
             foreach (var category in guild.CategoryChannels
-                         .Where(c => c.Name.StartsWith("aa-", StringComparison.OrdinalIgnoreCase)))
+                         .Where(c => c.Name.EndsWith(" Messages", StringComparison.OrdinalIgnoreCase) ||
+                                     c.Name.StartsWith("aa-", StringComparison.OrdinalIgnoreCase)))
             {
                 var channels = guild.TextChannels.Where(c => c.CategoryId == category.Id).ToList();
 
@@ -926,10 +949,31 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                     var topic = channel.Topic ?? "";
                     var agentName = channel.Name;
 
-                    // Parse roomId from topic: "Agent Academy — {agentName} questions (Room: {roomId})"
+                    // Parse roomId from topic — supports both formats:
+                    // New: "Direct messages — {agentName} · Room: {roomId}"
+                    // Legacy: "Agent Academy — {agentName} questions (Room: {roomId})"
                     var restoredRoomId = "unknown";
-                    if (topic.Contains("Agent Academy"))
+
+                    // Try new format first: "· Room: {roomId}"
+                    var roomMarkerNew = "· Room: ";
+                    var roomStartNew = topic.IndexOf(roomMarkerNew, StringComparison.Ordinal);
+                    if (roomStartNew >= 0)
                     {
+                        restoredRoomId = topic[(roomStartNew + roomMarkerNew.Length)..].Trim();
+
+                        // Parse agent name from "Direct messages — {agentName}"
+                        var dashIdx = topic.IndexOf('—');
+                        if (dashIdx >= 0)
+                        {
+                            var afterDash = topic[(dashIdx + 1)..].Trim();
+                            var dotIdx = afterDash.IndexOf('·');
+                            if (dotIdx > 0)
+                                agentName = afterDash[..dotIdx].Trim();
+                        }
+                    }
+                    else if (topic.Contains("Agent Academy"))
+                    {
+                        // Legacy format: "Agent Academy — {agentName} questions (Room: {roomId})"
                         var dashIdx = topic.IndexOf('—');
                         if (dashIdx >= 0)
                         {
@@ -959,15 +1003,22 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 }
             }
 
-            // Rebuild room channel mappings from project categories ("AA: *") and legacy "Agent Academy"
+            // Rebuild room channel mappings from project categories ("* Rooms") and legacy ("AA: *", "Agent Academy", "Rooms")
             foreach (var roomCategory in guild.CategoryChannels.Where(
-                         c => c.Name.StartsWith("AA: ", StringComparison.OrdinalIgnoreCase) ||
+                         c => c.Name.EndsWith(" Rooms", StringComparison.OrdinalIgnoreCase) ||
+                              c.Name.Equals("Rooms", StringComparison.OrdinalIgnoreCase) ||
+                              c.Name.StartsWith("AA: ", StringComparison.OrdinalIgnoreCase) ||
                               c.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase)))
             {
                 // Cache the category under the appropriate key
-                var categoryKey = roomCategory.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase)
-                    ? DefaultCategoryKey
-                    : roomCategory.Name[4..]; // Strip "AA: " prefix to get project name
+                string categoryKey;
+                if (roomCategory.Name.Equals("Rooms", StringComparison.OrdinalIgnoreCase) ||
+                    roomCategory.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase))
+                    categoryKey = DefaultCategoryKey;
+                else if (roomCategory.Name.EndsWith(" Rooms", StringComparison.OrdinalIgnoreCase))
+                    categoryKey = roomCategory.Name[..^6]; // Strip " Rooms" suffix to get project name
+                else
+                    categoryKey = roomCategory.Name[4..]; // Strip "AA: " prefix (legacy)
                 _roomCategories[categoryKey] = roomCategory.Id;
 
                 foreach (var channel in guild.TextChannels.Where(c => c.CategoryId == roomCategory.Id))
