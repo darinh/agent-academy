@@ -98,6 +98,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.ReviewRounds).HasDefaultValue(0);
             entity.Property(e => e.TestsCreated).IsRequired().HasDefaultValue("[]");
             entity.Property(e => e.CommitCount).HasDefaultValue(0);
+            entity.Property(e => e.MergeCommitSha).IsRequired(false);
 
             entity.HasOne(e => e.Room)
                 .WithMany(r => r.Tasks)
@@ -167,6 +168,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.ParentRoomId).IsRequired();
             entity.Property(e => e.AssignedAgentId).IsRequired();
             entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
+            entity.Property(e => e.TaskId).IsRequired(false);
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
 
@@ -176,6 +178,7 @@ public class AgentAcademyDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.ParentRoomId).HasDatabaseName("idx_breakout_rooms_parent");
+            entity.HasIndex(e => e.TaskId).HasDatabaseName("idx_breakout_rooms_task");
         });
 
         // ── Breakout Messages ─────────────────────────────────

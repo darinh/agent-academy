@@ -471,6 +471,47 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Equal("Task 1", task.Title);
     }
 
+    [Fact]
+    public async Task TransitionBreakoutTaskToInReview_UpdatesLinkedTask()
+    {
+        await _runtime.InitializeAsync();
+
+        var taskResult = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Reviewable Task", "Needs review", "Reach InReview", "main", []));
+        var breakout = await _runtime.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Reviewable Task");
+        await _runtime.SetBreakoutTaskIdAsync(breakout.Id, taskResult.Task.Id);
+
+        var updatedTask = await _runtime.TransitionBreakoutTaskToInReviewAsync(breakout.Id);
+
+        Assert.NotNull(updatedTask);
+        Assert.Equal(Shared.Models.TaskStatus.InReview, updatedTask!.Status);
+
+        var persistedTask = await _runtime.GetTaskAsync(taskResult.Task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.Equal(Shared.Models.TaskStatus.InReview, persistedTask!.Status);
+    }
+
+    [Fact]
+    public async Task CompleteTask_PersistsMergeCommitSha()
+    {
+        await _runtime.InitializeAsync();
+
+        var taskResult = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Mergeable Task", "Needs merge metadata", "Persist merge SHA", "main", []));
+
+        var completedTask = await _runtime.CompleteTaskAsync(
+            taskResult.Task.Id,
+            commitCount: 1,
+            mergeCommitSha: "abc123def456");
+
+        Assert.Equal(Shared.Models.TaskStatus.Completed, completedTask.Status);
+        Assert.Equal("abc123def456", completedTask.MergeCommitSha);
+
+        var persistedTask = await _runtime.GetTaskAsync(taskResult.Task.Id);
+        Assert.NotNull(persistedTask);
+        Assert.Equal("abc123def456", persistedTask!.MergeCommitSha);
+    }
+
     // ── Phase Management ────────────────────────────────────────
 
     [Fact]

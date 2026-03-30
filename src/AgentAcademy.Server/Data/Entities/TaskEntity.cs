@@ -39,6 +39,7 @@ public class TaskEntity
     public int ReviewRounds { get; set; }
     public string TestsCreated { get; set; } = "[]";
     public int CommitCount { get; set; }
+    public string? MergeCommitSha { get; set; }
 
     // Navigation properties
     public RoomEntity? Room { get; set; }

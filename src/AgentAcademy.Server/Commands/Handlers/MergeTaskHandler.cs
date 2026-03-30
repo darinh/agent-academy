@@ -82,8 +82,8 @@ public sealed class MergeTaskHandler : ICommandHandler
                 commitMessage += $"\nReviewed-by: {task.ReviewerAgentId}";
             commitMessage += $"\nCo-authored-by: {context.AgentName} <{context.AgentId}@agent-academy>";
 
-            await _gitService.SquashMergeAsync(task.BranchName, commitMessage);
-            await runtime.CompleteTaskAsync(taskId, commitCount: 1);
+            var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage);
+            await runtime.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: mergeCommitSha);
 
             // Post success note to task room
             if (!string.IsNullOrWhiteSpace(context.RoomId))
@@ -100,13 +100,26 @@ public sealed class MergeTaskHandler : ICommandHandler
                     ["taskId"] = task.Id,
                     ["title"] = task.Title,
                     ["branch"] = task.BranchName,
+                    ["mergeCommitSha"] = mergeCommitSha,
                     ["message"] = $"Task '{task.Title}' merged successfully"
                 }
             };
         }
         catch (Exception ex)
         {
-            // Broad catch for git/DB inconsistency recovery
+            try
+            {
+                await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Approved);
+            }
+            catch (Exception recoveryEx)
+            {
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    Error = $"Merge failed: {ex.Message} (task status recovery also failed: {recoveryEx.Message})"
+                };
+            }
+
             return command with
             {
                 Status = CommandStatus.Error,

@@ -4,9 +4,15 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **010-task-management**: Breakout completion now transitions the linked task to `InReview` before presentation in the main room. The spec now describes the shipped behavior: breakout completion triggers review presentation, while `APPROVE_TASK` and `MERGE_TASK` remain the authoritative task-state transitions.
+- **010-task-management**: Task matching on assignment uses cascading lookup (title → room → agent → sole-unassigned) with fallback creation. `BreakoutRoomEntity.TaskId` links breakout rooms to tasks for reliable lookup.
+- **007-agent-commands**: `MERGE_TASK` now returns `mergeCommitSha`, persists it on `TaskEntity.MergeCommitSha`, and restores task status to `Approved` if the merge fails.
+- **001-domain-model**: `TaskStatus` enum updated to include all 10 values (was missing `InReview`, `ChangesRequested`, `Approved`, `Merging`).
+
 ### Added
 - **007-agent-commands**: `MERGE_TASK` command (Phase 1B) — squash-merges approved task branches to develop. Validates caller is Reviewer or Planner, task is Approved with a BranchName.
-- **010-task-management**: Branch-per-breakout workflow — task branches (`task/{slug}-{id}`) isolate breakout work from develop. Completion flows through `InReview` → `MERGE_TASK` → squash-merge.
+- **010-task-management**: Branch-per-breakout workflow — task branches (`task/{slug}-{suffix}`) isolate breakout work from develop. Completion flows through `InReview` → `MERGE_TASK` → squash-merge.
 - **010-task-management**: Round-scoped git locking for concurrent breakout room safety — serializes git operations to prevent working-tree corruption.
 
 ### Changed

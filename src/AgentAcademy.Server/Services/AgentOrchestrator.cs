@@ -487,12 +487,13 @@ public sealed class AgentOrchestrator
         string? taskBranch = null;
         try
         {
+            // Ensure a TaskEntity exists for this breakout (find or create)
+            var taskId = await runtime.EnsureTaskForBreakoutAsync(
+                assignment.Title, descriptionWithCriteria, agent.Id, roomId);
+
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
-            var tasks = await runtime.GetTasksAsync();
-            var roomTask = tasks.FirstOrDefault(t => t.Title == assignment.Title ||
-                (t.AssignedAgentId == agent.Id && t.Status is Shared.Models.TaskStatus.Active or Shared.Models.TaskStatus.Queued));
-            if (roomTask != null)
-                await runtime.UpdateTaskBranchAsync(roomTask.Id, taskBranch);
+            await runtime.UpdateTaskBranchAsync(taskId, taskBranch);
+            await runtime.SetBreakoutTaskIdAsync(br.Id, taskId);
             await _gitService.ReturnToDevelopAsync(taskBranch);
         }
         catch (Exception ex)
@@ -670,21 +671,33 @@ public sealed class AgentOrchestrator
             }
         }
 
-        // Ask the reviewer to evaluate
-        var verdict = await RunReviewCycleAsync(runtime, configService, parentRoomId, agent, lastMessage?.Content ?? "");
+        // Check if this breakout has a linked task with a branch
+        var reviewTask = await runtime.TransitionBreakoutTaskToInReviewAsync(breakoutRoomId);
 
-        // Check for approval — anchored at start to avoid false positives from
-        // chatty verdicts like "APPROVED - no fixes needed"
-        var isApproved = verdict is null ||
-            Regex.IsMatch(verdict.Verdict, @"^\s*APPROVED", RegexOptions.IgnoreCase);
-
-        if (!isApproved)
+        if (reviewTask?.BranchName is not null)
         {
-            await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br);
+            // Branch-based task: skip auto-review, use manual APPROVE_TASK → MERGE_TASK flow
+            await runtime.PostSystemStatusAsync(parentRoomId,
+                $"📋 Task \"{reviewTask.Title}\" is now **InReview** on branch `{reviewTask.BranchName}`. " +
+                $"Use APPROVE_TASK to approve, then MERGE_TASK to merge into develop.");
+            await FinalizeBreakoutAsync(runtime, breakoutRoomId);
         }
         else
         {
-            await FinalizeBreakoutAsync(runtime, breakoutRoomId);
+            // Legacy path: automated review cycle
+            var verdict = await RunReviewCycleAsync(runtime, configService, parentRoomId, agent, lastMessage?.Content ?? "");
+
+            var isApproved = verdict is null ||
+                Regex.IsMatch(verdict.Verdict, @"^\s*APPROVED", RegexOptions.IgnoreCase);
+
+            if (!isApproved)
+            {
+                await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br);
+            }
+            else
+            {
+                await FinalizeBreakoutAsync(runtime, breakoutRoomId);
+            }
         }
     }
 

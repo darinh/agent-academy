@@ -716,7 +716,7 @@ public sealed class WorkspaceRuntime
     /// Marks a task as complete with final metadata.
     /// </summary>
     public async Task<TaskSnapshot> CompleteTaskAsync(
-        string taskId, int commitCount, List<string>? testsCreated = null)
+        string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
     {
         var entity = await _db.Tasks.FindAsync(taskId)
             ?? throw new InvalidOperationException($"Task '{taskId}' not found");
@@ -726,6 +726,7 @@ public sealed class WorkspaceRuntime
         entity.CommitCount = commitCount;
         if (testsCreated is not null)
             entity.TestsCreated = JsonSerializer.Serialize(testsCreated);
+        entity.MergeCommitSha = mergeCommitSha;
         entity.UpdatedAt = now;
         await _db.SaveChangesAsync();
         return BuildTaskSnapshot(entity);
@@ -1440,6 +1441,132 @@ public sealed class WorkspaceRuntime
         return entities.Select(BuildBreakoutRoomSnapshot).ToList();
     }
 
+    /// <summary>
+    /// Links a breakout room to a TaskEntity for reliable lookup during completion.
+    /// </summary>
+    public async Task SetBreakoutTaskIdAsync(string breakoutRoomId, string taskId)
+    {
+        var entity = await _db.BreakoutRooms.FindAsync(breakoutRoomId)
+            ?? throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' not found");
+        entity.TaskId = taskId;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Returns the TaskEntity ID linked to a breakout room, or null if none.
+    /// </summary>
+    public async Task<string?> GetBreakoutTaskIdAsync(string breakoutRoomId)
+    {
+        var entity = await _db.BreakoutRooms.FindAsync(breakoutRoomId);
+        return entity?.TaskId;
+    }
+
+    /// <summary>
+    /// Moves the task linked to a breakout room into InReview status.
+    /// Returns the updated task, or null when the breakout has no linked task.
+    /// </summary>
+    public async Task<TaskSnapshot?> TransitionBreakoutTaskToInReviewAsync(string breakoutRoomId)
+    {
+        var taskId = await GetBreakoutTaskIdAsync(breakoutRoomId);
+        if (string.IsNullOrWhiteSpace(taskId))
+            return null;
+
+        return await UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.InReview);
+    }
+
+    /// <summary>
+    /// Ensures a TaskEntity exists for a breakout assignment.
+    /// Searches by title match, then room+status, then agent+status,
+    /// then any unassigned task without a branch.
+    /// Creates a new TaskEntity if none found.
+    /// Returns the TaskEntity ID.
+    /// </summary>
+    public async Task<string> EnsureTaskForBreakoutAsync(
+        string title, string description, string agentId, string roomId)
+    {
+        var tasks = await _db.Tasks.ToListAsync();
+
+        // 1. Exact title match (case-insensitive)
+        var match = tasks.FirstOrDefault(t =>
+            t.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
+
+        // 2. Same room + Active/Queued status
+        match ??= tasks.FirstOrDefault(t =>
+            t.RoomId == roomId &&
+            (t.Status == nameof(Shared.Models.TaskStatus.Active) ||
+             t.Status == nameof(Shared.Models.TaskStatus.Queued)));
+
+        // 3. Same agent + Active/Queued status
+        match ??= tasks.FirstOrDefault(t =>
+            t.AssignedAgentId == agentId &&
+            (t.Status == nameof(Shared.Models.TaskStatus.Active) ||
+             t.Status == nameof(Shared.Models.TaskStatus.Queued)));
+
+        // 4. Any Active/Queued task without a branch (likely created by
+        //    CREATE_TASK in a different room and not yet assigned to a breakout).
+        //    Only use this fallback if there's exactly one candidate to avoid
+        //    picking the wrong task when multiple are pending.
+        if (match is null)
+        {
+            var unassigned = tasks.Where(t =>
+                string.IsNullOrEmpty(t.BranchName) &&
+                (t.Status == nameof(Shared.Models.TaskStatus.Active) ||
+                 t.Status == nameof(Shared.Models.TaskStatus.Queued)))
+                .ToList();
+
+            if (unassigned.Count == 1)
+            {
+                match = unassigned[0];
+                _logger.LogInformation(
+                    "Matched breakout \"{Title}\" to existing task \"{TaskTitle}\" (sole unassigned task)",
+                    title, match.Title);
+            }
+            else if (unassigned.Count > 1)
+            {
+                _logger.LogWarning(
+                    "Found {Count} unassigned tasks — cannot auto-match breakout \"{Title}\". Creating new TaskEntity.",
+                    unassigned.Count, title);
+            }
+        }
+
+        if (match is not null)
+            return match.Id;
+
+        // Create a new TaskEntity for this breakout assignment
+        var now = DateTime.UtcNow;
+        var taskId = Guid.NewGuid().ToString("N");
+        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+
+        var entity = new TaskEntity
+        {
+            Id = taskId,
+            Title = title,
+            Description = description,
+            SuccessCriteria = "",
+            Status = nameof(Shared.Models.TaskStatus.Active),
+            Type = nameof(TaskType.Feature),
+            CurrentPhase = nameof(CollaborationPhase.Implementation),
+            CurrentPlan = "",
+            ValidationStatus = nameof(WorkstreamStatus.NotStarted),
+            ValidationSummary = "",
+            ImplementationStatus = nameof(WorkstreamStatus.InProgress),
+            ImplementationSummary = "",
+            PreferredRoles = "[]",
+            RoomId = roomId,
+            AssignedAgentId = agentId,
+            AssignedAgentName = agent?.Name,
+            StartedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        _db.Tasks.Add(entity);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Created TaskEntity {TaskId} for breakout assignment: {Title}", taskId, title);
+        return taskId;
+    }
+
     // ── Plan Management ─────────────────────────────────────────
 
     /// <summary>
@@ -1667,6 +1794,7 @@ public sealed class WorkspaceRuntime
             ReviewRounds: entity.ReviewRounds,
             TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
             CommitCount: entity.CommitCount,
+            MergeCommitSha: entity.MergeCommitSha,
             CommentCount: commentCount
         );
     }

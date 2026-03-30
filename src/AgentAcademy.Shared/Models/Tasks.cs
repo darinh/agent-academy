@@ -35,6 +35,7 @@ public record TaskSnapshot(
     int ReviewRounds = 0,
     List<string>? TestsCreated = null,
     int CommitCount = 0,
+    string? MergeCommitSha = null,
     int CommentCount = 0
 );
 

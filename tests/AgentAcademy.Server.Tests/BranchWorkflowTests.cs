@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
@@ -22,11 +23,15 @@ public class BranchWorkflowTests : IDisposable
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentCatalogOptions _catalog;
     private readonly GitService _gitService;
+    private readonly string _repoRoot;
 
     public BranchWorkflowTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
+        _repoRoot = Path.Combine(Path.GetTempPath(), $"agent-academy-merge-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_repoRoot);
+        InitializeRepository(_repoRoot);
 
         _catalog = new AgentCatalogOptions(
             DefaultRoomId: "main",
@@ -51,7 +56,7 @@ public class BranchWorkflowTests : IDisposable
             ]
         );
 
-        _gitService = new GitService(NullLogger<GitService>.Instance);
+        _gitService = new GitService(NullLogger<GitService>.Instance, _repoRoot);
 
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
@@ -71,6 +76,8 @@ public class BranchWorkflowTests : IDisposable
     {
         _serviceProvider.Dispose();
         _connection.Dispose();
+        if (Directory.Exists(_repoRoot))
+            Directory.Delete(_repoRoot, recursive: true);
     }
 
     // ── Authorization Tests ─────────────────────────────────────
@@ -198,6 +205,107 @@ public class BranchWorkflowTests : IDisposable
         Assert.Contains("Approved", result.Error!);
     }
 
+    [Fact]
+    public async Task MergeTask_Success_ReturnsAndPersistsMergeCommitSha()
+    {
+        const string branchName = "task/test-branch-abc123";
+        CreateFeatureBranchWithCommit(branchName, "feature.txt", "branch workflow integration fix");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: branchName);
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var mergeCommitSha = result.Result!["mergeCommitSha"]?.ToString();
+        Assert.False(string.IsNullOrWhiteSpace(mergeCommitSha));
+        Assert.Equal(mergeCommitSha, RunGitInRepo("rev-parse", "HEAD"));
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var task = await runtime.GetTaskAsync(taskId);
+
+        Assert.NotNull(task);
+        Assert.Equal(TaskStatus.Completed, task!.Status);
+        Assert.Equal(mergeCommitSha, task.MergeCommitSha);
+    }
+
+    [Fact]
+    public async Task MergeTask_Failure_RestoresApprovedStatus()
+    {
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: "task/missing-branch");
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Merge failed", result.Error!);
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var task = await runtime.GetTaskAsync(taskId);
+
+        Assert.NotNull(task);
+        Assert.Equal(TaskStatus.Approved, task!.Status);
+        Assert.Null(task.MergeCommitSha);
+    }
+
+    [Fact]
+    public async Task BranchWorkflow_LinkedBreakout_CanProgressFromInReviewToMerged()
+    {
+        const string branchName = "task/full-workflow-abc123";
+        CreateFeatureBranchWithCommit(branchName, "workflow.txt", "full workflow change");
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await runtime.InitializeAsync();
+        await EnsureRoom(db, "room-1");
+
+        var taskResult = await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            Title: "Full Workflow Task",
+            Description: "Exercise branch workflow end to end",
+            SuccessCriteria: "Transitions through review and merge",
+            RoomId: "main",
+            PreferredRoles: []));
+        await runtime.UpdateTaskBranchAsync(taskResult.Task.Id, branchName);
+
+        var breakout = await runtime.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Full Workflow Task");
+        await runtime.SetBreakoutTaskIdAsync(breakout.Id, taskResult.Task.Id);
+
+        var inReviewTask = await runtime.TransitionBreakoutTaskToInReviewAsync(breakout.Id);
+        Assert.NotNull(inReviewTask);
+        Assert.Equal(TaskStatus.InReview, inReviewTask!.Status);
+
+        var approvedTask = await runtime.ApproveTaskAsync(taskResult.Task.Id, "reviewer-1", "Looks good.");
+        Assert.Equal(TaskStatus.Approved, approvedTask.Status);
+
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskResult.Task.Id }, "reviewer-1", "Socrates", "Reviewer");
+
+        var mergeResult = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.True(
+            mergeResult.Status == CommandStatus.Success,
+            $"MERGE_TASK failed: {mergeResult.Error}");
+
+        using var verificationScope = _serviceProvider.CreateScope();
+        var verificationRuntime = verificationScope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var mergedTask = await verificationRuntime.GetTaskAsync(taskResult.Task.Id);
+        Assert.NotNull(mergedTask);
+        Assert.Equal(TaskStatus.Completed, mergedTask!.Status);
+        Assert.False(string.IsNullOrWhiteSpace(mergedTask.MergeCommitSha));
+    }
+
     // ── Parser Test ─────────────────────────────────────────────
 
     [Fact]
@@ -258,6 +366,57 @@ public class BranchWorkflowTests : IDisposable
         }
     }
 
+    private static void InitializeRepository(string repoRoot)
+    {
+        RunGit(repoRoot, "init");
+        RunGit(repoRoot, "config", "user.name", "Agent Academy Tests");
+        RunGit(repoRoot, "config", "user.email", "tests@agent-academy.local");
+        RunGit(repoRoot, "checkout", "-b", "develop");
+        File.WriteAllText(Path.Combine(repoRoot, "README.md"), "initial\n");
+        RunGit(repoRoot, "add", "README.md");
+        RunGit(repoRoot, "commit", "-m", "Initial commit");
+    }
+
+    private void CreateFeatureBranchWithCommit(string branchName, string fileName, string content)
+    {
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, fileName), content + Environment.NewLine);
+        RunGitInRepo("add", fileName);
+        RunGitInRepo("commit", "-m", $"Add {fileName}");
+        RunGitInRepo("checkout", "develop");
+    }
+
+    private string RunGitInRepo(params string[] args)
+        => RunGit(_repoRoot, args);
+
+    private static string RunGit(string workingDirectory, params string[] args)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start git process for test repository");
+
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(
+                $"git {string.Join(" ", args)} failed in {workingDirectory}: {stderr.Trim()}");
+
+        return stdout.Trim();
+    }
+
     private (CommandEnvelope command, CommandContext context) MakeCommand(
         string commandName,
         Dictionary<string, string> args,
@@ -288,5 +447,161 @@ public class BranchWorkflowTests : IDisposable
         );
 
         return (command, context);
+    }
+
+    // ── Task Matching & Branch Persistence Tests ────────────────
+
+    [Fact]
+    public async Task EnsureTaskForBreakout_FindsByExactTitle()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        await EnsureRoom(scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>(), "room-1");
+
+        // Pre-create a task with a known title
+        await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            Title: "Fix Login Bug",
+            Description: "Fix the login bug",
+            SuccessCriteria: "Login works",
+            RoomId: "room-1",
+            PreferredRoles: ["SoftwareEngineer"]));
+
+        // EnsureTaskForBreakout should find it by title
+        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            "Fix Login Bug", "desc", "engineer-1", "room-1");
+
+        var task = await runtime.GetTaskAsync(taskId);
+        Assert.NotNull(task);
+        Assert.Equal("Fix Login Bug", task.Title);
+    }
+
+    [Fact]
+    public async Task EnsureTaskForBreakout_CaseInsensitiveMatch()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        await EnsureRoom(scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>(), "room-1");
+
+        await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            Title: "Fix Login Bug",
+            Description: "desc",
+            SuccessCriteria: "works",
+            RoomId: "room-1",
+            PreferredRoles: []));
+
+        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            "fix login bug", "desc", "engineer-1", "different-room");
+
+        var task = await runtime.GetTaskAsync(taskId);
+        Assert.Equal("Fix Login Bug", task!.Title);
+    }
+
+    [Fact]
+    public async Task EnsureTaskForBreakout_CreatesNewWhenNoMatch()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        await EnsureRoom(scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>(), "room-1");
+
+        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            "Brand New Task", "description", "engineer-1", "room-1");
+
+        var task = await runtime.GetTaskAsync(taskId);
+        Assert.NotNull(task);
+        Assert.Equal("Brand New Task", task.Title);
+        Assert.Equal(TaskStatus.Active, task.Status);
+        Assert.Equal("engineer-1", task.AssignedAgentId);
+    }
+
+    [Fact]
+    public async Task EnsureTaskForBreakout_FindsSoleUnassignedTask()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+        await EnsureRoom(db, "room-2");
+
+        // Create a task in room-2 (different room, no matching title, no agent match)
+        await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            Title: "Implement Feature X",
+            Description: "details",
+            SuccessCriteria: "works",
+            RoomId: "room-2",
+            PreferredRoles: []));
+
+        // EnsureTaskForBreakout with different title and different room
+        // should still find it because it's the sole unassigned task
+        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            "Feature X Implementation", "desc", "engineer-1", "room-1");
+
+        var task = await runtime.GetTaskAsync(taskId);
+        Assert.Equal("Implement Feature X", task!.Title);
+    }
+
+    [Fact]
+    public async Task SetBreakoutTaskId_PersistsLink()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+
+        var br = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Test");
+        await runtime.SetBreakoutTaskIdAsync(br.Id, "task-123");
+
+        var storedId = await runtime.GetBreakoutTaskIdAsync(br.Id);
+        Assert.Equal("task-123", storedId);
+    }
+
+    [Fact]
+    public async Task CompleteTask_PersistsMergeCommitSha()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Approved));
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        var result = await runtime.CompleteTaskAsync(
+            taskId, commitCount: 1, mergeCommitSha: "abc123def456");
+
+        Assert.Equal(TaskStatus.Completed, result.Status);
+        Assert.Equal("abc123def456", result.MergeCommitSha);
+    }
+
+    [Fact]
+    public async Task MergeTaskResult_IncludesMergeSha()
+    {
+        // This test validates the result schema — the handler returns mergeSha
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: "task/test-branch-abc123");
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        // Simulate what MergeTaskHandler does after merge: complete with SHA
+        var result = await runtime.CompleteTaskAsync(
+            taskId, commitCount: 1, mergeCommitSha: "deadbeef12345678");
+
+        Assert.Equal("deadbeef12345678", result.MergeCommitSha);
+        Assert.Equal(TaskStatus.Completed, result.Status);
+        Assert.Equal(1, result.CommitCount);
+    }
+
+    [Fact]
+    public async Task InReviewTransition_TaskWithBranch_CanBeApproved()
+    {
+        // Task starts InReview (what HandleBreakoutCompleteAsync sets)
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.InReview),
+            branchName: "task/feature-abc123");
+
+        // APPROVE_TASK should work on InReview tasks
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var approved = await runtime.ApproveTaskAsync(taskId, "reviewer-1", null);
+
+        Assert.Equal(TaskStatus.Approved, approved.Status);
     }
 }

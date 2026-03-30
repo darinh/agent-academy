@@ -33,7 +33,7 @@ public enum AgentAvailability { Ready, Preferred, Active, Busy, Offline }
 public enum DeliveryPriority { Low, Normal, High, Urgent }
 public enum MessageKind { System, TaskAssignment, Coordination, Plan, Status, Review, Validation, Decision, Question, Response, SpecChangeProposal, DirectMessage }
 public enum MessageSenderKind { System, Agent, User }
-public enum TaskStatus { Queued, Active, Blocked, AwaitingValidation, Completed, Cancelled }
+public enum TaskStatus { Queued, Active, Blocked, AwaitingValidation, InReview, ChangesRequested, Approved, Merging, Completed, Cancelled }
 public enum WorkstreamStatus { NotStarted, Ready, InProgress, Blocked, Completed }
 public enum RoomStatus { Idle, Active, AttentionRequired, Completed, Archived }
 public enum ActivityEventType { AgentLoaded, AgentThinking, AgentFinished, RoomCreated, RoomClosed, TaskCreated, PhaseChanged, MessagePosted, MessageSent, PresenceUpdated, RoomStatusChanged, ArtifactEvaluated, QualityGateChecked, IterationRetried, CheckpointCreated, AgentErrorOccurred, AgentWarningOccurred, SubagentStarted, SubagentCompleted, SubagentFailed, AgentPlanChanged, AgentSnapshotRewound, ToolIntercepted, CommandExecuted, CommandDenied, CommandFailed, TaskClaimed, TaskReleased, TaskApproved, TaskChangesRequested, TaskStatusUpdated, RoomRenamed, DirectMessageSent }

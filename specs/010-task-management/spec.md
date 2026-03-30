@@ -1,6 +1,6 @@
 # 010 — Task Management & Git Workflow
 
-**Status**: Planned
+**Status**: Partial
 
 ## Purpose
 
@@ -42,7 +42,7 @@ Add to `TaskSnapshot` and `TaskEntity`:
 | `AssignedAgentName` | `string?` | Display name (e.g., `Hephaestus`) |
 | `UsedFleet` | `bool` | Whether a fleet/subagent swarm was used |
 | `FleetModels` | `List<string>` | Models used in the fleet (if any) |
-| `BranchName` | `string?` | Git branch: `agents/{agent-name}/{branch-slug}` |
+| `BranchName` | `string?` | Local task branch: `task/{slug}-{suffix}` |
 | `PullRequestUrl` | `string?` | GitHub PR URL |
 | `PullRequestNumber` | `int?` | GitHub PR number |
 | `PullRequestStatus` | `PullRequestStatus?` | `Open`, `ReviewRequested`, `ChangesRequested`, `Approved`, `Merged`, `Closed` |
@@ -50,6 +50,7 @@ Add to `TaskSnapshot` and `TaskEntity`:
 | `ReviewRounds` | `int` | Number of review iterations |
 | `TestsCreated` | `List<string>` | Test files/names created to prove the work |
 | `CommitCount` | `int` | Number of commits on the task branch |
+| `MergeCommitSha` | `string?` | SHA of the squash-merge commit created by `MERGE_TASK` |
 
 ### New Enums
 
@@ -195,7 +196,7 @@ When a task is assigned to a breakout room, the platform creates a dedicated tas
 
 ### Branch Creation
 
-- Branch name: `task/{slug}-{id}` (unique suffix from task ID prevents collisions from duplicate titles)
+- Branch name: `task/{slug}-{suffix}` (six-character GUID suffix generated at branch creation)
 - Created automatically when a task is assigned to a breakout room
 - Agent work on breakout tasks goes on the task branch, not `develop`
 
@@ -207,12 +208,29 @@ When a task is assigned to a breakout room, the platform creates a dedicated tas
 
 ### Completion Flow
 
-1. Agent finishes work in breakout → task status moves to `InReview` (not `Completed`)
-2. Reviewer (Socrates) reviews the work on the task branch
-3. Reviewer approves → executes `MERGE_TASK` command
-4. `MERGE_TASK` squash-merges the task branch to `develop`
-5. On successful merge → task status moves to `Completed`, merge commit SHA recorded
-6. On merge conflict → merge is aborted, error returned to caller
+1. Agent finishes work in breakout → the linked task status moves to `InReview` (not `Completed`)
+2. The existing reviewer cycle can still post review feedback in the collaboration room, but task approval remains an explicit command transition
+3. Reviewer approves via `APPROVE_TASK` → task status moves to `Approved`
+4. Reviewer (or Planner) executes `MERGE_TASK` command
+5. `MERGE_TASK` squash-merges the task branch to `develop`
+6. On successful merge → task status moves to `Completed`, merge commit SHA recorded on TaskEntity
+7. On merge conflict → merge is aborted, the task returns to `Approved`, and an error is returned to the caller
+
+### Task Matching on Assignment
+
+When a breakout task is assigned, the orchestrator ensures a `TaskEntity` exists via a cascading lookup:
+
+1. Exact title match (case-insensitive)
+2. Same room + Active/Queued status
+3. Same agent + Active/Queued status
+4. Sole unassigned task without a branch (single-candidate heuristic)
+5. Fallback: create a new `TaskEntity`
+
+The `BreakoutRoomEntity.TaskId` field links the breakout room to its `TaskEntity` for reliable lookup during completion.
+
+### Known Gaps
+
+- No `REJECT_TASK` command for branch-based tasks. If a reviewer finds issues after approval, the only recourse is `git revert`. A rejection flow (setting task back to `ChangesRequested` and spawning a new breakout) is a future enhancement.
 
 ---
 
@@ -221,9 +239,9 @@ When a task is assigned to a breakout room, the platform creates a dedicated tas
 ### Review Trigger
 
 When a task transitions to `InReview`:
-1. Socrates receives a notification (via collaboration room message + activity event)
-2. Socrates fetches the PR diff via GitHub API
-3. Socrates performs adversarial review
+1. A system status message is posted to the collaboration room announcing the task is ready for review
+2. Socrates reviews the work on the task branch
+3. Socrates approves via `APPROVE_TASK` or requests changes via `REQUEST_CHANGES`
 
 ### Review Process
 

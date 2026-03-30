@@ -12,12 +12,14 @@ namespace AgentAcademy.Server.Services;
 public sealed class GitService
 {
     private readonly ILogger<GitService> _logger;
+    private readonly string _repositoryRoot;
     private readonly SemaphoreSlim _gitLock = new(1, 1);
     private readonly SemaphoreSlim _roundLock = new(1, 1);
 
-    public GitService(ILogger<GitService> logger)
+    public GitService(ILogger<GitService> logger, string? repositoryRoot = null)
     {
         _logger = logger;
+        _repositoryRoot = repositoryRoot ?? FindProjectRoot();
     }
 
     // ── Round-Scoped Locking ────────────────────────────────────
@@ -117,7 +119,7 @@ public sealed class GitService
     /// Squash-merges a task branch into the current branch (develop).
     /// Cleans up with <c>git merge --abort</c> on failure.
     /// </summary>
-    public async Task SquashMergeAsync(string branch, string commitMessage)
+    public async Task<string> SquashMergeAsync(string branch, string commitMessage)
     {
         await _gitLock.WaitAsync();
         try
@@ -127,7 +129,9 @@ public sealed class GitService
             {
                 await RunGitAsync("merge", "--squash", branch);
                 await RunGitAsync("commit", "-m", commitMessage);
+                var mergeCommitSha = await RunGitAsync("rev-parse", "HEAD");
                 _logger.LogInformation("Squash-merged {Branch} into develop", branch);
+                return mergeCommitSha;
             }
             catch
             {
@@ -204,7 +208,7 @@ public sealed class GitService
         var psi = new ProcessStartInfo
         {
             FileName = "git",
-            WorkingDirectory = FindProjectRoot(),
+            WorkingDirectory = _repositoryRoot,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
