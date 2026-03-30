@@ -106,27 +106,27 @@ These formalize existing capabilities with audit trails and structured output.
 | `RELEASE_TASK` | `taskId` | Confirmation | Unassigns agent | `ReleaseTaskHandler.cs` — validates calling agent is current assignee, clears assignment |
 | `UPDATE_TASK` | `taskId`, `status?`, `blocker?`, `note?` | Confirmation | Updates task state | `UpdateTaskHandler.cs` — validates allowed statuses (Active/Blocked/AwaitingValidation/InReview/Queued), handles blocker→Blocked shorthand, posts notes to task room |
 
-#### Phase 1C: Verification
+#### Phase 1C: Verification — IMPLEMENTED
 
-| Command | Args | Returns | Side Effects |
-|---------|------|---------|-------------|
-| `RUN_BUILD` | — | Build output, exit code, duration | Runs `dotnet build` |
-| `RUN_TESTS` | `scope?` (`all`, `frontend`, `backend`, `file:path`) | Test results, pass/fail counts | Runs test suite |
-| `SHOW_DIFF` | `taskId?`, `branch?`, `agentId?` | Git diff output | Audit event |
-| `GIT_LOG` | `file?`, `since?`, `count?` | Commit history | Audit event |
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `RUN_BUILD` | — | Build output, exit code | Runs `dotnet build` | `RunBuildHandler.cs` — 10min safety timeout, output truncated to 3KB |
+| `RUN_TESTS` | `scope?` (`all`, `frontend`, `backend`, `file:path`) | Test output, exit code | Runs test suite | `RunTestsHandler.cs` — routes frontend to `npm test`, backend to `dotnet test` |
+| `SHOW_DIFF` | `branch?` | Git diff output | Audit event | `ShowDiffHandler.cs` — `git diff --stat -p`, optional branch comparison |
+| `GIT_LOG` | `file?`, `since?`, `count?` | Commit history (sha + message) | Audit event | `GitLogHandler.cs` — `git log --oneline`, max 50 entries |
 
 #### Phase 1D: Communication — IMPLEMENTED
 
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
 | `DM` | `recipient` (agentId, agent name, or `@Human`), `message` | Delivery confirmation | Stores DM with RecipientId, posts system notification in recipient's room, triggers immediate agent round or Discord notification | `DmHandler.cs` — routes `@Human` to notification bridge (Discord), agent recipients to DB storage + orchestrator wake-up. Case-insensitive name/ID matching. Self-DM prevented. |
-| `ROOM_HISTORY` | `roomId`, `count?` | Recent messages from any room | Audit event (no movement) |
+| `ROOM_HISTORY` | `roomId`, `count?` | Recent messages from specified room | Audit event (no movement) | `RoomHistoryHandler.cs` — reads room snapshot, returns last N messages (max 50) |
 
-#### Phase 1E: Navigation
+#### Phase 1E: Navigation — IMPLEMENTED
 
-| Command | Args | Returns | Side Effects |
-|---------|------|---------|-------------|
-| `MOVE_TO_ROOM` | `roomId` | Confirmation + new room context | Updates agent location |
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `MOVE_TO_ROOM` | `roomId` | Confirmation + room name | Updates agent location | `MoveToRoomHandler.cs` — validates room exists, calls MoveAgentAsync |
 
 ### Tier 2 — Full Autonomy
 
@@ -407,3 +407,4 @@ Discord Server
 | 2026-03-28 | Reconciled frontend surface contradiction: Phase 1A shipped backend-only, no UI surfaces implemented. Documented 9 live commands with implementation evidence. Updated Known Gaps to reflect backend-only state. | spec-007-reconciliation | (this change) |
 | 2026-03-29 | Implemented ASK_HUMAN command: Discord agent-to-human question bridge with category-per-workspace, channel-per-agent, thread-per-question architecture. Persistent reply routing via WorkspaceRuntime. | ask-human-command | (this change) |
 | 2026-03-30 | Implemented DM command (Phase 1D), replacing ASK_HUMAN. Agent-to-agent and agent-to-human private messaging. MessageEntity.RecipientId + DirectMessage kind. Orchestrator HandleDirectMessage with targeted rounds. System notification in recipient's room. Frontend Telegram-style DM panel. DM API endpoints. 18 tests. | dm-command | (this change) |
+| 2026-03-30 | Implemented Phase 1C (RUN_BUILD, RUN_TESTS, SHOW_DIFF, GIT_LOG), ROOM_HISTORY (1D), MOVE_TO_ROOM (1E). All agent timeouts removed — no per-turn LLM timeout, no breakout round cap, no fix round cap. Breakout rooms are open-ended (agents work until WORK REPORT: COMPLETE). DMs delivered to agents in breakout rooms. Task workspace scoping fix. | commands-and-breakout-redesign | (this change) |
