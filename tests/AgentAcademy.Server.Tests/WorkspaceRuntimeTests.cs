@@ -854,7 +854,7 @@ public class WorkspaceRuntimeTests : IDisposable
         await _db.SaveChangesAsync();
 
         var result = await _runtime.GetProjectNameForRoomAsync("room-no-name");
-        Assert.Equal("cool-app", result);
+        Assert.Equal("Cool App", result);
     }
 
     [Fact]

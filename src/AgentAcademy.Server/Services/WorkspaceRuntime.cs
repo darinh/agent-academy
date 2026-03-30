@@ -258,8 +258,9 @@ public sealed class WorkspaceRuntime
         if (!string.IsNullOrWhiteSpace(workspace.ProjectName))
             return workspace.ProjectName;
 
-        // Fallback: directory basename
-        return Path.GetFileName(workspace.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        // Fallback: directory basename, humanized
+        var basename = Path.GetFileName(workspace.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return ProjectScanner.HumanizeProjectName(basename);
     }
 
     /// <summary>

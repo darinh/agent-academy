@@ -532,7 +532,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _workspaceCategories.TryRemove(cacheKey, out _);
         }
 
-        var displayName = projectName ?? roomName;
+        var displayName = projectName is not null
+            ? ProjectScanner.HumanizeProjectName(projectName)
+            : roomName;
         var categoryName = SanitizeCategoryName($"{displayName} Messages");
 
         var found = guild.CategoryChannels.FirstOrDefault(
@@ -618,7 +620,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _roomCategories.TryRemove(cacheKey, out _);
         }
 
-        var categoryName = SanitizeCategoryName(projectName is not null ? $"{projectName} Rooms" : "Rooms");
+        var categoryName = SanitizeCategoryName(projectName is not null
+            ? $"{ProjectScanner.HumanizeProjectName(projectName)} Rooms"
+            : "Rooms");
 
         var found = guild.CategoryChannels.FirstOrDefault(
             c => c.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
@@ -908,7 +912,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// Sanitizes a name for use as a Discord category name.
     /// Categories allow spaces and mixed case but have a 100-char limit.
     /// </summary>
-    private static string SanitizeCategoryName(string name)
+    internal static string SanitizeCategoryName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return "General";
