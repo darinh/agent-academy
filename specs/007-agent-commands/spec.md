@@ -137,6 +137,12 @@ These formalize existing capabilities with audit trails and structured output.
 |---------|------|---------|-------------|----------------|
 | `MOVE_TO_ROOM` | `roomId` | Confirmation + room name | Updates agent location | `MoveToRoomHandler.cs` — validates room exists, calls MoveAgentAsync |
 
+#### Phase 1F: System — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `RESTART_SERVER` | `reason` | Exit code (75), confirmation | Posts system message, sets exit code 75, triggers graceful shutdown via `IHostApplicationLifetime.StopApplication()`. Wrapper script detects code 75 and restarts immediately. | `RestartServerHandler.cs` — Planner-only authorization (role-gated + CommandAuthorizer). Schedules shutdown on background thread for response propagation. |
+
 ### Tier 2 — Full Autonomy
 
 #### Room Management

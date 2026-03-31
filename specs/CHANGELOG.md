@@ -4,6 +4,15 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **003-agent-system**: CopilotExecutor error classification — `SessionErrorEvent.ErrorType` now parsed into typed exceptions (`CopilotAuthException`, `CopilotTransientException`, `CopilotQuotaException`). Transient and quota errors retried with exponential backoff. Auth failures trigger user notification and auto-recovery on re-login.
+- **007-agent-commands**: `RESTART_SERVER` command (Phase 1F) — Planner-only command triggers graceful server restart with exit code 75. Posts system message, uses `IHostApplicationLifetime.StopApplication()`.
+- **011-state-recovery**: Implemented wrapper script (`wrapper.sh`), server instance tracking (`ServerInstanceEntity` + crash detection), `GET /api/health/instance` endpoint, and `IHostApplicationLifetime` shutdown hook. Exit code table updated: crash restarts with exponential backoff (code 1+), max 5 attempts.
+
+### Changed
+- **003-agent-system**: `CopilotTokenProvider` now tracks `TokenSetAt` timestamp. `CopilotExecutor` takes `IServiceScopeFactory` for scoped service access (auth failure notifications via `WorkspaceRuntime`).
+- **011-state-recovery**: Status changed from "Planned" to "Partially Implemented". Six known gaps resolved (wrapper, entity, crash detection, shutdown hook, health endpoint, restart command). Updated exit code contract to include crash-restart behavior with backoff.
+
 ### Fixed
 - **010-task-management**: Breakout completion now transitions the linked task to `InReview` before presentation in the main room. The spec now describes the shipped behavior: breakout completion triggers review presentation, while `APPROVE_TASK` and `MERGE_TASK` remain the authoritative task-state transitions.
 - **010-task-management**: Task matching on assignment uses cascading lookup (title → room → agent → sole-unassigned) with fallback creation. `BreakoutRoomEntity.TaskId` links breakout rooms to tasks for reliable lookup.

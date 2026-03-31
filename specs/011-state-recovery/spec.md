@@ -6,7 +6,7 @@ Documents the supervised restart and state recovery system that enables Agent Ac
 
 ## Current Behavior
 
-**Status: Planned** (Implementation pending)
+**Status: Partially Implemented** (Wrapper script, server instances, restart command, and health endpoint implemented. Client reconnect UX planned.)
 
 The state recovery system consists of six components working together:
 
@@ -18,41 +18,45 @@ A wrapper script supervises the .NET application and interprets exit codes to de
 |-----------|---------|--------|
 | `0` | Clean shutdown | Exit wrapper, no restart |
 | `75` | Restart requested | Restart .NET process immediately |
-| Other (1+) | Crash/error | Exit wrapper, report error |
+| `1+` | Crash/error | Restart with exponential backoff (2s→4s→8s→16s→32s, max 5 attempts) |
 
-**File**: `src/AgentAcademy.Server/wrapper.sh` (planned)
+**File**: `src/AgentAcademy.Server/wrapper.sh`
 
 The wrapper script:
 - Launches the .NET application (`dotnet AgentAcademy.Server.dll`)
 - Captures the exit code
-- If exit code = 75: restarts the process with the same arguments
-- If exit code = 0 or other: exits with the same code
-- Logs all restart events for debugging
+- If exit code = 75: restarts the process immediately, resets crash counter
+- If exit code = 0: exits cleanly
+- If exit code = 1+: restarts with exponential backoff, up to 5 attempts
+- Resets crash counter if process runs for ≥ 60 seconds (configurable via `AA_HEALTH_SEC`)
+- Maximum crash restarts configurable via `AA_MAX_CRASH` (default: 5)
+- DLL path auto-detected or set via `AA_DLL_PATH`
+- Logs all restart events with timestamps
 
 ### 2. Server Instance Tracking
 
 The `ServerInstanceEntity` records each server lifecycle event in the database.
 
-**Schema** (`server_instances` table, planned):
+**Schema** (`server_instances` table, **implemented**):
 ```sql
 CREATE TABLE server_instances (
-    id TEXT PRIMARY KEY,              -- GUID generated at startup
-    started_at DATETIME NOT NULL,     -- Process start timestamp (UTC)
-    shutdown_at DATETIME NULL,        -- Clean shutdown timestamp (UTC)
-    exit_code INTEGER NULL,           -- Process exit code
-    crash_detected BOOLEAN DEFAULT 0, -- TRUE if previous instance crashed
-    version TEXT NOT NULL             -- Application version (from AssemblyInfo)
+    Id TEXT PRIMARY KEY,              -- GUID generated at startup
+    StartedAt TEXT NOT NULL,          -- Process start timestamp (UTC)
+    ShutdownAt TEXT NULL,             -- Clean shutdown timestamp (UTC)
+    ExitCode INTEGER NULL,            -- Process exit code
+    CrashDetected INTEGER DEFAULT 0,  -- 1 if previous instance crashed
+    Version TEXT NOT NULL              -- Assembly version
 );
 ```
 
 **Invariants**:
-1. Exactly one instance has `shutdown_at = NULL` at any time (the current running instance)
-2. `crash_detected = TRUE` only when a previous instance has `shutdown_at = NULL`
-3. `exit_code` is only set when `shutdown_at` is not null (process has exited)
-4. `started_at` must be UTC
-5. `version` matches the assembly version of the running executable
+1. Exactly one instance has `ShutdownAt = NULL` at any time (the current running instance)
+2. `CrashDetected = true` only when a previous instance has `ShutdownAt = NULL`
+3. `ExitCode` is only set when `ShutdownAt` is not null (process has exited)
+4. `StartedAt` must be UTC
+5. `Version` matches the assembly version of the running executable
 
-**Entity Definition** (`src/AgentAcademy.Server/Data/Entities/ServerInstanceEntity.cs`, planned):
+**Entity Definition** (`src/AgentAcademy.Server/Data/Entities/ServerInstanceEntity.cs`, **implemented**):
 ```csharp
 public class ServerInstanceEntity
 {
@@ -69,32 +73,35 @@ public class ServerInstanceEntity
 
 The `WorkspaceRuntime` service manages instance lifecycle events.
 
-**On Startup** (`InitializeAsync`, planned modifications):
+**On Startup** (`InitializeAsync`, **implemented**):
 1. Query for the most recent `ServerInstanceEntity` where `ShutdownAt = NULL`
 2. If found:
    - Set `CrashDetected = true` on the current startup instance
    - Update the previous instance: `ShutdownAt = NOW(), ExitCode = -1`
-3. Create new `ServerInstanceEntity` for this startup with `CrashDetected` flag
-4. Proceed with existing initialization (default room, agents, welcome message)
+3. Create new `ServerInstanceEntity` with `CrashDetected` flag and assembly version
+4. Set `WorkspaceRuntime.CurrentInstanceId` (static property for health endpoint)
+5. Proceed with existing initialization (default room, agents, welcome message)
 
-**On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, planned):
-1. Locate the current instance (where `ShutdownAt = NULL`)
+**On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `Program.cs`):
+1. Locate the current instance (by `CurrentInstanceId`)
 2. Set `ShutdownAt = DateTime.UtcNow`
-3. Set `ExitCode = {pending from environment}`
+3. Set `ExitCode = Environment.ExitCode`
 
-**File**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (modifications planned)
+**Files**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs`, `src/AgentAcademy.Server/Program.cs`
 
 ### 4. Client Reconnect Protocol
 
 When the server restarts, connected clients must detect the restart and refresh their state.
 
-**Health Endpoint** (`GET /api/health/instance`, planned):
+**Health Endpoint** (`GET /api/health/instance`, **implemented**):
 ```json
 {
   "instanceId": "abc-123-def",
   "startedAt": "2026-03-30T16:00:00Z",
   "version": "1.2.3",
-  "crashDetected": false
+  "crashDetected": false,
+  "executorOperational": true,
+  "authFailed": false
 }
 ```
 
@@ -162,23 +169,25 @@ RESTART_SERVER:
   reason: <why the restart is needed>
 ```
 
-**Behavior** (planned):
-1. Handler records the restart reason in logs or instance history
-2. Handler calls `Environment.Exit(75)`
-3. Wrapper script detects exit code 75
-4. Wrapper restarts the .NET process
-5. The new process records a new server instance
-6. Clients reconnect and refresh against `/api/health/instance`
+**Behavior** (**implemented**):
+1. Handler validates Planner role authorization (double-checked beyond CommandAuthorizer)
+2. Records the restart reason in logs
+3. Posts system message to the main room: "🔄 Server restarting: {reason}"
+4. Sets `Environment.ExitCode = 75`
+5. Schedules `IHostApplicationLifetime.StopApplication()` on a background thread (500ms delay for response propagation)
+6. Wrapper script detects exit code 75 and restarts the .NET process
+7. The new process records a new server instance and detects if previous shutdown was clean
+8. Clients reconnect and refresh against `/api/health/instance`
 
-**File**: `src/AgentAcademy.Server/Commands/Handlers/RestartServerHandler.cs` (planned)
+**File**: `src/AgentAcademy.Server/Commands/Handlers/RestartServerHandler.cs`
 
 ## Interfaces & Contracts
 
 ### Exit Code Contract
 ```
 0   → Clean shutdown (user-initiated or completion)
-75  → Supervised restart (config reload, upgrade, maintenance)
->0  → Crash (unhandled exception, fatal error)
+75  → Supervised restart (RESTART_SERVER command)
+1+  → Crash (unhandled exception, fatal error) — wrapper restarts with backoff
 ```
 
 ### Health Endpoint
@@ -186,10 +195,12 @@ RESTART_SERVER:
 GET /api/health/instance
 Response 200:
 {
-  "instanceId": string,      // GUID
-  "startedAt": string,       // ISO 8601 UTC
-  "version": string,         // semver
-  "crashDetected": boolean   // true if previous instance crashed
+  "instanceId": string,        // GUID
+  "startedAt": string,         // ISO 8601 UTC
+  "version": string,           // semver
+  "crashDetected": boolean,    // true if previous instance crashed
+  "executorOperational": boolean, // true if Copilot SDK client is active
+  "authFailed": boolean        // true if auth failure detected (awaiting re-login)
 }
 ```
 
@@ -228,20 +239,21 @@ Result: Server exits with code 75, wrapper restarts process
 
 ## Known Gaps
 
-- Wrapper script implementation (shell script wrapper not yet created)
-- `ServerInstanceEntity` not yet added to `AgentAcademyDbContext`
-- Startup crash detection logic not yet implemented in `WorkspaceRuntime.InitializeAsync`
-- Shutdown hook not yet registered with `IHostApplicationLifetime`
-- `/api/health/instance` endpoint not yet implemented
+- ~~Wrapper script implementation~~ — **Implemented**: `src/AgentAcademy.Server/wrapper.sh`
+- ~~`ServerInstanceEntity` not yet added~~ — **Implemented**: `src/AgentAcademy.Server/Data/Entities/ServerInstanceEntity.cs`
+- ~~Startup crash detection logic~~ — **Implemented** in `WorkspaceRuntime.InitializeAsync`
+- ~~Shutdown hook not yet registered~~ — **Implemented** in `Program.cs` via `IHostApplicationLifetime.ApplicationStopping`
+- ~~`/api/health/instance` endpoint~~ — **Implemented** in `SystemController.cs`
+- ~~`RESTART_SERVER` command handler~~ — **Implemented**: `RestartServerHandler.cs`
 - Frontend health check and reconnect logic not yet implemented
-- `RESTART_SERVER` command handler not yet implemented
 - Breakout cancellation and stuck-detection controls are not yet implemented
 - No persisted termination-reason field currently exists for breakout lifecycle outcomes
-- No mechanism to prevent restart loops (crash → restart → crash → restart)
+- No mechanism to prevent restart loops (crash → restart → crash → restart) — wrapper limits to 5 crash restarts
 - No restart history UI (list of past restarts with timestamps and reasons)
-- No maximum restart count enforcement
+- No maximum restart count enforcement in the server (only in wrapper)
 
 ## Revision History
 
+- **2026-03-31**: Implemented wrapper script (crash-restart with backoff), server instance tracking (entity + migration + crash detection), RESTART_SERVER command handler (Planner-only, exit code 75), /api/health/instance endpoint (instanceId, authFailed, executorOperational), IHostApplicationLifetime shutdown hook. Updated exit code table to include crash-restart behavior.
 - **2026-03-30**: Initial specification — wrapper exit code contract, `ServerInstanceEntity` schema, startup/shutdown hooks, client reconnect protocol, `RESTART_SERVER` command design
 - **2026-03-30**: Expanded planned reconnect UX states, task-comment recovery expectations, and breakout termination paths | spec-doc-gap-fix

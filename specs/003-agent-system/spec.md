@@ -68,15 +68,20 @@ Key behaviors:
   2. **Config token** — `Copilot:GitHubToken` from `IConfiguration` (appsettings / user-secrets)
   3. **Environment / CLI** — `null` passed to SDK, which checks `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, or copilot CLI login state
 - **CLI path configuration**: `Copilot:CliPath` in `appsettings.json` controls which copilot binary the SDK uses. Must be set to `"copilot"` (system PATH) or an explicit path to an already-authenticated copilot CLI. The SDK's bundled binary (at `runtimes/linux-x64/native/copilot`) ships with no auth state and will fail to connect. The system copilot CLI (e.g., `~/.local/bin/copilot`) uses existing `copilot auth login` credentials.
-- **Token-change awareness**: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt.
+- **Token-change awareness**: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt. If the executor was in an auth-failed state, a recovery message is posted to the main room.
+- **Error classification**: `SessionErrorEvent.Data.ErrorType` is classified into typed exceptions:
+  - `authentication` → `CopilotAuthException` (definitive — no retry, triggers auth failure notification)
+  - `authorization` → `CopilotAuthorizationException` (no retry — token lacks required permissions)
+  - `quota`, `rate_limit` → `CopilotQuotaException` (retried with longer backoff: 5s/15s/30s, max 3 attempts)
+  - Other/unknown → `CopilotTransientException` (retried with backoff: 2s/4s/8s, max 3 attempts)
+- **Auth failure handling**: On definitive auth failure, the executor sets `IsAuthFailed = true`, posts a re-authentication notice to the main room, and notifies via the notification system. When the user re-authenticates (token changes), the flag is cleared and a recovery message is posted automatically.
 - **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0). Safe because no SDK tools are registered in session config. Must be revisited when tool calling is wired up.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity.
 - **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
 - **TTL cleanup**: Sessions expire after 10 minutes of inactivity; a background timer runs every 2 minutes.
-- **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails, delegates to `StubExecutor`.
-- **Request timeout**: 2-minute timeout per `SendAsync` call.
+- **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails (after retry exhaustion), delegates to `StubExecutor`.
 - **Graceful disposal**: All sessions and the client are disposed on shutdown.
 
 ### Token Provider: `CopilotTokenProvider`
@@ -84,9 +89,10 @@ Key behaviors:
 **File**: `src/AgentAcademy.Server/Services/CopilotTokenProvider.cs`
 
 Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
-- `SetToken(string)` — called during `OnCreatingTicket` in the OAuth flow to capture the user's access token.
-- `ClearToken()` — called by `AuthController.Logout` to remove the stored token.
+- `SetToken(string)` — called during `OnCreatingTicket` in the OAuth flow to capture the user's access token. Records `TokenSetAt` timestamp for diagnostics.
+- `ClearToken()` — called by `AuthController.Logout` to remove the stored token and timestamp.
 - `Token` — volatile read; available to the executor even during background orchestration (where `HttpContext` is null).
+- `TokenSetAt` — UTC timestamp of when the token was last set (nullable, null if never set). Used by the health endpoint for diagnostics.
 
 ### Authentication Flow → Copilot SDK Activation
 
