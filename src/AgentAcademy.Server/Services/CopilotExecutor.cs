@@ -3,6 +3,7 @@ using System.Text;
 using AgentAcademy.Shared.Models;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -39,9 +40,26 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(2);
 
+    // Retry parameters for transient errors (network, 5xx)
+    private const int TransientMaxRetries = 3;
+    private static readonly TimeSpan[] TransientBackoff = [
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(4),
+        TimeSpan.FromSeconds(8),
+    ];
+
+    // Retry parameters for quota/rate-limit errors
+    private const int QuotaMaxRetries = 3;
+    private static readonly TimeSpan[] QuotaBackoff = [
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(15),
+        TimeSpan.FromSeconds(30),
+    ];
+
     private readonly ILogger<CopilotExecutor> _logger;
     private readonly ILogger<StubExecutor> _stubLogger;
     private readonly CopilotTokenProvider _tokenProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly string? _configToken;
     private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
@@ -50,6 +68,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private CopilotClient? _client;
     private string? _activeToken;
     private bool _clientFailed;
+    private volatile bool _authFailed;
     private StubExecutor? _fallback;
     private Timer? _cleanupTimer;
     private bool _disposed;
@@ -58,13 +77,15 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         ILogger<CopilotExecutor> logger,
         ILogger<StubExecutor> stubLogger,
         IConfiguration configuration,
-        CopilotTokenProvider tokenProvider)
+        CopilotTokenProvider tokenProvider,
+        IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
         _stubLogger = stubLogger;
         _configToken = configuration["Copilot:GitHubToken"];
         _cliPath = configuration["Copilot:CliPath"];
         _tokenProvider = tokenProvider;
+        _scopeFactory = scopeFactory;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -78,6 +99,12 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     /// it failed and we fell back to the stub.
     /// </summary>
     public bool IsFullyOperational => _client is not null && !_clientFailed;
+
+    /// <summary>
+    /// True when the executor has encountered a definitive authentication
+    /// failure. Cleared automatically when a new token is provided.
+    /// </summary>
+    public bool IsAuthFailed => _authFailed;
 
     public async Task<string> RunAsync(
         AgentDefinition agent,
@@ -103,7 +130,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             await entry.SendLock.WaitAsync(ct);
             try
             {
-                var response = await SendAndCollectAsync(entry.Session, agent, prompt, ct);
+                var response = await SendAndCollectWithRetryAsync(entry.Session, agent, prompt, ct);
                 entry.Touch();
                 return response;
             }
@@ -111,6 +138,22 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             {
                 entry.SendLock.Release();
             }
+        }
+        catch (CopilotAuthException ex)
+        {
+            _logger.LogError(ex,
+                "Authentication failure for agent {AgentId} — marking auth failed",
+                agent.Id);
+            await HandleAuthFailureAsync(agent.Id, roomId);
+            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+        }
+        catch (CopilotAuthorizationException ex)
+        {
+            _logger.LogError(ex,
+                "Authorization failure for agent {AgentId} — token lacks required permissions",
+                agent.Id);
+            await InvalidateSessionAsync(agent.Id, roomId);
+            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -228,7 +271,15 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     "Token changed — recreating CopilotClient (old source: {Old}, new source: {New})",
                     DescribeTokenSource(_activeToken),
                     DescribeTokenSource(token));
+
+                var wasAuthFailed = _authFailed;
                 await DisposeClientSafe();
+
+                // Clear auth failure state — the new token may be valid.
+                _authFailed = false;
+
+                if (wasAuthFailed)
+                    _ = PostAuthRecoveryMessageAsync();
             }
 
             // If we already failed with this exact token, don't retry.
@@ -405,7 +456,71 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     }
 
     /// <summary>
+    /// Wraps <see cref="SendAndCollectAsync"/> with retry logic for
+    /// transient and quota errors. Auth errors are never retried.
+    /// </summary>
+    private async Task<string> SendAndCollectWithRetryAsync(
+        CopilotSession session,
+        AgentDefinition agent,
+        string prompt,
+        CancellationToken ct)
+    {
+        Exception? lastException = null;
+
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await SendAndCollectAsync(session, agent, prompt, ct);
+            }
+            catch (CopilotAuthException)
+            {
+                throw; // Never retry auth failures
+            }
+            catch (CopilotAuthorizationException)
+            {
+                throw; // Never retry authorization failures
+            }
+            catch (CopilotQuotaException ex)
+            {
+                lastException = ex;
+                if (attempt >= QuotaMaxRetries)
+                {
+                    _logger.LogWarning(
+                        "Quota/rate-limit error for {AgentId} after {Attempts} retries — giving up",
+                        agent.Id, attempt + 1);
+                    throw;
+                }
+
+                var delay = QuotaBackoff[Math.Min(attempt, QuotaBackoff.Length - 1)];
+                _logger.LogWarning(
+                    "Quota/rate-limit error for {AgentId} (attempt {Attempt}/{Max}), retrying in {Delay}s: {Error}",
+                    agent.Id, attempt + 1, QuotaMaxRetries, delay.TotalSeconds, ex.Message);
+                await Task.Delay(delay, ct);
+            }
+            catch (CopilotTransientException ex)
+            {
+                lastException = ex;
+                if (attempt >= TransientMaxRetries)
+                {
+                    _logger.LogWarning(
+                        "Transient error for {AgentId} after {Attempts} retries — giving up",
+                        agent.Id, attempt + 1);
+                    throw;
+                }
+
+                var delay = TransientBackoff[Math.Min(attempt, TransientBackoff.Length - 1)];
+                _logger.LogWarning(
+                    "Transient error for {AgentId} (attempt {Attempt}/{Max}), retrying in {Delay}s: {Error}",
+                    agent.Id, attempt + 1, TransientMaxRetries, delay.TotalSeconds, ex.Message);
+                await Task.Delay(delay, ct);
+            }
+        }
+    }
+
+    /// <summary>
     /// Sends a prompt and collects the complete streamed response.
+    /// Classifies SDK errors by <c>ErrorType</c> into typed exceptions.
     /// </summary>
     private async Task<string> CollectResponse(
         CopilotSession session,
@@ -437,8 +552,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     done.TrySetResult();
                     break;
                 case SessionErrorEvent err:
-                    done.TrySetException(
-                        new InvalidOperationException($"Copilot session error: {err.Data.Message}"));
+                    done.TrySetException(ClassifyError(err));
                     break;
             }
         });
@@ -448,7 +562,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             await session.SendAsync(new MessageOptions { Prompt = prompt });
 
             // Wait for the response — no internal timeout.
-            // Cancellation is handled by the registration at line 418.
+            // Cancellation is handled by the registration at line above.
             await done.Task;
 
             return sb.ToString();
@@ -457,6 +571,25 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         {
             unsubscribe.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Classifies a <see cref="SessionErrorEvent"/> into a typed exception
+    /// based on the <c>ErrorType</c> field from the Copilot SDK.
+    /// </summary>
+    internal static Exception ClassifyError(SessionErrorEvent err)
+    {
+        var errorType = err.Data.ErrorType?.ToLowerInvariant();
+        var message = err.Data.Message ?? "Unknown Copilot session error";
+
+        return errorType switch
+        {
+            "authentication" => new CopilotAuthException(message),
+            "authorization" => new CopilotAuthorizationException(message),
+            "quota" => new CopilotQuotaException(errorType, message),
+            "rate_limit" => new CopilotQuotaException(errorType, message),
+            _ => new CopilotTransientException(message),
+        };
     }
 
     private async Task CleanupExpiredSessionsAsync()
@@ -499,6 +632,49 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     private static string BuildKey(string agentId, string? roomId)
         => $"{agentId}:{roomId ?? "default"}";
+
+    // ── Auth failure/recovery notifications ─────────────────────
+
+    private async Task HandleAuthFailureAsync(string agentId, string? roomId)
+    {
+        _authFailed = true;
+        await InvalidateSessionAsync(agentId, roomId);
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+            await runtime.PostSystemStatusAsync(runtime.DefaultRoomId,
+                "⚠️ **Copilot SDK authentication failed.** The OAuth token has expired or been revoked. " +
+                "Please re-authenticate at `/api/auth/login` to restore agent functionality.");
+
+            _logger.LogWarning(
+                "Auth failure detected — posted re-authentication notice to main room");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post auth failure notification");
+        }
+    }
+
+    private async Task PostAuthRecoveryMessageAsync()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+            await runtime.PostSystemStatusAsync(runtime.DefaultRoomId,
+                "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online.");
+
+            _logger.LogInformation("Auth recovery — posted reconnection notice to main room");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post auth recovery notification");
+        }
+    }
 
     // ── Session entry with TTL tracking ─────────────────────────
 

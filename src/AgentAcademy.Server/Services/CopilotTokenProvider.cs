@@ -9,6 +9,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class CopilotTokenProvider
 {
     private volatile string? _token;
+    private DateTime? _tokenSetAt;
 
     /// <summary>
     /// The most recently captured OAuth access token, or null if no
@@ -17,12 +18,26 @@ public sealed class CopilotTokenProvider
     public string? Token => _token;
 
     /// <summary>
+    /// UTC timestamp when the token was last set, or null if never set.
+    /// Used for diagnostics and health reporting.
+    /// </summary>
+    public DateTime? TokenSetAt => _tokenSetAt;
+
+    /// <summary>
     /// Called during OAuth login to capture the user's access token.
     /// </summary>
-    public void SetToken(string token) => _token = token;
+    public void SetToken(string token)
+    {
+        _token = token;
+        _tokenSetAt = DateTime.UtcNow;
+    }
 
     /// <summary>
     /// Called on logout to clear the stored token.
     /// </summary>
-    public void ClearToken() => _token = null;
+    public void ClearToken()
+    {
+        _token = null;
+        _tokenSetAt = null;
+    }
 }

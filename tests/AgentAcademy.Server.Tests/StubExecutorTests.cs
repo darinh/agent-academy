@@ -1,6 +1,10 @@
+using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -122,11 +126,23 @@ public class AgentExecutorInterfaceTests
     [Fact]
     public void CopilotExecutor_ImplementsIAgentExecutor()
     {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var services = new ServiceCollection();
+        services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(connection));
+        services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
+        services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
+        services.AddScoped<WorkspaceRuntime>();
+        var sp = services.BuildServiceProvider();
+
         var executor = new CopilotExecutor(
             NullLogger<CopilotExecutor>.Instance,
             NullLogger<StubExecutor>.Instance,
             new ConfigurationBuilder().Build(),
-            new CopilotTokenProvider());
+            new CopilotTokenProvider(),
+            sp.GetRequiredService<IServiceScopeFactory>());
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
+        connection.Dispose();
     }
 }

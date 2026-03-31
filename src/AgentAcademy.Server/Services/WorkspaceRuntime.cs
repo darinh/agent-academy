@@ -50,6 +50,11 @@ public sealed class WorkspaceRuntime
     // ── Initialization ──────────────────────────────────────────
 
     /// <summary>
+    /// Returns the catalog's default room ID (e.g. "main").
+    /// </summary>
+    public string DefaultRoomId => _catalog.DefaultRoomId;
+
+    /// <summary>
     /// Returns the path of the currently active workspace, or null if none.
     /// </summary>
     public async Task<string?> GetActiveWorkspacePathAsync()
