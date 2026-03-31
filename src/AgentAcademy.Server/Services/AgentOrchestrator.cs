@@ -489,11 +489,17 @@ public sealed class AgentOrchestrator
         {
             // Ensure a TaskEntity exists for this breakout (find or create)
             var taskId = await runtime.EnsureTaskForBreakoutAsync(
-                assignment.Title, descriptionWithCriteria, agent.Id, roomId);
+                assignment.Title, descriptionWithCriteria, agent.Id, roomId,
+                BuildAssignmentPlanContent(assignment));
 
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
             await runtime.UpdateTaskBranchAsync(taskId, taskBranch);
             await runtime.SetBreakoutTaskIdAsync(br.Id, taskId);
+            var task = await runtime.GetTaskAsync(taskId);
+            var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
+                ? task.CurrentPlan
+                : BuildAssignmentPlanContent(assignment);
+            await runtime.SetPlanAsync(br.Id, planContent);
             await _gitService.ReturnToDevelopAsync(taskBranch);
         }
         catch (Exception ex)
@@ -1149,6 +1155,28 @@ public sealed class AgentOrchestrator
             lines.Add("Spec Accuracy:");
             lines.Add("- [PASS/FAIL] Do spec updates match the delivered implementation?");
             lines.Add("- [list any spec-code discrepancies found]");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    internal static string BuildAssignmentPlanContent(ParsedTaskAssignment assignment)
+    {
+        var lines = new List<string>
+        {
+            $"# {assignment.Title}",
+            "",
+            "## Objective",
+            string.IsNullOrWhiteSpace(assignment.Description)
+                ? assignment.Title
+                : assignment.Description.Trim()
+        };
+
+        if (assignment.Criteria.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("## Acceptance Criteria");
+            lines.AddRange(assignment.Criteria.Select(c => $"- {c}"));
         }
 
         return string.Join("\n", lines);

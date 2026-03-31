@@ -207,11 +207,6 @@ public class AgentAcademyDbContext : DbContext
             entity.HasKey(e => e.RoomId);
             entity.Property(e => e.Content).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
-
-            entity.HasOne(e => e.Room)
-                .WithOne(r => r.Plan)
-                .HasForeignKey<PlanEntity>(e => e.RoomId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── Activity Events ───────────────────────────────────

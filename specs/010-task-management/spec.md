@@ -228,6 +228,8 @@ When a breakout task is assigned, the orchestrator ensures a `TaskEntity` exists
 
 The `BreakoutRoomEntity.TaskId` field links the breakout room to its `TaskEntity` for reliable lookup during completion.
 
+The breakout room plan is seeded during assignment from the linked task's `CurrentPlan`. When a task is created through `TaskAssignmentRequest`, callers may provide explicit markdown in `CurrentPlan`; otherwise the runtime stores the default planning checklist. If the orchestrator has to create a fallback task during breakout assignment, it derives a markdown plan from the assignment objective and acceptance criteria so the breakout Plan tab is populated immediately.
+
 ### Known Gaps
 
 - No `REJECT_TASK` command for branch-based tasks. If a reviewer finds issues after approval, the only recourse is `git revert`. A rejection flow (setting task back to `ChangesRequested` and spawning a new breakout) is a future enhancement.

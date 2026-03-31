@@ -19,5 +19,4 @@ public class RoomEntity
     public List<TaskEntity> Tasks { get; set; } = [];
     public List<BreakoutRoomEntity> BreakoutRooms { get; set; } = [];
     public List<ActivityEventEntity> ActivityEvents { get; set; } = [];
-    public PlanEntity? Plan { get; set; }
 }

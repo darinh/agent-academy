@@ -9,7 +9,4 @@ public class PlanEntity
     public string RoomId { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public DateTime UpdatedAt { get; set; }
-
-    // Navigation properties
-    public RoomEntity Room { get; set; } = null!;
 }

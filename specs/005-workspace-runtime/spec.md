@@ -68,6 +68,7 @@ Task creation:
 - If `RoomId` is null: creates new room with normalized title as ID, stamped with active workspace's `WorkspacePath`
 - Adds system messages (TaskAssignment + Coordination)
 - Publishes TaskCreated and PhaseChanged events
+- Seeds `TaskSnapshot.CurrentPlan` from `TaskAssignmentRequest.CurrentPlan` when provided; otherwise uses the default planning checklist markdown
 - **Auto-join**: When a new room is created, all agents with `AutoJoinDefaultRoom = true` are moved into the room via `MoveAgentAsync`. Agents currently in `Working` state are skipped to avoid disrupting in-flight breakout work. Failures are caught and logged per-agent (best-effort) so task creation always succeeds.
 
 ### Message Management
@@ -110,6 +111,8 @@ Agent must be in catalog. Room existence is not validated (matches v1).
 - `GetPlanAsync(roomId)` → `PlanContent` or null
 - `SetPlanAsync(roomId, content)` → create or update (upsert)
 - `DeletePlanAsync(roomId)` → returns true if deleted
+
+Plan records are keyed by the active room identifier and may target either a main collaboration room or a breakout room. `SetPlanAsync` validates that the target ID belongs to an existing room or breakout room before writing.
 
 ### Activity Publishing
 
@@ -155,6 +158,7 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 9. Task room creation auto-joins all `AutoJoinDefaultRoom` agents (except those in Working state)
 10. Rooms created while a workspace is active are stamped with that workspace's path
 11. `GetRoomsAsync()` only returns rooms belonging to the active workspace
+12. Plan writes reject unknown room identifiers instead of silently creating orphaned plan rows
 
 ## Known Gaps
 

@@ -201,4 +201,21 @@ public class CommandParserTests
         Assert.Equal("10", result.Commands[0].Args["startLine"]);
         Assert.Equal("20", result.Commands[0].Args["endLine"]);
     }
+
+    [Fact]
+    public void Parse_SetPlanWithMultilineContent_Extracts()
+    {
+        var text = """
+            SET_PLAN:
+              Content: # Execution Plan
+                - Review code
+                - Implement fix
+            """;
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("SET_PLAN", result.Commands[0].Command);
+        Assert.Contains("# Execution Plan", result.Commands[0].Args["Content"]);
+        Assert.Contains("- Implement fix", result.Commands[0].Args["Content"]);
+    }
 }

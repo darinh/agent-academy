@@ -52,9 +52,10 @@ public class PlanController : ControllerBase
 
         try
         {
-            // Verify room exists before writing plan
+            // Verify room or breakout exists before writing plan
             var room = await _runtime.GetRoomAsync(roomId);
-            if (room is null)
+            var breakout = room is null ? await _runtime.GetBreakoutRoomAsync(roomId) : null;
+            if (room is null && breakout is null)
                 return NotFound(new { error = $"Room '{roomId}' not found" });
 
             await _runtime.SetPlanAsync(roomId, plan.Content);

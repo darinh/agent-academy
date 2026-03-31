@@ -11,6 +11,12 @@ All changes to specifications are documented here.
 - **001-domain-model**: `TaskStatus` enum updated to include all 10 values (was missing `InReview`, `ChangesRequested`, `Approved`, `Merging`).
 
 ### Added
+- **007-agent-commands**: `SET_PLAN` command — agents can persist markdown plan content to their current room or breakout room through `WorkspaceRuntime.SetPlanAsync`.
+
+### Changed
+- **005-workspace-runtime / 006-orchestrator / 010-task-management**: Breakout room plans are now auto-seeded during task assignment from the linked task's `CurrentPlan`, with assignment-derived markdown as the fallback. `TaskAssignmentRequest` now accepts optional `CurrentPlan` content, and plan storage is no longer restricted to main-room IDs.
+
+### Added
 - **007-agent-commands**: `MERGE_TASK` command (Phase 1B) — squash-merges approved task branches to develop. Validates caller is Reviewer or Planner, task is Approved with a BranchName.
 - **010-task-management**: Branch-per-breakout workflow — task branches (`task/{slug}-{suffix}`) isolate breakout work from develop. Completion flows through `InReview` → `MERGE_TASK` → squash-merge.
 - **010-task-management**: Round-scoped git locking for concurrent breakout room safety — serializes git operations to prevent working-tree corruption.

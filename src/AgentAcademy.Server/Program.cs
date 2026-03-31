@@ -178,6 +178,7 @@ builder.Services.AddSingleton<ICommandHandler, ShowDiffHandler>();
 builder.Services.AddSingleton<ICommandHandler, GitLogHandler>();
 builder.Services.AddSingleton<ICommandHandler, RoomHistoryHandler>();
 builder.Services.AddSingleton<ICommandHandler, MoveToRoomHandler>();
+builder.Services.AddSingleton<ICommandHandler, SetPlanHandler>();
 builder.Services.AddSingleton<ICommandHandler, AddTaskCommentHandler>();
 builder.Services.AddSingleton<ICommandHandler, RecallAgentHandler>();
 builder.Services.AddSingleton<ICommandHandler, MergeTaskHandler>();

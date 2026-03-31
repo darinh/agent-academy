@@ -67,7 +67,8 @@ public record TaskAssignmentRequest(
     string? RoomId,
     List<string> PreferredRoles,
     TaskType Type = TaskType.Feature,
-    string? CorrelationId = null
+    string? CorrelationId = null,
+    string? CurrentPlan = null
 );
 
 /// <summary>

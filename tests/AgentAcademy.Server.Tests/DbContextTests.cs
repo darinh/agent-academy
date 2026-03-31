@@ -193,7 +193,7 @@ public class DbContextTests : IDisposable
     }
 
     [Fact]
-    public void CanInsertPlanLinkedToRoom()
+    public void CanInsertPlanForRoomId()
     {
         var room = new RoomEntity
         {
@@ -213,12 +213,46 @@ public class DbContextTests : IDisposable
         _db.Plans.Add(plan);
         _db.SaveChanges();
 
-        var loaded = _db.Rooms
-            .Include(r => r.Plan)
-            .First(r => r.Id == "room-plan");
+        var loaded = _db.Plans.First(p => p.RoomId == "room-plan");
 
-        Assert.NotNull(loaded.Plan);
-        Assert.Contains("Step 1", loaded.Plan.Content);
+        Assert.Contains("Step 1", loaded.Content);
+    }
+
+    [Fact]
+    public void CanInsertPlanForBreakoutRoomId()
+    {
+        var room = new RoomEntity
+        {
+            Id = "room-parent",
+            Name = "Parent Room",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _db.Rooms.Add(room);
+
+        var breakout = new BreakoutRoomEntity
+        {
+            Id = "breakout-plan",
+            Name = "BR: Plan Room",
+            ParentRoomId = "room-parent",
+            AssignedAgentId = "agent-1",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _db.BreakoutRooms.Add(breakout);
+
+        var plan = new PlanEntity
+        {
+            RoomId = "breakout-plan",
+            Content = "# Breakout Plan",
+            UpdatedAt = DateTime.UtcNow
+        };
+        _db.Plans.Add(plan);
+        _db.SaveChanges();
+
+        var loaded = _db.Plans.First(p => p.RoomId == "breakout-plan");
+
+        Assert.Equal("# Breakout Plan", loaded.Content);
     }
 
     [Fact]

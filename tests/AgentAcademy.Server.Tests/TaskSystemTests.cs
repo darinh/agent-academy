@@ -166,6 +166,55 @@ public class TaskSystemTests : IDisposable
     // ── ADD_TASK_COMMENT Command ─────────────────────────────────
 
     [Fact]
+    public async Task SetPlan_SavesPlanForCurrentRoom()
+    {
+        await EnsureRoom("room-1");
+        var handler = new SetPlanHandler();
+        var (cmd, ctx) = MakeCommand(
+            "SET_PLAN",
+            new() { ["content"] = "# Backend Plan\n\n- Add command" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var plan = await runtime.GetPlanAsync("room-1");
+
+        Assert.NotNull(plan);
+        Assert.Contains("Backend Plan", plan!.Content);
+    }
+
+    [Fact]
+    public async Task SetPlan_WithoutRoomContext_ReturnsError()
+    {
+        var handler = new SetPlanHandler();
+        var scope = _serviceProvider.CreateScope();
+        var command = new CommandEnvelope(
+            Command: "SET_PLAN",
+            Args: new Dictionary<string, object?> { ["content"] = "# Plan" },
+            Status: CommandStatus.Success,
+            Result: null,
+            Error: null,
+            CorrelationId: $"cmd-{Guid.NewGuid():N}",
+            Timestamp: DateTime.UtcNow,
+            ExecutedBy: "engineer-1");
+        var context = new CommandContext(
+            AgentId: "engineer-1",
+            AgentName: "Hephaestus",
+            AgentRole: "SoftwareEngineer",
+            RoomId: null,
+            BreakoutRoomId: null,
+            Services: scope.ServiceProvider);
+
+        var result = await handler.ExecuteAsync(command, context);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("room context", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AddTaskComment_Assignee_CanComment()
     {
         var taskId = await CreateTestTask(assignedAgentId: "engineer-1");
@@ -539,6 +588,16 @@ public class TaskSystemTests : IDisposable
 
         Assert.Single(result.Commands);
         Assert.Equal("RECALL_AGENT", result.Commands[0].Command);
+    }
+
+    [Fact]
+    public void CommandParser_RecognizesSetPlan()
+    {
+        var parser = new CommandParser();
+        var result = parser.Parse("SET_PLAN:\n  Content: # Plan");
+
+        Assert.Single(result.Commands);
+        Assert.Equal("SET_PLAN", result.Commands[0].Command);
     }
 
     // ── Helpers ─────────────────────────────────────────────────

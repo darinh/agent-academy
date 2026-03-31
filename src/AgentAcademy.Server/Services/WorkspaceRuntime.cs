@@ -465,6 +465,7 @@ public sealed class WorkspaceRuntime
             .Where(r => !string.IsNullOrEmpty(r))
             .Distinct()
             .ToList();
+        var currentPlan = ResolveTaskPlanContent(request.Title, request.CurrentPlan);
 
         var task = new TaskSnapshot(
             Id: taskId,
@@ -474,7 +475,7 @@ public sealed class WorkspaceRuntime
             Status: Shared.Models.TaskStatus.Active,
             Type: request.Type,
             CurrentPhase: CollaborationPhase.Planning,
-            CurrentPlan: $"Plan for: {request.Title}\n\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate",
+            CurrentPlan: currentPlan,
             ValidationStatus: WorkstreamStatus.Ready,
             ValidationSummary: "Pending reviewer and validator feedback.",
             ImplementationStatus: WorkstreamStatus.NotStarted,
@@ -1483,7 +1484,7 @@ public sealed class WorkspaceRuntime
     /// Returns the TaskEntity ID.
     /// </summary>
     public async Task<string> EnsureTaskForBreakoutAsync(
-        string title, string description, string agentId, string roomId)
+        string title, string description, string agentId, string roomId, string? currentPlan = null)
     {
         var tasks = await _db.Tasks.ToListAsync();
 
@@ -1547,7 +1548,7 @@ public sealed class WorkspaceRuntime
             Status = nameof(Shared.Models.TaskStatus.Active),
             Type = nameof(TaskType.Feature),
             CurrentPhase = nameof(CollaborationPhase.Implementation),
-            CurrentPlan = "",
+            CurrentPlan = ResolveTaskPlanContent(title, currentPlan),
             ValidationStatus = nameof(WorkstreamStatus.NotStarted),
             ValidationSummary = "",
             ImplementationStatus = nameof(WorkstreamStatus.InProgress),
@@ -1583,6 +1584,14 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task SetPlanAsync(string roomId, string content)
     {
+        if (string.IsNullOrWhiteSpace(roomId))
+            throw new ArgumentException("Room ID is required.", nameof(roomId));
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ArgumentException("Plan content is required.", nameof(content));
+
+        if (!await PlanTargetExistsAsync(roomId))
+            throw new InvalidOperationException($"Room or breakout room '{roomId}' not found");
+
         var entity = await _db.Plans.FindAsync(roomId);
         var now = DateTime.UtcNow;
 
@@ -1814,6 +1823,20 @@ public sealed class WorkspaceRuntime
             CorrelationId: entity.CorrelationId,
             ReplyToMessageId: entity.ReplyToMessageId
         );
+    }
+
+    private async Task<bool> PlanTargetExistsAsync(string roomId)
+    {
+        return await _db.Rooms.AnyAsync(r => r.Id == roomId)
+            || await _db.BreakoutRooms.AnyAsync(br => br.Id == roomId);
+    }
+
+    private static string ResolveTaskPlanContent(string title, string? currentPlan)
+    {
+        if (!string.IsNullOrWhiteSpace(currentPlan))
+            return currentPlan.Trim();
+
+        return $"# {title}\n\n## Plan\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate";
     }
 
     private static AgentLocation BuildAgentLocation(AgentLocationEntity entity)

@@ -430,6 +430,27 @@ public class WorkspaceRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateTask_UsesExplicitCurrentPlan()
+    {
+        await _runtime.InitializeAsync();
+
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            Title: "Planful Task",
+            Description: "Task with explicit plan",
+            SuccessCriteria: "Plan persists",
+            RoomId: "main",
+            PreferredRoles: [],
+            CurrentPlan: "# Custom Plan\n\n- Investigate\n- Implement"
+        ));
+
+        Assert.Equal("# Custom Plan\n\n- Investigate\n- Implement", result.Task.CurrentPlan);
+
+        var persisted = await _runtime.GetTaskAsync(result.Task.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(result.Task.CurrentPlan, persisted!.CurrentPlan);
+    }
+
+    [Fact]
     public async Task CreateTask_ThrowsForMissingTitle()
     {
         var request = new TaskAssignmentRequest(
@@ -489,6 +510,20 @@ public class WorkspaceRuntimeTests : IDisposable
         var persistedTask = await _runtime.GetTaskAsync(taskResult.Task.Id);
         Assert.NotNull(persistedTask);
         Assert.Equal(Shared.Models.TaskStatus.InReview, persistedTask!.Status);
+    }
+
+    [Fact]
+    public async Task SetPlanAsync_AllowsBreakoutRoomPlans()
+    {
+        await _runtime.InitializeAsync();
+
+        var breakout = await _runtime.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Plan Test");
+        await _runtime.SetPlanAsync(breakout.Id, "# Breakout Plan\n\n- Do work");
+
+        var plan = await _runtime.GetPlanAsync(breakout.Id);
+
+        Assert.NotNull(plan);
+        Assert.Contains("Breakout Plan", plan!.Content);
     }
 
     [Fact]

@@ -793,17 +793,6 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("Room");
                 });
 
-            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.PlanEntity", b =>
-                {
-                    b.HasOne("AgentAcademy.Server.Data.Entities.RoomEntity", "Room")
-                        .WithOne("Plan")
-                        .HasForeignKey("AgentAcademy.Server.Data.Entities.PlanEntity", "RoomId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Room");
-                });
-
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskCommentEntity", b =>
                 {
                     b.HasOne("AgentAcademy.Server.Data.Entities.TaskEntity", "Task")
@@ -837,8 +826,6 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("BreakoutRooms");
 
                     b.Navigation("Messages");
-
-                    b.Navigation("Plan");
 
                     b.Navigation("Tasks");
                 });

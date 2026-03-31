@@ -46,6 +46,7 @@
             "GIT_LOG",
             "ROOM_HISTORY",
             "MOVE_TO_ROOM",
+            "SET_PLAN",
             "ADD_TASK_COMMENT",
             "RECALL_AGENT",
             "MERGE_TASK"
@@ -93,6 +94,7 @@
             "RUN_TESTS",
             "ROOM_HISTORY",
             "MOVE_TO_ROOM",
+            "SET_PLAN",
             "ADD_TASK_COMMENT"
           ],
           "Denied": [
@@ -142,6 +144,7 @@
             "DM",
             "ROOM_HISTORY",
             "MOVE_TO_ROOM",
+            "SET_PLAN",
             "ADD_TASK_COMMENT"
           ],
           "Denied": [
@@ -191,6 +194,7 @@
             "DM",
             "ROOM_HISTORY",
             "MOVE_TO_ROOM",
+            "SET_PLAN",
             "ADD_TASK_COMMENT"
           ],
           "Denied": [
@@ -241,6 +245,7 @@
             "DM",
             "ROOM_HISTORY",
             "MOVE_TO_ROOM",
+            "SET_PLAN",
             "ADD_TASK_COMMENT",
             "MERGE_TASK"
           ],
@@ -285,6 +290,7 @@
             "RUN_TESTS",
             "ROOM_HISTORY",
             "MOVE_TO_ROOM",
+            "SET_PLAN",
             "ADD_TASK_COMMENT"
           ],
           "Denied": [
