@@ -8,7 +8,8 @@
 #   1+  → Crash/error     → restart with exponential backoff
 #
 # Usage:
-#   ./wrapper.sh                           # uses default DLL path
+#   ./wrapper.sh                           # production mode (uses built DLL)
+#   ./wrapper.sh --dev                     # dev mode (uses dotnet run)
 #   ./wrapper.sh --urls http://0.0.0.0:5000
 #
 # Environment variables:
@@ -31,41 +32,53 @@ EXIT_RESTART=75
 
 # State
 crash_count=0
+dev_mode=false
+
+# Parse flags
+for arg in "$@"; do
+    case "$arg" in
+        --dev) dev_mode=true; shift ;;
+    esac
+done
 
 log() { echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $*"; }
 
-find_dll() {
-    if [[ -n "${AA_DLL_PATH:-}" ]]; then
-        echo "$AA_DLL_PATH"
+build_run_command() {
+    if [[ "$dev_mode" == true ]]; then
+        echo "dotnet run --project $SCRIPT_DIR"
         return
     fi
 
-    # Try common locations relative to the script
-    local candidates=(
-        "$SCRIPT_DIR/bin/Debug/net8.0/AgentAcademy.Server.dll"
-        "$SCRIPT_DIR/bin/Release/net8.0/AgentAcademy.Server.dll"
-        "$SCRIPT_DIR/AgentAcademy.Server.dll"
-    )
+    local dll_path=""
+    if [[ -n "${AA_DLL_PATH:-}" ]]; then
+        dll_path="$AA_DLL_PATH"
+    else
+        local candidates=(
+            "$SCRIPT_DIR/bin/Debug/net8.0/AgentAcademy.Server.dll"
+            "$SCRIPT_DIR/bin/Release/net8.0/AgentAcademy.Server.dll"
+            "$SCRIPT_DIR/AgentAcademy.Server.dll"
+        )
+        for candidate in "${candidates[@]}"; do
+            if [[ -f "$candidate" ]]; then
+                dll_path="$candidate"
+                break
+            fi
+        done
+    fi
 
-    for candidate in "${candidates[@]}"; do
-        if [[ -f "$candidate" ]]; then
-            echo "$candidate"
-            return
-        fi
-    done
+    if [[ -z "$dll_path" ]]; then
+        log "ERROR: Cannot find AgentAcademy.Server.dll"
+        log "Set AA_DLL_PATH, use --dev flag, or build first."
+        exit 1
+    fi
 
-    echo ""
+    echo "dotnet $dll_path"
 }
 
-DLL_PATH="$(find_dll)"
+RUN_CMD="$(build_run_command)"
 
-if [[ -z "$DLL_PATH" ]]; then
-    log "ERROR: Cannot find AgentAcademy.Server.dll"
-    log "Set AA_DLL_PATH or run from the server project directory."
-    exit 1
-fi
-
-log "DLL path: $DLL_PATH"
+log "Mode: $(if [[ "$dev_mode" == true ]]; then echo "dev (dotnet run)"; else echo "production (DLL)"; fi)"
+log "Command: $RUN_CMD"
 log "Max crash restarts: $MAX_CRASH_RESTARTS"
 log "Healthy-after threshold: ${HEALTHY_AFTER_SEC}s"
 
@@ -74,7 +87,7 @@ while true; do
     start_time=$(date +%s)
 
     set +e
-    dotnet "$DLL_PATH" "$@"
+    $RUN_CMD "$@"
     exit_code=$?
     set -e
 
