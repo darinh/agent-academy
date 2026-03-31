@@ -221,6 +221,30 @@ lifetime.ApplicationStopping.Register(() =>
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogWarning("Server shutting down (exit code: {ExitCode})", Environment.ExitCode);
+
+    // Update the current server instance record with shutdown timestamp
+    try
+    {
+        using var shutdownScope = app.Services.CreateScope();
+        var db = shutdownScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var instanceId = WorkspaceRuntime.CurrentInstanceId;
+        if (instanceId is not null)
+        {
+            var instance = db.ServerInstances.Find(instanceId);
+            if (instance is not null)
+            {
+                instance.ShutdownAt = DateTime.UtcNow;
+                instance.ExitCode = Environment.ExitCode;
+                db.SaveChanges();
+                logger.LogInformation("Server instance {InstanceId} shutdown recorded", instanceId);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        var shutdownLogger = app.Services.GetRequiredService<ILogger<Program>>();
+        shutdownLogger.LogError(ex, "Failed to record server instance shutdown");
+    }
 });
 
 // Register built-in notification providers

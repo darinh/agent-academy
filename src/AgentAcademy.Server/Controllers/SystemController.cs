@@ -78,7 +78,7 @@ public class SystemController : ControllerBase
     }
 
     /// <summary>
-    /// GET /healthz — health check.
+    /// GET /healthz — basic health check.
     /// </summary>
     [HttpGet("/healthz")]
     [AllowAnonymous]
@@ -90,6 +90,27 @@ public class SystemController : ControllerBase
             Status: "healthy",
             Uptime: uptime.ToString(@"d\.hh\:mm\:ss"),
             Timestamp: DateTime.UtcNow
+        ));
+    }
+
+    /// <summary>
+    /// GET /api/health/instance — instance-level health for client reconnect protocol.
+    /// Clients compare instanceId to detect server restarts.
+    /// </summary>
+    [HttpGet("api/health/instance")]
+    [AllowAnonymous]
+    public IActionResult GetInstanceHealth()
+    {
+        var instanceId = WorkspaceRuntime.CurrentInstanceId ?? "unknown";
+        var executor = _executor as CopilotExecutor;
+
+        return Ok(new InstanceHealthResult(
+            InstanceId: instanceId,
+            StartedAt: StartedAt,
+            Version: typeof(SystemController).Assembly.GetName().Version?.ToString() ?? "0.0.0",
+            CrashDetected: false, // Only meaningful on first request after restart — check DB for accuracy
+            ExecutorOperational: _executor.IsFullyOperational,
+            AuthFailed: executor?.IsAuthFailed ?? false
         ));
     }
 

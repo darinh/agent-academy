@@ -30,6 +30,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<AgentConfigEntity> AgentConfigs => Set<AgentConfigEntity>();
     public DbSet<InstructionTemplateEntity> InstructionTemplates => Set<InstructionTemplateEntity>();
     public DbSet<TaskCommentEntity> TaskComments => Set<TaskCommentEntity>();
+    public DbSet<ServerInstanceEntity> ServerInstances => Set<ServerInstanceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -307,6 +308,15 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.Name)
                 .IsUnique()
                 .HasDatabaseName("idx_instruction_templates_name");
+        });
+
+        // ── Server Instances ───────────────────────────────────
+        modelBuilder.Entity<ServerInstanceEntity>(entity =>
+        {
+            entity.ToTable("server_instances");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.StartedAt).IsRequired();
+            entity.Property(e => e.Version).IsRequired();
         });
     }
 }

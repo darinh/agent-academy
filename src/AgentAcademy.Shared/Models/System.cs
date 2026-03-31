@@ -76,3 +76,16 @@ public record ErrorRecord(
 public record PlanContent(
     string Content
 );
+
+/// <summary>
+/// Instance-level health result for client reconnect protocol.
+/// Clients compare <see cref="InstanceId"/> to detect server restarts.
+/// </summary>
+public record InstanceHealthResult(
+    string InstanceId,
+    DateTime StartedAt,
+    string Version,
+    bool CrashDetected,
+    bool ExecutorOperational,
+    bool AuthFailed
+);

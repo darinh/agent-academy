@@ -69,9 +69,13 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Ensures the default room and agent locations exist.
     /// Call once at startup within a scope.
+    /// Also tracks server instance lifecycle for crash detection.
     /// </summary>
     public async Task InitializeAsync()
     {
+        // ── Server Instance Tracking ────────────────────────────
+        await RecordServerInstanceAsync();
+
         var defaultRoomId = _catalog.DefaultRoomId;
         var activeWorkspace = await GetActiveWorkspacePathAsync();
 
@@ -142,6 +146,58 @@ public sealed class WorkspaceRuntime
 
         await _db.SaveChangesAsync();
     }
+
+    /// <summary>
+    /// Records a new server instance and detects if the previous one crashed
+    /// (had no clean shutdown). The current instance ID is stored in
+    /// <see cref="CurrentInstanceId"/> for the health endpoint.
+    /// </summary>
+    private async Task RecordServerInstanceAsync()
+    {
+        var version = typeof(WorkspaceRuntime).Assembly
+            .GetName().Version?.ToString() ?? "0.0.0";
+
+        // Check for a previous instance that never shut down cleanly
+        var orphan = await _db.ServerInstances
+            .Where(si => si.ShutdownAt == null)
+            .OrderByDescending(si => si.StartedAt)
+            .FirstOrDefaultAsync();
+
+        var crashDetected = false;
+        if (orphan is not null)
+        {
+            // Previous instance didn't record a shutdown — it crashed.
+            orphan.ShutdownAt = DateTime.UtcNow;
+            orphan.ExitCode = -1;
+            crashDetected = true;
+
+            _logger.LogWarning(
+                "Previous server instance {InstanceId} (started {StartedAt}) did not shut down cleanly — marking as crashed",
+                orphan.Id, orphan.StartedAt);
+        }
+
+        var instance = new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow,
+            CrashDetected = crashDetected,
+            Version = version
+        };
+
+        _db.ServerInstances.Add(instance);
+        await _db.SaveChangesAsync();
+
+        CurrentInstanceId = instance.Id;
+
+        _logger.LogInformation(
+            "Server instance {InstanceId} started (version {Version}, crash detected: {Crash})",
+            instance.Id, version, crashDetected);
+    }
+
+    /// <summary>
+    /// The ID of the current server instance. Set during <see cref="InitializeAsync"/>.
+    /// Used by the health endpoint for client reconnect protocol.
+    /// </summary>
+    public static string? CurrentInstanceId { get; private set; }
 
     // ── Configured Agents ───────────────────────────────────────
 
