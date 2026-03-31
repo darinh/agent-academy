@@ -182,6 +182,7 @@ builder.Services.AddSingleton<ICommandHandler, SetPlanHandler>();
 builder.Services.AddSingleton<ICommandHandler, AddTaskCommentHandler>();
 builder.Services.AddSingleton<ICommandHandler, RecallAgentHandler>();
 builder.Services.AddSingleton<ICommandHandler, MergeTaskHandler>();
+builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
 
 // Notification system
 builder.Services.AddSingleton<NotificationManager>();
@@ -213,6 +214,14 @@ using (var scope = app.Services.CreateScope())
         await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
     }
 }
+
+// Register shutdown hook for graceful cleanup
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() =>
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogWarning("Server shutting down (exit code: {ExitCode})", Environment.ExitCode);
+});
 
 // Register built-in notification providers
 var notificationManager = app.Services.GetRequiredService<NotificationManager>();

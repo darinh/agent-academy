@@ -49,7 +49,8 @@
             "SET_PLAN",
             "ADD_TASK_COMMENT",
             "RECALL_AGENT",
-            "MERGE_TASK"
+            "MERGE_TASK",
+            "RESTART_SERVER"
           ],
           "Denied": [
             "RUN_BUILD",
@@ -99,7 +100,8 @@
           ],
           "Denied": [
             "RUN_BUILD",
-            "RUN_TESTS"
+            "RUN_TESTS",
+            "RESTART_SERVER"
           ]
         }
       },
@@ -149,7 +151,8 @@
           ],
           "Denied": [
             "APPROVE_TASK",
-            "REQUEST_CHANGES"
+            "REQUEST_CHANGES",
+            "RESTART_SERVER"
           ]
         }
       },
@@ -199,7 +202,8 @@
           ],
           "Denied": [
             "APPROVE_TASK",
-            "REQUEST_CHANGES"
+            "REQUEST_CHANGES",
+            "RESTART_SERVER"
           ]
         }
       },
@@ -249,7 +253,9 @@
             "ADD_TASK_COMMENT",
             "MERGE_TASK"
           ],
-          "Denied": []
+          "Denied": [
+            "RESTART_SERVER"
+          ]
         }
       },
       {
@@ -297,7 +303,8 @@
             "RUN_BUILD",
             "RUN_TESTS",
             "APPROVE_TASK",
-            "REQUEST_CHANGES"
+            "REQUEST_CHANGES",
+            "RESTART_SERVER"
           ]
         }
       }
