@@ -41,51 +41,14 @@ agent-academy/
 └── AgentAcademy.sln
 ```
 
-## Specification Workflow (MANDATORY)
+## Specification Workflow
 
-The `specs/` directory is the single source of truth for what this system does. Every claim in the spec must be verifiable against actual code.
+This project uses spec-driven development. The `specs/` directory is in-repo and is the single source of truth. See user-level instructions (`~/.copilot/copilot-instructions.md`) for the full spec workflow, plan format, and validation checklist.
 
-### Plans ARE Spec Change Proposals
-
-Every implementation plan (plan.md) must include a **Spec Change Proposal** section. The plan is not just a task list — it is the formal proposal for how the spec will change. This means:
-
-1. **Before coding**: The plan identifies which spec sections are affected, the change type, and the proposed spec updates.
-2. **During coding**: The spec update is a tracked todo item alongside the code changes — not an afterthought.
-3. **After coding**: Changes are validated against both the plan and the spec change proposal. The spec update is reviewed with the same rigor as code changes.
-
-### Plan Spec Change Proposal Format
-
-Every plan must include:
-```
-## Spec Change Proposal
-- **Sections affected**: [spec section numbers and names]
-- **Change type**: NEW_CAPABILITY | MODIFICATION | BUG_FIX_CODE | BUG_FIX_SPEC
-- **Proposed changes**: [what the spec will say after implementation]
-- **Verification**: [how to confirm spec accuracy against delivered code]
-```
-
-### Validation Checklist
-
-When reviewing completed work, verify:
-- [ ] Every code change has a corresponding spec update
-- [ ] Every spec claim references actual code (file paths, function names, types)
-- [ ] The spec update matches what was proposed in the plan
-- [ ] `specs/CHANGELOG.md` has an entry for the change
-- [ ] No aspirational claims — spec describes what IS, not what SHOULD BE
-
-### If Spec and Code Diverge
-1. Investigate WHY they diverged
-2. Fix whichever is wrong (code or spec)
-3. Update THIS FILE with a new convention or pitfall to prevent recurrence
-
-### Spec Document Template
-Each spec section follows:
-- **Purpose**: What this section covers
-- **Current Behavior**: Verified description (or "Planned" for unimplemented features)
-- **Interfaces & Contracts**: Types, APIs, data shapes
-- **Invariants**: Rules that must always hold
-- **Known Gaps**: Where implementation is incomplete
-- **Revision History**: Changes linked to tasks
+**Project-specific notes:**
+- Specs live at `specs/` in the repo root (this project owns its repo)
+- Changelog at `specs/CHANGELOG.md`
+- Spec index at `specs/README.md`
 
 ## Conventions
 - Use C# records for immutable domain types
@@ -95,14 +58,6 @@ Each spec section follows:
 - Controllers should be thin — business logic lives in services
 - Error responses use `ProblemDetails` format
 - Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`
-
-## Branching Strategy
-
-- `main` — stable releases only. Never push directly. Protected branch.
-- `develop` — integration branch. PRs from feature branches merge here.
-- `feat/xxx`, `fix/xxx`, `docs/xxx` — feature branches off `develop`.
-- All work happens on feature branches. PRs go to `develop`.
-- `develop` → `main` only via PR when ready for release.
 
 ## Git Hooks Setup
 
@@ -133,90 +88,7 @@ git config core.hooksPath .githooks
   - `BREAKING CHANGE` or `feat!:` → major
 - Version sources: `Directory.Build.props` (.NET) and `package.json` (client).
 
-## Discovery Workflow
-- **Read specs first** — `specs/` has complete API contracts, DB schemas, behavior rules, and test coverage. This is faster than reading source files for understanding the backend.
-- **Read code only when implementing** — or when the spec says "Planned" or has known gaps.
+## Project-Specific Pitfalls
 - **Frontend has no spec** — code exploration is needed for frontend patterns, conventions, and component structure.
-- **Don't read source files to understand APIs** — the spec already documents endpoints, request/response shapes, validation rules, and error codes. Reading `Controllers/*.cs` for discovery is redundant.
-
-## Common Pitfalls
-- Don't write aspirational specs — write factual specs describing what IS
-- Don't skip spec verification after implementation
-- Don't add features without updating the spec
-- Don't read source code for API discovery when the spec already documents it
-- Don't hardcode configuration values — use `appsettings.json` or environment variables
-- Don't push directly to `main` — always use a feature branch and PR
 - Don't forget to run `git config core.hooksPath .githooks` after cloning
-
-## Session Handoff Protocol
-
-Agents use `.github/next-session.md` for continuity across sessions.
-
-### On Session Start
-When the user greets you (e.g., "hey", "hello", "hi"), **immediately**:
-
-1. **Check for unmerged work**: Run `git branch --no-merged develop` (or the integration branch). If any feature branches have unmerged commits, tell the user: *"Found unmerged work on branch X (N commits). Want to continue that, merge it, or start fresh?"*
-2. **Read handoff**: Check if `.github/next-session.md` exists. If it does:
-   - Read it and use it as your starting context.
-   - Tell the user what was left in progress and what you're picking up.
-   - Delete the file after reading it (it's a one-time handoff, not permanent docs).
-3. **Log the session**: Insert a row into the `session_log` table in the session database (see Session History below).
-
-### On Session End (automatic)
-Write `.github/next-session.md` when any of these are true:
-- You've completed a large task and there are known next steps.
-- You sense the context window is getting large (long conversation, many tool calls). Don't wait to be asked — proactively write the file and tell the user: *"Context is getting heavy. I've written the handoff to `.github/next-session.md` — start a new session and I'll pick up where we left off."*
-- The user says they're ending the session.
-
-### Handoff File Format
-```markdown
-# Session Handoff
-
-## Status
-[What was just completed — be specific about commits, branches, files changed]
-
-## In Progress
-[What was actively being worked on when the session ended, if anything]
-
-## Next Steps
-[Prioritized list of what the next agent should do]
-
-## Context
-[Key decisions made, architectural notes, gotchas discovered — anything the next agent needs to avoid re-deriving from scratch]
-
-## Prompt
-[A ready-to-paste prompt the next agent can execute immediately, e.g.:
-"Work in ~/projects/agent-academy on develop. The X feature is done. Next: implement Y. Check file Z for context. Use the anvil agent."]
-```
-
-### Rules
-- The file is `.github/next-session.md` — always this path, never somewhere else.
-- It is gitignored (add it to `.gitignore` if not already there).
-- It is ephemeral — read once, then delete. Not documentation.
-- Write it proactively. The user should never have to ask for it.
-
-### Session History
-
-Use a `session_log` table in the **session SQL database** to record a persistent history of work across sessions. This survives session boundaries and can be queried later for auditing, context, or review.
-
-```sql
-CREATE TABLE IF NOT EXISTS session_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    ended_at DATETIME,
-    branch TEXT,
-    task_summary TEXT NOT NULL,
-    commits TEXT,           -- comma-separated SHAs
-    files_changed TEXT,     -- comma-separated paths
-    tests_before INTEGER,
-    tests_after INTEGER,
-    learnings TEXT,         -- key decisions, gotchas, patterns discovered
-    status TEXT DEFAULT 'in_progress' CHECK(status IN ('in_progress', 'completed', 'abandoned'))
-);
-```
-
-**On session start**: `INSERT INTO session_log (branch, task_summary) VALUES ('{branch}', '{what you''re working on}');`
-
-**On session end**: `UPDATE session_log SET ended_at = CURRENT_TIMESTAMP, commits = '{shas}', files_changed = '{files}', tests_before = N, tests_after = M, learnings = '{notes}', status = 'completed' WHERE id = {id};`
-
-**To review history**: `SELECT * FROM session_log ORDER BY started_at DESC LIMIT 20;`
+- ⚠️ Do NOT start the server while making git changes — GitService actively manages git branches
