@@ -56,7 +56,7 @@ public record AgentCatalogOptions(string DefaultRoomId, string DefaultRoomName, 
 
 ```csharp
 public record RoomSnapshot(string Id, string Name, RoomStatus Status, CollaborationPhase CurrentPhase, TaskSnapshot? ActiveTask, List<AgentPresence> Participants, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
-public record BreakoutRoom(string Id, string Name, string ParentRoomId, string AssignedAgentId, List<TaskItem> Tasks, RoomStatus Status, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
+public record BreakoutRoom(string Id, string Name, string ParentRoomId, string AssignedAgentId, string? TaskId, List<TaskItem> Tasks, RoomStatus Status, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
 public record ChatEnvelope(string Id, string RoomId, string SenderId, string SenderName, string? SenderRole, MessageSenderKind SenderKind, MessageKind Kind, string Content, DateTime SentAt, string? CorrelationId = null, string? ReplyToMessageId = null, DeliveryHint? Hint = null);
 public record DeliveryHint(string? TargetRole, string? TargetAgentId, DeliveryPriority Priority, bool ReplyRequested);
 ```

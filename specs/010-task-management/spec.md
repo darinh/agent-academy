@@ -86,7 +86,7 @@ public class TaskCommentEntity
 
 Add to existing `TaskStatus` enum:
 
-- `InReview` — PR opened, awaiting Socrates review
+- `InReview` — Work completed, awaiting reviewer approval
 - `ChangesRequested` — Socrates requested fixes
 - `Approved` — PR approved, ready to merge
 - `Merging` — Merge in progress
@@ -274,6 +274,8 @@ Socrates may use multiple models for review depth:
 ```
 
 ### Post-Approval
+
+> **Note**: This section describes the planned PR-based workflow (Phase 5-6). The current shipped behavior uses `APPROVE_TASK` → `MERGE_TASK` (local squash-merge via GitService) as documented in section 3.5 (Branch-per-Breakout).
 
 ```
 1. Socrates approves PR
@@ -618,9 +620,9 @@ The orchestrator should ensure agents post at minimum:
 
 1. A task's `AssignedAgentName` must correspond to a configured agent in `agents.json`
 2. All commits on an agent branch must be authored by that agent's git identity
-3. A task in `InReview` must have a non-null `PullRequestNumber`
+3. A task in `InReview` must have either a non-null `BranchName` (branch-based, current) or `PullRequestNumber` (PR-based, planned)
 4. Socrates is the only agent that can approve PRs (unless the review pipeline is explicitly overridden)
-5. A task cannot transition to `Completed` without `PullRequestStatus == Merged` (for tasks that produce code)
+5. A task cannot transition to `Completed` without either `MergeCommitSha` (branch-based, current) or `PullRequestStatus == Merged` (PR-based, planned)
 6. Named agents are responsible for fleet output — fleet models are recorded but the agent is the author
 
 ## Known Gaps
