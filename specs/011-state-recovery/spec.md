@@ -6,9 +6,9 @@ Documents the supervised restart and state recovery system that enables Agent Ac
 
 ## Current Behavior
 
-**Status: Partially Implemented** (Wrapper script, server instances, restart command, and health endpoint implemented. Client reconnect UX planned.)
+**Status: Partially Implemented** (Wrapper script, server instances, restart command, health endpoint, and auth recovery implemented. Client reconnect UX planned.)
 
-The state recovery system consists of six components working together:
+The state recovery system consists of eight components working together:
 
 ### 1. Wrapper Script Exit Code Contract
 
@@ -181,6 +181,58 @@ RESTART_SERVER:
 
 **File**: `src/AgentAcademy.Server/Commands/Handlers/RestartServerHandler.cs`
 
+### 8. Auth Retry vs Restart Escalation
+
+The `CopilotExecutor` implements a token-based authentication recovery strategy that avoids server restarts for recoverable auth failures.
+
+**Authentication Failure Detection** (**implemented**):
+
+When the Copilot SDK returns an authentication error during agent execution:
+
+1. **Auth Exception Handling** (`CopilotExecutor.RunAsync`):
+   - `CopilotAuthException`: Authentication failure (token expired/revoked)
+     - Marks `_authFailed = true` via `HandleAuthFailureAsync`
+     - Invalidates the current agent session
+     - Posts system message: "⚠️ **Copilot SDK authentication failed.** The OAuth token has expired or been revoked. Please re-authenticate at `/api/auth/login` to restore agent functionality."
+     - Falls back to `StubExecutor` for this request
+     - **Never retried** — no automatic retry loop for auth failures
+   
+   - `CopilotAuthorizationException`: Token lacks required permissions
+     - Invalidates the current agent session
+     - Falls back to `StubExecutor`
+     - **Never retried** — no automatic retry loop for authorization failures
+
+2. **Auth Recovery Flow** (`CopilotExecutor.EnsureClientAsync`):
+   - If `_authFailed` is true, `CopilotClient` remains unavailable
+   - When a new token is provided (via `CopilotTokenProvider` after user re-login):
+     - `_activeToken` changes, triggering client recreation
+     - `_authFailed` is cleared to `false`
+     - Posts recovery message: "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online."
+   - Health endpoint exposes `authFailed` flag so clients can prompt user to re-authenticate
+
+3. **Retry Policy** (`CopilotExecutor.SendAndCollectWithRetryAsync`):
+   - **Auth/authorization failures**: Never retried (thrown immediately)
+   - **Quota/rate-limit errors**: Retried up to 3 times with exponential backoff (5s, 15s, 30s)
+   - **Transient errors**: Retried up to 3 times with exponential backoff (2s, 4s, 8s)
+
+**Why No Restart Escalation**:
+
+Auth failures are caused by expired/revoked OAuth tokens, not by corrupted SDK state or broken file handles. The correct fix is to refresh the token via user re-authentication, not to restart the server. The system:
+
+- Exposes `authFailed` in the health endpoint so the UI can prompt re-login
+- Continues serving non-agent endpoints (workspace, tasks, rooms) during auth failure
+- Automatically recovers when `CopilotTokenProvider` receives a new token (after OAuth callback)
+- Uses `StubExecutor` as fallback so orchestration doesn't crash
+
+**Restart is only needed** when:
+- Unrecoverable SDK state corruption occurs (not auth failures)
+- Configuration changes require process reload
+- Planner explicitly requests it via `RESTART_SERVER` command
+
+**Files**: 
+- `src/AgentAcademy.Server/Services/CopilotExecutor.cs` (lines 142-157, 278-306, 476-484, 640-679)
+- `src/AgentAcademy.Server/Services/CopilotExceptions.cs` (typed exception definitions)
+
 ## Interfaces & Contracts
 
 ### Exit Code Contract
@@ -230,12 +282,13 @@ Result: Server exits with code 75, wrapper restarts process
 1. **Single active instance**: Only one `ServerInstanceEntity` with `ShutdownAt = NULL` exists at any time
 2. **Crash detection**: `CrashDetected = true` if and only if a previous instance has `ShutdownAt = NULL` at startup
 3. **Exit code semantics**: Code 75 means "restart", code 0 means "stop", other codes mean "error"
-4. **Wrapper obligation**: Wrapper MUST restart on exit code 75, MUST NOT restart on any other code
+4. **Wrapper obligation**: Wrapper MUST restart on exit code 75, MUST NOT restart on code 0, MUST restart with backoff on code 1+
 5. **Client sync**: Frontend `instanceId` must match backend health endpoint after reconnection
 6. **Timestamp consistency**: All `StartedAt` and `ShutdownAt` values are UTC
 7. **Version tracking**: `Version` field matches the running assembly version
 8. **Recovery over guesswork**: After reconnect, client state must be refreshed from authoritative server endpoints before transient UI state is trusted
 9. **Visible termination**: Breakout termination reason must be observable as complete, recall, cancel, or stuck-detected
+10. **Auth recovery without restart**: Authentication failures trigger user re-authentication flow, not server restart. `authFailed` flag exposed to clients, cleared automatically on token refresh.
 
 ## Known Gaps
 
@@ -254,6 +307,7 @@ Result: Server exits with code 75, wrapper restarts process
 
 ## Revision History
 
+- **2026-03-31**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based recovery strategy. Authentication failures trigger user re-authentication instead of server restart. Auth/authorization exceptions are never retried; quota/transient errors retry with exponential backoff. Health endpoint `authFailed` flag exposed for client prompts. Added Invariant 10. Updated Invariant 4 to clarify crash-restart behavior (code 1+).
 - **2026-03-31**: Implemented wrapper script (crash-restart with backoff), server instance tracking (entity + migration + crash detection), RESTART_SERVER command handler (Planner-only, exit code 75), /api/health/instance endpoint (instanceId, authFailed, executorOperational), IHostApplicationLifetime shutdown hook. Updated exit code table to include crash-restart behavior.
 - **2026-03-30**: Initial specification — wrapper exit code contract, `ServerInstanceEntity` schema, startup/shutdown hooks, client reconnect protocol, `RESTART_SERVER` command design
 - **2026-03-30**: Expanded planned reconnect UX states, task-comment recovery expectations, and breakout termination paths | spec-doc-gap-fix

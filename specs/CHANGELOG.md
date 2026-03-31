@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **011-state-recovery**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based authentication recovery strategy. Authentication failures trigger user re-authentication flow instead of server restart. Auth/authorization exceptions never retried; transient errors retry with exponential backoff (2s→4s→8s); quota errors retry with exponential backoff (5s→15s→30s). Health endpoint `authFailed` flag exposed for client prompts. Added Invariant 10 for auth recovery without restart policy.
+
 ### Added
 - **003-agent-system**: CopilotExecutor error classification — `SessionErrorEvent.ErrorType` now parsed into typed exceptions (`CopilotAuthException`, `CopilotTransientException`, `CopilotQuotaException`). Transient and quota errors retried with exponential backoff. Auth failures trigger user notification and auto-recovery on re-login.
 - **007-agent-commands**: `RESTART_SERVER` command (Phase 1F) — Planner-only command triggers graceful server restart with exit code 75. Posts system message, uses `IHostApplicationLifetime.StopApplication()`.
