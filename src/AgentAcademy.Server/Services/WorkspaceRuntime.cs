@@ -187,6 +187,7 @@ public sealed class WorkspaceRuntime
         await _db.SaveChangesAsync();
 
         CurrentInstanceId = instance.Id;
+        CurrentCrashDetected = crashDetected;
 
         _logger.LogInformation(
             "Server instance {InstanceId} started (version {Version}, crash detected: {Crash})",
@@ -198,6 +199,12 @@ public sealed class WorkspaceRuntime
     /// Used by the health endpoint for client reconnect protocol.
     /// </summary>
     public static string? CurrentInstanceId { get; private set; }
+
+    /// <summary>
+    /// Whether a crash was detected on the most recent startup
+    /// (previous instance had no clean shutdown).
+    /// </summary>
+    public static bool CurrentCrashDetected { get; private set; }
 
     // ── Configured Agents ───────────────────────────────────────
 

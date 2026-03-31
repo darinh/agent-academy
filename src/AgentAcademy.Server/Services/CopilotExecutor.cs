@@ -272,14 +272,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     DescribeTokenSource(_activeToken),
                     DescribeTokenSource(token));
 
-                var wasAuthFailed = _authFailed;
                 await DisposeClientSafe();
-
-                // Clear auth failure state — the new token may be valid.
-                _authFailed = false;
-
-                if (wasAuthFailed)
-                    _ = PostAuthRecoveryMessageAsync();
             }
 
             // If we already failed with this exact token, don't retry.
@@ -287,6 +280,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
             // Reset failure state for new token attempts.
             _clientFailed = false;
+            var wasAuthFailed = _authFailed;
             _activeToken = token;
 
             var hasToken = !string.IsNullOrWhiteSpace(token);
@@ -303,6 +297,14 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             await client.StartAsync();
             _client = client;
             _logger.LogInformation("CopilotClient started successfully");
+
+            // Only clear auth failure and post recovery AFTER successful start.
+            if (wasAuthFailed)
+            {
+                _authFailed = false;
+                _ = PostAuthRecoveryMessageAsync();
+            }
+
             return _client;
         }
         catch (Exception ex)

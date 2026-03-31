@@ -108,7 +108,7 @@ public class SystemController : ControllerBase
             InstanceId: instanceId,
             StartedAt: StartedAt,
             Version: typeof(SystemController).Assembly.GetName().Version?.ToString() ?? "0.0.0",
-            CrashDetected: false, // Only meaningful on first request after restart — check DB for accuracy
+            CrashDetected: WorkspaceRuntime.CurrentCrashDetected,
             ExecutorOperational: _executor.IsFullyOperational,
             AuthFailed: executor?.IsAuthFailed ?? false
         ));
