@@ -135,6 +135,12 @@ builder.Services.AddScoped<WorkspaceRuntime>();
 // Agent config service (scoped — merges catalog defaults with DB overrides)
 builder.Services.AddScoped<AgentConfigService>();
 
+// System settings (scoped — typed access to system_settings table)
+builder.Services.AddScoped<SystemSettingsService>();
+
+// Conversation session management (scoped — epoch lifecycle and summarization)
+builder.Services.AddScoped<ConversationSessionService>();
+
 // Copilot token provider (singleton — captures OAuth token for SDK activation)
 builder.Services.AddSingleton<CopilotTokenProvider>();
 

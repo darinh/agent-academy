@@ -73,7 +73,11 @@ public class WorkspaceRuntimeTests : IDisposable
 
         var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
         _activityBus = new ActivityBroadcaster();
-        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityBus);
+        var settingsService = new SystemSettingsService(_db);
+        var executor = Substitute.For<IAgentExecutor>();
+        var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
+        var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
+        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityBus, sessionService);
     }
 
     public void Dispose()

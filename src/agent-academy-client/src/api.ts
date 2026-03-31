@@ -698,3 +698,21 @@ export function sendDmToAgent(
     },
   );
 }
+
+// ── System Settings ────────────────────────────────────────────────────
+
+export type SystemSettings = Record<string, string>;
+
+export async function getSystemSettings(): Promise<SystemSettings> {
+  return request<SystemSettings>(apiUrl("/api/settings"));
+}
+
+export async function updateSystemSettings(
+  settings: SystemSettings,
+): Promise<SystemSettings> {
+  return request<SystemSettings>(apiUrl("/api/settings"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+}

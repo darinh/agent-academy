@@ -86,9 +86,19 @@ When a breakout completes:
 
 Three prompt builders construct context for agent invocations:
 
-- **`BuildConversationPrompt`**: Agent startup prompt + room context + spec context + recent messages (last 20)
-- **`BuildBreakoutPrompt`**: Agent startup prompt + breakout room name + tasks + work log (last 10 messages)
+- **`BuildConversationPrompt`**: Session summary (if available) + agent memories + room context + spec context + recent messages (last 20 from active session). **Note**: Agent startup prompt is NOT included — it's sent only during SDK session priming to avoid redundant context accumulation.
+- **`BuildBreakoutPrompt`**: Session summary (if available) + agent memories + breakout room name + tasks + work log (last 10 from active session). Same startup prompt deduplication.
 - **`BuildReviewPrompt`**: Reviewer startup prompt + work report + spec context for accuracy verification
+
+### Epoch-Aware Round Logic
+
+Before the first conversation round, the orchestrator checks if the room's active conversation session has exceeded the configured message threshold (default 50 for main rooms, 30 for breakout rooms). If exceeded:
+1. `ConversationSessionService.CheckAndRotateAsync()` summarizes the current session via LLM
+2. The session is archived with the summary
+3. A new active session is created
+4. All SDK sessions for the room are invalidated (forcing fresh context)
+
+For breakout rooms, the threshold check runs before each round (not just round 1).
 
 ### Spec Context Loading
 
@@ -128,6 +138,7 @@ Registered as a singleton. Uses `IServiceScopeFactory` to create scoped `Workspa
 | `ActivityBroadcaster` | Singleton | Publishes thinking/finished events |
 | `ILogger<AgentOrchestrator>` | Singleton | Structured logging |
 | `WorkspaceRuntime` | Scoped (per round) | Room/message/agent state management |
+| `ConversationSessionService` | Scoped (per round) | Epoch threshold checks and rotation |
 
 ### Constants
 

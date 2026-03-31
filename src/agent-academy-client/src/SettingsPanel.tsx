@@ -14,12 +14,15 @@ import {
   BotRegular,
   DocumentTextRegular,
   AddRegular,
+  SettingsRegular,
 } from "@fluentui/react-icons";
 import {
   getNotificationProviders,
   disconnectProvider,
   getConfiguredAgents,
   getInstructionTemplates,
+  getSystemSettings,
+  updateSystemSettings,
   type ProviderStatus,
   type AgentDefinition,
   type InstructionTemplate,
@@ -131,6 +134,12 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
   const [showNewTemplate, setShowNewTemplate] = useState(false);
 
+  // Advanced settings state
+  const [mainRoomEpochSize, setMainRoomEpochSize] = useState("50");
+  const [breakoutEpochSize, setBreakoutEpochSize] = useState("30");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   const fetchProviders = useCallback(async () => {
     try {
       const data = await getNotificationProviders();
@@ -157,7 +166,32 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   useEffect(() => {
     fetchProviders();
     fetchAgentsAndTemplates();
+    // Fetch system settings
+    getSystemSettings()
+      .then((s) => {
+        if (s["conversation.mainRoomEpochSize"])
+          setMainRoomEpochSize(s["conversation.mainRoomEpochSize"]);
+        if (s["conversation.breakoutEpochSize"])
+          setBreakoutEpochSize(s["conversation.breakoutEpochSize"]);
+      })
+      .catch(() => {});
   }, [fetchProviders, fetchAgentsAndTemplates]);
+
+  const handleSaveSettings = useCallback(async () => {
+    setSettingsSaving(true);
+    try {
+      await updateSystemSettings({
+        "conversation.mainRoomEpochSize": mainRoomEpochSize,
+        "conversation.breakoutEpochSize": breakoutEpochSize,
+      });
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 2000);
+    } catch {
+      // Error handling in API layer
+    } finally {
+      setSettingsSaving(false);
+    }
+  }, [mainRoomEpochSize, breakoutEpochSize]);
 
   const handleDisconnect = useCallback(async (providerId: string) => {
     setDisconnecting(providerId);
@@ -380,6 +414,82 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
               </div>
             ))
           )}
+        </div>
+        {/* ── Advanced Section ───────────────────────────────── */}
+        <div className={s.section}>
+          <div className={s.sectionTitle}>
+            <SettingsRegular />
+            Advanced
+          </div>
+
+          <div className={s.providerCard}>
+            <div style={{ padding: "8px 0" }}>
+              <div style={{ fontWeight: 600, marginBottom: 12, color: "#c8d6e5" }}>
+                Conversation Management
+              </div>
+              <div style={{ marginBottom: 12, color: "#8899aa", fontSize: 13 }}>
+                When a room's message count exceeds the epoch size, the conversation is
+                summarized and a new session begins with clean context. This prevents
+                performance degradation from accumulated conversation history.
+              </div>
+
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: 13, color: "#8899aa" }}>Main room epoch size</span>
+                  <input
+                    type="number"
+                    min="10"
+                    max="500"
+                    value={mainRoomEpochSize}
+                    onChange={(e) => setMainRoomEpochSize(e.target.value)}
+                    style={{
+                      width: 80,
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                      border: "1px solid #2a3a4a",
+                      background: "#0d1929",
+                      color: "#e0e8f0",
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: 13, color: "#8899aa" }}>Breakout room epoch size</span>
+                  <input
+                    type="number"
+                    min="10"
+                    max="500"
+                    value={breakoutEpochSize}
+                    onChange={(e) => setBreakoutEpochSize(e.target.value)}
+                    style={{
+                      width: 80,
+                      padding: "6px 10px",
+                      borderRadius: 6,
+                      border: "1px solid #2a3a4a",
+                      background: "#0d1929",
+                      color: "#e0e8f0",
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
+                <Button
+                  appearance="primary"
+                  size="small"
+                  disabled={settingsSaving}
+                  onClick={handleSaveSettings}
+                >
+                  {settingsSaving ? <Spinner size="tiny" /> : "Save"}
+                </Button>
+                {settingsSaved && (
+                  <span style={{ color: "#4caf50", fontSize: 13 }}>✓ Saved</span>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

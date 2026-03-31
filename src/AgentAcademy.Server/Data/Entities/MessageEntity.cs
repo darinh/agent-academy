@@ -18,6 +18,7 @@ public class MessageEntity
     public string? RecipientId { get; set; }
     public string? CorrelationId { get; set; }
     public string? ReplyToMessageId { get; set; }
+    public string? SessionId { get; set; }
 
     // Navigation properties
     public RoomEntity Room { get; set; } = null!;

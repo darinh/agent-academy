@@ -144,6 +144,23 @@ public sealed class AgentOrchestrator
             using var scope = _scopeFactory.CreateScope();
             var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+
+            // Check if conversation session needs rotation before this round
+            if (round == 1)
+            {
+                try
+                {
+                    var rotated = await sessionService.CheckAndRotateAsync(roomId);
+                    if (rotated)
+                        _logger.LogInformation(
+                            "Conversation session rotated for room {RoomId} before round 1", roomId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Session rotation check failed for room {RoomId}", roomId);
+                }
+            }
 
             var room = await runtime.GetRoomAsync(roomId);
             if (room is null) return;
@@ -154,6 +171,17 @@ public sealed class AgentOrchestrator
 
             // Load spec context once for all prompts in this round
             var specContext = _specManager.LoadSpecContext();
+
+            // Load session summary for context continuity after epoch rotation
+            string? sessionSummary = null;
+            try
+            {
+                sessionSummary = await sessionService.GetSessionContextAsync(roomId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId);
+            }
 
             var planner = FindPlanner(runtime);
             if (planner is not null)
@@ -171,7 +199,7 @@ public sealed class AgentOrchestrator
                     var taskItems = await runtime.GetActiveTaskItemsAsync();
                     var plannerMemories = await LoadAgentMemoriesAsync(planner.Id);
                     var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms)
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -238,7 +266,7 @@ public sealed class AgentOrchestrator
                 {
                     var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
-                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms);
+                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary);
                     response = await RunAgentAsync(agent, prompt, roomId);
                 }
                 catch (Exception ex)
@@ -349,12 +377,21 @@ public sealed class AgentOrchestrator
         var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
         var directMessages = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
 
+        // Load session summary for DM round
+        string? dmSessionSummary = null;
+        try
+        {
+            var dmSessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+            dmSessionSummary = await dmSessionService.GetSessionContextAsync(roomId);
+        }
+        catch { /* non-critical */ }
+
         await runtime.PublishThinkingAsync(agent, roomId);
         var response = "";
         try
         {
             var prompt = BuildConversationPrompt(agent, room, specContext,
-                memories: agentMemories, directMessages: directMessages);
+                memories: agentMemories, directMessages: directMessages, sessionSummary: dmSessionSummary);
             response = await RunAgentAsync(agent, prompt, roomId);
         }
         catch (Exception ex)
@@ -529,6 +566,7 @@ public sealed class AgentOrchestrator
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+        var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
 
         var catalogAgent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == agentId);
         if (catalogAgent is null) return;
@@ -548,6 +586,17 @@ public sealed class AgentOrchestrator
         {
             if (_stopped) break;
 
+            // Check breakout session rotation before each round
+            try
+            {
+                await sessionService.CheckAndRotateAsync(breakoutRoomId, "Breakout");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Session rotation check failed for breakout {BreakoutId}", breakoutRoomId);
+            }
+
             var currentBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
             if (currentBr is null || currentBr.Status != RoomStatus.Active) break;
 
@@ -566,7 +615,8 @@ public sealed class AgentOrchestrator
                 {
                     var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
                     var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
-                    var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms);
+                    var breakoutSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
+                    var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary);
                     response = await RunAgentAsync(agent, prompt, breakoutRoomId);
                 }
                 catch (Exception ex)
@@ -762,6 +812,10 @@ public sealed class AgentOrchestrator
         WorkspaceRuntime runtime, string breakoutRoomId, string parentRoomId,
         AgentDefinition agent, BreakoutRoom br)
     {
+        // Resolve session service for epoch context
+        using var fixScope = _scopeFactory.CreateScope();
+        var sessionService = fixScope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+
         await runtime.PostSystemStatusAsync(parentRoomId,
             $"🔄 {agent.Name} is returning to \"{br.Name}\" to address review feedback.");
         await runtime.MoveAgentAsync(agent.Id, parentRoomId, AgentState.Working, breakoutRoomId);
@@ -791,8 +845,9 @@ public sealed class AgentOrchestrator
             {
                 var fixMemories = await LoadAgentMemoriesAsync(agent.Id);
                 var fixDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                var fixSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
                 response = await RunAgentAsync(
-                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms),
+                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary),
                     breakoutRoomId);
             }
             catch { continue; }
@@ -979,9 +1034,21 @@ public sealed class AgentOrchestrator
         AgentDefinition agent, RoomSnapshot room, string? specContext,
         List<TaskItem>? activeTaskItems = null,
         List<AgentMemory>? memories = null,
-        List<Data.Entities.MessageEntity>? directMessages = null)
+        List<Data.Entities.MessageEntity>? directMessages = null,
+        string? sessionSummary = null)
     {
-        var lines = new List<string> { agent.StartupPrompt, "" };
+        // Note: agent.StartupPrompt is NOT included here — it's already sent
+        // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
+        // Including it again would duplicate it in the SDK session context.
+        var lines = new List<string>();
+
+        // Inject session summary from previous epoch if available
+        if (!string.IsNullOrEmpty(sessionSummary))
+        {
+            lines.Add("=== PREVIOUS CONVERSATION SUMMARY ===");
+            lines.Add(sessionSummary);
+            lines.Add("");
+        }
 
         // Inject agent memories before room context
         if (memories is { Count: > 0 })
@@ -1059,9 +1126,20 @@ public sealed class AgentOrchestrator
 
     private static string BuildBreakoutPrompt(AgentDefinition agent, BreakoutRoom br, int round,
         List<AgentMemory>? memories = null,
-        List<Data.Entities.MessageEntity>? directMessages = null)
+        List<Data.Entities.MessageEntity>? directMessages = null,
+        string? sessionSummary = null)
     {
-        var lines = new List<string> { agent.StartupPrompt, "" };
+        // Note: agent.StartupPrompt is NOT included here — it's already sent
+        // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
+        var lines = new List<string>();
+
+        // Inject session summary from previous epoch if available
+        if (!string.IsNullOrEmpty(sessionSummary))
+        {
+            lines.Add("=== PREVIOUS WORK SUMMARY ===");
+            lines.Add(sessionSummary);
+            lines.Add("");
+        }
 
         // Inject agent memories
         if (memories is { Count: > 0 })

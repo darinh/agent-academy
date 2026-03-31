@@ -31,6 +31,8 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<InstructionTemplateEntity> InstructionTemplates => Set<InstructionTemplateEntity>();
     public DbSet<TaskCommentEntity> TaskComments => Set<TaskCommentEntity>();
     public DbSet<ServerInstanceEntity> ServerInstances => Set<ServerInstanceEntity>();
+    public DbSet<ConversationSessionEntity> ConversationSessions => Set<ConversationSessionEntity>();
+    public DbSet<SystemSettingEntity> SystemSettings => Set<SystemSettingEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -317,6 +319,31 @@ public class AgentAcademyDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.StartedAt).IsRequired();
             entity.Property(e => e.Version).IsRequired();
+        });
+
+        // ── Conversation Sessions ───────────────────────────────
+        modelBuilder.Entity<ConversationSessionEntity>(entity =>
+        {
+            entity.ToTable("conversation_sessions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.RoomId).IsRequired();
+            entity.Property(e => e.RoomType).IsRequired().HasDefaultValue("Main");
+            entity.Property(e => e.SequenceNumber).IsRequired().HasDefaultValue(1);
+            entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
+            entity.Property(e => e.MessageCount).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasIndex(e => new { e.RoomId, e.Status })
+                .HasDatabaseName("idx_conversation_sessions_room_status");
+        });
+
+        // ── System Settings ─────────────────────────────────────
+        modelBuilder.Entity<SystemSettingEntity>(entity =>
+        {
+            entity.ToTable("system_settings");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Value).IsRequired();
+            entity.Property(e => e.UpdatedAt).IsRequired();
         });
     }
 }

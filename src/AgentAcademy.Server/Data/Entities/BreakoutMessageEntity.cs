@@ -15,6 +15,7 @@ public class BreakoutMessageEntity
     public string Kind { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public DateTime SentAt { get; set; }
+    public string? SessionId { get; set; }
 
     // Navigation properties
     public BreakoutRoomEntity BreakoutRoom { get; set; } = null!;

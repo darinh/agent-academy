@@ -57,6 +57,8 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton(_catalog);
         services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ConversationSessionService>();
 
         // Real NotificationManager with no providers (SendAgentQuestionAsync returns false)
         services.AddSingleton<NotificationManager>();

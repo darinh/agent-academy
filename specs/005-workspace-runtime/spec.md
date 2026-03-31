@@ -80,6 +80,10 @@ Validation: room must exist, sender must be in catalog (for agent messages).
 
 **Message trimming**: When message count exceeds 200, oldest messages are deleted from the database. This matches v1 behavior.
 
+**Session-aware message loading**: `BuildRoomSnapshotAsync` loads only messages from the active conversation session (plus legacy untagged messages). Messages are tagged with `SessionId` when posted. See spec 003 → Conversation Session Management for epoch lifecycle details.
+
+**Message tagging**: `PostMessageAsync`, `PostHumanMessageAsync`, and `PostBreakoutMessageAsync` call `ConversationSessionService.GetOrCreateActiveSessionAsync` to tag each message with the active session ID and increment the session's message count.
+
 ### Phase Management
 
 - `TransitionPhaseAsync(roomId, targetPhase, reason?)` → updates room and active task phase

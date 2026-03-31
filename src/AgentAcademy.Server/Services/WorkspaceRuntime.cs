@@ -34,17 +34,20 @@ public sealed class WorkspaceRuntime
     private readonly ILogger<WorkspaceRuntime> _logger;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityBroadcaster _activityBus;
+    private readonly ConversationSessionService _sessionService;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
         ILogger<WorkspaceRuntime> logger,
         AgentCatalogOptions catalog,
-        ActivityBroadcaster activityBus)
+        ActivityBroadcaster activityBus,
+        ConversationSessionService sessionService)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
         _activityBus = activityBus;
+        _sessionService = sessionService;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -1088,7 +1091,13 @@ public sealed class WorkspaceRuntime
             SentAt = envelope.SentAt,
             CorrelationId = envelope.CorrelationId
         };
+
+        // Tag message with active conversation session
+        var session = await _sessionService.GetOrCreateActiveSessionAsync(request.RoomId);
+        msgEntity.SessionId = session.Id;
+
         _db.Messages.Add(msgEntity);
+        await _sessionService.IncrementMessageCountAsync(session.Id);
 
         // Trim to last MaxRecentMessages
         await TrimMessagesAsync(request.RoomId);
@@ -1148,7 +1157,13 @@ public sealed class WorkspaceRuntime
             Content = content,
             SentAt = now
         };
+
+        // Tag message with active conversation session
+        var session = await _sessionService.GetOrCreateActiveSessionAsync(roomId);
+        msgEntity.SessionId = session.Id;
+
         _db.Messages.Add(msgEntity);
+        await _sessionService.IncrementMessageCountAsync(session.Id);
 
         await TrimMessagesAsync(roomId);
 
@@ -1778,9 +1793,18 @@ public sealed class WorkspaceRuntime
     private async Task<RoomSnapshot> BuildRoomSnapshotAsync(
         RoomEntity room, List<AgentLocationEntity>? preloadedLocations = null)
     {
-        // Get recent messages (last MaxRecentMessages), excluding DMs
+        // Load messages from the active conversation session only.
+        // Include messages with no SessionId for backwards compatibility
+        // with pre-session data.
+        var activeSession = await _db.ConversationSessions
+            .Where(s => s.RoomId == room.Id && s.Status == "Active")
+            .FirstOrDefaultAsync();
+
+        var activeSessionId = activeSession?.Id;
+
         var messages = await _db.Messages
-            .Where(m => m.RoomId == room.Id && m.RecipientId == null)
+            .Where(m => m.RoomId == room.Id && m.RecipientId == null
+                && (activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null))
             .OrderByDescending(m => m.SentAt)
             .Take(MaxRecentMessages)
             .OrderBy(m => m.SentAt)
@@ -1920,6 +1944,19 @@ public sealed class WorkspaceRuntime
 
     private BreakoutRoom BuildBreakoutRoomSnapshot(BreakoutRoomEntity entity)
     {
+        // Filter messages to active session if one exists.
+        // Since breakout rooms are short-lived, most won't have session boundaries,
+        // but this handles long-running breakouts that exceed the threshold.
+        var activeSession = _db.ConversationSessions
+            .Where(s => s.RoomId == entity.Id && s.Status == "Active")
+            .FirstOrDefault();
+        var activeSessionId = activeSession?.Id;
+
+        var filteredMessages = entity.Messages?
+            .Where(m => activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null)
+            .OrderBy(m => m.SentAt)
+            ?? Enumerable.Empty<BreakoutMessageEntity>();
+
         return new BreakoutRoom(
             Id: entity.Id,
             Name: entity.Name,
@@ -1927,8 +1964,7 @@ public sealed class WorkspaceRuntime
             AssignedAgentId: entity.AssignedAgentId,
             Tasks: [],
             Status: Enum.Parse<RoomStatus>(entity.Status),
-            RecentMessages: entity.Messages?
-                .OrderBy(m => m.SentAt)
+            RecentMessages: filteredMessages
                 .Select(m => new ChatEnvelope(
                 Id: m.Id,
                 RoomId: entity.ParentRoomId,
@@ -1939,7 +1975,7 @@ public sealed class WorkspaceRuntime
                 Kind: Enum.Parse<MessageKind>(m.Kind),
                 Content: m.Content,
                 SentAt: m.SentAt
-            )).ToList() ?? [],
+            )).ToList(),
             CreatedAt: entity.CreatedAt,
             UpdatedAt: entity.UpdatedAt
         );
@@ -2077,7 +2113,13 @@ public sealed class WorkspaceRuntime
             Content = content,
             SentAt = now
         };
+
+        // Tag message with active conversation session for breakout room
+        var session = await _sessionService.GetOrCreateActiveSessionAsync(breakoutRoomId, "Breakout");
+        entity.SessionId = session.Id;
+
         _db.BreakoutMessages.Add(entity);
+        await _sessionService.IncrementMessageCountAsync(session.Id);
 
         br.UpdatedAt = now;
         await _db.SaveChangesAsync();

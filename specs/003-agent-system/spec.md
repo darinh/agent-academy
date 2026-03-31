@@ -78,7 +78,7 @@ Key behaviors:
 - **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0). Safe because no SDK tools are registered in session config. Must be revisited when tool calling is wired up.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
-- **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity.
+- **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity. The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
 - **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
 - **TTL cleanup**: Sessions expire after 10 minutes of inactivity; a background timer runs every 2 minutes.
 - **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails (after retry exhaustion), delegates to `StubExecutor`.
@@ -183,8 +183,34 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 - **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy.
 - **No token/usage tracking**: `CopilotExecutor` does not yet track input/output tokens or cost. The v1 `AgentEventTracker` integration is pending.
 - **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up. When enabled, `OnPermissionRequest` must be changed from `ApproveAll` to a restrictive handler.
-- **Session compaction**: The SDK may support session compaction for long conversations. Not yet implemented.
 - **No per-project session resume**: Sessions are cleared on project switch. If a user returns to a previous project, agents start fresh — they don't resume their prior conversation context.
+
+### Conversation Session Management
+
+> **Status: Implemented** — Prevents context accumulation that degrades agent performance.
+
+**Problem**: Copilot SDK sessions accumulate all prompts and responses internally. Over many rounds, agents process an ever-growing context window, leading to slower responses and degraded quality.
+
+**Solution**: Conversation sessions (epochs) create logical boundaries within rooms. When message count exceeds a configurable threshold, the conversation is LLM-summarized and a new session begins with clean context.
+
+**Components**:
+
+- **`ConversationSessionEntity`** (`src/AgentAcademy.Server/Data/Entities/ConversationSessionEntity.cs`): Tracks epoch boundaries per room. Fields: `Id`, `RoomId`, `RoomType` (Main/Breakout), `SequenceNumber`, `Status` (Active/Archived), `Summary`, `MessageCount`.
+- **`ConversationSessionService`** (`src/AgentAcademy.Server/Services/ConversationSessionService.cs`): Manages epoch lifecycle — creation, threshold checks, LLM summarization, rotation, and SDK session invalidation.
+- **`SystemSettingsService`** (`src/AgentAcademy.Server/Services/SystemSettingsService.cs`): Configurable thresholds via `conversation.mainRoomEpochSize` (default 50) and `conversation.breakoutEpochSize` (default 30).
+
+**Epoch rotation flow**:
+1. Before each conversation round, `AgentOrchestrator` calls `CheckAndRotateAsync(roomId)`
+2. If message count ≥ threshold, loads session messages and generates an LLM summary
+3. Archives current session with summary, creates new active session
+4. Invalidates all SDK sessions for the room via `InvalidateRoomSessionsAsync()`
+5. New prompts include the archived session summary under `=== PREVIOUS CONVERSATION SUMMARY ===`
+
+**Prompt deduplication**: `BuildConversationPrompt` and `BuildBreakoutPrompt` no longer include `agent.StartupPrompt` — it's already sent as session priming in `CopilotExecutor.GetOrCreateSessionEntryAsync`. This eliminates the largest source of redundant context.
+
+**Message tagging**: `MessageEntity.SessionId` and `BreakoutMessageEntity.SessionId` tag messages by epoch. `BuildRoomSnapshotAsync` loads only messages from the active session (plus legacy untagged messages for backwards compatibility).
+
+**Graceful degradation**: If LLM summarization fails (Copilot offline), a fallback summary with participant names and message count is used.
 
 ## SSE Activity Stream
 

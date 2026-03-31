@@ -32,12 +32,17 @@ public class ServerInstanceTests : IDisposable
             Agents: []);
 
         var activityBus = new ActivityBroadcaster();
+        var settingsService = new SystemSettingsService(_db);
+        var executor = NSubstitute.Substitute.For<IAgentExecutor>();
+        var sessionLogger = NullLogger<ConversationSessionService>.Instance;
+        var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
 
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
             catalog,
-            activityBus);
+            activityBus,
+            sessionService);
     }
 
     public void Dispose()

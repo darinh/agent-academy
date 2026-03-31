@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
@@ -59,6 +60,9 @@ public class TaskSystemTests : IDisposable
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton(_catalog);
         services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<SystemSettingsService>();
+        services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
+        services.AddScoped<ConversationSessionService>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 

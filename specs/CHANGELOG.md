@@ -4,6 +4,13 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **003-agent-system**: Conversation Session Management — epoch-based session boundaries with LLM summarization. When message count exceeds configurable threshold (default 50 main/30 breakout), conversation is summarized and a new session begins. SDK sessions are invalidated at rotation boundaries to reset accumulated context. System agent identity (`system-summarizer`) used for summarization. Fallback to structural summary when Copilot is offline.
+- **003-agent-system**: Prompt deduplication — `BuildConversationPrompt` and `BuildBreakoutPrompt` no longer include `agent.StartupPrompt` (already sent during SDK session priming). Eliminates the largest source of redundant context accumulation.
+- **005-workspace-runtime**: Session-aware message loading — `BuildRoomSnapshotAsync` loads only messages from the active conversation session. Messages tagged with `SessionId` via `PostMessageAsync`/`PostHumanMessageAsync`/`PostBreakoutMessageAsync`.
+- **005-workspace-runtime**: `ConversationSessionEntity` table — tracks epoch boundaries (Id, RoomId, RoomType, SequenceNumber, Status, Summary, MessageCount). `SystemSettingEntity` table — key-value store for configurable settings.
+- **006-orchestrator**: Epoch-aware round logic — `CheckAndRotateAsync` called before conversation rounds (round 1 for main rooms, every round for breakouts). Session summary injected into prompts via `=== PREVIOUS CONVERSATION SUMMARY ===` section.
+
 ### Changed
 - **011-state-recovery**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based authentication recovery strategy. Authentication failures trigger user re-authentication flow instead of server restart. Auth/authorization exceptions never retried; transient errors retry with exponential backoff (2s→4s→8s); quota errors retry with exponential backoff (5s→15s→30s). Health endpoint `authFailed` flag exposed for client prompts. Added Invariant 10 for auth recovery without restart policy.
 

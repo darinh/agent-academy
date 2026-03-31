@@ -134,6 +134,10 @@ public class AgentExecutorInterfaceTests
         services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
         services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<SystemSettingsService>();
+        services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
+        services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
+        services.AddScoped<ConversationSessionService>();
         var sp = services.BuildServiceProvider();
 
         var executor = new CopilotExecutor(
