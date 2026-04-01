@@ -35,6 +35,7 @@ import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
+import { shouldRenderWorkspace } from "./authPresentation";
 
 export default function App() {
   return (
@@ -235,8 +236,8 @@ function AppShell() {
     return <div className={s.root} />;
   }
 
-  // Show login page if auth is enabled but user is not authenticated
-  if (auth.authEnabled && !auth.authenticated) {
+  // Only operational Copilot sessions can enter the workspace shell.
+  if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
     return <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />;
   }
 
@@ -257,7 +258,7 @@ function AppShell() {
         <ProjectSelectorPage
           onProjectSelected={handleProjectSelected}
           onProjectOnboarded={handleProjectOnboarded}
-          user={auth?.authenticated ? auth.user : null}
+          user={auth.user ?? null}
           onLogout={handleLogout}
         />
       ) : (
@@ -338,7 +339,7 @@ function AppShell() {
                     {room.currentPhase}
                   </div>
                 )}
-                {auth?.authenticated && auth.user && (
+                {auth.user && (
                   <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
                 )}
               </div>

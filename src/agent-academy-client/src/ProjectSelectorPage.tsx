@@ -52,123 +52,354 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
+type SelectorTab = "existing" | "onboard" | "create";
+
+const TAB_COPY: Record<SelectorTab, { kicker: string; title: string; description: string }> = {
+  existing: {
+    kicker: "Resume work",
+    title: "Return to an active workspace",
+    description: "Jump back into a project already known to Agent Academy and keep the current room context intact.",
+  },
+  onboard: {
+    kicker: "Inspect before entering",
+    title: "Scan a repository and onboard it cleanly",
+    description: "Review the project shape first, then activate it with the right spec expectations and workspace metadata.",
+  },
+  create: {
+    kicker: "Start from a fresh directory",
+    title: "Open a new project path directly",
+    description: "Point Agent Academy at a destination folder and create the workspace without leaving the client.",
+  },
+};
+
+const RAIL_POINTS = [
+  {
+    label: "Collaboration",
+    value: "Six specialists, one room",
+    body: "Planning, implementation, review, validation, and specs stay visible in the same interface.",
+  },
+  {
+    label: "Branch flow",
+    value: "Task branches by default",
+    body: "Work happens off develop so breakout rounds can ship incrementally without trashing the main line.",
+  },
+  {
+    label: "Spec discipline",
+    value: "Reality over aspiration",
+    body: "Projects with missing specs get surfaced early so the system can onboard them deliberately.",
+  },
+];
+
 const useStyles = makeStyles({
   root: {
+    position: "relative",
     minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#eff5ff",
+    overflow: "hidden",
+    ...shorthands.padding("36px", "24px"),
+  },
+  backdrop: {
+    position: "absolute",
+    inset: 0,
     background:
-      "radial-gradient(circle at top left, rgba(65, 135, 255, 0.18), transparent 26%), radial-gradient(circle at top right, rgba(183, 148, 255, 0.14), transparent 24%), linear-gradient(180deg, #09111f 0%, #0b1425 100%)",
-    ...shorthands.padding("40px", "24px"),
+      "radial-gradient(circle at 12% 16%, rgba(131, 207, 255, 0.16), transparent 24%), radial-gradient(circle at 86% 14%, rgba(127, 107, 255, 0.12), transparent 20%), radial-gradient(circle at 66% 84%, rgba(217, 166, 103, 0.12), transparent 26%)",
+    pointerEvents: "none",
   },
   container: {
-    width: "100%",
-    maxWidth: "720px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "32px",
+    position: "relative",
+    width: "min(1240px, 100%)",
+    minHeight: "calc(100vh - 72px)",
+    margin: "0 auto",
+    display: "grid",
+    gridTemplateColumns: "minmax(320px, 0.86fr) minmax(0, 1.14fr)",
+    gap: "28px",
+    alignItems: "stretch",
+    "@media (max-width: 1080px)": {
+      gridTemplateColumns: "1fr",
+    },
   },
-  header: {
-    textAlign: "center",
-    display: "flex",
-    flexDirection: "column",
+  rail: {
+    display: "grid",
+    alignContent: "space-between",
+    gap: "24px",
+    border: "1px solid rgba(163, 180, 208, 0.16)",
+    background:
+      "linear-gradient(180deg, rgba(13, 22, 37, 0.88), rgba(8, 14, 24, 0.96))",
+    boxShadow: "0 32px 90px rgba(0, 0, 0, 0.34)",
+    ...shorthands.borderRadius("32px"),
+    ...shorthands.padding("34px"),
+  },
+  railHeader: {
+    display: "grid",
+    gap: "16px",
+  },
+  railKicker: {
+    display: "inline-flex",
     alignItems: "center",
+    width: "fit-content",
+    color: "#f3d4a8",
+    backgroundColor: "rgba(217, 166, 103, 0.12)",
+    border: "1px solid rgba(217, 166, 103, 0.22)",
+    ...shorthands.borderRadius("999px"),
+    ...shorthands.padding("8px", "14px"),
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
+  },
+  railTitle: {
+    margin: 0,
+    color: "#f8fbff",
+    fontFamily: "var(--heading)",
+    fontSize: "clamp(2.8rem, 5.5vw, 4.5rem)",
+    lineHeight: 0.95,
+    letterSpacing: "-0.05em",
+  },
+  railBody: {
+    margin: 0,
+    color: "#aec0de",
+    fontSize: "16px",
+    lineHeight: 1.8,
+    maxWidth: "38rem",
+  },
+  railGrid: {
+    display: "grid",
+    gap: "14px",
+  },
+  railCard: {
+    display: "grid",
+    gap: "10px",
+    border: "1px solid rgba(163, 180, 208, 0.12)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02))",
+    ...shorthands.borderRadius("24px"),
+    ...shorthands.padding("18px"),
+  },
+  railCardLabel: {
+    color: "#f3d4a8",
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+  },
+  railCardValue: {
+    color: "#eef4ff",
+    fontSize: "18px",
+    fontWeight: 700,
+    letterSpacing: "-0.02em",
+  },
+  railCardBody: {
+    color: "#8da3c4",
+    fontSize: "13px",
+    lineHeight: 1.7,
+  },
+  railFootnote: {
+    color: "#7f94b6",
+    fontSize: "12px",
+    lineHeight: 1.8,
+  },
+  deck: {
+    display: "grid",
+    gridTemplateRows: "auto auto minmax(0, 1fr)",
+    gap: "18px",
+    border: "1px solid rgba(163, 180, 208, 0.16)",
+    background:
+      "linear-gradient(180deg, rgba(18, 30, 48, 0.92), rgba(9, 15, 25, 0.98))",
+    boxShadow: "0 32px 90px rgba(0, 0, 0, 0.38)",
+    ...shorthands.borderRadius("32px"),
+    ...shorthands.padding("28px"),
+  },
+  deckTop: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "18px",
+    "@media (max-width: 780px)": {
+      flexDirection: "column",
+    },
+  },
+  userWrap: {
+    display: "flex",
+    justifyContent: "flex-end",
+  },
+  deckHeader: {
+    display: "grid",
     gap: "8px",
+    maxWidth: "44rem",
   },
-  title: {
-    fontSize: "32px",
-    fontWeight: 760,
-    letterSpacing: "-0.03em",
-    lineHeight: "1.3",
-    background: "linear-gradient(135deg, #6cb6ff, #b794ff)",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
+  deckKicker: {
+    color: "#f3d4a8",
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
   },
-  subtitle: { color: "#a1b3d2", fontSize: "14px", lineHeight: "1.6" },
-  tabList: { justifyContent: "center" },
+  deckTitle: {
+    color: "#f8fbff",
+    fontFamily: "var(--heading)",
+    fontSize: "clamp(2.1rem, 4vw, 3.1rem)",
+    lineHeight: 1,
+    letterSpacing: "-0.05em",
+  },
+  deckDescription: {
+    color: "#aec0de",
+    fontSize: "15px",
+    lineHeight: 1.8,
+  },
+  tabList: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "10px",
+  },
   panel: {
-    border: "1px solid rgba(155, 176, 210, 0.16)",
-    background: "linear-gradient(180deg, rgba(15, 23, 40, 0.98), rgba(10, 17, 31, 0.98))",
-    boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
-    ...shorthands.borderRadius("22px"),
+    minHeight: 0,
+    border: "1px solid rgba(163, 180, 208, 0.14)",
+    background: "linear-gradient(180deg, rgba(8, 13, 23, 0.78), rgba(10, 18, 30, 0.92))",
+    ...shorthands.borderRadius("28px"),
     ...shorthands.padding("24px"),
   },
-  placeholder: { display: "grid", placeItems: "center", minHeight: "160px", color: "#7c90b2", fontSize: "14px" },
-  loadingWrap: { display: "grid", placeItems: "center", minHeight: "160px", gap: "12px" },
-  workspaceList: { display: "grid", gap: "10px" },
+  placeholder: {
+    display: "grid",
+    placeItems: "center",
+    minHeight: "180px",
+    color: "#8da3c4",
+    fontSize: "14px",
+  },
+  loadingWrap: {
+    display: "grid",
+    placeItems: "center",
+    gap: "12px",
+    minHeight: "180px",
+  },
+  workspaceList: { display: "grid", gap: "12px" },
   workspaceCard: {
     width: "100%",
     display: "grid",
-    gridTemplateColumns: "40px 1fr auto",
-    gap: "14px",
+    gridTemplateColumns: "52px 1fr auto",
+    gap: "16px",
     alignItems: "center",
-    border: "1px solid transparent",
-    background: "transparent",
+    border: "1px solid rgba(163, 180, 208, 0.12)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02))",
     color: "inherit",
     cursor: "pointer",
     textAlign: "left",
-    ...shorthands.borderRadius("18px"),
-    ...shorthands.padding("14px"),
+    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.18)",
+    transitionDuration: "160ms",
+    transitionProperty: "transform, border-color, background-color",
+    ...shorthands.borderRadius("22px"),
+    ...shorthands.padding("16px"),
     ":hover": {
-      backgroundColor: "rgba(255, 255, 255, 0.03)",
-      border: "1px solid rgba(255, 255, 255, 0.06)",
+      transform: "translateY(-1px)",
+      border: "1px solid rgba(131, 207, 255, 0.22)",
+      background: "linear-gradient(180deg, rgba(131, 207, 255, 0.06), rgba(255, 255, 255, 0.03))",
     },
   },
   workspaceIcon: {
-    width: "40px",
-    height: "40px",
+    width: "52px",
+    height: "52px",
     display: "grid",
     placeItems: "center",
-    color: "#ffffff",
-    fontSize: "14px",
-    fontWeight: 760,
-    background: "linear-gradient(135deg, #4f8cff, #7c5cff)",
-    boxShadow: "0 8px 20px rgba(79, 140, 255, 0.25)",
-    ...shorthands.borderRadius("14px"),
+    color: "#0a1019",
+    fontSize: "18px",
+    fontWeight: 800,
+    background: "linear-gradient(145deg, #f3d4a8, #83cfff)",
+    boxShadow: "0 12px 32px rgba(0, 0, 0, 0.22)",
+    ...shorthands.borderRadius("18px"),
   },
-  workspaceName: { fontSize: "14px", fontWeight: 650 },
-  workspacePath: { marginTop: "2px", color: "#a1b3d2", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" },
+  workspaceName: { color: "#f4f8ff", fontSize: "15px", fontWeight: 700 },
+  workspacePath: {
+    marginTop: "4px",
+    color: "#8da3c4",
+    fontSize: "12px",
+    lineHeight: 1.6,
+    overflowWrap: "anywhere",
+  },
+  workspaceMeta: {
+    color: "#7f94b6",
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+  },
   badge: {
     display: "inline-flex",
     alignItems: "center",
     fontSize: "10px",
-    letterSpacing: "0.04em",
-    color: "#b794ff",
-    backgroundColor: "rgba(183, 148, 255, 0.12)",
-    border: "1px solid rgba(183, 148, 255, 0.22)",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "#d9e7fb",
+    backgroundColor: "rgba(131, 207, 255, 0.1)",
+    border: "1px solid rgba(131, 207, 255, 0.22)",
     ...shorthands.borderRadius("999px"),
-    ...shorthands.padding("2px", "8px"),
+    ...shorthands.padding("4px", "10px"),
   },
-  form: { display: "grid", gap: "14px" },
-  fieldLabel: { color: "#7c90b2", fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "4px" },
+  form: { display: "grid", gap: "18px" },
+  fieldLabel: {
+    color: "#7f94b6",
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    marginBottom: "6px",
+  },
   fieldInput: { width: "100%" },
-  actionRow: { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" },
+  inlineField: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: "10px",
+    "@media (max-width: 640px)": {
+      gridTemplateColumns: "1fr",
+    },
+  },
+  actionRow: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
   scanResults: {
     display: "grid",
+    gap: "12px",
+    border: "1px solid rgba(163, 180, 208, 0.14)",
+    background: "linear-gradient(180deg, rgba(131, 207, 255, 0.06), rgba(255, 255, 255, 0.03))",
+    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.16)",
+    ...shorthands.borderRadius("22px"),
+    ...shorthands.padding("18px"),
+  },
+  scanRow: {
+    display: "flex",
+    alignItems: "center",
     gap: "10px",
-    border: "1px solid rgba(108, 182, 255, 0.18)",
-    backgroundColor: "rgba(108, 182, 255, 0.04)",
-    ...shorthands.borderRadius("14px"),
-    ...shorthands.padding("16px"),
+    flexWrap: "wrap",
+    fontSize: "13px",
+    color: "#dce7f7",
   },
-  scanRow: { display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" },
-  scanLabel: { color: "#7c90b2", minWidth: "90px", fontSize: "12px" },
-  errorText: { color: "#ef4444", fontSize: "13px" },
+  scanLabel: {
+    color: "#7f94b6",
+    minWidth: "88px",
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+  },
+  errorText: { color: "#ff9b97", fontSize: "13px", lineHeight: 1.6 },
   browserWrap: {
-    border: "1px solid rgba(155, 176, 210, 0.16)",
-    backgroundColor: "rgba(15, 23, 40, 0.6)",
-    ...shorthands.borderRadius("14px"),
-    ...shorthands.padding("12px"),
+    border: "1px solid rgba(163, 180, 208, 0.14)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02))",
+    ...shorthands.borderRadius("22px"),
+    ...shorthands.padding("14px"),
   },
-  browserHeader: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", fontSize: "12px", color: "#a1b3d2", overflowWrap: "anywhere" },
-  browserList: { display: "grid", gap: "2px", maxHeight: "260px", overflowY: "auto" },
+  browserHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    marginBottom: "10px",
+    fontSize: "12px",
+    color: "#aec0de",
+    overflowWrap: "anywhere",
+  },
+  browserList: { display: "grid", gap: "6px", maxHeight: "280px", overflowY: "auto" },
   browserEntry: {
     display: "flex",
     alignItems: "center",
-    gap: "8px",
+    gap: "10px",
     width: "100%",
     background: "transparent",
     border: "1px solid transparent",
@@ -176,25 +407,36 @@ const useStyles = makeStyles({
     cursor: "pointer",
     textAlign: "left",
     fontSize: "13px",
-    ...shorthands.borderRadius("8px"),
-    ...shorthands.padding("6px", "10px"),
-    ":hover": { backgroundColor: "rgba(255, 255, 255, 0.04)", border: "1px solid rgba(255, 255, 255, 0.08)" },
+    transitionDuration: "140ms",
+    transitionProperty: "background-color, border-color",
+    ...shorthands.borderRadius("14px"),
+    ...shorthands.padding("10px", "12px"),
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.04)",
+      border: "1px solid rgba(255, 255, 255, 0.08)",
+    },
   },
-  browserActions: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "10px" },
-  dialogSurface: { backgroundColor: "#0f1728", border: "1px solid rgba(155, 176, 210, 0.16)", color: "#eff5ff", maxWidth: "480px" },
-  dialogTitle: { color: "#eff5ff" },
+  browserActions: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" },
+  dialogSurface: {
+    backgroundColor: "#0c1523",
+    border: "1px solid rgba(163, 180, 208, 0.16)",
+    color: "#eff5ff",
+    maxWidth: "520px",
+  },
+  dialogTitle: { color: "#eff5ff", fontFamily: "var(--heading)" },
   dialogSpecNote: {
     display: "flex",
-    gap: "8px",
+    gap: "10px",
     fontSize: "13px",
-    lineHeight: "1.6",
-    backgroundColor: "rgba(108, 182, 255, 0.06)",
-    border: "1px solid rgba(108, 182, 255, 0.18)",
-    ...shorthands.borderRadius("10px"),
-    ...shorthands.padding("12px"),
+    lineHeight: "1.7",
+    color: "#dce7f7",
+    backgroundColor: "rgba(131, 207, 255, 0.06)",
+    border: "1px solid rgba(131, 207, 255, 0.18)",
+    ...shorthands.borderRadius("14px"),
+    ...shorthands.padding("14px"),
   },
   dialogSpecIcon: { fontSize: "16px", flexShrink: 0, lineHeight: "1.6" },
-  dialogError: { color: "#ef4444", fontSize: "13px", marginTop: "8px" },
+  dialogError: { color: "#ff9b97", fontSize: "13px", marginTop: "8px" },
 });
 
 function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: string) => void }) {
@@ -205,16 +447,24 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
   useEffect(() => {
     let cancelled = false;
     listWorkspaces()
-      .then((ws) => { if (!cancelled) setWorkspaces(ws); })
-      .catch(() => { if (!cancelled) setWorkspaces([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .then((ws) => {
+        if (!cancelled) setWorkspaces(ws);
+      })
+      .catch(() => {
+        if (!cancelled) setWorkspaces([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) {
     return (
       <div className={classes.loadingWrap}>
-        <Spinner size="small" label="Loading projects\u2026" />
+        <Spinner size="small" label="Loading workspaces…" />
       </div>
     );
   }
@@ -222,7 +472,7 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
   if (workspaces.length === 0) {
     return (
       <div className={classes.placeholder}>
-        <Body1>No existing projects found. Onboard or create one below.</Body1>
+        <Body1>No existing projects found yet. Onboard a repository or create a new workspace below.</Body1>
       </div>
     );
   }
@@ -235,16 +485,15 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
           className={classes.workspaceCard}
           onClick={() => onProjectSelected(ws.path)}
           title={`Open ${ws.projectName ?? ws.path}`}
+          type="button"
         >
-          <div className={classes.workspaceIcon}>
-            {(ws.projectName ?? ws.path).charAt(0).toUpperCase()}
-          </div>
+          <div className={classes.workspaceIcon}>{(ws.projectName ?? ws.path).charAt(0).toUpperCase()}</div>
           <div>
             <div className={classes.workspaceName}>{ws.projectName ?? ws.path.split("/").pop()}</div>
             <div className={classes.workspacePath}>{ws.path}</div>
           </div>
-          <Caption1 style={{ color: "#7c90b2" }}>
-            {ws.lastAccessedAt ? relativeTime(ws.lastAccessedAt) : ""}
+          <Caption1 className={classes.workspaceMeta}>
+            {ws.lastAccessedAt ? `Active ${relativeTime(ws.lastAccessedAt)}` : "New workspace"}
           </Caption1>
         </button>
       ))}
@@ -311,7 +560,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
       setBrowseResult(null);
       setScanResult(null);
       setScannedPath("");
-      doScan(selectedPath);
+      void doScan(selectedPath);
     }
   }, [browseResult, doScan]);
 
@@ -333,8 +582,8 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
   return (
     <div className={classes.form}>
       <div>
-        <div className={classes.fieldLabel}>Directory Path</div>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div className={classes.fieldLabel}>Directory path</div>
+        <div className={classes.inlineField}>
           <Input
             className={classes.fieldInput}
             placeholder="/home/user/projects/my-project"
@@ -346,31 +595,34 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                 setScannedPath("");
               }
             }}
-            onKeyDown={(e) => { if (e.key === "Enter") doScan(dirPath); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void doScan(dirPath);
+            }}
             contentAfter={
               <Button
                 appearance="transparent"
                 size="small"
-                icon={<span>{"🔍"}</span>}
-                onClick={() => doScan(dirPath)}
+                onClick={() => void doScan(dirPath)}
                 disabled={scanning || !dirPath.trim()}
-              />
+              >
+                Scan
+              </Button>
             }
           />
           <Button
             appearance="subtle"
             size="medium"
-            onClick={() => browsing ? setBrowsing(false) : handleBrowse()}
+            onClick={() => (browsing ? setBrowsing(false) : void handleBrowse())}
             disabled={browseLoading}
           >
-            {browsing ? "Close" : "Browse\u2026"}
+            {browsing ? "Close browser" : "Browse directories"}
           </Button>
         </div>
       </div>
 
       {browseLoading && !browsing && (
-        <div className={classes.loadingWrap} style={{ minHeight: "60px" }}>
-          <Spinner size="small" label="Loading directories\u2026" />
+        <div className={classes.loadingWrap} style={{ minHeight: "72px" }}>
+          <Spinner size="small" label="Loading directories…" />
         </div>
       )}
       {browseError && <div className={classes.errorText}>{browseError}</div>}
@@ -378,35 +630,47 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
       {browsing && browseResult && (
         <div className={classes.browserWrap}>
           <div className={classes.browserHeader}>
-            <span style={{ fontWeight: 600, color: "#6cb6ff" }}>{"📁"}</span>
+            <span style={{ color: "#83cfff", fontWeight: 700 }}>Path</span>
             <span style={{ flex: 1 }}>{browseResult.current}</span>
           </div>
           <div className={classes.browserList}>
+            {browseResult.parent && (
+              <button
+                className={classes.browserEntry}
+                onClick={() => void handleBrowse(browseResult.parent ?? undefined)}
+                disabled={browseLoading}
+                type="button"
+              >
+                <span>↖</span>
+                <span>Parent directory</span>
+              </button>
+            )}
             {browseResult.entries
-              .filter((e) => e.isDirectory)
+              .filter((entry) => entry.isDirectory)
               .map((entry) => (
                 <button
                   key={entry.path}
                   className={classes.browserEntry}
-                  onClick={() => handleBrowse(entry.path)}
+                  onClick={() => void handleBrowse(entry.path)}
                   disabled={browseLoading}
+                  type="button"
                 >
-                  <span>{"📁"}</span>
+                  <span>▣</span>
                   <span>{entry.name}</span>
                 </button>
               ))}
           </div>
           <div className={classes.browserActions}>
             <Button appearance="primary" size="small" onClick={handleSelectBrowsedDir}>
-              Select This Directory
+              Select this directory
             </Button>
           </div>
         </div>
       )}
 
       {scanning && (
-        <div className={classes.loadingWrap} style={{ minHeight: "80px" }}>
-          <Spinner size="small" label="Scanning project\u2026" />
+        <div className={classes.loadingWrap} style={{ minHeight: "88px" }}>
+          <Spinner size="small" label="Scanning project…" />
         </div>
       )}
       {scanError && <div className={classes.errorText}>{scanError}</div>}
@@ -420,10 +684,10 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
             </div>
             {scanResult.techStack.length > 0 && (
               <div className={classes.scanRow}>
-                <span className={classes.scanLabel}>Tech Stack</span>
+                <span className={classes.scanLabel}>Stack</span>
                 <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  {scanResult.techStack.map((t) => (
-                    <span key={t} className={classes.badge}>{t}</span>
+                  {scanResult.techStack.map((tech) => (
+                    <span key={tech} className={classes.badge}>{tech}</span>
                   ))}
                 </div>
               </div>
@@ -432,56 +696,62 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
               <span className={classes.scanLabel}>Git</span>
               <span>
                 {scanResult.isGitRepo
-                  ? `\u2713 Git repo (${scanResult.gitBranch ?? "unknown branch"})`
-                  : "Not a git repository"}
+                  ? `✓ Repository detected (${scanResult.gitBranch ?? "unknown branch"})`
+                  : "No git repository detected"}
               </span>
+            </div>
+            <div className={classes.scanRow}>
+              <span className={classes.scanLabel}>Specs</span>
+              <span>{scanResult.hasSpecs ? "Existing spec set found" : "No specs found — onboarding will generate one"}</span>
             </div>
           </div>
 
           <div className={classes.actionRow}>
             <Button
               appearance="primary"
-              icon={<span>{"🚀"}</span>}
-              onClick={() => { setOnboardError(null); setDialogOpen(true); }}
+              onClick={() => {
+                setOnboardError(null);
+                setDialogOpen(true);
+              }}
             >
-              Onboard Project
+              Onboard project
             </Button>
           </div>
 
           <Dialog open={dialogOpen} onOpenChange={(_, data) => { if (!onboarding) setDialogOpen(data.open); }}>
             <DialogSurface className={classes.dialogSurface}>
               <DialogBody>
-                <DialogTitle className={classes.dialogTitle}>Onboard Project</DialogTitle>
+                <DialogTitle className={classes.dialogTitle}>Onboard project</DialogTitle>
                 <DialogContent>
                   <div style={{ display: "grid", gap: "12px" }}>
                     <div>
                       <Body1Strong>{scanResult.projectName ?? scannedPath.split("/").pop()}</Body1Strong>
-                      <Caption1 style={{ display: "block", color: "#a1b3d2", marginTop: "2px" }}>
+                      <Caption1 style={{ display: "block", color: "#aec0de", marginTop: "4px" }}>
                         {scannedPath}
                       </Caption1>
                     </div>
                     {scanResult.techStack.length > 0 && (
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        {scanResult.techStack.map((t) => (
-                          <span key={t} className={classes.badge}>{t}</span>
+                        {scanResult.techStack.map((tech) => (
+                          <span key={tech} className={classes.badge}>{tech}</span>
                         ))}
                       </div>
                     )}
                     <div className={classes.dialogSpecNote}>
-                      <span className={classes.dialogSpecIcon}>{scanResult.hasSpecs ? "\u2705" : "\ud83d\udcdd"}</span>
+                      <span className={classes.dialogSpecIcon}>{scanResult.hasSpecs ? "✓" : "✦"}</span>
                       <div>
                         {scanResult.hasSpecs ? (
                           <>
                             <Body1Strong>Existing specification found.</Body1Strong>
-                            <Body1 style={{ display: "block", color: "#a1b3d2", marginTop: "4px" }}>
-                              The agent team will use the existing specs/ directory.
+                            <Body1 style={{ display: "block", color: "#aec0de", marginTop: "4px" }}>
+                              The agent team will anchor on the current specs/ directory during onboarding.
                             </Body1>
                           </>
                         ) : (
                           <>
                             <Body1Strong>No specification found — one will be generated automatically.</Body1Strong>
-                            <Body1 style={{ display: "block", color: "#a1b3d2", marginTop: "4px" }}>
-                              The agent team will analyze this codebase and create a project specification for review.
+                            <Body1 style={{ display: "block", color: "#aec0de", marginTop: "4px" }}>
+                              Agent Academy will inspect the codebase and create an initial spec set for review.
                             </Body1>
                           </>
                         )}
@@ -496,11 +766,11 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                   </Button>
                   <Button
                     appearance="primary"
-                    onClick={handleConfirmOnboard}
+                    onClick={() => void handleConfirmOnboard()}
                     disabled={onboarding}
                     icon={onboarding ? <Spinner size="tiny" /> : undefined}
                   >
-                    {onboarding ? "Onboarding\u2026" : "Onboard"}
+                    {onboarding ? "Onboarding…" : "Onboard"}
                   </Button>
                 </DialogActions>
               </DialogBody>
@@ -536,23 +806,25 @@ function CreateSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboard
   return (
     <div className={classes.form}>
       <div>
-        <div className={classes.fieldLabel}>Directory Path</div>
+        <div className={classes.fieldLabel}>Directory path</div>
         <Input
           className={classes.fieldInput}
           placeholder="/home/user/projects/my-awesome-project"
           value={dirPath}
-          onChange={(_, d) => setDirPath(d.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+          onChange={(_, data) => setDirPath(data.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void handleCreate();
+          }}
         />
       </div>
       <div className={classes.actionRow}>
         <Button
           appearance="primary"
-          icon={creating ? <Spinner size="tiny" /> : <span>{"➕"}</span>}
-          onClick={handleCreate}
+          icon={creating ? <Spinner size="tiny" /> : undefined}
+          onClick={() => void handleCreate()}
           disabled={!dirPath.trim() || creating}
         >
-          {creating ? "Creating\u2026" : "Create & Open"}
+          {creating ? "Creating…" : "Create & open"}
         </Button>
       </div>
       {createError && <div className={classes.errorText}>{createError}</div>}
@@ -560,11 +832,11 @@ function CreateSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboard
   );
 }
 
-type SelectorTab = "existing" | "onboard" | "create";
-
 export default function ProjectSelectorPage({ onProjectSelected, onProjectOnboarded, user, onLogout }: ProjectSelectorPageProps) {
   const classes = useStyles();
   const [tab, setTab] = useState<SelectorTab>("onboard");
+  const tabCopy = TAB_COPY[tab];
+  const userName = user?.name ?? user?.login;
 
   const handleOnboarded = useCallback((result: OnboardResult) => {
     if (onProjectOnboarded) {
@@ -576,32 +848,65 @@ export default function ProjectSelectorPage({ onProjectSelected, onProjectOnboar
 
   return (
     <div className={classes.root}>
-      {user && onLogout && (
-        <div style={{ position: "absolute", top: 16, right: 24 }}>
-          <UserBadge user={user} onLogout={onLogout} />
-        </div>
-      )}
+      <div className={classes.backdrop} />
       <div className={classes.container}>
-        <div className={classes.header}>
-          <h1 className={classes.title}>Agent Academy</h1>
-          <div className={classes.subtitle}>Multi-Agent Collaboration Platform</div>
-        </div>
+        <section className={classes.rail}>
+          <div className={classes.railHeader}>
+            <div className={classes.railKicker}>Workspace staging</div>
+            <h1 className={classes.railTitle}>Choose the project with intent.</h1>
+            <p className={classes.railBody}>
+              {userName
+                ? `Welcome back, ${userName}. Bring an existing repository forward or onboard a new one without leaving the client.`
+                : "Move from directory discovery into collaboration without a clunky handoff between tools."}
+            </p>
+          </div>
 
-        <TabList
-          className={classes.tabList}
-          selectedValue={tab}
-          onTabSelect={(_, data) => setTab(data.value as SelectorTab)}
-        >
-          <Tab value="existing" icon={<span>{"📂"}</span>}>Load Existing</Tab>
-          <Tab value="onboard" icon={<span>{"🔍"}</span>}>Onboard Project</Tab>
-          <Tab value="create" icon={<span>{"➕"}</span>}>Create New</Tab>
-        </TabList>
+          <div className={classes.railGrid}>
+            {RAIL_POINTS.map((point) => (
+              <div key={point.label} className={classes.railCard}>
+                <div className={classes.railCardLabel}>{point.label}</div>
+                <div className={classes.railCardValue}>{point.value}</div>
+                <div className={classes.railCardBody}>{point.body}</div>
+              </div>
+            ))}
+          </div>
 
-        <div className={classes.panel}>
-          {tab === "existing" && <LoadExistingSection onProjectSelected={onProjectSelected} />}
-          {tab === "onboard" && <OnboardSection onProjectOnboarded={handleOnboarded} />}
-          {tab === "create" && <CreateSection onProjectOnboarded={handleOnboarded} />}
-        </div>
+          <div className={classes.railFootnote}>
+            The frontend now treats Copilot availability as a first-class state, so onboarding and workspace entry feel
+            consistent with the rest of the application instead of bolted on.
+          </div>
+        </section>
+
+        <section className={classes.deck}>
+          <div className={classes.deckTop}>
+            <div className={classes.deckHeader}>
+              <div className={classes.deckKicker}>{tabCopy.kicker}</div>
+              <div className={classes.deckTitle}>{tabCopy.title}</div>
+              <div className={classes.deckDescription}>{tabCopy.description}</div>
+            </div>
+            {user && onLogout && (
+              <div className={classes.userWrap}>
+                <UserBadge user={user} onLogout={onLogout} />
+              </div>
+            )}
+          </div>
+
+          <TabList
+            className={classes.tabList}
+            selectedValue={tab}
+            onTabSelect={(_, data) => setTab(data.value as SelectorTab)}
+          >
+            <Tab value="existing">Existing</Tab>
+            <Tab value="onboard">Onboard</Tab>
+            <Tab value="create">Create</Tab>
+          </TabList>
+
+          <div className={classes.panel}>
+            {tab === "existing" && <LoadExistingSection onProjectSelected={onProjectSelected} />}
+            {tab === "onboard" && <OnboardSection onProjectOnboarded={handleOnboarded} />}
+            {tab === "create" && <CreateSection onProjectOnboarded={handleOnboarded} />}
+          </div>
+        </section>
       </div>
     </div>
   );
