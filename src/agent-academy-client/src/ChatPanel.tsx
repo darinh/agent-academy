@@ -22,6 +22,8 @@ import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot } from "./api";
+import RecoveryBanner, { type RecoveryBannerState } from "./RecoveryBanner";
+import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
 import type { ThinkingAgent } from "./useWorkspace";
 import type { ConnectionStatus } from "./useActivityHub";
 
@@ -252,6 +254,7 @@ const ChatPanel = memo(function ChatPanel(props: {
   thinkingAgents: ThinkingAgent[];
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
+  recoveryBanner?: RecoveryBannerState | null;
   readOnly?: boolean;
 }) {
   const s = useStyles();
@@ -260,6 +263,12 @@ const ChatPanel = memo(function ChatPanel(props: {
   const [sending, setSending] = useState(false);
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
   const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const room = props.room;
+  const readOnly = props.readOnly ?? false;
+  const onSendMessage = props.onSendMessage;
+  const thinkingAgents = props.thinkingAgents;
+  const connectionStatus = props.connectionStatus;
+  const recoveryBanner = props.recoveryBanner;
 
   // Filters use checkedValues where checked = visible (not hidden)
   const checkedValues = useMemo(() => {
@@ -282,19 +291,31 @@ const ChatPanel = memo(function ChatPanel(props: {
   );
 
   const filteredMessages = useMemo(
-    () => props.room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
-    [props.room?.recentMessages, hiddenFilters],
+    () => room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
+    [hiddenFilters, room],
   );
 
   useEffect(() => {
-    setHumanMsg("");
+    if (!room || readOnly) {
+      setHumanMsg("");
+    } else {
+      setHumanMsg(loadChatDraft(room.id));
+    }
     setExpandedMsgs(new Set());
-  }, [props.room?.id]);
+  }, [readOnly, room]);
+
+  useEffect(() => {
+    if (!room || readOnly) {
+      return;
+    }
+
+    saveChatDraft(room.id, humanMsg);
+  }, [humanMsg, readOnly, room]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-  }, [props.room?.id, filteredMessages.length, props.thinkingAgents.length]);
+  }, [filteredMessages.length, room?.id, thinkingAgents.length]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedMsgs((cur) => {
@@ -306,17 +327,20 @@ const ChatPanel = memo(function ChatPanel(props: {
   }, []);
 
   const doSend = useCallback(async () => {
-    const rid = props.room?.id;
+    const rid = room?.id;
     const content = humanMsg.trim();
     if (!rid || !content) return;
     setSending(true);
     try {
-      const sent = await props.onSendMessage(rid, content);
-      if (sent) setHumanMsg("");
+      const sent = await onSendMessage(rid, content);
+      if (sent) {
+        clearChatDraft(rid);
+        setHumanMsg("");
+      }
     } finally {
       setSending(false);
     }
-  }, [humanMsg, props.onSendMessage, props.room?.id]);
+  }, [humanMsg, onSendMessage, room?.id]);
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -325,7 +349,7 @@ const ChatPanel = memo(function ChatPanel(props: {
     }
   }, [doSend]);
 
-  const hiddenCount = (props.room?.recentMessages.length ?? 0) - filteredMessages.length;
+  const hiddenCount = (room?.recentMessages.length ?? 0) - filteredMessages.length;
 
   return (
     <div className={s.conversationLayout}>
@@ -349,27 +373,28 @@ const ChatPanel = memo(function ChatPanel(props: {
         </Menu>
       </div>
 
-      <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
+       <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
+        {recoveryBanner ? <RecoveryBanner state={recoveryBanner} /> : null}
         {filteredMessages.length ? (
           filteredMessages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />
           ))
         ) : (
           <Body1 className={s.emptyState}>
-            {props.room?.recentMessages.length ? "All messages filtered." : "No messages yet for this room."}
+            {room?.recentMessages.length ? "All messages filtered." : "No messages yet for this room."}
           </Body1>
         )}
-        {props.thinkingAgents.map((agent) => (
+        {thinkingAgents.map((agent) => (
           <ThinkingBubble key={agent.id} agent={agent} />
         ))}
       </div>
 
       <div className={s.statusBar}>
-        <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[props.connectionStatus] }} />
-        {STATUS_LABELS[props.connectionStatus]}
+        <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[connectionStatus] }} />
+        {STATUS_LABELS[connectionStatus]}
       </div>
 
-      {props.room && !props.readOnly && (
+      {room && !readOnly && (
         <div className={s.composerShell}>
           <div className={s.composerLabel}>Message the team</div>
           <Textarea
@@ -385,7 +410,16 @@ const ChatPanel = memo(function ChatPanel(props: {
             aria-label="Message to agents"
           />
           <div className={s.composerActions}>
-            <Button appearance="subtle" onClick={() => setHumanMsg("")} disabled={sending || !humanMsg}>
+            <Button
+              appearance="subtle"
+              onClick={() => {
+                if (room) {
+                  clearChatDraft(room.id);
+                }
+                setHumanMsg("");
+              }}
+              disabled={sending || !humanMsg}
+            >
               Clear
             </Button>
             <Button appearance="primary" onClick={() => void doSend()} disabled={!humanMsg.trim() || sending}>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getOverview,
+  getInstanceHealth,
   sendHumanMessage,
   transitionPhase,
   submitTask,
@@ -14,9 +15,11 @@ import type {
   WorkspaceOverview,
 } from "./api";
 import { workspaceChanged, sameActivityFeed } from "./utils";
+import { hasInstanceChanged } from "./recovery";
 import { useActivityHub } from "./useActivityHub";
 import { useActivitySSE } from "./useActivitySSE";
 import type { ConnectionStatus } from "./useActivityHub";
+import type { RecoveryBannerState } from "./RecoveryBanner";
 
 export type ActivityTransport = "signalr" | "sse";
 
@@ -32,6 +35,7 @@ export interface TaskDraft {
 }
 
 const FALLBACK_POLL_MS = 120_000;
+const RECOVERY_BANNER_DISMISS_MS = 4_000;
 
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
@@ -64,7 +68,7 @@ const empty: WorkspaceOverview = {
 };
 
 export function useWorkspace() {
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshInFlight = useRef(false);
 
   const [ov, setOv] = useState<WorkspaceOverview>(empty);
@@ -72,6 +76,8 @@ export function useWorkspace() {
   const [roomId, setRoomId] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(true);
+  const [instanceId, setInstanceId] = useState<string | null>(null);
+  const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBannerState | null>(null);
   const [tab, setTabRaw] = useState<string>(loadTab);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
   // Thinking state keyed by roomId → Map<agentId, info>
@@ -116,8 +122,11 @@ export function useWorkspace() {
   // Ref so the SignalR callback always sees current configuredAgents without re-subscribing
   const agentsRef = useRef(ov.configuredAgents);
   agentsRef.current = ov.configuredAgents;
+  const instanceIdRef = useRef<string | null>(instanceId);
+  instanceIdRef.current = instanceId;
+  const connectionStatusRef = useRef<ConnectionStatus>("disconnected");
 
-  const refreshRef = useRef<(opts?: { showBusy?: boolean }) => Promise<void>>(undefined);
+  const refreshRef = useRef<(opts?: { showBusy?: boolean }) => Promise<boolean>>(undefined);
 
   const handleActivityEvent = useCallback((evt: ActivityEvent) => {
     switch (evt.type) {
@@ -168,7 +177,7 @@ export function useWorkspace() {
 
   const refresh = useCallback(async (opts: { showBusy?: boolean } = {}) => {
     const showBusy = opts.showBusy ?? true;
-    if (refreshInFlight.current) return;
+    if (refreshInFlight.current) return false;
     refreshInFlight.current = true;
     if (showBusy) { setBusy(true); setErr(""); }
 
@@ -200,8 +209,10 @@ export function useWorkspace() {
         return changed ? cleaned : prev;
       });
       setErr("");
+      return true;
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Load failed");
+      return false;
     } finally {
       refreshInFlight.current = false;
       if (showBusy) setBusy(false);
@@ -219,10 +230,104 @@ export function useWorkspace() {
 
     return () => {
       clearInterval(poll);
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      if (recoveryTimer.current) clearTimeout(recoveryTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInstanceHealth() {
+      try {
+        const health = await getInstanceHealth();
+        if (!cancelled) {
+          setInstanceId(health.instanceId);
+        }
+      } catch {
+        // Best-effort initialization; reconnect flow will re-check.
+      }
+    }
+
+    void loadInstanceHealth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const previousStatus = connectionStatusRef.current;
+    connectionStatusRef.current = connectionStatus;
+
+    if (!useSignalR || previousStatus !== "reconnecting" || connectionStatus !== "connected") {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function handleReconnect() {
+      try {
+        const health = await getInstanceHealth();
+        if (cancelled) {
+          return;
+        }
+
+        if (!hasInstanceChanged(instanceIdRef.current, health.instanceId)) {
+          if (instanceIdRef.current === null) {
+            setInstanceId(health.instanceId);
+          }
+          return;
+        }
+
+        if (recoveryTimer.current) {
+          clearTimeout(recoveryTimer.current);
+          recoveryTimer.current = null;
+        }
+
+        setThinkingByRoom(new Map());
+        setRecoveryBanner({
+          tone: "syncing",
+          message: "Server restarted — refreshing workspace",
+          detail: "Re-syncing rooms, activity, and current task state.",
+        });
+
+        const refreshed = await refresh({ showBusy: false });
+        if (cancelled) {
+          return;
+        }
+
+        if (refreshed) {
+          setInstanceId(health.instanceId);
+          recoveryTimer.current = setTimeout(() => {
+            setRecoveryBanner(null);
+            recoveryTimer.current = null;
+          }, RECOVERY_BANNER_DISMISS_MS);
+          return;
+        }
+
+        setRecoveryBanner({
+          tone: "error",
+          message: "Server restarted, but workspace refresh did not complete.",
+          detail: "Your draft message is still preserved locally. Use manual refresh to retry sync.",
+        });
+      } catch {
+        if (!cancelled) {
+          setRecoveryBanner({
+            tone: "error",
+            message: "Live connection returned, but restart verification failed.",
+            detail: "Your draft message is still preserved locally while the workspace catches up.",
+          });
+        }
+      }
+    }
+
+    void handleReconnect();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionStatus, refresh, useSignalR]);
 
   useEffect(() => {
     if (ov.rooms.length && !ov.rooms.some((r) => r.id === roomId)) {
@@ -296,6 +401,7 @@ export function useWorkspace() {
     activity,
     thinkingAgentList,
     thinkingByRoom,
+    recoveryBanner,
     connectionStatus,
     agentLocations: ov.agentLocations ?? [],
     breakoutRooms: ov.breakoutRooms ?? [],

@@ -224,7 +224,6 @@ const SidebarPanel = memo(function SidebarPanel(props: {
 
 /* ── RoomButton — inline-editable room name ──────────────────────── */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function RoomButton(props: {
   room: RoomSnapshot;
   isActive: boolean;

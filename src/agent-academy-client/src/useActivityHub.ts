@@ -28,16 +28,18 @@ export function useActivityHub(
   const [status, setStatus] = useState<ConnectionStatus>(
     enabled ? "connecting" : "disconnected",
   );
+  const [hasEverConnected, setHasEverConnected] = useState(false);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
 
   useEffect(() => {
     if (!enabled) {
-      setStatus("disconnected");
       return;
     }
 
-    setStatus("connecting");
     const connection: HubConnection = new HubConnectionBuilder()
       .withUrl("/hubs/activity")
       .withAutomaticReconnect(INITIAL_RETRY_DELAYS)
@@ -49,7 +51,10 @@ export function useActivityHub(
     });
 
     connection.onreconnecting(() => setStatus("reconnecting"));
-    connection.onreconnected(() => setStatus("connected"));
+    connection.onreconnected(() => {
+      setHasEverConnected(true);
+      setStatus("connected");
+    });
     connection.onclose(() => setStatus("disconnected"));
 
     let cancelled = false;
@@ -59,7 +64,10 @@ export function useActivityHub(
       if (cancelled) return;
       try {
         await connection.start();
-        if (!cancelled) setStatus("connected");
+        if (!cancelled) {
+          setHasEverConnected(true);
+          setStatus("connected");
+        }
       } catch {
         if (cancelled) return;
         const delay = INITIAL_RETRY_DELAYS[Math.min(attempt, INITIAL_RETRY_DELAYS.length - 1)];
@@ -78,6 +86,14 @@ export function useActivityHub(
       }
     };
   }, [enabled]);
+
+  if (!enabled) {
+    return "disconnected";
+  }
+
+  if (!hasEverConnected && status === "disconnected") {
+    return "connecting";
+  }
 
   return status;
 }

@@ -52,6 +52,7 @@ function AppShell() {
     activity,
     thinkingAgentList,
     thinkingByRoom,
+    recoveryBanner,
     connectionStatus,
     breakoutRooms,
     err,
@@ -395,6 +396,7 @@ function AppShell() {
                   <ChatPanel
                     room={room}
                     thinkingAgents={thinkingAgentList}
+                    recoveryBanner={recoveryBanner}
                     connectionStatus={connectionStatus}
                     onSendMessage={handleSendMessage}
                   />

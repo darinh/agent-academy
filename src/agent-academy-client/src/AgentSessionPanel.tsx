@@ -1,23 +1,22 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import {
   Badge,
-  Card,
-  CardHeader,
   Button,
   Spinner,
 } from "@fluentui/react-components";
-import { useStyles } from "./useStyles";
 import { roleColor } from "./theme";
-import type { AgentDefinition, AgentLocation, BreakoutRoom, ChatEnvelope } from "./api";
+import type { AgentDefinition, AgentLocation, BreakoutRoom } from "./api";
 import { getAgentSessions } from "./api";
 import ChatPanel from "./ChatPanel";
+import type { ThinkingAgent } from "./useWorkspace";
+import type { ConnectionStatus } from "./useActivityHub";
 
 interface AgentSessionPanelProps {
   agent: AgentDefinition;
   location?: AgentLocation;
-  thinkingAgents: AgentDefinition[];
-  connectionStatus: string;
-  onSendMessage: (roomId: string, message: string) => void;
+  thinkingAgents: ThinkingAgent[];
+  connectionStatus: ConnectionStatus;
+  onSendMessage: (roomId: string, message: string) => Promise<boolean>;
 }
 
 function formatDuration(start: string, end: string): string {
@@ -40,7 +39,6 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
   connectionStatus,
   onSendMessage,
 }: AgentSessionPanelProps) {
-  const s = useStyles();
   const [sessions, setSessions] = useState<BreakoutRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);

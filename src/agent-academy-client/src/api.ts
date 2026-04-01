@@ -224,6 +224,15 @@ export interface HealthResult {
   timestamp: string;
 }
 
+export interface InstanceHealthResult {
+  instanceId: string;
+  startedAt: string;
+  version: string;
+  crashDetected: boolean;
+  executorOperational: boolean;
+  authFailed: boolean;
+}
+
 export interface TaskAssignmentRequest {
   title: string;
   description: string;
@@ -287,6 +296,10 @@ export function getOverview(): Promise<WorkspaceOverview> {
 
 export function getHealth(): Promise<HealthResult> {
   return request<HealthResult>(apiUrl("/healthz"));
+}
+
+export function getInstanceHealth(): Promise<InstanceHealthResult> {
+  return request<InstanceHealthResult>(apiUrl("/api/health/instance"));
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────
