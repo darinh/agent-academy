@@ -4,6 +4,14 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **001-domain-model**: Updated `TaskSnapshot` signature to match actual code — added 19 missing fields (Type, Size, StartedAt, CompletedAt, AssignedAgentId, AssignedAgentName, UsedFleet, FleetModels, BranchName, PullRequestUrl, PullRequestNumber, PullRequestStatus, ReviewerAgentId, ReviewRounds, TestsCreated, CommitCount, MergeCommitSha, CommentCount) per `src/AgentAcademy.Shared/Models/Tasks.cs`
+- **001-domain-model**: Removed non-existent `TaskId` parameter from `BreakoutRoom` signature (does not exist in `src/AgentAcademy.Shared/Models/Rooms.cs`)
+- **001-domain-model**: Added missing enums to spec: `TaskType`, `TaskSize`, `PullRequestStatus`, `TaskCommentType` (were already in code, missing from spec)
+- **010-task-management**: Rewrote Overview (lines 11-22) to describe the delivered branch-based local squash-merge workflow instead of the aspirational PR-based workflow
+- **010-task-management**: Updated Post-Approval section to document actual `MERGE_TASK` command flow with `GitService.SquashMergeAsync()` instead of PR merge
+- **010-task-management**: Removed false invariants requiring `PullRequestNumber` or `PullRequestStatus == Merged` for task completion — actual system uses `MergeCommitSha` from local squash-merge
+
 ### Added
 - **003-agent-system**: Conversation Session Management — epoch-based session boundaries with LLM summarization. When message count exceeds configurable threshold (default 50 main/30 breakout), conversation is summarized and a new session begins. SDK sessions are invalidated at rotation boundaries to reset accumulated context. System agent identity (`system-summarizer`) used for summarization. Fallback to structural summary when Copilot is offline.
 - **003-agent-system**: Prompt deduplication — `BuildConversationPrompt` and `BuildBreakoutPrompt` no longer include `agent.StartupPrompt` (already sent during SDK session priming). Eliminates the largest source of redundant context accumulation.

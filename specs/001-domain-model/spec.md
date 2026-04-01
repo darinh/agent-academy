@@ -34,6 +34,10 @@ public enum DeliveryPriority { Low, Normal, High, Urgent }
 public enum MessageKind { System, TaskAssignment, Coordination, Plan, Status, Review, Validation, Decision, Question, Response, SpecChangeProposal, DirectMessage }
 public enum MessageSenderKind { System, Agent, User }
 public enum TaskStatus { Queued, Active, Blocked, AwaitingValidation, InReview, ChangesRequested, Approved, Merging, Completed, Cancelled }
+public enum TaskType { Feature, Bug, Chore, Spike }
+public enum TaskSize { XS, S, M, L, XL }
+public enum PullRequestStatus { Open, ReviewRequested, ChangesRequested, Approved, Merged, Closed }
+public enum TaskCommentType { Comment, Finding, Evidence, Blocker }
 public enum WorkstreamStatus { NotStarted, Ready, InProgress, Blocked, Completed }
 public enum RoomStatus { Idle, Active, AttentionRequired, Completed, Archived }
 public enum ActivityEventType { AgentLoaded, AgentThinking, AgentFinished, RoomCreated, RoomClosed, TaskCreated, PhaseChanged, MessagePosted, MessageSent, PresenceUpdated, RoomStatusChanged, ArtifactEvaluated, QualityGateChecked, IterationRetried, CheckpointCreated, AgentErrorOccurred, AgentWarningOccurred, SubagentStarted, SubagentCompleted, SubagentFailed, AgentPlanChanged, AgentSnapshotRewound, ToolIntercepted, CommandExecuted, CommandDenied, CommandFailed, TaskClaimed, TaskReleased, TaskApproved, TaskChangesRequested, TaskStatusUpdated, RoomRenamed, DirectMessageSent }
@@ -42,6 +46,8 @@ public enum AgentState { InRoom, Working, Presenting, Idle }
 public enum TaskItemStatus { Pending, Active, Done, Rejected }
 public enum NotificationType { AgentThinking, NeedsInput, TaskComplete, TaskFailed, SpecReview, Error }
 ```
+
+> **Source**: `src/AgentAcademy.Shared/Models/Enums.cs`
 
 ### Agent Types
 
@@ -56,19 +62,57 @@ public record AgentCatalogOptions(string DefaultRoomId, string DefaultRoomName, 
 
 ```csharp
 public record RoomSnapshot(string Id, string Name, RoomStatus Status, CollaborationPhase CurrentPhase, TaskSnapshot? ActiveTask, List<AgentPresence> Participants, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
-public record BreakoutRoom(string Id, string Name, string ParentRoomId, string AssignedAgentId, string? TaskId, List<TaskItem> Tasks, RoomStatus Status, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
+public record BreakoutRoom(string Id, string Name, string ParentRoomId, string AssignedAgentId, List<TaskItem> Tasks, RoomStatus Status, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
 public record ChatEnvelope(string Id, string RoomId, string SenderId, string SenderName, string? SenderRole, MessageSenderKind SenderKind, MessageKind Kind, string Content, DateTime SentAt, string? CorrelationId = null, string? ReplyToMessageId = null, DeliveryHint? Hint = null);
 public record DeliveryHint(string? TargetRole, string? TargetAgentId, DeliveryPriority Priority, bool ReplyRequested);
 ```
 
+> **Source**: `src/AgentAcademy.Shared/Models/Rooms.cs`
+
 ### Task Types
 
 ```csharp
-public record TaskSnapshot(string Id, string Title, string Description, string SuccessCriteria, TaskStatus Status, CollaborationPhase CurrentPhase, string CurrentPlan, WorkstreamStatus ValidationStatus, string ValidationSummary, WorkstreamStatus ImplementationStatus, string ImplementationSummary, List<string> PreferredRoles, DateTime CreatedAt, DateTime UpdatedAt);
+public record TaskSnapshot(
+    string Id,
+    string Title,
+    string Description,
+    string SuccessCriteria,
+    TaskStatus Status,
+    TaskType Type,
+    CollaborationPhase CurrentPhase,
+    string CurrentPlan,
+    WorkstreamStatus ValidationStatus,
+    string ValidationSummary,
+    WorkstreamStatus ImplementationStatus,
+    string ImplementationSummary,
+    List<string> PreferredRoles,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    TaskSize? Size = null,
+    DateTime? StartedAt = null,
+    DateTime? CompletedAt = null,
+    string? AssignedAgentId = null,
+    string? AssignedAgentName = null,
+    bool UsedFleet = false,
+    List<string>? FleetModels = null,
+    string? BranchName = null,
+    string? PullRequestUrl = null,
+    int? PullRequestNumber = null,
+    PullRequestStatus? PullRequestStatus = null,
+    string? ReviewerAgentId = null,
+    int ReviewRounds = 0,
+    List<string>? TestsCreated = null,
+    int CommitCount = 0,
+    string? MergeCommitSha = null,
+    int CommentCount = 0
+);
 public record TaskItem(string Id, string Title, string Description, TaskItemStatus Status, string AssignedTo, string RoomId, string? BreakoutRoomId, string? Evidence, string? Feedback, DateTime CreatedAt, DateTime UpdatedAt);
-public record TaskAssignmentRequest(string Title, string Description, string SuccessCriteria, string? RoomId, List<string> PreferredRoles, string? CorrelationId = null);
+public record TaskAssignmentRequest(string Title, string Description, string SuccessCriteria, string? RoomId, List<string> PreferredRoles, TaskType Type = TaskType.Feature, string? CorrelationId = null, string? CurrentPlan = null);
 public record TaskAssignmentResult(string CorrelationId, RoomSnapshot Room, TaskSnapshot Task, ActivityEvent Activity);
+public record TaskComment(string Id, string TaskId, string AgentId, string AgentName, TaskCommentType CommentType, string Content, DateTime CreatedAt);
 ```
+
+> **Source**: `src/AgentAcademy.Shared/Models/Tasks.cs`
 
 ### Activity Types
 
