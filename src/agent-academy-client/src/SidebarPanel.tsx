@@ -60,16 +60,23 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           ) : (
             <div className={s.eyebrow}>Live</div>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div className={s.sidebarUtilityRow}>
             {props.busy && <Spinner size="tiny" />}
             {props.sidebarOpen && (
-              <Button appearance="subtle" size="small" onClick={props.onRefresh} aria-label="Refresh">
+              <Button
+                appearance="subtle"
+                size="small"
+                className={s.sidebarIconButton}
+                onClick={props.onRefresh}
+                aria-label="Refresh"
+              >
                 ↻
               </Button>
             )}
             <Button
               appearance="subtle"
               size="small"
+              className={s.sidebarIconButton}
               onClick={props.onToggleSidebar}
               aria-label={props.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             >
@@ -79,19 +86,21 @@ const SidebarPanel = memo(function SidebarPanel(props: {
         </div>
 
         {props.sidebarOpen && props.workspace && (
-          <div style={{ marginTop: "4px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#7c90b2", padding: "0 12px" }}>
-              <span>📁</span>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }} title={props.workspace.path}>
-                {props.workspace.name}
-              </span>
+          <div className={s.sidebarProjectCard}>
+            <div className={s.sidebarProjectLabel}>Active project</div>
+            <div className={s.sidebarProjectRow}>
+              <span className={s.sidebarProjectIcon}>↗</span>
+              <div style={{ minWidth: 0 }}>
+                <div className={s.sidebarProjectName} title={props.workspace.name}>{props.workspace.name}</div>
+                <div className={s.sidebarProjectPath} title={props.workspace.path}>{props.workspace.path}</div>
+              </div>
               {props.onSwitchProject && (
                 <Button
                   appearance="transparent"
                   size="small"
+                  className={s.sidebarProjectAction}
                   onClick={props.onSwitchProject}
                   aria-label="Switch project"
-                  style={{ minWidth: "auto", padding: "0 4px", fontSize: "11px", color: "#7c90b2", height: "20px" }}
                 >
                   ⇄
                 </Button>
@@ -170,11 +179,13 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                           <span className={s.workspaceName}>{agent.name}</span>
-                          <span style={{
-                            fontSize: "9px", padding: "1px 5px", borderRadius: "999px",
-                            backgroundColor: isWorking ? rc.accent + "33" : "#ffffff11",
-                            color: isWorking ? rc.accent : "#7c90b2",
-                          }}>
+                          <span
+                            className={s.workspaceStateBadge}
+                            style={{
+                              backgroundColor: isWorking ? `${rc.accent}33` : "#ffffff11",
+                              color: isWorking ? rc.accent : "#7c90b2",
+                            }}
+                          >
                             {state}
                           </span>
                         </div>
@@ -262,7 +273,7 @@ function RoomButton(props: {
     >
       <div className={s.roomButtonIcon}>{initials(room.name)}</div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className={s.roomButtonMeta}>
           {editing ? (
             <input
               ref={inputRef}
@@ -301,7 +312,7 @@ function RoomButton(props: {
               {room.name}
             </div>
           )}
-          <span style={{ width: "6px", height: "6px", borderRadius: "999px", backgroundColor: dotColor, flexShrink: 0 }} />
+          <span className={s.roomPhaseDot} style={{ backgroundColor: dotColor }} />
         </div>
       </div>
       {roomAgents.length > 0 && (

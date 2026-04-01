@@ -4,7 +4,8 @@ export const useStyles = makeStyles({
   root: {
     minHeight: "100vh",
     color: "var(--aa-text)",
-    background: "transparent",
+    background:
+      "radial-gradient(circle at top left, rgba(108, 182, 255, 0.08), transparent 26%), radial-gradient(circle at top right, rgba(167, 139, 250, 0.08), transparent 22%), radial-gradient(circle at bottom, rgba(217, 166, 103, 0.06), transparent 30%), linear-gradient(180deg, rgba(4, 8, 15, 0.98), rgba(8, 14, 24, 1))",
   },
   errorBar: {
     position: "sticky",
@@ -14,13 +15,26 @@ export const useStyles = makeStyles({
   },
   shell: {
     display: "grid",
-    gap: "24px",
+    gap: "20px",
     height: "100vh",
     boxSizing: "border-box",
     gridTemplateRows: "minmax(0, 1fr)",
-    ...shorthands.padding("22px"),
+    ...shorthands.padding("18px"),
+    "@media (max-width: 900px)": {
+      gap: "16px",
+      ...shorthands.padding("14px"),
+    },
   },
-  shellOpen: { gridTemplateColumns: "336px minmax(0, 1fr)" },
+  shellOpen: {
+    gridTemplateColumns: "320px minmax(0, 1fr)",
+    "@media (max-width: 1100px)": {
+      gridTemplateColumns: "280px minmax(0, 1fr)",
+    },
+    "@media (max-width: 900px)": {
+      gridTemplateColumns: "1fr",
+      gridTemplateRows: "minmax(220px, auto) minmax(0, 1fr)",
+    },
+  },
   shellCollapsed: { gridTemplateColumns: "88px minmax(0, 1fr)" },
   sidebar: {
     minHeight: 0,
@@ -35,7 +49,7 @@ export const useStyles = makeStyles({
   sidebarCollapsed: { alignItems: "center" },
   sidebarHeader: {
     display: "grid",
-    gap: tokens.spacingVerticalS,
+    gap: "12px",
     borderBottom: "1px solid rgba(163, 180, 208, 0.16)",
     ...shorthands.padding("26px", "24px", "22px"),
   },
@@ -82,6 +96,75 @@ export const useStyles = makeStyles({
     textTransform: "uppercase",
   },
   roomList: { display: "grid", gap: "8px" },
+  sidebarUtilityRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  sidebarIconButton: {
+    minWidth: "32px",
+    width: "32px",
+    height: "32px",
+    color: "#9bb0d2",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    border: "1px solid rgba(255, 255, 255, 0.05)",
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+      color: "#eff5ff",
+    },
+  },
+  sidebarProjectCard: {
+    display: "grid",
+    gap: "10px",
+    border: "1px solid rgba(163, 180, 208, 0.12)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015))",
+    ...shorthands.borderRadius("20px"),
+    ...shorthands.padding("12px", "14px"),
+  },
+  sidebarProjectLabel: {
+    color: "#7f94b6",
+    fontSize: "10px",
+    fontWeight: 700,
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+  },
+  sidebarProjectRow: {
+    display: "grid",
+    gridTemplateColumns: "auto minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: "10px",
+  },
+  sidebarProjectIcon: {
+    width: "30px",
+    height: "30px",
+    display: "grid",
+    placeItems: "center",
+    color: "#f3d4a8",
+    backgroundColor: "rgba(217, 166, 103, 0.12)",
+    border: "1px solid rgba(217, 166, 103, 0.18)",
+    ...shorthands.borderRadius("12px"),
+    fontSize: "14px",
+  },
+  sidebarProjectName: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: "#eef4ff",
+    fontSize: "13px",
+    fontWeight: 650,
+  },
+  sidebarProjectPath: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: "#7f94b6",
+    fontSize: "11px",
+  },
+  sidebarProjectAction: {
+    minWidth: "auto",
+    height: "28px",
+    color: "#9bb0d2",
+  },
   roomButton: {
     width: "100%",
     display: "grid",
@@ -120,6 +203,17 @@ export const useStyles = makeStyles({
     ...shorthands.borderRadius("14px"),
   },
   roomButtonName: { fontSize: "14px", fontWeight: 650 },
+  roomButtonMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  roomPhaseDot: {
+    width: "6px",
+    height: "6px",
+    ...shorthands.borderRadius("999px"),
+    flexShrink: 0,
+  },
   compactSidebar: {
     flex: 1,
     display: "grid",
@@ -216,6 +310,13 @@ export const useStyles = makeStyles({
     fontSize: "13px",
     fontWeight: 620,
   },
+  workspaceStateBadge: {
+    fontSize: "9px",
+    fontWeight: 700,
+    letterSpacing: "0.04em",
+    ...shorthands.borderRadius("999px"),
+    ...shorthands.padding("2px", "6px"),
+  },
   workspaceTask: {
     fontSize: "11px",
     color: "#7c90b2",
@@ -242,6 +343,7 @@ export const useStyles = makeStyles({
     background: "linear-gradient(180deg, rgba(18, 30, 48, 0.92), rgba(9, 15, 25, 0.98))",
     boxShadow: "var(--aa-shadow)",
     overflow: "hidden",
+    backdropFilter: "blur(14px)",
   },
   workspaceHeader: {
     display: "flex",
@@ -251,6 +353,9 @@ export const useStyles = makeStyles({
     borderBottom: "1px solid rgba(163, 180, 208, 0.16)",
     background: "linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent)",
     ...shorthands.padding("28px", "30px", "22px"),
+    "@media (max-width: 900px)": {
+      ...shorthands.padding("22px", "22px", "18px"),
+    },
   },
   workspaceTitle: { fontFamily: "var(--heading)", fontSize: "38px", fontWeight: 700, letterSpacing: "-0.05em", color: "#f8fbff" },
   workspaceSubtitle: {
@@ -272,12 +377,19 @@ export const useStyles = makeStyles({
     fontSize: "12px",
     fontWeight: 700,
   },
-  tabBar: { ...shorthands.padding("16px", "30px", "0") },
+  tabBar: {
+    borderBottom: "1px solid rgba(163, 180, 208, 0.12)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0))",
+    ...shorthands.padding("14px", "24px", "0"),
+  },
   tabContent: {
     minHeight: 0,
     display: "grid",
     gridTemplateRows: "minmax(0, 1fr)",
-    ...shorthands.padding("20px", "30px", "28px"),
+    ...shorthands.padding("22px", "24px", "24px"),
+    "@media (max-width: 900px)": {
+      ...shorthands.padding("18px", "18px", "20px"),
+    },
   },
   conversationLayout: {
     minHeight: 0,

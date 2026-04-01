@@ -26,19 +26,27 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     height: "100%",
     overflow: "auto",
-    gap: "20px",
+    gap: "18px",
+  },
+  section: {
+    display: "grid",
+    gap: "14px",
+    border: "1px solid rgba(155, 176, 210, 0.16)",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015))",
+    ...shorthands.borderRadius("24px"),
+    ...shorthands.padding("20px"),
   },
   sectionTitle: {
-    fontSize: "14px",
+    fontSize: "15px",
     fontWeight: 680,
     color: "#eff5ff",
-    marginBottom: "12px",
+    letterSpacing: "-0.02em",
   },
   phaseBar: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    marginBottom: "8px",
+    flexWrap: "wrap",
   },
   phaseLabel: {
     fontSize: "14px",
@@ -52,13 +60,19 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "8px",
     flexWrap: "wrap",
-    marginTop: "12px",
+  },
+  phaseButton: {
+    border: "1px solid rgba(155, 176, 210, 0.18)",
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+  },
+  phaseButtonActive: {
+    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.18)",
   },
   card: {
-    ...shorthands.padding("12px", "16px"),
     border: "1px solid rgba(155, 176, 210, 0.16)",
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    ...shorthands.borderRadius("18px"),
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015))",
+    ...shorthands.borderRadius("20px"),
+    ...shorthands.padding("14px", "16px"),
   },
   roomRow: {
     display: "flex",
@@ -130,7 +144,7 @@ export default function WorkspaceOverviewPanel({
     <div className={s.root}>
       {/* Current phase for selected room */}
       {room && (
-        <div>
+        <div className={s.section}>
           <div className={s.sectionTitle}>Current Phase — {room.name}</div>
 
           <div className={s.phaseBar}>
@@ -149,6 +163,7 @@ export default function WorkspaceOverviewPanel({
               <Button
                 key={phase}
                 size="small"
+                className={phase === room.currentPhase ? s.phaseButtonActive : s.phaseButton}
                 appearance={phase === room.currentPhase ? "primary" : "outline"}
                 disabled={phase === room.currentPhase || transitioning}
                 icon={<ArrowRightRegular />}
@@ -162,7 +177,7 @@ export default function WorkspaceOverviewPanel({
       )}
 
       {/* Room status summary */}
-      <div>
+      <div className={s.section}>
         <div className={s.sectionTitle}>Room Status Summary</div>
         <Card className={s.card}>
           {overview.rooms.length === 0 ? (
