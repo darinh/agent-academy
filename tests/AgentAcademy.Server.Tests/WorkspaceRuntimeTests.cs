@@ -807,6 +807,10 @@ public class WorkspaceRuntimeTests : IDisposable
         var archived = await _runtime.GetBreakoutRoomAsync(breakout.Id);
         Assert.NotNull(archived);
         Assert.Equal(RoomStatus.Archived, archived.Status);
+
+        var entity = await _db.BreakoutRooms.FindAsync(breakout.Id);
+        Assert.NotNull(entity);
+        Assert.Equal(nameof(BreakoutRoomCloseReason.Completed), entity.CloseReason);
     }
 
     [Fact]

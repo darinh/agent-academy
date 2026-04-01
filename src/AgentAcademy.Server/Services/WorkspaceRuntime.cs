@@ -150,6 +150,10 @@ public sealed class WorkspaceRuntime
         await _db.SaveChangesAsync();
     }
 
+    public sealed record CrashRecoveryResult(
+        int ClosedBreakoutRooms,
+        int ResetWorkingAgents);
+
     /// <summary>
     /// Records a new server instance and detects if the previous one crashed
     /// (had no clean shutdown). The current instance ID is stored in
@@ -1485,7 +1489,9 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Closes a breakout room and moves the agent back to idle.
     /// </summary>
-    public async Task CloseBreakoutRoomAsync(string breakoutId)
+    public async Task CloseBreakoutRoomAsync(
+        string breakoutId,
+        BreakoutRoomCloseReason closeReason = BreakoutRoomCloseReason.Completed)
     {
         var entity = await _db.BreakoutRooms.FindAsync(breakoutId)
             ?? throw new InvalidOperationException($"Breakout room '{breakoutId}' not found");
@@ -1498,12 +1504,60 @@ public sealed class WorkspaceRuntime
 
         // Soft-delete: archive instead of removing (preserves messages for history)
         entity.Status = nameof(RoomStatus.Archived);
+        entity.CloseReason = closeReason.ToString();
         entity.UpdatedAt = DateTime.UtcNow;
 
         Publish(ActivityEventType.RoomClosed, entity.ParentRoomId, entity.AssignedAgentId, null,
-            $"Breakout room closed: {entity.Name}");
+            $"Breakout room closed: {entity.Name} ({closeReason})");
 
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<CrashRecoveryResult> RecoverFromCrashAsync(string mainRoomId)
+    {
+        var mainRoom = await _db.Rooms.FindAsync(mainRoomId)
+            ?? throw new InvalidOperationException($"Room '{mainRoomId}' not found");
+
+        var activeBreakoutIds = await _db.BreakoutRooms
+            .Where(br => br.Status == nameof(RoomStatus.Active))
+            .OrderBy(br => br.CreatedAt)
+            .Select(br => br.Id)
+            .ToListAsync();
+
+        foreach (var breakoutId in activeBreakoutIds)
+        {
+            await CloseBreakoutRoomAsync(breakoutId, BreakoutRoomCloseReason.ClosedByRecovery);
+        }
+
+        var lingeringWorkingAgents = await _db.AgentLocations
+            .Where(loc => loc.State == nameof(AgentState.Working))
+            .OrderBy(loc => loc.AgentId)
+            .ToListAsync();
+
+        foreach (var location in lingeringWorkingAgents)
+        {
+            await MoveAgentAsync(location.AgentId, location.RoomId, AgentState.Idle);
+        }
+
+        var now = DateTime.UtcNow;
+        var message = activeBreakoutIds.Count > 0 || lingeringWorkingAgents.Count > 0
+            ? $"System recovered from crash. Closed {activeBreakoutIds.Count} breakout room(s) and reset {lingeringWorkingAgents.Count} additional working agent(s) to Idle."
+            : "System recovered from crash. No active breakout rooms or working agents required recovery.";
+
+        var entity = CreateMessageEntity(mainRoomId, MessageKind.System, message, null, now);
+        _db.Messages.Add(entity);
+        mainRoom.UpdatedAt = now;
+
+        Publish(ActivityEventType.MessagePosted, mainRoomId, null, null,
+            $"System: {Truncate(message, 100)}");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogWarning(
+            "Crash recovery completed for room {RoomId}: closed {BreakoutCount} breakouts and reset {AgentCount} lingering working agents",
+            mainRoomId, activeBreakoutIds.Count, lingeringWorkingAgents.Count);
+
+        return new CrashRecoveryResult(activeBreakoutIds.Count, lingeringWorkingAgents.Count);
     }
 
     /// <summary>

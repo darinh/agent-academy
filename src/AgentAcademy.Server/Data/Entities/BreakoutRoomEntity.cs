@@ -1,5 +1,14 @@
 namespace AgentAcademy.Server.Data.Entities;
 
+public enum BreakoutRoomCloseReason
+{
+    Completed,
+    Recalled,
+    Cancelled,
+    StuckDetected,
+    ClosedByRecovery
+}
+
 /// <summary>
 /// Persistence entity for a breakout room assigned to a single agent.
 /// Maps to the "breakout_rooms" table.
@@ -11,6 +20,7 @@ public class BreakoutRoomEntity
     public string ParentRoomId { get; set; } = string.Empty;
     public string AssignedAgentId { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
+    public string? CloseReason { get; set; }
     public string? TaskId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

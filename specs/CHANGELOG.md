@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **011-state-recovery**: Crash-detected startup now runs server-side recovery. Active breakout rooms close with persisted `ClosedByRecovery` reason, lingering `Working` agents reset to `Idle`, and the main room receives a "System recovered from crash" notification before orchestration resumes.
 - **011-state-recovery / 300-frontend-ui**: Refactored auth gating to use `copilotStatus` (`operational` / `degraded` / `unavailable`) from `/api/auth/status`. The backend now derives the state from browser auth + Copilot SDK readiness, keeps `authenticated` fail-closed when degraded, and the login UI distinguishes first-time sign-in from re-authentication.
 - **007-agent-commands**: `GitService.SquashMergeAsync()` now runs `git add -A` before the squash-merge commit so the full merge result is staged consistently before `MERGE_TASK` records `mergeCommitSha`.
 - **001-domain-model**: Updated `TaskSnapshot` signature to match actual code — added 19 missing fields (Type, Size, StartedAt, CompletedAt, AssignedAgentId, AssignedAgentName, UsedFleet, FleetModels, BranchName, PullRequestUrl, PullRequestNumber, PullRequestStatus, ReviewerAgentId, ReviewRounds, TestsCreated, CommitCount, MergeCommitSha, CommentCount) per `src/AgentAcademy.Shared/Models/Tasks.cs`

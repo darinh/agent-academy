@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
@@ -215,10 +216,17 @@ using (var scope = app.Services.CreateScope())
     await runtime.InitializeAsync();
 
     // If a workspace is already active, ensure it has a default room
+    var mainRoomId = runtime.DefaultRoomId;
     var activeWorkspace = await runtime.GetActiveWorkspacePathAsync();
     if (activeWorkspace is not null)
     {
-        await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
+        mainRoomId = await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
+    }
+
+    if (WorkspaceRuntime.CurrentCrashDetected)
+    {
+        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        await orchestrator.HandleStartupRecoveryAsync(mainRoomId);
     }
 }
 

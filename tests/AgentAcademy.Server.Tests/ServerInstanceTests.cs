@@ -1,10 +1,13 @@
+using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -29,7 +32,29 @@ public class ServerInstanceTests : IDisposable
         var catalog = new AgentCatalogOptions(
             DefaultRoomId: "main",
             DefaultRoomName: "Main Collaboration Room",
-            Agents: []);
+            Agents:
+            [
+                new AgentDefinition(
+                    Id: "planner-1",
+                    Name: "Aristotle",
+                    Role: "Planner",
+                    Summary: "Planning lead",
+                    StartupPrompt: "You are the planner.",
+                    Model: null,
+                    CapabilityTags: ["planning"],
+                    EnabledTools: ["chat"],
+                    AutoJoinDefaultRoom: true),
+                new AgentDefinition(
+                    Id: "engineer-1",
+                    Name: "Hephaestus",
+                    Role: "SoftwareEngineer",
+                    Summary: "Backend engineer",
+                    StartupPrompt: "You are the engineer.",
+                    Model: null,
+                    CapabilityTags: ["implementation"],
+                    EnabledTools: ["chat", "code"],
+                    AutoJoinDefaultRoom: true)
+            ]);
 
         var activityBus = new ActivityBroadcaster();
         var settingsService = new SystemSettingsService(_db);
@@ -139,6 +164,100 @@ public class ServerInstanceTests : IDisposable
     public void DefaultRoomId_ReturnsConfiguredValue()
     {
         Assert.Equal("main", _runtime.DefaultRoomId);
+    }
+
+    [Fact]
+    public async Task HandleStartupRecoveryAsync_ClosesBreakouts_ResetsAgents_AndPostsNotification()
+    {
+        var now = DateTime.UtcNow;
+
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main",
+            Name = "Main Collaboration Room",
+            Status = nameof(RoomStatus.Idle),
+            CurrentPhase = nameof(CollaborationPhase.Intake),
+            CreatedAt = now.AddHours(-1),
+            UpdatedAt = now.AddHours(-1)
+        });
+
+        _db.BreakoutRooms.Add(new BreakoutRoomEntity
+        {
+            Id = "breakout-1",
+            Name = "Crash Recovery Work",
+            ParentRoomId = "main",
+            AssignedAgentId = "engineer-1",
+            Status = nameof(RoomStatus.Active),
+            CreatedAt = now.AddMinutes(-30),
+            UpdatedAt = now.AddMinutes(-30)
+        });
+
+        _db.AgentLocations.AddRange(
+            new AgentLocationEntity
+            {
+                AgentId = "engineer-1",
+                RoomId = "main",
+                State = nameof(AgentState.Working),
+                BreakoutRoomId = "breakout-1",
+                UpdatedAt = now.AddMinutes(-30)
+            },
+            new AgentLocationEntity
+            {
+                AgentId = "planner-1",
+                RoomId = "main",
+                State = nameof(AgentState.Working),
+                UpdatedAt = now.AddMinutes(-20)
+            });
+
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = now.AddHours(-2),
+            Version = "1.0.0"
+        });
+
+        await _db.SaveChangesAsync();
+        await _runtime.InitializeAsync();
+
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(serviceProvider);
+        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+
+        var orchestrator = new AgentOrchestrator(
+            scopeFactory,
+            Substitute.For<IAgentExecutor>(),
+            new ActivityBroadcaster(),
+            new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            new GitService(NullLogger<GitService>.Instance),
+            NullLogger<AgentOrchestrator>.Instance);
+
+        await orchestrator.HandleStartupRecoveryAsync("main");
+
+        var breakout = await _db.BreakoutRooms.FindAsync("breakout-1");
+        Assert.NotNull(breakout);
+        Assert.Equal(nameof(RoomStatus.Archived), breakout.Status);
+        Assert.Equal(nameof(BreakoutRoomCloseReason.ClosedByRecovery), breakout.CloseReason);
+
+        var engineer = await _db.AgentLocations.FindAsync("engineer-1");
+        Assert.NotNull(engineer);
+        Assert.Equal(nameof(AgentState.Idle), engineer.State);
+        Assert.Null(engineer.BreakoutRoomId);
+
+        var planner = await _db.AgentLocations.FindAsync("planner-1");
+        Assert.NotNull(planner);
+        Assert.Equal(nameof(AgentState.Idle), planner.State);
+        Assert.Null(planner.BreakoutRoomId);
+
+        var recoveryMessage = await _db.Messages
+            .Where(m => m.RoomId == "main")
+            .OrderByDescending(m => m.SentAt)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(recoveryMessage);
+        Assert.Contains("System recovered from crash", recoveryMessage.Content);
     }
 }
 

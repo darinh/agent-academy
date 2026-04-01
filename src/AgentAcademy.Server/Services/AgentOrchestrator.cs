@@ -1,8 +1,10 @@
 using System.Text.RegularExpressions;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -52,6 +54,22 @@ public sealed class AgentOrchestrator
 
     /// <summary>Signals the orchestrator to stop processing.</summary>
     public void Stop() => _stopped = true;
+
+    public async Task HandleStartupRecoveryAsync(string mainRoomId)
+    {
+        if (!WorkspaceRuntime.CurrentCrashDetected)
+        {
+            return;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var result = await runtime.RecoverFromCrashAsync(mainRoomId);
+
+        _logger.LogWarning(
+            "Startup crash recovery ran for main room {RoomId}: {BreakoutCount} breakouts closed, {AgentCount} lingering agents reset",
+            mainRoomId, result.ClosedBreakoutRooms, result.ResetWorkingAgents);
+    }
 
     // ── PUBLIC ENTRY POINT ──────────────────────────────────────
 
@@ -891,7 +909,7 @@ public sealed class AgentOrchestrator
     {
         try
         {
-            await runtime.CloseBreakoutRoomAsync(breakoutRoomId);
+            await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Completed);
         }
         catch (Exception ex)
         {

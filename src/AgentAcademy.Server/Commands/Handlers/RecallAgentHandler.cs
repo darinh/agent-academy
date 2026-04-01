@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -87,7 +88,7 @@ public sealed class RecallAgentHandler : ICommandHandler
                 $"⏎ {agent.Name} has been recalled by {context.AgentName}.");
 
             // Close the breakout room (moves agent to idle in parent room)
-            await runtime.CloseBreakoutRoomAsync(breakoutId);
+            await runtime.CloseBreakoutRoomAsync(breakoutId, BreakoutRoomCloseReason.Recalled);
 
             await runtime.PostSystemStatusAsync(parentRoomId,
                 $"⏎ {agent.Name} has been recalled from breakout by {context.AgentName} and returned to this room.");

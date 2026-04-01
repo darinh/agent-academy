@@ -6,7 +6,7 @@ Documents the supervised restart and state recovery system that enables Agent Ac
 
 ## Current Behavior
 
-**Status: Partially Implemented** (Wrapper script, server instances, restart command, health endpoint, and auth recovery implemented. Client reconnect UX planned.)
+**Status: Partially Implemented** (Wrapper script, server instances, startup crash recovery, restart command, health endpoint, and auth recovery implemented. Client reconnect UX planned.)
 
 The state recovery system consists of eight components working together:
 
@@ -73,7 +73,7 @@ public class ServerInstanceEntity
 
 The `WorkspaceRuntime` service manages instance lifecycle events.
 
-**On Startup** (`InitializeAsync`, **implemented**):
+**On Startup** (`InitializeAsync` + startup bootstrap, **implemented**):
 1. Query for the most recent `ServerInstanceEntity` where `ShutdownAt = NULL`
 2. If found:
    - Set `CrashDetected = true` on the current startup instance
@@ -81,13 +81,16 @@ The `WorkspaceRuntime` service manages instance lifecycle events.
 3. Create new `ServerInstanceEntity` with `CrashDetected` flag and assembly version
 4. Set `WorkspaceRuntime.CurrentInstanceId` (static property for health endpoint)
 5. Proceed with existing initialization (default room, agents, welcome message)
+6. Resolve the authoritative main room for the active workspace, if any
+7. If `CrashDetected = true`, ask `AgentOrchestrator` to run startup recovery before normal work resumes
+8. Startup recovery closes every active breakout via `CloseBreakoutRoomAsync(..., ClosedByRecovery)`, resets any lingering `Working` agents to `Idle`, and posts a main-room system message beginning with `"System recovered from crash"`
 
 **On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `Program.cs`):
 1. Locate the current instance (by `CurrentInstanceId`)
 2. Set `ShutdownAt = DateTime.UtcNow`
 3. Set `ExitCode = Environment.ExitCode`
 
-**Files**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs`, `src/AgentAcademy.Server/Program.cs`
+**Files**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Program.cs`
 
 ### 4. Client Reconnect Protocol
 
@@ -153,10 +156,12 @@ Open-ended breakout loops need explicit termination semantics so a restart or re
 | `recall` | Planner/operator recalls the working agent | Close breakout, move the agent to `Idle` in the parent room, and post recall notices so the termination is visible to the team |
 | `cancel` | Planner/operator explicitly aborts the breakout | Record a cancellation reason, stop further breakout work, close the breakout, and leave the linked task in a non-success terminal state |
 | `stuck-detected` | No meaningful progress signal is observed for a configured threshold, or repeated executor failures prevent forward motion | Mark the breakout as stuck, surface a visible warning in the parent room/UI, and require explicit human/planner follow-up (recall, cancel, or retry) instead of silently discarding the work |
+| `closed-by-recovery` | Server startup detects the previous instance crashed while breakout work was active | Close the breakout during startup recovery, persist `ClosedByRecovery` as the close reason, return the assigned agent to `Idle`, and notify the main room so interrupted work can be re-evaluated |
 
 Recovery expectations:
 - reconnect should never invent a successful breakout completion that was not persisted server-side
 - stale client-side `Working` indicators must be cleared when the authoritative server state shows recall, cancel, or stuck status
+- crash recovery must clear persisted active breakouts and `Working` agent locations before normal orchestration resumes
 - if the termination reason cannot be confirmed after restart, the system should present the breakout as needing operator review rather than assuming success
 
 ### 7. Restart Command
@@ -317,15 +322,17 @@ Result: Server exits with code 75, wrapper restarts process
 - ~~Shutdown hook not yet registered~~ — **Implemented** in `Program.cs` via `IHostApplicationLifetime.ApplicationStopping`
 - ~~`/api/health/instance` endpoint~~ — **Implemented** in `SystemController.cs`
 - ~~`RESTART_SERVER` command handler~~ — **Implemented**: `RestartServerHandler.cs`
+- ~~Startup crash recovery actions~~ — **Implemented**: crash-detected boot now closes active breakouts with `ClosedByRecovery`, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notification
 - Frontend health check and reconnect logic not yet implemented
 - Breakout cancellation and stuck-detection controls are not yet implemented
-- No persisted termination-reason field currently exists for breakout lifecycle outcomes
+- Persisted breakout close reasons currently cover `Completed`, `Recalled`, and `ClosedByRecovery`; `Cancelled` and `StuckDetected` are reserved but not yet emitted by runtime flows
 - No mechanism to prevent restart loops (crash → restart → crash → restart) — wrapper limits to 5 crash restarts
 - No restart history UI (list of past restarts with timestamps and reasons)
 - No maximum restart count enforcement in the server (only in wrapper)
 
 ## Revision History
 
+- **2026-04-01**: Implemented startup crash recovery actions. On crash-detected boot, `AgentOrchestrator` now triggers runtime repair that closes active breakout rooms with persisted `ClosedByRecovery` reason, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notice.
 - **2026-03-31**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based recovery strategy. Authentication failures trigger user re-authentication instead of server restart. Auth/authorization exceptions are never retried; quota/transient errors retry with exponential backoff. Health endpoint `authFailed` flag exposed for diagnostics, and `/api/auth/status` now surfaces `copilotStatus` (`operational` / `degraded` / `unavailable`) for client gating. Added Invariant 10. Updated Invariant 4 to clarify crash-restart behavior (code 1+).
 - **2026-03-31**: Implemented wrapper script (crash-restart with backoff), server instance tracking (entity + migration + crash detection), RESTART_SERVER command handler (Planner-only, exit code 75), /api/health/instance endpoint (instanceId, authFailed, executorOperational), IHostApplicationLifetime shutdown hook. Updated exit code table to include crash-restart behavior.
 - **2026-03-30**: Initial specification — wrapper exit code contract, `ServerInstanceEntity` schema, startup/shutdown hooks, client reconnect protocol, `RESTART_SERVER` command design
