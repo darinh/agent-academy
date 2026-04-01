@@ -12,9 +12,12 @@ export interface AuthUser {
   avatarUrl?: string | null;
 }
 
+export type CopilotStatus = "operational" | "degraded" | "unavailable";
+
 export interface AuthStatus {
   authEnabled: boolean;
   authenticated: boolean;
+  copilotStatus: CopilotStatus;
   user?: AuthUser | null;
 }
 

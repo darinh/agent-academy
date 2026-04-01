@@ -16,6 +16,12 @@ public interface IAgentExecutor
     bool IsFullyOperational { get; }
 
     /// <summary>
+    /// True when the executor has detected an authentication failure that
+    /// requires the user to re-authenticate before Copilot can recover.
+    /// </summary>
+    bool IsAuthFailed { get; }
+
+    /// <summary>
     /// Sends <paramref name="prompt"/> to the agent and returns the
     /// complete response. The implementation may stream internally but
     /// this method returns only after the full response is assembled.

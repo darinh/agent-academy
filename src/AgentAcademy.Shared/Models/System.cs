@@ -10,6 +10,35 @@ public record HealthResult(
 );
 
 /// <summary>
+/// Canonical Copilot availability states surfaced to the client auth flow.
+/// </summary>
+public static class CopilotStatusValues
+{
+    public const string Operational = "operational";
+    public const string Degraded = "degraded";
+    public const string Unavailable = "unavailable";
+}
+
+/// <summary>
+/// Minimal authenticated GitHub user profile returned by auth status checks.
+/// </summary>
+public record AuthUserInfo(
+    string Login,
+    string? Name,
+    string? AvatarUrl
+);
+
+/// <summary>
+/// Auth status contract for the frontend login gate.
+/// </summary>
+public record AuthStatusResult(
+    bool AuthEnabled,
+    bool Authenticated,
+    string CopilotStatus,
+    AuthUserInfo? User = null
+);
+
+/// <summary>
 /// Detailed health check response including dependency statuses.
 /// </summary>
 public record HealthCheckResponse(

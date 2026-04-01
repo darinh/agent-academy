@@ -19,6 +19,7 @@ public sealed class StubExecutor : IAgentExecutor
     }
 
     public bool IsFullyOperational => false;
+    public bool IsAuthFailed => false;
 
     public Task<string> RunAsync(
         AgentDefinition agent,

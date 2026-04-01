@@ -203,12 +203,17 @@ When the Copilot SDK returns an authentication error during agent execution:
      - **Never retried** — no automatic retry loop for authorization failures
 
 2. **Auth Recovery Flow** (`CopilotExecutor.EnsureClientAsync`):
-   - If `_authFailed` is true, `CopilotClient` remains unavailable
-   - When a new token is provided (via `CopilotTokenProvider` after user re-login):
-     - `_activeToken` changes, triggering client recreation
-     - `_authFailed` is cleared to `false`
-     - Posts recovery message: "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online."
-   - Health endpoint exposes `authFailed` flag so clients can prompt user to re-authenticate
+    - If `_authFailed` is true, `CopilotClient` remains unavailable
+    - When a new token is provided (via `CopilotTokenProvider` after user re-login):
+      - `_activeToken` changes, triggering client recreation
+      - `_authFailed` is cleared to `false`
+      - Posts recovery message: "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online."
+    - `/api/auth/status` exposes `copilotStatus` with three states:
+      - `operational` — browser auth cookie and Copilot SDK token are both healthy
+      - `degraded` — browser auth cookie is still valid, but the SDK token is missing or `_authFailed = true`
+      - `unavailable` — no authenticated browser session is present
+    - The auth status response remains fail-closed: `authenticated = false` whenever `copilotStatus != operational`
+    - Health endpoint still exposes `authFailed` for instance-health diagnostics
 
 3. **Retry Policy** (`CopilotExecutor.SendAndCollectWithRetryAsync`):
    - **Auth/authorization failures**: Never retried (thrown immediately)
@@ -219,7 +224,7 @@ When the Copilot SDK returns an authentication error during agent execution:
 
 Auth failures are caused by expired/revoked OAuth tokens, not by corrupted SDK state or broken file handles. The correct fix is to refresh the token via user re-authentication, not to restart the server. The system:
 
-- Exposes `authFailed` in the health endpoint so the UI can prompt re-login
+- Exposes `copilotStatus` in `/api/auth/status` so the UI can distinguish normal login from re-authentication, while `authFailed` remains available from the health endpoint for diagnostics
 - Continues serving non-agent endpoints (workspace, tasks, rooms) during auth failure
 - Automatically recovers when `CopilotTokenProvider` receives a new token (after OAuth callback)
 - Uses `StubExecutor` as fallback so orchestration doesn't crash
@@ -256,6 +261,20 @@ Response 200:
 }
 ```
 
+Authenticated UI gating contract:
+```json
+{
+  "authEnabled": true,
+  "authenticated": false,
+  "copilotStatus": "degraded",
+  "user": {
+    "login": "octocat",
+    "name": "Monalisa Octocat",
+    "avatarUrl": "https://avatars.githubusercontent.com/u/1"
+  }
+}
+```
+
 ### ServerInstanceEntity Schema
 ```csharp
 public class ServerInstanceEntity
@@ -288,7 +307,7 @@ Result: Server exits with code 75, wrapper restarts process
 7. **Version tracking**: `Version` field matches the running assembly version
 8. **Recovery over guesswork**: After reconnect, client state must be refreshed from authoritative server endpoints before transient UI state is trusted
 9. **Visible termination**: Breakout termination reason must be observable as complete, recall, cancel, or stuck-detected
-10. **Auth recovery without restart**: Authentication failures trigger user re-authentication flow, not server restart. `authFailed` flag exposed to clients, cleared automatically on token refresh.
+10. **Auth recovery without restart**: Authentication failures trigger user re-authentication flow, not server restart. `/api/auth/status` exposes `copilotStatus` for client gating, `authFailed` remains available for diagnostics, and recovery is cleared automatically on token refresh.
 
 ## Known Gaps
 
@@ -307,7 +326,7 @@ Result: Server exits with code 75, wrapper restarts process
 
 ## Revision History
 
-- **2026-03-31**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based recovery strategy. Authentication failures trigger user re-authentication instead of server restart. Auth/authorization exceptions are never retried; quota/transient errors retry with exponential backoff. Health endpoint `authFailed` flag exposed for client prompts. Added Invariant 10. Updated Invariant 4 to clarify crash-restart behavior (code 1+).
+- **2026-03-31**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based recovery strategy. Authentication failures trigger user re-authentication instead of server restart. Auth/authorization exceptions are never retried; quota/transient errors retry with exponential backoff. Health endpoint `authFailed` flag exposed for diagnostics, and `/api/auth/status` now surfaces `copilotStatus` (`operational` / `degraded` / `unavailable`) for client gating. Added Invariant 10. Updated Invariant 4 to clarify crash-restart behavior (code 1+).
 - **2026-03-31**: Implemented wrapper script (crash-restart with backoff), server instance tracking (entity + migration + crash detection), RESTART_SERVER command handler (Planner-only, exit code 75), /api/health/instance endpoint (instanceId, authFailed, executorOperational), IHostApplicationLifetime shutdown hook. Updated exit code table to include crash-restart behavior.
 - **2026-03-30**: Initial specification — wrapper exit code contract, `ServerInstanceEntity` schema, startup/shutdown hooks, client reconnect protocol, `RESTART_SERVER` command design
 - **2026-03-30**: Expanded planned reconnect UX states, task-comment recovery expectations, and breakout termination paths | spec-doc-gap-fix

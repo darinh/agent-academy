@@ -102,7 +102,11 @@ function AppShell() {
         if (attempt < 3) {
           retryTimer = setTimeout(() => void checkAuth(attempt + 1), 2000);
         } else {
-          setAuth({ authEnabled: false, authenticated: false });
+          setAuth({
+            authEnabled: false,
+            authenticated: false,
+            copilotStatus: "unavailable",
+          });
         }
       }
     }
@@ -208,7 +212,12 @@ function AppShell() {
   const handleLogout = useCallback(async () => {
     try {
       await logout();
-      setAuth({ authEnabled: true, authenticated: false });
+      setAuth({
+        authEnabled: true,
+        authenticated: false,
+        copilotStatus: "unavailable",
+        user: null,
+      });
     } catch { /* best-effort */ }
   }, []);
 
@@ -227,7 +236,7 @@ function AppShell() {
 
   // Show login page if auth is enabled but user is not authenticated
   if (auth.authEnabled && !auth.authenticated) {
-    return <LoginPage />;
+    return <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />;
   }
 
   return (

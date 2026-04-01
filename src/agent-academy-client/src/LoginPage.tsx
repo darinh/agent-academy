@@ -4,6 +4,7 @@ import {
   shorthands,
 } from "@fluentui/react-components";
 import { apiBaseUrl } from "./api";
+import type { AuthUser, CopilotStatus } from "./api";
 
 const useLocalStyles = makeStyles({
   root: {
@@ -52,18 +53,32 @@ const useLocalStyles = makeStyles({
   },
 });
 
-export default function LoginPage() {
+interface LoginPageProps {
+  copilotStatus?: CopilotStatus;
+  user?: AuthUser | null;
+}
+
+export default function LoginPage({
+  copilotStatus = "unavailable",
+  user = null,
+}: LoginPageProps) {
   const s = useLocalStyles();
 
   const loginUrl = `${apiBaseUrl}/api/auth/login`;
+  const userName = user?.name ?? user?.login;
+  const reconnecting = copilotStatus === "degraded";
+  const subtitle = reconnecting
+    ? `${userName ? `${userName}'s` : "Your"} GitHub session is still present, but Copilot access needs to be refreshed. Sign in again to restore agent functionality.`
+    : "Multi-agent collaboration platform.\nSign in with GitHub to get started.";
 
   return (
     <div className={s.root}>
       <div className={s.card}>
         <div className={s.title}>🏛️ Agent Academy</div>
         <div className={s.subtitle}>
-          Multi-agent collaboration platform.<br />
-          Sign in with GitHub to get started.
+          {subtitle.split("\n").map((line) => (
+            <div key={line}>{line}</div>
+          ))}
         </div>
         <Button
           className={s.button}
@@ -76,7 +91,7 @@ export default function LoginPage() {
             </svg>
           }
         >
-          Login with GitHub
+          {reconnecting ? "Reconnect GitHub" : "Login with GitHub"}
         </Button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -19,13 +20,16 @@ public class AuthController : ControllerBase
 {
     private readonly GitHubAuthOptions _authOptions;
     private readonly CopilotTokenProvider _tokenProvider;
+    private readonly IAgentExecutor _executor;
 
     public AuthController(
         GitHubAuthOptions authOptions,
-        CopilotTokenProvider tokenProvider)
+        CopilotTokenProvider tokenProvider,
+        IAgentExecutor executor)
     {
         _authOptions = authOptions;
         _tokenProvider = tokenProvider;
+        _executor = executor;
     }
 
     /// <summary>
@@ -37,33 +41,38 @@ public class AuthController : ControllerBase
     {
         if (!_authOptions.Enabled)
         {
-            return Ok(new
-            {
-                authEnabled = false,
-                authenticated = false,
-            });
+            return Ok(new AuthStatusResult(
+                AuthEnabled: false,
+                Authenticated: false,
+                CopilotStatus: CopilotStatusValues.Unavailable));
         }
 
-        if (User.Identity?.IsAuthenticated != true)
+        var cookieAuthenticated = User.Identity?.IsAuthenticated == true;
+        var sdkOperational = cookieAuthenticated
+            && !string.IsNullOrWhiteSpace(_tokenProvider.Token)
+            && !_executor.IsAuthFailed;
+        var copilotStatus = !cookieAuthenticated
+            ? CopilotStatusValues.Unavailable
+            : sdkOperational
+                ? CopilotStatusValues.Operational
+                : CopilotStatusValues.Degraded;
+        var authenticated = cookieAuthenticated
+            && string.Equals(copilotStatus, CopilotStatusValues.Operational, StringComparison.Ordinal);
+        AuthUserInfo? user = null;
+
+        if (cookieAuthenticated)
         {
-            return Ok(new
-            {
-                authEnabled = true,
-                authenticated = false,
-            });
+            user = new AuthUserInfo(
+                Login: User.FindFirstValue(ClaimTypes.Name) ?? string.Empty,
+                Name: User.FindFirstValue("urn:github:name"),
+                AvatarUrl: User.FindFirstValue("urn:github:avatar"));
         }
 
-        return Ok(new
-        {
-            authEnabled = true,
-            authenticated = true,
-            user = new
-            {
-                login = User.FindFirstValue(ClaimTypes.Name),
-                name = User.FindFirstValue("urn:github:name"),
-                avatarUrl = User.FindFirstValue("urn:github:avatar"),
-            }
-        });
+        return Ok(new AuthStatusResult(
+            AuthEnabled: true,
+            Authenticated: authenticated,
+            CopilotStatus: copilotStatus,
+            User: user));
     }
 
     /// <summary>

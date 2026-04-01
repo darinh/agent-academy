@@ -23,6 +23,7 @@ public class BranchWorkflowTests : IDisposable
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentCatalogOptions _catalog;
     private readonly GitService _gitService;
+    private readonly string _gitTracePath;
     private readonly string _repoRoot;
 
     public BranchWorkflowTests()
@@ -32,6 +33,8 @@ public class BranchWorkflowTests : IDisposable
         _repoRoot = Path.Combine(Path.GetTempPath(), $"agent-academy-merge-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_repoRoot);
         InitializeRepository(_repoRoot);
+        _gitTracePath = Path.Combine(_repoRoot, "git-trace.log");
+        var gitWrapper = CreateGitWrapper(_repoRoot, _gitTracePath);
 
         _catalog = new AgentCatalogOptions(
             DefaultRoomId: "main",
@@ -56,7 +59,7 @@ public class BranchWorkflowTests : IDisposable
             ]
         );
 
-        _gitService = new GitService(NullLogger<GitService>.Instance, _repoRoot);
+        _gitService = new GitService(NullLogger<GitService>.Instance, _repoRoot, gitWrapper);
 
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
@@ -238,6 +241,32 @@ public class BranchWorkflowTests : IDisposable
     }
 
     [Fact]
+    public async Task MergeTask_StagesAllChanges_BeforeCommit()
+    {
+        const string branchName = "task/test-stage-before-commit";
+        CreateFeatureBranchWithCommit(branchName, "staged.txt", "staging flow verification");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: branchName);
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var trace = File.ReadAllLines(_gitTracePath);
+        var mergeIndex = Array.FindLastIndex(trace, line => line.StartsWith("merge --squash ", StringComparison.Ordinal));
+        var addIndex = Array.FindLastIndex(trace, line => string.Equals(line, "add -A", StringComparison.Ordinal));
+        var commitIndex = Array.FindLastIndex(trace, line => line.StartsWith("commit -m ", StringComparison.Ordinal));
+
+        Assert.True(mergeIndex >= 0, "Expected squash merge to be traced.");
+        Assert.True(addIndex > mergeIndex, "Expected git add -A after squash merge.");
+        Assert.True(commitIndex > addIndex, "Expected commit after git add -A.");
+    }
+
+    [Fact]
     public async Task MergeTask_Failure_RestoresApprovedStatus()
     {
         var taskId = await CreateTestTask(
@@ -378,6 +407,27 @@ public class BranchWorkflowTests : IDisposable
         File.WriteAllText(Path.Combine(repoRoot, "README.md"), "initial\n");
         RunGit(repoRoot, "add", "README.md");
         RunGit(repoRoot, "commit", "-m", "Initial commit");
+    }
+
+    private static string CreateGitWrapper(string repoRoot, string tracePath)
+    {
+        var wrapperPath = Path.Combine(repoRoot, "git-wrapper.sh");
+        File.WriteAllText(wrapperPath,
+            $$"""
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >> "{{tracePath}}"
+            exec git "$@"
+            """);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                wrapperPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        return wrapperPath;
     }
 
     private void CreateFeatureBranchWithCommit(string branchName, string fileName, string content)

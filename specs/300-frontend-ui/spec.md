@@ -69,6 +69,16 @@ On mount, `App.tsx` calls `getActiveWorkspace()`:
 
 This gates the entire workspace UI behind explicit workspace selection, preventing the selector from being bypassed on page refresh.
 
+### Authentication Gating (App.tsx + LoginPage.tsx)
+
+On mount, `App.tsx` also calls `getAuthStatus()`:
+- If `authEnabled = false` → the app skips login gating
+- If `copilotStatus = "operational"` → the workspace can render normally
+- If `copilotStatus = "unavailable"` → `LoginPage` renders the standard GitHub sign-in prompt
+- If `copilotStatus = "degraded"` → `LoginPage` renders a re-authentication prompt that explains the browser session still exists but Copilot access needs to be refreshed
+
+The contract is fail-closed: the backend sets `authenticated = false` whenever `copilotStatus != "operational"`, so the workspace shell never renders while Copilot is degraded.
+
 ## Project Selection / Onboarding Flow
 
 ### Load Existing
@@ -102,6 +112,7 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/workspaces/scan` | POST | Scan a directory |
 | `/api/workspaces/onboard` | POST | Onboard a project |
 | `/api/overview` | GET | Full workspace overview |
+| `/api/auth/status` | GET | Return `authEnabled`, fail-closed `authenticated`, and `copilotStatus` (`operational` / `degraded` / `unavailable`) |
 | `/api/filesystem/browse` | GET | Browse filesystem |
 | `/api/rooms/{id}/human` | POST | Send human message |
 | `/api/rooms/{id}/phase` | POST | Transition phase |

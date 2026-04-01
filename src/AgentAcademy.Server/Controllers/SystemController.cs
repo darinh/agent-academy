@@ -102,7 +102,6 @@ public class SystemController : ControllerBase
     public IActionResult GetInstanceHealth()
     {
         var instanceId = WorkspaceRuntime.CurrentInstanceId ?? "unknown";
-        var executor = _executor as CopilotExecutor;
 
         return Ok(new InstanceHealthResult(
             InstanceId: instanceId,
@@ -110,7 +109,7 @@ public class SystemController : ControllerBase
             Version: typeof(SystemController).Assembly.GetName().Version?.ToString() ?? "0.0.0",
             CrashDetected: WorkspaceRuntime.CurrentCrashDetected,
             ExecutorOperational: _executor.IsFullyOperational,
-            AuthFailed: executor?.IsAuthFailed ?? false
+            AuthFailed: _executor.IsAuthFailed
         ));
     }
 

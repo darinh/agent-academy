@@ -13,13 +13,18 @@ public sealed class GitService
 {
     private readonly ILogger<GitService> _logger;
     private readonly string _repositoryRoot;
+    private readonly string _gitExecutable;
     private readonly SemaphoreSlim _gitLock = new(1, 1);
     private readonly SemaphoreSlim _roundLock = new(1, 1);
 
-    public GitService(ILogger<GitService> logger, string? repositoryRoot = null)
+    public GitService(
+        ILogger<GitService> logger,
+        string? repositoryRoot = null,
+        string gitExecutable = "git")
     {
         _logger = logger;
         _repositoryRoot = repositoryRoot ?? FindProjectRoot();
+        _gitExecutable = string.IsNullOrWhiteSpace(gitExecutable) ? "git" : gitExecutable;
     }
 
     // ── Round-Scoped Locking ────────────────────────────────────
@@ -128,6 +133,7 @@ public sealed class GitService
             try
             {
                 await RunGitAsync("merge", "--squash", branch);
+                await RunGitAsync("add", "-A");
                 await RunGitAsync("commit", "-m", commitMessage);
                 var mergeCommitSha = await RunGitAsync("rev-parse", "HEAD");
                 _logger.LogInformation("Squash-merged {Branch} into develop", branch);
@@ -207,7 +213,7 @@ public sealed class GitService
     {
         var psi = new ProcessStartInfo
         {
-            FileName = "git",
+            FileName = _gitExecutable,
             WorkingDirectory = _repositoryRoot,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -218,7 +224,7 @@ public sealed class GitService
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        _logger.LogDebug("Running: git {Args}", string.Join(" ", args));
+        _logger.LogDebug("Running: {GitExecutable} {Args}", _gitExecutable, string.Join(" ", args));
 
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start git process");
