@@ -62,11 +62,11 @@ Per-agent permission boundaries:
 
 | Agent | Role | Allowed | Denied |
 |-------|------|---------|--------|
-| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `ADD_TASK_COMMENT` | Code execution |
+| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | Arbitrary code execution |
 | Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT` | Code execution |
 | Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT` | Spec write, task approve |
 | Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
-| Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT` | File write, code execution |
+| Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | File write, arbitrary code execution |
 | Thucydides | TechnicalWriter | Spec read/write, file read, `ADD_TASK_COMMENT` | Code execution, task approve |
 
 **Escalation rules:**
@@ -142,6 +142,15 @@ These formalize existing capabilities with audit trails and structured output.
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
 | `RESTART_SERVER` | `reason` | Exit code (75), confirmation | Posts system message, sets exit code 75, triggers graceful shutdown via `IHostApplicationLifetime.StopApplication()`. Wrapper script detects code 75 and restarts immediately. | `RestartServerHandler.cs` — Planner-only authorization (role-gated + CommandAuthorizer). Schedules shutdown on background thread for response propagation. |
+| `SHELL` | `operation`, plus operation-specific args:<br>`git-checkout` → `branch`<br>`git-stash-pop` → `branch`<br>`git-commit` → `message`<br>`restart-server` → `reason`<br>`dotnet-build` / `dotnet-test` → no extra args | Structured result including `operation`, `exitCode`, `success`, and operation-specific fields like `branch`, `commitSha`, `reason`, or `output` | Executes one allowlisted operational command only; no arbitrary bash or shell composition | `ShellCommandHandler.cs` — Planner/Reviewer-only authorization (role-gated in both `CommandAuthorizer` and handler). Validates the operation name and allowed args, routes git actions through `GitService`, runs dotnet operations via direct `ProcessStartInfo.ArgumentList`, and returns explicit errors for unsupported operations, invalid args, missing stashes, or non-zero exits. |
+
+**`SHELL` operation allowlist**
+- `git-checkout` — runs `git checkout <branch>` after validating the branch name
+- `git-stash-pop` — restores the newest `auto-stash:{branch}:<timestamp>` entry for the specified branch
+- `git-commit` — runs `git commit -m <message>` against already staged changes and returns the resulting commit SHA
+- `restart-server` — same restart semantics as `RESTART_SERVER`, but exposed through the allowlisted `SHELL` dispatcher
+- `dotnet-build` — runs `dotnet build --nologo -v q`
+- `dotnet-test` — runs `dotnet test --nologo -v q`
 
 ### Tier 2 — Full Autonomy
 

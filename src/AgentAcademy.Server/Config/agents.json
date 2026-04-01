@@ -50,6 +50,7 @@
             "ADD_TASK_COMMENT",
             "RECALL_AGENT",
             "MERGE_TASK",
+            "SHELL",
             "RESTART_SERVER"
           ],
           "Denied": [
@@ -251,7 +252,8 @@
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT",
-            "MERGE_TASK"
+            "MERGE_TASK",
+            "SHELL"
           ],
           "Denied": [
             "RESTART_SERVER"

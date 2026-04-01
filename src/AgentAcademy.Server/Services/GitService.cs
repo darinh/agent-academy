@@ -121,6 +121,65 @@ public sealed class GitService
     }
 
     /// <summary>
+    /// Checks out an existing branch.
+    /// </summary>
+    public async Task CheckoutBranchAsync(string branch)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            await RunGitAsync("checkout", branch);
+            _logger.LogInformation("Checked out branch {Branch}", branch);
+        }
+        finally
+        {
+            _gitLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Creates a commit from staged changes and returns the new commit SHA.
+    /// </summary>
+    public async Task<string> CommitAsync(string message)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            await RunGitAsync("commit", "-m", message);
+            var commitSha = await RunGitAsync("rev-parse", "HEAD");
+            _logger.LogInformation("Created commit {CommitSha}", commitSha);
+            return commitSha;
+        }
+        finally
+        {
+            _gitLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Pops the most recent auto-stash for the given branch.
+    /// Returns <c>true</c> when a matching stash is restored.
+    /// </summary>
+    public async Task<bool> PopAutoStashAsync(string branch)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            var stashRef = await FindAutoStashRefAsync(branch);
+            if (stashRef is null)
+                return false;
+
+            await RunGitAsync("stash", "pop", stashRef);
+            _logger.LogInformation("Popped stash {StashRef} for branch {Branch}", stashRef, branch);
+            return true;
+        }
+        finally
+        {
+            _gitLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Squash-merges a task branch into the current branch (develop).
     /// Cleans up with <c>git merge --abort</c> on failure.
     /// </summary>
@@ -179,28 +238,38 @@ public sealed class GitService
     /// Pops the most recent stash whose name matches the branch pattern.
     /// Uses exact regex matching: <c>auto-stash:{branch}:\d+$</c>.
     /// </summary>
-    private async Task TryPopStashForBranchAsync(string branch)
+    private async Task<bool> TryPopStashForBranchAsync(string branch)
     {
         try
         {
-            var stashList = await RunGitAsync("stash", "list");
-            var pattern = new Regex($@"auto-stash:{Regex.Escape(branch)}:\d+$");
+            var stashRef = await FindAutoStashRefAsync(branch);
+            if (stashRef is null)
+                return false;
 
-            foreach (var line in stashList.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (pattern.IsMatch(line))
-                {
-                    var stashRef = line.Split(':')[0]; // e.g. "stash@{0}"
-                    await RunGitAsync("stash", "pop", stashRef);
-                    _logger.LogDebug("Popped stash for branch {Branch}", branch);
-                    return;
-                }
-            }
+            await RunGitAsync("stash", "pop", stashRef);
+            _logger.LogDebug("Popped stash for branch {Branch}", branch);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "No stash to pop for branch {Branch}", branch);
         }
+
+        return false;
+    }
+
+    private async Task<string?> FindAutoStashRefAsync(string branch)
+    {
+        var stashList = await RunGitAsync("stash", "list");
+        var pattern = new Regex($@"auto-stash:{Regex.Escape(branch)}:\d+$");
+
+        foreach (var line in stashList.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (pattern.IsMatch(line))
+                return line.Split(':')[0]; // e.g. "stash@{0}"
+        }
+
+        return null;
     }
 
     // ── Git Process Runner ──────────────────────────────────────

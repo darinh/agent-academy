@@ -10,6 +10,11 @@ namespace AgentAcademy.Server.Commands;
 /// </summary>
 public sealed class CommandAuthorizer
 {
+    private static readonly Dictionary<string, HashSet<string>> RestrictedRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["SHELL"] = new(StringComparer.OrdinalIgnoreCase) { "Planner", "Reviewer" }
+    };
+
     /// <summary>
     /// Check if the agent is authorized to execute the given command.
     /// Returns null if authorized, or a denied CommandEnvelope if not.
@@ -28,7 +33,16 @@ public sealed class CommandAuthorizer
 
         // Check allow list
         if (permissions.Allowed.Any(p => MatchesPattern(command.Command, p)))
+        {
+            if (RestrictedRoles.TryGetValue(command.Command, out var allowedRoles)
+                && !allowedRoles.Contains(agent.Role))
+            {
+                return Deny(command,
+                    $"Command '{command.Command}' is restricted to roles: {string.Join(", ", allowedRoles)}.");
+            }
+
             return null; // Authorized
+        }
 
         // Default deny
         return Deny(command, $"Agent '{agent.Name}' is not authorized to execute '{command.Command}'.");
