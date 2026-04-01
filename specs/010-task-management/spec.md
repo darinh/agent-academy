@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Defines the task lifecycle, agent Git workflow, PR review pipeline, agent identity model, and the frontend task management UI. This is the system that turns collaboration room discussions into tracked, reviewable, mergeable work.
+Defines the task lifecycle, local branch-based Git workflow, review pipeline, agent identity model, and the frontend task management UI. This is the system that turns collaboration room discussions into tracked, reviewable, mergeable work.
 
 ## Overview
 
@@ -159,7 +159,9 @@ Examples:
 - If a feature branch exists that collects related PRs: target that branch instead
 - The target branch is determined at task creation or can be specified manually
 
-### Workflow Steps
+### Workflow Steps (Planned)
+
+**Note**: The following workflow describes a future GitHub integration. The current implementation uses local branch workflow without remote push or PR creation. See section 3.5 for the implemented local branch workflow.
 
 ```
 1. Agent receives task assignment
@@ -175,7 +177,7 @@ Examples:
 7. Socrates is notified
 ```
 
-### Commit Format
+### Commit Format (Planned)
 
 Agents follow conventional commits:
 
@@ -236,7 +238,7 @@ The currently shipped task-assignment path does not create a `BreakoutRoomEntity
 
 ---
 
-## 4. PR Review Pipeline (Socrates)
+## 4. Review Pipeline (Socrates)
 
 ### Review Trigger
 
@@ -257,23 +259,24 @@ Socrates may use multiple models for review depth:
 
 ### Review Outcomes
 
-| Outcome | Action |
+| Command | Effect |
 |---------|--------|
-| **Approved** | Socrates approves PR via GitHub API, posts approval message in room, notifies owning agent |
-| **Changes Requested** | Socrates leaves PR comments via GitHub API, posts summary in room, sets task status to `ChangesRequested`, notifies owning agent |
+| `APPROVE_TASK` | Sets task status to `Approved`, posts approval message in room |
+| `REQUEST_CHANGES` | Sets task status to `ChangesRequested`, posts feedback in room |
+
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/ApproveTaskHandler.cs`, `RequestChangesHandler.cs`
 
 ### Fix & Re-review Cycle
 
 ```
 1. Owning agent sees ChangesRequested
-2. Agent makes fixes, pushes commits to same branch
-3. Agent posts message: "Ready for re-review"
-4. Agent sets task status back to InReview
-5. Socrates re-reviews (may focus on changed files only)
-6. Max review rounds: configurable (default: 3)
+2. Agent makes fixes in a new breakout round
+3. Agent sets task status back to InReview
+4. Socrates re-reviews
+5. Review rounds tracked via TaskEntity.ReviewRounds field
 ```
 
-### Post-Approval (branch-based workflow)
+### Post-Approval Merge
 
 After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner invokes `MERGE_TASK` to squash-merge the task branch:
 
@@ -287,20 +290,22 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 7. System posts success message to room
 ```
 
-> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.cs`
 
 ---
 
-## 5. GitHub Integration
+## 5. GitHub Integration (Planned)
 
-### Authentication
+**Status**: Planned. The task model includes PR-related fields (`PullRequestUrl`, `PullRequestNumber`, `PullRequestStatus`) to support future GitHub integration, but no GitHub API service exists. The current implementation uses local branch workflow with `MERGE_TASK` command.
 
-Agent Academy needs GitHub API access to:
-- Create branches (or push to remote)
+### Planned Authentication
+
+Agent Academy will need GitHub API access to:
+- Push branches to remote
 - Open PRs
 - Leave review comments
 - Approve PRs
-- Merge PRs
+- Merge PRs via API
 
 **Approach**: GitHub OAuth App or GitHub App installation
 
@@ -309,14 +314,12 @@ Agent Academy needs GitHub API access to:
 3. All GitHub API calls are made with this token
 4. Agent identity is conveyed via commit author (not API caller)
 
-### Required Scopes
+### Planned Required Scopes
 
 - `repo` — full repository access (branches, PRs, commits)
 - `read:user` — user profile for display
 
-### Service: `GitHubService`
-
-New service encapsulating all GitHub API operations:
+### Planned Service: `GitHubService`
 
 ```csharp
 public interface IGitHubService
@@ -327,7 +330,7 @@ public interface IGitHubService
     Task StoreTokenAsync(string code);
 
     // Branches
-    Task CreateBranchAsync(string repo, string branchName, string baseBranch);
+    Task PushBranchAsync(string repo, string branchName);
 
     // PRs
     Task<PullRequestInfo> CreatePullRequestAsync(string repo, CreatePrRequest request);
@@ -336,27 +339,6 @@ public interface IGitHubService
     Task ApprovePullRequestAsync(string repo, int prNumber, string body);
     Task RequestChangesAsync(string repo, int prNumber, string body);
     Task MergePullRequestAsync(string repo, int prNumber, MergeMethod method);
-
-    // Git operations (on local workspace)
-    Task<string> CreateAgentBranchAsync(string workspacePath, AgentGitIdentity identity, string taskSlug);
-    Task CommitAsync(string workspacePath, AgentGitIdentity identity, string message);
-    Task PushAsync(string workspacePath, string branchName);
-}
-```
-
-### Git Operations Service: `GitOperationsService`
-
-For local git operations (branch, commit, push) on the loaded project:
-
-```csharp
-public interface IGitOperationsService
-{
-    Task<string> CreateBranchAsync(string repoPath, string branchName, string? baseBranch = null);
-    Task CommitAsync(string repoPath, string authorName, string authorEmail, string message);
-    Task PushAsync(string repoPath, string branchName);
-    Task<string> GetCurrentBranchAsync(string repoPath);
-    Task<string> GetRemoteUrlAsync(string repoPath);
-    Task<(string owner, string repo)> ParseRemoteAsync(string repoPath);
 }
 ```
 
@@ -555,22 +537,21 @@ When task status → `InReview`:
 
 1. Activity event: `TaskReviewRequested`
 2. Socrates receives the event
-3. Socrates fetches PR diff
+3. Socrates fetches diff using `SHOW_DIFF` command
 4. Socrates performs review
-5. Socrates posts review in room + on GitHub PR
-6. Task status updated based on outcome
+5. Socrates posts review in room
+6. Task status updated based on outcome (via `APPROVE_TASK` or `REQUEST_CHANGES`)
 
 ### Agent Communication
 
-Agents MUST communicate progress while working. This is already supported by the orchestrator:
+Agents communicate progress while working:
 - `AgentThinking` / `AgentFinished` activity events
 - System status messages via `WorkspaceRuntime.PostSystemStatusAsync()`
 - Direct room messages via `WorkspaceRuntime.PostMessageAsync()`
 
-The orchestrator should ensure agents post at minimum:
+Agents typically post:
 - "Starting work on {task title}" when claimed
 - Progress updates during implementation
-- "Opening PR #{number}" when PR is created
 - "Ready for review" when submitting to Socrates
 
 ---
@@ -598,25 +579,12 @@ The orchestrator should ensure agents post at minimum:
 - Integrate below workspace header
 - **Estimated scope**: 1 session
 
-### Phase 4: Git Operations Service
-- `IGitOperationsService` implementation
-- Agent git identity configuration in `agents.json`
-- Branch creation, commit attribution, push
-- **Estimated scope**: 1 session
-
-### Phase 5: GitHub Integration
+### Phase 4: GitHub Integration (Future)
 - GitHub OAuth flow
 - `IGitHubService` implementation
-- PR creation, review comments, approval, merge
-- **Estimated scope**: 1-2 sessions
-
-### Phase 6: Review Pipeline (Socrates)
-- Review trigger on `InReview` status
-- Multi-model adversarial review
-- PR comment posting
-- Fix/re-review cycle
-- Auto-merge on approval
-- **Estimated scope**: 1-2 sessions
+- Remote branch push
+- PR creation, review comments, approval, merge via API
+- **Estimated scope**: 2-3 sessions
 
 ---
 
@@ -631,15 +599,16 @@ The orchestrator should ensure agents post at minimum:
 
 ## Known Gaps
 
-- GitHub App vs OAuth App decision (App provides better permissions model but more setup)
-- How to handle repos without GitHub remotes (local-only projects)
-- Agent identity for non-GitHub Git hosts (GitLab, Bitbucket)
-- Rate limiting on GitHub API calls
-- Conflict resolution when multiple agents push to related branches
-- Security: token storage and rotation
+- **GitHub PR integration not implemented** — task model has PR fields but no API service exists
+- No remote push capability — all work is local-only
+- No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`
+- Agent git identity configuration not fully utilized (planned for future GitHub integration)
+- Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
+- No formal limit on review rounds (tracked but not enforced)
 
 ## Revision History
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-01 | Remove unimplemented PR workflow content — marked GitHub integration as Planned | Thucydides |
 | 2026-03-28 | Initial spec — Planned | Copilot (via Anvil) |

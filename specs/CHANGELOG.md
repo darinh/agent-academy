@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **010-task-management**: Removed unimplemented GitHub PR integration content from spec. Sections describing PR creation, review via GitHub API, and remote push workflows marked as "Planned" or rewritten to describe actual local branch workflow with `MERGE_TASK`. PR metadata fields remain in task model for future use.
+
 ### Fixed
 - **011-state-recovery / 300-frontend-ui**: Frontend auth recovery is now automatic. The app polls `/api/auth/status` every 30 seconds, redirects to `/api/auth/login` on `operational` → `degraded` transitions when the browser session still exists, debounces the redirect once per tab, and suppresses auto re-auth after explicit logout.
 - **003-agent-system / 011-state-recovery**: Added proactive SDK auth-expiry detection. A hosted `/user` probe now runs every 5 minutes, treats only HTTP `401/403` as definitive auth failure, leaves transient network/server issues alone, and sends Discord-backed notifications only when auth transitions between `operational` and `degraded`.
