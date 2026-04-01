@@ -5,7 +5,7 @@ import {
 } from "@fluentui/react-components";
 import { apiBaseUrl } from "./api";
 import type { AuthUser, CopilotStatus } from "./api";
-import { getCopilotStatusCopy } from "./authPresentation";
+import { getCopilotStatusCopy, getCopilotStatusFacts } from "./authPresentation";
 
 const useLocalStyles = makeStyles({
   root: {
@@ -223,6 +223,50 @@ const useLocalStyles = makeStyles({
     fontSize: "12px",
     lineHeight: 1.7,
   },
+  factGrid: {
+    display: "grid",
+    gap: "10px",
+  },
+  factRow: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: "12px",
+    alignItems: "center",
+    border: "1px solid rgba(163, 180, 208, 0.12)",
+    background: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.borderRadius("18px"),
+    ...shorthands.padding("12px", "14px"),
+  },
+  factLabel: {
+    color: "#8da3c4",
+    fontSize: "12px",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
+  factValue: {
+    width: "fit-content",
+    fontSize: "12px",
+    fontWeight: 700,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    ...shorthands.borderRadius("999px"),
+    ...shorthands.padding("6px", "10px"),
+  },
+  factValueGood: {
+    color: "#d8f5e2",
+    backgroundColor: "rgba(72, 214, 122, 0.14)",
+    border: "1px solid rgba(72, 214, 122, 0.24)",
+  },
+  factValueWarning: {
+    color: "#f7e1ba",
+    backgroundColor: "rgba(217, 166, 103, 0.14)",
+    border: "1px solid rgba(217, 166, 103, 0.24)",
+  },
+  factValueCritical: {
+    color: "#ffd0d7",
+    backgroundColor: "rgba(255, 113, 135, 0.14)",
+    border: "1px solid rgba(255, 113, 135, 0.24)",
+  },
 });
 
 interface LoginPageProps {
@@ -255,6 +299,7 @@ export default function LoginPage({
   const s = useLocalStyles();
   const loginUrl = `${apiBaseUrl}/api/auth/login`;
   const copy = getCopilotStatusCopy(copilotStatus, user);
+  const facts = getCopilotStatusFacts(copilotStatus);
   const userName = user?.name ?? user?.login;
   const degraded = copilotStatus === "degraded";
 
@@ -309,6 +354,26 @@ export default function LoginPage({
                   : "Signing in restores room access, active workspace state, and the normal agent workflow."}
               </span>
             </div>
+          </div>
+
+          <div className={s.factGrid} aria-label="System status details">
+            {facts.map((fact) => (
+              <div key={fact.label} className={s.factRow}>
+                <span className={s.factLabel}>{fact.label}</span>
+                <span
+                  className={[
+                    s.factValue,
+                    fact.tone === "good"
+                      ? s.factValueGood
+                      : fact.tone === "warning"
+                        ? s.factValueWarning
+                        : s.factValueCritical,
+                  ].join(" ")}
+                >
+                  {fact.value}
+                </span>
+              </div>
+            ))}
           </div>
 
           <div className={s.actionRow}>

@@ -8,6 +8,12 @@ export interface CopilotStatusCopy {
   supportingNote: string;
 }
 
+export interface CopilotStatusFact {
+  label: string;
+  value: string;
+  tone: "good" | "warning" | "critical";
+}
+
 export function shouldRenderWorkspace(auth: AuthStatus): boolean {
   return !auth.authEnabled || auth.copilotStatus === "operational";
 }
@@ -46,5 +52,29 @@ export function getCopilotStatusCopy(
         actionLabel: "Continue",
         supportingNote: "Operational state should route straight into the workspace shell.",
       };
+  }
+}
+
+export function getCopilotStatusFacts(copilotStatus: CopilotStatus): CopilotStatusFact[] {
+  switch (copilotStatus) {
+    case "degraded":
+      return [
+        { label: "Browser identity", value: "Still connected", tone: "good" },
+        { label: "Copilot runtime", value: "Paused until re-auth", tone: "warning" },
+        { label: "Workspace access", value: "Fail-closed", tone: "critical" },
+      ];
+    case "unavailable":
+      return [
+        { label: "Browser identity", value: "Not connected", tone: "critical" },
+        { label: "Copilot runtime", value: "Unavailable", tone: "warning" },
+        { label: "Workspace access", value: "Sign-in required", tone: "critical" },
+      ];
+    case "operational":
+    default:
+      return [
+        { label: "Browser identity", value: "Connected", tone: "good" },
+        { label: "Copilot runtime", value: "Ready", tone: "good" },
+        { label: "Workspace access", value: "Open", tone: "good" },
+      ];
   }
 }

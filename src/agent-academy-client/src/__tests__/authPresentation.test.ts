@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCopilotStatusCopy, shouldRenderWorkspace } from "../authPresentation";
+import { getCopilotStatusCopy, getCopilotStatusFacts, shouldRenderWorkspace } from "../authPresentation";
 import type { AuthStatus } from "../api";
 
 function authStatus(overrides: Partial<AuthStatus>): AuthStatus {
@@ -33,5 +33,19 @@ describe("auth presentation", () => {
 
     expect(copy.actionLabel).toBe("Login with GitHub");
     expect(copy.eyebrow).toBe("Authentication required");
+  });
+
+  it("surfaces state facts that distinguish degraded from unavailable sessions", () => {
+    expect(getCopilotStatusFacts("degraded")).toEqual([
+      { label: "Browser identity", value: "Still connected", tone: "good" },
+      { label: "Copilot runtime", value: "Paused until re-auth", tone: "warning" },
+      { label: "Workspace access", value: "Fail-closed", tone: "critical" },
+    ]);
+
+    expect(getCopilotStatusFacts("unavailable")).toEqual([
+      { label: "Browser identity", value: "Not connected", tone: "critical" },
+      { label: "Copilot runtime", value: "Unavailable", tone: "warning" },
+      { label: "Workspace access", value: "Sign-in required", tone: "critical" },
+    ]);
   });
 });

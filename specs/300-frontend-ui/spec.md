@@ -76,6 +76,7 @@ On mount, `App.tsx` also calls `getAuthStatus()`:
 - If `copilotStatus = "operational"` → the workspace can render normally
 - If `copilotStatus = "unavailable"` → `LoginPage` renders the standard GitHub sign-in prompt
 - If `copilotStatus = "degraded"` → `LoginPage` renders a re-authentication prompt that explains the browser session still exists but Copilot access needs to be refreshed
+- `LoginPage` renders a dedicated status panel summarizing **Browser identity**, **Copilot runtime**, and **Workspace access** so degraded vs unavailable states are visually distinct without reading backend terms
 
 The contract is fail-closed: the backend sets `authenticated = false` whenever `copilotStatus != "operational"`, so the workspace shell never renders while Copilot is degraded.
 
@@ -142,6 +143,7 @@ Defined in `theme.ts`. Each agent role maps to accent/foreground/avatar colors:
 - Full viewport: `100vh` with CSS grid
 - Sidebar + main content: `320px minmax(0, 1fr)` (open) / `88px minmax(0, 1fr)` (collapsed)
 - Dark gradient background with glassmorphism panels
+- Authentication surfaces (`LoginPage.tsx`, `ProjectSelectorPage.tsx`) use a two-panel editorial layout: narrative rail on the left, actionable system/status card on the right
 - `index.css` provides minimal resets; all component styles use Griffel `makeStyles`
 
 ## Real-Time Updates
