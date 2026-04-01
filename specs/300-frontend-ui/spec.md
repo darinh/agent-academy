@@ -77,6 +77,9 @@ On mount, `App.tsx` also calls `getAuthStatus()`:
 - If `copilotStatus = "unavailable"` → `LoginPage` renders the standard GitHub sign-in prompt
 - If `copilotStatus = "degraded"` → `LoginPage` renders a re-authentication prompt that explains the browser session still exists but Copilot access needs to be refreshed
 - `LoginPage` renders a dedicated status panel summarizing **Browser identity**, **Copilot runtime**, and **Workspace access** so degraded vs unavailable states are visually distinct without reading backend terms
+- After the initial load, the client polls `/api/auth/status` every 30 seconds while the tab is open
+- If the client sees `copilotStatus` transition from `operational` to `degraded` while `user` is still populated, it immediately navigates to `/api/auth/login` so the existing OAuth flow can refresh the SDK token without a manual click
+- Automatic re-authentication is debounced once per browser tab via `sessionStorage` and is suppressed after explicit logout so the sign-out flow remains stable
 
 The contract is fail-closed: the backend sets `authenticated = false` whenever `copilotStatus != "operational"`, so the workspace shell never renders while Copilot is degraded.
 

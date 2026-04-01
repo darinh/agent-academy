@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FluentProvider,
   webDarkTheme,
@@ -20,7 +20,7 @@ import {
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
+import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
@@ -36,6 +36,14 @@ import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
 import { shouldRenderWorkspace } from "./authPresentation";
+import {
+  AUTH_STATUS_POLL_MS,
+  clearAutoReauthAttempt,
+  clearManualLogout,
+  getAuthTransitionEffect,
+  markAutoReauthAttempt,
+  markManualLogout,
+} from "./authMonitor";
 
 export default function App() {
   return (
@@ -89,6 +97,21 @@ function AppShell() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const previousAuthRef = useRef<AuthStatus | null>(null);
+  const authRefreshInFlight = useRef(false);
+  const loginUrl = `${apiBaseUrl}/api/auth/login`;
+
+  const refreshAuthStatus = useCallback(async () => {
+    if (authRefreshInFlight.current) return;
+
+    authRefreshInFlight.current = true;
+    try {
+      const status = await getAuthStatus();
+      setAuth(status);
+    } finally {
+      authRefreshInFlight.current = false;
+    }
+  }, []);
 
   // Check auth status on mount — retry if backend is still starting
   useEffect(() => {
@@ -115,6 +138,37 @@ function AppShell() {
     void checkAuth(0);
     return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
+
+  useEffect(() => {
+    if (auth === null) return undefined;
+
+    const timer = window.setInterval(() => {
+      void refreshAuthStatus().catch(() => undefined);
+    }, AUTH_STATUS_POLL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [auth, refreshAuthStatus]);
+
+  useEffect(() => {
+    if (!auth) return;
+
+    const transitionEffect = getAuthTransitionEffect(previousAuthRef.current, auth);
+
+    if (transitionEffect.clearAutoReauthAttempt) {
+      clearAutoReauthAttempt();
+    }
+
+    if (transitionEffect.clearManualLogoutSuppression) {
+      clearManualLogout();
+    }
+
+    if (transitionEffect.redirectToLogin) {
+      markAutoReauthAttempt();
+      window.location.assign(loginUrl);
+    }
+
+    previousAuthRef.current = auth;
+  }, [auth, loginUrl]);
 
   // Fetch tasks when workspace is active and tab is "tasks"
   useEffect(() => {
@@ -212,6 +266,9 @@ function AppShell() {
   );
 
   const handleLogout = useCallback(async () => {
+    markManualLogout();
+    clearAutoReauthAttempt();
+
     try {
       await logout();
       setAuth({
@@ -220,7 +277,9 @@ function AppShell() {
         copilotStatus: "unavailable",
         user: null,
       });
-    } catch { /* best-effort */ }
+    } catch {
+      clearManualLogout();
+    }
   }, []);
 
   useEffect(() => {

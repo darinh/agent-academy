@@ -222,6 +222,8 @@ When the Copilot SDK returns an authentication error during agent execution:
       - `degraded` — browser auth cookie is still valid, but the SDK token is missing or `_authFailed = true`
       - `unavailable` — no authenticated browser session is present
     - The auth status response remains fail-closed: `authenticated = false` whenever `copilotStatus != operational`
+    - The frontend polls `/api/auth/status` every 30 seconds and treats `operational -> degraded` with a retained `user` payload as an automatic re-auth trigger
+    - Automatic re-authentication reuses the existing `/api/auth/login` OAuth redirect, debounced once per tab and suppressed after explicit logout to avoid redirect loops
     - Health endpoint still exposes `authFailed` for instance-health diagnostics
 
 3. **Retry Policy** (`CopilotExecutor.SendAndCollectWithRetryAsync`):
@@ -236,6 +238,7 @@ Auth failures are caused by expired/revoked OAuth tokens, not by corrupted SDK s
 - Exposes `copilotStatus` in `/api/auth/status` so the UI can distinguish normal login from re-authentication, while `authFailed` remains available from the health endpoint for diagnostics
 - Continues serving non-agent endpoints (workspace, tasks, rooms) during auth failure
 - Automatically recovers when `CopilotTokenProvider` receives a new token (after OAuth callback)
+- Starts the browser re-authentication flow automatically when the UI observes a degraded SDK state but still has the browser GitHub session
 - Uses `StubExecutor` as fallback so orchestration doesn't crash
 
 **Restart is only needed** when:
