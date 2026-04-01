@@ -147,7 +147,14 @@ builder.Services.AddSingleton<CopilotTokenProvider>();
 
 // Agent execution — CopilotExecutor falls back to StubExecutor internally
 // if the Copilot CLI is not available.
-builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
+builder.Services.AddSingleton<CopilotExecutor>();
+builder.Services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
+
+builder.Services.AddHttpClient<ICopilotAuthProbe, GitHubCopilotAuthProbe>(client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("AgentAcademy.AuthProbe/1.0");
+});
 
 // Spec manager (singleton — reads specs/ directory for prompt injection)
 builder.Services.AddSingleton<SpecManager>();
@@ -202,6 +209,9 @@ builder.Services.AddHostedService<ActivityHubBroadcaster>();
 
 // Notification broadcaster (hosted service — bridges ActivityBroadcaster → NotificationManager)
 builder.Services.AddHostedService<ActivityNotificationBroadcaster>();
+
+// Proactive auth health probe (hosted service — checks GitHub /user every 5 minutes)
+builder.Services.AddHostedService<CopilotAuthMonitorService>();
 
 var app = builder.Build();
 

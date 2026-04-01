@@ -21,6 +21,16 @@ public sealed class StubExecutor : IAgentExecutor
     public bool IsFullyOperational => false;
     public bool IsAuthFailed => false;
 
+    public Task MarkAuthDegradedAsync(CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task MarkAuthOperationalAsync(CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
+    }
+
     public Task<string> RunAsync(
         AgentDefinition agent,
         string prompt,

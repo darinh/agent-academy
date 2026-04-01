@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
@@ -145,7 +146,8 @@ public class AgentExecutorInterfaceTests
             NullLogger<StubExecutor>.Instance,
             new ConfigurationBuilder().Build(),
             new CopilotTokenProvider(),
-            sp.GetRequiredService<IServiceScopeFactory>());
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new NotificationManager(NullLogger<NotificationManager>.Instance));
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
         connection.Dispose();
     }

@@ -22,7 +22,19 @@ public interface IAgentExecutor
     bool IsAuthFailed { get; }
 
     /// <summary>
-    /// Sends <paramref name="prompt"/> to the agent and returns the
+    /// Marks the executor as auth-degraded and emits any transition-side effects
+    /// (room notice, notifications) if this is the first transition into failure.
+    /// </summary>
+    Task MarkAuthDegradedAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks the executor as auth-operational again and emits recovery side effects
+    /// only when transitioning from degraded to healthy.
+    /// </summary>
+    Task MarkAuthOperationalAsync(CancellationToken ct = default);
+
+    /// <summary>
+     /// Sends <paramref name="prompt"/> to the agent and returns the
     /// complete response. The implementation may stream internally but
     /// this method returns only after the full response is assembled.
     /// </summary>

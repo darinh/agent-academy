@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Notifications;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,6 +61,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly ILogger<StubExecutor> _stubLogger;
     private readonly CopilotTokenProvider _tokenProvider;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly NotificationManager _notificationManager;
     private readonly string? _configToken;
     private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
@@ -71,6 +73,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private volatile bool _authFailed;
     private StubExecutor? _fallback;
     private Timer? _cleanupTimer;
+    private readonly SemaphoreSlim _authStateLock = new(1, 1);
     private bool _disposed;
 
     public CopilotExecutor(
@@ -78,7 +81,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         ILogger<StubExecutor> stubLogger,
         IConfiguration configuration,
         CopilotTokenProvider tokenProvider,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        NotificationManager notificationManager)
     {
         _logger = logger;
         _stubLogger = stubLogger;
@@ -86,6 +90,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _cliPath = configuration["Copilot:CliPath"];
         _tokenProvider = tokenProvider;
         _scopeFactory = scopeFactory;
+        _notificationManager = notificationManager;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -105,6 +110,12 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     /// failure. Cleared automatically when a new token is provided.
     /// </summary>
     public bool IsAuthFailed => _authFailed;
+
+    public Task MarkAuthDegradedAsync(CancellationToken ct = default)
+        => TransitionAuthStateAsync(degraded: true, ct);
+
+    public Task MarkAuthOperationalAsync(CancellationToken ct = default)
+        => TransitionAuthStateAsync(degraded: false, ct);
 
     public async Task<string> RunAsync(
         AgentDefinition agent,
@@ -300,10 +311,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
             // Only clear auth failure and post recovery AFTER successful start.
             if (wasAuthFailed)
-            {
-                _authFailed = false;
-                _ = PostAuthRecoveryMessageAsync();
-            }
+                _ = MarkAuthOperationalAsync();
 
             return _client;
         }
@@ -639,42 +647,60 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     private async Task HandleAuthFailureAsync(string agentId, string? roomId)
     {
-        _authFailed = true;
         await InvalidateSessionAsync(agentId, roomId);
-
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-
-            await runtime.PostSystemStatusAsync(runtime.DefaultRoomId,
-                "⚠️ **Copilot SDK authentication failed.** The OAuth token has expired or been revoked. " +
-                "Please re-authenticate at `/api/auth/login` to restore agent functionality.");
-
-            _logger.LogWarning(
-                "Auth failure detected — posted re-authentication notice to main room");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to post auth failure notification");
-        }
+        await MarkAuthDegradedAsync();
     }
 
-    private async Task PostAuthRecoveryMessageAsync()
+    private async Task TransitionAuthStateAsync(bool degraded, CancellationToken ct)
     {
+        await _authStateLock.WaitAsync(ct);
         try
         {
+            if (_authFailed == degraded)
+                return;
+
+            _authFailed = degraded;
+
             using var scope = _scopeFactory.CreateScope();
             var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var roomId = runtime.DefaultRoomId;
+            var roomMessage = degraded
+                ? "⚠️ **Copilot SDK authentication failed.** The OAuth token has expired or been revoked. Please re-authenticate at `/api/auth/login` to restore agent functionality."
+                : "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online.";
+            var notification = degraded
+                ? new NotificationMessage(
+                    Type: NotificationType.Error,
+                    Title: "Copilot SDK authentication degraded",
+                    Body: "The GitHub auth probe received 401/403 from `GET /user`. Re-authenticate at `/api/auth/login` to restore agent functionality.",
+                    RoomId: roomId)
+                : new NotificationMessage(
+                    Type: NotificationType.TaskComplete,
+                    Title: "Copilot SDK authentication restored",
+                    Body: "Copilot access is healthy again. Agents are coming back online.",
+                    RoomId: roomId);
 
-            await runtime.PostSystemStatusAsync(runtime.DefaultRoomId,
-                "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online.");
+            await runtime.PostSystemStatusAsync(roomId, roomMessage);
+            await _notificationManager.SendToAllAsync(notification, ct);
 
-            _logger.LogInformation("Auth recovery — posted reconnection notice to main room");
+            if (degraded)
+            {
+                _logger.LogWarning("Auth state transitioned to degraded");
+            }
+            else
+            {
+                _logger.LogInformation("Auth state transitioned to operational");
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to post auth recovery notification");
+            _logger.LogError(ex,
+                degraded
+                    ? "Failed to process auth degradation transition"
+                    : "Failed to process auth recovery transition");
+        }
+        finally
+        {
+            _authStateLock.Release();
         }
     }
 

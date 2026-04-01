@@ -213,6 +213,10 @@ When the Copilot SDK returns an authentication error during agent execution:
       - `_activeToken` changes, triggering client recreation
       - `_authFailed` is cleared to `false`
       - Posts recovery message: "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online."
+    - `CopilotAuthMonitorService` proactively probes `GET /user` every 5 minutes:
+      - `200` → executor transitions back to operational if it was previously degraded
+      - `401` / `403` → executor transitions to degraded immediately, posts the re-authentication notice, and sends a notification via `NotificationManager`
+      - Network failures, timeouts, and other non-auth responses are logged and ignored so transient outages do not force degraded mode
     - `/api/auth/status` exposes `copilotStatus` with three states:
       - `operational` — browser auth cookie and Copilot SDK token are both healthy
       - `degraded` — browser auth cookie is still valid, but the SDK token is missing or `_authFailed = true`
@@ -333,6 +337,7 @@ Result: Server exits with code 75, wrapper restarts process
 ## Revision History
 
 - **2026-04-01**: Implemented startup crash recovery actions. On crash-detected boot, `AgentOrchestrator` now triggers runtime repair that closes active breakout rooms with persisted `ClosedByRecovery` reason, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notice.
+- **2026-04-01**: Added proactive SDK auth expiry detection. `CopilotAuthMonitorService` probes GitHub `/user` every 5 minutes, treats only `401/403` as definitive auth failure, and debounces room/Discord notifications so they fire only on degraded/operational transitions.
 - **2026-03-31**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based recovery strategy. Authentication failures trigger user re-authentication instead of server restart. Auth/authorization exceptions are never retried; quota/transient errors retry with exponential backoff. Health endpoint `authFailed` flag exposed for diagnostics, and `/api/auth/status` now surfaces `copilotStatus` (`operational` / `degraded` / `unavailable`) for client gating. Added Invariant 10. Updated Invariant 4 to clarify crash-restart behavior (code 1+).
 - **2026-03-31**: Implemented wrapper script (crash-restart with backoff), server instance tracking (entity + migration + crash detection), RESTART_SERVER command handler (Planner-only, exit code 75), /api/health/instance endpoint (instanceId, authFailed, executorOperational), IHostApplicationLifetime shutdown hook. Updated exit code table to include crash-restart behavior.
 - **2026-03-30**: Initial specification — wrapper exit code contract, `ServerInstanceEntity` schema, startup/shutdown hooks, client reconnect protocol, `RESTART_SERVER` command design

@@ -75,6 +75,7 @@ Key behaviors:
   - `quota`, `rate_limit` → `CopilotQuotaException` (retried with longer backoff: 5s/15s/30s, max 3 attempts)
   - Other/unknown → `CopilotTransientException` (retried with backoff: 2s/4s/8s, max 3 attempts)
 - **Auth failure handling**: On definitive auth failure, the executor sets `IsAuthFailed = true`, posts a re-authentication notice to the main room, and notifies via the notification system. When the user re-authenticates (token changes), the flag is cleared and a recovery message is posted automatically.
+- **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state.
 - **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0). Safe because no SDK tools are registered in session config. Must be revisited when tool calling is wired up.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
@@ -550,6 +551,7 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-03-28 | Fixed CopilotExecutor auth: added OnPermissionRequest + IConfiguration token support | copilot-auth-sse |
 | 2026-03-28 | Added SSE activity stream as SignalR alternative | copilot-auth-sse |
 | 2026-03-28 | OAuth token → Copilot SDK activation: CopilotTokenProvider, token-change-aware executor, SaveTokens=true | auth-sdk-flow |
+| 2026-04-01 | Added proactive SDK auth probe with transition-based notifications | proactive-auth-probe |
 | 2026-03-28 | Documented CLI path configuration (Copilot:CliPath, system vs bundled binary) | cli-path-docs |
 | 2026-03-28 | StubExecutor: replaced canned role-based responses with deterministic offline notice | stub-offline-notice |
 | 2026-03-29 | Agent configuration overrides — DB schema, AgentConfigService, orchestrator integration | agent-config-phase1 |
