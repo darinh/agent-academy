@@ -8,17 +8,19 @@ Defines the task lifecycle, agent Git workflow, PR review pipeline, agent identi
 
 ## Overview
 
-When agents work on tasks, they follow a structured workflow:
+When agents work on tasks, they follow a branch-based local squash-merge workflow:
 
 1. A task is created (manually or automatically, e.g., after onboarding)
-2. An agent claims the task and creates a branch in the loaded project's repository
-3. The agent works, making commits attributed to their identity
-4. When complete, the agent opens a PR to the target branch
-5. Socrates (Reviewer) performs adversarial review, potentially with multiple models
-6. If changes are requested, the owning agent fixes and re-submits
-7. On approval, the agent merges the PR and updates the task record
+2. An agent claims the task and is automatically switched to a `task/{slug}-{suffix}` branch
+3. The agent works in isolated breakout rounds, making commits on the task branch
+4. When complete, the agent sets the task status to `InReview`
+5. Socrates (Reviewer) performs adversarial review on the task branch
+6. If changes are requested, the agent makes fixes in subsequent breakout rounds
+7. On approval, Socrates or Aristotle issues `MERGE_TASK` to squash-merge into `develop`
 
 All of this is visible in the frontend: a task list below the Main Collaboration Room showing in-progress, incomplete, and completed work with rich metadata.
+
+> **Note**: The system also includes metadata fields for GitHub PR integration (`PullRequestNumber`, `PullRequestUrl`, `PullRequestStatus`), but the current implementation does not use GitHub PRs. Tasks are merged via local `MERGE_TASK` command which invokes `GitService.SquashMergeAsync()` (see `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`).
 
 ---
 
@@ -273,17 +275,21 @@ Socrates may use multiple models for review depth:
 6. Max review rounds: configurable (default: 3)
 ```
 
-### Post-Approval
+### Post-Approval (branch-based workflow)
 
-> **Note**: This section describes the planned PR-based workflow (Phase 5-6). The current shipped behavior uses `APPROVE_TASK` → `MERGE_TASK` (local squash-merge via GitService) as documented in section 3.5 (Branch-per-Breakout).
+After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner invokes `MERGE_TASK` to squash-merge the task branch:
 
 ```
-1. Socrates approves PR
+1. Socrates issues APPROVE_TASK command
 2. Task status → Approved
-3. Owning agent merges PR (squash merge preferred)
-4. Owning agent updates task: CompletedAt, CommitCount, PullRequestStatus → Merged
-5. Task status → Completed
+3. Socrates or Aristotle issues MERGE_TASK: TaskId={id}
+4. GitService.SquashMergeAsync(branchName, commitMessage) executes
+5. Task updated: CompletedAt, MergeCommitSha, CommitCount
+6. Task status → Completed
+7. System posts success message to room
 ```
+
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`
 
 ---
 
@@ -620,9 +626,9 @@ The orchestrator should ensure agents post at minimum:
 
 1. A task's `AssignedAgentName` must correspond to a configured agent in `agents.json`
 2. All commits on an agent branch must be authored by that agent's git identity
-3. A task in `InReview` must have either a non-null `BranchName` (branch-based, current) or `PullRequestNumber` (PR-based, planned)
-4. Socrates is the only agent that can approve PRs (unless the review pipeline is explicitly overridden)
-5. A task cannot transition to `Completed` without either `MergeCommitSha` (branch-based, current) or `PullRequestStatus == Merged` (PR-based, planned)
+3. A task in `InReview` must have a non-null `BranchName`
+4. Socrates is the only agent that can approve tasks (unless the review pipeline is explicitly overridden)
+5. A task cannot transition to `Completed` without a `MergeCommitSha` (written by `MERGE_TASK` handler)
 6. Named agents are responsible for fleet output — fleet models are recorded but the agent is the author
 
 ## Known Gaps
