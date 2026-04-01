@@ -526,9 +526,6 @@ public sealed class AgentOrchestrator
             return;
         }
 
-        var brName = $"BR: {assignment.Title}";
-        var br = await runtime.CreateBreakoutRoomAsync(roomId, agent.Id, brName);
-
         var descriptionWithCriteria = assignment.Description
             + (assignment.Criteria.Count > 0
                 ? "\n\nAcceptance Criteria:\n" + string.Join("\n", assignment.Criteria.Select(c => $"- {c}"))
@@ -536,25 +533,18 @@ public sealed class AgentOrchestrator
 
         await runtime.CreateTaskItemAsync(
             assignment.Title, descriptionWithCriteria,
-            agent.Id, roomId, br.Id);
+            agent.Id, roomId, breakoutRoomId: null);
 
-        // Create task branch for the breakout
+        // Keep branch-based task workflow active even while breakout rooms are disabled.
         string? taskBranch = null;
         try
         {
-            // Ensure a TaskEntity exists for this breakout (find or create)
             var taskId = await runtime.EnsureTaskForBreakoutAsync(
                 assignment.Title, descriptionWithCriteria, agent.Id, roomId,
                 BuildAssignmentPlanContent(assignment));
 
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
             await runtime.UpdateTaskBranchAsync(taskId, taskBranch);
-            await runtime.SetBreakoutTaskIdAsync(br.Id, taskId);
-            var task = await runtime.GetTaskAsync(taskId);
-            var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
-                ? task.CurrentPlan
-                : BuildAssignmentPlanContent(assignment);
-            await runtime.SetPlanAsync(br.Id, planContent);
             await _gitService.ReturnToDevelopAsync(taskBranch);
         }
         catch (Exception ex)
@@ -564,17 +554,7 @@ public sealed class AgentOrchestrator
 
         var branchInfo = taskBranch != null ? $" on branch `{taskBranch}`" : "";
         await runtime.PostSystemStatusAsync(roomId,
-            $"📋 {agent.Name} has been assigned \"{assignment.Title}\" and is heading to breakout room \"{brName}\"{branchInfo}.");
-
-        // Fire-and-forget — breakout work runs asynchronously
-        _ = Task.Run(async () =>
-        {
-            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch); }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Breakout loop failed for {AgentName} in {BreakoutId}", agent.Name, br.Id);
-            }
-        });
+            $"📋 {agent.Name} has been assigned \"{assignment.Title}\"{branchInfo}. They will work from the main room while breakout rooms are disabled.");
     }
 
     // ── BREAKOUT ROOM ───────────────────────────────────────────

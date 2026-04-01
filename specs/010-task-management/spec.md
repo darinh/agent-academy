@@ -12,10 +12,10 @@ When agents work on tasks, they follow a branch-based local squash-merge workflo
 
 1. A task is created (manually or automatically, e.g., after onboarding)
 2. An agent claims the task and is automatically switched to a `task/{slug}-{suffix}` branch
-3. The agent works in isolated breakout rounds, making commits on the task branch
+3. The agent works from the main collaboration room on the task branch while automatic breakout creation is disabled
 4. When complete, the agent sets the task status to `InReview`
 5. Socrates (Reviewer) performs adversarial review on the task branch
-6. If changes are requested, the agent makes fixes in subsequent breakout rounds
+6. If changes are requested, the agent makes fixes on the same task branch
 7. On approval, Socrates or Aristotle issues `MERGE_TASK` to squash-merge into `develop`
 
 All of this is visible in the frontend: a task list below the Main Collaboration Room showing in-progress, incomplete, and completed work with rich metadata.
@@ -192,25 +192,25 @@ Author is always the named agent's git identity, never the fleet model.
 
 ---
 
-## 3.5. Branch-Per-Breakout Workflow
+## 3.5. Branch Workflow While Breakouts Are Disabled
 
-When a task is assigned to a breakout room, the platform creates a dedicated task branch to isolate breakout work from `develop`.
+Automatic breakout-room creation is currently disabled system-wide for task assignments. The platform still creates a dedicated task branch to isolate assigned work from `develop`, but the assignee remains in the main collaboration room.
 
 ### Branch Creation
 
 - Branch name: `task/{slug}-{suffix}` (six-character GUID suffix generated at branch creation)
-- Created automatically when a task is assigned to a breakout room
-- Agent work on breakout tasks goes on the task branch, not `develop`
+- Created automatically when a task is assigned
+- Agent work goes on the task branch, not `develop`
 
-### Round-Scoped Git Locking
+### Assignment Behavior
 
-- A round-scoped git lock serializes breakout rounds to prevent working-tree corruption
-- Only one breakout round can execute git operations at a time
-- The lock is acquired at round start and released at round end
+- Task assignment creates a `TaskItemEntity` with `BreakoutRoomId = null`
+- The orchestrator ensures or creates the linked `TaskEntity` and records the generated branch name
+- The system posts an assignment notice in the main room instead of moving the assignee into a breakout room
 
 ### Completion Flow
 
-1. Agent finishes work in breakout → the linked task status moves to `InReview` (not `Completed`)
+1. Agent finishes work on the task branch → the linked task status moves to `InReview` (not `Completed`)
 2. The existing reviewer cycle can still post review feedback in the collaboration room, but task approval remains an explicit command transition
 3. Reviewer approves via `APPROVE_TASK` → task status moves to `Approved`
 4. Reviewer (or Planner) executes `MERGE_TASK` command
@@ -220,7 +220,7 @@ When a task is assigned to a breakout room, the platform creates a dedicated tas
 
 ### Task Matching on Assignment
 
-When a breakout task is assigned, the orchestrator ensures a `TaskEntity` exists via a cascading lookup:
+When a task is assigned, the orchestrator ensures a `TaskEntity` exists via a cascading lookup:
 
 1. Exact title match (case-insensitive)
 2. Same room + Active/Queued status
@@ -228,9 +228,7 @@ When a breakout task is assigned, the orchestrator ensures a `TaskEntity` exists
 4. Sole unassigned task without a branch (single-candidate heuristic)
 5. Fallback: create a new `TaskEntity`
 
-The `BreakoutRoomEntity.TaskId` field links the breakout room to its `TaskEntity` for reliable lookup during completion.
-
-The breakout room plan is seeded during assignment from the linked task's `CurrentPlan`. When a task is created through `TaskAssignmentRequest`, callers may provide explicit markdown in `CurrentPlan`; otherwise the runtime stores the default planning checklist. If the orchestrator has to create a fallback task during breakout assignment, it derives a markdown plan from the assignment objective and acceptance criteria so the breakout Plan tab is populated immediately.
+The currently shipped task-assignment path does not create a `BreakoutRoomEntity`, so no breakout linkage is recorded during assignment.
 
 ### Known Gaps
 

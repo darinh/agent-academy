@@ -54,12 +54,12 @@ Acceptance Criteria:
 
 The orchestrator:
 1. Finds the named agent in the catalog
-2. Creates a breakout room (`BR: {title}`)
-3. Creates a task item linked to the breakout room
-4. Ensures or creates the linked `TaskEntity` for the breakout assignment
-5. Seeds the breakout room plan from the linked task's `CurrentPlan`; if no persisted plan exists, derives markdown from the assignment objective and acceptance criteria
-6. Posts a system status message to the main room
-7. Launches the breakout loop asynchronously
+2. Creates a task item for the assignment in the main collaboration room
+3. Ensures or creates the linked `TaskEntity` for the assignment
+4. Creates a dedicated task branch (`task/{slug}-{suffix}`) and records it on the task
+5. Posts a system status message to the main room
+
+Automatic breakout-room creation is currently disabled on the task-assignment path. Assigned agents remain in the main collaboration room until breakout reliability is restored.
 
 ### Breakout Room Workflow
 
