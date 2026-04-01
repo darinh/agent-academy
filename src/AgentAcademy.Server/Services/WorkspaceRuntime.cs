@@ -684,12 +684,18 @@ public sealed class WorkspaceRuntime
 
         if (activeWorkspace is not null)
         {
-            // Scope tasks to rooms in the active workspace
+            // Keep historical tasks visible after workspace-scoped rooms were introduced:
+            // legacy "main" tasks may retain a detached room row, and older task rooms may
+            // no longer exist even though the task record is still valid.
             var workspaceRoomIds = await _db.Rooms
-                .Where(r => r.WorkspacePath == activeWorkspace)
+                .Where(r => r.WorkspacePath == activeWorkspace ||
+                            (r.Id == _catalog.DefaultRoomId && r.WorkspacePath == null))
                 .Select(r => r.Id)
                 .ToListAsync();
-            query = query.Where(t => t.RoomId != null && workspaceRoomIds.Contains(t.RoomId));
+
+            query = query.Where(t => t.RoomId != null &&
+                                     (workspaceRoomIds.Contains(t.RoomId) ||
+                                      !_db.Rooms.Any(r => r.Id == t.RoomId)));
         }
 
         var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();

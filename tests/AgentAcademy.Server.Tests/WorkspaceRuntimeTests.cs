@@ -484,6 +484,109 @@ public class WorkspaceRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTasks_InActiveWorkspace_IncludesLegacyAndOrphanedHistory()
+    {
+        const string activeWorkspace = "/home/test/agent-academy";
+        const string inactiveWorkspace = "/home/test/other-project";
+
+        _db.Workspaces.AddRange(
+            new WorkspaceEntity
+            {
+                Path = activeWorkspace,
+                ProjectName = "Agent Academy",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            },
+            new WorkspaceEntity
+            {
+                Path = inactiveWorkspace,
+                ProjectName = "Other Project",
+                IsActive = false,
+                CreatedAt = DateTime.UtcNow
+            });
+
+        var now = DateTime.UtcNow;
+        _db.Rooms.AddRange(
+            new RoomEntity
+            {
+                Id = "agent-academy-main",
+                Name = "Main Collaboration Room",
+                Status = "Idle",
+                CurrentPhase = "Intake",
+                WorkspacePath = activeWorkspace,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            new RoomEntity
+            {
+                Id = "main",
+                Name = "Main Collaboration Room",
+                Status = "Idle",
+                CurrentPhase = "Intake",
+                WorkspacePath = null,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            new RoomEntity
+            {
+                Id = "other-project-main",
+                Name = "Other Project Main Room",
+                Status = "Idle",
+                CurrentPhase = "Intake",
+                WorkspacePath = inactiveWorkspace,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+
+        _db.Tasks.AddRange(
+            new TaskEntity
+            {
+                Id = "current-workspace-task",
+                Title = "Current workspace task",
+                Description = "Visible via workspace room",
+                SuccessCriteria = "Show up",
+                RoomId = "agent-academy-main",
+                CreatedAt = now.AddMinutes(-3),
+                UpdatedAt = now.AddMinutes(-3)
+            },
+            new TaskEntity
+            {
+                Id = "legacy-main-task",
+                Title = "Legacy main task",
+                Description = "Visible via detached legacy main room",
+                SuccessCriteria = "Show up",
+                RoomId = "main",
+                CreatedAt = now.AddMinutes(-2),
+                UpdatedAt = now.AddMinutes(-2)
+            },
+            new TaskEntity
+            {
+                Id = "other-workspace-task",
+                Title = "Other workspace task",
+                Description = "Must stay hidden",
+                SuccessCriteria = "Stay hidden",
+                RoomId = "other-project-main",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        await _db.SaveChangesAsync();
+
+        await _db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;");
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO tasks ("Id", "Title", "Description", "SuccessCriteria", "RoomId", "CreatedAt", "UpdatedAt")
+            VALUES ({"orphaned-task"}, {"Orphaned task"}, {"Visible even if its room row is gone"}, {"Show up"}, {"missing-room"}, {now.AddMinutes(-1)}, {now.AddMinutes(-1)})
+            """);
+        await _db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
+
+        var tasks = await _runtime.GetTasksAsync();
+
+        Assert.Collection(tasks,
+            task => Assert.Equal("orphaned-task", task.Id),
+            task => Assert.Equal("legacy-main-task", task.Id),
+            task => Assert.Equal("current-workspace-task", task.Id));
+    }
+
+    [Fact]
     public async Task GetTask_ReturnsSingleTask()
     {
         await _runtime.InitializeAsync();

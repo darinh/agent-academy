@@ -19,7 +19,7 @@ Types are ported from the v1 TypeScript definitions (`local-agent-host/shared/sr
 | `Models/Tasks.cs` | TaskSnapshot, TaskItem, TaskAssignmentRequest, TaskAssignmentResult | ✅ Implemented |
 | `Models/Activity.cs` | ActivityEvent, WorkspaceOverview | ✅ Implemented |
 | `Models/Evaluation.cs` | EvaluationResult, ArtifactRecord, MetricsEntry, MetricsSummary | ✅ Implemented |
-| `Models/System.cs` | HealthResult, HealthCheckResponse, ModelInfo, PermissionPolicy, DependencyStatus, UsageSummary, ErrorRecord, PlanContent | ✅ Implemented |
+| `Models/System.cs` | HealthResult, HealthCheckResponse, ModelInfo, PermissionPolicy, DependencyStatus, UsageSummary, ErrorRecord, PlanContent, CopilotStatusValues, AuthUserInfo, AuthStatusResult | ✅ Implemented |
 | `Models/Projects.cs` | ProjectScanResult, WorkspaceMeta | ✅ Implemented |
 | `Models/Notifications.cs` | NotificationType, NotificationMessage, InputRequest, UserResponse, ProviderConfigSchema, ConfigField | ✅ Implemented |
 
@@ -141,6 +141,17 @@ public record DependencyStatus(string Name, string Status, string? Detail = null
 public record UsageSummary(long TotalInputTokens, long TotalOutputTokens, decimal TotalCost, int RequestCount, List<string> Models);
 public record ErrorRecord(string AgentId, string RoomId, string ErrorType, string Message, bool Recoverable, DateTime Timestamp);
 public record PlanContent(string Content);
+
+// Auth status types (for /api/auth/status endpoint)
+public static class CopilotStatusValues
+{
+    public const string Operational = "operational";    // Auth + SDK ready
+    public const string Degraded = "degraded";          // Auth OK, SDK unavailable
+    public const string Unavailable = "unavailable";    // Auth not configured or failed
+}
+
+public record AuthUserInfo(string Login, string? Name, string? AvatarUrl);
+public record AuthStatusResult(bool AuthEnabled, bool Authenticated, string CopilotStatus, AuthUserInfo? User = null);
 ```
 
 ### Project Types
