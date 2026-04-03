@@ -21,6 +21,37 @@ export interface AuthStatus {
   user?: AuthUser | null;
 }
 
+export type HumanCommandName =
+  | "READ_FILE"
+  | "SEARCH_CODE"
+  | "LIST_ROOMS"
+  | "LIST_AGENTS"
+  | "LIST_TASKS"
+  | "SHOW_DIFF"
+  | "GIT_LOG"
+  | "SHOW_REVIEW_QUEUE"
+  | "ROOM_HISTORY"
+  | "RUN_BUILD"
+  | "RUN_TESTS";
+
+export type CommandExecutionStatus = "pending" | "completed" | "failed" | "denied";
+export type CommandArgScalar = string | number | boolean | null;
+
+export interface ExecuteCommandRequest {
+  command: HumanCommandName;
+  args?: Record<string, CommandArgScalar>;
+}
+
+export interface CommandExecutionResponse {
+  command: string;
+  status: CommandExecutionStatus;
+  result: unknown;
+  error: string | null;
+  correlationId: string;
+  timestamp: string;
+  executedBy: string;
+}
+
 // ── Core types ─────────────────────────────────────────────────────────
 
 export type CollaborationPhase =
@@ -404,6 +435,17 @@ export function transitionPhase(
     method: "POST",
     body: JSON.stringify({ roomId, targetPhase, reason: reason ?? "" }),
   });
+}
+
+export function executeCommand(req: ExecuteCommandRequest): Promise<CommandExecutionResponse> {
+  return request<CommandExecutionResponse>(apiUrl("/api/commands/execute"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function getCommandExecution(correlationId: string): Promise<CommandExecutionResponse> {
+  return request<CommandExecutionResponse>(apiUrl(`/api/commands/${correlationId}`));
 }
 
 export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {

@@ -244,11 +244,12 @@ interface AgentInfo {
 
 interface DmPanelProps {
   agents: AgentInfo[];
+  readOnly?: boolean;
 }
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export default function DmPanel({ agents }: DmPanelProps) {
+export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   const s = useLocalStyles();
 
   const [threads, setThreads] = useState<DmThreadSummary[]>([]);
@@ -320,14 +321,15 @@ export default function DmPanel({ agents }: DmPanelProps) {
   }, [refreshMessages]);
 
   const startNewThread = useCallback((agentId: string) => {
+    if (readOnly) return;
     setSelectedAgentId(agentId);
     setMessages([]);
     setShowAgentPicker(false);
     void refreshMessages(agentId);
-  }, [refreshMessages]);
+  }, [readOnly, refreshMessages]);
 
   const doSend = useCallback(async () => {
-    if (!selectedAgentId || !input.trim()) return;
+    if (readOnly || !selectedAgentId || !input.trim()) return;
     setSending(true);
     try {
       await sendDmToAgent(selectedAgentId, input.trim());
@@ -337,7 +339,7 @@ export default function DmPanel({ agents }: DmPanelProps) {
     } finally {
       setSending(false);
     }
-  }, [selectedAgentId, input, refreshMessages, refreshThreads]);
+  }, [readOnly, selectedAgentId, input, refreshMessages, refreshThreads]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -376,6 +378,7 @@ export default function DmPanel({ agents }: DmPanelProps) {
               size="small"
               onClick={() => setShowAgentPicker((v) => !v)}
               title="New conversation"
+              disabled={readOnly}
             />
             {showAgentPicker && (
               <div className={s.agentDropdown}>
@@ -504,14 +507,14 @@ export default function DmPanel({ agents }: DmPanelProps) {
                 onKeyDown={handleKeyDown}
                 resize="vertical"
                 rows={2}
-                disabled={sending}
+                disabled={sending || readOnly}
                 aria-label={`Message ${selectedAgent.name}`}
               />
               <Button
                 appearance="primary"
                 icon={sending ? <Spinner size="tiny" /> : <SendRegular />}
                 onClick={() => void doSend()}
-                disabled={!input.trim() || sending}
+                disabled={!input.trim() || sending || readOnly}
                 title="Send"
               />
             </div>

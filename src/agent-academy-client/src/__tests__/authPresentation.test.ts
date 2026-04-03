@@ -13,19 +13,20 @@ function authStatus(overrides: Partial<AuthStatus>): AuthStatus {
 }
 
 describe("auth presentation", () => {
-  it("renders the workspace only when auth is disabled or Copilot is operational", () => {
+  it("renders the workspace when auth is disabled or Copilot is at least partially available", () => {
     expect(shouldRenderWorkspace(authStatus({ authEnabled: false }))).toBe(true);
     expect(shouldRenderWorkspace(authStatus({ copilotStatus: "operational" }))).toBe(true);
-    expect(shouldRenderWorkspace(authStatus({ copilotStatus: "degraded" }))).toBe(false);
+    expect(shouldRenderWorkspace(authStatus({ copilotStatus: "degraded" }))).toBe(true);
     expect(shouldRenderWorkspace(authStatus({ copilotStatus: "unavailable" }))).toBe(false);
   });
 
   it("uses the required degraded-state headline", () => {
     const copy = getCopilotStatusCopy("degraded", { login: "athena", name: "Athena" });
 
-    expect(copy.title).toBe("Copilot SDK unavailable - agents cannot work");
+    expect(copy.title).toBe("Copilot needs reconnection");
     expect(copy.actionLabel).toBe("Reconnect GitHub");
     expect(copy.description).toContain("Athena GitHub session is still present");
+    expect(copy.description).toContain("limited mode");
   });
 
   it("keeps the unavailable state on the standard sign-in flow", () => {
@@ -39,7 +40,7 @@ describe("auth presentation", () => {
     expect(getCopilotStatusFacts("degraded")).toEqual([
       { label: "Browser identity", value: "Still connected", tone: "good" },
       { label: "Copilot runtime", value: "Paused until re-auth", tone: "warning" },
-      { label: "Workspace access", value: "Fail-closed", tone: "critical" },
+      { label: "Workspace access", value: "Limited mode", tone: "informative" },
     ]);
 
     expect(getCopilotStatusFacts("unavailable")).toEqual([

@@ -11,6 +11,7 @@ import {
 } from "@fluentui/react-components";
 import {
   ChatRegular,
+  CodeRegular,
   DocumentRegular,
   TimelineRegular,
   GridRegular,
@@ -35,7 +36,8 @@ import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
-import { shouldRenderWorkspace } from "./authPresentation";
+import CommandsPanel from "./CommandsPanel";
+import { getCopilotStatusCopy, shouldRenderWorkspace } from "./authPresentation";
 import {
   AUTH_STATUS_POLL_MS,
   clearAutoReauthAttempt,
@@ -295,10 +297,13 @@ function AppShell() {
     return <div className={s.root} />;
   }
 
-  // Only operational Copilot sessions can enter the workspace shell.
+  // Unavailable auth fail-closes to LoginPage; degraded stays visible in limited mode.
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
     return <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />;
   }
+
+  const workspaceLimited = auth.copilotStatus === "degraded";
+  const degradedCopy = workspaceLimited ? getCopilotStatusCopy("degraded", auth.user ?? null) : null;
 
   return (
     <div className={s.root}>
@@ -368,7 +373,10 @@ function AppShell() {
 
               return (<>
                 <div className={s.workspaceHeader}>
-                  <div>
+                  <div className={s.workspaceHeaderBody}>
+                    <div className={s.workspaceEyebrow}>
+                      {sessionAgent ? "Agent session" : selectedBreakout ? "Breakout review" : "Workspace shell"}
+                    </div>
                     <div className={s.workspaceTitle}>
                       {sessionAgent
                         ? `${sessionAgent.name}'s Sessions`
@@ -384,17 +392,10 @@ function AppShell() {
                           : roomSummary}
                     </div>
                   </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              <div className={s.workspaceHeaderActions}>
                 {room && !sessionAgent && (
                   <div className={s.phasePill}>
-                    <span
-                      style={{
-                        width: "8px",
-                        height: "8px",
-                        borderRadius: "999px",
-                        backgroundColor: "#6cb6ff",
-                      }}
-                    />
+                    <span className={s.phasePillDot} />
                     {room.currentPhase}
                   </div>
                 )}
@@ -403,6 +404,16 @@ function AppShell() {
                 )}
               </div>
             </div>
+
+            {workspaceLimited && degradedCopy && (
+              <div className={s.limitedModeBanner}>
+                <div className={s.limitedModeBadge}>{degradedCopy.eyebrow}</div>
+                <div className={s.limitedModeTitle}>{degradedCopy.title}</div>
+                <div className={s.limitedModeDescription}>
+                  {degradedCopy.description}
+                </div>
+              </div>
+            )}
 
             {sessionAgent ? (
               <section className={s.tabContent}>
@@ -437,6 +448,7 @@ function AppShell() {
             ) : (<>
               <div className={s.tabBar}>
                 <TabList
+                  className={s.tabList}
                   selectedValue={tab}
                   onTabSelect={(_, data) => setTab(data.value as string)}
                   size="small"
@@ -444,6 +456,7 @@ function AppShell() {
                   <Tab value="chat" icon={<ChatRegular />}>Conversation</Tab>
                   <Tab value="tasks" icon={<TaskListLtrRegular />}>Tasks</Tab>
                   <Tab value="plan" icon={<DocumentRegular />}>Plan</Tab>
+                  <Tab value="commands" icon={<CodeRegular />}>Commands</Tab>
                   <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
                   <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
                   <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
@@ -459,6 +472,7 @@ function AppShell() {
                     recoveryBanner={recoveryBanner}
                     connectionStatus={connectionStatus}
                     onSendMessage={handleSendMessage}
+                    readOnly={workspaceLimited}
                   />
                 )}
                 {tab === "tasks" && (
@@ -466,6 +480,9 @@ function AppShell() {
                 )}
                 {tab === "plan" && (
                   <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
+                )}
+                {tab === "commands" && (
+                  <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
                 )}
                 {tab === "timeline" && (
                   <TimelinePanel activity={activity} />
@@ -479,6 +496,7 @@ function AppShell() {
                     room={room}
                     onPhaseTransition={wrappedPhaseTransition}
                     transitioning={phaseTransitioning}
+                    readOnly={workspaceLimited}
                   />
                 )}
                 {tab === "directMessages" && (
@@ -488,6 +506,7 @@ function AppShell() {
                       name: a.name,
                       role: a.role,
                     }))}
+                    readOnly={workspaceLimited}
                   />
                 )}
               </section>

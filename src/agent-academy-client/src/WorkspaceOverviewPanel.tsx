@@ -102,6 +102,14 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     color: "#a1b3d2",
   },
+  emptyText: {
+    color: "#a1b3d2",
+  },
+  limitedModeNote: {
+    color: "#f3d4a8",
+    fontSize: "12px",
+    lineHeight: 1.6,
+  },
 });
 
 // ── Helpers ──
@@ -130,6 +138,7 @@ interface WorkspaceOverviewPanelProps {
   room: RoomSnapshot | null;
   onPhaseTransition: (phase: CollaborationPhase) => void;
   transitioning: boolean;
+  readOnly?: boolean;
 }
 
 export default function WorkspaceOverviewPanel({
@@ -137,6 +146,7 @@ export default function WorkspaceOverviewPanel({
   room,
   onPhaseTransition,
   transitioning,
+  readOnly = false,
 }: WorkspaceOverviewPanelProps) {
   const s = useLocalStyles();
 
@@ -165,7 +175,7 @@ export default function WorkspaceOverviewPanel({
                 size="small"
                 className={phase === room.currentPhase ? s.phaseButtonActive : s.phaseButton}
                 appearance={phase === room.currentPhase ? "primary" : "outline"}
-                disabled={phase === room.currentPhase || transitioning}
+                disabled={phase === room.currentPhase || transitioning || readOnly}
                 icon={<ArrowRightRegular />}
                 onClick={() => onPhaseTransition(phase)}
               >
@@ -173,6 +183,11 @@ export default function WorkspaceOverviewPanel({
               </Button>
             ))}
           </div>
+          {readOnly && (
+            <div className={s.limitedModeNote}>
+              Phase changes are paused while Copilot reconnects. Review the current plan and room state until full access returns.
+            </div>
+          )}
         </div>
       )}
 
@@ -181,7 +196,7 @@ export default function WorkspaceOverviewPanel({
         <div className={s.sectionTitle}>Room Status Summary</div>
         <Card className={s.card}>
           {overview.rooms.length === 0 ? (
-            <span style={{ color: "#a1b3d2" }}>No rooms yet</span>
+            <span className={s.emptyText}>No rooms yet</span>
           ) : (
             overview.rooms.map((r) => (
               <div key={r.id} className={s.roomRow}>

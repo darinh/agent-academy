@@ -247,12 +247,14 @@ public class AgentAcademyDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CorrelationId).IsRequired();
             entity.Property(e => e.AgentId).IsRequired();
+            entity.Property(e => e.Source);
             entity.Property(e => e.Command).IsRequired();
             entity.Property(e => e.ArgsJson).IsRequired().HasDefaultValue("{}");
             entity.Property(e => e.Status).IsRequired().HasDefaultValue("Success");
             entity.Property(e => e.Timestamp).IsRequired();
 
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_cmd_audits_agent");
+            entity.HasIndex(e => e.Source).HasDatabaseName("idx_cmd_audits_source");
             entity.HasIndex(e => e.Timestamp).HasDatabaseName("idx_cmd_audits_time");
             entity.HasIndex(e => e.CorrelationId).HasDatabaseName("idx_cmd_audits_correlation");
         });

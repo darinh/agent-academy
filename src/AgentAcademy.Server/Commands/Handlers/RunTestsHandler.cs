@@ -9,56 +9,60 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class RunTestsHandler : ICommandHandler
 {
+    private static readonly SemaphoreSlim TestLock = new(1, 1);
+
     public string CommandName => "RUN_TESTS";
 
     private static readonly TimeSpan TestTimeout = TimeSpan.FromMinutes(10);
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var projectRoot = FindProjectRoot();
-
-        // Parse optional scope
-        var scope = "all";
-        if (command.Args.TryGetValue("scope", out var scopeObj) && scopeObj is string s && !string.IsNullOrWhiteSpace(s))
-            scope = s.ToLowerInvariant();
-
-        string fileName;
-        string arguments;
-
-        switch (scope)
-        {
-            case "frontend":
-                fileName = "npm";
-                arguments = "test -- --run";
-                projectRoot = Path.Combine(projectRoot, "src", "agent-academy-client");
-                break;
-            case "backend":
-                fileName = "dotnet";
-                arguments = "test --nologo -v q";
-                break;
-            case var _ when scope.StartsWith("file:"):
-                var filter = scope[5..];
-                fileName = "dotnet";
-                arguments = $"test --nologo -v q --filter \"{filter}\"";
-                break;
-            default: // "all"
-                fileName = "dotnet";
-                arguments = "test --nologo -v q";
-                break;
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = projectRoot
-        };
+        await TestLock.WaitAsync();
 
         try
         {
+            var projectRoot = FindProjectRoot();
+
+            // Parse optional scope
+            var scope = "all";
+            if (command.Args.TryGetValue("scope", out var scopeObj) && scopeObj is string s && !string.IsNullOrWhiteSpace(s))
+                scope = s.ToLowerInvariant();
+
+            string fileName;
+            string arguments;
+
+            switch (scope)
+            {
+                case "frontend":
+                    fileName = "npm";
+                    arguments = "test -- --run";
+                    projectRoot = Path.Combine(projectRoot, "src", "agent-academy-client");
+                    break;
+                case "backend":
+                    fileName = "dotnet";
+                    arguments = "test --nologo -v q";
+                    break;
+                case var _ when scope.StartsWith("file:"):
+                    var filter = scope[5..];
+                    fileName = "dotnet";
+                    arguments = $"test --nologo -v q --filter \"{filter}\"";
+                    break;
+                default: // "all"
+                    fileName = "dotnet";
+                    arguments = "test --nologo -v q";
+                    break;
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                WorkingDirectory = projectRoot
+            };
+
             using var process = Process.Start(psi);
             if (process is null)
                 return command with { Status = CommandStatus.Error, Error = "Failed to start test process." };
@@ -92,6 +96,10 @@ public sealed class RunTestsHandler : ICommandHandler
         catch (Exception ex)
         {
             return command with { Status = CommandStatus.Error, Error = $"Test run failed: {ex.Message}" };
+        }
+        finally
+        {
+            TestLock.Release();
         }
     }
 

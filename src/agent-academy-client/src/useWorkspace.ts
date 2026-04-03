@@ -40,7 +40,7 @@ const RECOVERY_BANNER_DISMISS_MS = 4_000;
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
 
-const VALID_TABS = new Set(["chat", "tasks", "plan", "timeline", "dashboard", "overview", "directMessages"]);
+const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages"]);
 
 function loadTab(): string {
   try {

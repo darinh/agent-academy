@@ -301,7 +301,6 @@ export default function LoginPage({
   const copy = getCopilotStatusCopy(copilotStatus, user);
   const facts = getCopilotStatusFacts(copilotStatus);
   const userName = user?.name ?? user?.login;
-  const degraded = copilotStatus === "degraded";
 
   return (
     <div className={s.root}>
@@ -328,8 +327,8 @@ export default function LoginPage({
           </div>
         </section>
 
-        <section className={`${s.panel} ${degraded ? s.panelDegraded : ""}`}>
-          <div className={`${s.statusPill} ${degraded ? s.statusPillWarning : ""}`}>{copy.eyebrow}</div>
+        <section className={s.panel}>
+          <div className={s.statusPill}>{copy.eyebrow}</div>
 
           {userName && (
             <div className={s.identity}>
@@ -344,15 +343,11 @@ export default function LoginPage({
           <div className={s.detailList}>
             <div className={s.detailRow}>
               <span className={s.detailDot} />
-              <span>Workspace access stays fail-closed until Copilot is fully operational.</span>
+              <span>Sign in to restore live rooms, task branches, and the full workspace shell.</span>
             </div>
             <div className={s.detailRow}>
               <span className={s.detailDot} />
-              <span>
-                {degraded
-                  ? "Your browser identity is still available, but agent execution is paused until you reconnect GitHub."
-                  : "Signing in restores room access, active workspace state, and the normal agent workflow."}
-              </span>
+              <span>Authentication restores room access, active workspace state, and the normal agent workflow.</span>
             </div>
           </div>
 

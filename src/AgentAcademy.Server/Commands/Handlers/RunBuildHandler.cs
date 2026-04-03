@@ -8,26 +8,30 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class RunBuildHandler : ICommandHandler
 {
+    private static readonly SemaphoreSlim BuildLock = new(1, 1);
+
     public string CommandName => "RUN_BUILD";
 
     private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(10);
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var projectRoot = FindProjectRoot();
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            Arguments = "build --nologo -v q",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = projectRoot
-        };
+        await BuildLock.WaitAsync();
 
         try
         {
+            var projectRoot = FindProjectRoot();
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "build --nologo -v q",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                WorkingDirectory = projectRoot
+            };
+
             using var process = Process.Start(psi);
             if (process is null)
                 return command with { Status = CommandStatus.Error, Error = "Failed to start build process." };
@@ -61,6 +65,10 @@ public sealed class RunBuildHandler : ICommandHandler
         catch (Exception ex)
         {
             return command with { Status = CommandStatus.Error, Error = $"Build failed: {ex.Message}" };
+        }
+        finally
+        {
+            BuildLock.Release();
         }
     }
 

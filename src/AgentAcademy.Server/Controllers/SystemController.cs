@@ -56,6 +56,8 @@ public class SystemController : ControllerBase
                 "PUT  /api/rooms/:roomId/plan",
                 "DELETE /api/rooms/:roomId/plan",
                 "POST /api/tasks",
+                "POST /api/commands/execute",
+                "GET  /api/commands/:correlationId",
                 "POST /api/rooms/:roomId/messages",
                 "POST /api/rooms/:roomId/human",
                 "POST /api/rooms/:roomId/phase",

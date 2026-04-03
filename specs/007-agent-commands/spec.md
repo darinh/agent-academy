@@ -269,6 +269,178 @@ PROPOSE_AGENT_UPDATE:
 - Rationale recorded
 - Rollback capability via `REVERT_AGENT_UPDATE: <change-id>`
 
+## Human Command Execution API
+
+### Purpose
+Expose a subset of platform commands to authenticated human users via HTTP REST API. Enables the frontend "Commands tab" to execute read operations, builds, and tests without requiring an agent intermediary.
+
+### Implementation Status
+**IMPLEMENTED** — Human-triggered command execution via `POST /api/commands/execute` and async polling via `GET /api/commands/{correlationId}` (commit `TBD`, 2026-04-02).
+
+### Architecture
+
+#### Separation from Agent Pipeline
+- **Agent commands**: Flow through `CommandPipeline` → text parser → `CommandAuthorizer` → handlers
+- **Human commands**: HTTP request → `CommandController` → handlers directly (bypass parser/authorizer)
+
+**Rationale**: Agent pipeline is designed for text-based agent responses. Human commands are already JSON. Controller-level allowlist is simpler than extending `CommandAuthorizer` with user identity concepts.
+
+#### Command Allowlist (Week 1)
+
+| Tier | Commands | Risk | Human Access |
+|------|----------|------|--------------|
+| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
+| **Side effects** | `RUN_BUILD`, `RUN_TESTS` | Compute cost, long-running | ✅ Allowed |
+| **Dangerous** | `SHELL`, `RESTART_SERVER`, `MERGE_TASK`, `RECALL_AGENT` | State mutation, git ops | ❌ Denied |
+| **Agent-only** | `REMEMBER`, `RECALL`, `FORGET`, `DM`, `MOVE_TO_ROOM`, `CLAIM_TASK`, `SET_PLAN` | Identity mismatch | ❌ Denied |
+
+**Week 1 scope: 11 commands.** All read-only + build/test.
+
+### API Contract
+
+#### Execute Command
+```http
+POST /api/commands/execute
+Authorization: Cookie (authenticated session)
+Content-Type: application/json
+
+{
+  "command": "READ_FILE",
+  "args": {
+    "path": "src/Program.cs",
+    "startLine": 10,
+    "endLine": 50
+  }
+}
+```
+
+**Response (synchronous commands)**:
+```json
+{
+  "command": "READ_FILE",
+  "status": "completed",
+  "result": {
+    "content": "...",
+    "lines": 40
+  },
+  "error": null,
+  "correlationId": "cmd-a1b2c3d4",
+  "timestamp": "2026-04-02T01:00:00Z",
+  "executedBy": "human"
+}
+```
+
+**Response (async commands: RUN_BUILD, RUN_TESTS)**:
+```json
+{
+  "command": "RUN_BUILD",
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "correlationId": "cmd-e5f6g7h8",
+  "timestamp": "2026-04-02T01:00:00Z",
+  "executedBy": "human"
+}
+```
+*Status: `202 Accepted`. Command executes in background.*
+
+#### Poll Command Status
+```http
+GET /api/commands/{correlationId}
+Authorization: Cookie (authenticated session)
+```
+
+**Response**:
+```json
+{
+  "command": "RUN_BUILD",
+  "status": "completed",
+  "result": {
+    "exitCode": 0,
+    "output": "Build succeeded.",
+    "success": true
+  },
+  "error": null,
+  "correlationId": "cmd-e5f6g7h8",
+  "timestamp": "2026-04-02T01:00:15Z",
+  "executedBy": "human"
+}
+```
+
+**Status values**: `"pending"`, `"completed"`, `"failed"`, `"denied"`
+
+### Error Responses
+
+| Status | Condition | Response Body |
+|--------|-----------|---------------|
+| `401 Unauthorized` | User not authenticated | `{ "code": "not_authenticated", "message": "..." }` |
+| `403 Forbidden` | Command not in allowlist | `{ "code": "command_denied", "message": "..." }` |
+| `400 Bad Request` | Missing/invalid payload | `{ "code": "invalid_command_request", "message": "..." }` |
+| `404 Not Found` | CorrelationId not found in polling | `{ "code": "command_not_found", "message": "..." }` |
+
+### Implementation Details
+
+#### CommandController.cs
+**File**: `src/AgentAcademy.Server/Controllers/CommandController.cs`
+
+**Handler resolution**: Injects `IEnumerable<ICommandHandler>` and builds a dictionary keyed by `CommandName`, same pattern as `CommandPipeline` (line 46).
+
+**Context creation**: Creates a synthetic `CommandContext` with:
+- `AgentId`: `"human"`
+- `AgentName`: `"Human"`
+- `AgentRole`: `"Human"`
+- `RoomId`: `null` (human commands have no room context)
+- Uses a fresh service scope per request via `IServiceScopeFactory`
+
+**Allowlist enforcement**: Static `HashSet<string>` (lines 25-38) checked before handler lookup. Non-allowlisted commands return `403 Forbidden`.
+
+**Argument normalization**: Converts `Dictionary<string, JsonElement>` to `Dictionary<string, object?>` (lines 303-326). Only scalar JSON values allowed (string, number, boolean, null). Arrays/objects rejected to prevent handlers from misinterpreting complex types as strings.
+
+**Async command handling**:
+- Commands in `AsyncCommands` set (`RUN_BUILD`, `RUN_TESTS`) return `202 Accepted` immediately
+- Creates a "Pending" audit row with the correlationId
+- Fires handler on background thread via `Task.Run`
+- Handler writes final result to same audit row when complete
+- Polling endpoint reads from `CommandAuditEntity` by correlationId
+
+**Concurrency control**: `RunBuildHandler` and `RunTestsHandler` use static `SemaphoreSlim(1,1)` to serialize execution. Prevents human and agent builds from conflicting.
+
+#### Audit Trail
+**Field**: `CommandAuditEntity.Source` (nullable string, line 13 of `CommandAuditEntity.cs`)
+
+- Agent-invoked commands: `Source = null` (or could be set to `"agent"`)
+- Human-invoked commands: `Source = "human-ui"`
+
+All human commands audit with:
+- `AgentId = "human"`
+- `Source = "human-ui"`
+- `RoomId = null`
+
+**Database migration**: `20260402012749_AddCommandAuditSource.cs` adds `Source` column + index for efficient polling queries.
+
+#### SystemController.cs
+**Lines modified**: Advertises new command endpoints in system metadata.
+
+### Handler Modifications
+**Concurrency control added to build/test handlers.** Two handlers were modified to prevent concurrent execution:
+
+- **RunBuildHandler.cs**: Added static `SemaphoreSlim BuildLock = new(1, 1)` (line 13). `WaitAsync` at line 40, `Release()` in finally block at line 71. Prevents overlapping builds from human UI and agent commands.
+- **RunTestsHandler.cs**: Added static `SemaphoreSlim TestLock = new(1, 1)` (line 13). Same pattern as build handler. Prevents overlapping test runs.
+
+All other handlers (26 of 28) require no modifications. They accept `CommandContext` and return `CommandEnvelope` identically for human and agent invocation.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/RunBuildHandler.cs` (lines 13, 40, 71), `src/AgentAcademy.Server/Commands/Handlers/RunTestsHandler.cs` (lines 13, 40, 71)
+
+### Known Limitations
+
+1. **No SignalR streaming**: Human commands do not stream live output. `RUN_BUILD` and `RUN_TESTS` require polling to see results. Acceptable for Week 1, but UX will feel sluggish for long-running commands.
+
+2. **No command metadata endpoint**: Frontend must hardcode which commands are synchronous vs asynchronous, and what arguments each command accepts. Future enhancement: `GET /api/commands/metadata` to return schema.
+
+3. **No cancellation**: Once an async command starts, there is no API to cancel it. Build/test runs execute to completion even if user navigates away.
+
+4. **Audit query performance**: Polling endpoint queries `command_audits` by `(CorrelationId, AgentId="human", Source="human-ui")`. Index exists, but polling every N seconds from multiple frontend tabs could generate query load. Consider adding an in-memory cache for pending commands.
+
 ## Private Communication (DM)
 
 ### Command
@@ -432,3 +604,4 @@ Discord Server
 | 2026-03-29 | Implemented ASK_HUMAN command: Discord agent-to-human question bridge with category-per-workspace, channel-per-agent, thread-per-question architecture. Persistent reply routing via WorkspaceRuntime. | ask-human-command | (this change) |
 | 2026-03-30 | Implemented DM command (Phase 1D), replacing ASK_HUMAN. Agent-to-agent and agent-to-human private messaging. MessageEntity.RecipientId + DirectMessage kind. Orchestrator HandleDirectMessage with targeted rounds. System notification in recipient's room. Frontend Telegram-style DM panel. DM API endpoints. 18 tests. | dm-command | (this change) |
 | 2026-03-30 | Implemented Phase 1C (RUN_BUILD, RUN_TESTS, SHOW_DIFF, GIT_LOG), ROOM_HISTORY (1D), MOVE_TO_ROOM (1E). All agent timeouts removed — no per-turn LLM timeout, no breakout round cap, no fix round cap. Breakout rooms are open-ended (agents work until WORK REPORT: COMPLETE). DMs delivered to agents in breakout rooms. Task workspace scoping fix. | commands-and-breakout-redesign | (this change) |
+| 2026-04-02 | Added Human Command Execution API: `POST /api/commands/execute` and `GET /api/commands/{correlationId}` for Week 1 allowlist (11 commands: all read-only + RUN_BUILD/RUN_TESTS). CommandController bypasses agent pipeline, uses controller-level allowlist + cookie auth. Async commands return 202 + polling. Added CommandAuditEntity.Source field. Build/test handlers serialized via SemaphoreSlim. | implement-frontend-command-execution-api | (this change) |

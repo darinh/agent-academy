@@ -4,10 +4,15 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **007-agent-commands**: Human Command Execution API — `POST /api/commands/execute` and `GET /api/commands/{correlationId}` endpoints for Week 1 frontend Commands tab. 11 allowlisted commands (all read-only + RUN_BUILD/RUN_TESTS). CommandController bypasses agent pipeline, uses controller-level allowlist and cookie auth. Async commands (build/test) return 202 Accepted with polling. Added `CommandAuditEntity.Source` field to distinguish human-ui from agent invocations. Build/test handlers serialized via SemaphoreSlim.
+- **300-frontend-ui**: Commands tab — added `CommandsPanel.tsx` to the workspace shell for the 11-command Week 1 human allowlist. The client hardcodes command metadata, submits scalar args only, polls async build/test executions every 2.5 seconds, keeps the last 10 runs in a result rail, and leaves the tab readable-but-disabled during degraded Copilot sessions.
+
 ### Changed
 - **010-task-management**: Removed unimplemented GitHub PR integration content from spec. Sections describing PR creation, review via GitHub API, and remote push workflows marked as "Planned" or rewritten to describe actual local branch workflow with `MERGE_TASK`. PR metadata fields remain in task model for future use.
 
 ### Fixed
+- **011-state-recovery / 300-frontend-ui**: Restored degraded-session limited mode in the frontend render contract. `copilotStatus = degraded` now keeps the workspace shell visible with an in-shell reconnect banner while chat sends, DM sends, and phase transitions stay paused; `LoginPage` is reserved for the fully unavailable sign-in path.
 - **011-state-recovery / 300-frontend-ui**: Frontend auth recovery is now automatic. The app polls `/api/auth/status` every 30 seconds, redirects to `/api/auth/login` on `operational` → `degraded` transitions when the browser session still exists, debounces the redirect once per tab, and suppresses auto re-auth after explicit logout.
 - **003-agent-system / 011-state-recovery**: Added proactive SDK auth-expiry detection. A hosted `/user` probe now runs every 5 minutes, treats only HTTP `401/403` as definitive auth failure, leaves transient network/server issues alone, and sends Discord-backed notifications only when auth transitions between `operational` and `degraded`.
 - **006-orchestrator / 010-task-management**: Disabled automatic breakout-room creation during task assignment. Assignments now create the task item and task branch, post the status notice in the main room, and keep the assignee in the main collaboration room until breakout reliability is restored.

@@ -11,11 +11,11 @@ export interface CopilotStatusCopy {
 export interface CopilotStatusFact {
   label: string;
   value: string;
-  tone: "good" | "warning" | "critical";
+  tone: "good" | "warning" | "critical" | "informative";
 }
 
 export function shouldRenderWorkspace(auth: AuthStatus): boolean {
-  return !auth.authEnabled || auth.copilotStatus === "operational";
+  return !auth.authEnabled || auth.copilotStatus === "operational" || auth.copilotStatus === "degraded";
 }
 
 export function getCopilotStatusCopy(
@@ -28,11 +28,11 @@ export function getCopilotStatusCopy(
     case "degraded":
       return {
         eyebrow: "Copilot degraded",
-        title: "Copilot SDK unavailable - agents cannot work",
+        title: "Copilot needs reconnection",
         description:
-          `${userLabel} GitHub session is still present in this browser, but Copilot access has dropped out. Reconnect GitHub to restore agent execution.`,
+          `${userLabel} GitHub session is still present in this browser, but Copilot access has dropped out. Review the workspace in limited mode while you reconnect GitHub.`,
         actionLabel: "Reconnect GitHub",
-        supportingNote: "Browser identity is intact; only the agent runtime is paused.",
+        supportingNote: "Browser identity is intact; sending new work stays paused until Copilot is healthy again.",
       };
     case "unavailable":
       return {
@@ -61,7 +61,7 @@ export function getCopilotStatusFacts(copilotStatus: CopilotStatus): CopilotStat
       return [
         { label: "Browser identity", value: "Still connected", tone: "good" },
         { label: "Copilot runtime", value: "Paused until re-auth", tone: "warning" },
-        { label: "Workspace access", value: "Fail-closed", tone: "critical" },
+        { label: "Workspace access", value: "Limited mode", tone: "informative" },
       ];
     case "unavailable":
       return [

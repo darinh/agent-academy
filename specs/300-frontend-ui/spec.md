@@ -27,11 +27,12 @@ App.tsx (FluentProvider + AppShell)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (chat, tasks, plan, timeline, dashboard, overview)
+        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview)
         └── Tab content panels
             ├── ChatPanel.tsx (with SignalR connection status bar)
             ├── TaskListPanel.tsx
             ├── PlanPanel.tsx
+            ├── CommandsPanel.tsx
             ├── TimelinePanel.tsx
             ├── DashboardPanel.tsx
             └── WorkspaceOverviewPanel.tsx
@@ -75,13 +76,13 @@ On mount, `App.tsx` also calls `getAuthStatus()`:
 - If `authEnabled = false` → the app skips login gating
 - If `copilotStatus = "operational"` → the workspace can render normally
 - If `copilotStatus = "unavailable"` → `LoginPage` renders the standard GitHub sign-in prompt
-- If `copilotStatus = "degraded"` → `LoginPage` renders a re-authentication prompt that explains the browser session still exists but Copilot access needs to be refreshed
-- `LoginPage` renders a dedicated status panel summarizing **Browser identity**, **Copilot runtime**, and **Workspace access** so degraded vs unavailable states are visually distinct without reading backend terms
+- If `copilotStatus = "degraded"` → the workspace shell stays visible in **limited mode** so rooms, plans, tasks, and prior output remain readable while new Copilot-driven actions stay paused
+- A limited-mode banner appears inside the workspace shell with reconnect guidance, while the dedicated `LoginPage` remains reserved for the fully unavailable sign-in path
 - After the initial load, the client polls `/api/auth/status` every 30 seconds while the tab is open
 - If the client sees `copilotStatus` transition from `operational` to `degraded` while `user` is still populated, it immediately navigates to `/api/auth/login` so the existing OAuth flow can refresh the SDK token without a manual click
 - Automatic re-authentication is debounced once per browser tab via `sessionStorage` and is suppressed after explicit logout so the sign-out flow remains stable
 
-The contract is fail-closed: the backend sets `authenticated = false` whenever `copilotStatus != "operational"`, so the workspace shell never renders while Copilot is degraded.
+The backend still keeps `authenticated = false` whenever `copilotStatus != "operational"`, but frontend rendering is driven by `copilotStatus`: `unavailable` fail-closes to `LoginPage`, while `degraded` stays in-shell in read-only limited mode.
 
 ## Project Selection / Onboarding Flow
 
@@ -116,7 +117,9 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/workspaces/scan` | POST | Scan a directory |
 | `/api/workspaces/onboard` | POST | Onboard a project |
 | `/api/overview` | GET | Full workspace overview |
-| `/api/auth/status` | GET | Return `authEnabled`, fail-closed `authenticated`, and `copilotStatus` (`operational` / `degraded` / `unavailable`) |
+| `/api/auth/status` | GET | Return `authEnabled`, fail-closed `authenticated`, and `copilotStatus` (`operational` / `degraded` / `unavailable`) used by the client render contract |
+| `/api/commands/execute` | POST | Execute a Week 1 allowlisted human command |
+| `/api/commands/{correlationId}` | GET | Poll async human command status/results |
 | `/api/filesystem/browse` | GET | Browse filesystem |
 | `/api/rooms/{id}/human` | POST | Send human message |
 | `/api/rooms/{id}/phase` | POST | Transition phase |
@@ -126,6 +129,29 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 ```json
 { "current": "/path", "parent": "/parent", "entries": [{ "name": "dir", "path": "/path/dir", "isDirectory": true }] }
 ```
+
+## Human Command UI
+
+### Commands Tab (`CommandsPanel.tsx`)
+
+The workspace shell includes a dedicated **Commands** tab for the human Week 1 command surface.
+
+- The command deck is **hardcoded** in the client to the 11-command allowlist documented in `007-agent-commands/spec.md`
+- Commands are grouped visually by category: workspace, code, git, and operations
+- The panel only submits **scalar** arguments (strings/numbers serialized as strings) to match `CommandController.NormalizeArgs()`
+- `RUN_BUILD` and `RUN_TESTS` are treated as **async** commands and polled via `GET /api/commands/{correlationId}` every 2.5 seconds while status is `pending`
+- The result rail keeps the latest 10 command runs visible, with the newest entry expanded as the primary detail surface
+- Result rendering is generic by design: scalar fields become summary chips, known text payloads (`content`, `output`, `diff`) render in a monospace preview block, and known arrays (`matches`, `tasks`, `rooms`, `agents`, `commits`, `messages`) render as compact record lists
+
+### Degraded Mode Behavior
+
+When `copilotStatus = "degraded"`:
+
+- The Commands tab remains visible inside the workspace shell
+- Existing command history remains readable
+- New command execution is disabled and the panel surfaces a limited-mode warning instead of pretending commands are available
+
+This mirrors the broader frontend rule that degraded mode is still a readable workspace, not a hidden or redirected one.
 
 ## Theme / Role Colors
 
@@ -187,3 +213,4 @@ Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear co
 - SSE activity stream integration
 - Notification setup wizard (component exists, not yet wired)
 - TaskStatePanel integration
+- Human command metadata endpoint so the Commands tab can stop hardcoding command schemas
