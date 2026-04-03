@@ -12,7 +12,7 @@ The goal of Agent Academy is to build the best possible multi-agent collaboratio
 - **Improving the system** by adding commands, fixing bugs (e.g., broken breakout rooms), and tuning agent definitions based on direct observation of how agents struggle
 - **Closing the feedback loop** — agents can articulate what they need, and the consultant can deliver it without a human middleman
 
-## Status: Planned
+## Status: Phase 1 & 2 Complete
 
 ## Problem Statement
 
