@@ -10,6 +10,7 @@ public class CommandAuditEntity
     public string Id { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
     public string AgentId { get; set; } = string.Empty;
+    public string? Source { get; set; }
     public string Command { get; set; } = string.Empty;
     public string ArgsJson { get; set; } = "{}";
     public string Status { get; set; } = "Success";
