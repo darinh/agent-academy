@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Config;
@@ -38,74 +39,119 @@ var gitHubClientId = builder.Configuration["GitHub:ClientId"] ?? "";
 var gitHubClientSecret = builder.Configuration["GitHub:ClientSecret"] ?? "";
 var gitHubAuthEnabled = !string.IsNullOrEmpty(gitHubClientId) && !string.IsNullOrEmpty(gitHubClientSecret);
 
-if (gitHubAuthEnabled)
+// Consultant API — opt-in: only enabled when a shared secret is configured
+var consultantSecret = builder.Configuration["ConsultantApi:SharedSecret"] ?? "";
+var consultantAuthEnabled = !string.IsNullOrEmpty(consultantSecret);
+
+var anyAuthEnabled = gitHubAuthEnabled || consultantAuthEnabled;
+
+if (anyAuthEnabled)
 {
-    builder.Services.AddAuthentication(options =>
+    var authBuilder = builder.Services.AddAuthentication(options =>
     {
-        options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = "GitHub";
-    })
-    .AddCookie(options =>
-    {
-        options.LoginPath = "/api/auth/login";
-        options.LogoutPath = "/api/auth/logout";
-        options.Cookie.Name = "AgentAcademy.Auth";
-        options.Cookie.HttpOnly = true;
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.ExpireTimeSpan = TimeSpan.FromDays(7);
-        options.SlidingExpiration = true;
-
-        // Return 401 for API calls instead of redirecting
-        options.Events.OnRedirectToLogin = context =>
+        if (gitHubAuthEnabled && consultantAuthEnabled)
         {
-            context.Response.StatusCode = 401;
-            return Task.CompletedTask;
-        };
-    })
-    .AddOAuth("GitHub", options =>
-    {
-        options.ClientId = gitHubClientId;
-        options.ClientSecret = gitHubClientSecret;
-        options.CallbackPath = builder.Configuration["GitHub:CallbackPath"] ?? "/api/auth/callback";
-        options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
-        options.TokenEndpoint = "https://github.com/login/oauth/access_token";
-        options.UserInformationEndpoint = "https://api.github.com/user";
-        options.Scope.Add("read:user");
-        options.Scope.Add("user:email");
-        options.SaveTokens = true;
-        options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-
-        options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
-        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "login");
-        options.ClaimActions.MapJsonKey("urn:github:name", "name");
-        options.ClaimActions.MapJsonKey("urn:github:avatar", "avatar_url");
-
-        options.Events = new OAuthEvents
+            // PolicyScheme selects the right handler per-request
+            options.DefaultScheme = "MultiAuth";
+            options.DefaultChallengeScheme = "GitHub";
+        }
+        else if (gitHubAuthEnabled)
         {
-            OnCreatingTicket = async context =>
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
-
-                using var response = await context.Backchannel.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.HttpContext.RequestAborted);
-                response.EnsureSuccessStatusCode();
-
-                var user = await response.Content.ReadFromJsonAsync<JsonElement>();
-                context.RunClaimActions(user);
-
-                // Capture the OAuth token for the Copilot SDK.
-                // This makes the token available to CopilotExecutor
-                // during background orchestration (where HttpContext is null).
-                if (!string.IsNullOrEmpty(context.AccessToken))
-                {
-                    var tokenProvider = context.HttpContext.RequestServices
-                        .GetRequiredService<CopilotTokenProvider>();
-                    tokenProvider.SetToken(context.AccessToken);
-                }
-            }
-        };
+            options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = "GitHub";
+        }
+        else
+        {
+            options.DefaultScheme = ConsultantKeyAuthHandler.SchemeName;
+        }
     });
+
+    if (gitHubAuthEnabled)
+    {
+        authBuilder
+            .AddCookie(options =>
+            {
+                options.LoginPath = "/api/auth/login";
+                options.LogoutPath = "/api/auth/logout";
+                options.Cookie.Name = "AgentAcademy.Auth";
+                options.Cookie.HttpOnly = true;
+                options.Cookie.SameSite = SameSiteMode.Lax;
+                options.ExpireTimeSpan = TimeSpan.FromDays(7);
+                options.SlidingExpiration = true;
+
+                // Return 401 for API calls instead of redirecting
+                options.Events.OnRedirectToLogin = context =>
+                {
+                    context.Response.StatusCode = 401;
+                    return Task.CompletedTask;
+                };
+            })
+            .AddOAuth("GitHub", options =>
+            {
+                options.ClientId = gitHubClientId;
+                options.ClientSecret = gitHubClientSecret;
+                options.CallbackPath = builder.Configuration["GitHub:CallbackPath"] ?? "/api/auth/callback";
+                options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
+                options.TokenEndpoint = "https://github.com/login/oauth/access_token";
+                options.UserInformationEndpoint = "https://api.github.com/user";
+                options.Scope.Add("read:user");
+                options.Scope.Add("user:email");
+                options.SaveTokens = true;
+                options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+
+                options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
+                options.ClaimActions.MapJsonKey(ClaimTypes.Name, "login");
+                options.ClaimActions.MapJsonKey("urn:github:name", "name");
+                options.ClaimActions.MapJsonKey("urn:github:avatar", "avatar_url");
+
+                options.Events = new OAuthEvents
+                {
+                    OnCreatingTicket = async context =>
+                    {
+                        using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+                        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
+
+                        using var response = await context.Backchannel.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.HttpContext.RequestAborted);
+                        response.EnsureSuccessStatusCode();
+
+                        var user = await response.Content.ReadFromJsonAsync<JsonElement>();
+                        context.RunClaimActions(user);
+
+                        // Capture the OAuth token for the Copilot SDK.
+                        // This makes the token available to CopilotExecutor
+                        // during background orchestration (where HttpContext is null).
+                        if (!string.IsNullOrEmpty(context.AccessToken))
+                        {
+                            var tokenProvider = context.HttpContext.RequestServices
+                                .GetRequiredService<CopilotTokenProvider>();
+                            tokenProvider.SetToken(context.AccessToken);
+                        }
+                    }
+                };
+            });
+    }
+
+    if (consultantAuthEnabled)
+    {
+        authBuilder.AddScheme<AuthenticationSchemeOptions, ConsultantKeyAuthHandler>(
+            ConsultantKeyAuthHandler.SchemeName, null);
+    }
+
+    // When both schemes are active, a PolicyScheme routes to the right one per-request
+    if (gitHubAuthEnabled && consultantAuthEnabled)
+    {
+        authBuilder.AddPolicyScheme("MultiAuth", "Multi-Auth Policy", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+            {
+                var header = context.Request.Headers[ConsultantKeyAuthHandler.HeaderName].ToString();
+                if (!string.IsNullOrEmpty(header))
+                    return ConsultantKeyAuthHandler.SchemeName;
+                return CookieAuthenticationDefaults.AuthenticationScheme;
+            };
+        });
+    }
 
     builder.Services.AddAuthorization(options =>
     {
@@ -322,11 +368,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors();
 
-if (gitHubAuthEnabled)
+if (anyAuthEnabled)
 {
     app.UseAuthentication();
     app.UseAuthorization();
+}
 
+if (gitHubAuthEnabled)
+{
     // Restore the Copilot SDK token from the auth cookie on the first
     // authenticated request after a server restart. Without this, the
     // user would need to log out and back in every time the server restarts.

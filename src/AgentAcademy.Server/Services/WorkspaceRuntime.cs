@@ -294,6 +294,56 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Returns messages in a room with cursor-based pagination.
+    /// Only returns non-DM messages from the active conversation session.
+    /// </summary>
+    public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
+        string roomId, string? afterMessageId = null, int limit = 50)
+    {
+        limit = Math.Clamp(limit, 1, 200);
+
+        var room = await _db.Rooms.FindAsync(roomId);
+        if (room is null)
+            throw new InvalidOperationException($"Room '{roomId}' not found.");
+
+        var activeSession = await _db.ConversationSessions
+            .Where(s => s.RoomId == roomId && s.Status == "Active")
+            .FirstOrDefaultAsync();
+        var activeSessionId = activeSession?.Id;
+
+        IQueryable<Data.Entities.MessageEntity> query = _db.Messages
+            .Where(m => m.RoomId == roomId && m.RecipientId == null
+                && (activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null));
+
+        if (!string.IsNullOrEmpty(afterMessageId))
+        {
+            var cursor = await _db.Messages
+                .Where(m => m.Id == afterMessageId && m.RoomId == roomId)
+                .Select(m => new { m.SentAt, m.Id })
+                .FirstOrDefaultAsync();
+
+            if (cursor is not null)
+            {
+                query = query.Where(m =>
+                    m.SentAt > cursor.SentAt ||
+                    (m.SentAt == cursor.SentAt && string.Compare(m.Id, cursor.Id) > 0));
+            }
+        }
+
+        var messages = await query
+            .OrderBy(m => m.SentAt)
+            .ThenBy(m => m.Id)
+            .Take(limit + 1)
+            .ToListAsync();
+
+        var hasMore = messages.Count > limit;
+        if (hasMore)
+            messages = messages.Take(limit).ToList();
+
+        return (messages.Select(BuildChatEnvelope).ToList(), hasMore);
+    }
+
+    /// <summary>
     /// Renames a room and publishes a RoomRenamed activity event.
     /// Returns the updated snapshot, or null if the room doesn't exist.
     /// </summary>

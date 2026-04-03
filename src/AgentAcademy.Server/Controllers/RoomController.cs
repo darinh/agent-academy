@@ -59,6 +59,28 @@ public class RoomController : ControllerBase
         }
     }
 
+    [HttpGet("{roomId}/messages")]
+    public async Task<ActionResult<RoomMessagesResponse>> GetRoomMessages(
+        string roomId,
+        [FromQuery] string? after = null,
+        [FromQuery] int limit = 50)
+    {
+        try
+        {
+            var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(roomId, after, limit);
+            return Ok(new RoomMessagesResponse(messages, hasMore));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { code = "room_not_found", message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get messages for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve messages.");
+        }
+    }
+
     /// <summary>
     /// GET /api/rooms/{roomId}/artifacts — artifacts produced in a room.
     /// Artifact tracking will be wired when AgentEventTracker is ported.

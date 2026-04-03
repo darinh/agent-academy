@@ -61,3 +61,11 @@ public record DeliveryHint(
     DeliveryPriority Priority,
     bool ReplyRequested
 );
+
+/// <summary>
+/// Paginated response for room message queries (cursor-based).
+/// </summary>
+public record RoomMessagesResponse(
+    List<ChatEnvelope> Messages,
+    bool HasMore
+);
