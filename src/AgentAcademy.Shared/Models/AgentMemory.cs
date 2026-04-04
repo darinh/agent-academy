@@ -10,5 +10,7 @@ public record AgentMemory(
     string Key,
     string Value,
     DateTime CreatedAt,
-    DateTime? UpdatedAt
+    DateTime? UpdatedAt,
+    DateTime? LastAccessedAt = null,
+    DateTime? ExpiresAt = null
 );

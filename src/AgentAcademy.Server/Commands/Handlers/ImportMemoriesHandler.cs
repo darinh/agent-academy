@@ -72,12 +72,24 @@ public sealed class ImportMemoriesHandler : ICommandHandler
                 continue;
             }
 
+            if (entry.Ttl.HasValue && (entry.Ttl.Value <= 0 || entry.Ttl.Value > 87600))
+            {
+                skipped++;
+                if (errors.Count < MaxReportedErrors)
+                    errors.Add($"Skipped '{entry.Key}': ttl must be 1-87600 hours");
+                continue;
+            }
+
             var existing = await db.AgentMemories.FindAsync(context.AgentId, entry.Key);
+            var expiresAt = entry.Ttl is > 0 ? (DateTime?)now.AddHours(entry.Ttl.Value) : null;
             if (existing != null)
             {
                 existing.Category = category;
                 existing.Value = entry.Value;
                 existing.UpdatedAt = now;
+                // Only overwrite ExpiresAt when TTL is explicitly provided
+                if (entry.Ttl.HasValue)
+                    existing.ExpiresAt = expiresAt;
                 updated++;
             }
             else
@@ -89,6 +101,7 @@ public sealed class ImportMemoriesHandler : ICommandHandler
                     Category = category,
                     Value = entry.Value,
                     CreatedAt = now,
+                    ExpiresAt = expiresAt,
                 });
                 created++;
             }
@@ -110,5 +123,5 @@ public sealed class ImportMemoriesHandler : ICommandHandler
         };
     }
 
-    internal record MemoryImportEntry(string Category, string Key, string Value);
+    internal record MemoryImportEntry(string Category, string Key, string Value, int? Ttl = null);
 }

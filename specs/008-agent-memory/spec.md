@@ -3,7 +3,7 @@
 ## Purpose
 Defines a persistent per-agent knowledge store that survives across sessions. Agents can record lessons, decisions, patterns, and risks — then recall them when working on related tasks.
 
-> **Status: Implemented** — Per-agent memory store with REMEMBER (upsert), RECALL (LIKE search), LIST_MEMORIES, and FORGET commands. No memory cap. Memories injected into agent prompts as `=== YOUR MEMORIES ===` section. Cross-agent sharing via `shared` category — memories with `category=shared` are visible to all agents in RECALL, LIST_MEMORIES, and prompt injection (shown in `=== SHARED KNOWLEDGE ===` section). FORGET still scoped to own memories only.
+> **Status: Implemented** — Per-agent memory store with REMEMBER (upsert), RECALL (FTS5 search), LIST_MEMORIES, FORGET, EXPORT_MEMORIES, and IMPORT_MEMORIES commands. Memory decay via optional TTL (time-to-live in hours) and staleness detection (30-day inactivity threshold). Expired memories filtered from reads and prompt injection. Stale memories tagged with ⚠️STALE in prompts. LastAccessedAt tracking for all read paths. Cross-agent sharing via `shared` category. REST endpoint for expired memory cleanup.
 
 ## Motivation
 Agents currently lose all learned context between orchestrator rounds and server restarts. Patterns discovered during code review, architectural decisions made during planning, and gotchas encountered during implementation are lost unless manually documented in specs or conversation.
@@ -14,9 +14,9 @@ The memory system gives agents a structured way to persist and retrieve knowledg
 
 | Command | Args | Returns | Auth |
 |---------|------|---------|------|
-| `REMEMBER` | `category`, `key`, `value` | Confirmation | Own memories only |
-| `RECALL` | `category?`, `key?`, `query?` | Matching memories | Own memories only |
-| `LIST_MEMORIES` | `category?` | All memories (filtered) | Own memories only |
+| `REMEMBER` | `category`, `key`, `value`, `ttl?` (hours) | Confirmation + expiresAt | Own memories only |
+| `RECALL` | `category?`, `key?`, `query?`, `include_expired?` | Matching memories (with stale flag) | Own memories only |
+| `LIST_MEMORIES` | `category?`, `include_expired?` | All memories (filtered, with stale flag) | Own memories only |
 | `FORGET` | `key` | Confirmation (with confirmation step) | Own memories only |
 
 ### Syntax in Agent Responses
@@ -26,11 +26,42 @@ REMEMBER:
   Category: pattern
   Key: ef-core-include
   Value: EF Core requires explicit Include() for navigation properties. Lazy loading is disabled.
+  TTL: 720
 
 RECALL: category=gotcha
 
+RECALL: include_expired=true
+
 FORGET: key=outdated-build-command
 ```
+
+## Memory Decay
+
+### TTL (Time-to-Live)
+
+Memories can optionally set a TTL in hours via the `ttl` argument on REMEMBER or IMPORT_MEMORIES. When set, `ExpiresAt` is computed as `now + ttl hours`. Valid range: 1–87600 hours (~10 years).
+
+- Expired memories are excluded from RECALL, LIST_MEMORIES, and prompt injection
+- Use `include_expired=true` on RECALL/LIST_MEMORIES to see expired memories
+- EXPORT_MEMORIES includes expired by default (for backup); use `include_expired=false` to exclude
+- Updating a memory without TTL preserves any existing expiration
+- Updating with TTL overwrites the expiration
+- REST cleanup: `DELETE /api/memories/expired?agentId=X` removes expired memories
+
+### Staleness Detection
+
+Memories without a TTL are tracked for staleness. A memory is **stale** if:
+- It has no `ExpiresAt` (not a TTL memory), AND
+- Its most recent activity (`LastAccessedAt` → `UpdatedAt` → `CreatedAt`) is ≥ 30 days ago
+
+Stale memories:
+- Are tagged with `⚠️STALE` in prompt injection
+- Include `"stale": true` in RECALL/LIST_MEMORIES/EXPORT results
+- Are still returned (not filtered) — agents decide whether to FORGET or refresh them
+
+### LastAccessedAt Tracking
+
+Every read path (RECALL, LIST_MEMORIES, prompt injection via `LoadAgentMemoriesAsync`) updates `LastAccessedAt` for all returned memories. This is best-effort and batched per agent for efficiency.
 
 ## Data Model
 
@@ -45,6 +76,8 @@ public class AgentMemoryEntity
     public string Value { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    public DateTime? LastAccessedAt { get; set; }  // Staleness tracking
+    public DateTime? ExpiresAt { get; set; }       // Optional TTL
 }
 ```
 
@@ -59,7 +92,9 @@ public record AgentMemory(
     string Key,
     string Value,
     DateTime CreatedAt,
-    DateTime? UpdatedAt
+    DateTime? UpdatedAt,
+    DateTime? LastAccessedAt = null,
+    DateTime? ExpiresAt = null
 );
 ```
 
@@ -135,7 +170,7 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
 - ~~**Memory import/export**: No bulk operations defined. Should agents be able to seed memories from a file?~~ **Resolved** — `EXPORT_MEMORIES` and `IMPORT_MEMORIES` commands plus REST endpoints at `GET /api/memories/export` and `POST /api/memories/import`. Import validates categories, enforces 500-char value limit, caps at 500 entries/request, uses upsert semantics.
-- **Memory decay**: No TTL or staleness detection. Old memories may become incorrect as the codebase evolves.
+- ~~**Memory decay**: No TTL or staleness detection. Old memories may become incorrect as the codebase evolves.~~ **Resolved** — Optional TTL (hours) on REMEMBER/IMPORT, `ExpiresAt` field, expired filtering on all reads, staleness detection (30-day threshold), `LastAccessedAt` tracking, `⚠️STALE` prompt tags, REST cleanup endpoint.
 - ~~**Cross-agent knowledge sharing**: Intentionally prohibited for isolation. But some knowledge (like "the build command is X") is universal. Consider a `shared` category visible to all?~~ **Resolved** — `shared` category added. Memories with `category=shared` are visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. FORGET scoped to own memories.
 
 ## Search Implementation
@@ -171,3 +206,4 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 | 2026-04-04 | Upgraded RECALL search from LIKE to FTS5 with BM25 ranking. Added fallback, triggers, migration. Known gap resolved. | fts5-memory-search |
 | 2026-04-04 | Added `shared` category for cross-agent knowledge sharing. Shared memories visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. Known gap resolved. | shared-memory-category |
 | 2026-04-04 | Added EXPORT_MEMORIES and IMPORT_MEMORIES commands + REST endpoints for bulk memory operations. Import validates categories, 500-char limit, 500-entry cap, upsert semantics. Known gap resolved. | memory-import-export |
+| 2026-04-04 | Added memory decay/TTL: optional TTL (hours) on REMEMBER/IMPORT, ExpiresAt filtering on all reads, LastAccessedAt tracking, staleness detection (30-day threshold), ⚠️STALE prompt tags, REST cleanup endpoint. Known gap resolved. | memory-decay-ttl |

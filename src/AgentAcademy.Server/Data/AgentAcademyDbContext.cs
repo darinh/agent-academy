@@ -272,6 +272,7 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_agent_memories_agent");
             entity.HasIndex(e => e.Category).HasDatabaseName("idx_agent_memories_category");
+            entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("idx_agent_memories_expires");
         });
 
         // ── Notification Configs ────────────────────────────
