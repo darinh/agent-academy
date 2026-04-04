@@ -58,6 +58,7 @@ Every failed command includes an `errorCode` string that agents can branch on in
 | `TIMEOUT` | Operation exceeded its time limit | `"Tests timed out after 5 minutes"` |
 | `EXECUTION` | Runtime/process failure (crash, non-zero exit) | `"Build failed with exit code 1"` |
 | `INTERNAL` | Unexpected internal error | `"Command execution failed: NullReferenceException"` |
+| `RATE_LIMIT` | Agent exceeded command rate limit | `"Rate limit exceeded. Try again in 45s."` |
 
 Error codes are string constants (not an enum) for extensibility. The `error` field retains the human-readable detail; `errorCode` provides the category.
 
@@ -440,7 +441,7 @@ Authorization: Cookie (authenticated session)
 
 **Field**: `CommandAuditEntity.ErrorCode` (nullable string)
 
-- Persists the structured error category (`VALIDATION`, `NOT_FOUND`, `PERMISSION`, `CONFLICT`, `TIMEOUT`, `EXECUTION`, `INTERNAL`) from `CommandEnvelope.ErrorCode`
+- Persists the structured error category (`VALIDATION`, `NOT_FOUND`, `PERMISSION`, `CONFLICT`, `TIMEOUT`, `EXECUTION`, `INTERNAL`, `RATE_LIMIT`) from `CommandEnvelope.ErrorCode`
 - Null on success or for pre-existing audit rows (column is nullable)
 - Written by all audit paths: `CommandPipeline.AuditAsync` (agent), `CommandController.CreateAuditEntity` (human sync), `CommandController.UpdateAuditAsync` (human async)
 - Read back by `CommandController.ToResponse(CommandAuditEntity)` for the polling endpoint
@@ -591,6 +592,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - Every command execution produces an audit event (no silent operations)
 - Read commands never produce side effects beyond audit logging
 - Authorization check precedes execution for every command
+- Rate limiting check follows authorization — agents exceeding 30 commands per 60 seconds are rejected with `RATE_LIMIT` error code
 - Command envelope shape is stable from day 1 — new commands extend `args`/`result`, never change the envelope
 - Agent permissions are configured, not hardcoded — stored in agent catalog
 - Memory system is per-agent isolated — agents cannot read each other's memories
@@ -600,7 +602,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 
 - **Command discovery**: How do agents learn what commands are available? Added to agent startup prompts as of commit `6117b4e` (2026-03-28). No `HELP` command yet — agents must reference startup prompt or remember syntax.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
-- **Rate limiting**: No rate limiting defined for commands. An agent could spam READ_FILE in a tight loop.
+- **Rate limiting**: Per-agent sliding-window rate limiter (30 commands per 60 seconds). Implemented in `CommandRateLimiter` (`src/AgentAcademy.Server/Commands/CommandRateLimiter.cs`), integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited (already behind cookie auth). Limits are hardcoded — no runtime configuration yet.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
 - **Tier 2 room commands**: `RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `RESTORE_ROOM`, and `ROOM_TOPIC` remain planned. `CLOSE_ROOM` is now implemented with planner-only authorization and archive semantics.
 
@@ -647,3 +649,4 @@ Discord Server
 | 2026-04-04 | Implemented planner-only `CLOSE_ROOM`. Non-main rooms can now be archived when empty; the runtime sets `RoomEntity.Status = Archived` and emits a `RoomClosed` activity event. Updated permission docs and reconciled the confirmation guardrail to match shipped behavior. | close-room-command | (this change) |
 | 2026-04-04 | Verified MERGE_TASK Planner/Reviewer role authorization enforcement. Handler code (lines 25-31) guards against unauthorized access. Updated spec table to include implementation reference and clarified design principle scope for agent-initiated commands. | merge-task-authorization-enforcement | `52419d8` |
 | 2026-04-04 | Added `ErrorCode` column to `CommandAuditEntity`. Async command polling and audit history now return structured error codes. All 4 audit write paths and the read path updated. Migration `20260404083032_AddCommandAuditErrorCode`. | errorcode-audit-persistence | `5fd74b3` |
+| 2026-04-04 | Per-agent command rate limiting (30 commands/60s sliding window). `CommandRateLimiter` integrated into `CommandPipeline` after authorization. `RATE_LIMIT` error code added. 6 new tests. | command-rate-limiting | `df07581` |
