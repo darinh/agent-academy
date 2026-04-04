@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -147,6 +148,85 @@ public class TaskAssignmentWorkflowTests : IDisposable
             content.Contains("heading to breakout room", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(systemMessages, content =>
             content.Contains("breakout rooms are disabled", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task TaskAssignment_BranchCreationFails_CancelsOrphanedTask()
+    {
+        const string assignmentResponse = """
+            TASK ASSIGNMENT:
+            Agent: @Hephaestus
+            Title: Build the widget
+            Description: Create the new widget component
+            Acceptance Criteria:
+            - Widget renders correctly
+            """;
+
+        _executor.RunAsync(
+                Arg.Is<AgentDefinition>(a => a.Role == "Planner"),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult(assignmentResponse),
+                Task.FromResult("PASS"));
+
+        _executor.RunAsync(
+                Arg.Is<AgentDefinition>(a => a.Role == "SoftwareEngineer"),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("Acknowledged"));
+
+        // Create a mock GitService whose CreateTaskBranchAsync always throws
+        var mockGitService = Substitute.ForPartsOf<GitService>(
+            NullLogger<GitService>.Instance, _repoRoot, "git");
+        mockGitService
+            .CreateTaskBranchAsync(Arg.Any<string>())
+            .Returns(Task.FromException<string>(
+                new InvalidOperationException("Simulated branch creation failure")));
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.InitializeAsync();
+            await runtime.PostHumanMessageAsync("main", "Build the widget please.");
+        }
+
+        var orchestrator = new AgentOrchestrator(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            _executor,
+            _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
+            new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            mockGitService,
+            NullLogger<AgentOrchestrator>.Instance);
+
+        await InvokeConversationRoundAsync(orchestrator, "main");
+
+        // Allow fire-and-forget to settle
+        await Task.Delay(2000);
+
+        using var assertScope = _serviceProvider.CreateScope();
+        var db = assertScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        // Breakout room should have been created then cancelled
+        var breakout = await db.BreakoutRooms.SingleAsync();
+        Assert.Equal("Archived", breakout.Status);
+        Assert.Equal("Cancelled", breakout.CloseReason);
+
+        // The orphaned task entity should be cancelled
+        var task = await db.Tasks.SingleAsync();
+        Assert.Equal("Build the widget", task.Title);
+        Assert.Equal("Cancelled", task.Status);
+
+        // A system message about the failure should have been posted
+        var systemMessages = await db.Messages
+            .Where(m => m.RoomId == "main" && m.SenderId == "system")
+            .Select(m => m.Content)
+            .ToListAsync();
+        Assert.Contains(systemMessages, content =>
+            content.Contains("Failed to set up branch", StringComparison.OrdinalIgnoreCase));
     }
 
     public void Dispose()

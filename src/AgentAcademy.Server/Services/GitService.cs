@@ -9,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// All git operations are serialized via <see cref="_gitLock"/> to prevent
 /// concurrent branch switches from corrupting the working tree.
 /// </summary>
-public sealed class GitService
+public class GitService
 {
     private readonly ILogger<GitService> _logger;
     private readonly string _repositoryRoot;
@@ -54,7 +54,7 @@ public sealed class GitService
     /// Creates a task branch from develop with a unique suffix to avoid collisions.
     /// Returns the branch name (e.g. "task/my-feature-a1b2c3").
     /// </summary>
-    public async Task<string> CreateTaskBranchAsync(string slug)
+    public virtual async Task<string> CreateTaskBranchAsync(string slug)
     {
         var sanitized = Regex.Replace(slug.ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
         var suffix = Guid.NewGuid().ToString("N")[..6];

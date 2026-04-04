@@ -29,6 +29,7 @@ public sealed class CommandController : ControllerBase
         "LIST_ROOMS",
         "LIST_AGENTS",
         "LIST_TASKS",
+        "LIST_COMMANDS",
         "SHOW_DIFF",
         "GIT_LOG",
         "SHOW_REVIEW_QUEUE",

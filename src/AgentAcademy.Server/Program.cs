@@ -218,6 +218,7 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 builder.Services.AddSingleton<CommandPipeline>();
 builder.Services.AddSingleton<ICommandHandler, ListRoomsHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListAgentsHandler>();
+builder.Services.AddSingleton<ICommandHandler, ListCommandsHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListTasksHandler>();
 builder.Services.AddSingleton<ICommandHandler, ReadFileHandler>();
 builder.Services.AddSingleton<ICommandHandler, SearchCodeHandler>();

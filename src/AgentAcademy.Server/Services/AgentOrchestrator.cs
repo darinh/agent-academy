@@ -539,9 +539,10 @@ public sealed class AgentOrchestrator
             agent.Id, roomId, br.Id);
 
         string? taskBranch = null;
+        string? taskId = null;
         try
         {
-            var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            taskId = await runtime.EnsureTaskForBreakoutAsync(
                 br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
                 BuildAssignmentPlanContent(assignment));
 
@@ -558,6 +559,20 @@ public sealed class AgentOrchestrator
         {
             _logger.LogError(ex, "Failed to create task branch for {Title} — closing breakout", assignment.Title);
             await runtime.CloseBreakoutRoomAsync(br.Id, BreakoutRoomCloseReason.Cancelled);
+
+            // Clean up the orphaned task if it was created before the failure
+            if (taskId is not null)
+            {
+                try
+                {
+                    await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
+                }
+                catch (Exception cancelEx)
+                {
+                    _logger.LogWarning(cancelEx, "Failed to cancel orphaned task {TaskId}", taskId);
+                }
+            }
+
             await runtime.PostSystemStatusAsync(roomId,
                 $"⚠️ Failed to set up branch for \"{assignment.Title}\". Breakout cancelled.");
             return;
