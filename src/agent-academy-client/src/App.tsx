@@ -132,6 +132,7 @@ function AppShell() {
   const [switchError, setSwitchError] = useState("");
   const [allTasks, setAllTasks] = useState<TaskSnapshot[]>([]);
   const [tasksError, setTasksError] = useState(false);
+  const [tasksFetchKey, setTasksFetchKey] = useState(0);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -218,7 +219,7 @@ function AppShell() {
       .then((tasks) => { if (!cancelled) setAllTasks(tasks); })
       .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } });
     return () => { cancelled = true; };
-  }, [showProjectSelector, tab]);
+  }, [showProjectSelector, tab, tasksFetchKey]);
 
   // On mount, check for active workspace — retry on failure (backend may still be starting)
   useEffect(() => {
@@ -629,7 +630,11 @@ function AppShell() {
                     />
                   )}
                   {tab === "tasks" && (
-                    <TaskListPanel tasks={allTasks} error={tasksError} />
+                    <TaskListPanel
+                      tasks={allTasks}
+                      error={tasksError}
+                      onRefresh={() => setTasksFetchKey((k) => k + 1)}
+                    />
                   )}
                   {tab === "plan" && (
                     <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />

@@ -173,6 +173,21 @@ export interface TaskSnapshot {
   reviewRounds?: number;
   testsCreated?: string[];
   commitCount?: number;
+  mergeCommitSha?: string | null;
+  commentCount?: number;
+  type?: "Feature" | "Bug" | "Chore" | "Spike";
+}
+
+export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker";
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  agentId: string;
+  agentName: string;
+  commentType: TaskCommentType;
+  content: string;
+  createdAt: string;
 }
 
 export interface TaskItem {
@@ -457,6 +472,10 @@ export function completeTask(
     method: "PUT",
     body: JSON.stringify({ commitCount, testsCreated }),
   });
+}
+
+export function getTaskComments(taskId: string): Promise<TaskComment[]> {
+  return request<TaskComment[]>(apiUrl(`/api/tasks/${taskId}/comments`));
 }
 
 export function sendHumanMessage(roomId: string, content: string): Promise<ChatEnvelope> {
