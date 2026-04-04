@@ -528,10 +528,11 @@ export const useStyles = makeStyles({
   },
   workspaceTitle: { fontFamily: "var(--heading)", fontSize: "42px", fontWeight: 700, letterSpacing: "-0.055em", color: "#f8fbff", lineHeight: 0.96 },
   workspaceSubtitle: {
-    maxWidth: "840px",
     color: "#aec0de",
     fontSize: "15px",
     lineHeight: 1.8,
+    maxHeight: `${1.8 * 3}em`,
+    overflowY: "auto" as const,
   },
   workspaceLead: {
     maxWidth: "72ch",
