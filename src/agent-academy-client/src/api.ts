@@ -266,6 +266,34 @@ export interface InstanceHealthResult {
   authFailed: boolean;
 }
 
+export interface ServerInstanceDto {
+  id: string;
+  startedAt: string;
+  shutdownAt: string | null;
+  exitCode: number | null;
+  crashDetected: boolean;
+  version: string;
+  shutdownReason: string;
+}
+
+export interface RestartHistoryResponse {
+  instances: ServerInstanceDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RestartStatsDto {
+  totalInstances: number;
+  crashRestarts: number;
+  intentionalRestarts: number;
+  cleanShutdowns: number;
+  stillRunning: number;
+  windowHours: number;
+  maxRestartsPerWindow: number;
+  restartWindowHours: number;
+}
+
 export interface TaskAssignmentRequest {
   title: string;
   description: string;
@@ -333,6 +361,16 @@ export function getHealth(): Promise<HealthResult> {
 
 export function getInstanceHealth(): Promise<InstanceHealthResult> {
   return request<InstanceHealthResult>(apiUrl("/api/health/instance"));
+}
+
+// ── System / Restart History ───────────────────────────────────────────
+
+export function getRestartHistory(limit = 20, offset = 0): Promise<RestartHistoryResponse> {
+  return request<RestartHistoryResponse>(apiUrl(`/api/system/restarts?limit=${limit}&offset=${offset}`));
+}
+
+export function getRestartStats(hours = 24): Promise<RestartStatsDto> {
+  return request<RestartStatsDto>(apiUrl(`/api/system/restarts/stats?hours=${hours}`));
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────
