@@ -90,7 +90,7 @@ These formalize existing capabilities with audit trails and structured output.
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
 | `READ_FILE` | `path`, `startLine?`, `endLine?` | File content, line count (files); entry listing (directories). Auto-truncates at 12,000 chars with `truncated=true` and continuation hint. | Audit event | `ReadFileHandler.cs` — validates path, reads lines, lists directories, protects against traversal, truncates large output |
-| `SEARCH_CODE` | `query`, `path?`, `glob?` | Matching lines with file/line refs | Audit event | `SearchCodeHandler.cs` — `git grep`-based search; respects .gitignore, skips binary files |
+| `SEARCH_CODE` | `query`, `path?`, `glob?`, `ignoreCase?` | Matching lines with file/line refs. Caps at 50 results with `truncated=true` hint. | Audit event | `SearchCodeHandler.cs` — `git grep`-based search; respects .gitignore, skips binary files, supports case-insensitive mode |
 | `LIST_ROOMS` | — | All rooms: id, name, status, phase, participant count, message count, active task | Audit event | `ListRoomsHandler.cs` — queries all rooms with preloaded agent locations |
 | `LIST_AGENTS` | — | All agents: id, name, role, location (room/workspace), state, active task item | Audit event | `ListAgentsHandler.cs` — queries agent catalog + locations + presence |
 | `LIST_TASKS` | `status?`, `assignee?` | Tasks with status, assignee, dependencies, acceptance criteria, spec links, review state | Audit event | `ListTasksHandler.cs` — queries tasks with optional filters |
