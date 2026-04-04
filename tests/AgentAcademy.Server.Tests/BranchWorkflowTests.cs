@@ -17,6 +17,7 @@ namespace AgentAcademy.Server.Tests;
 /// <summary>
 /// Tests for MERGE_TASK command handler and branch workflow authorization.
 /// </summary>
+[Collection("WorkspaceRuntime")]
 public class BranchWorkflowTests : IDisposable
 {
     private readonly SqliteConnection _connection;

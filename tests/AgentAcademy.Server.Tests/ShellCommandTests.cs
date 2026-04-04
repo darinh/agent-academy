@@ -13,6 +13,7 @@ using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
+[Collection("WorkspaceRuntime")]
 public sealed class ShellCommandTests : IDisposable
 {
     private readonly SqliteConnection _connection;

@@ -167,6 +167,7 @@ public class GitHubCopilotAuthProbeTests
 
 }
 
+[Collection("WorkspaceRuntime")]
 public class CopilotExecutorAuthTransitionTests
 {
     [Fact]

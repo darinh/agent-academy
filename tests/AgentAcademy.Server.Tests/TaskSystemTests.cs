@@ -20,6 +20,7 @@ namespace AgentAcademy.Server.Tests;
 /// - RECALL_AGENT command
 /// - ParseTaskAssignments Type field parsing
 /// </summary>
+[Collection("WorkspaceRuntime")]
 public class TaskSystemTests : IDisposable
 {
     private readonly SqliteConnection _connection;

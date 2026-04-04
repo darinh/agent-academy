@@ -13,6 +13,7 @@ namespace AgentAcademy.Server.Tests;
 /// Tests for WorkspaceRuntime — the central state manager.
 /// Uses in-memory SQLite for isolation.
 /// </summary>
+[Collection("WorkspaceRuntime")]
 public class WorkspaceRuntimeTests : IDisposable
 {
     private readonly SqliteConnection _connection;

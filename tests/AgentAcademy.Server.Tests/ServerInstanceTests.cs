@@ -11,6 +11,7 @@ using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
+[Collection("WorkspaceRuntime")]
 public class ServerInstanceTests : IDisposable
 {
     private readonly SqliteConnection _connection;
