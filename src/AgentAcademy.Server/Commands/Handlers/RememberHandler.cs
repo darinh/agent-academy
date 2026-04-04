@@ -13,11 +13,11 @@ public sealed class RememberHandler : ICommandHandler
 {
     public string CommandName => "REMEMBER";
 
-    private static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
     {
         "decision", "lesson", "pattern", "preference", "invariant", "risk",
         "gotcha", "incident", "constraint", "finding", "spec-drift",
-        "mapping", "verification", "gap-pattern"
+        "mapping", "verification", "gap-pattern", "shared"
     };
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
@@ -33,6 +33,10 @@ public sealed class RememberHandler : ICommandHandler
 
         if (!ValidCategories.Contains(category))
             return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = $"Invalid category '{category}'. Valid: {string.Join(", ", ValidCategories.Order())}" };
+
+        // Normalize category to lowercase for consistent matching (ValidCategories is case-insensitive
+        // but downstream shared-memory checks use exact string comparison)
+        category = category.ToLowerInvariant();
 
         var db = context.Services.GetRequiredService<AgentAcademyDbContext>();
         var existing = await db.AgentMemories.FindAsync(context.AgentId, key);

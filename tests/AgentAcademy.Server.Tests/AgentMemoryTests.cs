@@ -482,4 +482,348 @@ public class AgentMemoryTests : IDisposable
         Assert.Equal(CommandStatus.Error, result.Status);
         Assert.Contains("No memory found", result.Error);
     }
+
+    // ── SHARED MEMORY ─────────────────────────────────────────
+
+    [Fact]
+    public async Task Remember_SharedCategory_Accepted()
+    {
+        var handler = new RememberHandler();
+        var cmd = MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "build-command",
+            ["category"] = "shared",
+            ["value"] = "dotnet build AgentAcademy.sln"
+        });
+        var result = await handler.ExecuteAsync(cmd, _context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        Assert.Equal("shared", resultDict["category"]);
+    }
+
+    [Fact]
+    public async Task Remember_SharedCategory_CaseNormalized()
+    {
+        var handler = new RememberHandler();
+        var cmd = MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "case-test",
+            ["category"] = "Shared",
+            ["value"] = "Should be normalized to lowercase"
+        });
+        var result = await handler.ExecuteAsync(cmd, _context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        // Verify stored as lowercase
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var entity = await db.AgentMemories.FindAsync("engineer-1", "case-test");
+        Assert.NotNull(entity);
+        Assert.Equal("shared", entity!.Category);
+    }
+
+    [Fact]
+    public async Task Recall_SharedMemory_VisibleToOtherAgents()
+    {
+        // Agent 1 stores a shared memory
+        var handler = new RememberHandler();
+        var cmd = MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "project-convention",
+            ["category"] = "shared",
+            ["value"] = "Use conventional commits"
+        });
+        await handler.ExecuteAsync(cmd, _context);
+
+        // Agent 2 recalls — should see agent 1's shared memory
+        var agent2Context = new CommandContext(
+            AgentId: "reviewer-1",
+            AgentName: "Athena",
+            AgentRole: "Reviewer",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var recallHandler = new RecallHandler();
+        var recallCmd = MakeCommand("RECALL", new Dictionary<string, string>());
+        var result = await recallHandler.ExecuteAsync(recallCmd, agent2Context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.Contains(memories, m => (string)m["key"]! == "project-convention");
+    }
+
+    [Fact]
+    public async Task Recall_SharedMemory_IncludesSourceAgentId()
+    {
+        // Agent 1 stores a shared memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "test-command",
+            ["category"] = "shared",
+            ["value"] = "dotnet test"
+        }), _context);
+
+        // Agent 2 recalls — agentId should be populated for shared memories from others
+        var agent2Context = new CommandContext(
+            AgentId: "reviewer-1",
+            AgentName: "Athena",
+            AgentRole: "Reviewer",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var recallHandler = new RecallHandler();
+        var result = await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string>()), agent2Context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        var sharedMem = memories.First(m => (string)m["key"]! == "test-command");
+        Assert.Equal("engineer-1", sharedMem["agentId"]);
+    }
+
+    [Fact]
+    public async Task Recall_OwnSharedMemory_AgentIdIsNull()
+    {
+        // Agent stores a shared memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "my-shared-tip",
+            ["category"] = "shared",
+            ["value"] = "Use async/await throughout"
+        }), _context);
+
+        // Same agent recalls — agentId should be null (it's their own)
+        var recallHandler = new RecallHandler();
+        var result = await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string>()), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        var sharedMem = memories.First(m => (string)m["key"]! == "my-shared-tip");
+        Assert.Null(sharedMem["agentId"]);
+    }
+
+    [Fact]
+    public async Task Recall_NonSharedMemory_StillIsolated()
+    {
+        // Agent 1 stores a private memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "private-note",
+            ["category"] = "lesson",
+            ["value"] = "This is private"
+        }), _context);
+
+        // Agent 2 recalls — should NOT see agent 1's private memory
+        var agent2Context = new CommandContext(
+            AgentId: "reviewer-1",
+            AgentName: "Athena",
+            AgentRole: "Reviewer",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var recallHandler = new RecallHandler();
+        var result = await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string>()), agent2Context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.DoesNotContain(memories, m => (string)m["key"]! == "private-note");
+    }
+
+    [Fact]
+    public async Task Recall_Fts5_SharedMemoryVisibleAcrossAgents()
+    {
+        // Agent 1 stores a shared memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "sqlite-choice",
+            ["category"] = "shared",
+            ["value"] = "We chose SQLite over Postgres for single-user simplicity"
+        }), _context);
+
+        // Agent 2 searches via FTS5 — should find shared memory
+        var agent2Context = new CommandContext(
+            AgentId: "planner-1",
+            AgentName: "Apollo",
+            AgentRole: "Planner",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var recallHandler = new RecallHandler();
+        var result = await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string> { ["query"] = "SQLite" }), agent2Context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.Contains(memories, m => (string)m["key"]! == "sqlite-choice");
+    }
+
+    [Fact]
+    public async Task Recall_Fts5_PrivateMemoryStillIsolated()
+    {
+        // Agent 1 stores a private memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "secret-pattern",
+            ["category"] = "pattern",
+            ["value"] = "Use repository pattern for data access"
+        }), _context);
+
+        // Agent 2 searches via FTS5 — should NOT find agent 1's private memory
+        var agent2Context = new CommandContext(
+            AgentId: "planner-1",
+            AgentName: "Apollo",
+            AgentRole: "Planner",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var recallHandler = new RecallHandler();
+        var result = await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string> { ["query"] = "repository" }), agent2Context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.DoesNotContain(memories, m => (string)m["key"]! == "secret-pattern");
+    }
+
+    [Fact]
+    public async Task ListMemories_IncludesSharedFromOtherAgents()
+    {
+        // Agent 1 stores shared + private
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "shared-tip",
+            ["category"] = "shared",
+            ["value"] = "Use EF Core Include()"
+        }), _context);
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "private-tip",
+            ["category"] = "pattern",
+            ["value"] = "This is private"
+        }), _context);
+
+        // Agent 2 lists memories — should see only shared
+        var agent2Context = new CommandContext(
+            AgentId: "reviewer-1",
+            AgentName: "Athena",
+            AgentRole: "Reviewer",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var listHandler = new ListMemoriesHandler();
+        var result = await listHandler.ExecuteAsync(
+            MakeCommand("LIST_MEMORIES", new Dictionary<string, string>()), agent2Context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.Contains(memories, m => (string)m["key"]! == "shared-tip");
+        Assert.DoesNotContain(memories, m => (string)m["key"]! == "private-tip");
+    }
+
+    [Fact]
+    public async Task ListMemories_CategoryFilter_SharedOnly()
+    {
+        // Agent 1 stores a shared memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "universal-rule",
+            ["category"] = "shared",
+            ["value"] = "Always use conventional commits"
+        }), _context);
+
+        // Agent 2 lists only shared category
+        var agent2Context = new CommandContext(
+            AgentId: "reviewer-1",
+            AgentName: "Athena",
+            AgentRole: "Reviewer",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var listHandler = new ListMemoriesHandler();
+        var result = await listHandler.ExecuteAsync(
+            MakeCommand("LIST_MEMORIES", new Dictionary<string, string> { ["category"] = "shared" }),
+            agent2Context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.Contains(memories, m => (string)m["key"]! == "universal-rule");
+    }
+
+    [Fact]
+    public async Task Forget_SharedMemory_OnlyOwnerCanForget()
+    {
+        // Agent 1 stores a shared memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "to-forget",
+            ["category"] = "shared",
+            ["value"] = "temporary"
+        }), _context);
+
+        // Agent 2 tries to forget it — should fail (PK is AgentId+Key, scoped to own)
+        var agent2Context = new CommandContext(
+            AgentId: "reviewer-1",
+            AgentName: "Athena",
+            AgentRole: "Reviewer",
+            RoomId: "room-1",
+            BreakoutRoomId: null,
+            Services: _serviceProvider);
+
+        var forgetHandler = new ForgetHandler();
+        var result = await forgetHandler.ExecuteAsync(
+            MakeCommand("FORGET", new Dictionary<string, string> { ["key"] = "to-forget" }),
+            agent2Context);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("No memory found", result.Error);
+
+        // Original agent can still forget it
+        var ownerResult = await forgetHandler.ExecuteAsync(
+            MakeCommand("FORGET", new Dictionary<string, string> { ["key"] = "to-forget" }),
+            _context);
+        Assert.Equal(CommandStatus.Success, ownerResult.Status);
+    }
+
+    [Fact]
+    public async Task Recall_SharedMemory_NoDuplicatesForOwner()
+    {
+        // Agent stores a shared memory
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(MakeCommand("REMEMBER", new Dictionary<string, string>
+        {
+            ["key"] = "no-dup-test",
+            ["category"] = "shared",
+            ["value"] = "Should appear once"
+        }), _context);
+
+        // Same agent recalls — should see it exactly once (not duplicated)
+        var recallHandler = new RecallHandler();
+        var result = await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string>()), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        var matches = memories.Where(m => (string)m["key"]! == "no-dup-test").ToList();
+        Assert.Single(matches);
+    }
 }

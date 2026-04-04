@@ -36,7 +36,8 @@ public sealed class RecallHandler : ICommandHandler
         }
         else
         {
-            var query = db.AgentMemories.Where(m => m.AgentId == context.AgentId);
+            // Include own memories + shared memories from all agents
+            var query = db.AgentMemories.Where(m => m.AgentId == context.AgentId || m.Category == "shared");
 
             if (hasCategory)
                 query = query.Where(m => m.Category == (string)catObj!);
@@ -53,7 +54,8 @@ public sealed class RecallHandler : ICommandHandler
             ["key"] = m.Key,
             ["value"] = m.Value,
             ["createdAt"] = m.CreatedAt.ToString("o"),
-            ["updatedAt"] = m.UpdatedAt?.ToString("o")
+            ["updatedAt"] = m.UpdatedAt?.ToString("o"),
+            ["agentId"] = m.Category == "shared" && m.AgentId != context.AgentId ? m.AgentId : null
         }).ToList();
 
         return command with
@@ -80,12 +82,13 @@ public sealed class RecallHandler : ICommandHandler
         {
             // FTS5 search with BM25 ranking, joined back to main table for full entity.
             // FTS5 table only indexes key+value (not agent_id) to avoid false positives.
+            // Include own memories + shared memories from all agents.
             var sql = """
                 SELECT m.AgentId, m.Key, m.Category, m.Value, m.CreatedAt, m.UpdatedAt
                 FROM agent_memories_fts fts
                 INNER JOIN agent_memories m ON m.rowid = fts.rowid
                 WHERE agent_memories_fts MATCH {0}
-                  AND m.AgentId = {1}
+                  AND (m.AgentId = {1} OR m.Category = 'shared')
                 """;
 
             if (categoryFilter is not null)
@@ -138,7 +141,7 @@ public sealed class RecallHandler : ICommandHandler
     {
         var pattern = $"%{queryText}%";
         var query = db.AgentMemories
-            .Where(m => m.AgentId == agentId)
+            .Where(m => m.AgentId == agentId || m.Category == "shared")
             .Where(m => EF.Functions.Like(m.Key, pattern) || EF.Functions.Like(m.Value, pattern));
 
         if (categoryFilter is not null)

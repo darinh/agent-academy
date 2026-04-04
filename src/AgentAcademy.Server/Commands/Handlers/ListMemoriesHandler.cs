@@ -15,7 +15,8 @@ public sealed class ListMemoriesHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         var db = context.Services.GetRequiredService<AgentAcademyDbContext>();
-        var query = db.AgentMemories.Where(m => m.AgentId == context.AgentId);
+        // Include own memories + shared memories from all agents
+        var query = db.AgentMemories.Where(m => m.AgentId == context.AgentId || m.Category == "shared");
 
         if (command.Args.TryGetValue("category", out var catObj) && catObj is string category && !string.IsNullOrWhiteSpace(category))
             query = query.Where(m => m.Category == category);
@@ -28,7 +29,8 @@ public sealed class ListMemoriesHandler : ICommandHandler
             ["key"] = m.Key,
             ["value"] = m.Value,
             ["createdAt"] = m.CreatedAt.ToString("o"),
-            ["updatedAt"] = m.UpdatedAt?.ToString("o")
+            ["updatedAt"] = m.UpdatedAt?.ToString("o"),
+            ["agentId"] = m.Category == "shared" && m.AgentId != context.AgentId ? m.AgentId : null
         }).ToList();
 
         return command with
