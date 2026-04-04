@@ -49,6 +49,9 @@ public static class CommandErrorCode
     /// <summary>Unexpected internal error.</summary>
     public const string Internal = "INTERNAL";
 
+    /// <summary>Agent exceeded the command rate limit. Retry after the indicated delay.</summary>
+    public const string RateLimit = "RATE_LIMIT";
+
     /// <summary>
     /// Infer an error code from an <see cref="InvalidOperationException"/> message
     /// when the service layer doesn't throw typed exceptions. Best-effort heuristic.

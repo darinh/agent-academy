@@ -15,15 +15,18 @@ public sealed class CommandPipeline
 {
     private readonly CommandParser _parser = new();
     private readonly CommandAuthorizer _authorizer = new();
+    private readonly CommandRateLimiter _rateLimiter;
     private readonly Dictionary<string, ICommandHandler> _handlers;
     private readonly ILogger<CommandPipeline> _logger;
 
     public CommandPipeline(
         IEnumerable<ICommandHandler> handlers,
-        ILogger<CommandPipeline> logger)
+        ILogger<CommandPipeline> logger,
+        CommandRateLimiter? rateLimiter = null)
     {
         _handlers = handlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
+        _rateLimiter = rateLimiter ?? new CommandRateLimiter();
     }
 
     /// <summary>
@@ -85,6 +88,23 @@ public sealed class CommandPipeline
                     parsed.Command, agentId, deniedWithCode.Error);
                 await AuditAsync(deniedWithCode, roomId, scopedServices);
                 results.Add(deniedWithCode);
+                continue;
+            }
+
+            // Rate limit
+            if (!_rateLimiter.TryAcquire(agentId, out var retryAfterSeconds))
+            {
+                var rateLimited = envelope with
+                {
+                    Status = CommandStatus.Denied,
+                    ErrorCode = CommandErrorCode.RateLimit,
+                    Error = $"Rate limit exceeded. Try again in {retryAfterSeconds}s."
+                };
+                _logger.LogWarning(
+                    "Command {Command} rate-limited for agent {AgentId}: retry after {Seconds}s",
+                    parsed.Command, agentId, retryAfterSeconds);
+                await AuditAsync(rateLimited, roomId, scopedServices);
+                results.Add(rateLimited);
                 continue;
             }
 

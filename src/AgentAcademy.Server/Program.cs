@@ -215,6 +215,7 @@ builder.Services.AddSingleton<GitService>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 
 // Command system (singleton pipeline + handlers registered via interface)
+builder.Services.AddSingleton<CommandRateLimiter>();
 builder.Services.AddSingleton<CommandPipeline>();
 builder.Services.AddSingleton<ICommandHandler, ListRoomsHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListAgentsHandler>();
