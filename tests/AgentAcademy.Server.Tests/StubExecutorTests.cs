@@ -147,7 +147,8 @@ public class AgentExecutorInterfaceTests
             new ConfigurationBuilder().Build(),
             new CopilotTokenProvider(),
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new NotificationManager(NullLogger<NotificationManager>.Instance));
+            new NotificationManager(NullLogger<NotificationManager>.Instance),
+            new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance));
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
         connection.Dispose();
     }

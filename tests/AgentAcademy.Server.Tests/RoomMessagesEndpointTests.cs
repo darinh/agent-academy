@@ -6,7 +6,9 @@ using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
@@ -256,7 +258,9 @@ public sealed class RoomMessagesEndpointTests : IDisposable
     private RoomController CreateController()
     {
         var logger = Substitute.For<ILogger<RoomController>>();
-        return new RoomController(_runtime, logger);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
+        return new RoomController(_runtime, usageTracker, logger);
     }
 
     private void SeedMessages(params (string id, string content, DateTime sentAt)[] messages)

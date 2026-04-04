@@ -182,7 +182,7 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 ## Known Gaps
 
 - **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy.
-- **No token/usage tracking**: `CopilotExecutor` does not yet track input/output tokens or cost. The v1 `AgentEventTracker` integration is pending.
+- ~~**No token/usage tracking**~~ — **Resolved**: `LlmUsageTracker` captures `AssistantUsageEvent` from the Copilot SDK on every LLM call (including session priming). Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. Room-level aggregation via `GET /api/rooms/{id}/usage`, per-agent breakdown via `/usage/agents`, individual records via `/usage/records`. Global usage via `GET /api/usage` with optional `hoursBack` filter.
 - **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up. When enabled, `OnPermissionRequest` must be changed from `ApproveAll` to a restrictive handler.
 - **No per-project session resume**: Sessions are cleared on project switch. If a user returns to a previous project, agents start fresh — they don't resume their prior conversation context.
 
@@ -557,3 +557,4 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-03-29 | Agent configuration overrides — DB schema, AgentConfigService, orchestrator integration | agent-config-phase1 |
 | 2026-03-29 | Agent config API — CRUD endpoints for agent config overrides and instruction templates | agent-config-phase2 |
 | 2026-03-30 | Frontend agent config UI — Settings panel with agent config cards, template management, 3 seed templates | agent-config-phase3-4 |
+| 2026-04-04 | LLM usage tracking — `LlmUsageTracker` captures `AssistantUsageEvent` from Copilot SDK. Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. REST APIs: room usage aggregation, per-agent breakdown, individual records, global usage with time filter. Resolves "No token/usage tracking" known gap. Adversarial review (GPT-5.3 Codex): 4 findings — 3 fixed (decimal precision, unsafe casts, input validation), 1 accepted (multi-query race). 20 new tests. | usage-tracking |

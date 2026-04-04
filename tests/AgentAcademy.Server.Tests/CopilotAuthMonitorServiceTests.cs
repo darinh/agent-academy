@@ -320,7 +320,8 @@ public class CopilotExecutorAuthTransitionTests
                 new ConfigurationBuilder().Build(),
                 new CopilotTokenProvider(),
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                serviceProvider.GetRequiredService<NotificationManager>());
+                serviceProvider.GetRequiredService<NotificationManager>(),
+                new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance));
 
             return new CopilotExecutorFixture(serviceProvider, connection, executor, provider);
         }

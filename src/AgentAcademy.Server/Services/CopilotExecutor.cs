@@ -62,6 +62,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly CopilotTokenProvider _tokenProvider;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NotificationManager _notificationManager;
+    private readonly LlmUsageTracker _usageTracker;
     private readonly string? _configToken;
     private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
@@ -82,7 +83,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         IConfiguration configuration,
         CopilotTokenProvider tokenProvider,
         IServiceScopeFactory scopeFactory,
-        NotificationManager notificationManager)
+        NotificationManager notificationManager,
+        LlmUsageTracker usageTracker)
     {
         _logger = logger;
         _stubLogger = stubLogger;
@@ -91,6 +93,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _tokenProvider = tokenProvider;
         _scopeFactory = scopeFactory;
         _notificationManager = notificationManager;
+        _usageTracker = usageTracker;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -134,14 +137,14 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
         try
         {
-            var entry = await GetOrCreateSessionEntryAsync(client, agent, sessionKey, ct);
+            var entry = await GetOrCreateSessionEntryAsync(client, agent, sessionKey, roomId, ct);
 
             // Serialize sends through the same session to prevent
             // concurrent responses from interleaving.
             await entry.SendLock.WaitAsync(ct);
             try
             {
-                var response = await SendAndCollectWithRetryAsync(entry.Session, agent, prompt, ct);
+                var response = await SendAndCollectWithRetryAsync(entry.Session, agent, prompt, roomId, ct);
                 entry.Touch();
                 return response;
             }
@@ -382,6 +385,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotClient client,
         AgentDefinition agent,
         string sessionKey,
+        string? roomId,
         CancellationToken ct)
     {
         // Fast path — valid cached session.
@@ -429,7 +433,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             // Prime the session with the agent's startup prompt if provided.
             if (!string.IsNullOrWhiteSpace(agent.StartupPrompt))
             {
-                var primeResponse = await CollectResponse(session, agent.StartupPrompt, ct);
+                var primeResponse = await CollectResponse(session, agent.StartupPrompt, agent.Id, roomId, ct);
                 _logger.LogDebug(
                     "Session primed for {AgentId}: {Length} chars",
                     agent.Id, primeResponse.Length);
@@ -449,6 +453,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotSession session,
         AgentDefinition agent,
         string prompt,
+        string? roomId,
         CancellationToken ct)
     {
         _logger.LogDebug(
@@ -456,7 +461,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             agent.Id,
             prompt.Length > 80 ? prompt[..80] : prompt);
 
-        var response = await CollectResponse(session, prompt, ct);
+        var response = await CollectResponse(session, prompt, agent.Id, roomId, ct);
 
         _logger.LogDebug(
             "Received response from {AgentId}: {Length} chars",
@@ -473,6 +478,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotSession session,
         AgentDefinition agent,
         string prompt,
+        string? roomId,
         CancellationToken ct)
     {
         Exception? lastException = null;
@@ -481,7 +487,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         {
             try
             {
-                return await SendAndCollectAsync(session, agent, prompt, ct);
+                return await SendAndCollectAsync(session, agent, prompt, roomId, ct);
             }
             catch (CopilotAuthException)
             {
@@ -535,10 +541,13 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private async Task<string> CollectResponse(
         CopilotSession session,
         string prompt,
+        string agentId,
+        string? roomId,
         CancellationToken ct)
     {
         var sb = new StringBuilder();
         var done = new TaskCompletionSource();
+        AssistantUsageEvent? capturedUsage = null;
 
         using var registration = ct.Register(() => done.TrySetCanceled(ct));
 
@@ -558,6 +567,9 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                         sb.Append(msg.Data.Content);
                     }
                     break;
+                case AssistantUsageEvent usage:
+                    capturedUsage = usage;
+                    break;
                 case SessionIdleEvent:
                     done.TrySetResult();
                     break;
@@ -574,6 +586,20 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             // Wait for the response — no internal timeout.
             // Cancellation is handled by the registration at line above.
             await done.Task;
+
+            // Persist usage metrics (fire-and-forget style — errors are caught internally)
+            if (capturedUsage is not null)
+            {
+                var data = capturedUsage.Data;
+                await _usageTracker.RecordAsync(
+                    agentId, roomId,
+                    data.Model,
+                    data.InputTokens, data.OutputTokens,
+                    data.CacheReadTokens, data.CacheWriteTokens,
+                    data.Cost, data.Duration,
+                    data.ApiCallId, data.Initiator,
+                    data.ReasoningEffort);
+            }
 
             return sb.ToString();
         }

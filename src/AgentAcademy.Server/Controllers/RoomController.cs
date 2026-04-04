@@ -12,11 +12,13 @@ namespace AgentAcademy.Server.Controllers;
 public class RoomController : ControllerBase
 {
     private readonly WorkspaceRuntime _runtime;
+    private readonly LlmUsageTracker _usageTracker;
     private readonly ILogger<RoomController> _logger;
 
-    public RoomController(WorkspaceRuntime runtime, ILogger<RoomController> logger)
+    public RoomController(WorkspaceRuntime runtime, LlmUsageTracker usageTracker, ILogger<RoomController> logger)
     {
         _runtime = runtime;
+        _usageTracker = usageTracker;
         _logger = logger;
     }
 
@@ -93,20 +95,60 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/rooms/{roomId}/usage — token usage stats for a room.
-    /// Usage tracking will be wired when AgentEventTracker is ported.
+    /// GET /api/rooms/{roomId}/usage — aggregated token usage stats for a room.
     /// </summary>
     [HttpGet("{roomId}/usage")]
-    public IActionResult GetRoomUsage(string roomId)
+    public async Task<ActionResult<UsageSummary>> GetRoomUsage(string roomId)
     {
-        // AgentEventTracker is not yet ported — return zeroed summary.
-        return Ok(new UsageSummary(
-            TotalInputTokens: 0,
-            TotalOutputTokens: 0,
-            TotalCost: 0m,
-            RequestCount: 0,
-            Models: new List<string>()
-        ));
+        try
+        {
+            var usage = await _usageTracker.GetRoomUsageAsync(roomId);
+            return Ok(usage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get usage for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve usage data.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/usage/agents — per-agent usage breakdown for a room.
+    /// </summary>
+    [HttpGet("{roomId}/usage/agents")]
+    public async Task<ActionResult<List<AgentUsageSummary>>> GetRoomUsageByAgent(string roomId)
+    {
+        try
+        {
+            var breakdown = await _usageTracker.GetRoomUsageByAgentAsync(roomId);
+            return Ok(breakdown);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get agent usage for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve agent usage data.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/usage/records — individual LLM call records.
+    /// </summary>
+    [HttpGet("{roomId}/usage/records")]
+    public async Task<ActionResult<List<LlmUsageRecord>>> GetRoomUsageRecords(
+        string roomId,
+        [FromQuery] string? agentId = null,
+        [FromQuery] int limit = 50)
+    {
+        try
+        {
+            var records = await _usageTracker.GetRecentUsageAsync(roomId, agentId, Math.Clamp(limit, 1, 200));
+            return Ok(records);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get usage records for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve usage records.");
+        }
     }
 
     /// <summary>
