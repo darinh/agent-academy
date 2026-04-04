@@ -224,5 +224,5 @@ Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear co
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
 - SSE activity stream integration
 - Notification setup wizard (component exists, not yet wired)
-- TaskStatePanel integration
+- ~~TaskStatePanel integration~~ **RESOLVED** — `TaskListPanel.tsx` now includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons (Approve/Request Changes/Reject/Merge) wired through `executeCommand` API.
 - ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **RESOLVED** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
