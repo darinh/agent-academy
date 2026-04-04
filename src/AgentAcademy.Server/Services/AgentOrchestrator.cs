@@ -1293,7 +1293,11 @@ public sealed class AgentOrchestrator
             {
                 lines.Add("=== YOUR MEMORIES ===");
                 foreach (var m in ownMemories)
-                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
+                {
+                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
+                    var ttlTag = m.ExpiresAt.HasValue ? $" [expires {m.ExpiresAt.Value:yyyy-MM-dd}]" : "";
+                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}{staleTag}{ttlTag}");
+                }
                 lines.Add("");
             }
 
@@ -1301,7 +1305,10 @@ public sealed class AgentOrchestrator
             {
                 lines.Add("=== SHARED KNOWLEDGE ===");
                 foreach (var m in sharedMemories)
-                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId})");
+                {
+                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
+                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId}){staleTag}");
+                }
                 lines.Add("");
             }
         }
@@ -1398,7 +1405,11 @@ public sealed class AgentOrchestrator
             {
                 lines.Add("=== YOUR MEMORIES ===");
                 foreach (var m in ownMemories)
-                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
+                {
+                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
+                    var ttlTag = m.ExpiresAt.HasValue ? $" [expires {m.ExpiresAt.Value:yyyy-MM-dd}]" : "";
+                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}{staleTag}{ttlTag}");
+                }
                 lines.Add("");
             }
 
@@ -1406,7 +1417,10 @@ public sealed class AgentOrchestrator
             {
                 lines.Add("=== SHARED KNOWLEDGE ===");
                 foreach (var m in sharedMemories)
-                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId})");
+                {
+                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
+                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId}){staleTag}");
+                }
                 lines.Add("");
             }
         }
@@ -1577,14 +1591,37 @@ public sealed class AgentOrchestrator
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var now = DateTime.UtcNow;
+
             var entities = await db.AgentMemories
                 .Where(m => m.AgentId == agentId || m.Category == "shared")
+                .Where(m => m.ExpiresAt == null || m.ExpiresAt > now)
                 .OrderBy(m => m.Category)
                 .ThenBy(m => m.Key)
                 .ToListAsync();
 
+            // Update LastAccessedAt for all loaded memories (best-effort, batched)
+            if (entities.Count > 0)
+            {
+                try
+                {
+                    foreach (var group in entities.GroupBy(e => e.AgentId))
+                    {
+                        var aid = group.Key;
+                        var keyList = group.Select(g => g.Key).ToList();
+                        var placeholders = string.Join(", ", keyList.Select((_, i) => $"{{{i + 2}}}"));
+                        var sql = $"UPDATE agent_memories SET LastAccessedAt = {{0}} WHERE AgentId = {{1}} AND Key IN ({placeholders})";
+                        var parameters = new List<object> { now, aid };
+                        parameters.AddRange(keyList);
+                        await db.Database.ExecuteSqlRawAsync(sql, parameters.ToArray());
+                    }
+                }
+                catch { /* best-effort */ }
+            }
+
             return entities.Select(e => new AgentMemory(
-                e.AgentId, e.Category, e.Key, e.Value, e.CreatedAt, e.UpdatedAt
+                e.AgentId, e.Category, e.Key, e.Value, e.CreatedAt, e.UpdatedAt,
+                e.LastAccessedAt, e.ExpiresAt
             )).ToList();
         }
         catch (Exception ex)
@@ -1592,6 +1629,16 @@ public sealed class AgentOrchestrator
             _logger.LogWarning(ex, "Failed to load memories for agent {AgentId}", agentId);
             return new List<AgentMemory>();
         }
+    }
+
+    /// <summary>
+    /// A memory is stale if it hasn't been accessed in 30+ days and has no explicit TTL.
+    /// </summary>
+    private static bool IsMemoryStale(AgentMemory m)
+    {
+        if (m.ExpiresAt.HasValue) return false;
+        var lastActivity = m.LastAccessedAt ?? m.UpdatedAt ?? m.CreatedAt;
+        return (DateTime.UtcNow - lastActivity).TotalDays >= 30;
     }
 
     private async Task PostAgentMessageAsync(

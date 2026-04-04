@@ -826,4 +826,469 @@ public class AgentMemoryTests : IDisposable
         var matches = memories.Where(m => (string)m["key"]! == "no-dup-test").ToList();
         Assert.Single(matches);
     }
+
+    // ── MEMORY DECAY / TTL ────────────────────────────────────
+
+    [Fact]
+    public async Task Remember_WithTtl_SetsExpiresAt()
+    {
+        var handler = new RememberHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "ttl-test",
+                ["value"] = "This memory expires",
+                ["ttl"] = "24"
+            }), _context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        Assert.Equal("created", resultDict["action"]);
+        Assert.NotNull(resultDict["expiresAt"]);
+
+        // Verify in DB
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var entity = await db.AgentMemories.FindAsync("engineer-1", "ttl-test");
+        Assert.NotNull(entity!.ExpiresAt);
+        Assert.True(entity.ExpiresAt > DateTime.UtcNow);
+        Assert.True(entity.ExpiresAt < DateTime.UtcNow.AddHours(25));
+    }
+
+    [Fact]
+    public async Task Remember_WithoutTtl_NoExpiresAt()
+    {
+        var handler = new RememberHandler();
+        await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "no-ttl-test",
+                ["value"] = "This memory never expires"
+            }), _context);
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var entity = await db.AgentMemories.FindAsync("engineer-1", "no-ttl-test");
+        Assert.Null(entity!.ExpiresAt);
+    }
+
+    [Fact]
+    public async Task Remember_InvalidTtl_ReturnsError()
+    {
+        var handler = new RememberHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "bad-ttl",
+                ["value"] = "test",
+                ["ttl"] = "-5"
+            }), _context);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("positive integer", result.Error);
+    }
+
+    [Fact]
+    public async Task Remember_ZeroTtl_ReturnsError()
+    {
+        var handler = new RememberHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "zero-ttl",
+                ["value"] = "test",
+                ["ttl"] = "0"
+            }), _context);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("positive integer", result.Error);
+    }
+
+    [Fact]
+    public async Task Remember_UpdateWithTtl_OverwritesExpiresAt()
+    {
+        var handler = new RememberHandler();
+        // Create without TTL
+        await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "ttl-overwrite",
+                ["value"] = "original"
+            }), _context);
+
+        // Update with TTL
+        var result = await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "ttl-overwrite",
+                ["value"] = "updated",
+                ["ttl"] = "48"
+            }), _context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        Assert.Equal("updated", resultDict["action"]);
+        Assert.NotNull(resultDict["expiresAt"]);
+    }
+
+    [Fact]
+    public async Task Remember_UpdateWithoutTtl_PreservesExistingExpiry()
+    {
+        var handler = new RememberHandler();
+        // Create with TTL
+        await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "ttl-preserve",
+                ["value"] = "original",
+                ["ttl"] = "24"
+            }), _context);
+
+        // Get original expiry
+        DateTime? originalExpiry;
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var entity = await db.AgentMemories.FindAsync("engineer-1", "ttl-preserve");
+            originalExpiry = entity!.ExpiresAt;
+            Assert.NotNull(originalExpiry);
+        }
+
+        // Update without TTL — should preserve existing expiry
+        await handler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "ttl-preserve",
+                ["value"] = "updated value"
+            }), _context);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var entity = await db.AgentMemories.FindAsync("engineer-1", "ttl-preserve");
+            Assert.Equal(originalExpiry, entity!.ExpiresAt);
+        }
+    }
+
+    [Fact]
+    public async Task Recall_ExcludesExpiredMemories()
+    {
+        // Seed an expired memory directly in DB
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "expired-mem",
+            Category = "lesson",
+            Value = "This is expired",
+            CreatedAt = DateTime.UtcNow.AddDays(-10),
+            ExpiresAt = DateTime.UtcNow.AddHours(-1) // expired 1 hour ago
+        });
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "valid-mem",
+            Category = "lesson",
+            Value = "This is valid",
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new RecallHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string> { ["category"] = "lesson" }), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.DoesNotContain(memories, m => (string)m["key"]! == "expired-mem");
+        Assert.Contains(memories, m => (string)m["key"]! == "valid-mem");
+    }
+
+    [Fact]
+    public async Task Recall_IncludeExpired_ShowsExpiredMemories()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "expired-visible",
+            Category = "pattern",
+            Value = "Expired but requested",
+            CreatedAt = DateTime.UtcNow.AddDays(-10),
+            ExpiresAt = DateTime.UtcNow.AddHours(-1)
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new RecallHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string>
+            {
+                ["category"] = "pattern",
+                ["include_expired"] = "true"
+            }), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.Contains(memories, m => (string)m["key"]! == "expired-visible");
+    }
+
+    [Fact]
+    public async Task Recall_UpdatesLastAccessedAt()
+    {
+        var rememberHandler = new RememberHandler();
+        await rememberHandler.ExecuteAsync(
+            MakeCommand("REMEMBER", new Dictionary<string, string>
+            {
+                ["category"] = "lesson",
+                ["key"] = "access-track",
+                ["value"] = "test access tracking"
+            }), _context);
+
+        // Verify LastAccessedAt is initially null
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var entity = await db.AgentMemories.FindAsync("engineer-1", "access-track");
+            Assert.Null(entity!.LastAccessedAt);
+        }
+
+        var recallHandler = new RecallHandler();
+        await recallHandler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string> { ["key"] = "access-track" }), _context);
+
+        // Verify LastAccessedAt is now set
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var entity = await db.AgentMemories.FindAsync("engineer-1", "access-track");
+            Assert.NotNull(entity!.LastAccessedAt);
+            Assert.True(entity.LastAccessedAt >= DateTime.UtcNow.AddSeconds(-5));
+        }
+    }
+
+    [Fact]
+    public async Task ListMemories_ExcludesExpiredMemories()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "list-expired",
+            Category = "risk",
+            Value = "Expired risk",
+            CreatedAt = DateTime.UtcNow.AddDays(-5),
+            ExpiresAt = DateTime.UtcNow.AddHours(-2)
+        });
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "list-valid",
+            Category = "risk",
+            Value = "Valid risk",
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new ListMemoriesHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("LIST_MEMORIES", new Dictionary<string, string> { ["category"] = "risk" }), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.DoesNotContain(memories, m => (string)m["key"]! == "list-expired");
+        Assert.Contains(memories, m => (string)m["key"]! == "list-valid");
+    }
+
+    [Fact]
+    public void IsStale_NoAccess_OlderThan30Days_ReturnsTrue()
+    {
+        var entity = new AgentMemoryEntity
+        {
+            AgentId = "test",
+            Key = "old-mem",
+            Category = "lesson",
+            Value = "old stuff",
+            CreatedAt = DateTime.UtcNow.AddDays(-45),
+            LastAccessedAt = null,
+            ExpiresAt = null
+        };
+        Assert.True(RecallHandler.IsStale(entity, DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void IsStale_RecentAccess_ReturnsFalse()
+    {
+        var entity = new AgentMemoryEntity
+        {
+            AgentId = "test",
+            Key = "recent-mem",
+            Category = "lesson",
+            Value = "still relevant",
+            CreatedAt = DateTime.UtcNow.AddDays(-45),
+            LastAccessedAt = DateTime.UtcNow.AddDays(-5),
+            ExpiresAt = null
+        };
+        Assert.False(RecallHandler.IsStale(entity, DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void IsStale_HasTtl_NeverMarkedStale()
+    {
+        var entity = new AgentMemoryEntity
+        {
+            AgentId = "test",
+            Key = "ttl-mem",
+            Category = "lesson",
+            Value = "has TTL",
+            CreatedAt = DateTime.UtcNow.AddDays(-60),
+            LastAccessedAt = null,
+            ExpiresAt = DateTime.UtcNow.AddDays(1)
+        };
+        Assert.False(RecallHandler.IsStale(entity, DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void IsStale_UpdatedRecently_ReturnsFalse()
+    {
+        var entity = new AgentMemoryEntity
+        {
+            AgentId = "test",
+            Key = "updated-mem",
+            Category = "lesson",
+            Value = "updated recently",
+            CreatedAt = DateTime.UtcNow.AddDays(-60),
+            UpdatedAt = DateTime.UtcNow.AddDays(-5),
+            LastAccessedAt = null,
+            ExpiresAt = null
+        };
+        Assert.False(RecallHandler.IsStale(entity, DateTime.UtcNow));
+    }
+
+    [Fact]
+    public async Task Recall_ShowsStaleFlag()
+    {
+        // Seed a stale memory directly
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "stale-flag-test",
+            Category = "gotcha",
+            Value = "Very old gotcha",
+            CreatedAt = DateTime.UtcNow.AddDays(-45),
+            LastAccessedAt = null,
+            ExpiresAt = null
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new RecallHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string> { ["key"] = "stale-flag-test" }), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        var staleMem = memories.First(m => (string)m["key"]! == "stale-flag-test");
+        // On the first recall, memory was stale before access tracking updated it.
+        // The stale flag is computed at query time based on the state before update.
+        // Since CreatedAt is 45 days ago and LastAccessedAt was null, it IS stale.
+        Assert.True((bool?)staleMem["stale"] == true);
+    }
+
+    [Fact]
+    public async Task Recall_FutureExpiry_IncludesMemory()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "future-expiry",
+            Category = "constraint",
+            Value = "Still valid",
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new RecallHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("RECALL", new Dictionary<string, string> { ["key"] = "future-expiry" }), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+        Assert.Contains(memories, m => (string)m["key"]! == "future-expiry");
+        var mem = memories.First(m => (string)m["key"]! == "future-expiry");
+        Assert.NotNull(mem["expiresAt"]);
+    }
+
+    [Fact]
+    public async Task Export_ShowsExpiresAtAndStale()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "export-ttl",
+            Category = "finding",
+            Value = "has expiry",
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddHours(24)
+        });
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "engineer-1",
+            Key = "export-stale",
+            Category = "finding",
+            Value = "very old",
+            CreatedAt = DateTime.UtcNow.AddDays(-60)
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new ExportMemoriesHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("EXPORT_MEMORIES", new Dictionary<string, string> { ["category"] = "finding" }), _context);
+
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        var memories = (List<Dictionary<string, object?>>)resultDict["memories"]!;
+
+        var ttlMem = memories.First(m => (string)m["key"]! == "export-ttl");
+        Assert.NotNull(ttlMem["expiresAt"]);
+
+        var staleMem = memories.First(m => (string)m["key"]! == "export-stale");
+        Assert.True((bool?)staleMem["stale"] == true);
+    }
+
+    [Fact]
+    public async Task Import_WithTtl_SetsExpiresAt()
+    {
+        var handler = new ImportMemoriesHandler();
+        var json = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new { category = "lesson", key = "import-ttl", value = "imported with ttl", ttl = 72 }
+        });
+
+        var result = await handler.ExecuteAsync(
+            MakeCommand("IMPORT_MEMORIES", new Dictionary<string, string> { ["memories"] = json }), _context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var entity = await db.AgentMemories.FindAsync("engineer-1", "import-ttl");
+        Assert.NotNull(entity!.ExpiresAt);
+        Assert.True(entity.ExpiresAt > DateTime.UtcNow.AddHours(70));
+    }
 }
