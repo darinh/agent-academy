@@ -11,6 +11,7 @@ All changes to specifications are documented here.
 ### Fixed
 - **006-orchestrator / 010-task-management**: Fixed breakout task metadata contamination during overlapping assignment/setup. Breakout rooms now persist and reuse `TaskId` as the only task-identity source during branch setup, and `TaskEntity.BranchName` is now write-once with conflict logging instead of being replaceable by later context-derived writes.
 - **007-agent-commands**: Confirmed MERGE_TASK role authorization enforcement (commit 52419d8). Handler guards Planner/Reviewer access at lines 25-31. Updated spec table with implementation reference and clarified "ship together" design principle scope.
+- **007-agent-commands / 010-task-management**: `MERGE_TASK` now formats squash-merge commit messages as conventional commit subjects derived from `TaskEntity.Type` (`feat:`, `fix:`, `chore:`, `docs:`), preventing commit-msg hook rejections during reviewer/planner merges.
 - **006-orchestrator / 010-task-management**: Re-enabled breakout room creation on task assignment. Fixed command processing order in `RunBreakoutLoopAsync` — commands (including `SHELL git-commit`) now execute while still on the task branch, not after switching back to `develop`. Updated spec sections to remove "disabled" language.
 
 ### Changed

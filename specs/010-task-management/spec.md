@@ -281,11 +281,13 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 1. Socrates issues APPROVE_TASK command
 2. Task status → Approved
 3. Socrates or Aristotle issues MERGE_TASK: TaskId={id}
-4. GitService.SquashMergeAsync(branchName, commitMessage) executes
+4. GitService.SquashMergeAsync(branchName, commitMessage) executes with commit subject `{prefix}{task.Title}`
 5. Task updated: CompletedAt, MergeCommitSha, CommitCount
 6. Task status → Completed
 7. System posts success message to room
 ```
+
+`{prefix}` is derived from `TaskEntity.Type`: `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, `Spike -> docs: `.
 
 > **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.cs`
 

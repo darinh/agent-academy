@@ -256,6 +256,32 @@ public class BranchWorkflowTests : IDisposable
         Assert.Equal(mergeCommitSha, task.MergeCommitSha);
     }
 
+    [Theory]
+    [InlineData(TaskType.Feature, "feat: ", "feature")]
+    [InlineData(TaskType.Bug, "fix: ", "bug")]
+    [InlineData(TaskType.Chore, "chore: ", "chore")]
+    [InlineData(TaskType.Spike, "docs: ", "spike")]
+    public async Task MergeTask_UsesConventionalCommitPrefix(TaskType taskType, string expectedPrefix, string branchSuffix)
+    {
+        var title = $"Conventional commit {branchSuffix}";
+        var branchName = $"task/{branchSuffix}-merge-prefix";
+        CreateFeatureBranchWithCommit(branchName, $"{branchSuffix}.txt", $"content for {branchSuffix}");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: branchName,
+            title: title,
+            taskType: taskType);
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        Assert.Equal($"{expectedPrefix}{title}", RunGitInRepo("log", "-1", "--pretty=%B"));
+    }
+
     [Fact]
     public async Task MergeTask_StagesAllChanges_BeforeCommit()
     {
@@ -371,7 +397,9 @@ public class BranchWorkflowTests : IDisposable
     private async Task<string> CreateTestTask(
         string status = "Active",
         string? branchName = "task/test-abc123",
-        string? assignedAgentId = null)
+        string? assignedAgentId = null,
+        string title = "Test Task",
+        TaskType taskType = TaskType.Feature)
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -381,10 +409,11 @@ public class BranchWorkflowTests : IDisposable
         db.Tasks.Add(new Data.Entities.TaskEntity
         {
             Id = taskId,
-            Title = "Test Task",
+            Title = title,
             Description = "Test task description",
             SuccessCriteria = "It works",
             Status = status,
+            Type = taskType.ToString(),
             CurrentPhase = "Implementation",
             RoomId = "room-1",
             BranchName = branchName,

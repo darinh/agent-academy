@@ -20,6 +20,18 @@ public sealed class MergeTaskHandler : ICommandHandler
 
     public string CommandName => "MERGE_TASK";
 
+    private static string BuildCommitMessage(TaskType taskType, string title)
+        => $"{GetConventionalCommitPrefix(taskType)}{title}";
+
+    private static string GetConventionalCommitPrefix(TaskType taskType)
+        => taskType switch
+        {
+            TaskType.Bug => "fix: ",
+            TaskType.Chore => "chore: ",
+            TaskType.Spike => "docs: ",
+            _ => "feat: "
+        };
+
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         if (!string.Equals(context.AgentRole, "Planner", StringComparison.OrdinalIgnoreCase) &&
@@ -86,19 +98,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             // Set task to Merging status before git ops
             await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
 
-            // Build commit message with conventional commit prefix based on task type
-            var prefix = task.Type switch
-            {
-                TaskType.Bug => "fix",
-                TaskType.Chore => "chore",
-                TaskType.Spike => "docs",
-                _ => "feat"
-            };
-            var commitMessage = $"{prefix}: {task.Title}\n\nBranch: {task.BranchName}";
-            if (!string.IsNullOrWhiteSpace(task.ReviewerAgentId))
-                commitMessage += $"\nReviewed-by: {task.ReviewerAgentId}";
-            commitMessage += $"\nCo-authored-by: {context.AgentName} <{context.AgentId}@agent-academy>";
-
+            var commitMessage = BuildCommitMessage(task.Type, task.Title);
             var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage);
             await runtime.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: mergeCommitSha);
 
