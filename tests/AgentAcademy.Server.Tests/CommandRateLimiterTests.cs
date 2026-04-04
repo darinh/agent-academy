@@ -158,11 +158,12 @@ public class CommandRateLimiterTests : IDisposable
             "room-1", agent, scope.ServiceProvider);
 
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var audits = await db.CommandAudits.OrderBy(a => a.Id).ToListAsync();
+        var audits = await db.CommandAudits.ToListAsync();
 
         Assert.Equal(2, audits.Count);
-        Assert.Null(audits[0].ErrorCode); // success
-        Assert.Equal("RATE_LIMIT", audits[1].ErrorCode); // rate-limited
-        Assert.Equal("Denied", audits[1].Status);
+        var success = audits.Single(a => a.Status == "Success");
+        var denied = audits.Single(a => a.Status == "Denied");
+        Assert.Null(success.ErrorCode);
+        Assert.Equal("RATE_LIMIT", denied.ErrorCode);
     }
 }

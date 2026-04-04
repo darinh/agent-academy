@@ -161,7 +161,10 @@ public sealed class CommandPipeline
         {
             lines.Add($"[{r.Status}] {r.Command} ({r.CorrelationId})");
             if (r.ErrorCode != null)
-                lines.Add($"  ErrorCode: {r.ErrorCode}");
+            {
+                var retryHint = CommandErrorCode.IsRetryable(r.ErrorCode) ? " (retryable)" : " (not retryable)";
+                lines.Add($"  ErrorCode: {r.ErrorCode}{retryHint}");
+            }
             if (r.Error != null)
                 lines.Add($"  Error: {r.Error}");
             if (r.Result != null)

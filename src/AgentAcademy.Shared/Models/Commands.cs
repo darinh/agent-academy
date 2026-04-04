@@ -52,6 +52,19 @@ public static class CommandErrorCode
     /// <summary>Agent exceeded the command rate limit. Retry after the indicated delay.</summary>
     public const string RateLimit = "RATE_LIMIT";
 
+    private static readonly HashSet<string> RetryableCodes = new(StringComparer.Ordinal)
+    {
+        RateLimit, Timeout, Internal
+    };
+
+    /// <summary>
+    /// Returns true if the error code indicates a transient failure that may
+    /// succeed on retry. Agents should use this to decide whether to retry
+    /// or abandon the command.
+    /// </summary>
+    public static bool IsRetryable(string? errorCode) =>
+        errorCode != null && RetryableCodes.Contains(errorCode);
+
     /// <summary>
     /// Infer an error code from an <see cref="InvalidOperationException"/> message
     /// when the service layer doesn't throw typed exceptions. Best-effort heuristic.

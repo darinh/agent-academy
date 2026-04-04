@@ -171,4 +171,53 @@ public class CommandPipelineTests : IDisposable
         Assert.Contains("[Success] LIST_ROOMS", result);
         Assert.Contains("=== END COMMAND RESULTS ===", result);
     }
+
+    [Fact]
+    public void FormatResultsForContext_IncludesRetryableHint()
+    {
+        var envelope = new CommandEnvelope(
+            "READ_FILE",
+            new Dictionary<string, object?>(),
+            CommandStatus.Error,
+            null,
+            "Timed out",
+            "cmd-456", DateTime.UtcNow, "test-1")
+        { ErrorCode = CommandErrorCode.Timeout };
+
+        var result = CommandPipeline.FormatResultsForContext(new List<CommandEnvelope> { envelope });
+
+        Assert.Contains("ErrorCode: TIMEOUT (retryable)", result);
+    }
+
+    [Fact]
+    public void FormatResultsForContext_IncludesNotRetryableHint()
+    {
+        var envelope = new CommandEnvelope(
+            "READ_FILE",
+            new Dictionary<string, object?>(),
+            CommandStatus.Error,
+            null,
+            "File not found",
+            "cmd-789", DateTime.UtcNow, "test-1")
+        { ErrorCode = CommandErrorCode.NotFound };
+
+        var result = CommandPipeline.FormatResultsForContext(new List<CommandEnvelope> { envelope });
+
+        Assert.Contains("ErrorCode: NOT_FOUND (not retryable)", result);
+    }
+
+    [Theory]
+    [InlineData("RATE_LIMIT", true)]
+    [InlineData("TIMEOUT", true)]
+    [InlineData("INTERNAL", true)]
+    [InlineData("VALIDATION", false)]
+    [InlineData("NOT_FOUND", false)]
+    [InlineData("PERMISSION", false)]
+    [InlineData("CONFLICT", false)]
+    [InlineData("EXECUTION", false)]
+    [InlineData(null, false)]
+    public void IsRetryable_ReturnsExpected(string? code, bool expected)
+    {
+        Assert.Equal(expected, CommandErrorCode.IsRetryable(code));
+    }
 }
