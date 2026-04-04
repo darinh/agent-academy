@@ -34,6 +34,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<ConversationSessionEntity> ConversationSessions => Set<ConversationSessionEntity>();
     public DbSet<SystemSettingEntity> SystemSettings => Set<SystemSettingEntity>();
     public DbSet<NotificationDeliveryEntity> NotificationDeliveries => Set<NotificationDeliveryEntity>();
+    public DbSet<LlmUsageEntity> LlmUsage => Set<LlmUsageEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -366,6 +367,19 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.ProviderId).HasDatabaseName("idx_notification_deliveries_provider");
             entity.HasIndex(e => e.Channel).HasDatabaseName("idx_notification_deliveries_channel");
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_notification_deliveries_room");
+        });
+
+        // ── LLM Usage ─────────────────────────────────────────
+        modelBuilder.Entity<LlmUsageEntity>(entity =>
+        {
+            entity.ToTable("llm_usage");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AgentId).IsRequired();
+            entity.Property(e => e.RecordedAt).IsRequired();
+
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_llm_usage_agent");
+            entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_llm_usage_room");
+            entity.HasIndex(e => e.RecordedAt).HasDatabaseName("idx_llm_usage_time");
         });
     }
 }

@@ -82,7 +82,7 @@ public record DependencyStatus(
 public record UsageSummary(
     long TotalInputTokens,
     long TotalOutputTokens,
-    decimal TotalCost,
+    double TotalCost,
     int RequestCount,
     List<string> Models
 );
@@ -97,6 +97,35 @@ public record ErrorRecord(
     string Message,
     bool Recoverable,
     DateTime Timestamp
+);
+
+/// <summary>
+/// Per-agent usage breakdown within a room.
+/// </summary>
+public record AgentUsageSummary(
+    string AgentId,
+    long TotalInputTokens,
+    long TotalOutputTokens,
+    double TotalCost,
+    int RequestCount
+);
+
+/// <summary>
+/// Individual LLM API call usage record.
+/// </summary>
+public record LlmUsageRecord(
+    string Id,
+    string AgentId,
+    string? RoomId,
+    string? Model,
+    long InputTokens,
+    long OutputTokens,
+    long CacheReadTokens,
+    long CacheWriteTokens,
+    double? Cost,
+    int? DurationMs,
+    string? ReasoningEffort,
+    DateTime RecordedAt
 );
 
 /// <summary>

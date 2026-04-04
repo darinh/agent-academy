@@ -18,6 +18,7 @@ public class SystemController : ControllerBase
     private readonly IAgentExecutor _executor;
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentAcademyDbContext _db;
+    private readonly LlmUsageTracker _usageTracker;
     private readonly ILogger<SystemController> _logger;
 
     private static readonly DateTime StartedAt = DateTime.UtcNow;
@@ -27,12 +28,14 @@ public class SystemController : ControllerBase
         IAgentExecutor executor,
         AgentCatalogOptions catalog,
         AgentAcademyDbContext db,
+        LlmUsageTracker usageTracker,
         ILogger<SystemController> logger)
     {
         _runtime = runtime;
         _executor = executor;
         _catalog = catalog;
         _db = db;
+        _usageTracker = usageTracker;
         _logger = logger;
     }
 
@@ -241,6 +244,53 @@ public class SystemController : ControllerBase
         : exitCode == 0 ? "CleanShutdown"
         : exitCode == -1 ? "Crash"
         : $"UnexpectedExit({exitCode})";
+
+    /// <summary>
+    /// GET /api/usage — global LLM usage summary, optionally filtered by time window.
+    /// </summary>
+    [HttpGet("api/usage")]
+    public async Task<ActionResult<UsageSummary>> GetGlobalUsage([FromQuery] int? hoursBack = null)
+    {
+        try
+        {
+            if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
+                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+
+            var since = hoursBack.HasValue
+                ? DateTime.UtcNow.AddHours(-hoursBack.Value)
+                : (DateTime?)null;
+            var usage = await _usageTracker.GetGlobalUsageAsync(since);
+            return Ok(usage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get global usage");
+            return Problem("Failed to retrieve usage data.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/usage/records — recent individual LLM call records across all rooms.
+    /// </summary>
+    [HttpGet("api/usage/records")]
+    public async Task<ActionResult<List<LlmUsageRecord>>> GetGlobalUsageRecords(
+        [FromQuery] string? agentId = null,
+        [FromQuery] int limit = 50)
+    {
+        try
+        {
+            var records = await _usageTracker.GetRecentUsageAsync(
+                roomId: null,
+                agentId: agentId,
+                limit: Math.Clamp(limit, 1, 200));
+            return Ok(records);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get global usage records");
+            return Problem("Failed to retrieve usage records.");
+        }
+    }
 }
 
 public record ServerInstanceDto(

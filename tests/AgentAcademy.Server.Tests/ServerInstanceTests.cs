@@ -685,8 +685,11 @@ public class RestartHistoryApiTests : IDisposable
             new ActivityBroadcaster(),
             sessionService);
 
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
+
         _controller = new SystemController(
-            runtime, executor, catalog, _db,
+            runtime, executor, catalog, _db, usageTracker,
             NullLogger<SystemController>.Instance);
     }
 
