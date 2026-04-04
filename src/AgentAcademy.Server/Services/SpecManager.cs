@@ -29,7 +29,7 @@ public sealed class SpecManager
     /// Reads the specs/ directory and returns a condensed index (heading + purpose per
     /// section) suitable for prompt injection. Returns null if no specs exist.
     /// </summary>
-    public string? LoadSpecContext()
+    public async Task<string?> LoadSpecContextAsync()
     {
         if (!Directory.Exists(_specsDir)) return null;
 
@@ -43,7 +43,7 @@ public sealed class SpecManager
                 var specFile = Path.Combine(dir, "spec.md");
                 if (!File.Exists(specFile)) continue;
 
-                var content = File.ReadAllText(specFile);
+                var content = await File.ReadAllTextAsync(specFile);
                 var headingMatch = Regex.Match(content, @"^#\s+(.+)", RegexOptions.Multiline);
                 var heading = headingMatch.Success ? headingMatch.Groups[1].Value : dirName;
 
@@ -68,7 +68,7 @@ public sealed class SpecManager
     /// Lists all spec sections with metadata (id, heading, summary, file path).
     /// Returns an empty list if no specs exist.
     /// </summary>
-    public List<SpecSection> GetSpecSections()
+    public async Task<List<SpecSection>> GetSpecSectionsAsync()
     {
         var result = new List<SpecSection>();
 
@@ -82,7 +82,7 @@ public sealed class SpecManager
                 var specFile = Path.Combine(dir, "spec.md");
                 if (!File.Exists(specFile)) continue;
 
-                var content = File.ReadAllText(specFile);
+                var content = await File.ReadAllTextAsync(specFile);
                 var headingMatch = Regex.Match(content, @"^#\s+(.+)", RegexOptions.Multiline);
                 var heading = headingMatch.Success ? headingMatch.Groups[1].Value : dirName;
 
@@ -110,7 +110,7 @@ public sealed class SpecManager
     /// Reads the full content of a specific spec section by its directory name
     /// (e.g., "001-domain-model"). Returns null if the section doesn't exist.
     /// </summary>
-    public string? GetSpecContent(string sectionId)
+    public async Task<string?> GetSpecContentAsync(string sectionId)
     {
         if (string.IsNullOrWhiteSpace(sectionId)) return null;
 
@@ -126,7 +126,7 @@ public sealed class SpecManager
 
         try
         {
-            return File.ReadAllText(specFile);
+            return await File.ReadAllTextAsync(specFile);
         }
         catch
         {

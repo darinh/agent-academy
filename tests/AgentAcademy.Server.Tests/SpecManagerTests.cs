@@ -17,25 +17,25 @@ public class SpecManagerTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
-    // ── LoadSpecContext ──────────────────────────────────────────
+    // ── LoadSpecContextAsync ──────────────────────────────────────────
 
     [Fact]
-    public void LoadSpecContext_ReturnsNull_WhenSpecsDirDoesNotExist()
+    public async Task LoadSpecContextAsync_ReturnsNull_WhenSpecsDirDoesNotExist()
     {
         var manager = new SpecManager(Path.Combine(_tempDir, "nonexistent"));
-        Assert.Null(manager.LoadSpecContext());
+        Assert.Null(await manager.LoadSpecContextAsync());
     }
 
     [Fact]
-    public void LoadSpecContext_ReturnsNull_WhenSpecsDirIsEmpty()
+    public async Task LoadSpecContextAsync_ReturnsNull_WhenSpecsDirIsEmpty()
     {
         Directory.CreateDirectory(_tempDir);
         var manager = new SpecManager(_tempDir);
-        Assert.Null(manager.LoadSpecContext());
+        Assert.Null(await manager.LoadSpecContextAsync());
     }
 
     [Fact]
-    public void LoadSpecContext_ReturnsNull_WhenSubdirsHaveNoSpecFile()
+    public async Task LoadSpecContextAsync_ReturnsNull_WhenSubdirsHaveNoSpecFile()
     {
         var subdir = Path.Combine(_tempDir, "001-example");
         Directory.CreateDirectory(subdir);
@@ -43,16 +43,16 @@ public class SpecManagerTests : IDisposable
         File.WriteAllText(Path.Combine(subdir, "notes.txt"), "not a spec");
 
         var manager = new SpecManager(_tempDir);
-        Assert.Null(manager.LoadSpecContext());
+        Assert.Null(await manager.LoadSpecContextAsync());
     }
 
     [Fact]
-    public void LoadSpecContext_ReturnsSingleSection()
+    public async Task LoadSpecContextAsync_ReturnsSingleSection()
     {
         CreateSpec("000-overview", "# System Overview\n\n## Purpose\nHigh-level architecture.\n\n## Current Behavior\nStuff.");
 
         var manager = new SpecManager(_tempDir);
-        var result = manager.LoadSpecContext();
+        var result = await manager.LoadSpecContextAsync();
 
         Assert.NotNull(result);
         Assert.Contains("specs/000-overview/spec.md", result);
@@ -61,13 +61,13 @@ public class SpecManagerTests : IDisposable
     }
 
     [Fact]
-    public void LoadSpecContext_ReturnsMultipleSections_InOrder()
+    public async Task LoadSpecContextAsync_ReturnsMultipleSections_InOrder()
     {
         CreateSpec("002-second", "# Second Section\n\n## Purpose\nSecond purpose.\n\n## Other\nX.");
         CreateSpec("001-first", "# First Section\n\n## Purpose\nFirst purpose.\n\n## Other\nY.");
 
         var manager = new SpecManager(_tempDir);
-        var result = manager.LoadSpecContext();
+        var result = await manager.LoadSpecContextAsync();
 
         Assert.NotNull(result);
         var lines = result!.Split('\n');
@@ -78,12 +78,12 @@ public class SpecManagerTests : IDisposable
     }
 
     [Fact]
-    public void LoadSpecContext_UsesDirectoryName_WhenNoHeading()
+    public async Task LoadSpecContextAsync_UsesDirectoryName_WhenNoHeading()
     {
         CreateSpec("003-no-heading", "Some content without a heading.\n\n## Purpose\nA purpose.");
 
         var manager = new SpecManager(_tempDir);
-        var result = manager.LoadSpecContext();
+        var result = await manager.LoadSpecContextAsync();
 
         Assert.NotNull(result);
         Assert.Contains("003-no-heading", result);
@@ -91,12 +91,12 @@ public class SpecManagerTests : IDisposable
     }
 
     [Fact]
-    public void LoadSpecContext_OmitsPurpose_WhenNoPurposeSection()
+    public async Task LoadSpecContextAsync_OmitsPurpose_WhenNoPurposeSection()
     {
         CreateSpec("004-minimal", "# Minimal Spec\n\nJust some text without a purpose section.");
 
         var manager = new SpecManager(_tempDir);
-        var result = manager.LoadSpecContext();
+        var result = await manager.LoadSpecContextAsync();
 
         Assert.NotNull(result);
         Assert.Contains("Minimal Spec", result);
@@ -105,35 +105,35 @@ public class SpecManagerTests : IDisposable
     }
 
     [Fact]
-    public void LoadSpecContext_ExtractsPurpose_WhenPurposeIsLastSectionNoTrailingNewline()
+    public async Task LoadSpecContextAsync_ExtractsPurpose_WhenPurposeIsLastSectionNoTrailingNewline()
     {
         // Regression: Purpose as last section with no trailing newline must still extract
         CreateSpec("005-edge", "# Edge Case\n\n## Purpose\nFinal purpose text");
 
         var manager = new SpecManager(_tempDir);
-        var result = manager.LoadSpecContext();
+        var result = await manager.LoadSpecContextAsync();
 
         Assert.NotNull(result);
         Assert.Contains("Final purpose text", result);
     }
 
-    // ── GetSpecSections ─────────────────────────────────────────
+    // ── GetSpecSectionsAsync ─────────────────────────────────────────
 
     [Fact]
-    public void GetSpecSections_ReturnsEmpty_WhenNoSpecsDir()
+    public async Task GetSpecSectionsAsync_ReturnsEmpty_WhenNoSpecsDir()
     {
         var manager = new SpecManager(Path.Combine(_tempDir, "nonexistent"));
-        Assert.Empty(manager.GetSpecSections());
+        Assert.Empty(await manager.GetSpecSectionsAsync());
     }
 
     [Fact]
-    public void GetSpecSections_ReturnsMetadata()
+    public async Task GetSpecSectionsAsync_ReturnsMetadata()
     {
         CreateSpec("000-overview", "# System Overview\n\n## Purpose\nHigh-level architecture.\n\n## Current Behavior\nStuff.");
         CreateSpec("001-domain", "# Domain Model\n\n## Purpose\nAll domain types.\n\n## Other\nY.");
 
         var manager = new SpecManager(_tempDir);
-        var sections = manager.GetSpecSections();
+        var sections = await manager.GetSpecSectionsAsync();
 
         Assert.Equal(2, sections.Count);
 
@@ -147,45 +147,45 @@ public class SpecManagerTests : IDisposable
         Assert.Equal("All domain types.", sections[1].Summary);
     }
 
-    // ── GetSpecContent ──────────────────────────────────────────
+    // ── GetSpecContentAsync ──────────────────────────────────────────
 
     [Fact]
-    public void GetSpecContent_ReturnsContent_ForValidSection()
+    public async Task GetSpecContentAsync_ReturnsContent_ForValidSection()
     {
         var content = "# Test Spec\n\n## Purpose\nA test.\n\n## Current Behavior\nWorks.";
         CreateSpec("005-test", content);
 
         var manager = new SpecManager(_tempDir);
-        var result = manager.GetSpecContent("005-test");
+        var result = await manager.GetSpecContentAsync("005-test");
 
         Assert.Equal(content, result);
     }
 
     [Fact]
-    public void GetSpecContent_ReturnsNull_ForNonexistentSection()
+    public async Task GetSpecContentAsync_ReturnsNull_ForNonexistentSection()
     {
         Directory.CreateDirectory(_tempDir);
         var manager = new SpecManager(_tempDir);
-        Assert.Null(manager.GetSpecContent("999-nonexistent"));
+        Assert.Null(await manager.GetSpecContentAsync("999-nonexistent"));
     }
 
     [Fact]
-    public void GetSpecContent_ReturnsNull_ForNullOrEmpty()
+    public async Task GetSpecContentAsync_ReturnsNull_ForNullOrEmpty()
     {
         var manager = new SpecManager(_tempDir);
-        Assert.Null(manager.GetSpecContent(null!));
-        Assert.Null(manager.GetSpecContent(""));
-        Assert.Null(manager.GetSpecContent("  "));
+        Assert.Null(await manager.GetSpecContentAsync(null!));
+        Assert.Null(await manager.GetSpecContentAsync(""));
+        Assert.Null(await manager.GetSpecContentAsync("  "));
     }
 
     [Fact]
-    public void GetSpecContent_BlocksPathTraversal()
+    public async Task GetSpecContentAsync_BlocksPathTraversal()
     {
         CreateSpec("000-legit", "# Legit");
 
         var manager = new SpecManager(_tempDir);
-        Assert.Null(manager.GetSpecContent("../../../etc"));
-        Assert.Null(manager.GetSpecContent(".."));
+        Assert.Null(await manager.GetSpecContentAsync("../../../etc"));
+        Assert.Null(await manager.GetSpecContentAsync(".."));
     }
 
     // ── Helper ──────────────────────────────────────────────────

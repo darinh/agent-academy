@@ -201,7 +201,7 @@ public sealed class AgentOrchestrator
                 round, MaxRoundsPerTrigger, roomId);
 
             // Load spec context once for all prompts in this round
-            var specContext = _specManager.LoadSpecContext();
+            var specContext = await _specManager.LoadSpecContextAsync();
 
             // Load session summary for context continuity after epoch rotation
             string? sessionSummary = null;
@@ -410,7 +410,7 @@ public sealed class AgentOrchestrator
         var room = await runtime.GetRoomAsync(roomId);
         if (room is null) return;
 
-        var specContext = _specManager.LoadSpecContext();
+        var specContext = await _specManager.LoadSpecContextAsync();
         var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
         var directMessages = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
         if (directMessages.Count > 0)
@@ -921,7 +921,7 @@ public sealed class AgentOrchestrator
             var room = await runtime.GetRoomAsync(parentRoomId);
             if (room is null) return null;
             var prompt = BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
-                _specManager.LoadSpecContext());
+                await _specManager.LoadSpecContextAsync());
             reviewResponse = await RunAgentAsync(reviewer, prompt, parentRoomId);
         }
         catch (Exception ex)
