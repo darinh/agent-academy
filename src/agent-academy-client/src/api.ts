@@ -38,7 +38,7 @@ export type CommandExecutionStatus = "pending" | "completed" | "failed" | "denie
 export type CommandArgScalar = string | number | boolean | null;
 
 export interface ExecuteCommandRequest {
-  command: HumanCommandName;
+  command: string;
   args?: Record<string, CommandArgScalar>;
 }
 
@@ -486,6 +486,30 @@ export function executeCommand(req: ExecuteCommandRequest): Promise<CommandExecu
 
 export function getCommandExecution(correlationId: string): Promise<CommandExecutionResponse> {
   return request<CommandExecutionResponse>(apiUrl(`/api/commands/${correlationId}`));
+}
+
+export interface CommandFieldMetadata {
+  name: string;
+  label: string;
+  kind: "text" | "textarea" | "number";
+  description: string;
+  placeholder?: string;
+  required?: boolean;
+  defaultValue?: string;
+}
+
+export interface CommandMetadata {
+  command: string;
+  title: string;
+  category: "workspace" | "code" | "git" | "operations";
+  description: string;
+  detail: string;
+  isAsync: boolean;
+  fields: CommandFieldMetadata[];
+}
+
+export function getCommandMetadata(): Promise<CommandMetadata[]> {
+  return request<CommandMetadata[]>(apiUrl("/api/commands/metadata"));
 }
 
 export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {

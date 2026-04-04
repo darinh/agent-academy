@@ -484,7 +484,7 @@ All other handlers (26 of 28) require no modifications. They accept `CommandCont
 
 1. **No SignalR streaming**: Human commands do not stream live output. `RUN_BUILD` and `RUN_TESTS` require polling to see results. Acceptable for Week 1, but UX will feel sluggish for long-running commands.
 
-2. **No command metadata endpoint**: Frontend must hardcode which commands are synchronous vs asynchronous, and what arguments each command accepts. Future enhancement: `GET /api/commands/metadata` to return schema.
+2. ~~**No command metadata endpoint**~~: **RESOLVED** — `GET /api/commands/metadata` returns the full command catalog (`HumanCommandMetadata[]`) including title, category, description, detail, isAsync flag, and field schemas. Frontend fetches dynamically on mount with fallback to hardcoded catalog. Server-side `HumanCommandRegistry` is the single source of truth.
 
 3. **No cancellation**: Once an async command starts, there is no API to cancel it. Build/test runs execute to completion even if user navigates away.
 
@@ -615,8 +615,8 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
-- **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
-- **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation.
+- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette and task panel enhancements still planned.
+- **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
 
 ## Discord Agent Question Bridge
 
@@ -667,3 +667,4 @@ Discord Server
 | 2026-04-04 | Implemented `ROOM_TOPIC` (Phase 1G). Any agent can set/clear a room's topic. DB migration adds `Topic` column. `RESTORE_ROOM` consolidated into `REOPEN_ROOM`. All Tier 2 room commands now implemented. 5 new tests. | room-topic | (this change) |
 | 2026-04-04 | `REJECT_TASK` command added (Tier 2 Task Management). Reverts Approved/Completed → ChangesRequested, reverts merge if needed, reopens breakout. Role-gated. `APPROVE_TASK` and `REQUEST_CHANGES` also got role gates. Review round limit (5) enforced. | reject-task | (this change) |
 | 2026-04-04 | Rate limit runtime configuration. `CommandRateLimiter.Configure()` method + settings keys (`commands.rateLimitMaxCommands`, `commands.rateLimitWindowSeconds`). Live-reconfigured via `PUT /api/settings`. | rate-limit-config | (this change) |
+| 2026-04-04 | Command metadata endpoint: `GET /api/commands/metadata` returns `HumanCommandMetadata[]` from `HumanCommandRegistry`. Filters by allowlist + handler existence. Frontend loads dynamically with hardcoded fallback. Resolves known gap #2. 13 new backend tests, 3 new frontend tests. | command-metadata-endpoint | (this change) |

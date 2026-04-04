@@ -8,6 +8,7 @@ All changes to specifications are documented here.
 - **008-agent-memory**: Upgraded RECALL search from LIKE to FTS5 full-text search with BM25 ranking. Word-boundary matching replaces substring matching. Multi-word queries use AND semantics. FTS5 virtual table (`agent_memories_fts`) synced via INSERT/UPDATE/DELETE triggers. Graceful LIKE fallback if FTS5 unavailable. Migration `AddMemoryFts5Search`. Known gap resolved. 10 new tests (813 total).
 
 ### Added
+- **007-agent-commands**: Command metadata endpoint — `GET /api/commands/metadata` returns `HumanCommandMetadata[]` with title, category, description, detail, isAsync, and field schemas. Server-side `HumanCommandRegistry` is the single source of truth for all 18 human-executable commands. Endpoint filters by both allowlist and registered handlers. Frontend `CommandsPanel` loads dynamically with hardcoded fallback. Resolves spec 007 known gap #2 and spec 300 future work item. 13 new backend tests, 3 new frontend tests.
 - **005-workspace-runtime**: Stale room cleanup — auto-archive rooms when all tasks reach terminal state (Completed/Cancelled). `CompleteTaskAsync` calls `TryAutoArchiveRoomAsync` to check and archive. Agents evacuated to workspace default room. Manual cleanup via `CleanupStaleRoomsAsync()`, `CLEANUP_ROOMS` command (Planner/Human only), and `POST /api/rooms/cleanup`. `RejectTaskAsync` reopens auto-archived rooms. `GetRoomsAsync` now excludes archived rooms by default (`includeArchived` parameter). Resolves known gap: "No room cleanup for stale completed rooms". 15 new tests.
 
 ### Added
