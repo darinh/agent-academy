@@ -39,18 +39,23 @@ Configured agents (v1 port):
 
 ### Room Management
 
-- `GetRoomsAsync()` → rooms for the active workspace, default room first then alphabetically
+- `GetRoomsAsync(includeArchived)` → rooms for the active workspace, default room first then alphabetically. Archived rooms are excluded by default; pass `includeArchived: true` to include them.
 - `GetRoomAsync(roomId)` → single room snapshot or null
 - `RenameRoomAsync(roomId, newName)` → renames a room, publishes `RoomRenamed` activity event, cascades to Discord channel name via `OnRoomRenamedAsync`
 - `CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
 - `EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
 - `GetProjectNameForRoomAsync(roomId)` → resolves `roomId → WorkspacePath → ProjectName` (falls back to directory basename)
+- `CleanupStaleRoomsAsync()` → scans for non-main rooms where all tasks are terminal (Completed/Cancelled), evacuates agents to default room, archives the rooms. Returns count of rooms cleaned up.
 
 **Room rename API**: `PUT /api/rooms/{roomId}/name` with `{ "name": "..." }` body. Returns updated `RoomSnapshot`. Frontend: double-click room name in sidebar to edit inline.
 
 **Project-scoped rooms**: Rooms are associated with a workspace via `WorkspacePath` (nullable FK to `workspaces.Path`). `GetRoomsAsync()` filters by the active workspace. Rooms without a workspace assignment are only visible when no workspace is active. Each workspace gets its own default room (ID: `{project-slug}-main`), with separate conversation history.
 
 **Legacy room retirement**: `EnsureDefaultRoomForWorkspaceAsync` calls `RetireLegacyDefaultRoomAsync` to clear `WorkspacePath` on the catalog default room if it was backfilled into a workspace by the `AddWorkspacePathToRooms` migration.
+
+**Stale room cleanup**: When all tasks in a room reach terminal state (Completed or Cancelled), the room is automatically archived and agents are evacuated to the workspace default room. Manual cleanup is available via `CleanupStaleRoomsAsync()`, the `CLEANUP_ROOMS` command, or `POST /api/rooms/cleanup`. `GetRoomsAsync()` excludes archived rooms by default; pass `includeArchived: true` to include them. Room rejection via `RejectTaskAsync` automatically reopens an auto-archived room.
+
+**Room cleanup API**: `POST /api/rooms/cleanup` triggers `CleanupStaleRoomsAsync`. Returns `{ "archivedCount": N }`. `GET /api/rooms?includeArchived=true` includes archived rooms.
 
 Each `RoomSnapshot` includes:
 - Participants (built from `AgentLocationEntity` records — agents whose current location matches the room, with preferred-role flag from the active task)
@@ -167,7 +172,6 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 ## Known Gaps
 
 - No real-time push to external clients — SignalR hub exists (`/hubs/activity`) and `ActivityHubBroadcaster` forwards events to connected clients, but activity subscribers are also available in-process
-- No room cleanup for stale completed rooms (v1 had `cleanupStaleRooms`)
 - No agent knowledge persistence (v1 had file-based knowledge storage)
 - No task item management (v1 had `createTaskItem`, `updateTaskStatus`, etc.)
 - Activity event in-memory buffer is per-instance, not shared across scoped instances
@@ -175,6 +179,7 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 ## Revision History
 
+- **2026-04-04**: Stale room cleanup — auto-archive rooms when all tasks are terminal, `GetRoomsAsync` excludes archived by default, `CleanupStaleRoomsAsync` for bulk cleanup, `CLEANUP_ROOMS` command, `POST /api/rooms/cleanup` API, room reopening on task rejection
 - **2026-03-29**: Project-scoped rooms — `WorkspacePath` FK on `RoomEntity`, `GetRoomsAsync` filters by active workspace, `EnsureDefaultRoomForWorkspaceAsync` creates per-project default room with agents, `CreateTaskAsync` stamps new rooms with active workspace path
 - **2026-03-29**: Default room ordering — `GetRoomsAsync` now sorts the configured default room first, then remaining rooms alphabetically by name
 - **Initial implementation**: Ported from v1 TypeScript `WorkspaceRuntime.ts` to C# with EF Core persistence

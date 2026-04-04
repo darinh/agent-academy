@@ -15,10 +15,14 @@ public sealed class ListRoomsHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var rooms = await runtime.GetRoomsAsync();
+
+        // When filtering for Archived rooms, we need to include them in the query
+        var wantsArchived = command.Args.TryGetValue("status", out var statusObj) && statusObj is string s
+            && s.Equals("Archived", StringComparison.OrdinalIgnoreCase);
+        var rooms = await runtime.GetRoomsAsync(includeArchived: wantsArchived);
 
         // Optional status filter
-        if (command.Args.TryGetValue("status", out var statusObj) && statusObj is string statusFilter
+        if (command.Args.TryGetValue("status", out statusObj) && statusObj is string statusFilter
             && !string.IsNullOrWhiteSpace(statusFilter))
         {
             if (!Enum.TryParse<RoomStatus>(statusFilter, ignoreCase: true, out var parsedStatus))

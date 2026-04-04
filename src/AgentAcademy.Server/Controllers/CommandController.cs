@@ -40,6 +40,7 @@ public sealed class CommandController : ControllerBase
         "CREATE_ROOM",
         "REOPEN_ROOM",
         "CLOSE_ROOM",
+        "CLEANUP_ROOMS",
         "INVITE_TO_ROOM",
     };
 

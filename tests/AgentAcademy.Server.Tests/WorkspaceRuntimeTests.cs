@@ -1257,4 +1257,270 @@ public class WorkspaceRuntimeTests : IDisposable
 
         Assert.Equal(_catalog.DefaultRoomName, room!.Name);
     }
+
+    // ── Stale Room Cleanup ──────────────────────────────────────
+
+    [Fact]
+    public async Task CompleteTask_AutoArchivesRoomWhenAllTasksTerminal()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create a task in a new room (not main)
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Auto-archive test", "Test room cleanup", "Room gets archived", null, []));
+
+        var roomId = result.Room.Id;
+        Assert.NotEqual("main", roomId);
+
+        // Complete the task
+        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+
+        // Room should now be archived
+        var room = await _runtime.GetRoomAsync(roomId);
+        Assert.NotNull(room);
+        Assert.Equal(RoomStatus.Archived, room!.Status);
+    }
+
+    [Fact]
+    public async Task CompleteTask_DoesNotArchiveRoomWithActiveTask()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create two tasks in the same room
+        var result1 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "First task", "Desc", "Criteria", null, []));
+        var roomId = result1.Room.Id;
+
+        var result2 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Second task", "Desc", "Criteria", roomId, []));
+
+        // Complete only the first task
+        await _runtime.CompleteTaskAsync(result1.Task.Id, commitCount: 1);
+
+        // Room should still be active (second task remains)
+        var room = await _runtime.GetRoomAsync(roomId);
+        Assert.NotNull(room);
+        Assert.NotEqual(RoomStatus.Archived, room!.Status);
+    }
+
+    [Fact]
+    public async Task CompleteTask_ArchivesRoomWhenAllTasksCancelledOrCompleted()
+    {
+        await _runtime.InitializeAsync();
+
+        var result1 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Task one", "Desc", "Criteria", null, []));
+        var roomId = result1.Room.Id;
+
+        var result2 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Task two", "Desc", "Criteria", roomId, []));
+
+        // Cancel task 2 via direct DB update (simulating CancelTaskHandler)
+        var task2Entity = await _db.Tasks.FindAsync(result2.Task.Id);
+        task2Entity!.Status = nameof(Shared.Models.TaskStatus.Cancelled);
+        await _db.SaveChangesAsync();
+
+        // Complete task 1 — now both tasks are terminal
+        await _runtime.CompleteTaskAsync(result1.Task.Id, commitCount: 1);
+
+        var room = await _runtime.GetRoomAsync(roomId);
+        Assert.NotNull(room);
+        Assert.Equal(RoomStatus.Archived, room!.Status);
+    }
+
+    [Fact]
+    public async Task CompleteTask_DoesNotArchiveMainRoom()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create task in main room
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Main room task", "Desc", "Criteria", "main", []));
+
+        // Complete the task
+        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+
+        // Main room should NOT be archived
+        var room = await _runtime.GetRoomAsync("main");
+        Assert.NotNull(room);
+        Assert.NotEqual(RoomStatus.Archived, room!.Status);
+    }
+
+    [Fact]
+    public async Task CompleteTask_EvacuatesAgentsOnArchive()
+    {
+        await _runtime.InitializeAsync();
+
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Evacuation test", "Desc", "Criteria", null, []));
+        var roomId = result.Room.Id;
+
+        // Move an agent into the task room
+        await _runtime.MoveAgentAsync("engineer-1", roomId, AgentState.InRoom);
+
+        // Complete the task
+        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+
+        // Agent should have been moved back to the default room
+        var location = await _runtime.GetAgentLocationAsync("engineer-1");
+        Assert.NotNull(location);
+        Assert.Equal("main", location!.RoomId);
+        Assert.Equal(AgentState.Idle, location.State);
+    }
+
+    [Fact]
+    public async Task GetRoomsAsync_ExcludesArchivedByDefault()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create and auto-archive a room
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Archived room test", "Desc", "Criteria", null, []));
+        var roomId = result.Room.Id;
+        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+
+        // Default query should not include archived room
+        var rooms = await _runtime.GetRoomsAsync();
+        Assert.DoesNotContain(rooms, r => r.Id == roomId);
+
+        // With includeArchived should include it
+        var allRooms = await _runtime.GetRoomsAsync(includeArchived: true);
+        Assert.Contains(allRooms, r => r.Id == roomId);
+    }
+
+    [Fact]
+    public async Task RejectTask_ReopensAutoArchivedRoom()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create task, approve, complete (auto-archive)
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Reject test", "Desc", "Criteria", null, []));
+        var roomId = result.Room.Id;
+
+        var taskEntity = await _db.Tasks.FindAsync(result.Task.Id);
+        taskEntity!.Status = nameof(Shared.Models.TaskStatus.Approved);
+        await _db.SaveChangesAsync();
+
+        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+
+        // Verify room is archived
+        var archivedRoom = await _runtime.GetRoomAsync(roomId);
+        Assert.Equal(RoomStatus.Archived, archivedRoom!.Status);
+
+        // Reject the task — should reopen the room
+        await _runtime.RejectTaskAsync(result.Task.Id, "reviewer-1", "Needs more tests");
+
+        var reopenedRoom = await _runtime.GetRoomAsync(roomId);
+        Assert.NotNull(reopenedRoom);
+        Assert.Equal(RoomStatus.Active, reopenedRoom!.Status);
+    }
+
+    [Fact]
+    public async Task CleanupStaleRooms_ArchivesStaleRooms()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create a task and manually complete it (without triggering auto-archive by
+        // directly updating the DB, simulating a pre-existing stale room)
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Stale room", "Desc", "Criteria", null, []));
+        var roomId = result.Room.Id;
+
+        // Mark task completed directly in DB (bypassing auto-archive)
+        var entity = await _db.Tasks.FindAsync(result.Task.Id);
+        entity!.Status = nameof(Shared.Models.TaskStatus.Completed);
+        entity.CompletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        // Room should still be Active
+        var room = await _db.Rooms.FindAsync(roomId);
+        Assert.Equal(nameof(RoomStatus.Active), room!.Status);
+
+        // Run cleanup
+        var count = await _runtime.CleanupStaleRoomsAsync();
+
+        Assert.Equal(1, count);
+        var cleaned = await _db.Rooms.FindAsync(roomId);
+        Assert.Equal(nameof(RoomStatus.Archived), cleaned!.Status);
+    }
+
+    [Fact]
+    public async Task CleanupStaleRooms_SkipsRoomsWithNoTasks()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create an empty room (no tasks)
+        var room = await _runtime.CreateRoomAsync("Empty Room");
+
+        var count = await _runtime.CleanupStaleRoomsAsync();
+
+        Assert.Equal(0, count);
+        var entity = await _db.Rooms.FindAsync(room.Id);
+        Assert.NotEqual(nameof(RoomStatus.Archived), entity!.Status);
+    }
+
+    [Fact]
+    public async Task CleanupStaleRooms_SkipsMainRoom()
+    {
+        await _runtime.InitializeAsync();
+
+        // Create task in main room and complete it
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Main task", "Desc", "Criteria", "main", []));
+
+        var entity = await _db.Tasks.FindAsync(result.Task.Id);
+        entity!.Status = nameof(Shared.Models.TaskStatus.Completed);
+        entity.CompletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        var count = await _runtime.CleanupStaleRoomsAsync();
+
+        Assert.Equal(0, count);
+        var mainRoom = await _db.Rooms.FindAsync("main");
+        Assert.NotEqual(nameof(RoomStatus.Archived), mainRoom!.Status);
+    }
+
+    [Fact]
+    public async Task CleanupStaleRooms_SkipsRoomsWithActiveTasks()
+    {
+        await _runtime.InitializeAsync();
+
+        var result1 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Done task", "Desc", "Criteria", null, []));
+        var roomId = result1.Room.Id;
+
+        var result2 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Active task", "Desc", "Criteria", roomId, []));
+
+        // Complete only first task
+        var entity = await _db.Tasks.FindAsync(result1.Task.Id);
+        entity!.Status = nameof(Shared.Models.TaskStatus.Completed);
+        entity.CompletedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        var count = await _runtime.CleanupStaleRoomsAsync();
+
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task CompleteTask_PublishesAutoArchiveActivityEvent()
+    {
+        await _runtime.InitializeAsync();
+
+        var events = new List<ActivityEvent>();
+        _activityBus.Subscribe(e => events.Add(e));
+
+        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Activity test", "Desc", "Criteria", null, []));
+
+        events.Clear();
+        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+
+        var archiveEvent = events.FirstOrDefault(e =>
+            e.Type == ActivityEventType.RoomClosed &&
+            e.Message.Contains("auto-archived"));
+        Assert.NotNull(archiveEvent);
+    }
 }
