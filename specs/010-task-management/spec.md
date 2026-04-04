@@ -632,7 +632,8 @@ All task commands are implemented as `ICommandHandler` implementations.
 | `UPDATE_TASK` | `UpdateTaskHandler` | Any | Updates status/blocker/note; allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued |
 | `APPROVE_TASK` | `ApproveTaskHandler` | Any (convention: Reviewer) | Approves task, increments ReviewRounds |
 | `REQUEST_CHANGES` | `RequestChangesHandler` | Any (convention: Reviewer) | Requests changes with required findings, increments ReviewRounds |
-| `MERGE_TASK` | `MergeTaskHandler` | Planner, Reviewer | Squash-merges task branch to develop |
+| `MERGE_TASK` | `MergeTaskHandler` | Planner, Reviewer | Squash-merges task branch to develop; reports conflicting files on failure and suggests REBASE_TASK |
+| `REBASE_TASK` | `RebaseTaskHandler` | Any | Rebases task branch onto develop; supports `dryRun=true` for conflict-only check |
 | `CANCEL_TASK` | `CancelTaskHandler` | Planner, Reviewer | Cancels task, optionally deletes branch (default: yes) |
 | `ADD_TASK_COMMENT` | `AddTaskCommentHandler` | Assignee, Reviewer, Planner | Adds structured comment (Comment/Finding/Evidence/Blocker) |
 | `LIST_TASKS` | `ListTasksHandler` | Any | Lists tasks with optional `status` and `assignee` filters |
@@ -689,7 +690,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 - No remote push capability — all work is local-only
 - ~~No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`~~ — **resolved**: `REJECT_TASK` handler supports `Approved` → `ChangesRequested` (simple status change + breakout reopen) and `Completed` → `ChangesRequested` (reverts merge commit on develop + breakout reopen). Role-gated to Planner, Reviewer, Human. 19 tests.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
-- Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
+- ~~Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)~~ — **resolved**: `MERGE_TASK` now detects conflicting files on merge failure and reports them with a suggestion to use `REBASE_TASK`. New `REBASE_TASK` command rebases task branches onto develop with conflict detection and abort-on-failure. Dry-run mode (`dryRun=true`) checks for conflicts without modifying the branch. `MergeConflictException` carries conflicting file paths. `DetectMergeConflictsAsync` performs non-destructive conflict checks. 18 new tests.
 - ~~No formal limit on review rounds (tracked but not enforced)~~ — **resolved**: `MaxReviewRounds = 5` enforced in `RequestChangesAsync` and `RejectTaskAsync`. Tasks that exceed the limit cannot enter another review cycle — reviewer gets an error suggesting cancellation. 2 tests added.
 - ~~`APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them~~ — **resolved**: Both handlers now enforce Planner/Reviewer/Human role gates, matching `REJECT_TASK` and `MERGE_TASK`. 2 tests added.
 
@@ -697,6 +698,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-04 | REBASE_TASK command + MERGE_TASK conflict reporting — rebase task branches onto develop with conflict detection, dry-run mode, MergeConflictException. MERGE_TASK now detects conflicting files on failure and suggests REBASE_TASK. 18 new tests (888 total). | Anvil |
 | 2026-04-04 | REJECT_TASK command — reverts Approved/Completed tasks to ChangesRequested, reverts merge commit for completed tasks, reopens breakout rooms. Role-gated to Planner/Reviewer/Human. 19 tests. | Anvil |
 | 2026-04-04 | Reconciled spec with code — Partial → Implemented. Documented all TaskSnapshot/TaskEntity fields, TaskStatus.AwaitingValidation, command table, WorkspaceRuntime method index, auto-spec dedup, role gate gaps, write-once invariants | Anvil |
 | 2026-04-01 | Remove unimplemented PR workflow content — marked GitHub integration as Planned | Thucydides |

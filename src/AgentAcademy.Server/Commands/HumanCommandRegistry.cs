@@ -193,6 +193,18 @@ public static class HumanCommandRegistry
                 new("category", "Category", "text", "Optional category filter.",
                     Placeholder: "pattern"),
             ]),
+
+        new("REBASE_TASK", "Rebase task branch", "git",
+            "Rebase a task's feature branch onto develop to resolve divergence.",
+            "Use before MERGE_TASK when the branch has fallen behind develop. Supports dry-run mode to check for conflicts without modifying the branch.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task whose branch to rebase.",
+                    Required: true),
+                new("dryRun", "Dry run", "text", "Set to 'true' to check for conflicts without rebasing.",
+                    Placeholder: "false"),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =
