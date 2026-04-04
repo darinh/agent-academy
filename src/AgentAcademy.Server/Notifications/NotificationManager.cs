@@ -12,10 +12,12 @@ public sealed class NotificationManager
 {
     private readonly ConcurrentDictionary<string, INotificationProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<NotificationManager> _logger;
+    private readonly NotificationDeliveryTracker? _tracker;
 
-    public NotificationManager(ILogger<NotificationManager> logger)
+    public NotificationManager(ILogger<NotificationManager> logger, NotificationDeliveryTracker? tracker = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _tracker = tracker;
     }
 
     /// <summary>
@@ -69,16 +71,22 @@ public sealed class NotificationManager
                 if (sent)
                 {
                     successCount++;
+                    if (_tracker is not null)
+                        await _tracker.RecordDeliveryAsync("Broadcast", provider.ProviderId, message.Title, message.Body, message.RoomId, message.AgentName);
                 }
                 else
                 {
                     _logger.LogWarning("Provider '{ProviderId}' returned false for notification '{Title}'",
                         provider.ProviderId, message.Title);
+                    if (_tracker is not null)
+                        await _tracker.RecordSkippedAsync("Broadcast", provider.ProviderId, message.Title, message.Body, message.RoomId, message.AgentName);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Failed to send notification via provider '{ProviderId}' after retries", provider.ProviderId);
+                if (_tracker is not null)
+                    await _tracker.RecordFailureAsync("Broadcast", provider.ProviderId, message.Title, message.Body, message.RoomId, message.AgentName, ex.Message);
             }
         }
 
@@ -151,13 +159,22 @@ public sealed class NotificationManager
                     _logger.LogInformation(
                         "Agent question from '{AgentName}' sent via provider '{ProviderId}'",
                         question.AgentName, provider.ProviderId);
+                    if (_tracker is not null)
+                        await _tracker.RecordDeliveryAsync("AgentQuestion", provider.ProviderId, question.Question, null, question.RoomId, question.AgentId);
                     return (true, null);
+                }
+                else
+                {
+                    if (_tracker is not null)
+                        await _tracker.RecordSkippedAsync("AgentQuestion", provider.ProviderId, question.Question, null, question.RoomId, question.AgentId);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Failed to send agent question via provider '{ProviderId}' after retries", provider.ProviderId);
                 lastError = $"Provider '{provider.ProviderId}' error: {ex.Message}";
+                if (_tracker is not null)
+                    await _tracker.RecordFailureAsync("AgentQuestion", provider.ProviderId, question.Question, null, question.RoomId, question.AgentId, ex.Message);
             }
         }
 
@@ -186,11 +203,23 @@ public sealed class NotificationManager
                     $"SendDirectMessage({provider.ProviderId})",
                     _logger,
                     cancellationToken);
-                if (sent) return (true, null);
+                if (sent)
+                {
+                    if (_tracker is not null)
+                        await _tracker.RecordDeliveryAsync("DirectMessage", provider.ProviderId, dm.Question, null, dm.RoomId, dm.AgentId);
+                    return (true, null);
+                }
+                else
+                {
+                    if (_tracker is not null)
+                        await _tracker.RecordSkippedAsync("DirectMessage", provider.ProviderId, dm.Question, null, dm.RoomId, dm.AgentId);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 lastError = $"Provider '{provider.ProviderId}' error: {ex.Message}";
+                if (_tracker is not null)
+                    await _tracker.RecordFailureAsync("DirectMessage", provider.ProviderId, dm.Question, null, dm.RoomId, dm.AgentId, ex.Message);
             }
         }
 
@@ -212,10 +241,14 @@ public sealed class NotificationManager
                     $"NotifyRoomRenamed({provider.ProviderId})",
                     _logger,
                     cancellationToken);
+                if (_tracker is not null)
+                    await _tracker.RecordDeliveryAsync("RoomRenamed", provider.ProviderId, $"Room renamed to \"{newName}\"", null, roomId, agentId: null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Failed to notify provider '{ProviderId}' of room rename after retries", provider.ProviderId);
+                if (_tracker is not null)
+                    await _tracker.RecordFailureAsync("RoomRenamed", provider.ProviderId, $"Room renamed to \"{newName}\"", null, roomId, agentId: null, ex.Message);
             }
         }
     }

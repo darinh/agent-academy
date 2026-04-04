@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **004-notification-system**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 4 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed) with Delivered/Skipped/Failed status. REST API endpoints for delivery history (`GET /api/notifications/deliveries`) and stats (`GET /api/notifications/deliveries/stats`). `NotificationManager` integrated with optional tracker dependency. 18 new tests.
+
+### Added
 - **006-orchestrator**: Queue reconstruction on startup — `ReconstructQueueAsync()` runs on every server startup and re-enqueues rooms with unanswered human messages. `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` queries for rooms where the latest message has `SenderKind = User`. Prevents message loss on crash or clean restart. 8 new tests.
 - **006-orchestrator**: Breakout failure surfacing — fire-and-forget breakout loops now catch unhandled exceptions and run `HandleBreakoutFailureAsync`, which closes the breakout with `Failed` reason, marks the linked task as `Blocked`, and posts a failure notification to the parent room. Added `Failed` to `BreakoutRoomCloseReason`.
 - **010-task-management**: Agent git identity attribution — `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` flag to git. `CommandContext` carries identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK). Known Gap resolved. 1 new test.

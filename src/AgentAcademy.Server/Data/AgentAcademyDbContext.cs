@@ -33,6 +33,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<ServerInstanceEntity> ServerInstances => Set<ServerInstanceEntity>();
     public DbSet<ConversationSessionEntity> ConversationSessions => Set<ConversationSessionEntity>();
     public DbSet<SystemSettingEntity> SystemSettings => Set<SystemSettingEntity>();
+    public DbSet<NotificationDeliveryEntity> NotificationDeliveries => Set<NotificationDeliveryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -348,6 +349,22 @@ public class AgentAcademyDbContext : DbContext
             entity.HasKey(e => e.Key);
             entity.Property(e => e.Value).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
+        });
+
+        // ── Notification Deliveries ────────────────────────────
+        modelBuilder.Entity<NotificationDeliveryEntity>(entity =>
+        {
+            entity.ToTable("notification_deliveries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Channel).IsRequired();
+            entity.Property(e => e.ProviderId).IsRequired();
+            entity.Property(e => e.Status).IsRequired().HasDefaultValue("Delivered");
+            entity.Property(e => e.AttemptedAt).IsRequired();
+
+            entity.HasIndex(e => e.AttemptedAt).HasDatabaseName("idx_notification_deliveries_time");
+            entity.HasIndex(e => e.ProviderId).HasDatabaseName("idx_notification_deliveries_provider");
+            entity.HasIndex(e => e.Channel).HasDatabaseName("idx_notification_deliveries_channel");
+            entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_notification_deliveries_room");
         });
     }
 }

@@ -254,6 +254,7 @@ builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
 
 // Notification system
+builder.Services.AddSingleton<NotificationDeliveryTracker>();
 builder.Services.AddSingleton<NotificationManager>();
 builder.Services.AddSingleton<ConsoleNotificationProvider>();
 builder.Services.AddSingleton<DiscordNotificationProvider>();

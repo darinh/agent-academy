@@ -15,12 +15,18 @@ namespace AgentAcademy.Server.Controllers;
 public class NotificationController : ControllerBase
 {
     private readonly NotificationManager _manager;
+    private readonly NotificationDeliveryTracker _tracker;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<NotificationController> _logger;
 
-    public NotificationController(NotificationManager manager, AgentAcademyDbContext db, ILogger<NotificationController> logger)
+    public NotificationController(
+        NotificationManager manager,
+        NotificationDeliveryTracker tracker,
+        AgentAcademyDbContext db,
+        ILogger<NotificationController> logger)
     {
         _manager = manager;
+        _tracker = tracker;
         _db = db;
         _logger = logger;
     }
@@ -166,6 +172,37 @@ public class NotificationController : ControllerBase
             totalConnected = _manager.GetAllProviders().Count(p => p.IsConnected)
         });
     }
+
+    /// <summary>
+    /// Queries notification delivery history with optional filters.
+    /// </summary>
+    [HttpGet("deliveries")]
+    public async Task<ActionResult<IEnumerable<NotificationDeliveryDto>>> GetDeliveries(
+        [FromQuery] string? channel = null,
+        [FromQuery] string? providerId = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? roomId = null,
+        [FromQuery] int limit = 50,
+        [FromQuery] int offset = 0)
+    {
+        var deliveries = await _tracker.GetDeliveriesAsync(channel, providerId, status, roomId, limit, offset);
+        var dtos = deliveries.Select(d => new NotificationDeliveryDto(
+            d.Id, d.Channel, d.Title, d.Body, d.RoomId, d.AgentId,
+            d.ProviderId, d.Status, d.Error, d.AttemptedAt));
+        return Ok(dtos);
+    }
+
+    /// <summary>
+    /// Returns delivery statistics grouped by status for a time window.
+    /// </summary>
+    [HttpGet("deliveries/stats")]
+    public async Task<ActionResult<Dictionary<string, int>>> GetDeliveryStats(
+        [FromQuery] int? hours = 24)
+    {
+        var window = TimeSpan.FromHours(Math.Clamp(hours ?? 24, 1, 720));
+        var stats = await _tracker.GetDeliveryStatsAsync(window);
+        return Ok(stats);
+    }
 }
 
 /// <summary>
@@ -176,4 +213,20 @@ public record ProviderStatusDto(
     string DisplayName,
     bool IsConfigured,
     bool IsConnected
+);
+
+/// <summary>
+/// DTO for notification delivery history in API responses.
+/// </summary>
+public record NotificationDeliveryDto(
+    int Id,
+    string Channel,
+    string? Title,
+    string? Body,
+    string? RoomId,
+    string? AgentId,
+    string ProviderId,
+    string Status,
+    string? Error,
+    DateTime AttemptedAt
 );
