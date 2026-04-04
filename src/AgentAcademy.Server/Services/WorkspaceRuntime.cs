@@ -1382,16 +1382,55 @@ public sealed class WorkspaceRuntime
 
     /// <summary>
     /// Returns recent DMs for an agent (both sent and received), ordered chronologically.
+    /// When unreadOnly is true (default), only returns DMs where the agent is the
+    /// recipient and hasn't acknowledged them yet.
     /// </summary>
-    public async Task<List<MessageEntity>> GetDirectMessagesForAgentAsync(string agentId, int limit = 20)
+    public async Task<List<MessageEntity>> GetDirectMessagesForAgentAsync(
+        string agentId, int limit = 20, bool unreadOnly = true)
     {
-        return await _db.Messages
-            .Where(m => m.RecipientId != null &&
-                        (m.RecipientId == agentId || m.SenderId == agentId))
+        IQueryable<MessageEntity> query;
+
+        if (unreadOnly)
+        {
+            // Only unacknowledged DMs where this agent is the recipient
+            query = _db.Messages
+                .Where(m => m.RecipientId == agentId && m.AcknowledgedAt == null);
+        }
+        else
+        {
+            query = _db.Messages
+                .Where(m => m.RecipientId != null &&
+                            (m.RecipientId == agentId || m.SenderId == agentId));
+        }
+
+        return await query
             .OrderByDescending(m => m.SentAt)
             .Take(limit)
             .OrderBy(m => m.SentAt)
             .ToListAsync();
+    }
+
+    /// <summary>
+    /// Marks specific DMs as acknowledged by their IDs.
+    /// Call this after building a prompt that includes DMs, passing only the
+    /// message IDs that were actually included in the prompt.
+    /// </summary>
+    public async Task AcknowledgeDirectMessagesAsync(string agentId, IReadOnlyList<string> messageIds)
+    {
+        if (messageIds.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        var messages = await _db.Messages
+            .Where(m => messageIds.Contains(m.Id) &&
+                        m.RecipientId == agentId &&
+                        m.AcknowledgedAt == null)
+            .ToListAsync();
+
+        foreach (var dm in messages)
+            dm.AcknowledgedAt = now;
+
+        if (messages.Count > 0)
+            await _db.SaveChangesAsync();
     }
 
     /// <summary>

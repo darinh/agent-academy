@@ -217,6 +217,8 @@ public sealed class AgentOrchestrator
                     var taskItems = await runtime.GetActiveTaskItemsAsync();
                     var plannerMemories = await LoadAgentMemoriesAsync(planner.Id);
                     var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
+                    if (plannerDms.Count > 0)
+                        await runtime.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
                     var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
@@ -284,6 +286,8 @@ public sealed class AgentOrchestrator
                 {
                     var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                    if (agentDms.Count > 0)
+                        await runtime.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
                     var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary);
                     response = await RunAgentAsync(agent, prompt, roomId);
                 }
@@ -364,16 +368,18 @@ public sealed class AgentOrchestrator
         var location = await runtime.GetAgentLocationAsync(agent.Id);
         if (location?.State == AgentState.Working && location.BreakoutRoomId is not null)
         {
-            // Agent is in a breakout room — post the DM as a breakout message
-            // so they see it on their next work round
+            // Agent is in a breakout room — post all unread DMs as breakout messages
             var dms = await runtime.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
             if (dms.Count > 0)
             {
-                var latestDm = dms.Last();
-                await runtime.PostBreakoutMessageAsync(
-                    location.BreakoutRoomId,
-                    "system", "System", "System",
-                    $"📩 Direct message from {latestDm.SenderName}: {latestDm.Content}");
+                foreach (var dm in dms)
+                {
+                    await runtime.PostBreakoutMessageAsync(
+                        location.BreakoutRoomId,
+                        "system", "System", "System",
+                        $"📩 Direct message from {dm.SenderName}: {dm.Content}");
+                }
+                await runtime.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
             }
             _logger.LogInformation(
                 "DM round: agent {AgentName} is in breakout room. DM posted to breakout context.",
@@ -394,8 +400,8 @@ public sealed class AgentOrchestrator
         var specContext = _specManager.LoadSpecContext();
         var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
         var directMessages = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
-
-        // Load session summary for DM round
+        if (directMessages.Count > 0)
+            await runtime.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
         string? dmSessionSummary = null;
         try
         {
@@ -648,6 +654,8 @@ public sealed class AgentOrchestrator
                 {
                     var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
                     var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                    if (breakoutDms.Count > 0)
+                        await runtime.AcknowledgeDirectMessagesAsync(agent.Id, breakoutDms.Select(m => m.Id).ToList());
                     var breakoutSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
                     var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary);
                     response = await RunAgentAsync(agent, prompt, breakoutRoomId);
@@ -882,6 +890,8 @@ public sealed class AgentOrchestrator
             {
                 var fixMemories = await LoadAgentMemoriesAsync(agent.Id);
                 var fixDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                if (fixDms.Count > 0)
+                    await runtime.AcknowledgeDirectMessagesAsync(agent.Id, fixDms.Select(m => m.Id).ToList());
                 var fixSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
                 response = await RunAgentAsync(
                     agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary),

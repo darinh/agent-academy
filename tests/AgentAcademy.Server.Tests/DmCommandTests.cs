@@ -323,7 +323,7 @@ public class DmCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task GetDirectMessagesForAgent_ReturnsSentAndReceived()
+    public async Task GetDirectMessagesForAgent_UnreadOnly_ReturnsReceivedOnly()
     {
         using var scope = _serviceProvider.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
@@ -339,10 +339,14 @@ public class DmCommandTests : IDisposable
             "engineer-1", "Hephaestus", "SoftwareEngineer", "planner-1",
             "Hey Aristotle!", "main");
 
-        var dms = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        // Default (unreadOnly=true): planner sees only the DM sent TO them
+        var unread = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        Assert.Single(unread);
+        Assert.Equal("Hey Aristotle!", unread[0].Content);
 
-        // Planner should see both (one sent, one received)
-        Assert.Equal(2, dms.Count);
+        // unreadOnly=false: planner sees both sent and received
+        var all = await runtime.GetDirectMessagesForAgentAsync("planner-1", unreadOnly: false);
+        Assert.Equal(2, all.Count);
     }
 
     [Fact]
@@ -448,5 +452,108 @@ public class DmCommandTests : IDisposable
     public void DmHandler_CommandName_IsDM()
     {
         Assert.Equal("DM", _handler.CommandName);
+    }
+
+    // ── DM Acknowledgment ───────────────────────────────────────────
+
+    [Fact]
+    public async Task AcknowledgeDirectMessages_MarksAsRead()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        await runtime.SendDirectMessageAsync(
+            "planner-1", "Aristotle", "Planner", "engineer-1",
+            "Check the auth module.", "main");
+
+        await runtime.SendDirectMessageAsync(
+            "engineer-1", "Hephaestus", "SoftwareEngineer", "planner-1",
+            "Will do!", "main");
+
+        // Before ack: engineer has 1 unread (the one sent TO them)
+        var before = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        Assert.Single(before);
+        Assert.Equal("Check the auth module.", before[0].Content);
+
+        // Acknowledge by explicit IDs
+        await runtime.AcknowledgeDirectMessagesAsync("engineer-1", before.Select(m => m.Id).ToList());
+
+        // After ack: no unread DMs
+        var after = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        Assert.Empty(after);
+    }
+
+    [Fact]
+    public async Task GetDirectMessages_UnreadOnlyFalse_ReturnsAll()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        await runtime.SendDirectMessageAsync(
+            "planner-1", "Aristotle", "Planner", "engineer-1",
+            "Message 1", "main");
+
+        var first = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        await runtime.AcknowledgeDirectMessagesAsync("engineer-1", first.Select(m => m.Id).ToList());
+
+        await runtime.SendDirectMessageAsync(
+            "planner-1", "Aristotle", "Planner", "engineer-1",
+            "Message 2", "main");
+
+        // unreadOnly=true: only the new message
+        var unread = await runtime.GetDirectMessagesForAgentAsync("engineer-1", unreadOnly: true);
+        Assert.Single(unread);
+        Assert.Equal("Message 2", unread[0].Content);
+
+        // unreadOnly=false: both messages (sent + received)
+        var all = await runtime.GetDirectMessagesForAgentAsync("engineer-1", unreadOnly: false);
+        Assert.Equal(2, all.Count);
+    }
+
+    [Fact]
+    public async Task AcknowledgeDirectMessages_OnlyAffectsTargetAgent()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        // Both agents receive a DM
+        await runtime.SendDirectMessageAsync(
+            "human", "Human", "Human", "engineer-1",
+            "Hey engineer!", "main");
+        await runtime.SendDirectMessageAsync(
+            "human", "Human", "Human", "planner-1",
+            "Hey planner!", "main");
+
+        // Ack only engineer's DMs
+        var engBefore = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        await runtime.AcknowledgeDirectMessagesAsync("engineer-1", engBefore.Select(m => m.Id).ToList());
+
+        // Engineer: no unread
+        var engDms = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        Assert.Empty(engDms);
+
+        // Planner: still has unread
+        var planDms = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        Assert.Single(planDms);
+    }
+
+    [Fact]
+    public async Task AcknowledgeDirectMessages_DoesNotAckSenderMessages()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        // Planner sends DM to engineer
+        await runtime.SendDirectMessageAsync(
+            "planner-1", "Aristotle", "Planner", "engineer-1",
+            "Please review.", "main");
+
+        // Planner should NOT see this as their unread DM (they're the sender)
+        var plannerUnread = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        Assert.Empty(plannerUnread);
+
+        // Engineer should see it
+        var engUnread = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        Assert.Single(engUnread);
     }
 }
