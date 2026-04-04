@@ -579,8 +579,17 @@ All other handlers (26 of 28) require no modifications. They accept `CommandCont
 
 **Status**: NOT IMPLEMENTED. Phase 1A shipped backend-only. Command execution is invisible to users — results are posted as system messages in agent conversation history.
 
-### Command Palette (Primary) — PLANNED
-Agent commands and their results will be visible in a searchable palette UI.
+### Command Palette (Primary) — IMPLEMENTED
+Keyboard-driven command search and execution overlay, opened with `Cmd+K` / `Ctrl+K`.
+
+**Features**:
+- Text search across command title, name, description, and category
+- Commands grouped by category (workspace, code, git, operations)
+- Keyboard navigation: ↑/↓ to move, Enter to select, Esc to close/back
+- Detail view with field inputs for command arguments
+- Execute with `Cmd+Enter` / `Ctrl+Enter`, inline result display
+- Async command polling for long-running operations (RUN_BUILD, RUN_TESTS)
+- Dynamic catalog from `GET /api/commands/metadata` with hardcoded fallback
 
 **Required for**: Discovery (knowing what commands exist), inspection (seeing what agents did), debugging (understanding command failures).
 
@@ -615,7 +624,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
-- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette and task panel enhancements still planned.
+- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette (Cmd+K) implemented with search, keyboard navigation, and inline execution. Task panel enhancements still planned.
 - **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
 
 ## Discord Agent Question Bridge

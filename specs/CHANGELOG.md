@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **008-agent-memory**: Cross-agent shared memory — `shared` category enables universal knowledge visible to all agents. REMEMBER with `category=shared` stores cross-agent knowledge. RECALL and LIST_MEMORIES include shared memories from all agents (with source `agentId`). Prompt injection shows shared memories in separate `=== SHARED KNOWLEDGE ===` section. FORGET still scoped to own memories only. FTS5 search includes shared memories. Resolves known gap: "Cross-agent knowledge sharing". 11 new tests (837 total).
+- **007-agent-commands**: Command palette — `Cmd+K` / `Ctrl+K` opens a searchable overlay for discovering and executing commands. Text search across title/name/description/category, keyboard navigation (↑/↓/Enter/Esc), grouped by category, detail view with field inputs, `Cmd+Enter` to execute, async polling, inline results. Dynamic catalog from metadata endpoint with hardcoded fallback. 13 new frontend tests (55 total).
 
 ### Changed
 - **008-agent-memory**: Upgraded RECALL search from LIKE to FTS5 full-text search with BM25 ranking. Word-boundary matching replaces substring matching. Multi-word queries use AND semantics. FTS5 virtual table (`agent_memories_fts`) synced via INSERT/UPDATE/DELETE triggers. Graceful LIKE fallback if FTS5 unavailable. Migration `AddMemoryFts5Search`. Known gap resolved. 10 new tests (813 total).
