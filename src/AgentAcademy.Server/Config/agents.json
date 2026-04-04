@@ -50,6 +50,7 @@
             "ADD_TASK_COMMENT",
             "RECALL_AGENT",
             "CLOSE_ROOM",
+            "CANCEL_TASK",
             "MERGE_TASK",
             "SHELL",
             "RESTART_SERVER"
@@ -253,6 +254,7 @@
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT",
+            "CANCEL_TASK",
             "MERGE_TASK",
             "SHELL"
           ],

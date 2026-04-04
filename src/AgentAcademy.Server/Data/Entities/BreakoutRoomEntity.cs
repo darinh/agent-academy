@@ -6,7 +6,8 @@ public enum BreakoutRoomCloseReason
     Recalled,
     Cancelled,
     StuckDetected,
-    ClosedByRecovery
+    ClosedByRecovery,
+    ServerCrash
 }
 
 /// <summary>
@@ -20,7 +21,7 @@ public class BreakoutRoomEntity
     public string ParentRoomId { get; set; } = string.Empty;
     public string AssignedAgentId { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
-    public string? CloseReason { get; set; }
+    public string? ClosedReason { get; set; }
     public string? TaskId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
