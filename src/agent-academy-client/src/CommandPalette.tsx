@@ -8,6 +8,7 @@ import {
   Text,
   Badge,
   Button,
+  useModalAttributes,
 } from "@fluentui/react-components";
 import {
   SearchRegular,
@@ -239,6 +240,21 @@ interface CommandPaletteProps {
 export default function CommandPalette({ open, onDismiss, roomId, readOnly }: CommandPaletteProps) {
   const styles = useLocalStyles();
 
+  // ── focus trap via Fluent UI tabster ──
+  const { modalAttributes } = useModalAttributes({ trapFocus: true });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<Element | null>(null);
+
+  // Capture the element that triggered the palette so we can restore focus on close
+  useEffect(() => {
+    if (open) {
+      triggerRef.current = document.activeElement;
+    } else if (triggerRef.current instanceof HTMLElement) {
+      triggerRef.current.focus();
+      triggerRef.current = null;
+    }
+  }, [open]);
+
   // ── commands catalog ──
   const [commands, setCommands] = useState<readonly HumanCommandDefinition[]>(WEEK1_COMMANDS);
   const loadedRef = useRef(false);
@@ -469,8 +485,17 @@ export default function CommandPalette({ open, onDismiss, roomId, readOnly }: Co
   };
 
   return (
-    <div className={styles.backdrop} onClick={onDismiss} onKeyDown={handleKeyDown} role="presentation">
-      <div className={styles.container} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
+    <div className={styles.backdrop} onClick={onDismiss} role="presentation">
+      <div
+        ref={containerRef}
+        className={styles.container}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        {...modalAttributes}
+      >
         {mode === "search" && (
           <>
             <div className={styles.searchRow}>
