@@ -687,9 +687,10 @@ public class RestartHistoryApiTests : IDisposable
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
+        var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
 
         _controller = new SystemController(
-            runtime, executor, catalog, _db, usageTracker,
+            runtime, executor, catalog, _db, usageTracker, errorTracker,
             NullLogger<SystemController>.Instance);
     }
 

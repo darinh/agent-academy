@@ -13,12 +13,14 @@ public class RoomController : ControllerBase
 {
     private readonly WorkspaceRuntime _runtime;
     private readonly LlmUsageTracker _usageTracker;
+    private readonly AgentErrorTracker _errorTracker;
     private readonly ILogger<RoomController> _logger;
 
-    public RoomController(WorkspaceRuntime runtime, LlmUsageTracker usageTracker, ILogger<RoomController> logger)
+    public RoomController(WorkspaceRuntime runtime, LlmUsageTracker usageTracker, AgentErrorTracker errorTracker, ILogger<RoomController> logger)
     {
         _runtime = runtime;
         _usageTracker = usageTracker;
+        _errorTracker = errorTracker;
         _logger = logger;
     }
 
@@ -153,13 +155,20 @@ public class RoomController : ControllerBase
 
     /// <summary>
     /// GET /api/rooms/{roomId}/errors — agent errors in a room.
-    /// Error tracking will be wired when AgentEventTracker is ported.
     /// </summary>
     [HttpGet("{roomId}/errors")]
-    public IActionResult GetRoomErrors(string roomId)
+    public async Task<ActionResult<List<ErrorRecord>>> GetRoomErrors(string roomId, [FromQuery] int limit = 50)
     {
-        // AgentEventTracker is not yet ported — return empty list.
-        return Ok(Array.Empty<ErrorRecord>());
+        try
+        {
+            var errors = await _errorTracker.GetRoomErrorsAsync(roomId, Math.Clamp(limit, 1, 200));
+            return Ok(errors);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get errors for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve error data.");
+        }
     }
 
     /// <summary>

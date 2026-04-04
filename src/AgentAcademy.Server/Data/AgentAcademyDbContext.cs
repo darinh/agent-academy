@@ -35,6 +35,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<SystemSettingEntity> SystemSettings => Set<SystemSettingEntity>();
     public DbSet<NotificationDeliveryEntity> NotificationDeliveries => Set<NotificationDeliveryEntity>();
     public DbSet<LlmUsageEntity> LlmUsage => Set<LlmUsageEntity>();
+    public DbSet<AgentErrorEntity> AgentErrors => Set<AgentErrorEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -380,6 +381,21 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_llm_usage_agent");
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_llm_usage_room");
             entity.HasIndex(e => e.RecordedAt).HasDatabaseName("idx_llm_usage_time");
+        });
+
+        modelBuilder.Entity<AgentErrorEntity>(entity =>
+        {
+            entity.ToTable("agent_errors");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AgentId).IsRequired();
+            entity.Property(e => e.ErrorType).IsRequired();
+            entity.Property(e => e.Message).IsRequired();
+            entity.Property(e => e.OccurredAt).IsRequired();
+
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_agent_errors_agent");
+            entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_agent_errors_room");
+            entity.HasIndex(e => e.OccurredAt).HasDatabaseName("idx_agent_errors_time");
+            entity.HasIndex(e => e.ErrorType).HasDatabaseName("idx_agent_errors_type");
         });
     }
 }

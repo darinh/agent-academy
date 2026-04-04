@@ -330,6 +330,7 @@ public class UsageApiEndpointTests : IDisposable
 
         var controller = new RoomController(
             _runtime, _tracker,
+            new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
 
         var result = await controller.GetRoomUsage("room-1");
@@ -349,6 +350,7 @@ public class UsageApiEndpointTests : IDisposable
 
         var controller = new RoomController(
             _runtime, _tracker,
+            new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageByAgent("room-1");
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -364,6 +366,7 @@ public class UsageApiEndpointTests : IDisposable
 
         var controller = new RoomController(
             _runtime, _tracker,
+            new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageRecords("room-1");
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -381,6 +384,7 @@ public class UsageApiEndpointTests : IDisposable
 
         var controller = new RoomController(
             _runtime, _tracker,
+            new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageRecords("room-1", limit: 2);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -460,8 +464,12 @@ public class UsageApiEndpointTests : IDisposable
     {
         var executor = Substitute.For<IAgentExecutor>();
 
+        var errorTracker = new AgentErrorTracker(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentErrorTracker>.Instance);
+
         return new SystemController(
-            _runtime, executor, _catalog, _db, _tracker,
+            _runtime, executor, _catalog, _db, _tracker, errorTracker,
             NullLogger<SystemController>.Instance);
     }
 

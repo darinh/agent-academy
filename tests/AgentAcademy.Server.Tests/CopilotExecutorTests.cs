@@ -209,7 +209,8 @@ public class ErrorClassificationTests
             new CopilotTokenProvider(),
             sp.GetRequiredService<IServiceScopeFactory>(),
             new NotificationManager(NullLogger<NotificationManager>.Instance),
-            new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance));
+            new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
+            new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance));
 
         Assert.False(executor.IsAuthFailed);
         connection.Dispose();

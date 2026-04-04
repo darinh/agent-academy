@@ -260,7 +260,8 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var logger = Substitute.For<ILogger<RoomController>>();
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
-        return new RoomController(_runtime, usageTracker, logger);
+        var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
+        return new RoomController(_runtime, usageTracker, errorTracker, logger);
     }
 
     private void SeedMessages(params (string id, string content, DateTime sentAt)[] messages)
