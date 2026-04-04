@@ -12,6 +12,13 @@ public sealed class CopilotTokenProvider
     private DateTime? _tokenSetAt;
 
     /// <summary>
+    /// Raised when a new token is set. Subscribers (e.g., the auth monitor)
+    /// can use this to trigger an immediate probe instead of waiting for
+    /// the next scheduled interval.
+    /// </summary>
+    public event Action? TokenChanged;
+
+    /// <summary>
     /// The most recently captured OAuth access token, or null if no
     /// user has authenticated since server start.
     /// </summary>
@@ -30,6 +37,10 @@ public sealed class CopilotTokenProvider
     {
         _token = token;
         _tokenSetAt = DateTime.UtcNow;
+
+        // Fire-and-forget: don't let subscriber exceptions break the login flow
+        try { TokenChanged?.Invoke(); }
+        catch { /* subscribers handle their own errors */ }
     }
 
     /// <summary>

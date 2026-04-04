@@ -24,6 +24,7 @@ public class CopilotAuthMonitorServiceTests
         var sut = new CopilotAuthMonitorService(
             probe,
             executor,
+            new CopilotTokenProvider(),
             NullLogger<CopilotAuthMonitorService>.Instance);
 
         await sut.ProbeOnceAsync();
@@ -40,6 +41,7 @@ public class CopilotAuthMonitorServiceTests
         var sut = new CopilotAuthMonitorService(
             probe,
             executor,
+            new CopilotTokenProvider(),
             NullLogger<CopilotAuthMonitorService>.Instance);
 
         await sut.ProbeOnceAsync();
@@ -56,6 +58,7 @@ public class CopilotAuthMonitorServiceTests
         var sut = new CopilotAuthMonitorService(
             probe,
             executor,
+            new CopilotTokenProvider(),
             NullLogger<CopilotAuthMonitorService>.Instance);
 
         await sut.ProbeOnceAsync();
@@ -72,6 +75,7 @@ public class CopilotAuthMonitorServiceTests
         var sut = new CopilotAuthMonitorService(
             probe,
             executor,
+            new CopilotTokenProvider(),
             NullLogger<CopilotAuthMonitorService>.Instance);
 
         await sut.ProbeOnceAsync();
@@ -79,6 +83,55 @@ public class CopilotAuthMonitorServiceTests
         await executor.DidNotReceive().MarkAuthDegradedAsync(Arg.Any<CancellationToken>());
         await executor.DidNotReceive().MarkAuthOperationalAsync(Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task TokenChanged_TriggersImmediateProbe()
+    {
+        var probeCount = 0;
+        var probe = new CountingAuthProbe(() =>
+        {
+            Interlocked.Increment(ref probeCount);
+            return CopilotAuthProbeResult.Healthy;
+        });
+        var executor = Substitute.For<IAgentExecutor>();
+        var tokenProvider = new CopilotTokenProvider();
+        var sut = new CopilotAuthMonitorService(
+            probe,
+            executor,
+            tokenProvider,
+            NullLogger<CopilotAuthMonitorService>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        var task = sut.StartAsync(cts.Token);
+
+        // Wait for the initial probe
+        await Task.Delay(200);
+        var initialCount = probeCount;
+        Assert.True(initialCount >= 1, "Initial probe should have fired");
+
+        // Set a token — should trigger an immediate probe
+        tokenProvider.SetToken("gho_new_token");
+        await Task.Delay(500);
+
+        Assert.True(probeCount > initialCount, "Token change should trigger additional probe");
+        await executor.Received().MarkAuthOperationalAsync(Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await sut.StopAsync(CancellationToken.None);
+    }
+}
+
+internal sealed class CountingAuthProbe : ICopilotAuthProbe
+{
+    private readonly Func<CopilotAuthProbeResult> _resultFactory;
+
+    public CountingAuthProbe(Func<CopilotAuthProbeResult> resultFactory)
+    {
+        _resultFactory = resultFactory;
+    }
+
+    public Task<CopilotAuthProbeResult> ProbeAsync(CancellationToken ct = default)
+        => Task.FromResult(_resultFactory());
 }
 
 public class GitHubCopilotAuthProbeTests
@@ -164,7 +217,6 @@ public class GitHubCopilotAuthProbeTests
             return Task.FromResult(_handler(request));
         }
     }
-
 }
 
 [Collection("WorkspaceRuntime")]

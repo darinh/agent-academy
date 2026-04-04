@@ -6,29 +6,55 @@ internal sealed class CopilotAuthMonitorService : BackgroundService
 
     private readonly ICopilotAuthProbe _probe;
     private readonly IAgentExecutor _executor;
+    private readonly CopilotTokenProvider _tokenProvider;
     private readonly ILogger<CopilotAuthMonitorService> _logger;
+    private readonly SemaphoreSlim _probeTrigger = new(0, 1);
 
     public CopilotAuthMonitorService(
         ICopilotAuthProbe probe,
         IAgentExecutor executor,
+        CopilotTokenProvider tokenProvider,
         ILogger<CopilotAuthMonitorService> logger)
     {
         _probe = probe;
         _executor = executor;
+        _tokenProvider = tokenProvider;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(ProbeInterval);
+        _tokenProvider.TokenChanged += OnTokenChanged;
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            await ProbeOnceAsync(stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await ProbeOnceAsync(stoppingToken);
 
-            if (!await timer.WaitForNextTickAsync(stoppingToken))
-                break;
+                // Wait for either the interval or an early trigger from TokenChanged
+                try
+                {
+                    await _probeTrigger.WaitAsync(ProbeInterval, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
         }
+        finally
+        {
+            _tokenProvider.TokenChanged -= OnTokenChanged;
+        }
+    }
+
+    private void OnTokenChanged()
+    {
+        _logger.LogInformation("Token changed — triggering immediate auth probe");
+        // Release the semaphore to wake the loop; TryRelease avoids overflow
+        try { _probeTrigger.Release(); }
+        catch (SemaphoreFullException) { /* already triggered */ }
     }
 
     internal async Task ProbeOnceAsync(CancellationToken ct = default)
