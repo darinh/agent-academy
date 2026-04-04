@@ -543,6 +543,106 @@ public class StateCommandTests : IDisposable
         Assert.All(result.Results, r => Assert.Equal(CommandStatus.Success, r.Status));
     }
 
+    // ── CANCEL_TASK ────────────────────────────────────────────
+
+    [Fact]
+    public async Task CancelTask_Success_PlannerCanCancel()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId, ["reason"] = "No longer needed" },
+            "planner-1", "Aristotle");
+        ctx = ctx with { AgentRole = "Planner" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        Assert.Equal(taskId, result.Result!["taskId"]!.ToString());
+    }
+
+    [Fact]
+    public async Task CancelTask_Success_ReviewerCanCancel()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+        ctx = ctx with { AgentRole = "Reviewer" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        // Verify task is actually cancelled in DB
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var task = await db.Tasks.FindAsync(taskId);
+        Assert.Equal(nameof(TaskStatus.Cancelled), task!.Status);
+        Assert.NotNull(task.CompletedAt);
+    }
+
+    [Fact]
+    public async Task CancelTask_Denied_EngineerCannotCancel()
+    {
+        var taskId = await CreateTestTask();
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+    }
+
+    [Fact]
+    public async Task CancelTask_Error_AlreadyCancelled()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Cancelled));
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+        ctx = ctx with { AgentRole = "Reviewer" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("already", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CancelTask_Error_AlreadyCompleted()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Completed));
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+        ctx = ctx with { AgentRole = "Reviewer" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+    }
+
+    [Fact]
+    public async Task CancelTask_Error_MissingTaskId()
+    {
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK", new(), "reviewer-1", "Socrates");
+        ctx = ctx with { AgentRole = "Reviewer" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("taskId", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────
 
     private async Task<string> CreateTestTask(

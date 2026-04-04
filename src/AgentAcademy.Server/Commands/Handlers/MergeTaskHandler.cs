@@ -76,8 +76,15 @@ public sealed class MergeTaskHandler : ICommandHandler
             // Set task to Merging status before git ops
             await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
 
-            // Build commit message with metadata trailers
-            var commitMessage = $"{task.Title}\n\nBranch: {task.BranchName}";
+            // Build commit message with conventional commit prefix based on task type
+            var prefix = task.Type switch
+            {
+                TaskType.Bug => "fix",
+                TaskType.Chore => "chore",
+                TaskType.Spike => "docs",
+                _ => "feat"
+            };
+            var commitMessage = $"{prefix}: {task.Title}\n\nBranch: {task.BranchName}";
             if (!string.IsNullOrWhiteSpace(task.ReviewerAgentId))
                 commitMessage += $"\nReviewed-by: {task.ReviewerAgentId}";
             commitMessage += $"\nCo-authored-by: {context.AgentName} <{context.AgentId}@agent-academy>";
