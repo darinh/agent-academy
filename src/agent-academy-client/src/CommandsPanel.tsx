@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import {
   Badge,
   Button,
@@ -14,19 +14,20 @@ import { PlayRegular } from "@fluentui/react-icons";
 import {
   executeCommand,
   getCommandExecution,
+  getCommandMetadata,
 } from "./api";
 import type {
   CommandExecutionResponse,
   CommandExecutionStatus,
-  HumanCommandName,
 } from "./api";
 import {
   buildExecuteCommandRequest,
   createDefaultCommandDrafts,
-  getCommandDefinition,
+  fromServerMetadata,
   validateCommandDraft,
   WEEK1_COMMANDS,
 } from "./commandCatalog";
+import type { HumanCommandDefinition } from "./commandCatalog";
 
 const POLL_INTERVAL_MS = 2500;
 const MAX_HISTORY_ITEMS = 10;
@@ -376,20 +377,57 @@ interface CommandsPanelProps {
 }
 
 interface CommandHistoryItem {
-  definition: ReturnType<typeof getCommandDefinition>;
+  definition: HumanCommandDefinition;
   response: CommandExecutionResponse;
   args?: Record<string, string>;
 }
 
 export default function CommandsPanel({ roomId, readOnly = false }: CommandsPanelProps) {
   const s = useLocalStyles();
-  const [selectedCommand, setSelectedCommand] = useState<HumanCommandName>("READ_FILE");
-  const [drafts, setDrafts] = useState(createDefaultCommandDrafts);
+  const [commands, setCommands] = useState<readonly HumanCommandDefinition[]>(WEEK1_COMMANDS);
+  const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [selectedCommand, setSelectedCommand] = useState<string>("READ_FILE");
+  const [drafts, setDrafts] = useState(() => createDefaultCommandDrafts());
   const [history, setHistory] = useState<CommandHistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const fetchRef = useRef(0);
 
-  const definition = useMemo(() => getCommandDefinition(selectedCommand), [selectedCommand]);
+  useEffect(() => {
+    const seq = ++fetchRef.current;
+    getCommandMetadata()
+      .then((data) => {
+        if (seq !== fetchRef.current) return;
+        const defs = fromServerMetadata(data);
+        if (defs.length > 0) {
+          setCommands(defs);
+          setDrafts((prev) => {
+            const next = createDefaultCommandDrafts(defs);
+            // Preserve any drafts the user already started typing
+            for (const key of Object.keys(prev)) {
+              if (next[key]) {
+                const hasDirtyFields = Object.values(prev[key]).some((v) => v.trim() !== "");
+                if (hasDirtyFields) next[key] = prev[key];
+              }
+            }
+            return next;
+          });
+          setSelectedCommand((prev) => defs.some((d) => d.command === prev) ? prev : defs[0].command);
+        }
+        setMetadataLoaded(true);
+      })
+      .catch(() => {
+        if (seq !== fetchRef.current) return;
+        setMetadataLoaded(true); // fallback to hardcoded catalog
+      });
+  }, []);
+
+  const commandMap = useMemo(
+    () => new Map(commands.map((c) => [c.command, c])),
+    [commands],
+  );
+
+  const definition = commandMap.get(selectedCommand) ?? commands[0];
   const draft = drafts[selectedCommand] ?? {};
 
   useEffect(() => {
@@ -437,7 +475,8 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
   }, [history]);
 
   const pendingCount = history.filter((item) => item.response.status === "pending").length;
-  const syncCount = WEEK1_COMMANDS.filter((command) => !command.isAsync).length;
+  const syncCount = commands.filter((command) => !command.isAsync).length;
+  const asyncCount = commands.length - syncCount;
 
   const handleFieldChange = (fieldName: string, value: string) => {
     setDrafts((current) => ({
@@ -491,16 +530,16 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
           <div className={s.eyebrow}>Human command surface</div>
           <h2 className={s.heroTitle}>Operate the workspace without dropping into a terminal.</h2>
           <div className={s.heroDescription}>
-            Week 1 ships a deliberately small command deck: repository inspection, room awareness,
-            review queue access, and build/test runs with polling. Everything here is hard allowlisted,
-            audited, and tuned to the human UI contract.
+            The command deck is loaded from the server and covers repository inspection, room management,
+            review queue access, and build/test runs with polling. Every command is allowlisted, audited,
+            and tuned to the human UI contract.
           </div>
 
           <div className={s.metricRow}>
             <div className={s.metricCard}>
-              <div className={s.metricLabel}>Allowlisted</div>
-              <div className={s.metricValue}>{WEEK1_COMMANDS.length}</div>
-              <div className={s.metricNote}>Focused deck for code reading, git context, and workspace triage.</div>
+              <div className={s.metricLabel}>Available</div>
+              <div className={s.metricValue}>{commands.length}</div>
+              <div className={s.metricNote}>Commands loaded from the server{metadataLoaded ? "" : "…"}.</div>
             </div>
             <div className={s.metricCard}>
               <div className={s.metricLabel}>Immediate</div>
@@ -509,8 +548,8 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
             </div>
             <div className={s.metricCard}>
               <div className={s.metricLabel}>Polling</div>
-              <div className={s.metricValue}>2</div>
-              <div className={s.metricNote}>Build and test runs stay async, then update here as they complete.</div>
+              <div className={s.metricValue}>{asyncCount}</div>
+              <div className={s.metricNote}>Async commands stay polling, then update here as they complete.</div>
             </div>
           </div>
         </section>
@@ -525,7 +564,7 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
           </div>
 
           <div className={s.commandGrid}>
-            {WEEK1_COMMANDS.map((command) => (
+            {commands.map((command) => (
               <button
                 key={command.command}
                 type="button"

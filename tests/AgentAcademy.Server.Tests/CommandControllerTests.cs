@@ -121,10 +121,97 @@ public sealed class CommandControllerTests : IDisposable
         Assert.Equal("human-ui", audit.Source);
     }
 
-    private CommandController CreateController(ICommandHandler handler, bool authenticated = true)
+    [Fact]
+    public void GetMetadata_WhenAuthenticated_ReturnsAllowlistedCommands()
+    {
+        var handlers = new ICommandHandler[]
+        {
+            new CapturingHandler("GIT_LOG"),
+            new CapturingHandler("READ_FILE"),
+            new CapturingHandler("RUN_BUILD"),
+            new CapturingHandler("LIST_ROOMS"),
+        };
+        var controller = CreateController(handlers);
+
+        var result = controller.GetMetadata();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var metadata = Assert.IsAssignableFrom<IEnumerable<object>>(ok.Value);
+        var list = metadata.ToList();
+
+        // Must return only commands that are in the allowlist
+        Assert.True(list.Count > 0, "Metadata should not be empty");
+
+        // Verify well-known commands are present
+        var commands = list.Cast<AgentAcademy.Shared.Models.HumanCommandMetadata>().ToList();
+        Assert.Contains(commands, m => m.Command == "READ_FILE");
+        Assert.Contains(commands, m => m.Command == "RUN_BUILD");
+        Assert.Contains(commands, m => m.Command == "GIT_LOG");
+
+        // Verify field metadata is populated
+        var readFile = commands.Single(m => m.Command == "READ_FILE");
+        Assert.Equal("Read file", readFile.Title);
+        Assert.Equal("code", readFile.Category);
+        Assert.False(readFile.IsAsync);
+        Assert.True(readFile.Fields.Count > 0, "READ_FILE should have fields");
+        Assert.Contains(readFile.Fields, f => f.Name == "path" && f.Required);
+
+        // Verify async commands are flagged
+        var runBuild = commands.Single(m => m.Command == "RUN_BUILD");
+        Assert.True(runBuild.IsAsync);
+    }
+
+    [Fact]
+    public void GetMetadata_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        var controller = CreateController(new CapturingHandler("GIT_LOG"), authenticated: false);
+
+        var result = controller.GetMetadata();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public void GetMetadata_OnlyReturnsAllowlistedCommands()
+    {
+        var controller = CreateController(new CapturingHandler("GIT_LOG"));
+
+        var result = controller.GetMetadata();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var commands = Assert.IsAssignableFrom<List<AgentAcademy.Shared.Models.HumanCommandMetadata>>(ok.Value);
+
+        // None of the agent-only commands should appear
+        Assert.DoesNotContain(commands, m => m.Command == "SHELL");
+        Assert.DoesNotContain(commands, m => m.Command == "REMEMBER");
+        Assert.DoesNotContain(commands, m => m.Command == "DM");
+        Assert.DoesNotContain(commands, m => m.Command == "MOVE_TO_ROOM");
+    }
+
+    [Fact]
+    public void GetMetadata_ExcludesCommandsWithoutRegisteredHandler()
+    {
+        // Only register a handler for GIT_LOG — metadata should not include
+        // any allowlisted command that lacks a handler.
+        var controller = CreateController(new CapturingHandler("GIT_LOG"));
+
+        var result = controller.GetMetadata();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var commands = Assert.IsAssignableFrom<List<AgentAcademy.Shared.Models.HumanCommandMetadata>>(ok.Value);
+
+        // Only GIT_LOG has a handler registered
+        Assert.Single(commands);
+        Assert.Equal("GIT_LOG", commands[0].Command);
+    }
+
+    private CommandController CreateController(ICommandHandler handler, bool authenticated = true) =>
+        CreateController(new[] { handler }, authenticated);
+
+    private CommandController CreateController(IEnumerable<ICommandHandler> handlers, bool authenticated = true)
     {
         var controller = new CommandController(
-            new[] { handler },
+            handlers,
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<CommandController>.Instance);
 

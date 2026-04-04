@@ -1,4 +1,4 @@
-import type { ExecuteCommandRequest, HumanCommandName } from "./api";
+import type { CommandMetadata, ExecuteCommandRequest } from "./api";
 
 export type CommandFieldKind = "text" | "textarea" | "number";
 export type CommandCategory = "workspace" | "code" | "git" | "operations";
@@ -14,7 +14,7 @@ export interface CommandFieldDefinition {
 }
 
 export interface HumanCommandDefinition {
-  command: HumanCommandName;
+  command: string;
   title: string;
   category: CommandCategory;
   description: string;
@@ -23,6 +23,11 @@ export interface HumanCommandDefinition {
   fields: readonly CommandFieldDefinition[];
 }
 
+/**
+ * Hardcoded fallback catalog — used when GET /api/commands/metadata is unavailable.
+ * Intentionally limited to the original 11 commands; the server registry is the
+ * single source of truth for the full set including room management commands.
+ */
 export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
   {
     command: "READ_FILE",
@@ -243,7 +248,7 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
 
 const COMMAND_MAP = new Map(WEEK1_COMMANDS.map((command) => [command.command, command]));
 
-export function getCommandDefinition(command: HumanCommandName): HumanCommandDefinition {
+export function getCommandDefinition(command: string): HumanCommandDefinition {
   const definition = COMMAND_MAP.get(command);
   if (!definition) {
     throw new Error(`Unknown command: ${command}`);
@@ -252,14 +257,16 @@ export function getCommandDefinition(command: HumanCommandName): HumanCommandDef
   return definition;
 }
 
-export function createDefaultCommandDrafts(): Record<HumanCommandName, Record<string, string>> {
-  return WEEK1_COMMANDS.reduce<Record<HumanCommandName, Record<string, string>>>((acc, definition) => {
+export function createDefaultCommandDrafts(
+  commands: readonly HumanCommandDefinition[] = WEEK1_COMMANDS,
+): Record<string, Record<string, string>> {
+  return commands.reduce<Record<string, Record<string, string>>>((acc, definition) => {
     acc[definition.command] = definition.fields.reduce<Record<string, string>>((fieldAcc, field) => {
       fieldAcc[field.name] = field.defaultValue ?? "";
       return fieldAcc;
     }, {});
     return acc;
-  }, {} as Record<HumanCommandName, Record<string, string>>);
+  }, {});
 }
 
 export function validateCommandDraft(
@@ -292,4 +299,25 @@ export function buildExecuteCommandRequest(
     command: definition.command,
     args: Object.keys(args).length > 0 ? args : undefined,
   };
+}
+
+/** Convert server metadata response into local command definitions. */
+export function fromServerMetadata(items: readonly CommandMetadata[]): HumanCommandDefinition[] {
+  return items.map((item) => ({
+    command: item.command,
+    title: item.title,
+    category: (item.category ?? "operations") as CommandCategory,
+    description: item.description,
+    detail: item.detail,
+    isAsync: item.isAsync,
+    fields: (item.fields ?? []).map((f) => ({
+      name: f.name,
+      label: f.label,
+      kind: (f.kind ?? "text") as CommandFieldKind,
+      description: f.description,
+      placeholder: f.placeholder ?? undefined,
+      required: f.required ?? false,
+      defaultValue: f.defaultValue ?? undefined,
+    })),
+  }));
 }

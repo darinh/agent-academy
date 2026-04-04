@@ -65,6 +65,23 @@ public sealed class CommandController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/commands/metadata — returns the full command catalog for the human UI.
+    /// Drives dynamic form rendering instead of a hardcoded frontend catalog.
+    /// </summary>
+    [HttpGet("metadata")]
+    public IActionResult GetMetadata()
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+
+        var metadata = HumanCommandRegistry.GetAll()
+            .Where(m => AllowedCommands.Contains(m.Command) && _handlers.ContainsKey(m.Command))
+            .ToList();
+
+        return Ok(metadata);
+    }
+
+    /// <summary>
     /// POST /api/commands/execute — execute an allowlisted command as the authenticated human user.
     /// </summary>
     [HttpPost("execute")]

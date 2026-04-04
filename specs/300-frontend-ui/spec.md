@@ -118,7 +118,8 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/workspaces/onboard` | POST | Onboard a project |
 | `/api/overview` | GET | Full workspace overview |
 | `/api/auth/status` | GET | Return `authEnabled`, fail-closed `authenticated`, and `copilotStatus` (`operational` / `degraded` / `unavailable`) used by the client render contract |
-| `/api/commands/execute` | POST | Execute a Week 1 allowlisted human command |
+| `/api/commands/metadata` | GET | Return the full human command catalog with field schemas |
+| `/api/commands/execute` | POST | Execute an allowlisted human command |
 | `/api/commands/{correlationId}` | GET | Poll async human command status/results |
 | `/api/filesystem/browse` | GET | Browse filesystem |
 | `/api/rooms/{id}/human` | POST | Send human message |
@@ -134,9 +135,10 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 
 ### Commands Tab (`CommandsPanel.tsx`)
 
-The workspace shell includes a dedicated **Commands** tab for the human Week 1 command surface.
+The workspace shell includes a dedicated **Commands** tab for the human command surface.
 
-- The command deck is **hardcoded** in the client to the 11-command allowlist documented in `007-agent-commands/spec.md`
+- The command deck is **loaded dynamically** from `GET /api/commands/metadata` on mount. If the endpoint is unreachable, the panel falls back to a hardcoded 11-command catalog (`WEEK1_COMMANDS` in `commandCatalog.ts`).
+- The server-side `HumanCommandRegistry` is the single source of truth. It returns metadata only for commands that are both allowlisted and have a registered handler.
 - Commands are grouped visually by category: workspace, code, git, and operations
 - The panel only submits **scalar** arguments (strings/numbers serialized as strings) to match `CommandController.NormalizeArgs()`
 - `RUN_BUILD` and `RUN_TESTS` are treated as **async** commands and polled via `GET /api/commands/{correlationId}` every 2.5 seconds while status is `pending`
@@ -223,4 +225,4 @@ Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear co
 - SSE activity stream integration
 - Notification setup wizard (component exists, not yet wired)
 - TaskStatePanel integration
-- Human command metadata endpoint so the Commands tab can stop hardcoding command schemas
+- ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **RESOLVED** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
