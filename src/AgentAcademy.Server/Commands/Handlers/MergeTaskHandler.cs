@@ -22,6 +22,16 @@ public sealed class MergeTaskHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
+        if (!string.Equals(context.AgentRole, "Planner", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(context.AgentRole, "Reviewer", StringComparison.OrdinalIgnoreCase))
+        {
+            return command with
+            {
+                Status = CommandStatus.Denied,
+                Error = "Only Planner or Reviewer roles can merge tasks"
+            };
+        }
+
         // Parse taskId from args or value
         if (!command.Args.TryGetValue("taskId", out var taskIdObj) || taskIdObj is not string taskId
             || string.IsNullOrWhiteSpace(taskId))

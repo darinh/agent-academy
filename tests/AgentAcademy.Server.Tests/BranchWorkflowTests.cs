@@ -139,6 +139,22 @@ public class BranchWorkflowTests : IDisposable
         Assert.Equal(CommandStatus.Denied, denied!.Status);
     }
 
+    [Fact]
+    public async Task MergeTask_ExecuteAsync_EngineerRole_ReturnsDenied()
+    {
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: "task/test-branch-abc123");
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Equal("Only Planner or Reviewer roles can merge tasks", result.Error);
+    }
+
     // ── Validation Tests ────────────────────────────────────────
 
     [Fact]

@@ -39,6 +39,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   workspace?: { name: string; path: string } | null;
 }) {
   const s = useStyles();
+  const activeRoomCount = props.rooms.filter((room) => room.status === "Active" || room.status === "AttentionRequired").length;
+  const workingAgentCount = props.agentLocations.filter((location) => location.state === "Working").length;
+  const activeBreakoutCount = props.breakoutRooms.filter((room) => room.status === "Active").length;
 
   // Build a map of roomId → agents in that room
   const agentsByRoom = new Map<string, AgentDefinition[]>();
@@ -108,6 +111,20 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                   ⇄
                 </Button>
               )}
+            </div>
+            <div className={s.sidebarSnapshotGrid}>
+              <div className={s.sidebarSnapshotCard}>
+                <div className={s.sidebarSnapshotValue}>{activeRoomCount}</div>
+                <div className={s.sidebarSnapshotLabel}>Live rooms</div>
+              </div>
+              <div className={s.sidebarSnapshotCard}>
+                <div className={s.sidebarSnapshotValue}>{workingAgentCount}</div>
+                <div className={s.sidebarSnapshotLabel}>Working</div>
+              </div>
+              <div className={s.sidebarSnapshotCard}>
+                <div className={s.sidebarSnapshotValue}>{activeBreakoutCount}</div>
+                <div className={s.sidebarSnapshotLabel}>Breakouts</div>
+              </div>
             </div>
           </div>
         )}
