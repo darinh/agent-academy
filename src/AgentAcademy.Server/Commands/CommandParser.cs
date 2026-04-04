@@ -43,7 +43,7 @@ public sealed class CommandParser
         "RUN_BUILD", "RUN_TESTS", "SHOW_DIFF", "GIT_LOG",
         "DM", "ROOM_HISTORY", "MOVE_TO_ROOM", "SET_PLAN",
         "ADD_TASK_COMMENT", "RECALL_AGENT", "CLOSE_ROOM", "MERGE_TASK",
-        "RESTART_SERVER", "SHELL"
+        "RESTART_SERVER", "SHELL", "CREATE_ROOM", "REOPEN_ROOM"
     };
 
     /// <summary>

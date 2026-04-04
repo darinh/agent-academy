@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **007-agent-commands**: Room-as-context — `CREATE_ROOM` command lets planners (and humans via UI) create persistent collaboration rooms as work contexts, without requiring a task first. `REOPEN_ROOM` restores archived rooms for continued work. `LIST_ROOMS` now supports `status=` filter. `CLOSE_ROOM` also accepts human role for frontend use. Planner system prompt updated with room lifecycle guidance (when to create, reopen, and close rooms). 13 new tests.
+
+### Added
 - **007-agent-commands**: Structured error codes — every command failure now includes an `errorCode` string field (`VALIDATION`, `NOT_FOUND`, `PERMISSION`, `CONFLICT`, `TIMEOUT`, `EXECUTION`, `INTERNAL`) so agents can programmatically branch on error type instead of parsing message strings. Applied across all 24 handlers, the command pipeline, the command authorizer, and the human command API. Frontend shows error code as a badge. String constants (not enum) for extensibility.
 - **007-agent-commands**: ErrorCode audit persistence — `CommandAuditEntity.ErrorCode` column added so async command polling and audit history return structured error codes. All 4 audit write paths (agent pipeline, human sync, human async update) and the read path (`ToResponse`) now persist/return the error code. Migration `20260404083032_AddCommandAuditErrorCode`.
 - **007-agent-commands**: Per-agent command rate limiting — sliding-window rate limiter (30 commands/60s) prevents agents from spamming commands. `RATE_LIMIT` error code added. Integrated into `CommandPipeline` after authorization. 6 new tests.

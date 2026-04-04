@@ -667,6 +667,261 @@ public class TaskSystemTests : IDisposable
         Assert.Contains("already archived", payload["message"]!.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
+    // ── CREATE_ROOM Command ─────────────────────────────────────
+
+    [Fact]
+    public async Task CreateRoom_Planner_CreatesRoom()
+    {
+        var handler = new CreateRoomHandler();
+        var (cmd, ctx) = MakeCommand("CREATE_ROOM",
+            new() { ["name"] = "Feature: User Profiles" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("Feature: User Profiles", payload["roomName"]);
+        Assert.NotNull(payload["roomId"]);
+        Assert.Contains("created", payload["message"]!.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateRoom_WithDescription_IncludesInWelcomeMessage()
+    {
+        var handler = new CreateRoomHandler();
+        var (cmd, ctx) = MakeCommand("CREATE_ROOM",
+            new() { ["name"] = "Bug: Login timeout", ["description"] = "Users on slow connections time out" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        var roomId = payload["roomId"]!.ToString()!;
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var welcomeMsg = await db.Messages
+            .Where(m => m.RoomId == roomId && m.Kind == nameof(MessageKind.System))
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(welcomeMsg);
+        Assert.Contains("Users on slow connections", welcomeMsg!.Content);
+    }
+
+    [Fact]
+    public async Task CreateRoom_NonPlanner_Denied()
+    {
+        var handler = new CreateRoomHandler();
+        var (cmd, ctx) = MakeCommand("CREATE_ROOM",
+            new() { ["name"] = "Test Room" },
+            "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Contains("planner", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateRoom_MissingName_ReturnsValidationError()
+    {
+        var handler = new CreateRoomHandler();
+        var (cmd, ctx) = MakeCommand("CREATE_ROOM",
+            new() { },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CreateRoom_PublishesActivityEvent()
+    {
+        var handler = new CreateRoomHandler();
+        var (cmd, ctx) = MakeCommand("CREATE_ROOM",
+            new() { ["name"] = "Discussion: API versioning" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        var roomId = payload["roomId"]!.ToString()!;
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var evt = await db.ActivityEvents
+            .Where(e => e.RoomId == roomId && e.Type == nameof(ActivityEventType.RoomCreated))
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(evt);
+        Assert.Contains("Discussion: API versioning", evt!.Message);
+    }
+
+    [Fact]
+    public async Task CreateRoom_GeneratesSlugId()
+    {
+        var handler = new CreateRoomHandler();
+        var (cmd, ctx) = MakeCommand("CREATE_ROOM",
+            new() { ["name"] = "Feature: User Profiles & Settings" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        var roomId = payload["roomId"]!.ToString()!;
+
+        Assert.StartsWith("feature-user-profiles-settings-", roomId);
+    }
+
+    // ── REOPEN_ROOM Command ─────────────────────────────────────
+
+    [Fact]
+    public async Task ReopenRoom_ArchivedRoom_Succeeds()
+    {
+        await EnsureRoom("room-archived");
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var room = await db.Rooms.FindAsync("room-archived");
+            room!.Status = nameof(RoomStatus.Archived);
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ReopenRoomHandler();
+        var (cmd, ctx) = MakeCommand("REOPEN_ROOM",
+            new() { ["roomId"] = "room-archived" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("Idle", payload["status"]!.ToString());
+        Assert.Contains("reopened", payload["message"]!.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReopenRoom_NonPlanner_Denied()
+    {
+        var handler = new ReopenRoomHandler();
+        var (cmd, ctx) = MakeCommand("REOPEN_ROOM",
+            new() { ["roomId"] = "room-1" },
+            "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+    }
+
+    [Fact]
+    public async Task ReopenRoom_NotArchived_ReturnsConflict()
+    {
+        await EnsureRoom("room-active");
+
+        var handler = new ReopenRoomHandler();
+        var (cmd, ctx) = MakeCommand("REOPEN_ROOM",
+            new() { ["roomId"] = "room-active" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ReopenRoom_NotFound_ReturnsNotFound()
+    {
+        var handler = new ReopenRoomHandler();
+        var (cmd, ctx) = MakeCommand("REOPEN_ROOM",
+            new() { ["roomId"] = "nonexistent" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ReopenRoom_PublishesStatusChangeEvent()
+    {
+        await EnsureRoom("room-reopen-evt");
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var room = await db.Rooms.FindAsync("room-reopen-evt");
+            room!.Status = nameof(RoomStatus.Archived);
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ReopenRoomHandler();
+        var (cmd, ctx) = MakeCommand("REOPEN_ROOM",
+            new() { ["roomId"] = "room-reopen-evt" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        using var scope2 = _serviceProvider.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var evt = await db2.ActivityEvents
+            .Where(e => e.RoomId == "room-reopen-evt" && e.Type == nameof(ActivityEventType.RoomStatusChanged))
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(evt);
+        Assert.Contains("reopened", evt!.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReopenRoom_MissingRoomId_ReturnsValidation()
+    {
+        var handler = new ReopenRoomHandler();
+        var (cmd, ctx) = MakeCommand("REOPEN_ROOM",
+            new() { },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+    }
+
+    // ── LIST_ROOMS Status Filter ────────────────────────────────
+
+    [Fact]
+    public async Task ListRooms_StatusFilter_FiltersResults()
+    {
+        await EnsureRoom("room-active-filter");
+        await EnsureRoom("room-archived-filter");
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var archived = await db.Rooms.FindAsync("room-archived-filter");
+            archived!.Status = nameof(RoomStatus.Archived);
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ListRoomsHandler();
+        var (cmd, ctx) = MakeCommand("LIST_ROOMS",
+            new() { ["status"] = "Archived" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        var rooms = Assert.IsAssignableFrom<IEnumerable<object>>(payload["rooms"]);
+        foreach (var room in rooms.Cast<Dictionary<string, object?>>())
+        {
+            Assert.Equal("Archived", room["status"]!.ToString());
+        }
+    }
+
     // ── Task Type in Task Creation ──────────────────────────────
 
     [Fact]

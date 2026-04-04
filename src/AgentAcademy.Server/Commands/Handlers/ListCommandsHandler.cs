@@ -45,6 +45,8 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["UPDATE_TASK"] = "Update task fields (status, phase, plan, etc.)",
         ["ADD_TASK_COMMENT"] = "Attach a comment or finding to a task",
         ["CLOSE_ROOM"] = "Archive a non-main room",
+        ["CREATE_ROOM"] = "Create a new persistent collaboration room",
+        ["REOPEN_ROOM"] = "Reopen an archived room for continued work",
         ["RESTART_SERVER"] = "Request a server restart via exit code 75",
     };
 

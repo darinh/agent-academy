@@ -6,6 +6,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 
 /// <summary>
 /// Handles LIST_ROOMS — returns all rooms with status, participants, and message counts.
+/// Supports optional status filter (e.g., status=Active, status=Archived).
 /// </summary>
 public sealed class ListRoomsHandler : ICommandHandler
 {
@@ -15,6 +16,22 @@ public sealed class ListRoomsHandler : ICommandHandler
     {
         var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
         var rooms = await runtime.GetRoomsAsync();
+
+        // Optional status filter
+        if (command.Args.TryGetValue("status", out var statusObj) && statusObj is string statusFilter
+            && !string.IsNullOrWhiteSpace(statusFilter))
+        {
+            if (!Enum.TryParse<RoomStatus>(statusFilter, ignoreCase: true, out var parsedStatus))
+            {
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Validation,
+                    Error = $"Invalid status filter: '{statusFilter}'. Valid values: {string.Join(", ", Enum.GetNames<RoomStatus>())}"
+                };
+            }
+            rooms = rooms.Where(r => r.Status == parsedStatus).ToList();
+        }
 
         var result = rooms.Select(r => new Dictionary<string, object?>
         {
