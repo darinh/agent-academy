@@ -324,3 +324,7 @@ All changes to specifications are documented here.
 ### Initial Scaffold — $(date)
 - Created spec-first project structure
 - All features marked as "Planned" — no aspirational claims
+
+### Fixed
+- **007-agent-commands**: ErrorCode audit persistence — async command polling now returns error codes instead of null.
+- **Auth**: Login token change now triggers immediate Copilot auth probe instead of waiting 5-minute interval. Fixes UI showing "degraded" after re-login.
