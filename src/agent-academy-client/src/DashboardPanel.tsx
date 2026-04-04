@@ -11,9 +11,11 @@ import {
   TaskListLtrRegular,
   ArrowSyncRegular,
   ServerRegular,
+  MoneyRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
 import RestartHistoryPanel from "./RestartHistoryPanel";
+import UsagePanel from "./UsagePanel";
 
 // ── Styles ──
 
@@ -189,6 +191,14 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           ))}
         </div>
       )}
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <MoneyRegular style={{ fontSize: 20 }} />
+          LLM Usage
+        </div>
+        <UsagePanel />
+      </div>
 
       <div className={s.section}>
         <div className={s.sectionTitle}>

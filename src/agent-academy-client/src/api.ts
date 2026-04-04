@@ -388,6 +388,60 @@ export function getRestartStats(hours = 24): Promise<RestartStatsDto> {
   return request<RestartStatsDto>(apiUrl(`/api/system/restarts/stats?hours=${hours}`));
 }
 
+// ── Usage / LLM Tracking ──────────────────────────────────────────────
+
+export interface UsageSummary {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  requestCount: number;
+  models: string[];
+}
+
+export interface AgentUsageSummary {
+  agentId: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  requestCount: number;
+}
+
+export interface LlmUsageRecord {
+  id: string;
+  agentId: string;
+  roomId: string | null;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  cost: number | null;
+  durationMs: number | null;
+  reasoningEffort: string | null;
+  recordedAt: string;
+}
+
+export function getGlobalUsage(hoursBack?: number): Promise<UsageSummary> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<UsageSummary>(apiUrl(`/api/usage${qs}`));
+}
+
+export function getGlobalUsageRecords(agentId?: string, limit = 50): Promise<LlmUsageRecord[]> {
+  const params = new URLSearchParams();
+  if (agentId) params.set("agentId", agentId);
+  if (limit !== 50) params.set("limit", String(limit));
+  const qs = params.toString();
+  return request<LlmUsageRecord[]>(apiUrl(`/api/usage/records${qs ? `?${qs}` : ""}`));
+}
+
+export function getRoomUsage(roomId: string): Promise<UsageSummary> {
+  return request<UsageSummary>(apiUrl(`/api/rooms/${roomId}/usage`));
+}
+
+export function getRoomUsageByAgent(roomId: string): Promise<AgentUsageSummary[]> {
+  return request<AgentUsageSummary[]>(apiUrl(`/api/rooms/${roomId}/usage/agents`));
+}
+
 // ── Auth ───────────────────────────────────────────────────────────────
 
 export function getAuthStatus(): Promise<AuthStatus> {
