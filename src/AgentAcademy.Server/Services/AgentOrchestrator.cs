@@ -545,6 +545,18 @@ public sealed class AgentOrchestrator
             return;
         }
 
+        // Prevent concurrent breakout rooms for the same agent
+        var location = await runtime.GetAgentLocationAsync(agent.Id);
+        if (location?.State == AgentState.Working)
+        {
+            _logger.LogWarning(
+                "Agent {AgentName} is already in breakout room {BreakoutId} — skipping assignment '{Title}'",
+                agent.Name, location.BreakoutRoomId, assignment.Title);
+            await runtime.PostSystemStatusAsync(roomId,
+                $"⚠️ {agent.Name} is already working on a task. Assignment \"{assignment.Title}\" will wait until they finish.");
+            return;
+        }
+
         var descriptionWithCriteria = assignment.Description
             + (assignment.Criteria.Count > 0
                 ? "\n\nAcceptance Criteria:\n" + string.Join("\n", assignment.Criteria.Select(c => $"- {c}"))
