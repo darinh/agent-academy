@@ -58,7 +58,16 @@
             "CANCEL_TASK",
             "MERGE_TASK",
             "SHELL",
-            "RESTART_SERVER"
+            "RESTART_SERVER",
+            "RETURN_TO_MAIN",
+            "EXPORT_MEMORIES",
+            "IMPORT_MEMORIES",
+            "REBASE_TASK",
+            "RUN_BUILD",
+            "RUN_TESTS",
+            "CLEANUP_ROOMS",
+            "INVITE_TO_ROOM",
+            "REJECT_TASK"
           ],
           "Denied": [
             "RUN_BUILD",
@@ -107,7 +116,11 @@
             "SET_PLAN",
             "ADD_TASK_COMMENT",
             "CREATE_TASK_ITEM",
-            "UPDATE_TASK_ITEM"
+            "UPDATE_TASK_ITEM",
+            "RETURN_TO_MAIN",
+            "EXPORT_MEMORIES",
+            "IMPORT_MEMORIES",
+            "REBASE_TASK"
           ],
           "Denied": [
             "RUN_BUILD",
@@ -161,7 +174,11 @@
             "SET_PLAN",
             "ADD_TASK_COMMENT",
             "CREATE_TASK_ITEM",
-            "UPDATE_TASK_ITEM"
+            "UPDATE_TASK_ITEM",
+            "RETURN_TO_MAIN",
+            "EXPORT_MEMORIES",
+            "IMPORT_MEMORIES",
+            "REBASE_TASK"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -215,7 +232,11 @@
             "SET_PLAN",
             "ADD_TASK_COMMENT",
             "CREATE_TASK_ITEM",
-            "UPDATE_TASK_ITEM"
+            "UPDATE_TASK_ITEM",
+            "RETURN_TO_MAIN",
+            "EXPORT_MEMORIES",
+            "IMPORT_MEMORIES",
+            "REBASE_TASK"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -273,7 +294,12 @@
             "UPDATE_TASK_ITEM",
             "CANCEL_TASK",
             "MERGE_TASK",
-            "SHELL"
+            "SHELL",
+            "RETURN_TO_MAIN",
+            "EXPORT_MEMORIES",
+            "IMPORT_MEMORIES",
+            "REBASE_TASK",
+            "REJECT_TASK"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -322,7 +348,11 @@
             "SET_PLAN",
             "ADD_TASK_COMMENT",
             "CREATE_TASK_ITEM",
-            "UPDATE_TASK_ITEM"
+            "UPDATE_TASK_ITEM",
+            "RETURN_TO_MAIN",
+            "EXPORT_MEMORIES",
+            "IMPORT_MEMORIES",
+            "REBASE_TASK"
           ],
           "Denied": [
             "RUN_BUILD",
