@@ -134,7 +134,7 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 ## Known Gaps
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
-- **Memory import/export**: No bulk operations defined. Should agents be able to seed memories from a file?
+- ~~**Memory import/export**: No bulk operations defined. Should agents be able to seed memories from a file?~~ **Resolved** — `EXPORT_MEMORIES` and `IMPORT_MEMORIES` commands plus REST endpoints at `GET /api/memories/export` and `POST /api/memories/import`. Import validates categories, enforces 500-char value limit, caps at 500 entries/request, uses upsert semantics.
 - **Memory decay**: No TTL or staleness detection. Old memories may become incorrect as the codebase evolves.
 - ~~**Cross-agent knowledge sharing**: Intentionally prohibited for isolation. But some knowledge (like "the build command is X") is universal. Consider a `shared` category visible to all?~~ **Resolved** — `shared` category added. Memories with `category=shared` are visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. FORGET scoped to own memories.
 
@@ -170,3 +170,4 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 | 2026-03-28 | Implemented: REMEMBER, RECALL, LIST_MEMORIES, FORGET. Removed 50-memory cap. LIKE search for RECALL. | command-system-phase1 |
 | 2026-04-04 | Upgraded RECALL search from LIKE to FTS5 with BM25 ranking. Added fallback, triggers, migration. Known gap resolved. | fts5-memory-search |
 | 2026-04-04 | Added `shared` category for cross-agent knowledge sharing. Shared memories visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. Known gap resolved. | shared-memory-category |
+| 2026-04-04 | Added EXPORT_MEMORIES and IMPORT_MEMORIES commands + REST endpoints for bulk memory operations. Import validates categories, 500-char limit, 500-entry cap, upsert semantics. Known gap resolved. | memory-import-export |
