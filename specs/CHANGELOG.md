@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **300-frontend-ui**: Interactive task review panel — `TaskListPanel.tsx` upgraded from read-only to interactive review queue. Filter bar (All/Review Queue/Active/Completed) with counts. Expandable task cards with full detail view (description, success criteria, implementation/validation summaries, tests created). Task comments fetched from `GET /api/tasks/{id}/comments` with error handling and retry. Review action buttons (Approve/Request Changes/Reject/Merge) contextual to task status, wired through `executeCommand` API. Reason textarea for findings/rejection with validation. Review metadata display (round count, reviewer, merge commit SHA). Resolves spec 300 future work: "TaskStatePanel integration". 18 new frontend tests (73 total).
+
+### Added
 - **008-agent-memory**: Cross-agent shared memory — `shared` category enables universal knowledge visible to all agents. REMEMBER with `category=shared` stores cross-agent knowledge. RECALL and LIST_MEMORIES include shared memories from all agents (with source `agentId`). Prompt injection shows shared memories in separate `=== SHARED KNOWLEDGE ===` section. FORGET still scoped to own memories only. FTS5 search includes shared memories. Resolves known gap: "Cross-agent knowledge sharing". 11 new tests (837 total).
 - **007-agent-commands**: Command palette — `Cmd+K` / `Ctrl+K` opens a searchable overlay for discovering and executing commands. Text search across title/name/description/category, keyboard navigation (↑/↓/Enter/Esc), grouped by category, detail view with field inputs, `Cmd+Enter` to execute, async polling, inline results. Dynamic catalog from metadata endpoint with hardcoded fallback. 13 new frontend tests (55 total).
 
