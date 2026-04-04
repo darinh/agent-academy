@@ -1884,6 +1884,38 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Returns IDs of rooms whose most recent message was sent by a human user
+    /// and has not been followed by an agent or system response. These rooms
+    /// need processing after a server restart.
+    /// </summary>
+    public async Task<List<string>> GetRoomsWithPendingHumanMessagesAsync()
+    {
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
+
+        IQueryable<RoomEntity> query = _db.Rooms
+            .Where(r => r.Status != nameof(RoomStatus.Archived)
+                     && r.Status != nameof(RoomStatus.Completed))
+            .Where(r => r.Messages.Any());
+
+        // Apply workspace scoping — same pattern as GetRoomsAsync
+        if (activeWorkspace is not null)
+            query = query.Where(r => r.WorkspacePath == activeWorkspace);
+        else
+            query = query.Where(r => r.WorkspacePath == null);
+
+        var roomIds = await query
+            .Where(r => r.Messages
+                .OrderByDescending(m => m.SentAt)
+                .ThenByDescending(m => m.Id)
+                .Select(m => m.SenderKind)
+                .FirstOrDefault() == nameof(MessageSenderKind.User))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        return roomIds;
+    }
+
+    /// <summary>
     /// Returns a single breakout room by its ID, or null if not found.
     /// </summary>
     public async Task<BreakoutRoom?> GetBreakoutRoomAsync(string breakoutId)

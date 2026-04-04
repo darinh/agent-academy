@@ -287,6 +287,14 @@ using (var scope = app.Services.CreateScope())
         mainRoomId = await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
     }
 
+    // Re-enqueue rooms with unanswered human messages (covers crash and clean restart).
+    // Must run BEFORE crash recovery, which posts system messages that would mask
+    // pending human messages from the reconstruction query.
+    {
+        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        await orchestrator.ReconstructQueueAsync();
+    }
+
     if (WorkspaceRuntime.CurrentCrashDetected)
     {
         var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();

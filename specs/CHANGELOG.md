@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **006-orchestrator**: Queue reconstruction on startup — `ReconstructQueueAsync()` runs on every server startup and re-enqueues rooms with unanswered human messages. `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` queries for rooms where the latest message has `SenderKind = User`. Prevents message loss on crash or clean restart. 8 new tests.
 - **010-task-management**: Agent git identity attribution — `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` flag to git. `CommandContext` carries identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK). Known Gap resolved. 1 new test.
 - **011-state-recovery**: Frontend reconnect UX — global `RecoveryBanner` with 4 tones (reconnecting, syncing, crash, error) renders above all tabs. `healthCheck.ts` module encapsulates `evaluateReconnect()` logic for instance-mismatch, crash-recovery, and resume-success states. Shows reconnecting banner immediately on SignalR disconnect. Crash-recovered state surfaces `crashDetected` from health endpoint with extended visibility. Spec 011 status → Implemented. 7 new frontend tests.
 

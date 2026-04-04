@@ -47,6 +47,9 @@ public sealed class AgentOrchestrator
 
     private record QueueItem(string RoomId, string? TargetAgentId = null);
 
+    /// <summary>Returns the current number of items in the processing queue (for testing/diagnostics).</summary>
+    internal int QueueDepth { get { lock (_lock) { return _queue.Count; } } }
+
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
         IAgentExecutor executor,
@@ -82,6 +85,37 @@ public sealed class AgentOrchestrator
         _logger.LogWarning(
             "Startup crash recovery ran for main room {RoomId}: {BreakoutCount} breakouts closed, {AgentCount} lingering agents reset",
             mainRoomId, result.ClosedBreakoutRooms, result.ResetWorkingAgents);
+    }
+
+    /// <summary>
+    /// Scans for rooms with unanswered human messages and re-enqueues them.
+    /// Call on every startup to recover queue state lost during shutdown or crash.
+    /// </summary>
+    public async Task ReconstructQueueAsync()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var pendingRoomIds = await runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        if (pendingRoomIds.Count == 0)
+        {
+            _logger.LogInformation("Queue reconstruction: no rooms with pending human messages");
+            return;
+        }
+
+        lock (_lock)
+        {
+            foreach (var roomId in pendingRoomIds)
+            {
+                _queue.Enqueue(new QueueItem(roomId));
+            }
+        }
+
+        _logger.LogInformation(
+            "Queue reconstruction: re-enqueued {Count} room(s) with pending human messages: {RoomIds}",
+            pendingRoomIds.Count, string.Join(", ", pendingRoomIds));
+
+        _ = ProcessQueueAsync();
     }
 
     // ── PUBLIC ENTRY POINT ──────────────────────────────────────

@@ -270,6 +270,290 @@ public class ServerInstanceTests : IDisposable
         Assert.NotNull(recoveryMessage);
         Assert.Contains("System recovered from crash", recoveryMessage.Content);
     }
+
+    // ── Queue Reconstruction ────────────────────────────────────
+
+    [Fact]
+    public async Task GetRoomsWithPendingHumanMessages_ReturnsRoom_WhenLatestMessageIsFromUser()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main", Name = "Main Room",
+            Status = nameof(RoomStatus.Idle), CurrentPhase = "Intake",
+            CreatedAt = now, UpdatedAt = now
+        });
+
+        _db.Messages.Add(new MessageEntity
+        {
+            Id = "m1", RoomId = "main", SenderId = "human", SenderName = "Human",
+            SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+            Content = "Hello", SentAt = now
+        });
+
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        Assert.Single(result);
+        Assert.Equal("main", result[0]);
+    }
+
+    [Fact]
+    public async Task GetRoomsWithPendingHumanMessages_ExcludesRoom_WhenLatestMessageIsFromAgent()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main", Name = "Main Room",
+            Status = nameof(RoomStatus.Active), CurrentPhase = "Intake",
+            CreatedAt = now, UpdatedAt = now
+        });
+
+        _db.Messages.AddRange(
+            new MessageEntity
+            {
+                Id = "m1", RoomId = "main", SenderId = "human", SenderName = "Human",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello", SentAt = now.AddMinutes(-5)
+            },
+            new MessageEntity
+            {
+                Id = "m2", RoomId = "main", SenderId = "agent-1", SenderName = "Agent",
+                SenderKind = nameof(MessageSenderKind.Agent), Kind = nameof(MessageKind.Coordination),
+                Content = "I'll handle this.", SentAt = now
+            });
+
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetRoomsWithPendingHumanMessages_ExcludesArchivedAndCompletedRooms()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.AddRange(
+            new RoomEntity
+            {
+                Id = "archived-room", Name = "Archived",
+                Status = nameof(RoomStatus.Archived), CurrentPhase = "Intake",
+                CreatedAt = now, UpdatedAt = now
+            },
+            new RoomEntity
+            {
+                Id = "completed-room", Name = "Completed",
+                Status = nameof(RoomStatus.Completed), CurrentPhase = "Intake",
+                CreatedAt = now, UpdatedAt = now
+            });
+
+        _db.Messages.AddRange(
+            new MessageEntity
+            {
+                Id = "m1", RoomId = "archived-room", SenderId = "human", SenderName = "Human",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello", SentAt = now
+            },
+            new MessageEntity
+            {
+                Id = "m2", RoomId = "completed-room", SenderId = "human", SenderName = "Human",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello", SentAt = now
+            });
+
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetRoomsWithPendingHumanMessages_ExcludesEmptyRooms()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "empty-room", Name = "Empty",
+            Status = nameof(RoomStatus.Idle), CurrentPhase = "Intake",
+            CreatedAt = now, UpdatedAt = now
+        });
+
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task GetRoomsWithPendingHumanMessages_ReturnsMultipleRooms()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.AddRange(
+            new RoomEntity
+            {
+                Id = "room-a", Name = "Room A",
+                Status = nameof(RoomStatus.Idle), CurrentPhase = "Intake",
+                CreatedAt = now, UpdatedAt = now
+            },
+            new RoomEntity
+            {
+                Id = "room-b", Name = "Room B",
+                Status = nameof(RoomStatus.Active), CurrentPhase = "Intake",
+                CreatedAt = now, UpdatedAt = now
+            });
+
+        _db.Messages.AddRange(
+            new MessageEntity
+            {
+                Id = "m1", RoomId = "room-a", SenderId = "human", SenderName = "Human",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello A", SentAt = now
+            },
+            new MessageEntity
+            {
+                Id = "m2", RoomId = "room-b", SenderId = "user-42", SenderName = "Bob",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello B", SentAt = now
+            });
+
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains("room-a", result);
+        Assert.Contains("room-b", result);
+    }
+
+    [Fact]
+    public async Task GetRoomsWithPendingHumanMessages_ExcludesRoom_WhenLatestMessageIsSystem()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main", Name = "Main Room",
+            Status = nameof(RoomStatus.Idle), CurrentPhase = "Intake",
+            CreatedAt = now, UpdatedAt = now
+        });
+
+        _db.Messages.AddRange(
+            new MessageEntity
+            {
+                Id = "m1", RoomId = "main", SenderId = "human", SenderName = "Human",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello", SentAt = now.AddMinutes(-5)
+            },
+            new MessageEntity
+            {
+                Id = "m2", RoomId = "main", SenderId = "system", SenderName = "System",
+                SenderKind = nameof(MessageSenderKind.System), Kind = nameof(MessageKind.System),
+                Content = "Recovery notice", SentAt = now
+            });
+
+        await _db.SaveChangesAsync();
+
+        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ReconstructQueueAsync_EnqueuesRoomsWithPendingMessages()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main", Name = "Main Room",
+            Status = nameof(RoomStatus.Idle), CurrentPhase = "Intake",
+            CreatedAt = now, UpdatedAt = now
+        });
+
+        _db.Messages.Add(new MessageEntity
+        {
+            Id = "m1", RoomId = "main", SenderId = "human", SenderName = "Human",
+            SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+            Content = "Please process this", SentAt = now
+        });
+
+        await _db.SaveChangesAsync();
+
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(serviceProvider);
+        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+
+        // Use a stopped orchestrator so ProcessQueueAsync doesn't drain the queue
+        var orchestrator = new AgentOrchestrator(
+            scopeFactory,
+            Substitute.For<IAgentExecutor>(),
+            new ActivityBroadcaster(),
+            new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            new GitService(NullLogger<GitService>.Instance),
+            NullLogger<AgentOrchestrator>.Instance);
+        orchestrator.Stop();
+
+        Assert.Equal(0, orchestrator.QueueDepth);
+
+        await orchestrator.ReconstructQueueAsync();
+
+        Assert.Equal(1, orchestrator.QueueDepth);
+    }
+
+    [Fact]
+    public async Task ReconstructQueueAsync_NoOp_WhenNoPendingMessages()
+    {
+        var now = DateTime.UtcNow;
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main", Name = "Main Room",
+            Status = nameof(RoomStatus.Idle), CurrentPhase = "Intake",
+            CreatedAt = now, UpdatedAt = now
+        });
+
+        _db.Messages.AddRange(
+            new MessageEntity
+            {
+                Id = "m1", RoomId = "main", SenderId = "human", SenderName = "Human",
+                SenderKind = nameof(MessageSenderKind.User), Kind = nameof(MessageKind.Response),
+                Content = "Hello", SentAt = now.AddMinutes(-5)
+            },
+            new MessageEntity
+            {
+                Id = "m2", RoomId = "main", SenderId = "agent-1", SenderName = "Aristotle",
+                SenderKind = nameof(MessageSenderKind.Agent), Kind = nameof(MessageKind.Coordination),
+                Content = "I'll handle this.", SentAt = now
+            });
+
+        await _db.SaveChangesAsync();
+
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(serviceProvider);
+        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+
+        var orchestrator = new AgentOrchestrator(
+            scopeFactory,
+            Substitute.For<IAgentExecutor>(),
+            new ActivityBroadcaster(),
+            new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            new GitService(NullLogger<GitService>.Instance),
+            NullLogger<AgentOrchestrator>.Instance);
+        orchestrator.Stop();
+
+        await orchestrator.ReconstructQueueAsync();
+
+        Assert.Equal(0, orchestrator.QueueDepth);
+    }
 }
 
 public class ServerInstanceEntityTests

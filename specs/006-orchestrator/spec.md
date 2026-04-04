@@ -18,6 +18,7 @@ Human messages and DM triggers are enqueued by room ID. A single processing loop
 - Entry point: `HandleDirectMessage(agentId, roomId)` — enqueues with dedupe for the same agent/room
 - Processing is serialized via `_processing` flag + `_lock` — only one room is processed at a time
 - The orchestrator can be stopped via `Stop()`, which flips `_stopped` and halts queue processing
+- **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
 
 ### Conversation Rounds
 
@@ -187,7 +188,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 ## Known Gaps
 
-- No persistence of queue state — pending messages are lost on restart
+- ~~No persistence of queue state — pending messages are lost on restart~~ — **resolved**: `ReconstructQueueAsync()` runs on every startup and re-enqueues rooms with pending human messages. Uses `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` to find rooms where the latest message has `SenderKind = User`.
 - Breakout rooms use fire-and-forget (`Task.Run`) — unobserved exceptions are logged but not surfaced to the caller
 - ~~No concurrency control on simultaneous breakout rooms for the same agent~~ — **resolved**: `HandleTaskAssignmentAsync` checks `AgentState.Working` before creating a breakout room. If the agent is already working, the assignment is skipped with a status message posted to the room.
 - ~~`LoadSpecContext` reads from the file system synchronously~~ — **resolved**: all `SpecManager` methods converted to async (`LoadSpecContextAsync`, `GetSpecSectionsAsync`, `GetSpecContentAsync`) using `File.ReadAllTextAsync`.
@@ -197,6 +198,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-04 | Queue reconstruction on startup: `ReconstructQueueAsync` re-enqueues rooms with unanswered human messages on every server startup. 8 new tests. Resolved queue persistence known gap. | queue-reconstruction |
 | 2026-04-04 | Full reconciliation with code: open-ended breakout/fix loops, DM handling, task gating, branch-based review split, removed stale constants | spec-006-reconciliation |
 | 2026-03-30 | Marked section `Outdated` pending reconciliation with open-ended breakout lifecycle and timeout removal | spec-doc-gap-fix |
 | 2026-03-28 | Multi-round continuation loop (up to 3 rounds per trigger) | fix-orchestrator-stall |
