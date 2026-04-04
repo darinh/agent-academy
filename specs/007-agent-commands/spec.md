@@ -438,12 +438,21 @@ Authorization: Cookie (authenticated session)
 - Agent-invoked commands: `Source = null` (or could be set to `"agent"`)
 - Human-invoked commands: `Source = "human-ui"`
 
+**Field**: `CommandAuditEntity.ErrorCode` (nullable string)
+
+- Persists the structured error category (`VALIDATION`, `NOT_FOUND`, `PERMISSION`, `CONFLICT`, `TIMEOUT`, `EXECUTION`, `INTERNAL`) from `CommandEnvelope.ErrorCode`
+- Null on success or for pre-existing audit rows (column is nullable)
+- Written by all audit paths: `CommandPipeline.AuditAsync` (agent), `CommandController.CreateAuditEntity` (human sync), `CommandController.UpdateAuditAsync` (human async)
+- Read back by `CommandController.ToResponse(CommandAuditEntity)` for the polling endpoint
+
 All human commands audit with:
 - `AgentId = "human"`
 - `Source = "human-ui"`
 - `RoomId = null`
 
-**Database migration**: `20260402012749_AddCommandAuditSource.cs` adds `Source` column + index for efficient polling queries.
+**Database migrations**:
+- `20260402012749_AddCommandAuditSource.cs` adds `Source` column + index for efficient polling queries.
+- `20260404083032_AddCommandAuditErrorCode.cs` adds `ErrorCode` column (nullable TEXT).
 
 #### SystemController.cs
 **Lines modified**: Advertises new command endpoints in system metadata.
@@ -637,3 +646,4 @@ Discord Server
 | 2026-04-02 | Added Human Command Execution API: `POST /api/commands/execute` and `GET /api/commands/{correlationId}` for Week 1 allowlist (11 commands: all read-only + RUN_BUILD/RUN_TESTS). CommandController bypasses agent pipeline, uses controller-level allowlist + cookie auth. Async commands return 202 + polling. Added CommandAuditEntity.Source field. Build/test handlers serialized via SemaphoreSlim. | implement-frontend-command-execution-api | (this change) |
 | 2026-04-04 | Implemented planner-only `CLOSE_ROOM`. Non-main rooms can now be archived when empty; the runtime sets `RoomEntity.Status = Archived` and emits a `RoomClosed` activity event. Updated permission docs and reconciled the confirmation guardrail to match shipped behavior. | close-room-command | (this change) |
 | 2026-04-04 | Verified MERGE_TASK Planner/Reviewer role authorization enforcement. Handler code (lines 25-31) guards against unauthorized access. Updated spec table to include implementation reference and clarified design principle scope for agent-initiated commands. | merge-task-authorization-enforcement | `52419d8` |
+| 2026-04-04 | Added `ErrorCode` column to `CommandAuditEntity`. Async command polling and audit history now return structured error codes. All 4 audit write paths and the read path updated. Migration `20260404083032_AddCommandAuditErrorCode`. | errorcode-audit-persistence | `5fd74b3` |
