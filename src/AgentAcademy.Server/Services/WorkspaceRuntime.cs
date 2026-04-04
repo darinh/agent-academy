@@ -311,9 +311,12 @@ public sealed class WorkspaceRuntime
             .FirstOrDefaultAsync();
         var activeSessionId = activeSession?.Id;
 
+        // Human/User messages persist across session boundaries so external
+        // inputs (consultant, human) remain visible after epoch transitions.
         IQueryable<Data.Entities.MessageEntity> query = _db.Messages
             .Where(m => m.RoomId == roomId && m.RecipientId == null
-                && (activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null));
+                && (activeSessionId == null || m.SessionId == activeSessionId
+                    || m.SessionId == null || m.SenderKind == nameof(MessageSenderKind.User)));
 
         if (!string.IsNullOrEmpty(afterMessageId))
         {
@@ -1914,7 +1917,8 @@ public sealed class WorkspaceRuntime
 
         var messages = await _db.Messages
             .Where(m => m.RoomId == room.Id && m.RecipientId == null
-                && (activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null))
+                && (activeSessionId == null || m.SessionId == activeSessionId
+                    || m.SessionId == null || m.SenderKind == nameof(MessageSenderKind.User)))
             .OrderByDescending(m => m.SentAt)
             .Take(MaxRecentMessages)
             .OrderBy(m => m.SentAt)
