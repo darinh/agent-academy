@@ -13,4 +13,13 @@ describe("LoginPage", () => {
     expect(markup).toContain("Sign-in required");
     expect(markup).toContain("Login with GitHub");
   });
+
+  it("renders the connected user identity whenever the backend includes a user payload", () => {
+    const markup = renderToStaticMarkup(
+      <LoginPage copilotStatus="degraded" user={{ login: "athena", name: "Athena" }} />,
+    );
+
+    expect(markup).toContain("Connected as");
+    expect(markup).toContain("Athena");
+  });
 });

@@ -232,6 +232,14 @@ const useLocalStyles = makeStyles({
   newMsgWrapper: {
     position: "relative",
   },
+  limitedModeNotice: {
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    padding: "12px 16px",
+    color: tokens.colorPaletteDarkOrangeForeground2,
+    backgroundColor: tokens.colorPaletteDarkOrangeBackground2,
+    fontSize: "12px",
+    lineHeight: 1.6,
+  },
 });
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -274,10 +282,26 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   }, []);
 
   useEffect(() => {
-    void refreshThreads().then(() => setLoading(false));
+    let active = true;
+
+    void refreshThreads().finally(() => {
+      if (active) {
+        setLoading(false);
+      }
+    });
+
+    if (readOnly) {
+      return () => {
+        active = false;
+      };
+    }
+
     const interval = setInterval(() => void refreshThreads(), 10000);
-    return () => clearInterval(interval);
-  }, [refreshThreads]);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [readOnly, refreshThreads]);
 
   // Load messages when thread selected
   const refreshMessages = useCallback(async (agentId: string) => {
@@ -292,9 +316,13 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   useEffect(() => {
     if (!selectedAgentId) return;
     void refreshMessages(selectedAgentId);
+    if (readOnly) {
+      return;
+    }
+
     const interval = setInterval(() => void refreshMessages(selectedAgentId), 3000);
     return () => clearInterval(interval);
-  }, [selectedAgentId, refreshMessages]);
+  }, [readOnly, selectedAgentId, refreshMessages]);
 
   // Auto-scroll
   useEffect(() => {
@@ -497,27 +525,34 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
               )}
             </div>
 
-            <div className={s.composer}>
-              <Textarea
-                className={s.composerInput}
-                appearance="filled-darker"
-                placeholder={sending ? "Sending…" : `Message ${selectedAgent.name}…`}
-                value={input}
-                onChange={(_, d) => setInput(d.value)}
-                onKeyDown={handleKeyDown}
-                resize="vertical"
-                rows={2}
-                disabled={sending || readOnly}
-                aria-label={`Message ${selectedAgent.name}`}
-              />
-              <Button
-                appearance="primary"
-                icon={sending ? <Spinner size="tiny" /> : <SendRegular />}
-                onClick={() => void doSend()}
-                disabled={!input.trim() || sending || readOnly}
-                title="Send"
-              />
-            </div>
+            {readOnly ? (
+              <div className={s.limitedModeNotice}>
+                Limited mode is active. Existing direct messages stay readable, but new DMs remain paused until
+                Copilot returns to operational.
+              </div>
+            ) : (
+              <div className={s.composer}>
+                <Textarea
+                  className={s.composerInput}
+                  appearance="filled-darker"
+                  placeholder={sending ? "Sending…" : `Message ${selectedAgent.name}…`}
+                  value={input}
+                  onChange={(_, d) => setInput(d.value)}
+                  onKeyDown={handleKeyDown}
+                  resize="vertical"
+                  rows={2}
+                  disabled={sending}
+                  aria-label={`Message ${selectedAgent.name}`}
+                />
+                <Button
+                  appearance="primary"
+                  icon={sending ? <Spinner size="tiny" /> : <SendRegular />}
+                  onClick={() => void doSend()}
+                  disabled={!input.trim() || sending}
+                  title="Send"
+                />
+              </div>
+            )}
           </>
         ) : (
           <div className={s.emptyState}>

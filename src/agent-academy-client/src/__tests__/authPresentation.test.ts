@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getCopilotStatusCopy, getCopilotStatusFacts, shouldRenderWorkspace } from "../authPresentation";
+import {
+  getCopilotStatusCopy,
+  getCopilotStatusFacts,
+  hasDisplayUser,
+  isWorkspaceLimited,
+  shouldRenderWorkspace,
+} from "../authPresentation";
 import type { AuthStatus } from "../api";
 
 function authStatus(overrides: Partial<AuthStatus>): AuthStatus {
@@ -48,5 +54,22 @@ describe("auth presentation", () => {
       { label: "Copilot runtime", value: "Unavailable", tone: "warning" },
       { label: "Workspace access", value: "Sign-in required", tone: "critical" },
     ]);
+  });
+
+  it("treats degraded mode as limited even when authenticated remains fail-closed", () => {
+    expect(isWorkspaceLimited(authStatus({
+      authenticated: false,
+      copilotStatus: "degraded",
+    }))).toBe(true);
+    expect(isWorkspaceLimited(authStatus({
+      authenticated: false,
+      copilotStatus: "unavailable",
+    }))).toBe(false);
+  });
+
+  it("treats the user payload as independently renderable identity", () => {
+    expect(hasDisplayUser({ login: "athena" })).toBe(true);
+    expect(hasDisplayUser({ login: "", name: "Athena" })).toBe(true);
+    expect(hasDisplayUser(null)).toBe(false);
   });
 });

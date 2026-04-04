@@ -14,8 +14,16 @@ export interface CopilotStatusFact {
   tone: "good" | "warning" | "critical" | "informative";
 }
 
+export function hasDisplayUser(user?: AuthUser | null): boolean {
+  return Boolean(user?.name ?? user?.login);
+}
+
 export function shouldRenderWorkspace(auth: AuthStatus): boolean {
   return !auth.authEnabled || auth.copilotStatus === "operational" || auth.copilotStatus === "degraded";
+}
+
+export function isWorkspaceLimited(auth: Pick<AuthStatus, "authEnabled" | "copilotStatus">): boolean {
+  return auth.authEnabled && auth.copilotStatus === "degraded";
 }
 
 export function getCopilotStatusCopy(

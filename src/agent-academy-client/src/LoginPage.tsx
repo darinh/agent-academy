@@ -5,7 +5,7 @@ import {
 } from "@fluentui/react-components";
 import { apiBaseUrl } from "./api";
 import type { AuthUser, CopilotStatus } from "./api";
-import { getCopilotStatusCopy, getCopilotStatusFacts } from "./authPresentation";
+import { getCopilotStatusCopy, getCopilotStatusFacts, hasDisplayUser } from "./authPresentation";
 
 const useLocalStyles = makeStyles({
   root: {
@@ -330,7 +330,7 @@ export default function LoginPage({
         <section className={s.panel}>
           <div className={s.statusPill}>{copy.eyebrow}</div>
 
-          {userName && (
+          {hasDisplayUser(user) && userName && (
             <div className={s.identity}>
               <span className={s.identityDot} />
               Connected as <strong>{userName}</strong>

@@ -62,7 +62,7 @@ Per-agent permission boundaries:
 
 | Agent | Role | Allowed | Denied |
 |-------|------|---------|--------|
-| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | Arbitrary code execution |
+| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | Arbitrary code execution |
 | Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT` | Code execution |
 | Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT` | Spec write, task approve |
 | Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
@@ -113,6 +113,7 @@ These formalize existing capabilities with audit trails and structured output.
 | `SET_PLAN` | `content` | Confirmation + target room ID | Writes markdown plan content for the caller's current room or breakout room | `SetPlanHandler.cs` — validates non-empty content and active room context, then calls `WorkspaceRuntime.SetPlanAsync` |
 | `ADD_TASK_COMMENT` | `taskId`, `type?` (Comment\|Finding\|Evidence\|Blocker, default: Comment), `content` | Comment ID and confirmation | Validates task exists, caller is assignee/reviewer/planner. Creates `TaskCommentEntity`, posts activity event | |
 | `RECALL_AGENT` | `agentId` (name or ID) | Agent info and room transition details | Validates caller has Planner role, target agent is in Working state in a breakout room. Closes breakout room, moves agent to Idle in parent room. Posts recall notices to both breakout and parent rooms | |
+| `CLOSE_ROOM` | `roomId` | Room ID, room name, archived status | Validates caller has Planner role, target room exists, target is not the workspace's main collaboration room, and the room has no active participants. Sets `RoomEntity.Status = Archived`, updates `UpdatedAt`, and publishes a `RoomClosed` activity event. Repeating the command against an already archived room is a no-op success. | `CloseRoomHandler.cs` + `WorkspaceRuntime.CloseRoomAsync()` |
 | `MERGE_TASK` | `taskId` | Task ID, title, branch, `mergeCommitSha` | Validates caller is Reviewer or Planner, task status is Approved, task has BranchName. Sets task to Merging status, squash-merges task branch to develop, runs `git add -A` to stage the full squash result, then commits. On success: updates task to Completed, records merge commit SHA on TaskEntity, and returns it in the result. On conflict: aborts the merge, restores task status to Approved, and returns an error. | |
 
 #### Phase 1C: Verification — IMPLEMENTED
@@ -155,7 +156,7 @@ These formalize existing capabilities with audit trails and structured output.
 ### Tier 2 — Full Autonomy
 
 #### Room Management
-`RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `CLOSE_ROOM`, `RESTORE_ROOM`, `ROOM_TOPIC`
+`RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `RESTORE_ROOM`, `ROOM_TOPIC`
 
 #### Communication
 `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`
@@ -478,7 +479,7 @@ All other handlers (26 of 28) require no modifications. They accept `CommandCont
 
 ### Guardrails
 - **Dry-run mode**: Side-effecting commands support `dryRun: true` returning what would happen
-- **Confirmation**: Destructive actions (CLOSE_ROOM, FORGET, data mutations) require confirmation step
+- **Confirmation**: Planned for destructive actions such as `CLOSE_ROOM`; current implementation relies on role gating plus hard validation (for example, refusing to archive the main collaboration room)
 - **Secret redaction**: All command output is scanned for secrets/tokens before logging
 - **Idempotent mutations**: Write commands produce the same result when called twice with the same args
 
@@ -563,7 +564,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?).
 - **Rate limiting**: No rate limiting defined for commands. An agent could spam READ_FILE in a tight loop.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
-- **Phase 1B-1E commands**: Task claiming, approvals, build/test execution, DMs, and navigation commands are specified but not implemented.
+- **Tier 2 room commands**: `RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `RESTORE_ROOM`, and `ROOM_TOPIC` remain planned. `CLOSE_ROOM` is now implemented with planner-only authorization and archive semantics.
 
 ## Discord Agent Question Bridge
 
@@ -605,3 +606,4 @@ Discord Server
 | 2026-03-30 | Implemented DM command (Phase 1D), replacing ASK_HUMAN. Agent-to-agent and agent-to-human private messaging. MessageEntity.RecipientId + DirectMessage kind. Orchestrator HandleDirectMessage with targeted rounds. System notification in recipient's room. Frontend Telegram-style DM panel. DM API endpoints. 18 tests. | dm-command | (this change) |
 | 2026-03-30 | Implemented Phase 1C (RUN_BUILD, RUN_TESTS, SHOW_DIFF, GIT_LOG), ROOM_HISTORY (1D), MOVE_TO_ROOM (1E). All agent timeouts removed — no per-turn LLM timeout, no breakout round cap, no fix round cap. Breakout rooms are open-ended (agents work until WORK REPORT: COMPLETE). DMs delivered to agents in breakout rooms. Task workspace scoping fix. | commands-and-breakout-redesign | (this change) |
 | 2026-04-02 | Added Human Command Execution API: `POST /api/commands/execute` and `GET /api/commands/{correlationId}` for Week 1 allowlist (11 commands: all read-only + RUN_BUILD/RUN_TESTS). CommandController bypasses agent pipeline, uses controller-level allowlist + cookie auth. Async commands return 202 + polling. Added CommandAuditEntity.Source field. Build/test handlers serialized via SemaphoreSlim. | implement-frontend-command-execution-api | (this change) |
+| 2026-04-04 | Implemented planner-only `CLOSE_ROOM`. Non-main rooms can now be archived when empty; the runtime sets `RoomEntity.Status = Archived` and emits a `RoomClosed` activity event. Updated permission docs and reconciled the confirmation guardrail to match shipped behavior. | close-room-command | (this change) |

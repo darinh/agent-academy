@@ -37,7 +37,12 @@ import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
 import CommandsPanel from "./CommandsPanel";
-import { getCopilotStatusCopy, shouldRenderWorkspace } from "./authPresentation";
+import {
+  getCopilotStatusCopy,
+  hasDisplayUser,
+  isWorkspaceLimited,
+  shouldRenderWorkspace,
+} from "./authPresentation";
 import {
   AUTH_STATUS_POLL_MS,
   clearAutoReauthAttempt,
@@ -302,7 +307,7 @@ function AppShell() {
     return <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />;
   }
 
-  const workspaceLimited = auth.copilotStatus === "degraded";
+  const workspaceLimited = isWorkspaceLimited(auth);
   const degradedCopy = workspaceLimited ? getCopilotStatusCopy("degraded", auth.user ?? null) : null;
 
   return (
@@ -399,7 +404,7 @@ function AppShell() {
                     {room.currentPhase}
                   </div>
                 )}
-                {auth.user && (
+                {hasDisplayUser(auth.user) && auth.user && (
                   <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
                 )}
               </div>
