@@ -8,35 +8,28 @@ Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await pat
 
 ## Current Behavior
 
-**Status: Outdated**
-
-This section no longer fully matches the implementation after the breakout-room redesign documented in `specs/CHANGELOG.md` and `specs/007-agent-commands/spec.md`.
-
-Known drift in this document includes:
-- breakout work is no longer capped by `MaxBreakoutRounds`
-- fix-up work is no longer capped by `MaxFixRounds`
-- orchestrator-driven per-turn and breakout timeouts were removed
-
-Until this section is reconciled with code, treat the breakout lifecycle details below as historical rather than authoritative.
+**Status: Implemented**
 
 ### Queue-Based Processing
 
-Human messages are enqueued by room ID. A single processing loop drains the queue, running one conversation round per room. If the orchestrator is already processing, new messages wait in the FIFO queue.
+Human messages and DM triggers are enqueued by room ID. A single processing loop drains the queue, running one conversation round per room. If the orchestrator is already processing, new messages wait in the FIFO queue.
 
-- Entry point: `HandleHumanMessage(roomId)` — enqueues and kicks off processing
-- Processing is serialized — only one room is handled at a time
-- The orchestrator can be stopped via `Stop()`, which halts queue processing and in-flight rounds
+- Entry point: `HandleHumanMessage(roomId)` — enqueues `{RoomId}` and kicks off `ProcessQueueAsync()`
+- Entry point: `HandleDirectMessage(agentId, roomId)` — enqueues with dedupe for the same agent/room
+- Processing is serialized via `_processing` flag + `_lock` — only one room is processed at a time
+- The orchestrator can be stopped via `Stop()`, which flips `_stopped` and halts queue processing
 
 ### Conversation Rounds
 
 Each round in the main collaboration room follows this sequence:
 
-1. **Planner first**: The agent with role `"Planner"` runs first, with instructions to tag other agents or create TASK ASSIGNMENT blocks
-2. **Tagged agents**: Agents @-mentioned in the planner's response run next (up to `MAX_TAGGED_AGENTS = 6`)
-3. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run
-4. **Sequential execution**: Agents run one at a time so each sees prior responses
-5. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed
-6. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
+1. **Session rotation**: Round 1 runs `ConversationSessionService.CheckAndRotateAsync(roomId)` to check epoch thresholds
+2. **Planner first**: The agent with role `"Planner"` runs first, with instructions to tag other agents or create TASK ASSIGNMENT blocks
+3. **Tagged agents**: Agents @-mentioned in the planner's response run next (up to `MaxTaggedAgents = 6`)
+4. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run
+5. **Sequential execution**: Agents run one at a time so each sees prior responses. Agents in `Working` state (in breakout) are skipped.
+6. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed
+7. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
 
 ### Task Assignment Workflow
 
@@ -50,55 +43,78 @@ Description: What to do
 Acceptance Criteria:
 - Criterion 1
 - Criterion 2
+Type: Feature|Bug|Chore|Spike
 ```
 
 The orchestrator:
 1. Finds the named agent in the catalog
-2. Creates a breakout room for the assigned agent
-3. Creates a task item linked to the breakout room
-4. Ensures the breakout room has a persisted linked `TaskEntity` via `BreakoutRoomEntity.TaskId`
-5. Creates a dedicated task branch (`task/{slug}-{suffix}`), records it once on that task, and sets the breakout plan
-6. Posts a system status message to the main room
-7. Launches the breakout loop asynchronously (fire-and-forget)
+2. **Task gating**: Non-planner agents can only create `Bug` tasks. Other task types from non-planners become a proposal message posted to the main room instead of an actual task.
+3. Creates a breakout room for the assigned agent
+4. Creates a task item linked to the breakout room
+5. Ensures the breakout room has a persisted linked `TaskEntity` via `BreakoutRoomEntity.TaskId`
+6. Creates a dedicated task branch (`task/{slug}-{suffix}`), records it once on that task, and sets the breakout plan
+7. Returns to `develop` after branch setup
+8. Posts a system status message to the main room
+9. Launches the breakout loop asynchronously via `Task.Run` (fire-and-forget)
+
+On setup failure, the breakout room is closed and any orphan task is cancelled.
 
 ### Breakout Room Workflow
 
-Inside a breakout room, the assigned agent works for up to `MAX_BREAKOUT_ROUNDS = 5` iterations:
+Inside a breakout room, the assigned agent works in an **open-ended loop** (`for (round = 1; ; round++)`) — there is no round cap:
 
-1. A task brief is posted as a system message
-2. Each round builds a prompt with tasks and work log
-3. The agent's response is posted to the breakout room's message log
-4. If the response contains a `WORK REPORT:` block with status "COMPLETE", the breakout completes early
-5. After max rounds, the breakout completes regardless
+1. Session rotation check runs before each round
+2. Git round lock is acquired and the task branch is ensured
+3. A prompt is built with: task brief + work log + unread DMs + session summary
+4. The agent runs and its response is posted to the breakout room
+5. Commands in the response are processed while still on the task branch
+6. If the response contains a `WORK REPORT:` block with `Status: COMPLETE`, the breakout completes early
+7. Without a work report, the loop continues indefinitely until the agent signals completion
 
 ### Review Cycle
 
 When a breakout completes:
 
-1. The agent moves to "presenting" state in the main room
-2. The last agent message (work report) is posted to the main room
-3. A reviewer agent (role `"Reviewer"`) evaluates the work
-4. The reviewer produces a `REVIEW:` block with verdict `APPROVED` or `NEEDS FIX`
-5. If rejected, the agent returns to the breakout room for up to `MAX_FIX_ROUNDS = 2` additional rounds
-6. The breakout room is closed after review completes
+1. The agent moves to `Presenting` state in the main room
+2. The work report is posted to the main room
+3. The task is transitioned to `InReview`
+
+Two review paths exist:
+
+- **Branch-backed tasks** (current default): Auto-review is skipped. The task awaits manual `APPROVE_TASK` → `MERGE_TASK` commands from a reviewer or planner.
+- **Legacy path**: A reviewer agent runs in the main room and produces a `REVIEW:` block with verdict `APPROVED` or `NEEDS FIX`. If rejected, the agent returns to breakout for an **open-ended fix loop** (`for (round = 1; ; round++)`) — there is no fix-round cap.
+
+The breakout room is closed after review completes.
+
+### Direct Message Handling
+
+The orchestrator has full DM integration:
+
+- `HandleDirectMessage(agentId, roomId)` provides a dedicated queue path for DM-triggered processing
+- If the target agent is in a breakout room, unread DMs are posted into the breakout room as system messages
+- Otherwise, DMs are injected into the agent's prompt in both main-room and breakout contexts
+- DMs use per-recipient `AcknowledgedAt` tracking to prevent duplication
 
 ### Prompt Building
 
 Three prompt builders construct context for agent invocations:
 
 - **`BuildConversationPrompt`**: Session summary (if available) + agent memories + room context + spec context + recent messages (last 20 from active session). **Note**: Agent startup prompt is NOT included — it's sent only during SDK session priming to avoid redundant context accumulation.
-- **`BuildBreakoutPrompt`**: Session summary (if available) + agent memories + breakout room name + tasks + work log (last 10 from active session). Same startup prompt deduplication.
+- **`BuildBreakoutPrompt`**: Session summary (if available) + agent memories + breakout room name + tasks + work log (last 10 from active session) + unread DMs. Same startup prompt deduplication.
 - **`BuildReviewPrompt`**: Reviewer startup prompt + work report + spec context for accuracy verification
 
 ### Epoch-Aware Round Logic
 
-Before the first conversation round, the orchestrator checks if the room's active conversation session has exceeded the configured message threshold (default 50 for main rooms, 30 for breakout rooms). If exceeded:
+Before the first conversation round (main room) or before each round (breakout rooms), the orchestrator checks if the active conversation session has exceeded the configured message threshold:
+
+- Main rooms: default 50 messages (`conversation.mainRoomEpochSize`)
+- Breakout rooms: default 30 messages (`conversation.breakoutEpochSize`)
+
+If exceeded:
 1. `ConversationSessionService.CheckAndRotateAsync()` summarizes the current session via LLM
 2. The session is archived with the summary
 3. A new active session is created
 4. All SDK sessions for the room are invalidated (forcing fresh context)
-
-For breakout rooms, the threshold check runs before each round (not just round 1).
 
 ### Spec Context Loading
 
@@ -144,17 +160,15 @@ Registered as a singleton. Uses `IServiceScopeFactory` to create scoped `Workspa
 
 | Name | Value | Description |
 |------|-------|-------------|
-| `McTimeout` | 120s | Main conversation agent timeout |
-| `BreakoutTimeout` | 300s | Breakout room agent timeout |
-| `MaxBreakoutRounds` | 5 | Max iterations per breakout |
-| `MaxFixRounds` | 2 | Extra rounds after review rejection |
 | `MaxRoundsPerTrigger` | 3 | Max conversation rounds per human message |
 | `MaxTaggedAgents` | 6 | Cap on tagged agents per round |
+
+Note: Per-turn and breakout timeouts (`McTimeout`, `BreakoutTimeout`) were removed. Breakout rounds (`MaxBreakoutRounds`) and fix rounds (`MaxFixRounds`) are now open-ended. Session epoch sizes are configured via `SystemSettingsService`.
 
 ### Parsing Records
 
 ```csharp
-internal record ParsedTaskAssignment(string Agent, string Title, string Description, List<string> Criteria);
+internal record ParsedTaskAssignment(string Agent, string Title, string Description, List<string> Criteria, TaskType Type);
 internal record ParsedWorkReport(string Status, List<string> Files, string Evidence);
 internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 ```
@@ -163,11 +177,13 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 1. Queue processing is serialized — at most one room is being processed at any time
 2. Agents run sequentially within a round so each sees prior responses
-3. Breakout loops run asynchronously (fire-and-forget) to not block the main conversation
+3. Breakout loops run asynchronously (fire-and-forget via `Task.Run`) to not block the main conversation
 4. The planner always runs first if one exists
 5. PASS responses are never posted to the room
 6. Task assignment parsing requires both Agent and Title fields
 7. The orchestrator tolerates individual agent failures without aborting the round
+8. Non-planner agents can only create Bug tasks; other types become proposals
+9. Branch-backed tasks skip auto-review in favor of manual APPROVE_TASK/MERGE_TASK
 
 ## Known Gaps
 
@@ -175,11 +191,13 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 - Breakout rooms use fire-and-forget (`Task.Run`) — unobserved exceptions are logged but not surfaced to the caller
 - No concurrency control on simultaneous breakout rooms for the same agent
 - `LoadSpecContext` reads from the file system synchronously
+- Open-ended breakout and fix loops have no timeout or round cap — a stuck agent loops indefinitely until manually recalled
 
 ## Revision History
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-04 | Full reconciliation with code: open-ended breakout/fix loops, DM handling, task gating, branch-based review split, removed stale constants | spec-006-reconciliation |
 | 2026-03-30 | Marked section `Outdated` pending reconciliation with open-ended breakout lifecycle and timeout removal | spec-doc-gap-fix |
 | 2026-03-28 | Multi-round continuation loop (up to 3 rounds per trigger) | fix-orchestrator-stall |
 | 2025-07-21 | Initial implementation — ported from v1 TypeScript | Port orchestrator |
