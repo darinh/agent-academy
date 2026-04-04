@@ -12,10 +12,12 @@ import {
   ArrowSyncRegular,
   ServerRegular,
   MoneyRegular,
+  ErrorCircleRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
 import RestartHistoryPanel from "./RestartHistoryPanel";
 import UsagePanel from "./UsagePanel";
+import ErrorsPanel from "./ErrorsPanel";
 
 // ── Styles ──
 
@@ -198,6 +200,14 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           LLM Usage
         </div>
         <UsagePanel />
+      </div>
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <ErrorCircleRegular style={{ fontSize: 20 }} />
+          Agent Errors
+        </div>
+        <ErrorsPanel />
       </div>
 
       <div className={s.section}>

@@ -442,6 +442,53 @@ export function getRoomUsageByAgent(roomId: string): Promise<AgentUsageSummary[]
   return request<AgentUsageSummary[]>(apiUrl(`/api/rooms/${roomId}/usage/agents`));
 }
 
+// ── Errors / Agent Error Tracking ─────────────────────────────────────
+
+export interface ErrorRecord {
+  agentId: string;
+  roomId: string;
+  errorType: string;
+  message: string;
+  recoverable: boolean;
+  timestamp: string;
+}
+
+export interface ErrorCountByType {
+  errorType: string;
+  count: number;
+}
+
+export interface ErrorCountByAgent {
+  agentId: string;
+  count: number;
+}
+
+export interface ErrorSummary {
+  totalErrors: number;
+  recoverableErrors: number;
+  unrecoverableErrors: number;
+  byType: ErrorCountByType[];
+  byAgent: ErrorCountByAgent[];
+}
+
+export function getGlobalErrorSummary(hoursBack?: number): Promise<ErrorSummary> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<ErrorSummary>(apiUrl(`/api/errors${qs}`));
+}
+
+export function getGlobalErrorRecords(agentId?: string, hoursBack?: number, limit = 50): Promise<ErrorRecord[]> {
+  const params = new URLSearchParams();
+  if (agentId) params.set("agentId", agentId);
+  if (hoursBack != null) params.set("hoursBack", String(hoursBack));
+  if (limit !== 50) params.set("limit", String(limit));
+  const qs = params.toString();
+  return request<ErrorRecord[]>(apiUrl(`/api/errors/records${qs ? `?${qs}` : ""}`));
+}
+
+export function getRoomErrors(roomId: string, limit = 50): Promise<ErrorRecord[]> {
+  return request<ErrorRecord[]>(apiUrl(`/api/rooms/${roomId}/errors?limit=${limit}`));
+}
+
 // ── Auth ───────────────────────────────────────────────────────────────
 
 export function getAuthStatus(): Promise<AuthStatus> {
