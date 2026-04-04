@@ -205,6 +205,19 @@ public class RejectTaskTests : IDisposable
     }
 
     [Fact]
+    public async Task RejectTask_ErrorWhenMaxReviewRoundsExceeded()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Approved), reviewRounds: 5);
+        var handler = new RejectTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand(new() { ["taskId"] = taskId, ["reason"] = "more issues" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("maximum", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RejectTask_Approved_PostsRejectionMessage()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Approved));
@@ -332,7 +345,8 @@ public class RejectTaskTests : IDisposable
         string status = "Active",
         string? branchName = "task/test-abc123",
         string? mergeCommitSha = null,
-        string title = "Test Task")
+        string title = "Test Task",
+        int reviewRounds = 0)
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -351,6 +365,7 @@ public class RejectTaskTests : IDisposable
             RoomId = "room-1",
             BranchName = branchName,
             AssignedAgentId = "engineer-1",
+            ReviewRounds = reviewRounds,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             MergeCommitSha = mergeCommitSha

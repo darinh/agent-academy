@@ -481,6 +481,21 @@ public class StateCommandTests : IDisposable
         Assert.Contains("must be InReview or AwaitingValidation", result.Error!);
     }
 
+    [Fact]
+    public async Task RequestChanges_ErrorWhenMaxReviewRoundsExceeded()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview), reviewRounds: 5);
+        var handler = new RequestChangesHandler();
+        var (cmd, ctx) = MakeCommand("REQUEST_CHANGES",
+            new() { ["taskId"] = taskId, ["findings"] = "More issues" },
+            "reviewer-1", "Socrates", agentRole: "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("maximum", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── SHOW_REVIEW_QUEUE ───────────────────────────────────────
 
     [Fact]
@@ -674,7 +689,8 @@ public class StateCommandTests : IDisposable
     private async Task<string> CreateTestTask(
         string status = "Active",
         string title = "Test Task",
-        string roomId = "room-1")
+        string roomId = "room-1",
+        int reviewRounds = 0)
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -704,6 +720,7 @@ public class StateCommandTests : IDisposable
             Status = status,
             CurrentPhase = "Implementation",
             RoomId = roomId,
+            ReviewRounds = reviewRounds,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });

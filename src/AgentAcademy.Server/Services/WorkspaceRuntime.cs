@@ -16,6 +16,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class WorkspaceRuntime
 {
     private const int MaxRecentMessages = 200;
+    private const int MaxReviewRounds = 5;
 
     /// <summary>
     /// Task statuses that represent active/in-progress work (not terminal, not queued).
@@ -1181,6 +1182,10 @@ public sealed class WorkspaceRuntime
             throw new InvalidOperationException(
                 $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to request changes");
 
+        if (entity.ReviewRounds >= MaxReviewRounds)
+            throw new InvalidOperationException(
+                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
+
         var now = DateTime.UtcNow;
         entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
         entity.ReviewerAgentId = reviewerAgentId;
@@ -1219,6 +1224,10 @@ public sealed class WorkspaceRuntime
             currentStatus != nameof(Shared.Models.TaskStatus.Completed))
             throw new InvalidOperationException(
                 $"Task '{taskId}' is in '{currentStatus}' state — must be Approved or Completed to reject");
+
+        if (entity.ReviewRounds >= MaxReviewRounds)
+            throw new InvalidOperationException(
+                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
 
         var now = DateTime.UtcNow;
         var wasCompleted = currentStatus == nameof(Shared.Models.TaskStatus.Completed);

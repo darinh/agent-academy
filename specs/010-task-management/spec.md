@@ -690,7 +690,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 - ~~No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`~~ — **resolved**: `REJECT_TASK` handler supports `Approved` → `ChangesRequested` (simple status change + breakout reopen) and `Completed` → `ChangesRequested` (reverts merge commit on develop + breakout reopen). Role-gated to Planner, Reviewer, Human. 19 tests.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
 - Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
-- No formal limit on review rounds (tracked but not enforced)
+- ~~No formal limit on review rounds (tracked but not enforced)~~ — **resolved**: `MaxReviewRounds = 5` enforced in `RequestChangesAsync` and `RejectTaskAsync`. Tasks that exceed the limit cannot enter another review cycle — reviewer gets an error suggesting cancellation. 2 tests added.
 - ~~`APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them~~ — **resolved**: Both handlers now enforce Planner/Reviewer/Human role gates, matching `REJECT_TASK` and `MERGE_TASK`. 2 tests added.
 
 ## Revision History
