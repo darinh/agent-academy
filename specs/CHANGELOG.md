@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **005-workspace-runtime**: Stale room cleanup — auto-archive rooms when all tasks reach terminal state (Completed/Cancelled). `CompleteTaskAsync` calls `TryAutoArchiveRoomAsync` to check and archive. Agents evacuated to workspace default room. Manual cleanup via `CleanupStaleRoomsAsync()`, `CLEANUP_ROOMS` command (Planner/Human only), and `POST /api/rooms/cleanup`. `RejectTaskAsync` reopens auto-archived rooms. `GetRoomsAsync` now excludes archived rooms by default (`includeArchived` parameter). Resolves known gap: "No room cleanup for stale completed rooms". 15 new tests.
+
+### Added
 - **004-notification-system**: Config encryption at rest — `ConfigEncryptionService` encrypts secret provider config values (e.g., Discord bot tokens) using ASP.NET Core Data Protection API before DB persistence. Versioned `ENC.v1:` prefix enables transparent migration from plaintext. `TryDecrypt` API distinguishes decrypt failure from empty values. Explicit Data Protection key-ring persistence. 19 new tests.
 - **011-state-recovery**: Server-side restart rate limiting — `RestartServerHandler` enforces max 10 intentional restarts per hour with `SemaphoreSlim`-guarded check against `ServerInstances` table. Returns `RATE_LIMIT` error when exceeded. Prevents infinite restart loops independent of wrapper script.
 - **011-state-recovery**: Restart history API — `GET /api/system/restarts` (paginated instance history with derived shutdown reason: Running/IntentionalRestart/CleanShutdown/Crash/UnexpectedExit) and `GET /api/system/restarts/stats` (aggregated counts by type with configurable time window). SQL-level aggregation for scalability. 18 new tests.

@@ -40,3 +40,8 @@ out/
 
 # Session handoff (ephemeral — not documentation)
 .github/next-session.md
+
+# Tool configs
+.playwright/
+.playwright-cli/
+.claude/

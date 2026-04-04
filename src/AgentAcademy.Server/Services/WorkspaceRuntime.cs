@@ -37,6 +37,15 @@ public sealed class WorkspaceRuntime
         nameof(RoomStatus.Archived)
     };
 
+    /// <summary>
+    /// Task statuses that represent finished work (no further action expected).
+    /// </summary>
+    private static readonly HashSet<string> TerminalTaskStatuses = new(StringComparer.Ordinal)
+    {
+        nameof(Shared.Models.TaskStatus.Completed),
+        nameof(Shared.Models.TaskStatus.Cancelled),
+    };
+
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceRuntime> _logger;
     private readonly AgentCatalogOptions _catalog;
@@ -258,7 +267,7 @@ public sealed class WorkspaceRuntime
     /// Returns rooms for the active workspace as snapshots, ordered by name.
     /// Rooms without a workspace are included only when no workspace is active.
     /// </summary>
-    public async Task<List<RoomSnapshot>> GetRoomsAsync()
+    public async Task<List<RoomSnapshot>> GetRoomsAsync(bool includeArchived = false)
     {
         var activeWorkspace = await GetActiveWorkspacePathAsync();
 
@@ -271,6 +280,11 @@ public sealed class WorkspaceRuntime
         {
             // No active workspace — show rooms without a workspace assignment (legacy)
             query = query.Where(r => r.WorkspacePath == null);
+        }
+
+        if (!includeArchived)
+        {
+            query = query.Where(r => r.Status != nameof(RoomStatus.Archived));
         }
 
         var rooms = await query
@@ -356,7 +370,136 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
-    /// Creates a new collaboration room (without a task) as a persistent work context.
+    /// Auto-archives a room when all its tasks have reached a terminal state
+    /// (Completed or Cancelled). Moves agents back to the workspace default room.
+    /// Skips main collaboration rooms.
+    /// </summary>
+    private async Task TryAutoArchiveRoomAsync(string roomId)
+    {
+        if (await IsMainCollaborationRoomAsync(roomId))
+            return;
+
+        var room = await _db.Rooms.FindAsync(roomId);
+        if (room is null || room.Status == nameof(RoomStatus.Archived))
+            return;
+
+        // Check if ALL tasks in this room are terminal
+        var hasNonTerminalTask = await _db.Tasks
+            .Where(t => t.RoomId == roomId && !TerminalTaskStatuses.Contains(t.Status))
+            .AnyAsync();
+
+        if (hasNonTerminalTask)
+            return;
+
+        // Must have at least one task (don't archive rooms with zero tasks)
+        var hasAnyTask = await _db.Tasks.AnyAsync(t => t.RoomId == roomId);
+        if (!hasAnyTask)
+            return;
+
+        // Move agents out before archiving
+        await EvacuateRoomAsync(roomId);
+
+        room.Status = nameof(RoomStatus.Archived);
+        room.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.RoomClosed, roomId, null, null,
+            $"Room auto-archived (all tasks complete): {room.Name}");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Auto-archived room '{RoomId}' ({RoomName}) — all tasks terminal",
+            roomId, room.Name);
+    }
+
+    /// <summary>
+    /// Moves all agents currently in a room back to the appropriate default room.
+    /// Resolves the default room from the target room's WorkspacePath (not the global active workspace).
+    /// </summary>
+    private async Task EvacuateRoomAsync(string roomId)
+    {
+        var room = await _db.Rooms.FindAsync(roomId);
+        var defaultRoomId = room?.WorkspacePath is not null
+            ? await GetDefaultRoomForWorkspaceAsync(room.WorkspacePath)
+            : _catalog.DefaultRoomId;
+
+        var agentsInRoom = await _db.AgentLocations
+            .Where(l => l.RoomId == roomId)
+            .ToListAsync();
+
+        foreach (var location in agentsInRoom)
+        {
+            location.RoomId = defaultRoomId;
+            location.State = nameof(AgentState.Idle);
+            location.BreakoutRoomId = null;
+            location.UpdatedAt = DateTime.UtcNow;
+
+            Publish(ActivityEventType.PresenceUpdated, defaultRoomId, location.AgentId, null,
+                $"Agent {location.AgentId} returned to default room (room archived)");
+        }
+    }
+
+    /// <summary>
+    /// Returns the default room ID for a specific workspace path, falling back to the catalog default.
+    /// </summary>
+    private async Task<string> GetDefaultRoomForWorkspaceAsync(string workspacePath)
+    {
+        var workspaceDefaultRoom = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath &&
+                   (r.Name == _catalog.DefaultRoomName ||
+                    r.Name.EndsWith("Main Room", StringComparison.Ordinal) ||
+                    r.Name.EndsWith("Collaboration Room", StringComparison.Ordinal)))
+            .Select(r => r.Id)
+            .FirstOrDefaultAsync();
+
+        return workspaceDefaultRoom ?? _catalog.DefaultRoomId;
+    }
+
+    /// <summary>
+    /// Scans for stale rooms (all tasks terminal) that are still Active/Completed
+    /// and archives them. Returns the count of rooms cleaned up.
+    /// </summary>
+    public async Task<int> CleanupStaleRoomsAsync()
+    {
+        // Find non-archived, non-main rooms that have at least one task
+        var candidateRooms = await _db.Rooms
+            .Where(r => r.Status != nameof(RoomStatus.Archived))
+            .ToListAsync();
+
+        var cleanedCount = 0;
+        foreach (var room in candidateRooms)
+        {
+            if (await IsMainCollaborationRoomAsync(room.Id))
+                continue;
+
+            var tasks = await _db.Tasks
+                .Where(t => t.RoomId == room.Id)
+                .Select(t => t.Status)
+                .ToListAsync();
+
+            // Skip rooms with no tasks or any non-terminal tasks
+            if (tasks.Count == 0 || tasks.Any(s => !TerminalTaskStatuses.Contains(s)))
+                continue;
+
+            await EvacuateRoomAsync(room.Id);
+
+            room.Status = nameof(RoomStatus.Archived);
+            room.UpdatedAt = DateTime.UtcNow;
+
+            Publish(ActivityEventType.RoomClosed, room.Id, null, null,
+                $"Room cleaned up (stale): {room.Name}");
+
+            cleanedCount++;
+        }
+
+        if (cleanedCount > 0)
+        {
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Cleaned up {Count} stale room(s)", cleanedCount);
+        }
+
+        return cleanedCount;
+    }
     /// Returns the created room snapshot.
     /// </summary>
     public async Task<RoomSnapshot> CreateRoomAsync(string name, string? description = null)
@@ -1065,6 +1208,13 @@ public sealed class WorkspaceRuntime
         entity.MergeCommitSha = mergeCommitSha;
         entity.UpdatedAt = now;
         await _db.SaveChangesAsync();
+
+        // Auto-archive the room if all tasks in it are terminal
+        if (!string.IsNullOrEmpty(entity.RoomId))
+        {
+            await TryAutoArchiveRoomAsync(entity.RoomId);
+        }
+
         return BuildTaskSnapshot(entity);
     }
 
@@ -1256,11 +1406,38 @@ public sealed class WorkspaceRuntime
         Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
             $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
 
+        // Reopen the parent room if it was auto-archived on task completion
+        if (!string.IsNullOrEmpty(entity.RoomId))
+        {
+            await TryReopenRoomForTaskAsync(entity.RoomId);
+        }
+
         // Reopen the breakout room for the assigned agent to fix
         await TryReopenBreakoutForTaskAsync(taskId, reason, reviewerName);
 
         await _db.SaveChangesAsync();
         return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Reopens a room that was auto-archived when its task completed.
+    /// No-op if the room is not archived.
+    /// </summary>
+    private async Task TryReopenRoomForTaskAsync(string roomId)
+    {
+        var room = await _db.Rooms.FindAsync(roomId);
+        if (room is null || room.Status != nameof(RoomStatus.Archived))
+            return;
+
+        room.Status = nameof(RoomStatus.Active);
+        room.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.RoomStatusChanged, roomId, null, null,
+            $"Room reopened (task rejected): {room.Name}");
+
+        _logger.LogInformation(
+            "Reopened auto-archived room '{RoomId}' ({RoomName}) due to task rejection",
+            roomId, room.Name);
     }
 
     /// <summary>

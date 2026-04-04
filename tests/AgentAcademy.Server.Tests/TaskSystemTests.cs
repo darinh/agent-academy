@@ -1494,4 +1494,66 @@ public class TaskSystemTests : IDisposable
         Assert.Equal(CommandStatus.Error, result.Status);
         Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
     }
+
+    // ── CLEANUP_ROOMS Command ─────────────────────────────────────
+
+    [Fact]
+    public async Task CleanupRooms_Planner_CanCleanup()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await runtime.InitializeAsync();
+
+        // Create a task in a new room, then mark it completed directly (simulating stale room)
+        var result = await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+            "Stale task", "Desc", "Criteria", null, []));
+        var taskEntity = await db.Tasks.FindAsync(result.Task.Id);
+        taskEntity!.Status = nameof(Shared.Models.TaskStatus.Completed);
+        taskEntity.CompletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        var handler = new CleanupRoomsHandler();
+        var (cmd, ctx) = MakeCommand("CLEANUP_ROOMS",
+            new(),
+            "planner-1", "Aristotle", "Planner");
+
+        var cmdResult = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, cmdResult.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(cmdResult.Result);
+        Assert.Equal(1, dict["archivedCount"]);
+    }
+
+    [Fact]
+    public async Task CleanupRooms_NonPlanner_Denied()
+    {
+        var handler = new CleanupRoomsHandler();
+        var (cmd, ctx) = MakeCommand("CLEANUP_ROOMS",
+            new(),
+            "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+    }
+
+    [Fact]
+    public async Task CleanupRooms_Human_CanCleanup()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        await runtime.InitializeAsync();
+
+        var handler = new CleanupRoomsHandler();
+        var (cmd, ctx) = MakeCommand("CLEANUP_ROOMS",
+            new(),
+            "human-1", "Human", "Human");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(0, dict["archivedCount"]);
+    }
 }

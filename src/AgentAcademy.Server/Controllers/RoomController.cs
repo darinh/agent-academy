@@ -21,14 +21,14 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/rooms — list all rooms.
+    /// GET /api/rooms — list all rooms. Archived rooms are excluded by default.
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<List<RoomSnapshot>>> GetRooms()
+    public async Task<ActionResult<List<RoomSnapshot>>> GetRooms([FromQuery] bool includeArchived = false)
     {
         try
         {
-            var rooms = await _runtime.GetRoomsAsync();
+            var rooms = await _runtime.GetRoomsAsync(includeArchived);
             return Ok(rooms);
         }
         catch (Exception ex)
@@ -156,6 +156,24 @@ public class RoomController : ControllerBase
         {
             _logger.LogError(ex, "Failed to rename room '{RoomId}'", roomId);
             return Problem("Failed to rename room.");
+        }
+    }
+
+    /// <summary>
+    /// POST /api/rooms/cleanup — archive stale rooms where all tasks are complete.
+    /// </summary>
+    [HttpPost("cleanup")]
+    public async Task<ActionResult> CleanupStaleRooms()
+    {
+        try
+        {
+            var count = await _runtime.CleanupStaleRoomsAsync();
+            return Ok(new { archivedCount = count });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cleanup stale rooms");
+            return Problem("Failed to cleanup stale rooms.");
         }
     }
 }
