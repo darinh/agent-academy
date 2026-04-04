@@ -271,7 +271,9 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 | `src/AgentAcademy.Server/Controllers/NotificationController.cs` | REST API (with config persistence) |
 | `src/agent-academy-client/src/NotificationSetupWizard.tsx` | Discord setup wizard UI |
 | `src/agent-academy-client/src/NotificationSetupWizard.css` | Wizard styles (overlay + inline) |
+| `src/AgentAcademy.Server/Notifications/NotificationRetryPolicy.cs` | Retry with exponential backoff for transient failures |
 | `tests/AgentAcademy.Server.Tests/NotificationManagerTests.cs` | Manager unit tests |
+| `tests/AgentAcademy.Server.Tests/NotificationRetryPolicyTests.cs` | Retry policy + manager retry behavior tests |
 | `tests/AgentAcademy.Server.Tests/DiscordNotificationProviderTests.cs` | Discord provider unit tests |
 | `tests/AgentAcademy.Server.Tests/ActivityNotificationBroadcasterTests.cs` | Bridge unit tests (35 tests) |
 
@@ -282,12 +284,37 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 3. **No silent failures**: Every provider error is logged with context
 4. **Null safety**: `RequestInputAsync` returns null (not throws) when input cannot be collected
 5. **Idempotent registration**: Re-registering a provider with the same ID replaces the previous one
+6. **Transient retry**: Provider calls that fail with transient errors (timeouts, network failures, HTTP 429/5xx) are retried up to 3 times with exponential backoff before being logged as failures
+
+### Retry Policy
+
+`NotificationRetryPolicy` provides retry with exponential backoff for transient notification provider failures. Applied by `NotificationManager` to all outbound provider calls except `RequestInputFromAnyAsync` (interactive, latency-sensitive).
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `MaxRetries` | 3 | Maximum retry attempts per provider call |
+| `BaseDelayMs` | 200 | Initial delay before first retry |
+| `MaxDelayMs` | 2000 | Cap on backoff delay |
+| `JitterMs` | 50 | Random ±50ms added to each delay |
+
+**Delay progression**: 200ms → 400ms → 800ms → 1600ms → 2000ms (capped), each ±50ms jitter.
+
+**Transient exception classification** (`IsTransient`):
+- `TimeoutException` — transient
+- `HttpRequestException` — transient (network failure)
+- `IOException` — transient (socket errors)
+- `Discord.Net.HttpException` with HTTP 429 (rate limit) or 5xx (server error) — transient
+- Wrapped exceptions with transient `InnerException` — transient
+- `ArgumentException`, `InvalidOperationException`, permission errors (403) — **not** transient (no retry)
+
+**Methods with retry**: `SendToAllAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`
+**Methods without retry**: `RequestInputFromAnyAsync` — interactive input collection is latency-sensitive and should fail fast
 
 ## Known Gaps
 
 - No Slack provider implementation yet
 - No persistent notification history or delivery tracking
-- No retry/backoff on transient provider failures
+- ~~No retry/backoff on transient provider failures~~ — **resolved**: `NotificationRetryPolicy` with exponential backoff (200ms base, 3 retries, 2s cap, ±50ms jitter). Applied to all outbound provider calls except `RequestInputFromAnyAsync`.
 - No authentication on notification API endpoints (will be covered by system-wide auth)
 - `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
 - Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
@@ -297,6 +324,8 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 - Room channels are not cleaned up when rooms are archived/completed
 
 ## Revision History
+
+- **2026-04-04**: Retry with exponential backoff — `NotificationRetryPolicy` (200ms base, 3 retries, 2s cap, ±50ms jitter) applied to `SendToAllAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`. Transient classification: timeouts, network failures, HTTP 429/5xx; excludes 4xx auth/config errors. HttpClient timeout (`TaskCanceledException`) retried when caller token not cancelled. 33 new tests. Adversarial review by GPT-5.3 Codex — 3 findings, 2 fixed.
 
 - **2026-03-29**: Discord room-based channel routing — per-room Discord channels under "Agent Academy" category, webhook-based agent identity (custom sender name + DiceBear avatar), bidirectional message bridging (Discord replies trigger orchestrator), error propagation via `(bool, string?)` tuple return, graceful permission fallback, missing-permissions catch with actionable logging. 3 adversarial reviews, 7 findings fixed.
 - **2026-03-29**: Discord → orchestrator fix — human messages from Discord now call `HandleHumanMessage(roomId)` to wake up agents (was storing messages without triggering response).
