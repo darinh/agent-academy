@@ -310,10 +310,47 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 **Methods with retry**: `SendToAllAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`
 **Methods without retry**: `RequestInputFromAnyAsync` — interactive input collection is latency-sensitive and should fail fast
 
+### Delivery Tracking
+
+Every outbound notification attempt is persisted to the `notification_deliveries` table via `NotificationDeliveryTracker`. This provides a complete audit trail for notification observability.
+
+**Tracked channels**: `Broadcast`, `AgentQuestion`, `DirectMessage`, `RoomRenamed`
+
+**Delivery statuses**:
+- `Delivered` — provider returned success
+- `Skipped` — provider returned false (unable to deliver, e.g., unsupported method)
+- `Failed` — exception after all retries exhausted; error message recorded
+
+**Entity** (`NotificationDeliveryEntity`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Id` | int (PK) | Auto-increment identifier |
+| `Channel` | string | Delivery channel type |
+| `Title` | string? | Notification title or question summary |
+| `Body` | string? | Message body (truncated to 500 chars) |
+| `RoomId` | string? | Room context |
+| `AgentId` | string? | Associated agent |
+| `ProviderId` | string | Provider that attempted delivery |
+| `Status` | string | Delivery outcome |
+| `Error` | string? | Error message on failure |
+| `AttemptedAt` | DateTime | When the attempt occurred |
+
+**Service** (`NotificationDeliveryTracker`):
+- Singleton, uses `IServiceScopeFactory` to create scoped `AgentAcademyDbContext` instances
+- Recording failures are caught and logged — never breaks notification flow
+- Supports filtered queries (by channel, provider, status, room) and time-windowed stats
+
+**API endpoints**:
+- `GET /api/notifications/deliveries?channel=&providerId=&status=&roomId=&limit=50&offset=0` — paginated delivery history
+- `GET /api/notifications/deliveries/stats?hours=24` — delivery counts grouped by status
+
+**Integration**: `NotificationManager` calls the tracker after each provider attempt in `SendToAllAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, and `NotifyRoomRenamedAsync`. The tracker is an optional dependency (null-safe) so existing tests continue working without a DB.
+
 ## Known Gaps
 
 - No Slack provider implementation yet
-- No persistent notification history or delivery tracking
+- ~~No persistent notification history or delivery tracking~~ — **resolved**: `NotificationDeliveryTracker` records every outbound delivery attempt per provider with status, error, and context. Query via REST API.
 - ~~No retry/backoff on transient provider failures~~ — **resolved**: `NotificationRetryPolicy` with exponential backoff (200ms base, 3 retries, 2s cap, ±50ms jitter). Applied to all outbound provider calls except `RequestInputFromAnyAsync`.
 - No authentication on notification API endpoints (will be covered by system-wide auth)
 - `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
@@ -324,6 +361,8 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 - Room channels are not cleaned up when rooms are archived/completed
 
 ## Revision History
+
+- **2026-04-04**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 4 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed) with Delivered/Skipped/Failed status. REST API for delivery history and stats. 18 new tests. Adversarial review by GPT-5.3 Codex.
 
 - **2026-04-04**: Retry with exponential backoff — `NotificationRetryPolicy` (200ms base, 3 retries, 2s cap, ±50ms jitter) applied to `SendToAllAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`. Transient classification: timeouts, network failures, HTTP 429/5xx; excludes 4xx auth/config errors. HttpClient timeout (`TaskCanceledException`) retried when caller token not cancelled. 33 new tests. Adversarial review by GPT-5.3 Codex — 3 findings, 2 fixed.
 
