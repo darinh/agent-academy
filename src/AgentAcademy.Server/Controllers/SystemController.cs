@@ -19,6 +19,7 @@ public class SystemController : ControllerBase
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentAcademyDbContext _db;
     private readonly LlmUsageTracker _usageTracker;
+    private readonly AgentErrorTracker _errorTracker;
     private readonly ILogger<SystemController> _logger;
 
     private static readonly DateTime StartedAt = DateTime.UtcNow;
@@ -29,6 +30,7 @@ public class SystemController : ControllerBase
         AgentCatalogOptions catalog,
         AgentAcademyDbContext db,
         LlmUsageTracker usageTracker,
+        AgentErrorTracker errorTracker,
         ILogger<SystemController> logger)
     {
         _runtime = runtime;
@@ -36,6 +38,7 @@ public class SystemController : ControllerBase
         _catalog = catalog;
         _db = db;
         _usageTracker = usageTracker;
+        _errorTracker = errorTracker;
         _logger = logger;
     }
 
@@ -289,6 +292,60 @@ public class SystemController : ControllerBase
         {
             _logger.LogError(ex, "Failed to get global usage records");
             return Problem("Failed to retrieve usage records.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/errors — global error summary, optionally filtered by time window.
+    /// </summary>
+    [HttpGet("api/errors")]
+    public async Task<ActionResult<ErrorSummary>> GetGlobalErrorSummary([FromQuery] int? hoursBack = null)
+    {
+        try
+        {
+            if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
+                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+
+            var since = hoursBack.HasValue
+                ? DateTime.UtcNow.AddHours(-hoursBack.Value)
+                : (DateTime?)null;
+            var summary = await _errorTracker.GetErrorSummaryAsync(since);
+            return Ok(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get global error summary");
+            return Problem("Failed to retrieve error data.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/errors/records — recent individual error records across all rooms.
+    /// </summary>
+    [HttpGet("api/errors/records")]
+    public async Task<ActionResult<List<ErrorRecord>>> GetGlobalErrorRecords(
+        [FromQuery] string? agentId = null,
+        [FromQuery] int? hoursBack = null,
+        [FromQuery] int limit = 50)
+    {
+        try
+        {
+            if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
+                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+
+            var since = hoursBack.HasValue
+                ? DateTime.UtcNow.AddHours(-hoursBack.Value)
+                : (DateTime?)null;
+            var records = await _errorTracker.GetRecentErrorsAsync(
+                agentId: agentId,
+                since: since,
+                limit: Math.Clamp(limit, 1, 200));
+            return Ok(records);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get global error records");
+            return Problem("Failed to retrieve error records.");
         }
     }
 }

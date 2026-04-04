@@ -201,6 +201,7 @@ builder.Services.AddSingleton<CopilotTokenProvider>();
 
 // LLM usage tracking (singleton — captures AssistantUsageEvent from SDK)
 builder.Services.AddSingleton<LlmUsageTracker>();
+builder.Services.AddSingleton<AgentErrorTracker>();
 
 // Agent execution — CopilotExecutor falls back to StubExecutor internally
 // if the Copilot CLI is not available.

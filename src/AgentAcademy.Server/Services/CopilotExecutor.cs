@@ -63,6 +63,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NotificationManager _notificationManager;
     private readonly LlmUsageTracker _usageTracker;
+    private readonly AgentErrorTracker _errorTracker;
     private readonly string? _configToken;
     private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
@@ -84,7 +85,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotTokenProvider tokenProvider,
         IServiceScopeFactory scopeFactory,
         NotificationManager notificationManager,
-        LlmUsageTracker usageTracker)
+        LlmUsageTracker usageTracker,
+        AgentErrorTracker errorTracker)
     {
         _logger = logger;
         _stubLogger = stubLogger;
@@ -94,6 +96,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _scopeFactory = scopeFactory;
         _notificationManager = notificationManager;
         _usageTracker = usageTracker;
+        _errorTracker = errorTracker;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -158,6 +161,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             _logger.LogError(ex,
                 "Authentication failure for agent {AgentId} — marking auth failed",
                 agent.Id);
+            await _errorTracker.RecordAsync(agent.Id, roomId, "authentication", ex.Message, recoverable: false);
             await HandleAuthFailureAsync(agent.Id, roomId);
             return await GetFallback().RunAsync(agent, prompt, roomId, ct);
         }
@@ -166,6 +170,25 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             _logger.LogError(ex,
                 "Authorization failure for agent {AgentId} — token lacks required permissions",
                 agent.Id);
+            await _errorTracker.RecordAsync(agent.Id, roomId, "authorization", ex.Message, recoverable: false);
+            await InvalidateSessionAsync(agent.Id, roomId);
+            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+        }
+        catch (CopilotQuotaException ex)
+        {
+            _logger.LogError(ex,
+                "Quota error for agent {AgentId} in room {RoomId} — exhausted retries, falling back to stub",
+                agent.Id, roomId);
+            // Already recorded per-attempt in SendAndCollectWithRetryAsync; no duplicate here.
+            await InvalidateSessionAsync(agent.Id, roomId);
+            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+        }
+        catch (CopilotTransientException ex)
+        {
+            _logger.LogError(ex,
+                "Transient error for agent {AgentId} in room {RoomId} — exhausted retries, falling back to stub",
+                agent.Id, roomId);
+            // Already recorded per-attempt in SendAndCollectWithRetryAsync; no duplicate here.
             await InvalidateSessionAsync(agent.Id, roomId);
             return await GetFallback().RunAsync(agent, prompt, roomId, ct);
         }
@@ -174,6 +197,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             _logger.LogError(ex,
                 "Copilot call failed for agent {AgentId} in room {RoomId} — falling back to stub",
                 agent.Id, roomId);
+            await _errorTracker.RecordAsync(agent.Id, roomId, "unknown", ex.Message, recoverable: true);
 
             // Invalidate the broken session so the next attempt gets a fresh one.
             await InvalidateSessionAsync(agent.Id, roomId);
@@ -505,6 +529,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     _logger.LogWarning(
                         "Quota/rate-limit error for {AgentId} after {Attempts} retries — giving up",
                         agent.Id, attempt + 1);
+                    await _errorTracker.RecordAsync(agent.Id, roomId, "quota",
+                        ex.Message, recoverable: false, retried: true, retryAttempt: attempt + 1);
                     throw;
                 }
 
@@ -512,6 +538,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 _logger.LogWarning(
                     "Quota/rate-limit error for {AgentId} (attempt {Attempt}/{Max}), retrying in {Delay}s: {Error}",
                     agent.Id, attempt + 1, QuotaMaxRetries, delay.TotalSeconds, ex.Message);
+                await _errorTracker.RecordAsync(agent.Id, roomId, "quota",
+                    ex.Message, recoverable: true, retried: true, retryAttempt: attempt + 1);
                 await Task.Delay(delay, ct);
             }
             catch (CopilotTransientException ex)
@@ -522,6 +550,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     _logger.LogWarning(
                         "Transient error for {AgentId} after {Attempts} retries — giving up",
                         agent.Id, attempt + 1);
+                    await _errorTracker.RecordAsync(agent.Id, roomId, "transient",
+                        ex.Message, recoverable: false, retried: true, retryAttempt: attempt + 1);
                     throw;
                 }
 
@@ -529,6 +559,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 _logger.LogWarning(
                     "Transient error for {AgentId} (attempt {Attempt}/{Max}), retrying in {Delay}s: {Error}",
                     agent.Id, attempt + 1, TransientMaxRetries, delay.TotalSeconds, ex.Message);
+                await _errorTracker.RecordAsync(agent.Id, roomId, "transient",
+                    ex.Message, recoverable: true, retried: true, retryAttempt: attempt + 1);
                 await Task.Delay(delay, ct);
             }
         }

@@ -100,6 +100,23 @@ public record ErrorRecord(
 );
 
 /// <summary>
+/// Aggregated error summary with breakdowns by type and agent.
+/// </summary>
+public record ErrorSummary(
+    int TotalErrors,
+    int RecoverableErrors,
+    int UnrecoverableErrors,
+    List<ErrorCountByType> ByType,
+    List<ErrorCountByAgent> ByAgent
+);
+
+/// <summary>Error count grouped by error type.</summary>
+public record ErrorCountByType(string ErrorType, int Count);
+
+/// <summary>Error count grouped by agent ID.</summary>
+public record ErrorCountByAgent(string AgentId, int Count);
+
+/// <summary>
 /// Per-agent usage breakdown within a room.
 /// </summary>
 public record AgentUsageSummary(
