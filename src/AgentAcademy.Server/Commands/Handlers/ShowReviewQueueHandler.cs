@@ -20,10 +20,15 @@ public sealed class ShowReviewQueueHandler : ICommandHandler
         {
             ["id"] = t.Id,
             ["title"] = t.Title,
+            ["description"] = t.Description,
+            ["type"] = t.Type.ToString(),
             ["status"] = t.Status.ToString(),
             ["assignedTo"] = t.AssignedAgentName ?? t.AssignedAgentId,
             ["reviewerAgentId"] = t.ReviewerAgentId,
             ["reviewRounds"] = t.ReviewRounds,
+            ["branchName"] = t.BranchName,
+            ["commitCount"] = t.CommitCount,
+            ["commentCount"] = t.CommentCount,
             ["createdAt"] = t.CreatedAt.ToString("o")
         }).ToList();
 
