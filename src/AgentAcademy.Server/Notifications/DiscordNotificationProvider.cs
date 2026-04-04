@@ -941,6 +941,47 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
     }
 
+    /// <inheritdoc />
+    public async Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
+    {
+        if (_client is null || !_isConfigured) return;
+
+        if (!_roomChannels.TryGetValue(roomId, out var channelId)) return;
+
+        var guild = _client.GetGuild(_guildId);
+        if (guild is null) return;
+
+        var channel = guild.GetTextChannel(channelId);
+        if (channel is null)
+        {
+            // Channel already gone — just clean up caches
+            CleanupChannelCaches(roomId, channelId);
+            return;
+        }
+
+        try
+        {
+            await channel.DeleteAsync(new RequestOptions { CancelToken = cancellationToken });
+            _logger.LogInformation("Deleted Discord channel '#{ChannelName}' for closed room '{RoomId}'",
+                channel.Name, roomId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete Discord channel for closed room '{RoomId}'", roomId);
+            throw; // Let NotificationManager record the failure via retry/tracker
+        }
+
+        CleanupChannelCaches(roomId, channelId);
+    }
+
+    private void CleanupChannelCaches(string roomId, ulong channelId)
+    {
+        _roomChannels.TryRemove(roomId, out _);
+        _channelToRoom.TryRemove(channelId, out _);
+        if (_webhooks.TryRemove(channelId, out var webhook))
+            webhook.Dispose();
+    }
+
     /// <summary>
     /// Sanitizes a name for use as a Discord channel/category name.
     /// Discord channel names: lowercase, hyphens instead of spaces, max 100 chars.

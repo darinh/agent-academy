@@ -243,6 +243,62 @@ public class ActivityNotificationBroadcasterTests
         await Task.Delay(200);
     }
 
+    [Fact]
+    public async Task RoomClosedEvent_TriggersOnRoomClosed_NotBroadcast()
+    {
+        var received = new List<NotificationMessage>();
+        var provider = new TestNotificationProvider(received);
+        _notificationManager.RegisterProvider(provider);
+        provider.SetConnected(true);
+
+        await _sut.StartAsync(CancellationToken.None);
+
+        _broadcaster.Broadcast(CreateEvent(ActivityEventType.RoomClosed, "Room archived: Test Room", roomId: "room-42"));
+        await Task.Delay(200);
+
+        // Should NOT appear as a broadcast notification
+        Assert.Empty(received);
+        // Should appear as a structural close event
+        Assert.Single(provider.ClosedRoomIds);
+        Assert.Equal("room-42", provider.ClosedRoomIds[0]);
+    }
+
+    [Fact]
+    public async Task RoomClosedEvent_WithNullRoomId_IsIgnored()
+    {
+        var received = new List<NotificationMessage>();
+        var provider = new TestNotificationProvider(received);
+        _notificationManager.RegisterProvider(provider);
+        provider.SetConnected(true);
+
+        await _sut.StartAsync(CancellationToken.None);
+
+        _broadcaster.Broadcast(CreateEvent(ActivityEventType.RoomClosed, "Room archived", roomId: null));
+        await Task.Delay(200);
+
+        Assert.Empty(received);
+        Assert.Empty(provider.ClosedRoomIds);
+    }
+
+    [Fact]
+    public async Task BreakoutRoomClosedEvent_DoesNotTriggerChannelCleanup()
+    {
+        var received = new List<NotificationMessage>();
+        var provider = new TestNotificationProvider(received);
+        _notificationManager.RegisterProvider(provider);
+        provider.SetConnected(true);
+
+        await _sut.StartAsync(CancellationToken.None);
+
+        // Breakout closure uses different message prefix
+        _broadcaster.Broadcast(CreateEvent(ActivityEventType.RoomClosed,
+            "Breakout room closed: TaskRoom (Completed)", roomId: "parent-room-1"));
+        await Task.Delay(200);
+
+        Assert.Empty(received);
+        Assert.Empty(provider.ClosedRoomIds);
+    }
+
     #endregion
 
     #region Helpers
@@ -271,6 +327,7 @@ public class ActivityNotificationBroadcasterTests
     private sealed class TestNotificationProvider : INotificationProvider
     {
         private readonly List<NotificationMessage> _received;
+        public readonly List<string> ClosedRoomIds = new();
         private bool _connected;
 
         public TestNotificationProvider(List<NotificationMessage> received) => _received = received;
@@ -299,6 +356,12 @@ public class ActivityNotificationBroadcasterTests
 
         public ProviderConfigSchema GetConfigSchema()
             => new("test", "Test", "Test provider", []);
+
+        public Task OnRoomClosedAsync(string roomId, CancellationToken ct = default)
+        {
+            ClosedRoomIds.Add(roomId);
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>

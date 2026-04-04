@@ -227,6 +227,52 @@ public class NotificationManagerTests
 
     #endregion
 
+    #region NotifyRoomClosedAsync
+
+    [Fact]
+    public async Task NotifyRoomClosedAsync_NotifiesAllConnectedProviders()
+    {
+        var p1 = CreateMockProvider("p1", isConnected: true);
+        var p2 = CreateMockProvider("p2", isConnected: true);
+        var offline = CreateMockProvider("p3", isConnected: false);
+
+        _manager.RegisterProvider(p1);
+        _manager.RegisterProvider(p2);
+        _manager.RegisterProvider(offline);
+
+        await _manager.NotifyRoomClosedAsync("room-1");
+
+        await p1.Received(1).OnRoomClosedAsync("room-1", Arg.Any<CancellationToken>());
+        await p2.Received(1).OnRoomClosedAsync("room-1", Arg.Any<CancellationToken>());
+        await offline.DidNotReceive().OnRoomClosedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task NotifyRoomClosedAsync_ContinuesOnProviderFailure()
+    {
+        var failing = CreateMockProvider("fail", isConnected: true);
+        failing.OnRoomClosedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("oops")));
+
+        var working = CreateMockProvider("ok", isConnected: true);
+
+        _manager.RegisterProvider(failing);
+        _manager.RegisterProvider(working);
+
+        await _manager.NotifyRoomClosedAsync("room-1");
+
+        await working.Received(1).OnRoomClosedAsync("room-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task NotifyRoomClosedAsync_NoOpWithNoProviders()
+    {
+        // Should not throw
+        await _manager.NotifyRoomClosedAsync("room-1");
+    }
+
+    #endregion
+
     #region Helpers
 
     private static INotificationProvider CreateMockProvider(string id, bool isConnected = true, bool isConfigured = true)

@@ -252,4 +252,32 @@ public sealed class NotificationManager
             }
         }
     }
+
+    /// <summary>
+    /// Notifies all connected providers that a room has been closed/archived,
+    /// so they can clean up external resources (e.g., Discord channels).
+    /// </summary>
+    public async Task NotifyRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
+    {
+        var connectedProviders = _providers.Values.Where(p => p.IsConnected).ToList();
+        foreach (var provider in connectedProviders)
+        {
+            try
+            {
+                await NotificationRetryPolicy.ExecuteAsync(
+                    () => provider.OnRoomClosedAsync(roomId, cancellationToken),
+                    $"NotifyRoomClosed({provider.ProviderId})",
+                    _logger,
+                    cancellationToken);
+                if (_tracker is not null)
+                    await _tracker.RecordDeliveryAsync("RoomClosed", provider.ProviderId, $"Room closed: {roomId}", null, roomId, agentId: null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Failed to notify provider '{ProviderId}' of room close after retries", provider.ProviderId);
+                if (_tracker is not null)
+                    await _tracker.RecordFailureAsync("RoomClosed", provider.ProviderId, $"Room closed: {roomId}", null, roomId, agentId: null, ex.Message);
+            }
+        }
+    }
 }

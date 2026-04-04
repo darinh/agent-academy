@@ -66,6 +66,16 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
             return;
         }
 
+        // Room closed is a structural event — notify providers to clean up resources (e.g., Discord channels)
+        // Only handle actual room archive events, not breakout room closures (which also emit RoomClosed
+        // with the parent room's ID in roomId — deleting the parent channel would be catastrophic)
+        if (evt.Type == ActivityEventType.RoomClosed && evt.RoomId is not null
+            && evt.Message.StartsWith("Room archived:", StringComparison.Ordinal))
+        {
+            _ = _notificationManager.NotifyRoomClosedAsync(evt.RoomId);
+            return;
+        }
+
         if (!NotifiableEvents.Contains(evt.Type))
             return;
 

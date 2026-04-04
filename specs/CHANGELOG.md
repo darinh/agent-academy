@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **004-notification-system**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 4 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed) with Delivered/Skipped/Failed status. REST API endpoints for delivery history (`GET /api/notifications/deliveries`) and stats (`GET /api/notifications/deliveries/stats`). `NotificationManager` integrated with optional tracker dependency. 18 new tests.
+- **004-notification-system**: Room channel cleanup — `OnRoomClosedAsync` on `INotificationProvider` and `NotifyRoomClosedAsync` on `NotificationManager`. Discord provider deletes channel, disposes webhook, clears caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events. 7 new tests.
 
 ### Added
 - **006-orchestrator**: Queue reconstruction on startup — `ReconstructQueueAsync()` runs on every server startup and re-enqueues rooms with unanswered human messages. `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` queries for rooms where the latest message has `SenderKind = User`. Prevents message loss on crash or clean restart. 8 new tests.
