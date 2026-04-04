@@ -36,6 +36,9 @@ public sealed class CommandController : ControllerBase
         "ROOM_HISTORY",
         "RUN_BUILD",
         "RUN_TESTS",
+        "CREATE_ROOM",
+        "REOPEN_ROOM",
+        "CLOSE_ROOM",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

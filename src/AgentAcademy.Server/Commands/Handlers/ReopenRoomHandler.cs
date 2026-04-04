@@ -5,12 +5,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AgentAcademy.Server.Commands.Handlers;
 
 /// <summary>
-/// Handles CLOSE_ROOM — archives a non-main collaboration room when it is empty.
-/// Only planners can close rooms.
+/// Handles REOPEN_ROOM — restores an archived room to active status for continued work.
+/// Only planners can reopen rooms.
 /// </summary>
-public sealed class CloseRoomHandler : ICommandHandler
+public sealed class ReopenRoomHandler : ICommandHandler
 {
-    public string CommandName => "CLOSE_ROOM";
+    public string CommandName => "REOPEN_ROOM";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -21,7 +21,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             {
                 Status = CommandStatus.Denied,
                 ErrorCode = CommandErrorCode.Permission,
-                Error = "Only planners can close collaboration rooms"
+                Error = "Only planners can reopen rooms"
             };
         }
 
@@ -31,12 +31,13 @@ public sealed class CloseRoomHandler : ICommandHandler
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Validation,
-                Error = "Missing required argument: roomId. Use LIST_ROOMS to see available rooms."
+                Error = "Missing required argument: roomId. Use LIST_ROOMS to see archived rooms."
             };
         }
 
         var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
         var room = await runtime.GetRoomAsync(roomId);
+
         if (room is null)
         {
             return command with
@@ -47,41 +48,41 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        if (await runtime.IsMainCollaborationRoomAsync(roomId))
+        if (room.Status != RoomStatus.Archived)
         {
             return command with
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Conflict,
-                Error = $"Room '{room.Name}' is the main collaboration room and cannot be closed."
+                Error = $"Room '{room.Name}' is not archived (status: {room.Status}). Only archived rooms can be reopened."
             };
         }
 
-        if (room.Participants.Count > 0)
+        try
+        {
+            var reopened = await runtime.ReopenRoomAsync(roomId);
+
+            return command with
+            {
+                Status = CommandStatus.Success,
+                Result = new Dictionary<string, object?>
+                {
+                    ["roomId"] = reopened.Id,
+                    ["roomName"] = reopened.Name,
+                    ["status"] = reopened.Status.ToString(),
+                    ["message"] = $"Room '{reopened.Name}' reopened. Use MOVE_TO_ROOM to enter it."
+                }
+            };
+        }
+        catch (InvalidOperationException ex)
         {
             return command with
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Conflict,
-                Error = $"Room '{room.Name}' has {room.Participants.Count} active participant(s) and cannot be closed."
+                Error = ex.Message
             };
         }
-
-        await runtime.CloseRoomAsync(roomId);
-
-        return command with
-        {
-            Status = CommandStatus.Success,
-            Result = new Dictionary<string, object?>
-            {
-                ["roomId"] = room.Id,
-                ["roomName"] = room.Name,
-                ["status"] = nameof(RoomStatus.Archived),
-                ["message"] = room.Status == RoomStatus.Archived
-                    ? $"Room '{room.Name}' was already archived."
-                    : $"Room '{room.Name}' archived."
-            }
-        };
     }
 
     private static bool TryGetRoomId(IReadOnlyDictionary<string, object?> args, out string roomId)

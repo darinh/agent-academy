@@ -355,6 +355,84 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Creates a new collaboration room (without a task) as a persistent work context.
+    /// Returns the created room snapshot.
+    /// </summary>
+    public async Task<RoomSnapshot> CreateRoomAsync(string name, string? description = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Room name is required", nameof(name));
+
+        var now = DateTime.UtcNow;
+        var slug = Normalize(name);
+        if (string.IsNullOrEmpty(slug)) slug = "room";
+        var roomId = $"{slug}-{Guid.NewGuid().ToString("N")[..8]}";
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
+
+        var room = new RoomEntity
+        {
+            Id = roomId,
+            Name = name,
+            Status = nameof(RoomStatus.Idle),
+            CurrentPhase = nameof(CollaborationPhase.Intake),
+            WorkspacePath = activeWorkspace,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        _db.Rooms.Add(room);
+
+        var welcomeContent = string.IsNullOrWhiteSpace(description)
+            ? $"Room created: {name}"
+            : $"Room created: {name}\n\n{description}";
+
+        var welcomeMsg = new MessageEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomId = roomId,
+            SenderId = "system",
+            SenderName = "System",
+            SenderKind = nameof(MessageSenderKind.System),
+            Kind = nameof(MessageKind.System),
+            Content = welcomeContent,
+            SentAt = now
+        };
+        _db.Messages.Add(welcomeMsg);
+
+        Publish(ActivityEventType.RoomCreated, roomId, null, null,
+            $"Room created: {name}");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Created room '{RoomId}' ({RoomName})", roomId, name);
+
+        return await BuildRoomSnapshotAsync(room);
+    }
+
+    /// <summary>
+    /// Reopens an archived room, restoring it to Idle status.
+    /// </summary>
+    public async Task<RoomSnapshot> ReopenRoomAsync(string roomId)
+    {
+        var room = await _db.Rooms.FindAsync(roomId)
+            ?? throw new InvalidOperationException($"Room '{roomId}' not found.");
+
+        if (room.Status != nameof(RoomStatus.Archived))
+            throw new InvalidOperationException($"Room '{room.Name}' is not archived (current status: {room.Status}).");
+
+        room.Status = nameof(RoomStatus.Idle);
+        room.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.RoomStatusChanged, roomId, null, null,
+            $"Room reopened: {room.Name}");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Reopened room '{RoomId}' ({RoomName})", roomId, room.Name);
+
+        return await BuildRoomSnapshotAsync(room);
+    }
+
+    /// <summary>
     /// Returns messages in a room with cursor-based pagination.
     /// Only returns non-DM messages from the active conversation session.
     /// </summary>
