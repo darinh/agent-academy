@@ -242,6 +242,26 @@ public class GitService
     }
 
     /// <summary>
+    /// Pushes a branch to the remote origin. Used before creating a PR.
+    /// </summary>
+    public virtual async Task PushBranchAsync(string branch)
+    {
+        if (string.IsNullOrWhiteSpace(branch))
+            throw new ArgumentException("Branch name is required.", nameof(branch));
+
+        await _gitLock.WaitAsync();
+        try
+        {
+            await RunGitAsync("push", "--set-upstream", "origin", branch);
+            _logger.LogInformation("Pushed branch {Branch} to origin", branch);
+        }
+        finally
+        {
+            _gitLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Deletes a branch. Refuses to delete develop or main.
     /// </summary>
     public async Task DeleteBranchAsync(string branch)

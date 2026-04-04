@@ -223,6 +223,10 @@ builder.Services.AddSingleton<ProjectScanner>();
 // Git service (singleton — branch management for breakout rooms)
 builder.Services.AddSingleton<GitService>();
 
+// GitHub integration (singleton — PR creation via gh CLI)
+builder.Services.AddSingleton<GitHubService>();
+builder.Services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHubService>());
+
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)
 builder.Services.AddSingleton<AgentOrchestrator>();
 
@@ -273,6 +277,7 @@ builder.Services.AddSingleton<ICommandHandler, UpdateTaskItemHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListTaskItemsHandler>();
 builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
+builder.Services.AddSingleton<ICommandHandler, CreatePrHandler>();
 
 // Notification system
 builder.Services.AddSingleton<ConfigEncryptionService>();
