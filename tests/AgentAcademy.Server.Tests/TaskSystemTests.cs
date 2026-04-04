@@ -1232,6 +1232,71 @@ public class TaskSystemTests : IDisposable
         Assert.Contains("Hephaestus", messages[0].Content);
     }
 
+    // ── RETURN_TO_MAIN ──────────────────────────────────────────
+
+    [Fact]
+    public async Task ReturnToMain_MovesAgentToDefaultRoom()
+    {
+        await EnsureRoom("room-2");
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.InitializeAsync();
+            await runtime.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
+        }
+
+        var handler = new ReturnToMainHandler();
+        var (cmd, ctx) = MakeCommand("RETURN_TO_MAIN", new());
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("main", dict["roomId"]);
+        Assert.Contains("Returned", (string)dict["message"]!);
+    }
+
+    [Fact]
+    public async Task ReturnToMain_AlreadyInMain_ReturnsNoOp()
+    {
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.InitializeAsync();
+        }
+
+        var handler = new ReturnToMainHandler();
+        var (cmd, ctx) = MakeCommand("RETURN_TO_MAIN", new());
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Contains("Already", (string)dict["message"]!);
+    }
+
+    [Fact]
+    public async Task ReturnToMain_AnyRole_Allowed()
+    {
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.InitializeAsync();
+            await runtime.MoveAgentAsync("engineer-1", "main", AgentState.Idle);
+            await EnsureRoom("room-2");
+            await runtime.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
+        }
+
+        var handler = new ReturnToMainHandler();
+        var (cmd, ctx) = MakeCommand("RETURN_TO_MAIN", new(),
+            "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────
 
     private async Task<string> CreateTestTask(

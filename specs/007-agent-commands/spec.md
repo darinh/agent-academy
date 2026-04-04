@@ -164,6 +164,7 @@ These formalize existing capabilities with audit trails and structured output.
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
 | `MOVE_TO_ROOM` | `roomId` | Confirmation + room name | Updates agent location | `MoveToRoomHandler.cs` — validates room exists, calls MoveAgentAsync |
+| `RETURN_TO_MAIN` | — | Confirmation + main room name | Moves calling agent to default room (Idle) | `ReturnToMainHandler.cs` — syntactic sugar for MOVE_TO_ROOM with DefaultRoomId. No-op if already in main room. Any role. |
 
 #### Phase 1G: Room Lifecycle — IMPLEMENTED
 
@@ -191,7 +192,7 @@ These formalize existing capabilities with audit trails and structured output.
 ### Tier 2 — Full Autonomy
 
 #### Room Management
-`RETURN_TO_MAIN`, ~~`INVITE_TO_ROOM`~~ *(implemented — see Phase 1A table)*, ~~`CREATE_ROOM`~~ *(implemented)*, `RESTORE_ROOM`, `ROOM_TOPIC`
+`RETURN_TO_MAIN` *(implemented — see Phase 1E table)*, ~~`INVITE_TO_ROOM`~~ *(implemented — see Phase 1G table)*, ~~`CREATE_ROOM`~~ *(implemented)*, `RESTORE_ROOM`, `ROOM_TOPIC`
 
 #### Communication
 `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`
@@ -613,7 +614,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter (30 commands per 60 seconds). Implemented in `CommandRateLimiter` (`src/AgentAcademy.Server/Commands/CommandRateLimiter.cs`), integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited (already behind cookie auth). Limits are hardcoded — no runtime configuration yet.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
-- **Tier 2 room commands**: `RETURN_TO_MAIN` remains planned. `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, and `INVITE_TO_ROOM` are implemented with planner/human authorization. `LIST_ROOMS` supports optional `status=` filter with validation.
+- **Tier 2 room commands**: All basic room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`). Only `RESTORE_ROOM` and `ROOM_TOPIC` remain planned. `LIST_ROOMS` supports optional `status=` filter with validation.
 
 ## Discord Agent Question Bridge
 
@@ -660,3 +661,4 @@ Discord Server
 | 2026-04-04 | Added `ErrorCode` column to `CommandAuditEntity`. Async command polling and audit history now return structured error codes. All 4 audit write paths and the read path updated. Migration `20260404083032_AddCommandAuditErrorCode`. | errorcode-audit-persistence | `5fd74b3` |
 | 2026-04-04 | Per-agent command rate limiting (30 commands/60s sliding window). `CommandRateLimiter` integrated into `CommandPipeline` after authorization. `RATE_LIMIT` error code added. 6 new tests. | command-rate-limiting | `df07581` |
 | 2026-04-04 | Implemented `INVITE_TO_ROOM` (Phase 1G). Planners/humans can move agents to rooms. Validates room exists/not archived, agent exists/not in breakout. No-op if already in room. System message posted. Added to human command allowlist. 12 new tests. | invite-to-room | (this change) |
+| 2026-04-04 | Implemented `RETURN_TO_MAIN` (Phase 1E). Any agent can return to the main collaboration room. Syntactic sugar for MOVE_TO_ROOM with DefaultRoomId. 3 new tests. | return-to-main | (this change) |

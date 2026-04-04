@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **007-agent-commands**: `INVITE_TO_ROOM` command — planners and humans can move a specified agent to a specified room. Validates room exists/not archived, agent exists/not in breakout. No-op if already in room. Posts system message. Added to human command allowlist. 12 new tests.
+- **007-agent-commands**: `RETURN_TO_MAIN` command — any agent can return to the main collaboration room. Syntactic sugar for MOVE_TO_ROOM with DefaultRoomId. No-op if already there. 3 new tests.
 
 ### Changed
 - **010-task-management**: Reconciled spec with code — Partial → Implemented. Documented all TaskSnapshot/TaskEntity fields (including `AwaitingValidation` status, `CommentCount`, `RoomId`, validation/implementation status fields). Added command table (section 10) and WorkspaceRuntime method index (section 11). Documented auto-spec dedup via `FindTaskByTitleAsync`. Noted `APPROVE_TASK`/`REQUEST_CHANGES` lack role gates (convention only). Documented write-once invariants for branch and task identity. Removed non-existent API endpoints (`PUT /tests`, review REST endpoints). Updated frontend section to reference implemented `TaskListPanel`/`TaskStatePanel` components.
