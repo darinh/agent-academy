@@ -49,6 +49,8 @@
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT",
+            "CREATE_TASK_ITEM",
+            "UPDATE_TASK_ITEM",
             "RECALL_AGENT",
             "CLOSE_ROOM",
             "CREATE_ROOM",
@@ -103,7 +105,9 @@
             "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
-            "ADD_TASK_COMMENT"
+            "ADD_TASK_COMMENT",
+            "CREATE_TASK_ITEM",
+            "UPDATE_TASK_ITEM"
           ],
           "Denied": [
             "RUN_BUILD",
@@ -155,7 +159,9 @@
             "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
-            "ADD_TASK_COMMENT"
+            "ADD_TASK_COMMENT",
+            "CREATE_TASK_ITEM",
+            "UPDATE_TASK_ITEM"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -207,7 +213,9 @@
             "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
-            "ADD_TASK_COMMENT"
+            "ADD_TASK_COMMENT",
+            "CREATE_TASK_ITEM",
+            "UPDATE_TASK_ITEM"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -261,6 +269,8 @@
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT",
+            "CREATE_TASK_ITEM",
+            "UPDATE_TASK_ITEM",
             "CANCEL_TASK",
             "MERGE_TASK",
             "SHELL"
@@ -310,7 +320,9 @@
             "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
-            "ADD_TASK_COMMENT"
+            "ADD_TASK_COMMENT",
+            "CREATE_TASK_ITEM",
+            "UPDATE_TASK_ITEM"
           ],
           "Denied": [
             "RUN_BUILD",
