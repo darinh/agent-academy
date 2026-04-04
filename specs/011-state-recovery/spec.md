@@ -155,7 +155,7 @@ Open-ended breakout loops need explicit termination semantics so a restart or re
 | `complete` | Agent posts `WORK REPORT:` with status `COMPLETE` | Close breakout, return the agent to the parent-room flow, persist the final work report, and treat the breakout as successfully finished |
 | `recall` | Planner/operator recalls the working agent | Close breakout, move the agent to `Idle` in the parent room, and post recall notices so the termination is visible to the team |
 | `cancel` | Planner/operator explicitly aborts the breakout | Record a cancellation reason, stop further breakout work, close the breakout, and leave the linked task in a non-success terminal state |
-| `stuck-detected` | No meaningful progress signal is observed for a configured threshold, or repeated executor failures prevent forward motion | Mark the breakout as stuck, surface a visible warning in the parent room/UI, and require explicit human/planner follow-up (recall, cancel, or retry) instead of silently discarding the work |
+| `stuck-detected` | Agent produces `MaxConsecutiveIdleRounds` (5) consecutive responses with zero parsed commands, **or** the breakout exceeds `MaxBreakoutRounds` (200) total rounds | Close breakout with `StuckDetected` reason, mark linked task as `Blocked`, move agent to `Idle` in parent room, post 🔴 warning to parent room. **Implemented** in `AgentOrchestrator.RunBreakoutLoopAsync`. |
 | `closed-by-recovery` | Server startup detects the previous instance crashed while breakout work was active | Close the breakout during startup recovery, persist `ClosedByRecovery` as the close reason, return the assigned agent to `Idle`, and notify the main room so interrupted work can be re-evaluated |
 
 Recovery expectations:
@@ -332,14 +332,15 @@ Result: Server exits with code 75, wrapper restarts process
 - ~~`RESTART_SERVER` command handler~~ — **Implemented**: `RestartServerHandler.cs`
 - ~~Startup crash recovery actions~~ — **Implemented**: crash-detected boot now closes active breakouts with `ClosedByRecovery`, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notification
 - Frontend health check and reconnect logic not yet implemented
-- Breakout cancellation and stuck-detection controls are not yet implemented
-- Persisted breakout close reasons currently cover `Completed`, `Recalled`, and `ClosedByRecovery`; `Cancelled` and `StuckDetected` are reserved but not yet emitted by runtime flows
+- ~~Breakout cancellation and stuck-detection controls are not yet implemented~~ — **Implemented**: `AgentOrchestrator.RunBreakoutLoopAsync` tracks consecutive idle rounds (no commands parsed) and enforces an absolute round cap. On detection, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room.
+- Persisted breakout close reasons currently cover `Completed`, `Recalled`, `ClosedByRecovery`, and `StuckDetected`; `Cancelled` is emitted on branch setup failure
 - No mechanism to prevent restart loops (crash → restart → crash → restart) — wrapper limits to 5 crash restarts
 - No restart history UI (list of past restarts with timestamps and reasons)
 - No maximum restart count enforcement in the server (only in wrapper)
 
 ## Revision History
 
+- **2026-04-04**: Implemented breakout stuck-detection. `AgentOrchestrator.RunBreakoutLoopAsync` tracks consecutive idle rounds (zero commands parsed) and enforces absolute max-round cap. On detection: closes breakout with `StuckDetected`, marks linked task as `Blocked`, notifies parent room. Thresholds: `MaxConsecutiveIdleRounds=5`, `MaxBreakoutRounds=200`. 3 new tests. Updated Known Gaps.
 - **2026-04-01**: Implemented startup crash recovery actions. On crash-detected boot, `AgentOrchestrator` now triggers runtime repair that closes active breakout rooms with persisted `ClosedByRecovery` reason, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notice.
 - **2026-04-01**: Added proactive SDK auth expiry detection. `CopilotAuthMonitorService` probes GitHub `/user` every 5 minutes, treats only `401/403` as definitive auth failure, and debounces room/Discord notifications so they fire only on degraded/operational transitions.
 - **2026-03-31**: Added Section 8 (Auth Retry vs Restart Escalation) documenting CopilotExecutor's token-based recovery strategy. Authentication failures trigger user re-authentication instead of server restart. Auth/authorization exceptions are never retried; quota/transient errors retry with exponential backoff. Health endpoint `authFailed` flag exposed for diagnostics, and `/api/auth/status` now surfaces `copilotStatus` (`operational` / `degraded` / `unavailable`) for client gating. Added Invariant 10. Updated Invariant 4 to clarify crash-restart behavior (code 1+).

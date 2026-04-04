@@ -19,6 +19,19 @@ public sealed class AgentOrchestrator
     /// <summary>Cap on the number of agents that can be tagged in one round.</summary>
     private const int MaxTaggedAgents = 6;
 
+    /// <summary>
+    /// Consecutive breakout rounds with zero commands parsed before the agent is
+    /// considered stuck and the breakout is terminated.
+    /// </summary>
+    internal const int MaxConsecutiveIdleRounds = 5;
+
+    /// <summary>
+    /// Absolute cap on breakout rounds. Prevents infinite loops regardless of
+    /// whether the agent is issuing commands. Agents should complete or be
+    /// recalled well before this limit.
+    /// </summary>
+    internal const int MaxBreakoutRounds = 200;
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentExecutor _executor;
     private readonly ActivityBroadcaster _activityBus;
@@ -620,6 +633,8 @@ public sealed class AgentOrchestrator
             breakoutRoomId, "system", "LocalAgentHost", "System",
             BuildTaskBrief(agent, tasks, taskBranch));
 
+        var consecutiveIdleRounds = 0;
+
         for (var round = 1; ; round++)
         {
             if (_stopped) break;
@@ -638,11 +653,26 @@ public sealed class AgentOrchestrator
             var currentBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
             if (currentBr is null || currentBr.Status != RoomStatus.Active) break;
 
+            // Absolute round safety valve (checked after room status so recalled
+            // rooms exit cleanly instead of being mis-flagged as stuck)
+            if (round > MaxBreakoutRounds)
+            {
+                _logger.LogWarning(
+                    "Agent {AgentName} hit max breakout rounds ({MaxRounds}) in {BreakoutId}",
+                    agent.Name, MaxBreakoutRounds, breakoutRoomId);
+                await HandleStuckDetectedAsync(
+                    runtime, breakoutRoomId, br.ParentRoomId, agent,
+                    $"reached maximum round limit ({MaxBreakoutRounds})");
+                return;
+            }
+
             _logger.LogInformation("Breakout round {Round} for {AgentName}",
                 round, agent.Name);
 
             var response = "";
             var isStubOffline = false;
+            var commandCount = 0;
+            var commandProcessingFailed = false;
             if (taskBranch != null)
                 await _gitService.AcquireRoundLockAsync();
             try
@@ -672,7 +702,11 @@ public sealed class AgentOrchestrator
                 {
                     isStubOffline = IsStubOfflineResponse(response);
                     if (!isStubOffline)
-                        await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                    {
+                        var cmdResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                        commandCount = cmdResult.Results.Count;
+                        commandProcessingFailed = cmdResult.ProcessingFailed;
+                    }
                 }
             }
             finally
@@ -714,6 +748,28 @@ public sealed class AgentOrchestrator
                 await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
                 return;
             }
+
+            // Stuck detection: track consecutive rounds with no commands parsed.
+            // Skip tracking when command processing itself failed (infrastructure
+            // issue, not agent idleness).
+            if (!commandProcessingFailed)
+            {
+                if (commandCount > 0)
+                    consecutiveIdleRounds = 0;
+                else
+                    consecutiveIdleRounds++;
+            }
+
+            if (consecutiveIdleRounds >= MaxConsecutiveIdleRounds)
+            {
+                _logger.LogWarning(
+                    "Agent {AgentName} stuck in {BreakoutId}: {IdleRounds} consecutive rounds with no commands",
+                    agent.Name, breakoutRoomId, consecutiveIdleRounds);
+                await HandleStuckDetectedAsync(
+                    runtime, breakoutRoomId, br.ParentRoomId, agent,
+                    $"no commands for {MaxConsecutiveIdleRounds} consecutive rounds");
+                return;
+            }
         }
 
         // Loop exited — agent stopped or room closed/recalled
@@ -728,6 +784,45 @@ public sealed class AgentOrchestrator
         }
 
         await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
+    }
+
+    // ── STUCK DETECTION ────────────────────────────────────────
+
+    private async Task HandleStuckDetectedAsync(
+        WorkspaceRuntime runtime,
+        string breakoutRoomId, string parentRoomId,
+        AgentDefinition agent, string reason)
+    {
+        var breakoutName = (await runtime.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
+
+        await runtime.PostBreakoutMessageAsync(
+            breakoutRoomId, "system", "LocalAgentHost", "System",
+            $"🔴 Stuck detection triggered for {agent.Name}: {reason}. Closing breakout.");
+
+        // Mark the linked task as Blocked
+        var taskBlocked = false;
+        var taskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+        if (taskId is not null)
+        {
+            try
+            {
+                await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
+                taskBlocked = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to mark task {TaskId} as Blocked during stuck detection", taskId);
+            }
+        }
+
+        await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.StuckDetected);
+
+        var taskNote = taskBlocked ? "Task marked as blocked." : taskId is not null
+            ? "Failed to update task status." : "No linked task.";
+        await runtime.PostSystemStatusAsync(parentRoomId,
+            $"🔴 {agent.Name} was stuck in breakout \"{breakoutName}\": {reason}. " +
+            $"Breakout closed. {taskNote} Agent returned to idle.");
     }
 
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
@@ -1349,7 +1444,7 @@ public sealed class AgentOrchestrator
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
-            return new CommandPipelineResult(new List<CommandEnvelope>(), responseText);
+            return new CommandPipelineResult(new List<CommandEnvelope>(), responseText, ProcessingFailed: true);
         }
     }
 

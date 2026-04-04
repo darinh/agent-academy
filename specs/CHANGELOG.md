@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **011-state-recovery**: Breakout stuck-detection — `AgentOrchestrator` now tracks consecutive idle rounds (zero commands parsed) and enforces an absolute max-round cap (200). After 5 consecutive idle rounds, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room. Prevents infinite agent loops and resource waste. 3 new tests.
+
+### Added
 - **007-agent-commands**: `INVITE_TO_ROOM` command — planners and humans can move a specified agent to a specified room. Validates room exists/not archived, agent exists/not in breakout. No-op if already in room. Posts system message. Added to human command allowlist. 12 new tests.
 - **007-agent-commands**: `RETURN_TO_MAIN` command — any agent can return to the main collaboration room. Syntactic sugar for MOVE_TO_ROOM with DefaultRoomId. No-op if already there. 3 new tests.
 

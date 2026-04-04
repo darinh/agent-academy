@@ -318,4 +318,34 @@ public class AgentOrchestratorTests
         Assert.Contains("## Acceptance Criteria", content);
         Assert.Contains("- Plan tab shows content", content);
     }
+
+    // ── Stuck Detection Constants ────────────────────────────────
+
+    [Fact]
+    public void MaxConsecutiveIdleRounds_IsReasonableDefault()
+    {
+        // Should allow a few rounds of planning before flagging stuck
+        Assert.True(AgentOrchestrator.MaxConsecutiveIdleRounds >= 3,
+            "MaxConsecutiveIdleRounds should be at least 3 to allow for planning rounds");
+        Assert.True(AgentOrchestrator.MaxConsecutiveIdleRounds <= 20,
+            "MaxConsecutiveIdleRounds should not be so high that stuck agents waste resources");
+    }
+
+    [Fact]
+    public void MaxBreakoutRounds_IsReasonableDefault()
+    {
+        // Should be high enough for complex tasks but not infinite
+        Assert.True(AgentOrchestrator.MaxBreakoutRounds >= 50,
+            "MaxBreakoutRounds should allow complex multi-step tasks");
+        Assert.True(AgentOrchestrator.MaxBreakoutRounds <= 500,
+            "MaxBreakoutRounds should prevent truly unbounded loops");
+    }
+
+    [Fact]
+    public void MaxBreakoutRounds_ExceedsMaxConsecutiveIdleRounds()
+    {
+        // The absolute cap must be higher than the idle detection threshold
+        Assert.True(AgentOrchestrator.MaxBreakoutRounds > AgentOrchestrator.MaxConsecutiveIdleRounds,
+            "MaxBreakoutRounds must exceed MaxConsecutiveIdleRounds");
+    }
 }

@@ -208,5 +208,6 @@ public sealed class CommandPipeline
 /// </summary>
 public record CommandPipelineResult(
     List<CommandEnvelope> Results,
-    string RemainingText
+    string RemainingText,
+    bool ProcessingFailed = false
 );
