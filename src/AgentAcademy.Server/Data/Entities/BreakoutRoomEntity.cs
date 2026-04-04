@@ -6,7 +6,8 @@ public enum BreakoutRoomCloseReason
     Recalled,
     Cancelled,
     StuckDetected,
-    ClosedByRecovery
+    ClosedByRecovery,
+    Failed
 }
 
 /// <summary>

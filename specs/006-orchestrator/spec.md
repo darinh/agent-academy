@@ -189,7 +189,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 ## Known Gaps
 
 - ~~No persistence of queue state — pending messages are lost on restart~~ — **resolved**: `ReconstructQueueAsync()` runs on every startup and re-enqueues rooms with pending human messages. Uses `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` to find rooms where the latest message has `SenderKind = User`.
-- Breakout rooms use fire-and-forget (`Task.Run`) — unobserved exceptions are logged but not surfaced to the caller
+- ~~Breakout rooms use fire-and-forget (`Task.Run`) — unobserved exceptions are logged but not surfaced to the caller~~ — **resolved**: `HandleBreakoutFailureAsync` catches unhandled exceptions, closes the breakout room with `Failed` reason, marks linked task as `Blocked`, and posts a failure notification to the parent room.
 - ~~No concurrency control on simultaneous breakout rooms for the same agent~~ — **resolved**: `HandleTaskAssignmentAsync` checks `AgentState.Working` before creating a breakout room. If the agent is already working, the assignment is skipped with a status message posted to the room.
 - ~~`LoadSpecContext` reads from the file system synchronously~~ — **resolved**: all `SpecManager` methods converted to async (`LoadSpecContextAsync`, `GetSpecSectionsAsync`, `GetSpecContentAsync`) using `File.ReadAllTextAsync`.
 - ~~Open-ended breakout and fix loops have no timeout or round cap~~ — **resolved**: stuck-detection tracks consecutive idle rounds (`MaxConsecutiveIdleRounds=5`) and enforces absolute cap (`MaxBreakoutRounds=200`). See spec 011.
@@ -199,6 +199,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 | Date | Change | Task |
 |------|--------|------|
 | 2026-04-04 | Queue reconstruction on startup: `ReconstructQueueAsync` re-enqueues rooms with unanswered human messages on every server startup. 8 new tests. Resolved queue persistence known gap. | queue-reconstruction |
+| 2026-04-04 | Breakout failure surfacing: `HandleBreakoutFailureAsync` catches unhandled exceptions from fire-and-forget breakout loops, closes breakout with `Failed` reason, marks task as `Blocked`, and notifies parent room. Added `Failed` to `BreakoutRoomCloseReason`. | breakout-failure-handling |
 | 2026-04-04 | Full reconciliation with code: open-ended breakout/fix loops, DM handling, task gating, branch-based review split, removed stale constants | spec-006-reconciliation |
 | 2026-03-30 | Marked section `Outdated` pending reconciliation with open-ended breakout lifecycle and timeout removal | spec-doc-gap-fix |
 | 2026-03-28 | Multi-round continuation loop (up to 3 rounds per trigger) | fix-orchestrator-stall |

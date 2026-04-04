@@ -652,6 +652,7 @@ public sealed class AgentOrchestrator
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Breakout loop failed for {AgentName} in {BreakoutId}", agent.Name, br.Id);
+                await HandleBreakoutFailureAsync(br.Id, roomId, agent, ex);
             }
         });
     }
@@ -869,6 +870,50 @@ public sealed class AgentOrchestrator
         await runtime.PostSystemStatusAsync(parentRoomId,
             $"🔴 {agent.Name} was stuck in breakout \"{breakoutName}\": {reason}. " +
             $"Breakout closed. {taskNote} Agent returned to idle.");
+    }
+
+    /// <summary>
+    /// Cleans up after an unhandled exception escapes the breakout loop.
+    /// Closes the breakout room, marks the linked task as Blocked, and
+    /// notifies the parent room so the failure is visible.
+    /// </summary>
+    private async Task HandleBreakoutFailureAsync(
+        string breakoutRoomId, string parentRoomId,
+        AgentDefinition agent, Exception ex)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+            var breakoutName = (await runtime.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
+
+            var taskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+            if (taskId is not null)
+            {
+                try
+                {
+                    await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
+                }
+                catch (Exception taskEx)
+                {
+                    _logger.LogWarning(taskEx,
+                        "Failed to mark task {TaskId} as Blocked during breakout failure cleanup", taskId);
+                }
+            }
+
+            await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Failed);
+
+            await runtime.PostSystemStatusAsync(parentRoomId,
+                $"🔴 {agent.Name} encountered an error in breakout \"{breakoutName}\": {ex.Message}. " +
+                $"Breakout closed. Agent returned to idle.");
+        }
+        catch (Exception cleanupEx)
+        {
+            _logger.LogError(cleanupEx,
+                "Failed to clean up after breakout failure for {AgentName} in {BreakoutId}",
+                agent.Name, breakoutRoomId);
+        }
     }
 
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
