@@ -194,6 +194,48 @@ public static class HumanCommandRegistry
                     Placeholder: "pattern"),
             ]),
 
+        new("CREATE_TASK_ITEM", "Create task item", "workspace",
+            "Create a work item assigned to yourself or another agent.",
+            "Break down complex work into trackable sub-items within a room.",
+            IsAsync: false,
+            Fields:
+            [
+                new("title", "Title", "text", "Short title for the work item.",
+                    Placeholder: "Implement auth middleware", Required: true),
+                new("description", "Description", "text", "Optional details about what the item involves.",
+                    Placeholder: "Add JWT validation to all API endpoints"),
+                new("assignedTo", "Assigned to", "text", "Agent ID or name. Defaults to current agent.",
+                    Placeholder: "Hephaestus"),
+                new("roomId", "Room ID", "text", "Target room. Defaults to current room.",
+                    Placeholder: "feature-auth-rework"),
+            ]),
+
+        new("UPDATE_TASK_ITEM", "Update task item", "workspace",
+            "Update a task item's status and optionally attach evidence.",
+            "Mark items as Active, Done, or Rejected. Attach evidence when completing items.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskItemId", "Task item ID", "text", "The task item to update.",
+                    Required: true),
+                new("status", "Status", "text", "New status: Pending, Active, Done, or Rejected.",
+                    Placeholder: "Done", Required: true),
+                new("evidence", "Evidence", "text", "Optional evidence of completion.",
+                    Placeholder: "All tests passing, see commit abc123"),
+            ]),
+
+        new("LIST_TASK_ITEMS", "List task items", "workspace",
+            "List task items with optional room or status filters.",
+            "View all work items in the workspace, or narrow down by room or status.",
+            IsAsync: false,
+            Fields:
+            [
+                new("roomId", "Room ID", "text", "Optional room to filter by.",
+                    Placeholder: "feature-auth-rework"),
+                new("status", "Status", "text", "Optional status filter: Pending, Active, Done, Rejected.",
+                    Placeholder: "Active"),
+            ]),
+
         new("REBASE_TASK", "Rebase task branch", "git",
             "Rebase a task's feature branch onto develop to resolve divergence.",
             "Use before MERGE_TASK when the branch has fallen behind develop. Supports dry-run mode to check for conflicts without modifying the branch.",

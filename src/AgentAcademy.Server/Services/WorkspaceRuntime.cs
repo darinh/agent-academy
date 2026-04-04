@@ -2914,7 +2914,8 @@ public sealed class WorkspaceRuntime
         string taskItemId, TaskItemStatus status, string? evidence = null)
     {
         var entity = await _db.TaskItems.FindAsync(taskItemId);
-        if (entity is null) return; // Silently ignore — matches v1 behavior
+        if (entity is null)
+            throw new InvalidOperationException($"Task item '{taskItemId}' not found");
 
         entity.Status = status.ToString();
         entity.UpdatedAt = DateTime.UtcNow;
@@ -2957,6 +2958,59 @@ public sealed class WorkspaceRuntime
                 .Select(r => r.Id)
                 .ToListAsync();
             query = query.Where(t => workspaceRoomIds.Contains(t.RoomId));
+        }
+
+        var entities = await query.OrderBy(t => t.CreatedAt).ToListAsync();
+
+        return entities.Select(e => new TaskItem(
+            e.Id, e.Title, e.Description,
+            Enum.Parse<TaskItemStatus>(e.Status),
+            e.AssignedTo, e.RoomId, e.BreakoutRoomId,
+            e.Evidence, e.Feedback,
+            e.CreatedAt, e.UpdatedAt)).ToList();
+    }
+
+    /// <summary>
+    /// Returns a single task item by ID, or null if not found.
+    /// </summary>
+    public async Task<TaskItem?> GetTaskItemAsync(string taskItemId)
+    {
+        var entity = await _db.TaskItems.FindAsync(taskItemId);
+        if (entity is null) return null;
+
+        return new TaskItem(
+            entity.Id, entity.Title, entity.Description,
+            Enum.Parse<TaskItemStatus>(entity.Status),
+            entity.AssignedTo, entity.RoomId, entity.BreakoutRoomId,
+            entity.Evidence, entity.Feedback,
+            entity.CreatedAt, entity.UpdatedAt);
+    }
+
+    /// <summary>
+    /// Returns task items filtered by room and/or status.
+    /// </summary>
+    public async Task<List<TaskItem>> GetTaskItemsAsync(string? roomId = null, TaskItemStatus? status = null)
+    {
+        var query = _db.TaskItems.AsQueryable();
+
+        if (roomId is not null)
+            query = query.Where(t => t.RoomId == roomId || t.BreakoutRoomId == roomId);
+
+        if (status is not null)
+            query = query.Where(t => t.Status == status.Value.ToString());
+
+        // Scope to active workspace when no room filter is specified
+        if (roomId is null)
+        {
+            var activeWorkspace = await GetActiveWorkspacePathAsync();
+            if (activeWorkspace is not null)
+            {
+                var workspaceRoomIds = await _db.Rooms
+                    .Where(r => r.WorkspacePath == activeWorkspace)
+                    .Select(r => r.Id)
+                    .ToListAsync();
+                query = query.Where(t => workspaceRoomIds.Contains(t.RoomId));
+            }
         }
 
         var entities = await query.OrderBy(t => t.CreatedAt).ToListAsync();
