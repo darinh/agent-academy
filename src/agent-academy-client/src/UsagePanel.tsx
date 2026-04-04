@@ -214,7 +214,11 @@ const RECORDS_PAGE = 15;
 
 // ── Component ──
 
-export default function UsagePanel() {
+interface UsagePanelProps {
+  hoursBack?: number;
+}
+
+export default function UsagePanel({ hoursBack }: UsagePanelProps) {
   const s = useLocalStyles();
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [records, setRecords] = useState<LlmUsageRecord[]>([]);
@@ -231,7 +235,7 @@ export default function UsagePanel() {
     setRecordsError(null);
 
     const [summaryResult, recordsResult] = await Promise.allSettled([
-      getGlobalUsage(),
+      getGlobalUsage(hoursBack),
       getGlobalUsageRecords(undefined, 100),
     ]);
 
@@ -259,7 +263,7 @@ export default function UsagePanel() {
     }
 
     setLoading(false);
-  }, []);
+  }, [hoursBack]);
 
   useEffect(() => {
     fetchData();

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Card,
   CardHeader,
@@ -13,6 +14,7 @@ import {
   ServerRegular,
   MoneyRegular,
   ErrorCircleRegular,
+  ClockRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
 import RestartHistoryPanel from "./RestartHistoryPanel";
@@ -100,6 +102,45 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     color: "var(--aa-soft)",
   },
+  timeRangeRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexWrap: "wrap",
+  },
+  timeRangeLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    color: "var(--aa-soft)",
+    fontSize: "12px",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+  },
+  timeRangeBtn: {
+    background: "none",
+    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.18)"),
+    ...shorthands.borderRadius("10px"),
+    ...shorthands.padding("4px", "14px"),
+    color: "var(--aa-text)",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 600,
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+    },
+  },
+  timeRangeBtnActive: {
+    background: "rgba(108, 182, 255, 0.14)",
+    ...shorthands.border("1px", "solid", "rgba(108, 182, 255, 0.35)"),
+    ...shorthands.borderRadius("10px"),
+    ...shorthands.padding("4px", "14px"),
+    color: "#6cb6ff",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: 700,
+  },
 });
 
 // ── Helpers ──
@@ -118,6 +159,32 @@ function phaseColor(
   return map[phase];
 }
 
+type TimeRange = 24 | 168 | 720 | undefined; // 24h, 7d, 30d, All
+const TIME_RANGES: { label: string; value: TimeRange }[] = [
+  { label: "24h", value: 24 },
+  { label: "7d", value: 168 },
+  { label: "30d", value: 720 },
+  { label: "All", value: undefined },
+];
+
+const TIME_RANGE_KEY = "agent-academy-dashboard-timerange";
+
+function loadTimeRange(): TimeRange {
+  try {
+    const raw = localStorage.getItem(TIME_RANGE_KEY);
+    if (raw === "all") return undefined;
+    const n = Number(raw);
+    if (n === 24 || n === 168 || n === 720) return n;
+  } catch { /* ignore */ }
+  return undefined;
+}
+
+function saveTimeRange(v: TimeRange) {
+  try {
+    localStorage.setItem(TIME_RANGE_KEY, v == null ? "all" : String(v));
+  } catch { /* ignore */ }
+}
+
 // ── Component ──
 
 interface DashboardPanelProps {
@@ -126,6 +193,12 @@ interface DashboardPanelProps {
 
 export default function DashboardPanel({ overview }: DashboardPanelProps) {
   const s = useLocalStyles();
+  const [hoursBack, setHoursBack] = useState<TimeRange>(loadTimeRange);
+
+  const handleTimeRange = (v: TimeRange) => {
+    setHoursBack(v);
+    saveTimeRange(v);
+  };
 
   const roomCount = overview.rooms.length;
   const agentCount = overview.configuredAgents.length;
@@ -194,12 +267,28 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
         </div>
       )}
 
+      <div className={s.timeRangeRow}>
+        <span className={s.timeRangeLabel}>
+          <ClockRegular style={{ fontSize: 14 }} />
+          Time Range
+        </span>
+        {TIME_RANGES.map((tr) => (
+          <button
+            key={tr.label}
+            className={hoursBack === tr.value ? s.timeRangeBtnActive : s.timeRangeBtn}
+            onClick={() => handleTimeRange(tr.value)}
+          >
+            {tr.label}
+          </button>
+        ))}
+      </div>
+
       <div className={s.section}>
         <div className={s.sectionTitle}>
           <MoneyRegular style={{ fontSize: 20 }} />
           LLM Usage
         </div>
-        <UsagePanel />
+        <UsagePanel hoursBack={hoursBack} />
       </div>
 
       <div className={s.section}>
@@ -207,7 +296,7 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           <ErrorCircleRegular style={{ fontSize: 20 }} />
           Agent Errors
         </div>
-        <ErrorsPanel />
+        <ErrorsPanel hoursBack={hoursBack} />
       </div>
 
       <div className={s.section}>
@@ -215,7 +304,7 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           <ServerRegular style={{ fontSize: 20 }} />
           Server Instance History
         </div>
-        <RestartHistoryPanel />
+        <RestartHistoryPanel hoursBack={hoursBack} />
       </div>
     </div>
   );

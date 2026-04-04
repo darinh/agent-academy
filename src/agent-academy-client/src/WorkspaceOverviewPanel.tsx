@@ -6,8 +6,12 @@ import {
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
-import { ArrowRightRegular } from "@fluentui/react-icons";
+import {
+  ArrowRightRegular,
+  ChartMultipleRegular,
+} from "@fluentui/react-icons";
 import type { CollaborationPhase, RoomSnapshot, WorkspaceOverview } from "./api";
+import RoomStatsPanel from "./RoomStatsPanel";
 
 const PHASES: readonly CollaborationPhase[] = [
   "Intake",
@@ -189,6 +193,17 @@ export default function WorkspaceOverviewPanel({
               Phase changes are paused while Copilot reconnects. Review the current plan and room state until full access returns.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Room usage & errors */}
+      {room && (
+        <div className={s.section}>
+          <div className={s.sectionTitle}>
+            <ChartMultipleRegular style={{ fontSize: 20 }} />
+            Room Stats — {room.name}
+          </div>
+          <RoomStatsPanel roomId={room.id} />
         </div>
       )}
 

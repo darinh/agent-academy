@@ -215,7 +215,11 @@ const RECORDS_PAGE = 15;
 
 // ── Component ──
 
-export default function ErrorsPanel() {
+interface ErrorsPanelProps {
+  hoursBack?: number;
+}
+
+export default function ErrorsPanel({ hoursBack }: ErrorsPanelProps) {
   const s = useLocalStyles();
   const [summary, setSummary] = useState<ErrorSummary | null>(null);
   const [records, setRecords] = useState<ErrorRecord[]>([]);
@@ -232,8 +236,8 @@ export default function ErrorsPanel() {
     setRecordsError(null);
 
     const [summaryResult, recordsResult] = await Promise.allSettled([
-      getGlobalErrorSummary(),
-      getGlobalErrorRecords(undefined, undefined, 100),
+      getGlobalErrorSummary(hoursBack),
+      getGlobalErrorRecords(undefined, hoursBack, 100),
     ]);
 
     if (id !== fetchIdRef.current) return;
@@ -260,7 +264,7 @@ export default function ErrorsPanel() {
     }
 
     setLoading(false);
-  }, []);
+  }, [hoursBack]);
 
   useEffect(() => {
     fetchData();

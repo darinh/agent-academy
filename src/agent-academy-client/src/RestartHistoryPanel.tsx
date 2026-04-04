@@ -194,7 +194,11 @@ const PAGE_SIZE = 10;
 
 // ── Component ──
 
-export default function RestartHistoryPanel() {
+interface RestartHistoryPanelProps {
+  hoursBack?: number;
+}
+
+export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelProps) {
   const s = useLocalStyles();
   const [instances, setInstances] = useState<ServerInstanceDto[]>([]);
   const [stats, setStats] = useState<RestartStatsDto | null>(null);
@@ -211,7 +215,7 @@ export default function RestartHistoryPanel() {
 
     const [historyResult, statsResult] = await Promise.allSettled([
       getRestartHistory(PAGE_SIZE, pageOffset),
-      getRestartStats(24),
+      getRestartStats(hoursBack ?? 24),
     ]);
 
     // Discard stale responses from superseded requests
@@ -237,7 +241,7 @@ export default function RestartHistoryPanel() {
     // Stats failure is non-critical — keep stale stats if available
 
     setLoading(false);
-  }, []);
+  }, [hoursBack]);
 
   useEffect(() => {
     fetchData(offset);
