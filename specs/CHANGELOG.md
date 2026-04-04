@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **008-agent-memory**: Upgraded RECALL search from LIKE to FTS5 full-text search with BM25 ranking. Word-boundary matching replaces substring matching. Multi-word queries use AND semantics. FTS5 virtual table (`agent_memories_fts`) synced via INSERT/UPDATE/DELETE triggers. Graceful LIKE fallback if FTS5 unavailable. Migration `AddMemoryFts5Search`. Known gap resolved. 10 new tests (813 total).
+
 ### Added
 - **005-workspace-runtime**: Stale room cleanup — auto-archive rooms when all tasks reach terminal state (Completed/Cancelled). `CompleteTaskAsync` calls `TryAutoArchiveRoomAsync` to check and archive. Agents evacuated to workspace default room. Manual cleanup via `CleanupStaleRoomsAsync()`, `CLEANUP_ROOMS` command (Planner/Human only), and `POST /api/rooms/cleanup`. `RejectTaskAsync` reopens auto-archived rooms. `GetRoomsAsync` now excludes archived rooms by default (`includeArchived` parameter). Resolves known gap: "No room cleanup for stale completed rooms". 15 new tests.
 

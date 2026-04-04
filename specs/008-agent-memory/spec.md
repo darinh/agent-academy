@@ -114,10 +114,34 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 
 ## Known Gaps
 
-- **Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?
+- ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
 - **Memory import/export**: No bulk operations defined. Should agents be able to seed memories from a file?
 - **Memory decay**: No TTL or staleness detection. Old memories may become incorrect as the codebase evolves.
 - **Cross-agent knowledge sharing**: Intentionally prohibited for isolation. But some knowledge (like "the build command is X") is universal. Consider a `shared` category visible to all?
+
+## Search Implementation
+
+### FTS5 Full-Text Search (Implemented)
+
+`RECALL` with `query` uses SQLite FTS5 for word-boundary matching and BM25 relevance ranking:
+
+- **FTS5 virtual table**: `agent_memories_fts` (external content table, synced via triggers)
+- **Sync triggers**: `agent_memories_ai` (INSERT), `agent_memories_ad` (DELETE), `agent_memories_au` (UPDATE)
+- **Query building**: Each search term is individually quoted to escape FTS5 special characters. Multi-word queries use implicit AND semantics.
+- **Ranking**: Results ordered by `bm25(agent_memories_fts)` — most relevant first.
+- **Agent isolation**: FTS5 query is joined with `AgentId` filter on the main table.
+- **Fallback**: If FTS5 table is unavailable (e.g., migration not applied), silently falls back to LIKE-based search.
+- **Filters**: `category` and `key` filters work alongside FTS5 query (applied as additional WHERE clauses on the main table).
+
+### Search behavior comparison
+
+| Feature | LIKE (old) | FTS5 (current) |
+|---------|-----------|----------------|
+| Word boundaries | No — "core" matches "score" | Yes — tokenized matching |
+| Ranking | Alphabetical | BM25 relevance |
+| Multi-word queries | Substring of concatenated text | AND of individual terms |
+| Special characters | Literal match | Escaped and quoted |
+| Performance | O(n) scan | Inverted index |
 
 ## Revision History
 
@@ -125,3 +149,4 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 |------|--------|------|
 | 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system |
 | 2026-03-28 | Implemented: REMEMBER, RECALL, LIST_MEMORIES, FORGET. Removed 50-memory cap. LIKE search for RECALL. | command-system-phase1 |
+| 2026-04-04 | Upgraded RECALL search from LIKE to FTS5 with BM25 ranking. Added fallback, triggers, migration. Known gap resolved. | fts5-memory-search |
