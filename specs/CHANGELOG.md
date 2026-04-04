@@ -5,6 +5,13 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **011-state-recovery**: Server-side restart rate limiting — `RestartServerHandler` enforces max 10 intentional restarts per hour with `SemaphoreSlim`-guarded check against `ServerInstances` table. Returns `RATE_LIMIT` error when exceeded. Prevents infinite restart loops independent of wrapper script.
+- **011-state-recovery**: Restart history API — `GET /api/system/restarts` (paginated instance history with derived shutdown reason: Running/IntentionalRestart/CleanShutdown/Crash/UnexpectedExit) and `GET /api/system/restarts/stats` (aggregated counts by type with configurable time window). SQL-level aggregation for scalability. 18 new tests.
+
+### Changed
+- **004-notification-system**: Marked notification endpoint auth gap as resolved — system-wide `FallbackPolicy` already covers all endpoints without `[AllowAnonymous]`.
+
+### Added
 - **004-notification-system**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 4 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed) with Delivered/Skipped/Failed status. REST API endpoints for delivery history (`GET /api/notifications/deliveries`) and stats (`GET /api/notifications/deliveries/stats`). `NotificationManager` integrated with optional tracker dependency. 18 new tests.
 - **004-notification-system**: Room channel cleanup — `OnRoomClosedAsync` on `INotificationProvider` and `NotifyRoomClosedAsync` on `NotificationManager`. Discord provider deletes channel, disposes webhook, clears caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events. 7 new tests.
 

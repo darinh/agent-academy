@@ -1,8 +1,10 @@
 using AgentAcademy.Server.Commands;
+using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -599,5 +601,296 @@ public class InstanceHealthResultTests
         Assert.False(result.CrashDetected);
         Assert.True(result.ExecutorOperational);
         Assert.False(result.AuthFailed);
+    }
+}
+
+public class RestartHistoryApiTests : IDisposable
+{
+    private readonly SqliteConnection _connection;
+    private readonly AgentAcademyDbContext _db;
+    private readonly SystemController _controller;
+
+    public RestartHistoryApiTests()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        var options = new DbContextOptionsBuilder<AgentAcademyDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        _db = new AgentAcademyDbContext(options);
+        _db.Database.EnsureCreated();
+
+        var catalog = new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>());
+        var executor = NSubstitute.Substitute.For<IAgentExecutor>();
+        var settings = new SystemSettingsService(_db);
+        var sessionService = new ConversationSessionService(
+            _db, settings, executor, NullLogger<ConversationSessionService>.Instance);
+        var runtime = new WorkspaceRuntime(
+            _db,
+            NullLogger<WorkspaceRuntime>.Instance,
+            catalog,
+            new ActivityBroadcaster(),
+            sessionService);
+
+        _controller = new SystemController(
+            runtime, executor, catalog, _db,
+            NullLogger<SystemController>.Instance);
+    }
+
+    public void Dispose()
+    {
+        _db.Dispose();
+        _connection.Dispose();
+    }
+
+    [Fact]
+    public async Task GetRestartHistory_EmptyDb_ReturnsEmptyList()
+    {
+        var result = await _controller.GetRestartHistory();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var value = ok.Value!;
+        var instancesProp = value.GetType().GetProperty("instances")!;
+        var instances = (IEnumerable<ServerInstanceDto>)instancesProp.GetValue(value)!;
+        Assert.Empty(instances);
+    }
+
+    [Fact]
+    public async Task GetRestartHistory_ReturnsInstancesOrderedByStartedAtDesc()
+    {
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddHours(-2),
+            ShutdownAt = DateTime.UtcNow.AddHours(-1),
+            ExitCode = 0,
+            Version = "1.0.0"
+        });
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddMinutes(-30),
+            ShutdownAt = DateTime.UtcNow.AddMinutes(-10),
+            ExitCode = 75,
+            Version = "1.0.1"
+        });
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddMinutes(-5),
+            Version = "1.0.2" // still running
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetRestartHistory();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var value = ok.Value!;
+        var instances = ((IEnumerable<ServerInstanceDto>)value.GetType()
+            .GetProperty("instances")!.GetValue(value)!).ToList();
+
+        Assert.Equal(3, instances.Count);
+        Assert.Equal("1.0.2", instances[0].Version); // most recent first
+        Assert.Equal("Running", instances[0].ShutdownReason);
+        Assert.Equal("IntentionalRestart", instances[1].ShutdownReason);
+        Assert.Equal("CleanShutdown", instances[2].ShutdownReason);
+    }
+
+    [Fact]
+    public async Task GetRestartHistory_RespectsLimit()
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            _db.ServerInstances.Add(new ServerInstanceEntity
+            {
+                StartedAt = DateTime.UtcNow.AddMinutes(-i),
+                ShutdownAt = DateTime.UtcNow.AddMinutes(-i + 1),
+                ExitCode = 0,
+                Version = "1.0.0"
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetRestartHistory(limit: 3);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var value = ok.Value!;
+        var instances = ((IEnumerable<ServerInstanceDto>)value.GetType()
+            .GetProperty("instances")!.GetValue(value)!).ToList();
+        Assert.Equal(3, instances.Count);
+
+        var total = (int)value.GetType().GetProperty("total")!.GetValue(value)!;
+        Assert.Equal(10, total);
+    }
+
+    [Fact]
+    public async Task GetRestartHistory_CrashInstanceShowsCrashReason()
+    {
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddHours(-1),
+            ShutdownAt = DateTime.UtcNow.AddMinutes(-30),
+            ExitCode = -1,
+            CrashDetected = true,
+            Version = "1.0.0"
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetRestartHistory();
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var instances = ((IEnumerable<ServerInstanceDto>)ok.Value!.GetType()
+            .GetProperty("instances")!.GetValue(ok.Value)!).ToList();
+
+        Assert.Single(instances);
+        Assert.Equal("Crash", instances[0].ShutdownReason);
+    }
+
+    [Fact]
+    public async Task GetRestartStats_ReturnsCorrectCounts()
+    {
+        // 2 intentional restarts
+        for (int i = 0; i < 2; i++)
+        {
+            _db.ServerInstances.Add(new ServerInstanceEntity
+            {
+                StartedAt = DateTime.UtcNow.AddMinutes(-(i + 1) * 10),
+                ShutdownAt = DateTime.UtcNow.AddMinutes(-i * 10),
+                ExitCode = 75,
+                Version = "1.0.0"
+            });
+        }
+        // 1 crash
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddMinutes(-60),
+            ShutdownAt = DateTime.UtcNow.AddMinutes(-55),
+            ExitCode = -1,
+            CrashDetected = true,
+            Version = "1.0.0"
+        });
+        // 1 clean shutdown
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddMinutes(-90),
+            ShutdownAt = DateTime.UtcNow.AddMinutes(-80),
+            ExitCode = 0,
+            Version = "1.0.0"
+        });
+        // 1 still running
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddMinutes(-2),
+            Version = "1.0.0"
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetRestartStats(hours: 24);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var stats = (RestartStatsDto)ok.Value!;
+
+        Assert.Equal(5, stats.TotalInstances);
+        Assert.Equal(1, stats.CrashRestarts);
+        Assert.Equal(2, stats.IntentionalRestarts);
+        Assert.Equal(1, stats.CleanShutdowns);
+        Assert.Equal(1, stats.StillRunning);
+    }
+
+    [Fact]
+    public async Task GetRestartStats_WindowFiltersOldInstances()
+    {
+        // Instance within 1-hour window (both started and shut down inside)
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddMinutes(-30),
+            ShutdownAt = DateTime.UtcNow.AddMinutes(-20),
+            ExitCode = 75,
+            Version = "1.0.0"
+        });
+        // Instance outside 1-hour window (both started and shut down outside)
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddHours(-2),
+            ShutdownAt = DateTime.UtcNow.AddHours(-1.5),
+            ExitCode = 75,
+            Version = "1.0.0"
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetRestartStats(hours: 1);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var stats = (RestartStatsDto)ok.Value!;
+
+        Assert.Equal(1, stats.TotalInstances);
+        Assert.Equal(1, stats.IntentionalRestarts);
+    }
+
+    [Fact]
+    public async Task GetRestartStats_ShutdownBasedMetrics_CountByShutdownAt()
+    {
+        // Instance started BEFORE the window but shut down INSIDE the window.
+        // IntentionalRestarts should count it (uses ShutdownAt).
+        // TotalInstances should NOT count it (uses StartedAt).
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = DateTime.UtcNow.AddHours(-3),
+            ShutdownAt = DateTime.UtcNow.AddMinutes(-10),
+            ExitCode = 75,
+            Version = "1.0.0"
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetRestartStats(hours: 1);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var stats = (RestartStatsDto)ok.Value!;
+
+        Assert.Equal(0, stats.TotalInstances); // StartedAt is outside window
+        Assert.Equal(1, stats.IntentionalRestarts); // ShutdownAt is inside window
+    }
+}
+
+public class ServerInstanceDtoTests
+{
+    [Theory]
+    [InlineData(null, null, "Running")]
+    [InlineData("2026-01-01T00:00:00Z", 0, "CleanShutdown")]
+    [InlineData("2026-01-01T00:00:00Z", 75, "IntentionalRestart")]
+    [InlineData("2026-01-01T00:00:00Z", -1, "Crash")]
+    [InlineData("2026-01-01T00:00:00Z", 137, "UnexpectedExit(137)")]
+    public void ShutdownReason_DerivedCorrectly(string? shutdownAt, int? exitCode, string expectedReason)
+    {
+        DateTime? shutdown = shutdownAt is not null ? DateTime.Parse(shutdownAt) : null;
+
+        var dto = new ServerInstanceDto(
+            "test-id", DateTime.UtcNow, shutdown, exitCode,
+            false, "1.0.0", DeriveReason(shutdown, exitCode));
+
+        Assert.Equal(expectedReason, dto.ShutdownReason);
+    }
+
+    // Mirror the controller's logic for unit-testing independently
+    private static string DeriveReason(DateTime? shutdownAt, int? exitCode) =>
+        shutdownAt is null ? "Running"
+        : exitCode == 75 ? "IntentionalRestart"
+        : exitCode == 0 ? "CleanShutdown"
+        : exitCode == -1 ? "Crash"
+        : $"UnexpectedExit({exitCode})";
+
+    [Fact]
+    public void RestartStatsDto_HasCorrectShape()
+    {
+        var stats = new RestartStatsDto(
+            TotalInstances: 10,
+            CrashRestarts: 2,
+            IntentionalRestarts: 5,
+            CleanShutdowns: 2,
+            StillRunning: 1,
+            WindowHours: 24,
+            MaxRestartsPerWindow: 10,
+            RestartWindowHours: 1);
+
+        Assert.Equal(10, stats.TotalInstances);
+        Assert.Equal(2, stats.CrashRestarts);
+        Assert.Equal(5, stats.IntentionalRestarts);
+        Assert.Equal(2, stats.CleanShutdowns);
+        Assert.Equal(1, stats.StillRunning);
     }
 }

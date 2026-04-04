@@ -1,7 +1,10 @@
+using AgentAcademy.Server.Commands.Handlers;
+using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -14,6 +17,7 @@ public class SystemController : ControllerBase
     private readonly WorkspaceRuntime _runtime;
     private readonly IAgentExecutor _executor;
     private readonly AgentCatalogOptions _catalog;
+    private readonly AgentAcademyDbContext _db;
     private readonly ILogger<SystemController> _logger;
 
     private static readonly DateTime StartedAt = DateTime.UtcNow;
@@ -22,11 +26,13 @@ public class SystemController : ControllerBase
         WorkspaceRuntime runtime,
         IAgentExecutor executor,
         AgentCatalogOptions catalog,
+        AgentAcademyDbContext db,
         ILogger<SystemController> logger)
     {
         _runtime = runtime;
         _executor = executor;
         _catalog = catalog;
+        _db = db;
         _logger = logger;
     }
 
@@ -161,4 +167,97 @@ public class SystemController : ControllerBase
             executorOperational = _executor.IsFullyOperational,
         });
     }
+
+    /// <summary>
+    /// GET /api/system/restarts — recent server instance history with lifecycle details.
+    /// </summary>
+    [HttpGet("api/system/restarts")]
+    public async Task<IActionResult> GetRestartHistory(
+        [FromQuery] int limit = 20,
+        [FromQuery] int offset = 0)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        offset = Math.Max(offset, 0);
+
+        var instances = await _db.ServerInstances
+            .OrderByDescending(si => si.StartedAt)
+            .Skip(offset)
+            .Take(limit)
+            .Select(si => new ServerInstanceDto(
+                si.Id,
+                si.StartedAt,
+                si.ShutdownAt,
+                si.ExitCode,
+                si.CrashDetected,
+                si.Version,
+                DeriveShutdownReason(si.ShutdownAt, si.ExitCode)))
+            .ToListAsync();
+
+        var total = await _db.ServerInstances.CountAsync();
+
+        return Ok(new { instances, total, limit, offset });
+    }
+
+    /// <summary>
+    /// GET /api/system/restarts/stats — restart statistics for a time window.
+    /// </summary>
+    [HttpGet("api/system/restarts/stats")]
+    public async Task<IActionResult> GetRestartStats([FromQuery] int? hours = 24)
+    {
+        var window = TimeSpan.FromHours(Math.Clamp(hours ?? 24, 1, 720));
+        var since = DateTime.UtcNow - window;
+
+        // Push aggregation to SQL to avoid materializing all rows.
+        // Use StartedAt for total/running counts, ShutdownAt for outcome counts.
+        var totalInstances = await _db.ServerInstances
+            .CountAsync(si => si.StartedAt > since);
+        var crashRestarts = await _db.ServerInstances
+            .CountAsync(si => si.StartedAt > since && si.CrashDetected);
+        var intentionalRestarts = await _db.ServerInstances
+            .CountAsync(si => si.ShutdownAt != null && si.ShutdownAt > since
+                && si.ExitCode == RestartServerHandler.RestartExitCode);
+        var cleanShutdowns = await _db.ServerInstances
+            .CountAsync(si => si.ShutdownAt != null && si.ShutdownAt > since
+                && si.ExitCode == 0);
+        var stillRunning = await _db.ServerInstances
+            .CountAsync(si => si.StartedAt > since && si.ShutdownAt == null);
+
+        var stats = new RestartStatsDto(
+            TotalInstances: totalInstances,
+            CrashRestarts: crashRestarts,
+            IntentionalRestarts: intentionalRestarts,
+            CleanShutdowns: cleanShutdowns,
+            StillRunning: stillRunning,
+            WindowHours: (int)window.TotalHours,
+            MaxRestartsPerWindow: RestartServerHandler.MaxRestartsPerWindow,
+            RestartWindowHours: RestartServerHandler.RestartWindowHours);
+
+        return Ok(stats);
+    }
+
+    private static string DeriveShutdownReason(DateTime? shutdownAt, int? exitCode) =>
+        shutdownAt is null ? "Running"
+        : exitCode == RestartServerHandler.RestartExitCode ? "IntentionalRestart"
+        : exitCode == 0 ? "CleanShutdown"
+        : exitCode == -1 ? "Crash"
+        : $"UnexpectedExit({exitCode})";
 }
+
+public record ServerInstanceDto(
+    string Id,
+    DateTime StartedAt,
+    DateTime? ShutdownAt,
+    int? ExitCode,
+    bool CrashDetected,
+    string Version,
+    string ShutdownReason);
+
+public record RestartStatsDto(
+    int TotalInstances,
+    int CrashRestarts,
+    int IntentionalRestarts,
+    int CleanShutdowns,
+    int StillRunning,
+    int WindowHours,
+    int MaxRestartsPerWindow,
+    int RestartWindowHours);

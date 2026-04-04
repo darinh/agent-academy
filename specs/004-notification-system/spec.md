@@ -354,7 +354,7 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - No Slack provider implementation yet
 - ~~No persistent notification history or delivery tracking~~ — **resolved**: `NotificationDeliveryTracker` records every outbound delivery attempt per provider with status, error, and context. Query via REST API.
 - ~~No retry/backoff on transient provider failures~~ — **resolved**: `NotificationRetryPolicy` with exponential backoff (200ms base, 3 retries, 2s cap, ±50ms jitter). Applied to all outbound provider calls except `RequestInputFromAnyAsync`.
-- No authentication on notification API endpoints (will be covered by system-wide auth)
+- ~~No authentication on notification API endpoints~~ — **resolved**: System-wide `FallbackPolicy` in `Program.cs` requires `RequireAuthenticatedUser()` on all endpoints without `[AllowAnonymous]`. `NotificationController` has no `[AllowAnonymous]`, so all notification endpoints are protected when auth is enabled.
 - `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
 - Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
 - Provider config values (including secrets) stored in plaintext in SQLite — encryption enhancement pending

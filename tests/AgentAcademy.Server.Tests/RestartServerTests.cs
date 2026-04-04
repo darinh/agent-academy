@@ -139,6 +139,163 @@ public class RestartServerTests : IDisposable
     {
         Assert.Equal(75, RestartServerHandler.RestartExitCode);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_UnderRateLimit_Succeeds()
+    {
+        // Seed a few recent intentional restarts (under the limit)
+        using (var scope = _sp.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            for (int i = 0; i < RestartServerHandler.MaxRestartsPerWindow - 1; i++)
+            {
+                db.ServerInstances.Add(new Data.Entities.ServerInstanceEntity
+                {
+                    StartedAt = DateTime.UtcNow.AddMinutes(-(i + 1) * 5),
+                    ShutdownAt = DateTime.UtcNow.AddMinutes(-i * 5),
+                    ExitCode = RestartServerHandler.RestartExitCode,
+                    Version = "1.0.0"
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var context = MakeContext("planner-1", "Aristotle", "Planner");
+        var envelope = MakeEnvelope();
+
+        var originalExitCode = Environment.ExitCode;
+        try
+        {
+            var result = await _handler.ExecuteAsync(envelope, context);
+            Assert.Equal(CommandStatus.Success, result.Status);
+        }
+        finally
+        {
+            Environment.ExitCode = originalExitCode;
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AtRateLimit_Denied()
+    {
+        // Seed exactly MaxRestartsPerWindow intentional restarts
+        using (var scope = _sp.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            for (int i = 0; i < RestartServerHandler.MaxRestartsPerWindow; i++)
+            {
+                db.ServerInstances.Add(new Data.Entities.ServerInstanceEntity
+                {
+                    StartedAt = DateTime.UtcNow.AddMinutes(-(i + 1) * 5),
+                    ShutdownAt = DateTime.UtcNow.AddMinutes(-i * 5),
+                    ExitCode = RestartServerHandler.RestartExitCode,
+                    Version = "1.0.0"
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var context = MakeContext("planner-1", "Aristotle", "Planner");
+        var envelope = MakeEnvelope();
+
+        var result = await _handler.ExecuteAsync(envelope, context);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.RateLimit, result.ErrorCode);
+        Assert.Contains("rate limit", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_OldRestartsOutsideWindow_NotCounted()
+    {
+        // Seed restarts that are OUTSIDE the window (older than RestartWindowHours)
+        using (var scope = _sp.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            for (int i = 0; i < RestartServerHandler.MaxRestartsPerWindow + 5; i++)
+            {
+                db.ServerInstances.Add(new Data.Entities.ServerInstanceEntity
+                {
+                    StartedAt = DateTime.UtcNow.AddHours(-(RestartServerHandler.RestartWindowHours + 1)),
+                    ShutdownAt = DateTime.UtcNow.AddHours(-(RestartServerHandler.RestartWindowHours + 1)),
+                    ExitCode = RestartServerHandler.RestartExitCode,
+                    Version = "1.0.0"
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var context = MakeContext("planner-1", "Aristotle", "Planner");
+        var envelope = MakeEnvelope();
+
+        var originalExitCode = Environment.ExitCode;
+        try
+        {
+            var result = await _handler.ExecuteAsync(envelope, context);
+            Assert.Equal(CommandStatus.Success, result.Status);
+        }
+        finally
+        {
+            Environment.ExitCode = originalExitCode;
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CrashRestartsNotCounted()
+    {
+        // Seed crash restarts (exit code != 75) — these should NOT count toward the limit
+        using (var scope = _sp.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            for (int i = 0; i < RestartServerHandler.MaxRestartsPerWindow + 5; i++)
+            {
+                db.ServerInstances.Add(new Data.Entities.ServerInstanceEntity
+                {
+                    StartedAt = DateTime.UtcNow.AddMinutes(-(i + 1) * 2),
+                    ShutdownAt = DateTime.UtcNow.AddMinutes(-i * 2),
+                    ExitCode = -1, // crash
+                    CrashDetected = true,
+                    Version = "1.0.0"
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var context = MakeContext("planner-1", "Aristotle", "Planner");
+        var envelope = MakeEnvelope();
+
+        var originalExitCode = Environment.ExitCode;
+        try
+        {
+            var result = await _handler.ExecuteAsync(envelope, context);
+            Assert.Equal(CommandStatus.Success, result.Status);
+        }
+        finally
+        {
+            Environment.ExitCode = originalExitCode;
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SuccessResult_IncludesRestartCount()
+    {
+        var context = MakeContext("planner-1", "Aristotle", "Planner");
+        var envelope = MakeEnvelope();
+
+        var originalExitCode = Environment.ExitCode;
+        try
+        {
+            var result = await _handler.ExecuteAsync(envelope, context);
+
+            Assert.Equal(CommandStatus.Success, result.Status);
+            Assert.Equal(1, result.Result!["restartsInWindow"]);
+            Assert.Equal(RestartServerHandler.MaxRestartsPerWindow, result.Result["maxRestartsPerWindow"]);
+        }
+        finally
+        {
+            Environment.ExitCode = originalExitCode;
+        }
+    }
 }
 
 public class RestartServerCommandTests
