@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Badge,
   Card,
@@ -61,10 +62,24 @@ const useLocalStyles = makeStyles({
     letterSpacing: "-0.02em",
   },
   taskDesc: {
-    fontSize: "14px",
-    color: "#dbe7fb",
+    fontSize: "13px",
+    color: "#9bb0d2",
+    marginBottom: "8px",
+    lineHeight: 1.5,
+    whiteSpace: "pre-wrap",
+  },
+  taskDescClamped: {
+    display: "-webkit-box",
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  },
+  taskDescToggle: {
+    fontSize: "12px",
+    color: "#5b8def",
+    cursor: "pointer",
     marginBottom: "12px",
-    lineHeight: 1.6,
+    ":hover": { textDecoration: "underline" },
   },
   phaseTrack: {
     display: "flex",
@@ -163,6 +178,7 @@ interface TaskStatePanelProps {
 
 export default function TaskStatePanel({ rooms, room }: TaskStatePanelProps) {
   const s = useLocalStyles();
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
 
   const roomsWithTasks = rooms.filter((r) => r.activeTask);
 
@@ -206,7 +222,27 @@ export default function TaskStatePanel({ rooms, room }: TaskStatePanelProps) {
                 }
               />
 
-              {task.description && <div className={s.taskDesc}>{task.description}</div>}
+              {task.description && (
+                <>
+                  <div
+                    className={`${s.taskDesc} ${expandedTasks.has(task.id) ? "" : s.taskDescClamped}`}
+                  >
+                    {task.description}
+                  </div>
+                  <div
+                    className={s.taskDescToggle}
+                    onClick={() =>
+                      setExpandedTasks((prev) => {
+                        const next = new Set(prev);
+                        next.has(task.id) ? next.delete(task.id) : next.add(task.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {expandedTasks.has(task.id) ? "▲ Collapse" : "▼ Show full description"}
+                  </div>
+                </>
+              )}
 
               {/* Phase indicator */}
               <div className={s.phaseTrack}>
