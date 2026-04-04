@@ -1,57 +1,73 @@
 ---
 name: code-intelligence
 description: Use when exploring codebase structure, finding callers/callees, understanding relationships between files or classes, checking what code depends on what, or assessing the blast radius of a change. Prefer this over grep, glob, or file reads for structural questions. Use before planning or implementing any Medium or Large task.
-allowed-tools: mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__trace_call_path, mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__detect_changes, mcp__codebase-memory-mcp__query_graph, mcp__codebase-memory-mcp__search_code, mcp__codebase-memory-mcp__get_code_snippet
+allowed-tools: mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__trace_call_path, mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__detect_changes, mcp__codebase-memory-mcp__query_graph, mcp__codebase-memory-mcp__search_code, mcp__codebase-memory-mcp__get_code_snippet, mcp__roslyn__find_references, mcp__roslyn__find_implementations, mcp__roslyn__find_callers, mcp__roslyn__get_symbol_info, mcp__roslyn__search_symbols
 ---
 
 # Code Intelligence Tools
 
-The `codebase-memory-mcp` server provides structural code intelligence via a
-knowledge graph built from the codebase. The project is indexed as
-`home-darin-projects-agent-academy`.
+Two MCP servers provide structural code intelligence. Each has a specific
+strength — use the right one for the job.
 
-**Never use grep/glob/file reads for structural questions** when graph queries can
-answer it — graph queries return precise results in a single tool call (~500 tokens)
-vs file-by-file exploration (~80K tokens).
+**Key constraint**: `codebase-memory-mcp` uses tree-sitter for parsing. Tree-sitter
+handles TypeScript cross-file resolution well, but **cannot reliably resolve C#
+cross-file callers/callees**. For any C# structural question, always use Roslyn.
 
-## Available Tools
+**Never use grep/glob/file reads for structural questions** when either tool can
+answer it — graph and Roslyn queries return precise results in a single tool call
+(~500 tokens) vs file-by-file exploration (~80K tokens).
 
-| Tool | Use For |
-|------|---------|
-| `search_graph` | Find functions, classes, routes, variables by name/pattern |
-| `trace_call_path` | Who calls a function and what it calls (inbound/outbound) |
-| `get_architecture` | High-level package/service/dependency overview |
-| `detect_changes` | Map git diff to affected symbols and blast radius |
-| `query_graph` | Custom Cypher queries for complex multi-hop patterns |
-| `search_code` | Graph-augmented grep — finds text, ranks by structural importance |
-| `get_code_snippet` | Read source for a specific symbol (use after search_graph) |
+## Decision Rules
+
+**Use `roslyn` (dotnet-roslyn-mcp) when:**
+- The question involves C# code in `src/AgentAcademy.Server/` or `tests/`
+- You need to find callers or callees of a C# method
+- You need to find all implementations of a C# interface
+- You need to find all references to a C# symbol
+- You need accurate cross-file type resolution in C#
+- You're assessing blast radius of a C# change
+
+**Use `codebase-memory-mcp` when:**
+- You need TypeScript/frontend structural queries in `src/agent-academy-client/` —
+  callers, callees, and cross-file resolution work correctly via tree-sitter
+- You need git coupling history (`FILE_CHANGES_WITH` edges — files that change together)
+- You need to map a git diff to affected symbols (`detect_changes`)
+- You need file/folder structure overview (`get_architecture`)
+- You want to find files/symbols by name pattern across the whole repo (`search_graph`)
+- You want grep results ranked by structural importance (`search_code`)
+- You need a custom graph traversal (`query_graph` with Cypher)
+
+**Never use `codebase-memory-mcp` for:**
+- C# caller/callee resolution — use Roslyn instead
+- C# cross-file type relationships — use Roslyn instead
 
 ## Common Workflows
 
 **Before planning a Medium/Large task (Anvil integration):**
-1. `detect_changes` — what's already in flight in the git diff
-2. `trace_call_path` on symbols you plan to change — blast radius
-3. `search_graph` with `label: "Interface"` if changing an interface — find implementations
+1. `detect_changes` (codebase-memory-mcp) — what's already in flight in the git diff
+2. `roslyn:find_references` on the C# symbol(s) you plan to change — blast radius
+3. `roslyn:find_implementations` if changing a C# interface
 4. Include results in the evidence bundle before the Plan step
 
-**"What calls X?"**
-→ `trace_call_path(function_name="X", direction="inbound")`
+**"What calls X?" (C#)**
+→ `roslyn:find_callers` or `roslyn:find_references`
 
-**"What does X call?"**
-→ `trace_call_path(function_name="X", direction="outbound")`
+**"What calls X?" (TypeScript)**
+→ `codebase-memory-mcp: trace_call_path`
 
 **"What does this git diff affect?"**
-→ `detect_changes(project="home-darin-projects-agent-academy")`
+→ `codebase-memory-mcp: detect_changes`
+
+**"Where is X implemented?" (C# interface)**
+→ `roslyn:find_implementations`
 
 **"Find all classes/functions matching a pattern"**
-→ `search_graph(project="home-darin-projects-agent-academy", name_pattern=".*Handler.*")`
+→ `roslyn:search_symbols` (C# backend)
+→ `codebase-memory-mcp: search_graph` (frontend or cross-repo)
 
 **"What's the overall architecture?"**
-→ `get_architecture(project="home-darin-projects-agent-academy")`
-
-**"Which files tend to change together?"**
-→ `query_graph` with `FILE_CHANGES_WITH` edges
+→ `codebase-memory-mcp: get_architecture`
 
 ## Key Constraint
 
-All calls require `project: "home-darin-projects-agent-academy"`.
+All `codebase-memory-mcp` calls require `project: "home-darin-projects-agent-academy"`.

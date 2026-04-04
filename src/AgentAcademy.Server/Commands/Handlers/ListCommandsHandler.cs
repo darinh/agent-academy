@@ -7,16 +7,10 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// <summary>
 /// Handles LIST_COMMANDS — returns all available commands with their names,
 /// indicating which ones the requesting agent is authorized to use.
+/// Resolves handlers at execution time to avoid circular DI dependency.
 /// </summary>
 public sealed class ListCommandsHandler : ICommandHandler
 {
-    private readonly IEnumerable<ICommandHandler> _allHandlers;
-
-    public ListCommandsHandler(IEnumerable<ICommandHandler> allHandlers)
-    {
-        _allHandlers = allHandlers;
-    }
-
     public string CommandName => "LIST_COMMANDS";
 
     private static readonly Dictionary<string, string> CommandDescriptions = new(StringComparer.OrdinalIgnoreCase)
@@ -56,12 +50,14 @@ public sealed class ListCommandsHandler : ICommandHandler
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
+        // Resolve handlers at execution time to avoid circular DI dependency
+        var allHandlers = context.Services.GetServices<ICommandHandler>();
         var authorizer = new CommandAuthorizer();
         var agentDef = context.Services.GetRequiredService<WorkspaceRuntime>()
             .GetConfiguredAgents()
             .FirstOrDefault(a => a.Id == context.AgentId);
 
-        var commands = _allHandlers
+        var commands = allHandlers
             .Select(h =>
             {
                 var authorized = true;
