@@ -1286,10 +1286,24 @@ public sealed class AgentOrchestrator
         // Inject agent memories before room context
         if (memories is { Count: > 0 })
         {
-            lines.Add("=== YOUR MEMORIES ===");
-            foreach (var m in memories)
-                lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
-            lines.Add("");
+            var ownMemories = memories.Where(m => m.Category != "shared" || m.AgentId == agent.Id).ToList();
+            var sharedMemories = memories.Where(m => m.Category == "shared" && m.AgentId != agent.Id).ToList();
+
+            if (ownMemories.Count > 0)
+            {
+                lines.Add("=== YOUR MEMORIES ===");
+                foreach (var m in ownMemories)
+                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
+                lines.Add("");
+            }
+
+            if (sharedMemories.Count > 0)
+            {
+                lines.Add("=== SHARED KNOWLEDGE ===");
+                foreach (var m in sharedMemories)
+                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId})");
+                lines.Add("");
+            }
         }
 
         lines.Add("=== CURRENT ROOM CONTEXT ===");
@@ -1377,10 +1391,24 @@ public sealed class AgentOrchestrator
         // Inject agent memories
         if (memories is { Count: > 0 })
         {
-            lines.Add("=== YOUR MEMORIES ===");
-            foreach (var m in memories)
-                lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
-            lines.Add("");
+            var ownMemories = memories.Where(m => m.Category != "shared" || m.AgentId == agent.Id).ToList();
+            var sharedMemories = memories.Where(m => m.Category == "shared" && m.AgentId != agent.Id).ToList();
+
+            if (ownMemories.Count > 0)
+            {
+                lines.Add("=== YOUR MEMORIES ===");
+                foreach (var m in ownMemories)
+                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}");
+                lines.Add("");
+            }
+
+            if (sharedMemories.Count > 0)
+            {
+                lines.Add("=== SHARED KNOWLEDGE ===");
+                foreach (var m in sharedMemories)
+                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId})");
+                lines.Add("");
+            }
         }
 
         lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
@@ -1540,7 +1568,8 @@ public sealed class AgentOrchestrator
     }
 
     /// <summary>
-    /// Loads an agent's persisted memories from the database.
+    /// Loads an agent's persisted memories from the database,
+    /// including shared memories from all agents.
     /// </summary>
     private async Task<List<AgentMemory>> LoadAgentMemoriesAsync(string agentId)
     {
@@ -1549,7 +1578,7 @@ public sealed class AgentOrchestrator
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             var entities = await db.AgentMemories
-                .Where(m => m.AgentId == agentId)
+                .Where(m => m.AgentId == agentId || m.Category == "shared")
                 .OrderBy(m => m.Category)
                 .ThenBy(m => m.Key)
                 .ToListAsync();

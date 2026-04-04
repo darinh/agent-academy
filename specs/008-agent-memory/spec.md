@@ -3,7 +3,7 @@
 ## Purpose
 Defines a persistent per-agent knowledge store that survives across sessions. Agents can record lessons, decisions, patterns, and risks — then recall them when working on related tasks.
 
-> **Status: Implemented** — Per-agent memory store with REMEMBER (upsert), RECALL (LIKE search), LIST_MEMORIES, and FORGET commands. No memory cap. Memories injected into agent prompts as `=== YOUR MEMORIES ===` section.
+> **Status: Implemented** — Per-agent memory store with REMEMBER (upsert), RECALL (LIKE search), LIST_MEMORIES, and FORGET commands. No memory cap. Memories injected into agent prompts as `=== YOUR MEMORIES ===` section. Cross-agent sharing via `shared` category — memories with `category=shared` are visible to all agents in RECALL, LIST_MEMORIES, and prompt injection (shown in `=== SHARED KNOWLEDGE ===` section). FORGET still scoped to own memories only.
 
 ## Motivation
 Agents currently lose all learned context between orchestrator rounds and server restarts. Patterns discovered during code review, architectural decisions made during planning, and gotchas encountered during implementation are lost unless manually documented in specs or conversation.
@@ -81,6 +81,7 @@ public record AgentMemory(
 | `mapping` | How entities/models map to each other | Architect |
 | `verification` | What to check and how | Reviewer |
 | `gap-pattern` | Recurring gaps in the codebase | All |
+| `shared` | Universal knowledge visible to all agents (cross-agent) | All |
 
 ## Context Integration
 
@@ -100,24 +101,42 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 
 ## Isolation
 
-- Agents can only read/write their own memories
-- No cross-agent memory access (prevents information leakage between roles)
+- Agents can only read/write their own memories for all categories except `shared`
+- Memories with `category=shared` are visible to all agents in RECALL, LIST_MEMORIES, and prompt injection
+- Shared memories are stored under the creating agent's `(AgentId, Key)` — no special namespace
+- FORGET only deletes the calling agent's own memories (including shared ones they created)
 - Human can view all agent memories via API for debugging
 - `FORGET` requires a confirmation step (logged as audit event)
+
+### Prompt Injection for Shared Knowledge
+
+When building prompts, shared memories from other agents appear in a separate section:
+
+```
+=== YOUR MEMORIES ===
+[pattern] ef-core-include: EF Core requires explicit Include() for navigation properties.
+
+=== SHARED KNOWLEDGE ===
+[shared] build-command: dotnet build AgentAcademy.sln (from: architect-1)
+[shared] db-choice: We chose SQLite for single-user simplicity (from: planner-1)
+```
+
+Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===` with category `[shared]`.
 
 ## Invariants
 
 - Memory keys are unique per agent
 - REMEMBER with an existing key updates the value (upsert semantics)
 - All memory operations are audit-logged
-- Memory content is never included in other agents' prompts
+- Non-shared memory content is never included in other agents' prompts
+- Shared memory content is included in all agents' prompts (in a `=== SHARED KNOWLEDGE ===` section)
 
 ## Known Gaps
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
 - **Memory import/export**: No bulk operations defined. Should agents be able to seed memories from a file?
 - **Memory decay**: No TTL or staleness detection. Old memories may become incorrect as the codebase evolves.
-- **Cross-agent knowledge sharing**: Intentionally prohibited for isolation. But some knowledge (like "the build command is X") is universal. Consider a `shared` category visible to all?
+- ~~**Cross-agent knowledge sharing**: Intentionally prohibited for isolation. But some knowledge (like "the build command is X") is universal. Consider a `shared` category visible to all?~~ **Resolved** — `shared` category added. Memories with `category=shared` are visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. FORGET scoped to own memories.
 
 ## Search Implementation
 
@@ -150,3 +169,4 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 | 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system |
 | 2026-03-28 | Implemented: REMEMBER, RECALL, LIST_MEMORIES, FORGET. Removed 50-memory cap. LIKE search for RECALL. | command-system-phase1 |
 | 2026-04-04 | Upgraded RECALL search from LIKE to FTS5 with BM25 ranking. Added fallback, triggers, migration. Known gap resolved. | fts5-memory-search |
+| 2026-04-04 | Added `shared` category for cross-agent knowledge sharing. Shared memories visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. Known gap resolved. | shared-memory-category |
