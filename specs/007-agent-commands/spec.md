@@ -611,7 +611,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 
 ## Known Gaps
 
-- **Command discovery**: How do agents learn what commands are available? Added to agent startup prompts as of commit `6117b4e` (2026-03-28). No `HELP` command yet — agents must reference startup prompt or remember syntax.
+- ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter (30 commands per 60 seconds). Implemented in `CommandRateLimiter` (`src/AgentAcademy.Server/Commands/CommandRateLimiter.cs`), integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited (already behind cookie auth). Limits are hardcoded — no runtime configuration yet.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.

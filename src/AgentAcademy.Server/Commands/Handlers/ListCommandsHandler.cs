@@ -47,6 +47,9 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["CLOSE_ROOM"] = "Archive a non-main room",
         ["CREATE_ROOM"] = "Create a new persistent collaboration room",
         ["REOPEN_ROOM"] = "Reopen an archived room for continued work",
+        ["INVITE_TO_ROOM"] = "Move another agent to a specified room",
+        ["RETURN_TO_MAIN"] = "Return to the main collaboration room",
+        ["ROOM_TOPIC"] = "Set or clear the topic description for a room",
         ["RESTART_SERVER"] = "Request a server restart via exit code 75",
     };
 
