@@ -14,29 +14,28 @@ public sealed class ShowDiffHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         var projectRoot = FindProjectRoot();
-        var args = "diff --stat";
 
-        // If a branch is specified, diff against it
-        if (command.Args.TryGetValue("branch", out var branchObj) && branchObj is string branch &&
-            !string.IsNullOrWhiteSpace(branch))
-        {
-            args = $"diff {EscapeArg(branch)} --stat -p";
-        }
-        else
-        {
-            // Default: show uncommitted changes
-            args = "diff --stat -p";
-        }
-
+        // Build argument list directly (not an Arguments string) to avoid
+        // shell-quoting issues with UseShellExecute = false
         var psi = new ProcessStartInfo
         {
             FileName = "git",
-            Arguments = $"--no-pager {args}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = projectRoot
         };
+        psi.ArgumentList.Add("--no-pager");
+        psi.ArgumentList.Add("diff");
+
+        if (command.Args.TryGetValue("branch", out var branchObj) && branchObj is string branch &&
+            !string.IsNullOrWhiteSpace(branch) && !branch.StartsWith('-'))
+        {
+            psi.ArgumentList.Add(branch);
+        }
+
+        psi.ArgumentList.Add("--stat");
+        psi.ArgumentList.Add("-p");
 
         try
         {
@@ -68,8 +67,6 @@ public sealed class ShowDiffHandler : ICommandHandler
             return command with { Status = CommandStatus.Error, Error = $"Diff failed: {ex.Message}" };
         }
     }
-
-    private static string EscapeArg(string arg) => $"'{arg.Replace("'", "'\\''")}'";
 
     private static string FindProjectRoot()
     {

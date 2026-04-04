@@ -27,29 +27,35 @@ public sealed class GitLogHandler : ICommandHandler
                 count = Math.Min(countInt, MaxCount);
         }
 
-        var args = $"--no-pager log --oneline --no-decorate -n {count}";
-
-        if (command.Args.TryGetValue("since", out var sinceObj) && sinceObj is string since &&
-            !string.IsNullOrWhiteSpace(since))
-        {
-            args += $" --since={EscapeArg(since)}";
-        }
-
-        if (command.Args.TryGetValue("file", out var fileObj) && fileObj is string file &&
-            !string.IsNullOrWhiteSpace(file))
-        {
-            args += $" -- {EscapeArg(file)}";
-        }
-
+        // Build argument list directly (not an Arguments string) to avoid
+        // shell-quoting issues with UseShellExecute = false
         var psi = new ProcessStartInfo
         {
             FileName = "git",
-            Arguments = args,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = projectRoot
         };
+        psi.ArgumentList.Add("--no-pager");
+        psi.ArgumentList.Add("log");
+        psi.ArgumentList.Add("--oneline");
+        psi.ArgumentList.Add("--no-decorate");
+        psi.ArgumentList.Add("-n");
+        psi.ArgumentList.Add(count.ToString());
+
+        if (command.Args.TryGetValue("since", out var sinceObj) && sinceObj is string since &&
+            !string.IsNullOrWhiteSpace(since))
+        {
+            psi.ArgumentList.Add($"--since={since}");
+        }
+
+        if (command.Args.TryGetValue("file", out var fileObj) && fileObj is string file &&
+            !string.IsNullOrWhiteSpace(file))
+        {
+            psi.ArgumentList.Add("--");
+            psi.ArgumentList.Add(file);
+        }
 
         try
         {
@@ -86,8 +92,6 @@ public sealed class GitLogHandler : ICommandHandler
             return command with { Status = CommandStatus.Error, Error = $"Git log failed: {ex.Message}" };
         }
     }
-
-    private static string EscapeArg(string arg) => $"'{arg.Replace("'", "'\\''")}'";
 
     private static string FindProjectRoot()
     {

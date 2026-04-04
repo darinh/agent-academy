@@ -37,20 +37,25 @@ public sealed class SearchCodeHandler : ICommandHandler
                 searchPath = full;
         }
 
-        // Build grep command
-        var globArg = "";
-        if (command.Args.TryGetValue("glob", out var globObj) && globObj is string glob && !string.IsNullOrWhiteSpace(glob))
-            globArg = $"--include={glob}";
-
+        // Build grep command using ArgumentList (not Arguments string) to avoid
+        // shell-quoting issues with UseShellExecute = false
         var psi = new ProcessStartInfo
         {
             FileName = "grep",
-            Arguments = $"-rn --color=never {globArg} -m {MaxResults} -- {EscapeArg(query)} {EscapeArg(searchPath)}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = projectRoot
         };
+        psi.ArgumentList.Add("-rn");
+        psi.ArgumentList.Add("--color=never");
+        if (command.Args.TryGetValue("glob", out var globObj) && globObj is string glob && !string.IsNullOrWhiteSpace(glob))
+            psi.ArgumentList.Add($"--include={glob}");
+        psi.ArgumentList.Add("-m");
+        psi.ArgumentList.Add(MaxResults.ToString());
+        psi.ArgumentList.Add("--");
+        psi.ArgumentList.Add(query);
+        psi.ArgumentList.Add(searchPath);
 
         try
         {
@@ -104,8 +109,6 @@ public sealed class SearchCodeHandler : ICommandHandler
             };
         }
     }
-
-    private static string EscapeArg(string arg) => $"'{arg.Replace("'", "'\\''")}'";
 
     private static string FindProjectRoot()
     {
