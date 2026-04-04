@@ -89,7 +89,7 @@ Per-agent permission boundaries:
 
 | Agent | Role | Allowed | Denied |
 |-------|------|---------|--------|
-| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | Arbitrary code execution |
+| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | Arbitrary code execution |
 | Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT` | Code execution |
 | Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT` | Spec write, task approve |
 | Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
@@ -164,6 +164,13 @@ These formalize existing capabilities with audit trails and structured output.
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
 | `MOVE_TO_ROOM` | `roomId` | Confirmation + room name | Updates agent location | `MoveToRoomHandler.cs` — validates room exists, calls MoveAgentAsync |
+
+#### Phase 1G: Room Lifecycle — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `CREATE_ROOM` | `name`, `description?` | Room ID, name, status | Creates a persistent collaboration room as a work context. Generates a slug-based ID. Posts a system welcome message with description. Publishes `RoomCreated` activity event. Planner or Human role required. | `CreateRoomHandler.cs` + `WorkspaceRuntime.CreateRoomAsync()` |
+| `REOPEN_ROOM` | `roomId` | Room ID, name, reopened status | Validates room is archived. Sets status to Idle. Publishes `RoomStatusChanged` activity event. Planner or Human role required. Exception-safe via try/catch for TOCTOU protection. | `ReopenRoomHandler.cs` + `WorkspaceRuntime.ReopenRoomAsync()` |
 
 #### Phase 1F: System — IMPLEMENTED
 
@@ -604,7 +611,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter (30 commands per 60 seconds). Implemented in `CommandRateLimiter` (`src/AgentAcademy.Server/Commands/CommandRateLimiter.cs`), integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited (already behind cookie auth). Limits are hardcoded — no runtime configuration yet.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
-- **Tier 2 room commands**: `RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `RESTORE_ROOM`, and `ROOM_TOPIC` remain planned. `CLOSE_ROOM` is now implemented with planner-only authorization and archive semantics.
+- **Tier 2 room commands**: `RETURN_TO_MAIN` and `INVITE_TO_ROOM` remain planned. `CLOSE_ROOM`, `CREATE_ROOM`, and `REOPEN_ROOM` are implemented with planner/human authorization. `LIST_ROOMS` supports optional `status=` filter with validation.
 
 ## Discord Agent Question Bridge
 
