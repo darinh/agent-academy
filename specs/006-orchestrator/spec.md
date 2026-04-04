@@ -191,7 +191,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 - Breakout rooms use fire-and-forget (`Task.Run`) — unobserved exceptions are logged but not surfaced to the caller
 - No concurrency control on simultaneous breakout rooms for the same agent
 - `LoadSpecContext` reads from the file system synchronously
-- Open-ended breakout and fix loops have no timeout or round cap — a stuck agent loops indefinitely until manually recalled
+- ~~Open-ended breakout and fix loops have no timeout or round cap~~ — **resolved**: stuck-detection tracks consecutive idle rounds (`MaxConsecutiveIdleRounds=5`) and enforces absolute cap (`MaxBreakoutRounds=200`). See spec 011.
 
 ## Revision History
 

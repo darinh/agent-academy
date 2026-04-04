@@ -333,7 +333,7 @@ Result: Server exits with code 75, wrapper restarts process
 - ~~`/api/health/instance` endpoint~~ — **Implemented** in `SystemController.cs`
 - ~~`RESTART_SERVER` command handler~~ — **Implemented**: `RestartServerHandler.cs`
 - ~~Startup crash recovery actions~~ — **Implemented**: crash-detected boot now closes active breakouts with `ClosedByRecovery`, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notification
-- Frontend health check and reconnect logic not yet implemented
+- ~~Frontend health check and reconnect logic not yet implemented~~ — **Implemented**: `healthCheck.ts` with `evaluateReconnect()`, global `RecoveryBanner` with 4 tones, reconnect/disconnect handling in `useWorkspace.ts`
 - ~~Breakout cancellation and stuck-detection controls are not yet implemented~~ — **Implemented**: `AgentOrchestrator.RunBreakoutLoopAsync` tracks consecutive idle rounds (no commands parsed) and enforces an absolute round cap. On detection, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room.
 - Persisted breakout close reasons currently cover `Completed`, `Recalled`, `ClosedByRecovery`, and `StuckDetected`; `Cancelled` is emitted on branch setup failure
 - No mechanism to prevent restart loops (crash → restart → crash → restart) — wrapper limits to 5 crash restarts
