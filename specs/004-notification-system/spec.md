@@ -131,7 +131,7 @@ Provider configuration is persisted in the `notification_configs` SQLite table v
 - Unique index on `(ProviderId, Key)` — enforced by the DB
 - Upsert via `INSERT ... ON CONFLICT DO UPDATE` (atomic, no race conditions)
 - On startup: saved configs are loaded, providers are configured and connected in a background `Task.Run` (non-blocking)
-- **Known limitation**: Config values (including secrets like bot tokens) are stored in plaintext. Acceptable for local single-user deployments; encryption is a separate enhancement.
+- **Config encryption**: Secret config values (e.g., Discord bot tokens) are encrypted at rest using ASP.NET Core Data Protection before persisting to `notification_configs` table. Non-secret values are stored in plaintext. Encryption uses a versioned `ENC.v1:` prefix for migration compatibility.
 
 ### Frontend Integration
 
@@ -357,7 +357,7 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - ~~No authentication on notification API endpoints~~ — **resolved**: System-wide `FallbackPolicy` in `Program.cs` requires `RequireAuthenticatedUser()` on all endpoints without `[AllowAnonymous]`. `NotificationController` has no `[AllowAnonymous]`, so all notification endpoints are protected when auth is enabled.
 - `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
 - Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
-- Provider config values (including secrets) stored in plaintext in SQLite — encryption enhancement pending
+- ~~Provider config values (including secrets) stored in plaintext in SQLite~~ — **resolved**: `ConfigEncryptionService` encrypts secret config values (Type = "secret" in schema) using ASP.NET Core Data Protection API before DB persistence. Versioned `ENC.v1:` prefix enables transparent migration of existing plaintext values. `TryDecrypt` API distinguishes decrypt failure from legitimate empty values. Explicit key-ring persistence at `~/.local/share/AgentAcademy/DataProtection-Keys/`.
 - Settings tab currently shows only Discord wizard; will need expansion for multiple providers
 - DiceBear avatar URLs are an external dependency — consider caching/bundling if availability matters
 - ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.

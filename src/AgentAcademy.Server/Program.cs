@@ -9,6 +9,7 @@ using AgentAcademy.Server.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Headers;
@@ -16,6 +17,13 @@ using System.Security.Claims;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Data Protection — explicit key persistence for encryption-at-rest
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AgentAcademy", "DataProtection-Keys")));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -255,6 +263,7 @@ builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
 
 // Notification system
+builder.Services.AddSingleton<ConfigEncryptionService>();
 builder.Services.AddSingleton<NotificationDeliveryTracker>();
 builder.Services.AddSingleton<NotificationManager>();
 builder.Services.AddSingleton<ConsoleNotificationProvider>();
@@ -356,6 +365,7 @@ _ = Task.Run(async () =>
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+    var encryption = scope.ServiceProvider.GetRequiredService<ConfigEncryptionService>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
     var savedConfigs = db.NotificationConfigs
@@ -368,7 +378,38 @@ _ = Task.Run(async () =>
         if (provider is null)
             continue;
 
-        var config = group.ToDictionary(c => c.Key, c => c.Value);
+        // Determine which fields are secrets from the provider schema
+        var schema = provider.GetConfigSchema();
+        var secretKeys = schema.Fields
+            .Where(f => string.Equals(f.Type, "secret", StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Decrypt secret values before passing to the provider
+        var config = new Dictionary<string, string>();
+        var failedKeys = new List<string>();
+        foreach (var entry in group)
+        {
+            if (secretKeys.Contains(entry.Key))
+            {
+                if (encryption.TryDecrypt(entry.Value, out var decrypted))
+                    config[entry.Key] = decrypted;
+                else
+                    failedKeys.Add(entry.Key);
+            }
+            else
+            {
+                config[entry.Key] = entry.Value;
+            }
+        }
+
+        if (failedKeys.Count > 0)
+        {
+            logger.LogWarning(
+                "Notification provider '{ProviderId}' has undecryptable config keys: {Keys}. Reconfiguration required.",
+                group.Key, string.Join(", ", failedKeys));
+            continue;
+        }
 
         try
         {

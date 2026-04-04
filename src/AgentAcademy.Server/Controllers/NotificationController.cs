@@ -16,17 +16,20 @@ public class NotificationController : ControllerBase
 {
     private readonly NotificationManager _manager;
     private readonly NotificationDeliveryTracker _tracker;
+    private readonly ConfigEncryptionService _encryption;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<NotificationController> _logger;
 
     public NotificationController(
         NotificationManager manager,
         NotificationDeliveryTracker tracker,
+        ConfigEncryptionService encryption,
         AgentAcademyDbContext db,
         ILogger<NotificationController> logger)
     {
         _manager = manager;
         _tracker = tracker;
+        _encryption = encryption;
         _db = db;
         _logger = logger;
     }
@@ -84,15 +87,27 @@ public class NotificationController : ControllerBase
         {
             await provider.ConfigureAsync(configuration, cancellationToken);
 
-            // Persist config to DB for auto-restore on restart (atomic upsert)
+            // Determine which fields are secrets from the provider schema
+            var schema = provider.GetConfigSchema();
+            var secretKeys = schema.Fields
+                .Where(f => string.Equals(f.Type, "secret", StringComparison.OrdinalIgnoreCase))
+                .Select(f => f.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Persist config to DB for auto-restore on restart (atomic upsert).
+            // Secret fields are encrypted before storage.
             var now = DateTime.UtcNow;
             foreach (var (key, value) in configuration)
             {
+                var storedValue = secretKeys.Contains(key)
+                    ? _encryption.Encrypt(value)
+                    : value;
+
                 await _db.Database.ExecuteSqlRawAsync(
                     @"INSERT INTO notification_configs (ProviderId, [Key], Value, UpdatedAt)
                       VALUES ({0}, {1}, {2}, {3})
                       ON CONFLICT(ProviderId, [Key]) DO UPDATE SET Value = {2}, UpdatedAt = {3}",
-                    [id, key, value, now],
+                    [id, key, storedValue, now],
                     cancellationToken);
             }
             return Ok(new { status = "configured", providerId = id });
