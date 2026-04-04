@@ -139,11 +139,6 @@ public sealed class WorkspaceRuntime
 
         var startupMainRoomId = await ResolveStartupMainRoomIdAsync(activeWorkspace);
 
-        if (CurrentCrashDetected)
-        {
-            await RecoverFromCrashAsync(startupMainRoomId);
-        }
-
         // Initialize agent locations for any agent not already tracked
         foreach (var agent in _catalog.Agents)
         {
@@ -1623,7 +1618,7 @@ public sealed class WorkspaceRuntime
 
         // Soft-delete: archive instead of removing (preserves messages for history)
         entity.Status = nameof(RoomStatus.Archived);
-        entity.ClosedReason = closeReason.ToString();
+        entity.CloseReason = closeReason.ToString();
         entity.UpdatedAt = DateTime.UtcNow;
 
         Publish(ActivityEventType.RoomClosed, entity.ParentRoomId, entity.AssignedAgentId, null,
@@ -1645,7 +1640,7 @@ public sealed class WorkspaceRuntime
 
         foreach (var breakoutId in activeBreakoutIds)
         {
-            await CloseBreakoutRoomAsync(breakoutId, BreakoutRoomCloseReason.ServerCrash);
+            await CloseBreakoutRoomAsync(breakoutId, BreakoutRoomCloseReason.ClosedByRecovery);
         }
 
         var activeBreakoutAssignments = await _db.BreakoutRooms

@@ -281,6 +281,12 @@ using (var scope = app.Services.CreateScope())
         mainRoomId = await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
     }
 
+    if (WorkspaceRuntime.CurrentCrashDetected)
+    {
+        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        await orchestrator.HandleStartupRecoveryAsync(mainRoomId);
+    }
+
 }
 
 // Register shutdown hook for graceful cleanup

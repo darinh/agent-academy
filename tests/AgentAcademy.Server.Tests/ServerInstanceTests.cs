@@ -218,6 +218,16 @@ public class ServerInstanceTests : IDisposable
         await _db.SaveChangesAsync();
         await _runtime.InitializeAsync();
 
+        var breakoutBeforeRecovery = await _db.BreakoutRooms.FindAsync("breakout-1");
+        Assert.NotNull(breakoutBeforeRecovery);
+        Assert.Equal(nameof(RoomStatus.Active), breakoutBeforeRecovery.Status);
+        Assert.Null(breakoutBeforeRecovery.CloseReason);
+
+        var engineerBeforeRecovery = await _db.AgentLocations.FindAsync("engineer-1");
+        Assert.NotNull(engineerBeforeRecovery);
+        Assert.Equal(nameof(AgentState.Working), engineerBeforeRecovery.State);
+        Assert.Equal("breakout-1", engineerBeforeRecovery.BreakoutRoomId);
+
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var scope = Substitute.For<IServiceScope>();
         var serviceProvider = Substitute.For<IServiceProvider>();

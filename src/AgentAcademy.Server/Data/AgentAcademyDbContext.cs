@@ -171,7 +171,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.ParentRoomId).IsRequired();
             entity.Property(e => e.AssignedAgentId).IsRequired();
             entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
-            entity.Property(e => e.ClosedReason).IsRequired(false);
+            entity.Property(e => e.CloseReason).IsRequired(false);
             entity.Property(e => e.TaskId).IsRequired(false);
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
