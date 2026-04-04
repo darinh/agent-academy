@@ -294,6 +294,58 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Returns true when the given room is the active workspace's main collaboration room
+    /// or the legacy catalog default room.
+    /// </summary>
+    public async Task<bool> IsMainCollaborationRoomAsync(string roomId)
+    {
+        var room = await _db.Rooms.FindAsync(roomId);
+        if (room is null)
+            return false;
+
+        if (room.Id == _catalog.DefaultRoomId)
+            return true;
+
+        var activeWorkspace = await GetActiveWorkspacePathAsync();
+        if (activeWorkspace is null || room.WorkspacePath != activeWorkspace)
+            return false;
+
+        return room.Name == _catalog.DefaultRoomName
+            || room.Name.EndsWith("Main Room", StringComparison.Ordinal)
+            || room.Name.EndsWith("Collaboration Room", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Archives a non-main collaboration room. Already archived rooms are a no-op.
+    /// </summary>
+    public async Task CloseRoomAsync(string roomId)
+    {
+        var room = await _db.Rooms.FindAsync(roomId)
+            ?? throw new InvalidOperationException($"Room '{roomId}' not found.");
+
+        if (await IsMainCollaborationRoomAsync(roomId))
+            throw new InvalidOperationException($"Room '{room.Name}' is the main collaboration room and cannot be closed.");
+
+        if (room.Status == nameof(RoomStatus.Archived))
+            return;
+
+        var participantCount = await _db.AgentLocations
+            .Where(l => l.RoomId == roomId && l.BreakoutRoomId == null)
+            .CountAsync();
+
+        if (participantCount > 0)
+            throw new InvalidOperationException($"Room '{room.Name}' has {participantCount} active participant(s) and cannot be closed.");
+
+        room.Status = nameof(RoomStatus.Archived);
+        room.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.RoomClosed, roomId, null, null,
+            $"Room archived: {room.Name}");
+
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
     /// Returns messages in a room with cursor-based pagination.
     /// Only returns non-DM messages from the active conversation session.
     /// </summary>

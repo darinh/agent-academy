@@ -49,6 +49,7 @@
             "SET_PLAN",
             "ADD_TASK_COMMENT",
             "RECALL_AGENT",
+            "CLOSE_ROOM",
             "MERGE_TASK",
             "SHELL",
             "RESTART_SERVER"

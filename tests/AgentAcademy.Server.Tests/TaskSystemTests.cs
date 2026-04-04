@@ -533,6 +533,139 @@ public class TaskSystemTests : IDisposable
         Assert.Equal("room-1", location.RoomId);
     }
 
+    // ── CLOSE_ROOM Command ─────────────────────────────────────
+
+    [Fact]
+    public async Task CloseRoom_Planner_CanArchiveEmptyRoom()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new CloseRoomHandler();
+        var (cmd, ctx) = MakeCommand("CLOSE_ROOM",
+            new() { ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var room = await runtime.GetRoomAsync("room-2");
+
+        Assert.NotNull(room);
+        Assert.Equal(RoomStatus.Archived, room!.Status);
+    }
+
+    [Fact]
+    public async Task CloseRoom_NonPlanner_Denied()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new CloseRoomHandler();
+        var (cmd, ctx) = MakeCommand("CLOSE_ROOM",
+            new() { ["roomId"] = "room-2" },
+            "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Contains("planner", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CloseRoom_MainRoom_ReturnsError()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        await runtime.InitializeAsync();
+
+        var handler = new CloseRoomHandler();
+        var (cmd, ctx) = MakeCommand("CLOSE_ROOM",
+            new() { ["roomId"] = "main" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("main collaboration room", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CloseRoom_WithParticipants_ReturnsError()
+    {
+        await EnsureRoom("room-2");
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
+        }
+
+        var handler = new CloseRoomHandler();
+        var (cmd, ctx) = MakeCommand("CLOSE_ROOM",
+            new() { ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("active participant", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CloseRoom_PublishesRoomClosedActivityEvent()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new CloseRoomHandler();
+        var (cmd, ctx) = MakeCommand("CLOSE_ROOM",
+            new() { ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var evt = await db.ActivityEvents
+            .Where(e => e.RoomId == "room-2" && e.Type == nameof(ActivityEventType.RoomClosed))
+            .OrderByDescending(e => e.OccurredAt)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(evt);
+        Assert.Contains("Room archived", evt!.Message);
+    }
+
+    [Fact]
+    public async Task CloseRoom_AlreadyArchived_IsNoOpSuccess()
+    {
+        await EnsureRoom("room-2");
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var room = await db.Rooms.FindAsync("room-2");
+            Assert.NotNull(room);
+
+            room!.Status = nameof(RoomStatus.Archived);
+            room.UpdatedAt = DateTime.UtcNow.AddMinutes(-5);
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new CloseRoomHandler();
+        var (cmd, ctx) = MakeCommand("CLOSE_ROOM",
+            new() { ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var payload = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(nameof(RoomStatus.Archived), payload["status"]);
+        Assert.Contains("already archived", payload["message"]!.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
     // ── Task Type in Task Creation ──────────────────────────────
 
     [Fact]
@@ -592,6 +725,17 @@ public class TaskSystemTests : IDisposable
 
         Assert.Single(result.Commands);
         Assert.Equal("RECALL_AGENT", result.Commands[0].Command);
+    }
+
+    [Fact]
+    public void CommandParser_RecognizesCloseRoom()
+    {
+        var parser = new CommandParser();
+        var result = parser.Parse("CLOSE_ROOM: roomId=room-2");
+
+        Assert.Single(result.Commands);
+        Assert.Equal("CLOSE_ROOM", result.Commands[0].Command);
+        Assert.Equal("room-2", result.Commands[0].Args["roomId"]);
     }
 
     [Fact]
