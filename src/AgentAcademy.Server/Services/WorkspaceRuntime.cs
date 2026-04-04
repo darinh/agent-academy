@@ -880,16 +880,36 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
-    /// Records a branch name on a task.
+    /// Records a branch name on a task. Branch metadata is write-once per task.
     /// </summary>
     public async Task<TaskSnapshot> UpdateTaskBranchAsync(string taskId, string branchName)
     {
+        if (string.IsNullOrWhiteSpace(taskId))
+            throw new ArgumentException("Task ID is required.", nameof(taskId));
+        if (string.IsNullOrWhiteSpace(branchName))
+            throw new ArgumentException("Branch name is required.", nameof(branchName));
+
         var entity = await _db.Tasks.FindAsync(taskId)
             ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-        entity.BranchName = branchName;
-        entity.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+
+        if (string.IsNullOrWhiteSpace(entity.BranchName))
+        {
+            entity.BranchName = branchName;
+            entity.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return BuildTaskSnapshot(entity);
+        }
+
+        if (string.Equals(entity.BranchName, branchName, StringComparison.Ordinal))
+            return BuildTaskSnapshot(entity);
+
+        _logger.LogError(
+            "Refusing to reassign branch for task {TaskId}: existing {ExistingBranch}, attempted {AttemptedBranch}",
+            taskId,
+            entity.BranchName,
+            branchName);
+        throw new InvalidOperationException(
+            $"Task '{taskId}' already has branch '{entity.BranchName}' and cannot be reassigned to '{branchName}'.");
     }
 
     /// <summary>
@@ -1735,11 +1755,32 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task SetBreakoutTaskIdAsync(string breakoutRoomId, string taskId)
     {
+        if (string.IsNullOrWhiteSpace(breakoutRoomId))
+            throw new ArgumentException("Breakout room ID is required.", nameof(breakoutRoomId));
+        if (string.IsNullOrWhiteSpace(taskId))
+            throw new ArgumentException("Task ID is required.", nameof(taskId));
+
         var entity = await _db.BreakoutRooms.FindAsync(breakoutRoomId)
             ?? throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' not found");
-        entity.TaskId = taskId;
-        entity.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
+
+        if (string.IsNullOrWhiteSpace(entity.TaskId))
+        {
+            entity.TaskId = taskId;
+            entity.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            return;
+        }
+
+        if (string.Equals(entity.TaskId, taskId, StringComparison.Ordinal))
+            return;
+
+        _logger.LogError(
+            "Refusing to relink breakout room {BreakoutRoomId}: existing task {ExistingTaskId}, attempted {AttemptedTaskId}",
+            breakoutRoomId,
+            entity.TaskId,
+            taskId);
+        throw new InvalidOperationException(
+            $"Breakout room '{breakoutRoomId}' is already linked to task '{entity.TaskId}' and cannot be reassigned to '{taskId}'.");
     }
 
     /// <summary>
@@ -1765,64 +1806,56 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
-    /// Ensures a TaskEntity exists for a breakout assignment.
-    /// Searches by title match, then room+status, then agent+status,
-    /// then any unassigned task without a branch.
-    /// Creates a new TaskEntity if none found.
-    /// Returns the TaskEntity ID.
+    /// Ensures a breakout room has a single, explicitly linked TaskEntity.
+    /// Task identity is keyed only by the breakout room's persisted TaskId.
     /// </summary>
     public async Task<string> EnsureTaskForBreakoutAsync(
-        string title, string description, string agentId, string roomId, string? currentPlan = null)
+        string breakoutRoomId,
+        string title,
+        string description,
+        string agentId,
+        string roomId,
+        string? currentPlan = null)
     {
-        var tasks = await _db.Tasks.ToListAsync();
+        if (string.IsNullOrWhiteSpace(breakoutRoomId))
+            throw new ArgumentException("Breakout room ID is required.", nameof(breakoutRoomId));
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("Title is required.", nameof(title));
+        if (string.IsNullOrWhiteSpace(description))
+            throw new ArgumentException("Description is required.", nameof(description));
+        if (string.IsNullOrWhiteSpace(agentId))
+            throw new ArgumentException("Agent ID is required.", nameof(agentId));
+        if (string.IsNullOrWhiteSpace(roomId))
+            throw new ArgumentException("Room ID is required.", nameof(roomId));
 
-        // 1. Exact title match (case-insensitive)
-        var match = tasks.FirstOrDefault(t =>
-            t.Title.Equals(title, StringComparison.OrdinalIgnoreCase));
+        var breakout = await _db.BreakoutRooms.FindAsync(breakoutRoomId)
+            ?? throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' not found");
 
-        // 2. Same room + Active/Queued status
-        match ??= tasks.FirstOrDefault(t =>
-            t.RoomId == roomId &&
-            (t.Status == nameof(Shared.Models.TaskStatus.Active) ||
-             t.Status == nameof(Shared.Models.TaskStatus.Queued)));
+        if (!string.Equals(breakout.ParentRoomId, roomId, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"Breakout room '{breakoutRoomId}' belongs to room '{breakout.ParentRoomId}', not '{roomId}'.");
 
-        // 3. Same agent + Active/Queued status
-        match ??= tasks.FirstOrDefault(t =>
-            t.AssignedAgentId == agentId &&
-            (t.Status == nameof(Shared.Models.TaskStatus.Active) ||
-             t.Status == nameof(Shared.Models.TaskStatus.Queued)));
+        if (!string.Equals(breakout.AssignedAgentId, agentId, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"Breakout room '{breakoutRoomId}' is assigned to '{breakout.AssignedAgentId}', not '{agentId}'.");
 
-        // 4. Any Active/Queued task without a branch (likely created by
-        //    CREATE_TASK in a different room and not yet assigned to a breakout).
-        //    Only use this fallback if there's exactly one candidate to avoid
-        //    picking the wrong task when multiple are pending.
-        if (match is null)
+        if (!string.IsNullOrWhiteSpace(breakout.TaskId))
         {
-            var unassigned = tasks.Where(t =>
-                string.IsNullOrEmpty(t.BranchName) &&
-                (t.Status == nameof(Shared.Models.TaskStatus.Active) ||
-                 t.Status == nameof(Shared.Models.TaskStatus.Queued)))
-                .ToList();
+            var existing = await _db.Tasks.FindAsync(breakout.TaskId);
+            if (existing is null)
+            {
+                _logger.LogError(
+                    "Breakout room {BreakoutRoomId} references missing task {TaskId}",
+                    breakoutRoomId,
+                    breakout.TaskId);
+                throw new InvalidOperationException(
+                    $"Breakout room '{breakoutRoomId}' references missing task '{breakout.TaskId}'.");
+            }
 
-            if (unassigned.Count == 1)
-            {
-                match = unassigned[0];
-                _logger.LogInformation(
-                    "Matched breakout \"{Title}\" to existing task \"{TaskTitle}\" (sole unassigned task)",
-                    title, match.Title);
-            }
-            else if (unassigned.Count > 1)
-            {
-                _logger.LogWarning(
-                    "Found {Count} unassigned tasks — cannot auto-match breakout \"{Title}\". Creating new TaskEntity.",
-                    unassigned.Count, title);
-            }
+            return existing.Id;
         }
 
-        if (match is not null)
-            return match.Id;
-
-        // Create a new TaskEntity for this breakout assignment
+        // Create a new TaskEntity for this breakout assignment and link it immediately.
         var now = DateTime.UtcNow;
         var taskId = Guid.NewGuid().ToString("N");
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
@@ -1850,9 +1883,15 @@ public sealed class WorkspaceRuntime
             UpdatedAt = now
         };
         _db.Tasks.Add(entity);
+        breakout.TaskId = taskId;
+        breakout.UpdatedAt = now;
         await _db.SaveChangesAsync();
 
-        _logger.LogInformation("Created TaskEntity {TaskId} for breakout assignment: {Title}", taskId, title);
+        _logger.LogInformation(
+            "Created TaskEntity {TaskId} for breakout {BreakoutRoomId}: {Title}",
+            taskId,
+            breakoutRoomId,
+            title);
         return taskId;
     }
 

@@ -518,94 +518,72 @@ public class BranchWorkflowTests : IDisposable
         return (command, context);
     }
 
-    // ── Task Matching & Branch Persistence Tests ────────────────
+    // ── Breakout Task Identity & Branch Persistence Tests ───────
 
     [Fact]
-    public async Task EnsureTaskForBreakout_FindsByExactTitle()
+    public async Task EnsureTaskForBreakout_CreatesAndLinksTaskForBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        await EnsureRoom(scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>(), "room-1");
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
 
-        // Pre-create a task with a known title
-        await runtime.CreateTaskAsync(new TaskAssignmentRequest(
-            Title: "Fix Login Bug",
-            Description: "Fix the login bug",
-            SuccessCriteria: "Login works",
-            RoomId: "room-1",
-            PreferredRoles: ["SoftwareEngineer"]));
-
-        // EnsureTaskForBreakout should find it by title
         var taskId = await runtime.EnsureTaskForBreakoutAsync(
-            "Fix Login Bug", "desc", "engineer-1", "room-1");
+            breakout.Id, "Fix Login Bug", "desc", "engineer-1", "room-1");
 
         var task = await runtime.GetTaskAsync(taskId);
         Assert.NotNull(task);
         Assert.Equal("Fix Login Bug", task.Title);
+        Assert.Equal(taskId, await runtime.GetBreakoutTaskIdAsync(breakout.Id));
     }
 
     [Fact]
-    public async Task EnsureTaskForBreakout_CaseInsensitiveMatch()
+    public async Task EnsureTaskForBreakout_ReturnsExistingLinkedTaskForSameBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        await EnsureRoom(scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>(), "room-1");
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
 
-        await runtime.CreateTaskAsync(new TaskAssignmentRequest(
-            Title: "Fix Login Bug",
-            Description: "desc",
-            SuccessCriteria: "works",
-            RoomId: "room-1",
-            PreferredRoles: []));
+        var firstTaskId = await runtime.EnsureTaskForBreakoutAsync(
+            breakout.Id, "Fix Login Bug", "desc", "engineer-1", "room-1");
+        var secondTaskId = await runtime.EnsureTaskForBreakoutAsync(
+            breakout.Id, "Different Title", "different desc", "engineer-1", "room-1");
 
-        var taskId = await runtime.EnsureTaskForBreakoutAsync(
-            "fix login bug", "desc", "engineer-1", "different-room");
-
-        var task = await runtime.GetTaskAsync(taskId);
-        Assert.Equal("Fix Login Bug", task!.Title);
+        Assert.Equal(firstTaskId, secondTaskId);
     }
 
     [Fact]
-    public async Task EnsureTaskForBreakout_CreatesNewWhenNoMatch()
-    {
-        using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        await EnsureRoom(scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>(), "room-1");
-
-        var taskId = await runtime.EnsureTaskForBreakoutAsync(
-            "Brand New Task", "description", "engineer-1", "room-1");
-
-        var task = await runtime.GetTaskAsync(taskId);
-        Assert.NotNull(task);
-        Assert.Equal("Brand New Task", task.Title);
-        Assert.Equal(TaskStatus.Active, task.Status);
-        Assert.Equal("engineer-1", task.AssignedAgentId);
-    }
-
-    [Fact]
-    public async Task EnsureTaskForBreakout_FindsSoleUnassignedTask()
+    public async Task EnsureTaskForBreakout_OverlappingBreakoutsGetDistinctTasksAndBranches()
     {
         using var scope = _serviceProvider.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         await EnsureRoom(db, "room-2");
+        var breakoutOne = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Task One");
+        var breakoutTwo = await runtime.CreateBreakoutRoomAsync("room-2", "engineer-1", "BR: Task Two");
 
-        // Create a task in room-2 (different room, no matching title, no agent match)
-        await runtime.CreateTaskAsync(new TaskAssignmentRequest(
-            Title: "Implement Feature X",
-            Description: "details",
-            SuccessCriteria: "works",
-            RoomId: "room-2",
-            PreferredRoles: []));
+        var taskOneId = await runtime.EnsureTaskForBreakoutAsync(
+            breakoutOne.Id, "Task One", "description one", "engineer-1", "room-1");
 
-        // EnsureTaskForBreakout with different title and different room
-        // should still find it because it's the sole unassigned task
-        var taskId = await runtime.EnsureTaskForBreakoutAsync(
-            "Feature X Implementation", "desc", "engineer-1", "room-1");
+        // Simulate overlapping setup: task one exists but has not yet been assigned a branch.
+        var taskTwoId = await runtime.EnsureTaskForBreakoutAsync(
+            breakoutTwo.Id, "Task Two", "description two", "engineer-1", "room-2");
 
-        var task = await runtime.GetTaskAsync(taskId);
-        Assert.Equal("Implement Feature X", task!.Title);
+        Assert.NotEqual(taskOneId, taskTwoId);
+
+        await runtime.UpdateTaskBranchAsync(taskOneId, "task/task-one-abc123");
+        await runtime.UpdateTaskBranchAsync(taskTwoId, "task/task-two-def456");
+
+        var taskOne = await runtime.GetTaskAsync(taskOneId);
+        var taskTwo = await runtime.GetTaskAsync(taskTwoId);
+        Assert.Equal("task/task-one-abc123", taskOne!.BranchName);
+        Assert.Equal("task/task-two-def456", taskTwo!.BranchName);
+        Assert.Equal(taskOneId, await runtime.GetBreakoutTaskIdAsync(breakoutOne.Id));
+        Assert.Equal(taskTwoId, await runtime.GetBreakoutTaskIdAsync(breakoutTwo.Id));
     }
 
     [Fact]
@@ -621,6 +599,39 @@ public class BranchWorkflowTests : IDisposable
 
         var storedId = await runtime.GetBreakoutTaskIdAsync(br.Id);
         Assert.Equal("task-123", storedId);
+    }
+
+    [Fact]
+    public async Task SetBreakoutTaskId_DifferentExistingLink_Throws()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+
+        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Test");
+        await runtime.SetBreakoutTaskIdAsync(breakout.Id, "task-123");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            runtime.SetBreakoutTaskIdAsync(breakout.Id, "task-456"));
+
+        Assert.Contains("already linked", ex.Message);
+    }
+
+    [Fact]
+    public async Task UpdateTaskBranch_DifferentExistingBranch_Throws()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Active), branchName: null);
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        await runtime.UpdateTaskBranchAsync(taskId, "task/original-abc123");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            runtime.UpdateTaskBranchAsync(taskId, "task/reassigned-def456"));
+
+        Assert.Contains("cannot be reassigned", ex.Message);
     }
 
     [Fact]

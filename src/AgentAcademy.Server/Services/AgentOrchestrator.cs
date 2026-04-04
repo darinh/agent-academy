@@ -542,12 +542,11 @@ public sealed class AgentOrchestrator
         try
         {
             var taskId = await runtime.EnsureTaskForBreakoutAsync(
-                assignment.Title, descriptionWithCriteria, agent.Id, roomId,
+                br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
                 BuildAssignmentPlanContent(assignment));
 
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
             await runtime.UpdateTaskBranchAsync(taskId, taskBranch);
-            await runtime.SetBreakoutTaskIdAsync(br.Id, taskId);
             var task = await runtime.GetTaskAsync(taskId);
             var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
                 ? task.CurrentPlan

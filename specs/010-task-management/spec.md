@@ -206,7 +206,8 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 ### Assignment Behavior
 
 - Task assignment creates a `BreakoutRoomEntity` and a `TaskItemEntity` linked to it
-- The orchestrator ensures or creates the linked `TaskEntity` and records the generated branch name
+- The orchestrator ensures the breakout room has a persisted `TaskId`; if none exists yet, it creates a new `TaskEntity` for that breakout and stores the link before branch creation continues
+- The generated branch name is written exactly once to the linked task and is never reassigned from room, agent, or title heuristics
 - The system posts an assignment notice in the main room and moves the assignee into the breakout room
 
 ### Completion Flow
@@ -219,17 +220,14 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 6. On successful merge → task status moves to `Completed`, merge commit SHA recorded on TaskEntity
 7. On merge conflict → merge is aborted, the task returns to `Approved`, and an error is returned to the caller
 
-### Task Matching on Assignment
+### Task Identity on Assignment
 
-When a task is assigned, the orchestrator ensures a `TaskEntity` exists via a cascading lookup:
+When a task is assigned, the breakout room's persisted `TaskId` is the only source of truth for the linked `TaskEntity`:
 
-1. Exact title match (case-insensitive)
-2. Same room + Active/Queued status
-3. Same agent + Active/Queued status
-4. Sole unassigned task without a branch (single-candidate heuristic)
-5. Fallback: create a new `TaskEntity`
+1. If the breakout room already has a `TaskId`, the orchestrator reuses that task
+2. Otherwise, it creates a new `TaskEntity`, stores the new `TaskId` on the breakout room, and then records the generated branch on that task
 
-The currently shipped task-assignment path does not create a `BreakoutRoomEntity`, so no breakout linkage is recorded during assignment.
+The branch workflow must not infer task identity from title matches, room status, agent status, or "unassigned task" heuristics. If a write would replace a different existing `BranchName`, the operation fails and logs the conflict instead of mutating task metadata.
 
 ### Known Gaps
 
