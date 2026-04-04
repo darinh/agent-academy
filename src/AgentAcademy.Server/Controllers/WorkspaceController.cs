@@ -154,7 +154,11 @@ public class WorkspaceController : ControllerBase
             // Auto-create spec generation task when project has no specs
             if (!scan.HasSpecs)
             {
-                var taskRequest = new TaskAssignmentRequest(
+                // Check if a spec task already exists to avoid duplicates on repeated onboards
+                var existingSpecTask = await _runtime.FindTaskByTitleAsync("Generate Project Specification");
+                if (existingSpecTask is null)
+                {
+                    var taskRequest = new TaskAssignmentRequest(
                     Title: "Generate Project Specification",
                     Description:
                         $"Analyze the codebase at '{resolved}' and generate a comprehensive project specification " +
@@ -184,6 +188,7 @@ public class WorkspaceController : ControllerBase
                 {
                     _logger.LogWarning(ex, "Spec task creation failed for '{Path}'; onboard succeeded without it", resolved);
                     return Ok(new OnboardResult(Scan: scan, Workspace: meta));
+                }
                 }
             }
 

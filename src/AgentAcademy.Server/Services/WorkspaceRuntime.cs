@@ -910,6 +910,20 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Finds a task by title. Returns the first non-cancelled match, or null.
+    /// </summary>
+    public async Task<TaskSnapshot?> FindTaskByTitleAsync(string title)
+    {
+        var entity = await _db.Tasks
+            .Where(t => t.Title == title && t.Status != nameof(Shared.Models.TaskStatus.Cancelled))
+            .OrderByDescending(t => t.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (entity is null) return null;
+        var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == entity.Id);
+        return BuildTaskSnapshot(entity, commentCount);
+    }
+
+    /// <summary>
     /// Assigns an agent to a task. Validates the agent exists in the catalog.
     /// </summary>
     public async Task<TaskSnapshot> AssignTaskAsync(string taskId, string agentId, string agentName)
