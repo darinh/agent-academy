@@ -714,4 +714,402 @@ public class BranchWorkflowTests : IDisposable
 
         Assert.Equal(TaskStatus.Approved, approved.Status);
     }
+
+    // ── REBASE_TASK Tests ──────────────────────────────────────
+
+    [Fact]
+    public async Task RebaseTask_MissingTaskId_ReturnsValidationError()
+    {
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK", new());
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("taskId", result.Error!);
+    }
+
+    [Fact]
+    public async Task RebaseTask_TaskNotFound_ReturnsNotFound()
+    {
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = "nonexistent-task" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RebaseTask_UnassignedEngineer_Denied()
+    {
+        var taskId = await CreateTestTask(assignedAgentId: "other-agent");
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Equal(CommandErrorCode.Permission, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RebaseTask_AssignedEngineer_Allowed()
+    {
+        var branchName = "task/rebase-assigned";
+        CreateFeatureBranchWithCommit(branchName, "assigned.txt", "content");
+        var taskId = await CreateTestTask(branchName: branchName, assignedAgentId: "engineer-1");
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+    }
+
+    [Fact]
+    public async Task RebaseTask_Reviewer_CanRebaseAnyTask()
+    {
+        var branchName = "task/rebase-reviewer";
+        CreateFeatureBranchWithCommit(branchName, "reviewer-rebase.txt", "content");
+        var taskId = await CreateTestTask(branchName: branchName, assignedAgentId: "engineer-1");
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+    }
+
+    [Fact]
+    public async Task RebaseTask_NoBranch_ReturnsConflictError()
+    {
+        var taskId = await CreateTestTask(branchName: null);
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+        Assert.Contains("no branch", result.Error!);
+    }
+
+    [Fact]
+    public async Task RebaseTask_CompletedTask_Rejected()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Completed));
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Completed", result.Error!);
+    }
+
+    [Fact]
+    public async Task RebaseTask_CancelledTask_Rejected()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Cancelled));
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Cancelled", result.Error!);
+    }
+
+    [Fact]
+    public async Task RebaseTask_SuccessfulRebase_ReturnsNewHead()
+    {
+        // Create a feature branch with a file
+        var branchName = "task/rebase-test-clean";
+        CreateFeatureBranchWithCommit(branchName, "feature.txt", "feature content");
+
+        // Add another commit to develop so there's something to rebase onto
+        File.WriteAllText(Path.Combine(_repoRoot, "develop-change.txt"), "develop content\n");
+        RunGitInRepo("add", "develop-change.txt");
+        RunGitInRepo("commit", "-m", "Add develop-change.txt");
+
+        var taskId = await CreateTestTask(branchName: branchName);
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        Assert.NotNull(result.Result);
+        var resultDict = (Dictionary<string, object?>)result.Result;
+        Assert.NotNull(resultDict["newHead"]);
+        Assert.Contains("rebased", ((string)resultDict["message"]!));
+    }
+
+    [Fact]
+    public async Task RebaseTask_WithConflict_ReturnsConflictDetails()
+    {
+        // Create a feature branch that modifies README.md
+        var branchName = "task/rebase-test-conflict";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature version\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on feature");
+        RunGitInRepo("checkout", "develop");
+
+        // Add a conflicting change to develop
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop version\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on develop");
+
+        var taskId = await CreateTestTask(branchName: branchName);
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+        Assert.Contains("README.md", result.Error!);
+    }
+
+    [Fact]
+    public async Task RebaseTask_DryRun_NoConflicts_ReportsClean()
+    {
+        var branchName = "task/rebase-dry-clean";
+        CreateFeatureBranchWithCommit(branchName, "dry-clean.txt", "content");
+
+        var taskId = await CreateTestTask(branchName: branchName);
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId, ["dryRun"] = "true" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        Assert.False((bool)resultDict["hasConflicts"]!);
+    }
+
+    [Fact]
+    public async Task RebaseTask_DryRun_WithConflicts_ReportsConflictFiles()
+    {
+        // Create a feature branch that modifies README.md
+        var branchName = "task/rebase-dry-conflict";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature dry-run\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on feature");
+        RunGitInRepo("checkout", "develop");
+
+        // Add conflicting change to develop
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop dry-run\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on develop");
+
+        var taskId = await CreateTestTask(branchName: branchName);
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["taskId"] = taskId, ["dryRun"] = "true" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var resultDict = (Dictionary<string, object?>)result.Result!;
+        Assert.True((bool)resultDict["hasConflicts"]!);
+        var conflictFiles = (IReadOnlyList<string>)resultDict["conflictingFiles"]!;
+        Assert.Contains("README.md", conflictFiles);
+    }
+
+    [Fact]
+    public async Task RebaseTask_ParsesTaskIdFromValue()
+    {
+        var taskId = await CreateTestTask(branchName: null);
+        var handler = new RebaseTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("REBASE_TASK",
+            new() { ["value"] = taskId });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        // Should find the task (will fail on "no branch" not "not found")
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+        Assert.Contains("no branch", result.Error!);
+    }
+
+    // ── MERGE_TASK Conflict Reporting Tests ────────────────────
+
+    [Fact]
+    public async Task MergeTask_WithConflict_ReportsConflictingFiles()
+    {
+        // Create a feature branch that modifies README.md
+        var branchName = "task/merge-conflict-test";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature merge-conflict\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on feature");
+        RunGitInRepo("checkout", "develop");
+
+        // Add conflicting change to develop
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop merge-conflict\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on develop");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: branchName);
+        var handler = new MergeTaskHandler(_gitService);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("REBASE_TASK", result.Error!);
+    }
+
+    // ── GitService Rebase & Conflict Detection Tests ───────────
+
+    [Fact]
+    public async Task DetectMergeConflicts_NoConflict_ReturnsFalse()
+    {
+        var branchName = "task/detect-no-conflict";
+        CreateFeatureBranchWithCommit(branchName, "detect-clean.txt", "clean");
+
+        var result = await _gitService.DetectMergeConflictsAsync(branchName);
+
+        Assert.False(result.HasConflicts);
+        Assert.Empty(result.ConflictingFiles);
+    }
+
+    [Fact]
+    public async Task DetectMergeConflicts_WithConflict_ReturnsTrue()
+    {
+        var branchName = "task/detect-with-conflict";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature detect\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md");
+        RunGitInRepo("checkout", "develop");
+
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop detect\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on develop");
+
+        var result = await _gitService.DetectMergeConflictsAsync(branchName);
+
+        Assert.True(result.HasConflicts);
+        Assert.Contains("README.md", result.ConflictingFiles);
+    }
+
+    [Fact]
+    public async Task DetectMergeConflicts_LeavesWorkingTreeClean()
+    {
+        var branchName = "task/detect-clean-tree";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature clean-tree\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md");
+        RunGitInRepo("checkout", "develop");
+
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop clean-tree\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README.md on develop");
+
+        await _gitService.DetectMergeConflictsAsync(branchName);
+
+        // After detection, should be on develop with no pending merge
+        var currentBranch = RunGitInRepo("rev-parse", "--abbrev-ref", "HEAD");
+        Assert.Equal("develop", currentBranch);
+
+        // Check only tracked-file status (ignore untracked test artifacts)
+        var status = RunGitInRepo("status", "--porcelain", "-uno");
+        Assert.Empty(status);
+    }
+
+    [Fact]
+    public async Task RebaseAsync_CleanRebase_ReturnsNewHead()
+    {
+        var branchName = "task/rebase-clean-direct";
+        CreateFeatureBranchWithCommit(branchName, "rebase-direct.txt", "content");
+
+        // Advance develop
+        File.WriteAllText(Path.Combine(_repoRoot, "advance.txt"), "new develop commit\n");
+        RunGitInRepo("add", "advance.txt");
+        RunGitInRepo("commit", "-m", "Advance develop");
+
+        var newHead = await _gitService.RebaseAsync(branchName);
+
+        Assert.False(string.IsNullOrWhiteSpace(newHead));
+
+        // Should be back on develop
+        var currentBranch = RunGitInRepo("rev-parse", "--abbrev-ref", "HEAD");
+        Assert.Equal("develop", currentBranch);
+    }
+
+    [Fact]
+    public async Task RebaseAsync_WithConflict_ThrowsMergeConflictException()
+    {
+        var branchName = "task/rebase-conflict-direct";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature rebase-conflict\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README on feature");
+        RunGitInRepo("checkout", "develop");
+
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop rebase-conflict\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README on develop");
+
+        var ex = await Assert.ThrowsAsync<MergeConflictException>(
+            () => _gitService.RebaseAsync(branchName));
+
+        Assert.Equal(branchName, ex.Branch);
+        Assert.Contains("README.md", ex.ConflictingFiles);
+    }
+
+    [Fact]
+    public async Task RebaseAsync_ProtectedBranch_Throws()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _gitService.RebaseAsync("develop"));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _gitService.RebaseAsync("main"));
+    }
+
+    [Fact]
+    public async Task RebaseAsync_WithConflict_LeavesRepoClean()
+    {
+        var branchName = "task/rebase-conflict-clean";
+        RunGitInRepo("checkout", "-b", branchName);
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "feature conflict-clean\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README on feature");
+        RunGitInRepo("checkout", "develop");
+
+        File.WriteAllText(Path.Combine(_repoRoot, "README.md"), "develop conflict-clean\n");
+        RunGitInRepo("add", "README.md");
+        RunGitInRepo("commit", "-m", "Modify README on develop");
+
+        try { await _gitService.RebaseAsync(branchName); }
+        catch (MergeConflictException) { }
+
+        // Should be back on develop with clean state
+        var currentBranch = RunGitInRepo("rev-parse", "--abbrev-ref", "HEAD");
+        Assert.Equal("develop", currentBranch);
+
+        // Check only tracked-file status (ignore untracked test artifacts)
+        var status = RunGitInRepo("status", "--porcelain", "-uno");
+        Assert.Empty(status);
+    }
 }

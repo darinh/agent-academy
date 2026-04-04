@@ -35,6 +35,27 @@ public sealed class MergeTaskHandler : ICommandHandler
                 $"No conventional commit prefix defined for TaskType '{taskType}'.")
         };
 
+    /// <summary>
+    /// Post-merge-failure conflict detection. Returns a human-readable conflict
+    /// summary, or null if detection itself fails.
+    /// </summary>
+    private async Task<string?> TryDetectConflictsAsync(string branch)
+    {
+        try
+        {
+            var result = await _gitService.DetectMergeConflictsAsync(branch);
+            if (result.HasConflicts && result.ConflictingFiles.Count > 0)
+            {
+                return string.Join(", ", result.ConflictingFiles);
+            }
+        }
+        catch
+        {
+            // Conflict detection is best-effort — don't hide the original merge error
+        }
+        return null;
+    }
+
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         if (!string.Equals(context.AgentRole, "Planner", StringComparison.OrdinalIgnoreCase) &&
@@ -143,6 +164,19 @@ public sealed class MergeTaskHandler : ICommandHandler
                     Status = CommandStatus.Error,
                     ErrorCode = CommandErrorCode.Execution,
                     Error = $"Merge failed: {ex.Message} (task status recovery also failed: {recoveryEx.Message})"
+                };
+            }
+
+            // Attempt to detect which files conflicted for actionable feedback
+            var conflictHint = await TryDetectConflictsAsync(task.BranchName!);
+
+            if (conflictHint is not null)
+            {
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Conflict,
+                    Error = $"Merge conflict: {conflictHint}. Use REBASE_TASK to rebase the branch onto develop, then retry."
                 };
             }
 
