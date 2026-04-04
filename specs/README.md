@@ -16,7 +16,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [007](./007-agent-commands/spec.md) | Agent Command System | Partial |
 | [008](./008-agent-memory/spec.md) | Agent Memory System | Implemented |
 | [009](./009-spec-management/spec.md) | Spec Management | Implemented |
-| [010](./010-task-management/spec.md) | Task Management & Git Workflow | Partial |
+| [010](./010-task-management/spec.md) | Task Management & Git Workflow | Implemented |
 | [011](./011-state-recovery/spec.md) | State Recovery and Supervised Restart | Partial |
 | [012](./012-consultant-api/spec.md) | Consultant API | Implemented |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |

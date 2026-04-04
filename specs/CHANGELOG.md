@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **010-task-management**: Reconciled spec with code — Partial → Implemented. Documented all TaskSnapshot/TaskEntity fields (including `AwaitingValidation` status, `CommentCount`, `RoomId`, validation/implementation status fields). Added command table (section 10) and WorkspaceRuntime method index (section 11). Documented auto-spec dedup via `FindTaskByTitleAsync`. Noted `APPROVE_TASK`/`REQUEST_CHANGES` lack role gates (convention only). Documented write-once invariants for branch and task identity. Removed non-existent API endpoints (`PUT /tests`, review REST endpoints). Updated frontend section to reference implemented `TaskListPanel`/`TaskStatePanel` components.
+
 ### Added
 - **007-agent-commands**: Room-as-context — `CREATE_ROOM` command lets planners (and humans via UI) create persistent collaboration rooms as work contexts, without requiring a task first. `REOPEN_ROOM` restores archived rooms for continued work. `LIST_ROOMS` now supports `status=` filter. `CLOSE_ROOM` also accepts human role for frontend use. Planner system prompt updated with room lifecycle guidance (when to create, reopen, and close rooms). 13 new tests.
 

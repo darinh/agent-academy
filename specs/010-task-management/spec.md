@@ -1,6 +1,6 @@
 # 010 — Task Management & Git Workflow
 
-**Status**: Partial
+**Status**: Implemented
 
 ## Purpose
 
@@ -23,20 +23,32 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 
 ---
 
-## 1. Task Model (Extended)
+## 1. Task Model
 
-### Current State
+### TaskSnapshot
 
-`TaskSnapshot` has: `Id`, `Title`, `Description`, `SuccessCriteria`, `Status`, `CurrentPhase`, `CurrentPlan`, `PreferredRoles`, `CreatedAt`, `UpdatedAt`.
+> **Source**: `src/AgentAcademy.Shared/Models/Tasks.cs`
 
-### New Fields
-
-Add to `TaskSnapshot` and `TaskEntity`:
+`TaskSnapshot` is an immutable record used for API responses and SignalR broadcasts:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `Type` | `TaskType` enum | `Feature`, `Bug`, `Chore`, `Spike` — defaults to `Feature` |
-| `Size` | `TaskSize` enum | `XS`, `S`, `M`, `L`, `XL` — estimated effort |
+| `Id` | `string` | Unique task identifier |
+| `Title` | `string` | Task title |
+| `Description` | `string` | Task description |
+| `SuccessCriteria` | `string?` | Acceptance criteria |
+| `Status` | `TaskStatus` | Current lifecycle status |
+| `Type` | `TaskType` | `Feature`, `Bug`, `Chore`, `Spike` — defaults to `Feature` |
+| `CurrentPhase` | `string?` | Current work phase (e.g., `Planning`, `Implementation`) |
+| `CurrentPlan` | `string?` | Agent's working plan for the task |
+| `ValidationStatus` | `string?` | Status of validation pass |
+| `ValidationSummary` | `string?` | Summary of validation results |
+| `ImplementationStatus` | `string?` | Status of implementation work |
+| `ImplementationSummary` | `string?` | Summary of implementation progress |
+| `PreferredRoles` | `List<string>` | Roles best suited for this task |
+| `CreatedAt` | `DateTime` | When the task was created |
+| `UpdatedAt` | `DateTime` | Last modification timestamp |
+| `Size` | `TaskSize?` | `XS`, `S`, `M`, `L`, `XL` — estimated effort |
 | `StartedAt` | `DateTime?` | When work began (first commit or status → Active) |
 | `CompletedAt` | `DateTime?` | When task was marked complete |
 | `AssignedAgentId` | `string?` | The named agent responsible (e.g., `software-engineer-1`) |
@@ -44,18 +56,47 @@ Add to `TaskSnapshot` and `TaskEntity`:
 | `UsedFleet` | `bool` | Whether a fleet/subagent swarm was used |
 | `FleetModels` | `List<string>` | Models used in the fleet (if any) |
 | `BranchName` | `string?` | Local task branch: `task/{slug}-{suffix}` |
-| `PullRequestUrl` | `string?` | GitHub PR URL |
-| `PullRequestNumber` | `int?` | GitHub PR number |
-| `PullRequestStatus` | `PullRequestStatus?` | `Open`, `ReviewRequested`, `ChangesRequested`, `Approved`, `Merged`, `Closed` |
+| `PullRequestUrl` | `string?` | GitHub PR URL (planned — not used) |
+| `PullRequestNumber` | `int?` | GitHub PR number (planned — not used) |
+| `PullRequestStatus` | `PullRequestStatus?` | PR status (planned — not used) |
 | `ReviewerAgentId` | `string?` | Always `reviewer-1` (Socrates) unless overridden |
-| `ReviewRounds` | `int` | Number of review iterations |
+| `ReviewRounds` | `int` | Number of review iterations (incremented on approve and request-changes) |
 | `TestsCreated` | `List<string>` | Test files/names created to prove the work |
 | `CommitCount` | `int` | Number of commits on the task branch |
 | `MergeCommitSha` | `string?` | SHA of the squash-merge commit created by `MERGE_TASK` |
+| `CommentCount` | `int` | Number of task comments (computed at query time) |
 
-### New Enums
+### TaskEntity
+
+> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEntity.cs`
+
+`TaskEntity` is the EF Core persistence model. It has the same fields as `TaskSnapshot` plus:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `RoomId` | `string?` | FK to the room where this task was created |
+| `Room` | `RoomEntity?` | Navigation property |
+
+### Enums
+
+> **Source**: `src/AgentAcademy.Shared/Models/Enums.cs`
 
 ```csharp
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskStatus
+{
+    Queued,              // Waiting to be started
+    Active,              // Work in progress
+    Blocked,             // Cannot proceed (blocker recorded)
+    AwaitingValidation,  // Implementation done, awaiting validation pass
+    InReview,            // Work completed, awaiting reviewer approval
+    ChangesRequested,    // Reviewer requested fixes
+    Approved,            // Reviewer approved, ready to merge
+    Merging,             // Merge in progress
+    Completed,           // Merged and done
+    Cancelled            // Task cancelled
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TaskType { Feature, Bug, Chore, Spike }
 
@@ -67,6 +108,8 @@ public enum PullRequestStatus { Open, ReviewRequested, ChangesRequested, Approve
 ```
 
 ### TaskCommentEntity
+
+> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskCommentEntity.cs`
 
 ```csharp
 public class TaskCommentEntity
@@ -83,22 +126,15 @@ public class TaskCommentEntity
 
 `CommentType` values: `Comment` (general note), `Finding` (review observation), `Evidence` (verification proof), `Blocker` (blocking issue). Only the task's assignee, reviewer, or planner can add comments.
 
-### Extended TaskStatus
-
-Add to existing `TaskStatus` enum:
-
-- `InReview` — Work completed, awaiting reviewer approval
-- `ChangesRequested` — Socrates requested fixes
-- `Approved` — PR approved, ready to merge
-- `Merging` — Merge in progress
-
 ---
 
 ## 2. Agent Identity & Git Attribution
 
 ### Agent Git Identity
 
-Each named agent has a Git identity for commits and PRs:
+> **Source**: `src/AgentAcademy.Shared/Models/Agents.cs`, `src/AgentAcademy.Server/Config/agents.json`
+
+Each named agent has a Git identity for commits:
 
 | Agent | Git Author | Email |
 |-------|-----------|-------|
@@ -111,7 +147,7 @@ Each named agent has a Git identity for commits and PRs:
 
 ### Git Config
 
-Add to `AgentDefinition`:
+`AgentDefinition` includes an optional `GitIdentity`:
 
 ```csharp
 public record AgentGitIdentity(
@@ -120,15 +156,15 @@ public record AgentGitIdentity(
 );
 ```
 
-Add to `agents.json`:
+Configured in `agents.json` (PascalCase keys):
 
 ```json
 {
   "id": "software-engineer-1",
   "name": "Hephaestus",
-  "gitIdentity": {
-    "authorName": "Hephaestus (Engineer)",
-    "authorEmail": "hephaestus@agent-academy.local"
+  "GitIdentity": {
+    "AuthorName": "Hephaestus (Engineer)",
+    "AuthorEmail": "hephaestus@agent-academy.local"
   }
 }
 ```
@@ -141,55 +177,49 @@ When a named agent uses a fleet (subagent swarm), the named agent is still the c
 
 ## 3. Git Workflow
 
-### Branch Naming
+### Branch Naming (Implemented)
+
+> **Source**: `src/AgentAcademy.Server/Services/GitService.cs:53-75`
+
+Task branches use the pattern:
+
+```
+task/{slug}-{suffix}
+```
+
+Where `{suffix}` is a six-character GUID. Examples:
+- `task/fix-login-crash-a1b2c3`
+- `task/add-dashboard-charts-d4e5f6`
+
+### Target Branch
+
+- Default target: `develop`
+- Squash-merge via `MERGE_TASK` always targets `develop`
+
+### Branch Naming (Planned — GitHub Integration)
+
+When GitHub PR integration is added, branches will use the pattern:
 
 ```
 agents/{agent-name}/{task-slug}
 ```
 
-Examples:
-- `agents/hephaestus/fix-login-crash`
-- `agents/athena/add-dashboard-charts`
-- `agents/thucydides/update-api-docs`
+This allows attributing branches to named agents in the remote repository.
 
-### Target Branch
+### Commit Format
 
-- Default target: `develop`
-- If a feature branch exists that collects related PRs: target that branch instead
-- The target branch is determined at task creation or can be specified manually
+Agents follow conventional commits. The `MERGE_TASK` handler generates the squash-merge commit message using a type prefix:
 
-### Workflow Steps (Planned)
+| TaskType | Prefix |
+|----------|--------|
+| `Feature` | `feat: ` |
+| `Bug` | `fix: ` |
+| `Chore` | `chore: ` |
+| `Spike` | `docs: ` |
 
-**Note**: The following workflow describes a future GitHub integration. The current implementation uses local branch workflow without remote push or PR creation. See section 3.5 for the implemented local branch workflow.
+Commit message format: `{prefix}{task.Title}`
 
-```
-1. Agent receives task assignment
-2. Agent creates branch: git checkout -b agents/{name}/{slug}
-3. Agent works, making commits with their git identity
-4. Agent pushes branch to remote
-5. Agent opens PR via GitHub API:
-   - Title: task title
-   - Body: task description + success criteria + test summary
-   - Base: develop (or feature branch)
-   - Labels: agent name, task size
-6. Agent sets task status to InReview
-7. Socrates is notified
-```
-
-### Commit Format (Planned)
-
-Agents follow conventional commits:
-
-```
-feat(scope): description
-
-Body explaining what and why.
-
-Tested-by: list of test files
-Task-id: {task-id}
-```
-
-Author is always the named agent's git identity, never the fleet model.
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs:23-33`
 
 ---
 
@@ -199,15 +229,19 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 
 ### Branch Creation
 
+> **Source**: `src/AgentAcademy.Server/Services/GitService.cs:53-75`
+
 - Branch name: `task/{slug}-{suffix}` (six-character GUID suffix generated at branch creation)
 - Created automatically when a task is assigned
 - Agent work goes on the task branch, not `develop`
 
 ### Assignment Behavior
 
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`, `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1943-2027`
+
 - Task assignment creates a `BreakoutRoomEntity` and a `TaskItemEntity` linked to it
-- The orchestrator ensures the breakout room has a persisted `TaskId`; if none exists yet, it creates a new `TaskEntity` for that breakout and stores the link before branch creation continues
-- The generated branch name is written exactly once to the linked task and is never reassigned from room, agent, or title heuristics
+- The orchestrator ensures the breakout room has a persisted `TaskId`; if none exists yet, it creates a new `TaskEntity` for that breakout and stores the link before branch creation continues (`EnsureTaskForBreakoutAsync`)
+- The generated branch name is written exactly once to the linked task and is never reassigned from room, agent, or title heuristics (`UpdateTaskBranchAsync` is write-once with conflict logging)
 - The system posts an assignment notice in the main room and moves the assignee into the breakout room
 
 ### Completion Flow
@@ -228,6 +262,8 @@ When a task is assigned, the breakout room's persisted `TaskId` is the only sour
 2. Otherwise, it creates a new `TaskEntity`, stores the new `TaskId` on the breakout room, and then records the generated branch on that task
 
 The branch workflow must not infer task identity from title matches, room status, agent status, or "unassigned task" heuristics. If a write would replace a different existing `BranchName`, the operation fails and logs the conflict instead of mutating task metadata.
+
+> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:977-1005` (write-once `UpdateTaskBranchAsync`), `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1888-1920` (`SetBreakoutTaskIdAsync`)
 
 ### Known Gaps
 
@@ -258,10 +294,13 @@ Socrates may use multiple models for review depth:
 
 | Command | Effect |
 |---------|--------|
-| `APPROVE_TASK` | Sets task status to `Approved`, posts approval message in room |
-| `REQUEST_CHANGES` | Sets task status to `ChangesRequested`, posts feedback in room |
+| `APPROVE_TASK` | Sets task status to `Approved`, increments `ReviewRounds`, posts approval message in room |
+| `REQUEST_CHANGES` | Sets task status to `ChangesRequested`, increments `ReviewRounds`, posts feedback in room |
 
 > **Source**: `src/AgentAcademy.Server/Commands/Handlers/ApproveTaskHandler.cs`, `RequestChangesHandler.cs`
+> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1110-1175` (ReviewRounds increment logic)
+
+> **Note**: Neither `APPROVE_TASK` nor `REQUEST_CHANGES` has an explicit role gate in the handler. Any agent can invoke them. The convention is that only Socrates (reviewer) does, enforced by system prompts rather than code. See Invariants section.
 
 ### Fix & Re-review Cycle
 
@@ -289,7 +328,7 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 
 `{prefix}` is derived from `TaskEntity.Type`: `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, `Spike -> docs: `.
 
-> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.cs`
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.cs:186-213`
 
 ---
 
@@ -341,13 +380,28 @@ public interface IGitHubService
 }
 ```
 
+### Planned API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `GET /api/github/auth` | GET | Get OAuth authorization URL |
+| `GET /api/github/callback` | GET | OAuth callback handler |
+| `GET /api/github/status` | GET | Check auth status |
+| `DELETE /api/github/auth` | DELETE | Revoke token |
+
 ---
 
 ## 6. Frontend: Task List Panel
 
-### Location
+### Components
 
-Below the Main Collaboration Room workspace header, above or alongside the tab bar. Visible when a workspace is loaded.
+> **Source**: `src/agent-academy-client/src/TaskListPanel.tsx`, `src/agent-academy-client/src/TaskStatePanel.tsx`
+
+The frontend includes two task-related components:
+- **TaskListPanel** — displays the full task list with grouping and metadata
+- **TaskStatePanel** — shows task state details
+
+Both are integrated into the main `App.tsx` layout.
 
 ### Layout
 
@@ -430,6 +484,8 @@ Only the following agents can comment on a task:
 - The task's reviewer
 - Any agent with the `Planner` role
 
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/AddTaskCommentHandler.cs`
+
 ### Ordering
 
 Comments are ordered by `CreatedAt` ascending.
@@ -437,66 +493,57 @@ Comments are ordered by `CreatedAt` ascending.
 ### API
 
 - `GET /api/tasks/{id}/comments` — returns all comments for a task, ordered by creation time
-- Command: `ADD_TASK_COMMENT` (see 007-agent-commands, Phase 1B)
+- Command: `ADD_TASK_COMMENT` (see 007-agent-commands)
+
+> **Source**: `src/AgentAcademy.Server/Controllers/CollaborationController.cs:62-77`
 
 ---
 
 ## 7. API Endpoints
 
-### Task Management (extend existing)
+### Task Management
+
+> **Source**: `src/AgentAcademy.Server/Controllers/CollaborationController.cs`
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `POST /api/tasks` | POST | Create a new task |
 | `GET /api/tasks` | GET | List all tasks with full metadata |
 | `GET /api/tasks/{id}` | GET | Get single task detail |
+| `GET /api/tasks/{id}/comments` | GET | List task comments, ordered by creation time |
 | `PUT /api/tasks/{id}/assign` | PUT | Assign agent to task |
 | `PUT /api/tasks/{id}/status` | PUT | Update task status |
 | `PUT /api/tasks/{id}/branch` | PUT | Record branch name |
 | `PUT /api/tasks/{id}/pr` | PUT | Record PR info |
-| `PUT /api/tasks/{id}/tests` | PUT | Record tests created |
 | `PUT /api/tasks/{id}/complete` | PUT | Mark complete with final metadata |
-| `GET /api/tasks/{id}/comments` | GET | List task comments, ordered by creation time |
-
-### GitHub Integration
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `GET /api/github/auth` | GET | Get OAuth authorization URL |
-| `GET /api/github/callback` | GET | OAuth callback handler |
-| `GET /api/github/status` | GET | Check auth status |
-| `DELETE /api/github/auth` | DELETE | Revoke token |
 
 ### Review Pipeline
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `POST /api/tasks/{id}/review/request` | POST | Request Socrates review |
-| `POST /api/tasks/{id}/review/complete` | POST | Socrates posts review result |
-| `POST /api/tasks/{id}/review/approve` | POST | Socrates approves |
+Reviews happen via agent commands (`APPROVE_TASK`, `REQUEST_CHANGES`), not REST endpoints. There are no REST review endpoints.
+
+### GitHub Integration (Planned)
+
+See section 5 for planned GitHub API endpoints.
 
 ---
 
 ## 8. Auto-Spec Task on Onboard
 
-### Current Bug
+> **Source**: `src/AgentAcademy.Server/Controllers/WorkspaceController.cs:138-195`
 
-`WorkspaceController.OnboardProject` scans and activates the workspace but does NOT create a spec generation task when `!hasSpecs`. The frontend dialog says "spec will be generated automatically" but nothing happens.
+When a project is onboarded and has no existing specs (`!scan.HasSpecs`), the system automatically creates a spec generation task:
 
-### Fix
-
-Port v1 logic from `local-agent-host/server/src/index.ts:252-301`:
-
-In `OnboardProject`, after scan, if `!scan.HasSpecs`:
-1. Create a `TaskAssignmentRequest`:
+1. Checks for an existing task with title `"Generate Project Specification"` via `FindTaskByTitleAsync` to prevent duplicates
+2. If no existing task: creates a `TaskAssignmentRequest` with:
    - Title: `"Generate Project Specification"`
    - Description: analyze codebase, generate spec in `specs/`
    - SuccessCriteria: spec files created and committed
    - PreferredRoles: `["Planner", "TechnicalWriter"]`
-2. Call `WorkspaceRuntime.CreateTaskAsync(request)`
-3. Call `AgentOrchestrator.HandleHumanMessageAsync(roomId)`
-4. Return `specTaskCreated: true` and `roomId` in `OnboardResult`
+3. Calls `WorkspaceRuntime.CreateTaskAsync(request)`
+4. Triggers `AgentOrchestrator.HandleHumanMessageAsync(roomId)` to kick off agent work
+5. Returns `specTaskCreated: true` and `roomId` in `OnboardResult`
 
-Update `OnboardResult`:
+`OnboardResult`:
 ```csharp
 public record OnboardResult(
     ProjectScanResult Scan,
@@ -506,24 +553,28 @@ public record OnboardResult(
 );
 ```
 
-Update client `OnboardResult` type in `api.ts` to match.
-
 ---
 
 ## 9. Orchestration Integration
 
 ### Task Assignment Flow
 
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`
+
 When a task is created (via `/api/tasks` or auto-spec):
 
 1. Orchestrator evaluates preferred roles
 2. Selects the most appropriate named agent
 3. Agent acknowledges task in the room
-4. Agent creates a branch (via `IGitOperationsService`)
-5. Agent begins work, posting progress messages to the room
-6. Agent records commits, tests, and progress on the task record
+4. Creates breakout room and task item (`CreateBreakoutRoomAsync`, `CreateTaskItemAsync`)
+5. Ensures task entity linked to breakout (`EnsureTaskForBreakoutAsync`)
+6. Creates task branch via `GitService.CreateTaskBranchAsync`
+7. Records branch on task via `UpdateTaskBranchAsync` (write-once)
+8. Agent begins work, posting progress messages to the room
 
 ### Task Creation Gating
+
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-473`
 
 Task creation via TASK ASSIGNMENT blocks in agent responses is role-gated:
 - Only agents with the `Planner` role can create tasks
@@ -555,59 +606,82 @@ Agents typically post:
 
 ---
 
-## 10. Implementation Phases
+## 10. Task-Related Commands
 
-### Phase 1: Auto-Spec Task Bug Fix
-- Fix `WorkspaceController.OnboardProject` to auto-create spec task
-- Update `OnboardResult` types (server + client)
-- Ensure orchestrator kicks off and agents communicate progress
-- **Estimated scope**: 1 session
+All task commands are implemented as `ICommandHandler` implementations.
 
-### Phase 2: Task Model Extension
-- Add new fields to `TaskSnapshot`, `TaskEntity`
-- Add new enums (`TaskSize`, `PullRequestStatus`)
-- Add new `TaskStatus` values
-- Create/run EF migration
-- Add API endpoints for task metadata updates
-- **Estimated scope**: 1 session
+| Command | Handler | Roles | Description |
+|---------|---------|-------|-------------|
+| `CLAIM_TASK` | `ClaimTaskHandler` | Any | Agent claims an unassigned task; auto-activates if queued |
+| `RELEASE_TASK` | `ReleaseTaskHandler` | Any (own task only) | Unassigns the requesting agent from a task |
+| `UPDATE_TASK` | `UpdateTaskHandler` | Any | Updates status/blocker/note; allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued |
+| `APPROVE_TASK` | `ApproveTaskHandler` | Any (convention: Reviewer) | Approves task, increments ReviewRounds |
+| `REQUEST_CHANGES` | `RequestChangesHandler` | Any (convention: Reviewer) | Requests changes with required findings, increments ReviewRounds |
+| `MERGE_TASK` | `MergeTaskHandler` | Planner, Reviewer | Squash-merges task branch to develop |
+| `CANCEL_TASK` | `CancelTaskHandler` | Planner, Reviewer | Cancels task, optionally deletes branch (default: yes) |
+| `ADD_TASK_COMMENT` | `AddTaskCommentHandler` | Assignee, Reviewer, Planner | Adds structured comment (Comment/Finding/Evidence/Blocker) |
+| `LIST_TASKS` | `ListTasksHandler` | Any | Lists tasks with optional `status` and `assignee` filters |
+| `SHOW_REVIEW_QUEUE` | `ShowReviewQueueHandler` | Any | Returns tasks in `InReview` or `AwaitingValidation` |
 
-### Phase 3: Frontend Task List
-- New `TaskListPanel` component
-- Task cards with metadata display
-- Grouping/sorting logic
-- Integrate below workspace header
-- **Estimated scope**: 1 session
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/`
 
-### Phase 4: GitHub Integration (Future)
-- GitHub OAuth flow
-- `IGitHubService` implementation
-- Remote branch push
-- PR creation, review comments, approval, merge via API
-- **Estimated scope**: 2-3 sessions
+---
+
+## 11. WorkspaceRuntime Task Methods
+
+> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs`
+
+| Method | Line | Description |
+|--------|------|-------------|
+| `CreateTaskAsync` | 719 | Creates task with room, plan, agents |
+| `GetTasksAsync` | 876 | Returns all tasks |
+| `FindTaskByTitleAsync` | 915 | Finds latest non-cancelled task by exact title |
+| `AssignTaskAsync` | 929 | Sets assigned agent on task |
+| `UpdateTaskStatusAsync` | 954 | Updates task status |
+| `UpdateTaskBranchAsync` | 977 | Write-once branch assignment |
+| `UpdateTaskPrAsync` | 1010 | Records PR info on task |
+| `CompleteTaskAsync` | 1026 | Marks task completed with metadata |
+| `ClaimTaskAsync` | 1049 | Agent claims task (prevents double-claim) |
+| `ReleaseTaskAsync` | 1082 | Agent releases task |
+| `ApproveTaskAsync` | 1110 | Approves task, increments ReviewRounds |
+| `RequestChangesAsync` | 1146 | Requests changes, increments ReviewRounds |
+| `GetReviewQueueAsync` | 1182 | Returns tasks awaiting review |
+| `PostTaskNoteAsync` | 1202 | Posts note to task's room |
+| `AddTaskCommentAsync` | 1218 | Adds structured comment |
+| `GetTaskCommentsAsync` | 1248 | Returns comments for a task |
+| `GetTaskCommentCountAsync` | 1264 | Returns comment count |
+| `SetBreakoutTaskIdAsync` | 1888 | Write-once breakout→task link |
+| `GetBreakoutTaskIdAsync` | 1920 | Gets task ID for breakout |
+| `TransitionBreakoutTaskToInReviewAsync` | 1930 | Moves breakout task to InReview |
+| `EnsureTaskForBreakoutAsync` | 1943 | Creates or reuses task for breakout |
 
 ---
 
 ## Invariants
 
-1. A task's `AssignedAgentName` must correspond to a configured agent in `agents.json`
-2. All commits on an agent branch must be authored by that agent's git identity
+1. A task's `AssignedAgentName` must correspond to a configured agent in `agents.json` (convention — not enforced in code)
+2. All commits on an agent branch must be authored by that agent's git identity (convention — git identity is configured but not enforced by commit hooks)
 3. A task in `InReview` must have a non-null `BranchName`
-4. Socrates is the only agent that can approve tasks (unless the review pipeline is explicitly overridden)
-5. A task cannot transition to `Completed` without a `MergeCommitSha` (written by `MERGE_TASK` handler)
+4. Socrates is the only agent that should approve tasks — this is enforced by system prompts, not by a role gate in `ApproveTaskHandler` (any agent can technically invoke `APPROVE_TASK`)
+5. A task cannot transition to `Completed` without a `MergeCommitSha` (enforced by `MERGE_TASK` handler flow)
 6. Named agents are responsible for fleet output — fleet models are recorded but the agent is the author
+7. `UpdateTaskBranchAsync` is write-once — if a branch is already set and differs, the operation logs a conflict and does not mutate (enforced in code)
+8. `SetBreakoutTaskIdAsync` is write-once — same conflict-logging behavior (enforced in code)
 
 ## Known Gaps
 
 - **GitHub PR integration not implemented** — task model has PR fields but no API service exists
 - No remote push capability — all work is local-only
 - No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`
-- Agent git identity configuration not fully utilized (planned for future GitHub integration)
+- Agent git identity configuration exists but commits are not yet attributed to agents
 - Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
 - No formal limit on review rounds (tracked but not enforced)
+- `APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them
 
 ## Revision History
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-04 | Reconciled spec with code — Partial → Implemented. Documented all TaskSnapshot/TaskEntity fields, TaskStatus.AwaitingValidation, command table, WorkspaceRuntime method index, auto-spec dedup, role gate gaps, write-once invariants | Anvil |
 | 2026-04-01 | Remove unimplemented PR workflow content — marked GitHub integration as Planned | Thucydides |
 | 2026-03-28 | Initial spec — Planned | Copilot (via Anvil) |
