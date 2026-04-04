@@ -56,7 +56,10 @@ const SidebarPanel = memo(function SidebarPanel(props: {
       <div className={s.sidebarHeader}>
         <div className={s.sidebarToolbar}>
           {props.sidebarOpen ? (
-            <div className={s.appTitle}>Agent Academy</div>
+            <div className={s.brandBlock}>
+              <div className={s.appTitle}>Agent Academy</div>
+              <div className={s.appSubtitle}>Mission control for spec-aware delivery</div>
+            </div>
           ) : (
             <div className={s.eyebrow}>Live</div>
           )}
@@ -116,6 +119,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           <section className={s.section} style={{ borderTop: "none" }}>
             <div className={s.sectionHeader}>
               <div className={s.sectionLabel}>Rooms</div>
+              <div className={s.sectionCount}>{props.rooms.length}</div>
             </div>
             <div className={s.roomList}>
               {props.rooms.map((candidate) => {
@@ -143,6 +147,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             <section className={s.section}>
               <div className={s.sectionHeader}>
                 <div className={s.sectionLabel}>Agent Sessions</div>
+                <div className={s.sectionCount}>{props.configuredAgents.length}</div>
               </div>
               <div className={s.roomList}>
                 {props.configuredAgents.map((agent) => {
@@ -163,10 +168,10 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                       onClick={() => props.onSelectWorkspace(`agent:${agent.id}`)}
                       aria-label={`View ${agent.name}'s sessions`}
                       type="button"
-                    >
-                      <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <div className={s.workspaceIcon} style={{ background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)` }}>
-                          {agent.name.charAt(0)}
+                      >
+                        <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <div className={s.workspaceIcon} style={{ background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)` }}>
+                            {agent.name.charAt(0)}
                         </div>
                         {isThinking && (
                           <span style={{
@@ -175,23 +180,24 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                             animation: "aa-spin 0.8s linear infinite",
                           }} />
                         )}
-                      </span>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span className={s.workspaceName}>{agent.name}</span>
-                          <span
-                            className={s.workspaceStateBadge}
+                        </span>
+                        <div className={s.workspaceButtonBody}>
+                          <div className={s.workspaceButtonTopRow}>
+                            <span className={s.workspaceName}>{agent.name}</span>
+                            <span
+                              className={s.workspaceStateBadge}
                             style={{
                               backgroundColor: isWorking ? `${rc.accent}33` : "#ffffff11",
                               color: isWorking ? rc.accent : "#7c90b2",
                             }}
-                          >
-                            {state}
-                          </span>
-                        </div>
-                        <div className={s.workspaceTask}>
-                          {taskName ?? agent.role}
-                        </div>
+                            >
+                              {state}
+                            </span>
+                          </div>
+                          <div className={s.workspaceRole}>{agent.role}</div>
+                          <div className={s.workspaceTask}>
+                            {taskName ?? agent.role}
+                          </div>
                       </div>
                     </button>
                   );
@@ -215,6 +221,11 @@ const SidebarPanel = memo(function SidebarPanel(props: {
         </div>
       ) : (
         <div className={s.compactSidebar}>
+          {props.workspace && (
+            <div className={s.compactSidebarMarker} title={props.workspace.name}>
+              {initials(props.workspace.name)}
+            </div>
+          )}
           {props.rooms.map((candidate) => (
             <button
               key={candidate.id}
@@ -272,8 +283,17 @@ function RoomButton(props: {
       type="button"
     >
       <div className={s.roomButtonIcon}>{initials(room.name)}</div>
-      <div style={{ minWidth: 0 }}>
-        <div className={s.roomButtonMeta}>
+      <div className={s.roomButtonBody}>
+        <div className={s.roomButtonTopRow}>
+          <div className={s.roomButtonMeta}>
+            <span className={s.roomPhaseDot} style={{ backgroundColor: dotColor }} />
+            <span className={s.roomPhaseLabel}>{room.currentPhase}</span>
+          </div>
+          <div className={s.roomButtonCount}>
+            {room.participants.length} agents
+          </div>
+        </div>
+        <div className={s.roomButtonTitleWrap}>
           {editing ? (
             <input
               ref={inputRef}
@@ -312,7 +332,9 @@ function RoomButton(props: {
               {room.name}
             </div>
           )}
-          <span className={s.roomPhaseDot} style={{ backgroundColor: dotColor }} />
+        </div>
+        <div className={s.roomButtonTask}>
+          {room.activeTask?.title ?? "No active task assigned"}
         </div>
       </div>
       {roomAgents.length > 0 && (

@@ -1,16 +1,16 @@
 :root {
-  --aa-text: #e8eef9;
+  --aa-text: #e6edf9;
   --aa-text-strong: #fbfdff;
-  --aa-muted: #a9bad6;
-  --aa-soft: #7f94b6;
-  --aa-bg: #07111f;
+  --aa-muted: #afc0dc;
+  --aa-soft: #8599bc;
+  --aa-bg: #060d18;
   --aa-panel: #0f1a2d;
-  --aa-border: rgba(163, 180, 208, 0.16);
+  --aa-border: rgba(174, 192, 222, 0.16);
   --aa-cyan: #83cfff;
-  --aa-gold: #d9a667;
-  --aa-plum: #7f6bff;
-  --aa-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
-  --sans: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --aa-gold: #dfab69;
+  --aa-plum: #9180ff;
+  --aa-shadow: 0 34px 90px rgba(0, 0, 0, 0.46);
+  --sans: "Avenir Next", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --heading: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
 
@@ -41,10 +41,10 @@ body {
   color: var(--aa-text);
   font-family: var(--sans);
   background:
-    radial-gradient(circle at 12% 14%, rgba(131, 207, 255, 0.14), transparent 22%),
-    radial-gradient(circle at 86% 18%, rgba(127, 107, 255, 0.12), transparent 20%),
-    radial-gradient(circle at 64% 84%, rgba(217, 166, 103, 0.1), transparent 28%),
-    linear-gradient(180deg, #07111f 0%, #0b1525 52%, #08111d 100%);
+    radial-gradient(circle at 10% 12%, rgba(131, 207, 255, 0.16), transparent 22%),
+    radial-gradient(circle at 86% 16%, rgba(145, 128, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 62% 82%, rgba(223, 171, 105, 0.12), transparent 26%),
+    linear-gradient(180deg, #060d18 0%, #0a1321 48%, #09111a 100%);
 }
 
 body::before {
@@ -52,7 +52,9 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.018), transparent 42%);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.018), transparent 42%),
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.015), transparent 54%);
   mix-blend-mode: screen;
   opacity: 0.6;
 }
@@ -122,7 +124,7 @@ code {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(163, 180, 208, 0.24);
+  background: rgba(163, 180, 208, 0.3);
   border: 2px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;

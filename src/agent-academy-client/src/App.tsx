@@ -52,6 +52,24 @@ import {
   markManualLogout,
 } from "./authMonitor";
 
+const CONNECTION_STATUS_COPY = {
+  connected: "Live sync",
+  connecting: "Connecting",
+  reconnecting: "Reconnecting",
+  disconnected: "Offline",
+} as const;
+
+const TAB_ITEMS = [
+  { value: "chat", label: "Conversation", detail: "Live room stream", Icon: ChatRegular },
+  { value: "tasks", label: "Tasks", detail: "Delivery queue", Icon: TaskListLtrRegular },
+  { value: "plan", label: "Plan", detail: "Shared approach", Icon: DocumentRegular },
+  { value: "commands", label: "Commands", detail: "Human tools", Icon: CodeRegular },
+  { value: "timeline", label: "Timeline", detail: "Activity trace", Icon: TimelineRegular },
+  { value: "dashboard", label: "Dashboard", detail: "System telemetry", Icon: GridRegular },
+  { value: "overview", label: "Overview", detail: "Room state", Icon: BoardRegular },
+  { value: "directMessages", label: "Messages", detail: "Private threads", Icon: MailRegular },
+] as const;
+
 export default function App() {
   return (
     <FluentProvider theme={webDarkTheme}>
@@ -309,6 +327,7 @@ function AppShell() {
 
   const workspaceLimited = isWorkspaceLimited(auth);
   const degradedCopy = workspaceLimited ? getCopilotStatusCopy("degraded", auth.user ?? null) : null;
+  const connectionLabel = CONNECTION_STATUS_COPY[connectionStatus];
 
   return (
     <div className={s.root}>
@@ -379,8 +398,16 @@ function AppShell() {
               return (<>
                 <div className={s.workspaceHeader}>
                   <div className={s.workspaceHeaderBody}>
-                    <div className={s.workspaceEyebrow}>
-                      {sessionAgent ? "Agent session" : selectedBreakout ? "Breakout review" : "Workspace shell"}
+                    <div className={s.workspaceHeaderTopRow}>
+                      <div className={s.workspaceEyebrow}>
+                        {sessionAgent ? "Agent session" : selectedBreakout ? "Breakout review" : "Workspace shell"}
+                      </div>
+                      <div className={s.workspaceHeaderSignals}>
+                        <div className={mergeClasses(s.workspaceSignal, workspaceLimited && s.workspaceSignalWarning)}>
+                          {workspaceLimited ? degradedCopy?.eyebrow ?? "Limited mode" : "Copilot ready"}
+                        </div>
+                        <div className={s.workspaceSignal}>{connectionLabel}</div>
+                      </div>
                     </div>
                     <div className={s.workspaceTitle}>
                       {sessionAgent
@@ -396,127 +423,175 @@ function AppShell() {
                           ? selectedBreakout.name
                           : roomSummary}
                     </div>
+                    <div className={s.workspaceMetaGrid}>
+                      <div className={s.workspaceMetaCard}>
+                        <div className={s.workspaceMetaLabel}>
+                          {sessionAgent ? "Agent role" : selectedBreakout ? "Breakout status" : "Current phase"}
+                        </div>
+                        <div className={s.workspaceMetaValue}>
+                          {sessionAgent
+                            ? sessionAgent.role
+                            : selectedBreakout
+                              ? selectedBreakout.status
+                              : room?.currentPhase ?? "No phase"}
+                        </div>
+                        <div className={s.workspaceMetaDetail}>
+                          {sessionAgentLocation?.state ?? (selectedBreakout ? "Workspace review" : "Awaiting room activity")}
+                        </div>
+                      </div>
+                      <div className={s.workspaceMetaCard}>
+                        <div className={s.workspaceMetaLabel}>
+                          {sessionAgent ? "Assigned room" : selectedBreakout ? "Assigned agent" : "Active task"}
+                        </div>
+                        <div className={s.workspaceMetaValue}>
+                          {sessionAgent
+                            ? (sessionAgentLocation
+                              ? ov.rooms.find((candidate) => candidate.id === sessionAgentLocation.roomId)?.name ?? "Unassigned"
+                              : "Unassigned")
+                            : selectedBreakout
+                              ? (selectedAgent?.name ?? "Unknown")
+                              : room?.activeTask?.title ?? "No active task"}
+                        </div>
+                        <div className={s.workspaceMetaDetail}>
+                          {sessionAgent
+                            ? (sessionAgentLocation?.state ?? "Idle")
+                            : selectedBreakout
+                              ? selectedBreakout.name
+                              : `${room?.participants.length ?? 0} active participants`}
+                        </div>
+                      </div>
+                      <div className={s.workspaceMetaCard}>
+                        <div className={s.workspaceMetaLabel}>Runtime</div>
+                        <div className={s.workspaceMetaValue}>{connectionLabel}</div>
+                        <div className={s.workspaceMetaDetail}>
+                          {workspaceLimited ? "Read-only while Copilot reconnects" : "Workspace actions available"}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-              <div className={s.workspaceHeaderActions}>
-                {room && !sessionAgent && (
-                  <div className={s.phasePill}>
-                    <span className={s.phasePillDot} />
-                    {room.currentPhase}
+                  <div className={s.workspaceHeaderActions}>
+                    {room && !sessionAgent && (
+                      <div className={s.phasePill}>
+                        <span className={s.phasePillDot} />
+                        {room.currentPhase}
+                      </div>
+                    )}
+                    {hasDisplayUser(auth.user) && auth.user && (
+                      <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
+                    )}
                   </div>
-                )}
-                {hasDisplayUser(auth.user) && auth.user && (
-                  <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
-                )}
-              </div>
-            </div>
-
-            {workspaceLimited && degradedCopy && (
-              <div className={s.limitedModeBanner}>
-                <div className={s.limitedModeBadge}>{degradedCopy.eyebrow}</div>
-                <div className={s.limitedModeTitle}>{degradedCopy.title}</div>
-                <div className={s.limitedModeDescription}>
-                  {degradedCopy.description}
                 </div>
-              </div>
-            )}
 
-            {sessionAgent ? (
-              <section className={s.tabContent}>
-                <AgentSessionPanel
-                  agent={sessionAgent}
-                  location={sessionAgentLocation}
-                  thinkingAgents={thinkingAgentList}
-                  connectionStatus={connectionStatus}
-                  onSendMessage={handleSendMessage}
-                />
-              </section>
-            ) : selectedBreakout ? (
-              <section className={s.tabContent}>
-                <ChatPanel
-                  room={{
-                    id: selectedBreakout.id,
-                    name: selectedBreakout.name,
-                    status: selectedBreakout.status,
-                    currentPhase: "Implementation",
-                    activeTask: null,
-                    participants: [],
-                    recentMessages: selectedBreakout.recentMessages,
-                    createdAt: selectedBreakout.createdAt,
-                    updatedAt: selectedBreakout.updatedAt,
-                  }}
-                  thinkingAgents={thinkingAgentList}
-                  connectionStatus={connectionStatus}
-                  onSendMessage={handleSendMessage}
-                  readOnly
-                />
-              </section>
-            ) : (<>
-              <div className={s.tabBar}>
-                <TabList
-                  className={s.tabList}
-                  selectedValue={tab}
-                  onTabSelect={(_, data) => setTab(data.value as string)}
-                  size="small"
-                >
-                  <Tab value="chat" icon={<ChatRegular />}>Conversation</Tab>
-                  <Tab value="tasks" icon={<TaskListLtrRegular />}>Tasks</Tab>
-                  <Tab value="plan" icon={<DocumentRegular />}>Plan</Tab>
-                  <Tab value="commands" icon={<CodeRegular />}>Commands</Tab>
-                  <Tab value="timeline" icon={<TimelineRegular />}>Timeline</Tab>
-                  <Tab value="dashboard" icon={<GridRegular />}>Dashboard</Tab>
-                  <Tab value="overview" icon={<BoardRegular />}>Overview</Tab>
-                  <Tab value="directMessages" icon={<MailRegular />}>Messages</Tab>
-                </TabList>
-              </div>
+                {workspaceLimited && degradedCopy && (
+                  <div className={s.limitedModeBanner}>
+                    <div className={s.limitedModeBadge}>{degradedCopy.eyebrow}</div>
+                    <div className={s.limitedModeTitle}>{degradedCopy.title}</div>
+                    <div className={s.limitedModeDescription}>
+                      {degradedCopy.description}
+                    </div>
+                  </div>
+                )}
 
-              <section className={s.tabContent}>
-                {tab === "chat" && (
-                  <ChatPanel
-                    room={room}
-                    thinkingAgents={thinkingAgentList}
-                    recoveryBanner={recoveryBanner}
-                    connectionStatus={connectionStatus}
-                    onSendMessage={handleSendMessage}
-                    readOnly={workspaceLimited}
-                  />
-                )}
-                {tab === "tasks" && (
-                  <TaskListPanel tasks={allTasks} error={tasksError} />
-                )}
-                {tab === "plan" && (
-                  <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
-                )}
-                {tab === "commands" && (
-                  <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
-                )}
-                {tab === "timeline" && (
-                  <TimelinePanel activity={activity} />
-                )}
-                {tab === "dashboard" && (
-                  <DashboardPanel overview={ov} />
-                )}
-                {tab === "overview" && (
-                  <WorkspaceOverviewPanel
-                    overview={ov}
-                    room={room}
-                    onPhaseTransition={wrappedPhaseTransition}
-                    transitioning={phaseTransitioning}
-                    readOnly={workspaceLimited}
-                  />
-                )}
-                {tab === "directMessages" && (
-                  <DmPanel
-                    agents={ov.configuredAgents.map((a) => ({
-                      id: a.id,
-                      name: a.name,
-                      role: a.role,
-                    }))}
-                    readOnly={workspaceLimited}
-                  />
-                )}
-              </section>
-            </>)}
-            </>);
+                {sessionAgent ? (
+                  <section className={s.tabContent}>
+                    <AgentSessionPanel
+                      agent={sessionAgent}
+                      location={sessionAgentLocation}
+                      thinkingAgents={thinkingAgentList}
+                      connectionStatus={connectionStatus}
+                      onSendMessage={handleSendMessage}
+                    />
+                  </section>
+                ) : selectedBreakout ? (
+                  <section className={s.tabContent}>
+                    <ChatPanel
+                      room={{
+                        id: selectedBreakout.id,
+                        name: selectedBreakout.name,
+                        status: selectedBreakout.status,
+                        currentPhase: "Implementation",
+                        activeTask: null,
+                        participants: [],
+                        recentMessages: selectedBreakout.recentMessages,
+                        createdAt: selectedBreakout.createdAt,
+                        updatedAt: selectedBreakout.updatedAt,
+                      }}
+                      thinkingAgents={thinkingAgentList}
+                      connectionStatus={connectionStatus}
+                      onSendMessage={handleSendMessage}
+                      readOnly
+                    />
+                  </section>
+                ) : (<>
+                  <div className={s.tabBar}>
+                    <TabList
+                      className={s.tabList}
+                      selectedValue={tab}
+                      onTabSelect={(_, data) => setTab(data.value as string)}
+                      size="small"
+                    >
+                      {TAB_ITEMS.map((item) => {
+                        const Icon = item.Icon;
+                        return (
+                          <Tab key={item.value} value={item.value} icon={<Icon />}>
+                            <span className={s.tabLabelStack}>
+                              <span className={s.tabLabelTitle}>{item.label}</span>
+                              <span className={s.tabLabelDetail}>{item.detail}</span>
+                            </span>
+                          </Tab>
+                        );
+                      })}
+                    </TabList>
+                  </div>
+
+                  <section className={s.tabContent}>
+                    {tab === "chat" && (
+                      <ChatPanel
+                        room={room}
+                        thinkingAgents={thinkingAgentList}
+                        recoveryBanner={recoveryBanner}
+                        connectionStatus={connectionStatus}
+                        onSendMessage={handleSendMessage}
+                        readOnly={workspaceLimited}
+                      />
+                    )}
+                    {tab === "tasks" && (
+                      <TaskListPanel tasks={allTasks} error={tasksError} />
+                    )}
+                    {tab === "plan" && (
+                      <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
+                    )}
+                    {tab === "commands" && (
+                      <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
+                    )}
+                    {tab === "timeline" && (
+                      <TimelinePanel activity={activity} />
+                    )}
+                    {tab === "dashboard" && (
+                      <DashboardPanel overview={ov} />
+                    )}
+                    {tab === "overview" && (
+                      <WorkspaceOverviewPanel
+                        overview={ov}
+                        room={room}
+                        onPhaseTransition={wrappedPhaseTransition}
+                        transitioning={phaseTransitioning}
+                        readOnly={workspaceLimited}
+                      />
+                    )}
+                    {tab === "directMessages" && (
+                      <DmPanel
+                        agents={ov.configuredAgents.map((a) => ({
+                          id: a.id,
+                          name: a.name,
+                          role: a.role,
+                        }))}
+                        readOnly={workspaceLimited}
+                      />
+                    )}
+                  </section>
+                </>)}
+              </>);
             })()}
           </main>
         </div>
