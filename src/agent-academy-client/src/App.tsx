@@ -37,6 +37,7 @@ import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
 import CommandsPanel from "./CommandsPanel";
+import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
 import {
   getCopilotStatusCopy,
@@ -134,6 +135,7 @@ function AppShell() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const previousAuthRef = useRef<AuthStatus | null>(null);
   const authRefreshInFlight = useRef(false);
   const loginUrl = `${apiBaseUrl}/api/auth/login`;
@@ -248,6 +250,21 @@ function AppShell() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
+  }, []);
+
+  // Cmd+K / Ctrl+K to open command palette (skip when focus is in an input)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        const tag = (e.target as HTMLElement)?.tagName;
+        const editable = (e.target as HTMLElement)?.isContentEditable;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || editable) return;
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   const handleProjectSelected = useCallback(
@@ -654,6 +671,12 @@ function AppShell() {
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
+      <CommandPalette
+        open={paletteOpen}
+        onDismiss={() => setPaletteOpen(false)}
+        roomId={room?.id ?? null}
+        readOnly={workspaceLimited}
+      />
     </div>
   );
 }
