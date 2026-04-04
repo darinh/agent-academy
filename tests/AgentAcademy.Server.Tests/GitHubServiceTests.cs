@@ -1,0 +1,176 @@
+using AgentAcademy.Server.Services;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace AgentAcademy.Server.Tests;
+
+/// <summary>
+/// Unit tests for <see cref="GitHubService"/>.
+/// Uses a wrapper script to simulate gh CLI responses without hitting GitHub.
+/// </summary>
+public class GitHubServiceTests : IDisposable
+{
+    private readonly string _tempDir;
+
+    public GitHubServiceTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), $"gh-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_tempDir);
+        // Create a fake AgentAcademy.sln so FindProjectRoot works
+        File.WriteAllText(Path.Combine(_tempDir, "AgentAcademy.sln"), "");
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_tempDir, true); } catch { }
+    }
+
+    private string CreateGhWrapper(string stdout, int exitCode = 0, string stderr = "")
+    {
+        // Write stdout/stderr to files to avoid shell quoting issues
+        var stdoutFile = Path.Combine(_tempDir, $"stdout-{Guid.NewGuid():N}.txt");
+        var stderrFile = Path.Combine(_tempDir, $"stderr-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(stdoutFile, stdout);
+        File.WriteAllText(stderrFile, stderr);
+
+        var wrapperPath = Path.Combine(_tempDir, $"gh-wrapper-{Guid.NewGuid():N}.sh");
+        File.WriteAllText(wrapperPath,
+            $$"""
+            #!/usr/bin/env bash
+            cat '{{stdoutFile}}'
+            if [ -s '{{stderrFile}}' ]; then
+                cat '{{stderrFile}}' >&2
+            fi
+            exit {{exitCode}}
+            """);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                wrapperPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+        return wrapperPath;
+    }
+
+    [Fact]
+    public async Task IsConfiguredAsync_WhenLoggedIn_ReturnsTrue()
+    {
+        // Exit code 0 means authenticated — we no longer parse stdout text
+        var wrapper = CreateGhWrapper("");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.IsConfiguredAsync();
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task IsConfiguredAsync_WhenNotLoggedIn_ReturnsFalse()
+    {
+        var wrapper = CreateGhWrapper("", exitCode: 1, stderr: "not logged in");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.IsConfiguredAsync();
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task GetRepositorySlugAsync_ReturnsSlug()
+    {
+        var wrapper = CreateGhWrapper("darinh/agent-academy");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var slug = await svc.GetRepositorySlugAsync();
+
+        Assert.Equal("darinh/agent-academy", slug);
+    }
+
+    [Fact]
+    public async Task GetRepositorySlugAsync_WhenNoRemote_ReturnsNull()
+    {
+        var wrapper = CreateGhWrapper("", exitCode: 1, stderr: "no remote");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var slug = await svc.GetRepositorySlugAsync();
+
+        Assert.Null(slug);
+    }
+
+    [Fact]
+    public async Task CreatePullRequestAsync_ReturnsPrInfo()
+    {
+        var json = """{"number":42,"url":"https://github.com/darinh/agent-academy/pull/42","state":"OPEN","title":"feat: test","baseRefName":"develop","headRefName":"task/test-abc123"}""";
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var pr = await svc.CreatePullRequestAsync("task/test-abc123", "feat: test", "body");
+
+        Assert.Equal(42, pr.Number);
+        Assert.Equal("https://github.com/darinh/agent-academy/pull/42", pr.Url);
+        Assert.Equal("OPEN", pr.State);
+        Assert.Equal("feat: test", pr.Title);
+        Assert.Equal("develop", pr.BaseBranch);
+        Assert.Equal("task/test-abc123", pr.HeadBranch);
+        Assert.False(pr.IsMerged);
+    }
+
+    [Fact]
+    public async Task CreatePullRequestAsync_EmptyBranch_Throws()
+    {
+        var wrapper = CreateGhWrapper("{}");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => svc.CreatePullRequestAsync("", "title", "body"));
+    }
+
+    [Fact]
+    public async Task CreatePullRequestAsync_EmptyTitle_Throws()
+    {
+        var wrapper = CreateGhWrapper("{}");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => svc.CreatePullRequestAsync("task/branch", "", "body"));
+    }
+
+    [Fact]
+    public async Task GetPullRequestAsync_ReturnsPrInfo_WithMerged()
+    {
+        var json = """{"number":42,"url":"https://github.com/darinh/agent-academy/pull/42","state":"MERGED","title":"feat: test","baseRefName":"develop","headRefName":"task/test-abc123","mergedAt":"2026-04-04T12:00:00Z"}""";
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var pr = await svc.GetPullRequestAsync(42);
+
+        Assert.Equal(42, pr.Number);
+        Assert.Equal("MERGED", pr.State);
+        Assert.True(pr.IsMerged);
+    }
+
+    [Fact]
+    public async Task GetPullRequestAsync_ReturnsPrInfo_NotMerged()
+    {
+        var json = """{"number":42,"url":"https://github.com/darinh/agent-academy/pull/42","state":"OPEN","title":"feat: test","baseRefName":"develop","headRefName":"task/test-abc123","mergedAt":null}""";
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var pr = await svc.GetPullRequestAsync(42);
+
+        Assert.False(pr.IsMerged);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_NonZeroExit_Throws()
+    {
+        var wrapper = CreateGhWrapper("", exitCode: 1, stderr: "something went wrong");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.RunGhAsync("pr", "view", "999"));
+        Assert.Contains("failed", ex.Message);
+        Assert.Contains("something went wrong", ex.Message);
+    }
+}

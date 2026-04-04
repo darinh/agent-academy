@@ -247,6 +247,21 @@ public static class HumanCommandRegistry
                 new("dryRun", "Dry run", "text", "Set to 'true' to check for conflicts without rebasing.",
                     Placeholder: "false"),
             ]),
+
+        new("CREATE_PR", "Create pull request", "git",
+            "Push a task branch to GitHub and open a pull request.",
+            "Pushes the task's branch to the remote origin and creates a GitHub PR targeting develop. Updates the task with the PR URL and number.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to create a PR for.",
+                    Required: true),
+                new("title", "PR title", "text", "Custom PR title. Defaults to the task title.",
+                    Placeholder: "feat: add user avatars"),
+                new("body", "PR body", "text", "Custom PR body. Defaults to task description + success criteria."),
+                new("baseBranch", "Base branch", "text", "Target branch for the PR.",
+                    Placeholder: "develop"),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

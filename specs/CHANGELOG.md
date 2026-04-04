@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **010-task-management**: GitHub PR integration (Phase 1) — `IGitHubService` / `GitHubService` wraps `gh` CLI for PR operations. `CREATE_PR` agent command pushes task branch to remote via `GitService.PushBranchAsync` and opens a GitHub pull request via `gh pr create`. Updates task entity with PR URL, number, and `Open` status. Role-gated to assigned agent, Planner, Reviewer, or Human. `GET /api/github/status` REST endpoint reports `gh` CLI auth status and repository slug. `CREATE_PR` added to `HumanCommandRegistry` (frontend command palette) and `CommandController` allowlist (async execution). 23 new tests (980 total). Resolves spec 010 known gaps: "GitHub PR integration not implemented" and "No remote push capability".
+
+### Added
 - **003-agent-system**: LLM usage tracking — `LlmUsageTracker` captures `AssistantUsageEvent` from Copilot SDK on every LLM API call (including session priming). Persists per-request metrics (model, input/output/cache tokens, cost, duration, API call ID, reasoning effort) to `llm_usage` table with indexes on agent, room, and time. Room-level aggregation via `GET /api/rooms/{id}/usage`, per-agent breakdown via `GET /api/rooms/{id}/usage/agents`, individual records via `GET /api/rooms/{id}/usage/records`. Global usage via `GET /api/usage` with `hoursBack` filter (1–8760), global records via `GET /api/usage/records` with agent filter. Replaces zeroed stubs in `RoomController`. Safe numeric conversion handles NaN/Infinity SDK payloads. Recording failures logged but never propagate to agent execution. Resolves spec 003 known gap: "No token/usage tracking". 20 new tests (938 total).
 
 ### Added

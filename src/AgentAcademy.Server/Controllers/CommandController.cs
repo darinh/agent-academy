@@ -43,12 +43,14 @@ public sealed class CommandController : ControllerBase
         "CLEANUP_ROOMS",
         "INVITE_TO_ROOM",
         "EXPORT_MEMORIES",
+        "CREATE_PR",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "RUN_BUILD",
         "RUN_TESTS",
+        "CREATE_PR",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;
