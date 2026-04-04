@@ -14,6 +14,18 @@ public sealed class RequestChangesHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
+        if (!string.Equals(context.AgentRole, "Planner", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(context.AgentRole, "Reviewer", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(context.AgentRole, "Human", StringComparison.OrdinalIgnoreCase))
+        {
+            return command with
+            {
+                Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
+                Error = "Only Planner, Reviewer, or Human roles can request changes"
+            };
+        }
+
         if (!command.Args.TryGetValue("taskId", out var taskIdObj) || taskIdObj is not string taskId
             || string.IsNullOrWhiteSpace(taskId))
         {

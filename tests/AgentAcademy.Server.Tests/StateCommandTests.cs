@@ -338,12 +338,25 @@ public class StateCommandTests : IDisposable
     // ── APPROVE_TASK ────────────────────────────────────────────
 
     [Fact]
+    public async Task ApproveTask_DeniedForEngineer()
+    {
+        var handler = new ApproveTaskHandler();
+        var (cmd, ctx) = MakeCommand("APPROVE_TASK",
+            new() { ["taskId"] = "t1" }, "engineer-1", "Hephaestus");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Equal(CommandErrorCode.Permission, result.ErrorCode);
+    }
+
+    [Fact]
     public async Task ApproveTask_SuccessFromInReview()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
         var handler = new ApproveTaskHandler();
         var (cmd, ctx) = MakeCommand("APPROVE_TASK",
-            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -358,7 +371,7 @@ public class StateCommandTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.AwaitingValidation));
         var handler = new ApproveTaskHandler();
         var (cmd, ctx) = MakeCommand("APPROVE_TASK",
-            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -373,7 +386,7 @@ public class StateCommandTests : IDisposable
         var handler = new ApproveTaskHandler();
         var (cmd, ctx) = MakeCommand("APPROVE_TASK",
             new() { ["taskId"] = taskId, ["findings"] = "Looks good, minor nit on naming" },
-            "reviewer-1", "Socrates");
+            "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -387,7 +400,7 @@ public class StateCommandTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
         var handler = new ApproveTaskHandler();
         var (cmd, ctx) = MakeCommand("APPROVE_TASK",
-            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -399,7 +412,7 @@ public class StateCommandTests : IDisposable
     public async Task ApproveTask_ErrorWhenMissingTaskId()
     {
         var handler = new ApproveTaskHandler();
-        var (cmd, ctx) = MakeCommand("APPROVE_TASK", new(), "reviewer-1", "Socrates");
+        var (cmd, ctx) = MakeCommand("APPROVE_TASK", new(), "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -410,13 +423,26 @@ public class StateCommandTests : IDisposable
     // ── REQUEST_CHANGES ─────────────────────────────────────────
 
     [Fact]
+    public async Task RequestChanges_DeniedForEngineer()
+    {
+        var handler = new RequestChangesHandler();
+        var (cmd, ctx) = MakeCommand("REQUEST_CHANGES",
+            new() { ["taskId"] = "t1", ["findings"] = "bugs" }, "engineer-1", "Hephaestus");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Equal(CommandErrorCode.Permission, result.ErrorCode);
+    }
+
+    [Fact]
     public async Task RequestChanges_Success()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
         var handler = new RequestChangesHandler();
         var (cmd, ctx) = MakeCommand("REQUEST_CHANGES",
             new() { ["taskId"] = taskId, ["findings"] = "Error handling is missing in the auth flow" },
-            "reviewer-1", "Socrates");
+            "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -432,7 +458,7 @@ public class StateCommandTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
         var handler = new RequestChangesHandler();
         var (cmd, ctx) = MakeCommand("REQUEST_CHANGES",
-            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -447,7 +473,7 @@ public class StateCommandTests : IDisposable
         var handler = new RequestChangesHandler();
         var (cmd, ctx) = MakeCommand("REQUEST_CHANGES",
             new() { ["taskId"] = taskId, ["findings"] = "Some findings" },
-            "reviewer-1", "Socrates");
+            "reviewer-1", "Socrates", agentRole: "Reviewer");
 
         var result = await handler.ExecuteAsync(cmd, ctx);
 
@@ -696,7 +722,8 @@ public class StateCommandTests : IDisposable
         string commandName,
         Dictionary<string, string> args,
         string agentId = "engineer-1",
-        string agentName = "Hephaestus")
+        string agentName = "Hephaestus",
+        string agentRole = "SoftwareEngineer")
     {
         var scope = _serviceProvider.CreateScope();
 
@@ -714,7 +741,7 @@ public class StateCommandTests : IDisposable
         var context = new CommandContext(
             AgentId: agentId,
             AgentName: agentName,
-            AgentRole: "SoftwareEngineer",
+            AgentRole: agentRole,
             RoomId: "room-1",
             BreakoutRoomId: null,
             Services: scope.ServiceProvider

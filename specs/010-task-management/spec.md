@@ -315,7 +315,7 @@ Socrates may use multiple models for review depth:
 > **Source**: `src/AgentAcademy.Server/Commands/Handlers/ApproveTaskHandler.cs`, `RequestChangesHandler.cs`
 > **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1110-1175` (ReviewRounds increment logic)
 
-> **Note**: Neither `APPROVE_TASK` nor `REQUEST_CHANGES` has an explicit role gate in the handler. Any agent can invoke them. The convention is that only Socrates (reviewer) does, enforced by system prompts rather than code. See Invariants section.
+> **Note**: `APPROVE_TASK`, `REQUEST_CHANGES`, and `REJECT_TASK` enforce Planner/Reviewer/Human role gates at the handler level. Engineers and other roles are denied.
 
 ### Fix & Re-review Cycle
 
@@ -677,7 +677,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 1. A task's `AssignedAgentName` must correspond to a configured agent in `agents.json` (convention — not enforced in code)
 2. All commits on an agent branch are authored by that agent's git identity — `GitService.CommitAsync` and `SquashMergeAsync` pass `--author` when `AgentGitIdentity` is present in the `CommandContext`
 3. A task in `InReview` must have a non-null `BranchName`
-4. Socrates is the only agent that should approve tasks — this is enforced by system prompts, not by a role gate in `ApproveTaskHandler` (any agent can technically invoke `APPROVE_TASK`)
+4. Task review commands (`APPROVE_TASK`, `REQUEST_CHANGES`, `REJECT_TASK`) are role-gated to Planner, Reviewer, and Human roles at the handler level
 5. A task cannot transition to `Completed` without a `MergeCommitSha` (enforced by `MERGE_TASK` handler flow)
 6. Named agents are responsible for fleet output — fleet models are recorded but the agent is the author
 7. `UpdateTaskBranchAsync` is write-once — if a branch is already set and differs, the operation logs a conflict and does not mutate (enforced in code)
@@ -691,7 +691,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
 - Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
 - No formal limit on review rounds (tracked but not enforced)
-- `APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them
+- ~~`APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them~~ — **resolved**: Both handlers now enforce Planner/Reviewer/Human role gates, matching `REJECT_TASK` and `MERGE_TASK`. 2 tests added.
 
 ## Revision History
 
