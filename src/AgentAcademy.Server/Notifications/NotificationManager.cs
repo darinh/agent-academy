@@ -61,7 +61,11 @@ public sealed class NotificationManager
         {
             try
             {
-                var sent = await provider.SendNotificationAsync(message, cancellationToken);
+                var sent = await NotificationRetryPolicy.ExecuteAsync(
+                    () => provider.SendNotificationAsync(message, cancellationToken),
+                    $"SendNotification({provider.ProviderId})",
+                    _logger,
+                    cancellationToken);
                 if (sent)
                 {
                     successCount++;
@@ -74,7 +78,7 @@ public sealed class NotificationManager
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Failed to send notification via provider '{ProviderId}'", provider.ProviderId);
+                _logger.LogError(ex, "Failed to send notification via provider '{ProviderId}' after retries", provider.ProviderId);
             }
         }
 
@@ -137,7 +141,11 @@ public sealed class NotificationManager
         {
             try
             {
-                var sent = await provider.SendAgentQuestionAsync(question, cancellationToken);
+                var sent = await NotificationRetryPolicy.ExecuteAsync(
+                    () => provider.SendAgentQuestionAsync(question, cancellationToken),
+                    $"SendAgentQuestion({provider.ProviderId})",
+                    _logger,
+                    cancellationToken);
                 if (sent)
                 {
                     _logger.LogInformation(
@@ -148,7 +156,7 @@ public sealed class NotificationManager
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Failed to send agent question via provider '{ProviderId}'", provider.ProviderId);
+                _logger.LogError(ex, "Failed to send agent question via provider '{ProviderId}' after retries", provider.ProviderId);
                 lastError = $"Provider '{provider.ProviderId}' error: {ex.Message}";
             }
         }
@@ -173,7 +181,11 @@ public sealed class NotificationManager
         {
             try
             {
-                var sent = await provider.SendDirectMessageAsync(dm, cancellationToken);
+                var sent = await NotificationRetryPolicy.ExecuteAsync(
+                    () => provider.SendDirectMessageAsync(dm, cancellationToken),
+                    $"SendDirectMessage({provider.ProviderId})",
+                    _logger,
+                    cancellationToken);
                 if (sent) return (true, null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -195,11 +207,15 @@ public sealed class NotificationManager
         {
             try
             {
-                await provider.OnRoomRenamedAsync(roomId, newName, cancellationToken);
+                await NotificationRetryPolicy.ExecuteAsync(
+                    () => provider.OnRoomRenamedAsync(roomId, newName, cancellationToken),
+                    $"NotifyRoomRenamed({provider.ProviderId})",
+                    _logger,
+                    cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Failed to notify provider '{ProviderId}' of room rename", provider.ProviderId);
+                _logger.LogError(ex, "Failed to notify provider '{ProviderId}' of room rename after retries", provider.ProviderId);
             }
         }
     }
