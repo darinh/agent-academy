@@ -171,6 +171,30 @@ public sealed class ShellCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_GitCommit_UsesAgentGitIdentity()
+    {
+        File.WriteAllText(Path.Combine(_repoRoot, "identity.txt"), "agent-authored\n");
+        RunGit(_repoRoot, "add", "identity.txt");
+
+        var gitIdentity = new AgentGitIdentity("Aristotle (Planner)", "aristotle@agent-academy.local");
+
+        var scope = _serviceProvider.CreateScope();
+        var envelope = MakeEnvelope(
+            new Dictionary<string, object?> { ["operation"] = "git-commit", ["message"] = "Agent commit with identity" },
+            "planner-1");
+        var context = new CommandContext("planner-1", "Aristotle", "Planner", "main", null, scope.ServiceProvider, gitIdentity);
+
+        var result = await _handler.ExecuteAsync(envelope, context);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+
+        var authorName = RunGit(_repoRoot, "log", "-1", "--pretty=%an");
+        var authorEmail = RunGit(_repoRoot, "log", "-1", "--pretty=%ae");
+        Assert.Equal("Aristotle (Planner)", authorName);
+        Assert.Equal("aristotle@agent-academy.local", authorEmail);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_GitStashPop_Succeeds()
     {
         RunGit(_repoRoot, "checkout", "-b", "task/stash-test");

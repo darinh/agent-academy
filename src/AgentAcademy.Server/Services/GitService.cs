@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -139,15 +140,29 @@ public class GitService
 
     /// <summary>
     /// Creates a commit from staged changes and returns the new commit SHA.
+    /// When <paramref name="author"/> is provided, the commit uses <c>--author</c>
+    /// to attribute the work to the specified agent identity.
     /// </summary>
-    public async Task<string> CommitAsync(string message)
+    public async Task<string> CommitAsync(string message, AgentGitIdentity? author = null)
     {
         await _gitLock.WaitAsync();
         try
         {
-            await RunGitAsync("commit", "-m", message);
+            if (author is not null
+                && !string.IsNullOrWhiteSpace(author.AuthorName)
+                && !string.IsNullOrWhiteSpace(author.AuthorEmail))
+            {
+                var authorArg = $"{author.AuthorName} <{author.AuthorEmail}>";
+                await RunGitAsync("commit", "-m", message, "--author", authorArg);
+            }
+            else
+            {
+                await RunGitAsync("commit", "-m", message);
+            }
+
             var commitSha = await RunGitAsync("rev-parse", "HEAD");
-            _logger.LogInformation("Created commit {CommitSha}", commitSha);
+            _logger.LogInformation("Created commit {CommitSha} (author: {Author})",
+                commitSha, author?.AuthorName ?? "default");
             return commitSha;
         }
         finally
@@ -181,9 +196,10 @@ public class GitService
 
     /// <summary>
     /// Squash-merges a task branch into the current branch (develop).
-    /// Cleans up with <c>git merge --abort</c> on failure.
+    /// Uses <c>git reset --hard HEAD</c> on failure to cleanly undo squash state.
+    /// When <paramref name="author"/> is provided, the merge commit uses <c>--author</c>.
     /// </summary>
-    public async Task<string> SquashMergeAsync(string branch, string commitMessage)
+    public async Task<string> SquashMergeAsync(string branch, string commitMessage, AgentGitIdentity? author = null)
     {
         await _gitLock.WaitAsync();
         try
@@ -193,15 +209,28 @@ public class GitService
             {
                 await RunGitAsync("merge", "--squash", branch);
                 await RunGitAsync("add", "-A");
-                await RunGitAsync("commit", "-m", commitMessage);
+
+                if (author is not null
+                    && !string.IsNullOrWhiteSpace(author.AuthorName)
+                    && !string.IsNullOrWhiteSpace(author.AuthorEmail))
+                {
+                    var authorArg = $"{author.AuthorName} <{author.AuthorEmail}>";
+                    await RunGitAsync("commit", "-m", commitMessage, "--author", authorArg);
+                }
+                else
+                {
+                    await RunGitAsync("commit", "-m", commitMessage);
+                }
+
                 var mergeCommitSha = await RunGitAsync("rev-parse", "HEAD");
-                _logger.LogInformation("Squash-merged {Branch} into develop", branch);
+                _logger.LogInformation("Squash-merged {Branch} into develop (author: {Author})",
+                    branch, author?.AuthorName ?? "default");
                 return mergeCommitSha;
             }
             catch
             {
-                _logger.LogWarning("Merge failed for {Branch}, aborting", branch);
-                try { await RunGitAsync("merge", "--abort"); }
+                _logger.LogWarning("Merge failed for {Branch}, resetting to HEAD", branch);
+                try { await RunGitAsync("reset", "--hard", "HEAD"); }
                 catch { /* best effort */ }
                 throw;
             }

@@ -57,7 +57,8 @@ public sealed class CommandPipeline
             AgentRole: agent.Role,
             RoomId: roomId,
             BreakoutRoomId: null,
-            Services: scopedServices
+            Services: scopedServices,
+            GitIdentity: agent.GitIdentity
         );
 
         var results = new List<CommandEnvelope>();

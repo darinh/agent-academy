@@ -104,7 +104,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
 
             var commitMessage = BuildCommitMessage(task.Type, task.Title);
-            var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage);
+            var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage, context.GitIdentity);
             await runtime.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: mergeCommitSha);
 
             // Post success note to task room

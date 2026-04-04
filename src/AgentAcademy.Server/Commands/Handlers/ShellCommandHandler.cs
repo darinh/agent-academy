@@ -62,7 +62,7 @@ public sealed class ShellCommandHandler : ICommandHandler
         return parsed!.Operation switch
         {
             "git-checkout" => await ExecuteGitCheckoutAsync(command, parsed),
-            "git-commit" => await ExecuteGitCommitAsync(command, parsed),
+            "git-commit" => await ExecuteGitCommitAsync(command, parsed, context),
             "git-stash-pop" => await ExecuteGitStashPopAsync(command, parsed),
             "restart-server" => await ExecuteRestartServerAsync(command, context, parsed),
             "dotnet-build" => await ExecuteDotnetAsync(command, parsed.Operation, "dotnet", ["build", "--nologo", "-v", "q"]),
@@ -107,11 +107,11 @@ public sealed class ShellCommandHandler : ICommandHandler
         }
     }
 
-    private async Task<CommandEnvelope> ExecuteGitCommitAsync(CommandEnvelope command, ShellCommand parsed)
+    private async Task<CommandEnvelope> ExecuteGitCommitAsync(CommandEnvelope command, ShellCommand parsed, CommandContext context)
     {
         try
         {
-            var commitSha = await _gitService.CommitAsync(parsed.Message!);
+            var commitSha = await _gitService.CommitAsync(parsed.Message!, context.GitIdentity);
 
             return command with
             {

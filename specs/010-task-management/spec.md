@@ -660,7 +660,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 ## Invariants
 
 1. A task's `AssignedAgentName` must correspond to a configured agent in `agents.json` (convention — not enforced in code)
-2. All commits on an agent branch must be authored by that agent's git identity (convention — git identity is configured but not enforced by commit hooks)
+2. All commits on an agent branch are authored by that agent's git identity — `GitService.CommitAsync` and `SquashMergeAsync` pass `--author` when `AgentGitIdentity` is present in the `CommandContext`
 3. A task in `InReview` must have a non-null `BranchName`
 4. Socrates is the only agent that should approve tasks — this is enforced by system prompts, not by a role gate in `ApproveTaskHandler` (any agent can technically invoke `APPROVE_TASK`)
 5. A task cannot transition to `Completed` without a `MergeCommitSha` (enforced by `MERGE_TASK` handler flow)
@@ -673,7 +673,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 - **GitHub PR integration not implemented** — task model has PR fields but no API service exists
 - No remote push capability — all work is local-only
 - No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`
-- Agent git identity configuration exists but commits are not yet attributed to agents
+- ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
 - Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
 - No formal limit on review rounds (tracked but not enforced)
 - `APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them
