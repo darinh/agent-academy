@@ -3,7 +3,7 @@
 ## Purpose
 Defines a unified command pipeline through which agents interact with the platform, codebase, and each other. Every agent action — reading files, moving between rooms, sending messages, managing tasks — flows through a structured envelope with authorization, audit trails, and consistent error handling.
 
-> **Status: Implemented (Phase 1A)** — Command envelope, parser, pipeline, authorization, audit trail, and Phase 1A handlers (LIST_ROOMS, LIST_AGENTS, LIST_TASKS, READ_FILE, SEARCH_CODE) are implemented. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET) are implemented. Runs in parallel with existing free-text parsing.
+> **Status: Implemented** — All Tier 1 command phases (1A–1G) and all Tier 2 Room Management commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 24 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET) are implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Communication, Task Management, Code & Spec, Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
 
 ## Motivation
 Today, agents have no formalized way to interact with the platform. The orchestrator parses free-text blocks like `TASK ASSIGNMENT:` from agent responses. This creates:
