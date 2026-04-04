@@ -264,6 +264,9 @@ builder.Services.AddSingleton<ICommandHandler, ReturnToMainHandler>();
 builder.Services.AddSingleton<ICommandHandler, MergeTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, RebaseTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, CancelTaskHandler>();
+builder.Services.AddSingleton<ICommandHandler, CreateTaskItemHandler>();
+builder.Services.AddSingleton<ICommandHandler, UpdateTaskItemHandler>();
+builder.Services.AddSingleton<ICommandHandler, ListTaskItemsHandler>();
 builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
 

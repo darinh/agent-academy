@@ -173,12 +173,13 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 - No real-time push to external clients — SignalR hub exists (`/hubs/activity`) and `ActivityHubBroadcaster` forwards events to connected clients, but activity subscribers are also available in-process
 - ~~No agent knowledge persistence (v1 had file-based knowledge storage)~~ — **resolved**: Agent memory system (spec 008) provides persistent key/value storage with categories, FTS5 search, shared cross-agent memories, import/export, and TTL-based decay. Replaces v1's file-based approach with a structured, queryable system.
-- No task item management (v1 had `createTaskItem`, `updateTaskStatus`, etc.) — internal methods exist (`CreateTaskItemAsync`, `UpdateTaskItemStatusAsync`) but no dedicated agent commands expose them
+- ~~No task item management (v1 had `createTaskItem`, `updateTaskStatus`, etc.)~~ — **resolved**: `CREATE_TASK_ITEM`, `UPDATE_TASK_ITEM`, and `LIST_TASK_ITEMS` commands expose task item management. Agents can create, update, and query task items with role-gating, entity validation, and agent catalog resolution.
 - Activity event in-memory buffer is per-instance, not shared across scoped instances
 - Legacy rooms (created before project-scoping) have `WorkspacePath = null` — they won't appear when a workspace is active
 
 ## Revision History
 
+- **2026-04-04**: Task item commands — `CREATE_TASK_ITEM`, `UPDATE_TASK_ITEM`, `LIST_TASK_ITEMS` commands added. Resolves the task item management known gap. Added `GetTaskItemAsync` and `GetTaskItemsAsync` to WorkspaceRuntime. `UpdateTaskItemStatusAsync` now throws on missing items (was silent no-op). Agent catalog validation on assignee, room existence validation on create.
 - **2026-04-04**: Marked "No agent knowledge persistence" as resolved — memory system (spec 008) provides persistent storage with categories, FTS5, shared memories, import/export, and TTL decay. Clarified task item gap: internal methods exist but no agent commands expose them.
 - **2026-04-04**: Stale room cleanup — auto-archive rooms when all tasks are terminal, `GetRoomsAsync` excludes archived by default, `CleanupStaleRoomsAsync` for bulk cleanup, `CLEANUP_ROOMS` command, `POST /api/rooms/cleanup` API, room reopening on task rejection
 - **2026-03-29**: Project-scoped rooms — `WorkspacePath` FK on `RoomEntity`, `GetRoomsAsync` filters by active workspace, `EnsureDefaultRoomForWorkspaceAsync` creates per-project default room with agents, `CreateTaskAsync` stamps new rooms with active workspace path
