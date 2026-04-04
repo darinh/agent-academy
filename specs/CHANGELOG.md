@@ -9,6 +9,8 @@ All changes to specifications are documented here.
 - **300-frontend-ui**: Commands tab — added `CommandsPanel.tsx` to the workspace shell for the 11-command Week 1 human allowlist. The client hardcodes command metadata, submits scalar args only, polls async build/test executions every 2.5 seconds, keeps the last 10 runs in a result rail, and leaves the tab readable-but-disabled during degraded Copilot sessions.
 
 ### Fixed
+- **007-agent-commands**: `SEARCH_CODE` switched from `grep -rn` to `git grep`. Respects `.gitignore` (skips `node_modules`, `bin`, `obj`), only searches tracked files, skips binary files. Invalid path args now return an actionable error message instead of silently returning zero results.
+- **007-agent-commands**: `READ_FILE` now supports directory paths — returns a listing of directory entries instead of "File not found".
 - **006-orchestrator / 010-task-management**: Fixed breakout task metadata contamination during overlapping assignment/setup. Breakout rooms now persist and reuse `TaskId` as the only task-identity source during branch setup, and `TaskEntity.BranchName` is now write-once with conflict logging instead of being replaceable by later context-derived writes.
 - **007-agent-commands**: Confirmed MERGE_TASK role authorization enforcement (commit 52419d8). Handler guards Planner/Reviewer access at lines 25-31. Updated spec table with implementation reference and clarified "ship together" design principle scope.
 - **007-agent-commands / 010-task-management**: `MERGE_TASK` now formats squash-merge commit messages as conventional commit subjects derived from `TaskEntity.Type` (`feat:`, `fix:`, `chore:`, `docs:`), preventing commit-msg hook rejections during reviewer/planner merges.

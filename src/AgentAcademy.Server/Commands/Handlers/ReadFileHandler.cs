@@ -40,6 +40,38 @@ public sealed class ReadFileHandler : ICommandHandler
 
         if (!File.Exists(fullPath))
         {
+            // If it's a directory, list its contents instead
+            if (Directory.Exists(fullPath))
+            {
+                try
+                {
+                    var entries = Directory.GetFileSystemEntries(fullPath)
+                        .Select(e => Path.GetRelativePath(projectRoot, e))
+                        .OrderBy(e => e)
+                        .ToList();
+
+                    return Task.FromResult(command with
+                    {
+                        Status = CommandStatus.Success,
+                        Result = new Dictionary<string, object?>
+                        {
+                            ["type"] = "directory",
+                            ["path"] = path,
+                            ["entries"] = entries,
+                            ["count"] = entries.Count
+                        }
+                    });
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    return Task.FromResult(command with
+                    {
+                        Status = CommandStatus.Error,
+                        Error = $"Cannot read directory: {ex.Message}"
+                    });
+                }
+            }
+
             return Task.FromResult(command with
             {
                 Status = CommandStatus.Error,

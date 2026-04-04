@@ -4,7 +4,9 @@ using AgentAcademy.Shared.Models;
 namespace AgentAcademy.Server.Commands.Handlers;
 
 /// <summary>
-/// Handles SEARCH_CODE — searches for text patterns in the project codebase using grep.
+/// Handles SEARCH_CODE — searches for text patterns in the project codebase using git grep.
+/// Uses git grep instead of plain grep to automatically respect .gitignore
+/// (skips node_modules, bin, obj, etc.) and only search tracked files.
 /// </summary>
 public sealed class SearchCodeHandler : ICommandHandler
 {
@@ -25,8 +27,35 @@ public sealed class SearchCodeHandler : ICommandHandler
 
         var projectRoot = FindProjectRoot();
 
-        // Optional path filter
-        var searchPath = projectRoot;
+        // Build git grep command — respects .gitignore, skips binary files,
+        // only searches tracked files
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            WorkingDirectory = projectRoot
+        };
+        psi.ArgumentList.Add("--no-pager");
+        psi.ArgumentList.Add("grep");
+        psi.ArgumentList.Add("-n");
+        psi.ArgumentList.Add("--color=never");
+        psi.ArgumentList.Add("-I"); // skip binary files
+
+        psi.ArgumentList.Add("--max-count");
+        psi.ArgumentList.Add(MaxResults.ToString());
+        psi.ArgumentList.Add("-e");
+        psi.ArgumentList.Add(query);
+
+        // Build pathspec for git grep
+        string? globFilter = null;
+        string? pathScope = null;
+        var pathScopeIsFile = false;
+
+        if (command.Args.TryGetValue("glob", out var globObj) && globObj is string glob && !string.IsNullOrWhiteSpace(glob))
+            globFilter = glob;
+
         if (command.Args.TryGetValue("path", out var pathObj) && pathObj is string subPath && !string.IsNullOrWhiteSpace(subPath))
         {
             var full = Path.GetFullPath(Path.Combine(projectRoot, subPath));
@@ -34,41 +63,52 @@ public sealed class SearchCodeHandler : ICommandHandler
                 ? projectRoot : projectRoot + Path.DirectorySeparatorChar;
             if (full.StartsWith(projectRootWithSep, StringComparison.Ordinal) ||
                 full.Equals(projectRoot, StringComparison.Ordinal))
-                searchPath = full;
+            {
+                if (!Directory.Exists(full) && !File.Exists(full))
+                {
+                    return command with
+                    {
+                        Status = CommandStatus.Error,
+                        Error = $"Path not found: {subPath}. Use paths relative to the project root (e.g., src/AgentAcademy.Server/Commands)."
+                    };
+                }
+                pathScope = Path.GetRelativePath(projectRoot, full);
+                pathScopeIsFile = File.Exists(full);
+            }
         }
 
-        // Build grep command using ArgumentList (not Arguments string) to avoid
-        // shell-quoting issues with UseShellExecute = false
-        var psi = new ProcessStartInfo
+        // Combine glob and path into a single pathspec when both are provided
+        if (globFilter is not null || pathScope is not null)
         {
-            FileName = "grep",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = projectRoot
-        };
-        psi.ArgumentList.Add("-rn");
-        psi.ArgumentList.Add("--color=never");
-        if (command.Args.TryGetValue("glob", out var globObj) && globObj is string glob && !string.IsNullOrWhiteSpace(glob))
-            psi.ArgumentList.Add($"--include={glob}");
-        psi.ArgumentList.Add("-m");
-        psi.ArgumentList.Add(MaxResults.ToString());
-        psi.ArgumentList.Add("--");
-        psi.ArgumentList.Add(query);
-        psi.ArgumentList.Add(searchPath);
+            psi.ArgumentList.Add("--");
+            if (globFilter is not null && pathScope is not null && !pathScopeIsFile)
+            {
+                // Combine: only match glob within the directory scope
+                psi.ArgumentList.Add($":(glob){pathScope}/**/{globFilter}");
+            }
+            else if (pathScope is not null)
+            {
+                // File path or directory without glob — use directly
+                psi.ArgumentList.Add(pathScope);
+            }
+            else
+            {
+                psi.ArgumentList.Add(globFilter!);
+            }
+        }
 
         try
         {
             using var process = Process.Start(psi);
             if (process == null)
             {
-                return command with { Status = CommandStatus.Error, Error = "Failed to start grep process." };
+                return command with { Status = CommandStatus.Error, Error = "Failed to start search process." };
             }
 
             var output = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();
 
-            // Parse grep output into structured results
+            // git grep output format: file:line:content
             var matches = output
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Take(MaxResults)
@@ -77,10 +117,9 @@ public sealed class SearchCodeHandler : ICommandHandler
                     var parts = line.Split(':', 3);
                     if (parts.Length >= 3)
                     {
-                        var filePath = Path.GetRelativePath(projectRoot, parts[0]);
                         return new Dictionary<string, object?>
                         {
-                            ["file"] = filePath,
+                            ["file"] = parts[0],
                             ["line"] = int.TryParse(parts[1], out var ln) ? ln : 0,
                             ["text"] = parts[2].Trim()
                         };
