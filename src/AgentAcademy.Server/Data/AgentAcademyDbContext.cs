@@ -251,6 +251,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.Command).IsRequired();
             entity.Property(e => e.ArgsJson).IsRequired().HasDefaultValue("{}");
             entity.Property(e => e.Status).IsRequired().HasDefaultValue("Success");
+            entity.Property(e => e.ErrorCode);
             entity.Property(e => e.Timestamp).IsRequired();
 
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_cmd_audits_agent");

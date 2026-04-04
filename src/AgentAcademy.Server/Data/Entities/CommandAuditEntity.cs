@@ -16,6 +16,7 @@ public class CommandAuditEntity
     public string Status { get; set; } = "Success";
     public string? ResultJson { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? ErrorCode { get; set; }
     public string? RoomId { get; set; }
     public DateTime Timestamp { get; set; }
 }

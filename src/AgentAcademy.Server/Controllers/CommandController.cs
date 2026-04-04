@@ -262,6 +262,7 @@ public sealed class CommandController : ControllerBase
             audit.Status = envelope.Status.ToString();
             audit.ResultJson = envelope.Result is null ? null : JsonSerializer.Serialize(envelope.Result);
             audit.ErrorMessage = envelope.Error;
+            audit.ErrorCode = envelope.ErrorCode;
             audit.Timestamp = envelope.Timestamp;
         }
 
@@ -280,6 +281,7 @@ public sealed class CommandController : ControllerBase
             Status = envelope.Status.ToString(),
             ResultJson = envelope.Result is null ? null : JsonSerializer.Serialize(envelope.Result),
             ErrorMessage = envelope.Error,
+            ErrorCode = envelope.ErrorCode,
             Timestamp = envelope.Timestamp
         };
 
@@ -300,7 +302,7 @@ public sealed class CommandController : ControllerBase
             Status: MapAuditStatus(audit.Status),
             Result: DeserializeResult(audit.ResultJson),
             Error: audit.ErrorMessage,
-            ErrorCode: null, // Audit entities don't store ErrorCode yet
+            ErrorCode: audit.ErrorCode,
             CorrelationId: audit.CorrelationId,
             Timestamp: audit.Timestamp,
             ExecutedBy: audit.AgentId);

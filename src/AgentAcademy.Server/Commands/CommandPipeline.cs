@@ -171,6 +171,7 @@ public sealed class CommandPipeline
             Status = envelope.Status.ToString(),
             ResultJson = envelope.Result != null ? JsonSerializer.Serialize(envelope.Result) : null,
             ErrorMessage = envelope.Error,
+            ErrorCode = envelope.ErrorCode,
             RoomId = roomId,
             Timestamp = envelope.Timestamp
         });
