@@ -202,6 +202,7 @@ public enum ActivityEventType
     TaskClaimed,
     TaskReleased,
     TaskApproved,
+    TaskRejected,
     TaskChangesRequested,
     TaskStatusUpdated,
     TaskCommentAdded,

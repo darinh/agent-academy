@@ -265,9 +265,24 @@ The branch workflow must not infer task identity from title matches, room status
 
 > **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:977-1005` (write-once `UpdateTaskBranchAsync`), `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1888-1920` (`SetBreakoutTaskIdAsync`)
 
-### Known Gaps
+### Rejection Flow
 
-- No `REJECT_TASK` command for branch-based tasks. If a reviewer finds issues after approval, the only recourse is `git revert`. A rejection flow (setting task back to `ChangesRequested` and spawning a new breakout) is a future enhancement.
+After a task is approved (or even completed/merged), a reviewer or planner can reject it via `REJECT_TASK`:
+
+1. Task status transitions from `Approved` or `Completed` → `ChangesRequested`
+2. If the task was `Completed` with a `MergeCommitSha`, the merge commit is reverted on develop via `git revert --no-edit`
+3. The `MergeCommitSha` and `CompletedAt` fields are cleared for completed tasks
+4. The reviewer and review round count are updated
+5. A rejection message (with `❌ Rejected` prefix) is posted to the task's room
+6. The most recent archived breakout room for the task is reopened (status → `Active`, agent moved back to `Working` state)
+7. The rejection reason is posted into the breakout room so the assigned agent sees it
+8. A `TaskRejected` activity event is published
+
+**Role gate**: Only `Planner`, `Reviewer`, or `Human` roles may invoke `REJECT_TASK`.
+
+**Required arguments**: `taskId`, `reason`
+
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/RejectTaskHandler.cs`, `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (`RejectTaskAsync`, `TryReopenBreakoutForTaskAsync`), `src/AgentAcademy.Server/Services/GitService.cs` (`RevertCommitAsync`)
 
 ---
 
@@ -672,7 +687,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 - **GitHub PR integration not implemented** — task model has PR fields but no API service exists
 - No remote push capability — all work is local-only
-- No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`
+- ~~No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`~~ — **resolved**: `REJECT_TASK` handler supports `Approved` → `ChangesRequested` (simple status change + breakout reopen) and `Completed` → `ChangesRequested` (reverts merge commit on develop + breakout reopen). Role-gated to Planner, Reviewer, Human. 19 tests.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
 - Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)
 - No formal limit on review rounds (tracked but not enforced)
@@ -682,6 +697,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-04 | REJECT_TASK command — reverts Approved/Completed tasks to ChangesRequested, reverts merge commit for completed tasks, reopens breakout rooms. Role-gated to Planner/Reviewer/Human. 19 tests. | Anvil |
 | 2026-04-04 | Reconciled spec with code — Partial → Implemented. Documented all TaskSnapshot/TaskEntity fields, TaskStatus.AwaitingValidation, command table, WorkspaceRuntime method index, auto-spec dedup, role gate gaps, write-once invariants | Anvil |
 | 2026-04-01 | Remove unimplemented PR workflow content — marked GitHub integration as Planned | Thucydides |
 | 2026-03-28 | Initial spec — Planned | Copilot (via Anvil) |

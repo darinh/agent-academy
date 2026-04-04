@@ -261,6 +261,37 @@ public class GitService
         }
     }
 
+    /// <summary>
+    /// Reverts a commit on develop. Used by REJECT_TASK to undo a squash-merge.
+    /// Returns the SHA of the revert commit.
+    /// </summary>
+    public async Task<string> RevertCommitAsync(string commitSha)
+    {
+        if (string.IsNullOrWhiteSpace(commitSha))
+            throw new ArgumentException("Commit SHA is required.", nameof(commitSha));
+
+        await _gitLock.WaitAsync();
+        try
+        {
+            await RunGitAsync("checkout", "develop");
+            await RunGitAsync("revert", "--no-edit", commitSha);
+            var revertSha = await RunGitAsync("rev-parse", "HEAD");
+            _logger.LogInformation("Reverted commit {CommitSha} on develop → {RevertSha}", commitSha, revertSha);
+            return revertSha;
+        }
+        catch
+        {
+            _logger.LogWarning("Revert failed for {CommitSha}, aborting revert", commitSha);
+            try { await RunGitAsync("revert", "--abort"); }
+            catch { /* best effort */ }
+            throw;
+        }
+        finally
+        {
+            _gitLock.Release();
+        }
+    }
+
     // ── Stash Helpers ───────────────────────────────────────────
 
     /// <summary>

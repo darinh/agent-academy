@@ -1204,6 +1204,96 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Rejects an approved or completed task, returning it to ChangesRequested.
+    /// For completed tasks, clears the merge metadata. Reopens the breakout room
+    /// so the assigned agent can address the rejection findings.
+    /// </summary>
+    public async Task<TaskSnapshot> RejectTaskAsync(
+        string taskId, string reviewerAgentId, string reason, string? revertCommitSha = null)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var currentStatus = entity.Status;
+        if (currentStatus != nameof(Shared.Models.TaskStatus.Approved) &&
+            currentStatus != nameof(Shared.Models.TaskStatus.Completed))
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is in '{currentStatus}' state — must be Approved or Completed to reject");
+
+        var now = DateTime.UtcNow;
+        var wasCompleted = currentStatus == nameof(Shared.Models.TaskStatus.Completed);
+
+        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
+        entity.ReviewerAgentId = reviewerAgentId;
+        entity.ReviewRounds++;
+        entity.UpdatedAt = now;
+
+        if (wasCompleted)
+        {
+            entity.MergeCommitSha = null;
+            entity.CompletedAt = null;
+        }
+
+        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
+
+        var statusNote = revertCommitSha is not null ? " (merge reverted)" : "";
+        if (!string.IsNullOrEmpty(entity.RoomId))
+        {
+            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
+                $"❌ **Rejected** by {reviewerName}{statusNote}\n\n{reason}", null, now);
+            _db.Messages.Add(msgEntity);
+        }
+
+        Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
+            $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
+
+        // Reopen the breakout room for the assigned agent to fix
+        await TryReopenBreakoutForTaskAsync(taskId, reason, reviewerName);
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Finds the most recent breakout room for a task and reopens it if archived.
+    /// Moves the assigned agent back into the breakout to address rejection findings.
+    /// </summary>
+    private async Task TryReopenBreakoutForTaskAsync(string taskId, string reason, string reviewerName)
+    {
+        var breakout = await _db.BreakoutRooms
+            .Where(b => b.TaskId == taskId && b.Status == nameof(RoomStatus.Archived))
+            .OrderByDescending(b => b.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (breakout is null) return;
+
+        breakout.Status = nameof(RoomStatus.Active);
+        breakout.CloseReason = null;
+        breakout.UpdatedAt = DateTime.UtcNow;
+
+        await MoveAgentAsync(breakout.AssignedAgentId, breakout.ParentRoomId,
+            AgentState.Working, breakout.Id);
+
+        Publish(ActivityEventType.RoomStatusChanged, breakout.ParentRoomId,
+            breakout.AssignedAgentId, null,
+            $"Breakout room reopened for rejected task: {breakout.Name}");
+
+        // Post rejection reason into the breakout so the agent sees it
+        _db.BreakoutMessages.Add(new Data.Entities.BreakoutMessageEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            BreakoutRoomId = breakout.Id,
+            SenderId = "system",
+            SenderName = "System",
+            SenderRole = "System",
+            SenderKind = "System",
+            Kind = nameof(MessageKind.System),
+            Content = $"⚠️ Task rejected by {reviewerName}:\n{reason}\n\nPlease address the findings and submit for review again.",
+            SentAt = DateTime.UtcNow
+        });
+    }
+
+    /// <summary>
     /// Returns tasks that are pending review (InReview or AwaitingValidation).
     /// </summary>
     public async Task<List<TaskSnapshot>> GetReviewQueueAsync()

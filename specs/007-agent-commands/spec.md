@@ -133,6 +133,7 @@ These formalize existing capabilities with audit trails and structured output.
 | `SHOW_UNLINKED_CHANGES` | `since?` | Tasks/commits without spec links | Audit event |
 | `APPROVE_TASK` | `taskId`, `findings?` | Confirmation | Updates task status, records reviewer | `ApproveTaskHandler.cs` — validates InReview/AwaitingValidation state, sets Approved, records reviewer, increments ReviewRounds, posts findings as review message |
 | `REQUEST_CHANGES` | `taskId`, `findings` | Confirmation | Updates task status, creates feedback | `RequestChangesHandler.cs` — validates InReview/AwaitingValidation state, sets ChangesRequested, records reviewer, increments ReviewRounds, posts findings as review message |
+| `REJECT_TASK` | `taskId`, `reason` | Confirmation, optional `revertCommitSha` | Reverts Approved/Completed → ChangesRequested, reverts merge if completed, reopens breakout room | `RejectTaskHandler.cs` — Planner/Reviewer/Human role gate, reverts merge commit on develop for completed tasks, reopens archived breakout, posts rejection reason |
 | `SHOW_REVIEW_QUEUE` | — | Tasks awaiting review | Audit event | `ShowReviewQueueHandler.cs` — queries tasks with InReview or AwaitingValidation status, returns summary list |
 | `CLAIM_TASK` | `taskId` | Confirmation | Assigns agent, prevents duplicate work | `ClaimTaskHandler.cs` — validates no other claimant, assigns calling agent, auto-activates Queued tasks |
 | `RELEASE_TASK` | `taskId` | Confirmation | Unassigns agent | `ReleaseTaskHandler.cs` — validates calling agent is current assignee, clears assignment |
