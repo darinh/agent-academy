@@ -82,4 +82,12 @@ public interface INotificationProvider
     /// <remarks>Default implementation is a no-op.</remarks>
     Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// Notifies the provider that a room has been archived/closed, allowing it to
+    /// clean up external resources (e.g., delete Discord channels, remove webhooks).
+    /// </summary>
+    /// <remarks>Default implementation is a no-op.</remarks>
+    Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }

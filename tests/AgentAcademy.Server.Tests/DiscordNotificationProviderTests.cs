@@ -343,6 +343,25 @@ public class DiscordNotificationProviderTests
 
     #endregion
 
+    #region OnRoomClosedAsync
+
+    [Fact]
+    public async Task OnRoomClosedAsync_NoOp_WhenNotConfigured()
+    {
+        // Should complete without throwing
+        await _provider.OnRoomClosedAsync("room-1");
+    }
+
+    [Fact]
+    public async Task OnRoomClosedAsync_NoOp_WhenRoomNotTracked()
+    {
+        await _provider.ConfigureAsync(ValidConfig());
+        // room-1 was never created/tracked — should be a no-op
+        await _provider.OnRoomClosedAsync("room-1");
+    }
+
+    #endregion
+
     #region Helpers
 
     private static Dictionary<string, string> ValidConfig() => new()

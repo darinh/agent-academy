@@ -40,6 +40,8 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 | `RequestInputAsync()` | `Task<UserResponse?>` | Collect user input (null if unsupported) |
 | `SendAgentQuestionAsync()` | `Task<(bool, string?)>` | Send agent question to human; returns sent status + error detail |
 | `GetConfigSchema()` | `ProviderConfigSchema` | Describe required configuration fields |
+| `OnRoomRenamedAsync()` | `Task` | Update external resources on room rename (default: no-op) |
+| `OnRoomClosedAsync()` | `Task` | Clean up external resources on room archive (default: no-op) |
 
 ### NotificationManager
 
@@ -358,9 +360,11 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - Provider config values (including secrets) stored in plaintext in SQLite — encryption enhancement pending
 - Settings tab currently shows only Discord wizard; will need expansion for multiple providers
 - DiceBear avatar URLs are an external dependency — consider caching/bundling if availability matters
-- Room channels are not cleaned up when rooms are archived/completed
+- ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.
 
 ## Revision History
+
+- **2026-04-04**: Room channel cleanup — `OnRoomClosedAsync` added to `INotificationProvider`. Discord provider deletes channel, disposes webhook, and clears mapping caches when a room is archived. `ActivityNotificationBroadcaster` routes `RoomClosed` events as structural provider notifications. `NotificationManager.NotifyRoomClosedAsync` fans out to all providers with retry. 7 new tests.
 
 - **2026-04-04**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 4 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed) with Delivered/Skipped/Failed status. REST API for delivery history and stats. 18 new tests. Adversarial review by GPT-5.3 Codex.
 
