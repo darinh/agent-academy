@@ -273,6 +273,57 @@ public class ServerInstanceTests : IDisposable
         Assert.Contains("System recovered from crash", recoveryMessage.Content);
     }
 
+    [Fact]
+    public async Task RecoverFromCrashAsync_NothingToRecover_SkipsNotification()
+    {
+        var now = DateTime.UtcNow;
+
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "main",
+            Name = "Main Collaboration Room",
+            Status = nameof(RoomStatus.Idle),
+            CurrentPhase = nameof(CollaborationPhase.Intake),
+            CreatedAt = now.AddHours(-1),
+            UpdatedAt = now.AddHours(-1)
+        });
+
+        // Add orphaned instance to trigger crash detection, but NO breakouts or stuck agents
+        _db.ServerInstances.Add(new ServerInstanceEntity
+        {
+            StartedAt = now.AddHours(-2),
+            Version = "1.0.0"
+        });
+
+        await _db.SaveChangesAsync();
+        await _runtime.InitializeAsync();
+
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var scope = Substitute.For<IServiceScope>();
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(serviceProvider);
+        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+
+        var orchestrator = new AgentOrchestrator(
+            scopeFactory,
+            Substitute.For<IAgentExecutor>(),
+            new ActivityBroadcaster(),
+            new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            new GitService(NullLogger<GitService>.Instance),
+            NullLogger<AgentOrchestrator>.Instance);
+
+        await orchestrator.HandleStartupRecoveryAsync("main");
+
+        // No recovery work → no notification should be posted
+        var messageCount = await _db.Messages
+            .Where(m => m.RoomId == "main")
+            .CountAsync();
+
+        Assert.Equal(0, messageCount);
+    }
+
     // ── Queue Reconstruction ────────────────────────────────────
 
     [Fact]

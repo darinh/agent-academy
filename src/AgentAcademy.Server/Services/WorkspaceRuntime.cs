@@ -1958,26 +1958,36 @@ public sealed class WorkspaceRuntime
         }
 
         var now = DateTime.UtcNow;
-        var message = $"System recovered from crash. Closed {activeBreakoutIds.Count} breakout room(s), reset {lingeringWorkingAgents.Count} stuck agent(s), and reset {recoverableTasks.Count} stuck task(s).";
-        var recoveryCorrelationId = CurrentInstanceId;
-        var alreadyNotified = !string.IsNullOrWhiteSpace(recoveryCorrelationId)
-            && await _db.Messages.AnyAsync(m => m.RoomId == mainRoomId && m.CorrelationId == recoveryCorrelationId);
+        var recoveredAnything = activeBreakoutIds.Count > 0
+            || lingeringWorkingAgents.Count > 0
+            || recoverableTasks.Count > 0;
 
-        if (!alreadyNotified)
+        // Only post a recovery notification when there was actual work to report.
+        // Prevents noisy "recovered from crash" messages when the server restarts
+        // multiple times without any breakouts/agents needing recovery.
+        if (recoveredAnything)
         {
-            var entity = CreateMessageEntity(mainRoomId, MessageKind.System, message, recoveryCorrelationId, now);
-            _db.Messages.Add(entity);
-            mainRoom.UpdatedAt = now;
+            var message = $"System recovered from crash. Closed {activeBreakoutIds.Count} breakout room(s), reset {lingeringWorkingAgents.Count} stuck agent(s), and reset {recoverableTasks.Count} stuck task(s).";
+            var recoveryCorrelationId = CurrentInstanceId;
+            var alreadyNotified = !string.IsNullOrWhiteSpace(recoveryCorrelationId)
+                && await _db.Messages.AnyAsync(m => m.RoomId == mainRoomId && m.CorrelationId == recoveryCorrelationId);
 
-            Publish(ActivityEventType.MessagePosted, mainRoomId, null, null,
-                $"System: {Truncate(message, 100)}", recoveryCorrelationId);
+            if (!alreadyNotified)
+            {
+                var entity = CreateMessageEntity(mainRoomId, MessageKind.System, message, recoveryCorrelationId, now);
+                _db.Messages.Add(entity);
+                mainRoom.UpdatedAt = now;
+
+                Publish(ActivityEventType.MessagePosted, mainRoomId, null, null,
+                    $"System: {Truncate(message, 100)}", recoveryCorrelationId);
+            }
         }
 
         await _db.SaveChangesAsync();
 
-        _logger.LogWarning(
-            "Crash recovery completed for room {RoomId}: closed {BreakoutCount} breakouts, reset {AgentCount} stuck agents, reset {TaskCount} stuck tasks",
-            mainRoomId, activeBreakoutIds.Count, lingeringWorkingAgents.Count, recoverableTasks.Count);
+        _logger.LogInformation(
+            "Crash recovery completed for room {RoomId}: closed {BreakoutCount} breakouts, reset {AgentCount} stuck agents, reset {TaskCount} stuck tasks (notification posted: {Posted})",
+            mainRoomId, activeBreakoutIds.Count, lingeringWorkingAgents.Count, recoverableTasks.Count, recoveredAnything);
 
         return new CrashRecoveryResult(activeBreakoutIds.Count, lingeringWorkingAgents.Count, recoverableTasks.Count);
     }
