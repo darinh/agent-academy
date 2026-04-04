@@ -10,8 +10,10 @@ import {
   ChatMultipleRegular,
   TaskListLtrRegular,
   ArrowSyncRegular,
+  ServerRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
+import RestartHistoryPanel from "./RestartHistoryPanel";
 
 // ── Styles ──
 
@@ -68,6 +70,9 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("22px"),
   },
   sectionTitle: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
     fontSize: "18px",
     fontWeight: 680,
     color: "var(--aa-text-strong)",
@@ -184,6 +189,14 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           ))}
         </div>
       )}
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <ServerRegular style={{ fontSize: 20 }} />
+          Server Instance History
+        </div>
+        <RestartHistoryPanel />
+      </div>
     </div>
   );
 }
