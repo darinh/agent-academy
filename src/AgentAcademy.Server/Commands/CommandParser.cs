@@ -36,7 +36,7 @@ public sealed class CommandParser
     private static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "READ_FILE", "SEARCH_CODE", "LIST_ROOMS", "LIST_AGENTS", "LIST_TASKS",
-        "REMEMBER", "RECALL", "LIST_MEMORIES", "FORGET",
+        "REMEMBER", "RECALL", "LIST_MEMORIES", "FORGET", "EXPORT_MEMORIES", "IMPORT_MEMORIES",
         "LINK_TASK_TO_SPEC", "SHOW_UNLINKED_CHANGES",
         "APPROVE_TASK", "REQUEST_CHANGES", "REJECT_TASK", "SHOW_REVIEW_QUEUE",
         "CLAIM_TASK", "RELEASE_TASK", "UPDATE_TASK", "CANCEL_TASK",

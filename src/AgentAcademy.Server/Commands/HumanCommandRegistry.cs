@@ -183,6 +183,16 @@ public static class HumanCommandRegistry
                     "Optional scope: all, backend, frontend, or file:<filter>.",
                     Placeholder: "frontend", DefaultValue: "all"),
             ]),
+
+        new("EXPORT_MEMORIES", "Export memories", "workspace",
+            "Export an agent's stored memories as structured JSON.",
+            "Useful for backup, transfer between agents, or inspection of learned knowledge.",
+            IsAsync: false,
+            Fields:
+            [
+                new("category", "Category", "text", "Optional category filter.",
+                    Placeholder: "pattern"),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

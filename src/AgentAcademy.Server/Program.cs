@@ -235,6 +235,8 @@ builder.Services.AddSingleton<ICommandHandler, RememberHandler>();
 builder.Services.AddSingleton<ICommandHandler, RecallHandler>();
 builder.Services.AddSingleton<ICommandHandler, ListMemoriesHandler>();
 builder.Services.AddSingleton<ICommandHandler, ForgetHandler>();
+builder.Services.AddSingleton<ICommandHandler, ExportMemoriesHandler>();
+builder.Services.AddSingleton<ICommandHandler, ImportMemoriesHandler>();
 builder.Services.AddSingleton<ICommandHandler, DmHandler>();
 builder.Services.AddSingleton<ICommandHandler, ClaimTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, ReleaseTaskHandler>();
