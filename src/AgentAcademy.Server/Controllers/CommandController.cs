@@ -39,6 +39,7 @@ public sealed class CommandController : ControllerBase
         "CREATE_ROOM",
         "REOPEN_ROOM",
         "CLOSE_ROOM",
+        "INVITE_TO_ROOM",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

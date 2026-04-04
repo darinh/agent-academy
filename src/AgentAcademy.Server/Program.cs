@@ -246,6 +246,7 @@ builder.Services.AddSingleton<ICommandHandler, RecallAgentHandler>();
 builder.Services.AddSingleton<ICommandHandler, CloseRoomHandler>();
 builder.Services.AddSingleton<ICommandHandler, CreateRoomHandler>();
 builder.Services.AddSingleton<ICommandHandler, ReopenRoomHandler>();
+builder.Services.AddSingleton<ICommandHandler, InviteToRoomHandler>();
 builder.Services.AddSingleton<ICommandHandler, MergeTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, CancelTaskHandler>();
 builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();

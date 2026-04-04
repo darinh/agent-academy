@@ -171,6 +171,7 @@ These formalize existing capabilities with audit trails and structured output.
 |---------|------|---------|-------------|----------------|
 | `CREATE_ROOM` | `name`, `description?` | Room ID, name, status | Creates a persistent collaboration room as a work context. Generates a slug-based ID. Posts a system welcome message with description. Publishes `RoomCreated` activity event. Planner or Human role required. | `CreateRoomHandler.cs` + `WorkspaceRuntime.CreateRoomAsync()` |
 | `REOPEN_ROOM` | `roomId` | Room ID, name, reopened status | Validates room is archived. Sets status to Idle. Publishes `RoomStatusChanged` activity event. Planner or Human role required. Exception-safe via try/catch for TOCTOU protection. | `ReopenRoomHandler.cs` + `WorkspaceRuntime.ReopenRoomAsync()` |
+| `INVITE_TO_ROOM` | `agentId` (name or ID), `roomId` | Agent ID/name, room ID/name, confirmation | Moves a specified agent to a specified room. Validates room exists and is not archived. Validates agent exists and is not Working in a breakout (use RECALL_AGENT first). No-op success if agent already in room. Posts system status message in target room. Planner or Human role required. | `InviteToRoomHandler.cs` + `WorkspaceRuntime.MoveAgentAsync()` |
 
 #### Phase 1F: System — IMPLEMENTED
 
@@ -190,7 +191,7 @@ These formalize existing capabilities with audit trails and structured output.
 ### Tier 2 — Full Autonomy
 
 #### Room Management
-`RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `RESTORE_ROOM`, `ROOM_TOPIC`
+`RETURN_TO_MAIN`, ~~`INVITE_TO_ROOM`~~ *(implemented — see Phase 1A table)*, ~~`CREATE_ROOM`~~ *(implemented)*, `RESTORE_ROOM`, `ROOM_TOPIC`
 
 #### Communication
 `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`
@@ -326,6 +327,7 @@ Expose a subset of platform commands to authenticated human users via HTTP REST 
 |------|----------|------|--------------|
 | **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
 | **Side effects** | `RUN_BUILD`, `RUN_TESTS` | Compute cost, long-running | ✅ Allowed |
+| **Room management** | `CREATE_ROOM`, `REOPEN_ROOM`, `CLOSE_ROOM`, `INVITE_TO_ROOM` | State mutation | ✅ Allowed |
 | **Dangerous** | `SHELL`, `RESTART_SERVER`, `MERGE_TASK`, `RECALL_AGENT` | State mutation, git ops | ❌ Denied |
 | **Agent-only** | `REMEMBER`, `RECALL`, `FORGET`, `DM`, `MOVE_TO_ROOM`, `CLAIM_TASK`, `SET_PLAN` | Identity mismatch | ❌ Denied |
 
@@ -611,7 +613,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter (30 commands per 60 seconds). Implemented in `CommandRateLimiter` (`src/AgentAcademy.Server/Commands/CommandRateLimiter.cs`), integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited (already behind cookie auth). Limits are hardcoded — no runtime configuration yet.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
-- **Tier 2 room commands**: `RETURN_TO_MAIN` and `INVITE_TO_ROOM` remain planned. `CLOSE_ROOM`, `CREATE_ROOM`, and `REOPEN_ROOM` are implemented with planner/human authorization. `LIST_ROOMS` supports optional `status=` filter with validation.
+- **Tier 2 room commands**: `RETURN_TO_MAIN` remains planned. `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, and `INVITE_TO_ROOM` are implemented with planner/human authorization. `LIST_ROOMS` supports optional `status=` filter with validation.
 
 ## Discord Agent Question Bridge
 
@@ -657,3 +659,4 @@ Discord Server
 | 2026-04-04 | Verified MERGE_TASK Planner/Reviewer role authorization enforcement. Handler code (lines 25-31) guards against unauthorized access. Updated spec table to include implementation reference and clarified design principle scope for agent-initiated commands. | merge-task-authorization-enforcement | `52419d8` |
 | 2026-04-04 | Added `ErrorCode` column to `CommandAuditEntity`. Async command polling and audit history now return structured error codes. All 4 audit write paths and the read path updated. Migration `20260404083032_AddCommandAuditErrorCode`. | errorcode-audit-persistence | `5fd74b3` |
 | 2026-04-04 | Per-agent command rate limiting (30 commands/60s sliding window). `CommandRateLimiter` integrated into `CommandPipeline` after authorization. `RATE_LIMIT` error code added. 6 new tests. | command-rate-limiting | `df07581` |
+| 2026-04-04 | Implemented `INVITE_TO_ROOM` (Phase 1G). Planners/humans can move agents to rooms. Validates room exists/not archived, agent exists/not in breakout. No-op if already in room. System message posted. Added to human command allowlist. 12 new tests. | invite-to-room | (this change) |

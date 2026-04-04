@@ -1004,6 +1004,234 @@ public class TaskSystemTests : IDisposable
         Assert.Equal("SET_PLAN", result.Commands[0].Command);
     }
 
+    // ── INVITE_TO_ROOM ──────────────────────────────────────────
+
+    [Fact]
+    public async Task InviteToRoom_Planner_MovesAgentToRoom()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("engineer-1", dict["agentId"]);
+        Assert.Equal("room-2", dict["roomId"]);
+
+        // Verify agent is actually in room-2
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var location = await runtime.GetAgentLocationAsync("engineer-1");
+        Assert.NotNull(location);
+        Assert.Equal("room-2", location!.RoomId);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_Human_Allowed()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "room-2" },
+            "human-1", "Human", "Human");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_NonPlanner_Denied()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "reviewer-1", ["roomId"] = "room-2" },
+            "engineer-1", "Hephaestus", "SoftwareEngineer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Contains("planner", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("human", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_MissingAgentId_ReturnsValidationError()
+    {
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("agentId", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_MissingRoomId_ReturnsValidationError()
+    {
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("roomId", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_UnknownAgent_ReturnsNotFound()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "nonexistent-agent", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+        Assert.Contains("nonexistent-agent", result.Error);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_UnknownRoom_ReturnsNotFound()
+    {
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "nonexistent-room" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+        Assert.Contains("nonexistent-room", result.Error);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_ArchivedRoom_ReturnsConflict()
+    {
+        await EnsureRoom("room-2");
+        // Archive the room
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var room = await db.Rooms.FindAsync("room-2");
+            room!.Status = "Archived";
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+        Assert.Contains("archived", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_WorkingInBreakout_ReturnsConflict()
+    {
+        await SetupRoomAndBreakout("engineer-1");
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+        Assert.Contains("breakout", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_AlreadyInRoom_ReturnsSuccess()
+    {
+        await EnsureRoom("room-2");
+
+        // Move agent to room-2 first
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
+        }
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Contains("already", (string)dict["message"]!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_ByAgentName_ResolvesCorrectly()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "Hephaestus", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("engineer-1", dict["agentId"]);
+    }
+
+    [Fact]
+    public async Task InviteToRoom_PostsSystemMessage()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new InviteToRoomHandler();
+        var (cmd, ctx) = MakeCommand("INVITE_TO_ROOM",
+            new() { ["agentId"] = "engineer-1", ["roomId"] = "room-2" },
+            "planner-1", "Aristotle", "Planner");
+
+        await handler.ExecuteAsync(cmd, ctx);
+
+        // Verify system message was posted
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var messages = await db.Messages
+            .Where(m => m.RoomId == "room-2" && m.Content.Contains("invited"))
+            .ToListAsync();
+
+        Assert.NotEmpty(messages);
+        Assert.Contains("Hephaestus", messages[0].Content);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────
 
     private async Task<string> CreateTestTask(
