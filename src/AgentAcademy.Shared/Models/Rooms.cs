@@ -7,6 +7,7 @@ namespace AgentAcademy.Shared.Models;
 public record RoomSnapshot(
     string Id,
     string Name,
+    string? Topic,
     RoomStatus Status,
     CollaborationPhase CurrentPhase,
     TaskSnapshot? ActiveTask,

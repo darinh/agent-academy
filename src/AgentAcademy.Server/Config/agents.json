@@ -45,6 +45,7 @@
             "SHOW_DIFF",
             "GIT_LOG",
             "ROOM_HISTORY",
+            "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT",
@@ -99,6 +100,7 @@
             "RUN_BUILD",
             "RUN_TESTS",
             "ROOM_HISTORY",
+            "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT"
@@ -150,6 +152,7 @@
             "UPDATE_TASK",
             "DM",
             "ROOM_HISTORY",
+            "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT"
@@ -201,6 +204,7 @@
             "UPDATE_TASK",
             "DM",
             "ROOM_HISTORY",
+            "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT"
@@ -253,6 +257,7 @@
             "RUN_TESTS",
             "DM",
             "ROOM_HISTORY",
+            "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT",
@@ -302,6 +307,7 @@
             "RUN_BUILD",
             "RUN_TESTS",
             "ROOM_HISTORY",
+            "ROOM_TOPIC",
             "MOVE_TO_ROOM",
             "SET_PLAN",
             "ADD_TASK_COMMENT"

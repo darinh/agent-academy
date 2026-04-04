@@ -34,6 +34,7 @@ public sealed class CommandController : ControllerBase
         "GIT_LOG",
         "SHOW_REVIEW_QUEUE",
         "ROOM_HISTORY",
+        "ROOM_TOPIC",
         "RUN_BUILD",
         "RUN_TESTS",
         "CREATE_ROOM",

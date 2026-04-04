@@ -433,6 +433,33 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
+    /// Sets or clears the topic of a room.
+    /// </summary>
+    public async Task<RoomSnapshot> SetRoomTopicAsync(string roomId, string? topic)
+    {
+        var room = await _db.Rooms.FindAsync(roomId)
+            ?? throw new InvalidOperationException($"Room '{roomId}' not found.");
+
+        if (room.Status == nameof(RoomStatus.Archived))
+            throw new InvalidOperationException($"Cannot set topic on archived room '{room.Name}'.");
+
+        room.Topic = string.IsNullOrWhiteSpace(topic) ? null : topic.Trim();
+        room.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.RoomStatusChanged, roomId, null, null,
+            room.Topic is not null
+                ? $"Room topic set: {room.Topic}"
+                : "Room topic cleared");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Set topic for room '{RoomId}' ({RoomName}): {Topic}",
+            roomId, room.Name, room.Topic ?? "(cleared)");
+
+        return await BuildRoomSnapshotAsync(room);
+    }
+
+    /// <summary>
     /// Returns messages in a room with cursor-based pagination.
     /// Only returns non-DM messages from the active conversation session.
     /// </summary>
@@ -2203,6 +2230,7 @@ public sealed class WorkspaceRuntime
         return new RoomSnapshot(
             Id: room.Id,
             Name: room.Name,
+            Topic: room.Topic,
             Status: Enum.Parse<RoomStatus>(room.Status),
             CurrentPhase: Enum.Parse<CollaborationPhase>(room.CurrentPhase),
             ActiveTask: activeTask,

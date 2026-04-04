@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **011-state-recovery**: Breakout stuck-detection — `AgentOrchestrator` now tracks consecutive idle rounds (zero commands parsed) and enforces an absolute max-round cap (200). After 5 consecutive idle rounds, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room. Prevents infinite agent loops and resource waste. 3 new tests.
+- **007-agent-commands**: `ROOM_TOPIC` command — any agent can set or clear a room's topic description. DB migration adds `Topic` column to rooms. `RoomSnapshot` model updated with `topic` field. `RESTORE_ROOM` consolidated into existing `REOPEN_ROOM`. All Tier 2 room commands now implemented. 5 new tests.
 
 ### Added
 - **007-agent-commands**: `INVITE_TO_ROOM` command — planners and humans can move a specified agent to a specified room. Validates room exists/not archived, agent exists/not in breakout. No-op if already in room. Posts system message. Added to human command allowlist. 12 new tests.

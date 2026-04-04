@@ -8,6 +8,7 @@ public class RoomEntity
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? Topic { get; set; }
     public string Status { get; set; } = "Idle";
     public string CurrentPhase { get; set; } = "Intake";
     public string? WorkspacePath { get; set; }

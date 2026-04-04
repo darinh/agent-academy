@@ -1402,4 +1402,96 @@ public class TaskSystemTests : IDisposable
 
         return (command, context);
     }
+
+    // ── ROOM_TOPIC ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task RoomTopic_SetsTopic()
+    {
+        await EnsureRoom("room-2");
+
+        var handler = new RoomTopicHandler();
+        var (cmd, ctx) = MakeCommand("ROOM_TOPIC",
+            new() { ["roomId"] = "room-2", ["topic"] = "Sprint 4 planning" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("Sprint 4 planning", dict["topic"]);
+
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var room = await runtime.GetRoomAsync("room-2");
+        Assert.Equal("Sprint 4 planning", room!.Topic);
+    }
+
+    [Fact]
+    public async Task RoomTopic_ClearsTopic_WhenEmpty()
+    {
+        await EnsureRoom("room-2");
+
+        // First set a topic
+        var handler = new RoomTopicHandler();
+        var (cmd1, ctx1) = MakeCommand("ROOM_TOPIC",
+            new() { ["roomId"] = "room-2", ["topic"] = "Some topic" });
+        await handler.ExecuteAsync(cmd1, ctx1);
+
+        // Then clear it
+        var (cmd2, ctx2) = MakeCommand("ROOM_TOPIC",
+            new() { ["roomId"] = "room-2", ["topic"] = "" });
+        var result = await handler.ExecuteAsync(cmd2, ctx2);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Null(dict["topic"]);
+    }
+
+    [Fact]
+    public async Task RoomTopic_MissingRoomId_ReturnsError()
+    {
+        var handler = new RoomTopicHandler();
+        var (cmd, ctx) = MakeCommand("ROOM_TOPIC",
+            new() { ["topic"] = "test" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RoomTopic_ArchivedRoom_ReturnsError()
+    {
+        await EnsureRoom("room-2");
+
+        // Archive the room first
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.CloseRoomAsync("room-2");
+        }
+
+        var handler = new RoomTopicHandler();
+        var (cmd, ctx) = MakeCommand("ROOM_TOPIC",
+            new() { ["roomId"] = "room-2", ["topic"] = "test" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task RoomTopic_NonexistentRoom_ReturnsNotFound()
+    {
+        var handler = new RoomTopicHandler();
+        var (cmd, ctx) = MakeCommand("ROOM_TOPIC",
+            new() { ["roomId"] = "no-such-room", ["topic"] = "test" });
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+    }
 }

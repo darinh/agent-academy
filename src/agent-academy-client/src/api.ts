@@ -192,6 +192,7 @@ export interface TaskItem {
 export interface RoomSnapshot {
   id: string;
   name: string;
+  topic?: string | null;
   status: RoomStatus;
   currentPhase: CollaborationPhase;
   activeTask?: TaskSnapshot | null;
