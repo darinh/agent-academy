@@ -43,6 +43,13 @@ public sealed class SearchCodeHandler : ICommandHandler
         psi.ArgumentList.Add("--color=never");
         psi.ArgumentList.Add("-I"); // skip binary files
 
+        // Case-insensitive search if requested
+        if (command.Args.TryGetValue("ignoreCase", out var icObj) &&
+            (icObj is true || (icObj is string icStr && icStr.Equals("true", StringComparison.OrdinalIgnoreCase))))
+        {
+            psi.ArgumentList.Add("-i");
+        }
+
         psi.ArgumentList.Add("--max-count");
         psi.ArgumentList.Add(MaxResults.ToString());
         psi.ArgumentList.Add("-e");
@@ -109,8 +116,9 @@ public sealed class SearchCodeHandler : ICommandHandler
             await process.WaitForExitAsync();
 
             // git grep output format: file:line:content
-            var matches = output
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            var allLines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var truncated = allLines.Length > MaxResults;
+            var matches = allLines
                 .Take(MaxResults)
                 .Select(line =>
                 {
@@ -128,15 +136,23 @@ public sealed class SearchCodeHandler : ICommandHandler
                 })
                 .ToList();
 
+            var result = new Dictionary<string, object?>
+            {
+                ["matches"] = matches,
+                ["count"] = matches.Count,
+                ["query"] = query
+            };
+
+            if (truncated)
+            {
+                result["truncated"] = true;
+                result["hint"] = $"Results capped at {MaxResults}. Narrow your query or add path/glob filters.";
+            }
+
             return command with
             {
                 Status = CommandStatus.Success,
-                Result = new Dictionary<string, object?>
-                {
-                    ["matches"] = matches,
-                    ["count"] = matches.Count,
-                    ["query"] = query
-                }
+                Result = result
             };
         }
         catch (Exception ex)
