@@ -19,7 +19,7 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["LIST_ROOMS"] = "Show all rooms with status, phase, and participants",
         ["LIST_AGENTS"] = "Show all agents with location and state",
         ["LIST_TASKS"] = "Show tasks with optional status/assignee filters",
-        ["READ_FILE"] = "Read file content or list directory entries",
+        ["READ_FILE"] = "Read file content (auto-truncates large files with continuation hints) or list directory entries",
         ["SEARCH_CODE"] = "Search codebase using git grep with optional path/glob filters",
         ["REMEMBER"] = "Store a persistent memory (key/value with category)",
         ["RECALL"] = "Search stored memories by category or query",

@@ -92,20 +92,45 @@ public sealed class ReadFileHandler : ICommandHandler
         startLine = Math.Max(1, startLine);
         endLine = Math.Min(totalLines, endLine);
 
-        var selectedLines = lines.Skip(startLine - 1).Take(endLine - startLine + 1);
+        var selectedLines = lines.Skip(startLine - 1).Take(endLine - startLine + 1).ToArray();
         var content = string.Join('\n', selectedLines);
+
+        // Truncate if content exceeds max size
+        const int MaxContentLength = 12_000;
+        var truncated = false;
+        var truncatedAtLine = endLine;
+        if (content.Length > MaxContentLength)
+        {
+            truncated = true;
+            content = content[..MaxContentLength];
+            // Find the last complete line within the truncated content
+            var lastNewline = content.LastIndexOf('\n');
+            if (lastNewline > 0)
+                content = content[..lastNewline];
+            // Calculate what line we actually stopped at
+            truncatedAtLine = startLine + content.Split('\n').Length - 1;
+        }
+
+        var result = new Dictionary<string, object?>
+        {
+            ["content"] = content,
+            ["totalLines"] = totalLines,
+            ["startLine"] = startLine,
+            ["endLine"] = truncated ? truncatedAtLine : endLine,
+            ["path"] = path
+        };
+
+        if (truncated)
+        {
+            result["truncated"] = true;
+            result["hint"] = $"Content truncated at line {truncatedAtLine} of {totalLines}. " +
+                             $"Use startLine: {truncatedAtLine + 1} to continue reading.";
+        }
 
         return Task.FromResult(command with
         {
             Status = CommandStatus.Success,
-            Result = new Dictionary<string, object?>
-            {
-                ["content"] = content,
-                ["totalLines"] = totalLines,
-                ["startLine"] = startLine,
-                ["endLine"] = endLine,
-                ["path"] = path
-            }
+            Result = result
         });
     }
 
