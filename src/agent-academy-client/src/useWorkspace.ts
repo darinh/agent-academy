@@ -15,11 +15,11 @@ import type {
   WorkspaceOverview,
 } from "./api";
 import { workspaceChanged, sameActivityFeed } from "./utils";
-import { hasInstanceChanged } from "./recovery";
 import { useActivityHub } from "./useActivityHub";
 import { useActivitySSE } from "./useActivitySSE";
 import type { ConnectionStatus } from "./useActivityHub";
 import type { RecoveryBannerState } from "./RecoveryBanner";
+import { evaluateReconnect, RECONNECTING_BANNER } from "./healthCheck";
 
 export type ActivityTransport = "signalr" | "sse";
 
@@ -260,6 +260,36 @@ export function useWorkspace() {
     const previousStatus = connectionStatusRef.current;
     connectionStatusRef.current = connectionStatus;
 
+    // Show reconnecting banner when connection drops
+    if (connectionStatus === "reconnecting" && previousStatus === "connected") {
+      // Clear any pending auto-dismiss timer from a prior recovery cycle
+      if (recoveryTimer.current) {
+        clearTimeout(recoveryTimer.current);
+        recoveryTimer.current = null;
+      }
+      setRecoveryBanner(RECONNECTING_BANNER);
+      return;
+    }
+
+    // Connection permanently lost after reconnect attempts exhausted
+    if (connectionStatus === "disconnected" && previousStatus === "reconnecting") {
+      if (recoveryTimer.current) {
+        clearTimeout(recoveryTimer.current);
+        recoveryTimer.current = null;
+      }
+      setRecoveryBanner({
+        tone: "error",
+        message: "Connection lost — unable to reconnect",
+        detail: "Live updates are paused. Use manual refresh to check for new activity.",
+      });
+      return;
+    }
+
+    // Clear reconnecting banner if connection was never established (initial connect)
+    if (connectionStatus === "connected" && previousStatus === "connecting") {
+      return;
+    }
+
     if (!useSignalR || previousStatus !== "reconnecting" || connectionStatus !== "connected") {
       return;
     }
@@ -267,59 +297,56 @@ export function useWorkspace() {
     let cancelled = false;
 
     async function handleReconnect() {
-      try {
-        const health = await getInstanceHealth();
-        if (cancelled) {
-          return;
-        }
-
-        if (!hasInstanceChanged(instanceIdRef.current, health.instanceId)) {
-          if (instanceIdRef.current === null) {
-            setInstanceId(health.instanceId);
-          }
-          return;
-        }
-
-        if (recoveryTimer.current) {
-          clearTimeout(recoveryTimer.current);
-          recoveryTimer.current = null;
-        }
-
-        setThinkingByRoom(new Map());
-        setRecoveryBanner({
-          tone: "syncing",
-          message: "Server restarted — refreshing workspace",
-          detail: "Re-syncing rooms, activity, and current task state.",
-        });
-
-        const refreshed = await refresh({ showBusy: false });
-        if (cancelled) {
-          return;
-        }
-
-        if (refreshed) {
-          setInstanceId(health.instanceId);
-          recoveryTimer.current = setTimeout(() => {
-            setRecoveryBanner(null);
-            recoveryTimer.current = null;
-          }, RECOVERY_BANNER_DISMISS_MS);
-          return;
-        }
-
-        setRecoveryBanner({
-          tone: "error",
-          message: "Server restarted, but workspace refresh did not complete.",
-          detail: "Your draft message is still preserved locally. Use manual refresh to retry sync.",
-        });
-      } catch {
-        if (!cancelled) {
-          setRecoveryBanner({
-            tone: "error",
-            message: "Live connection returned, but restart verification failed.",
-            detail: "Your draft message is still preserved locally while the workspace catches up.",
-          });
-        }
+      // Clear any pending auto-dismiss timer from a prior recovery cycle
+      if (recoveryTimer.current) {
+        clearTimeout(recoveryTimer.current);
+        recoveryTimer.current = null;
       }
+
+      const result = await evaluateReconnect(instanceIdRef.current);
+      if (cancelled) return;
+
+      if (result.state === "refresh-failed") {
+        setRecoveryBanner(result.banner);
+        return;
+      }
+
+      if (result.state === "resume-success") {
+        // Same instance, no crash — dismiss banner and continue
+        setRecoveryBanner(null);
+        if (result.health && instanceIdRef.current === null) {
+          setInstanceId(result.health.instanceId);
+        }
+        return;
+      }
+
+      // crash-recovered or instance-mismatch — clear stale state and refresh
+      setThinkingByRoom(new Map());
+      setRecoveryBanner(result.banner);
+
+      const refreshed = await refresh({ showBusy: false });
+      if (cancelled) return;
+
+      if (refreshed && result.health) {
+        setInstanceId(result.health.instanceId);
+
+        // For crash recovery, keep the banner longer so the user notices
+        const dismissMs = result.state === "crash-recovered"
+          ? RECOVERY_BANNER_DISMISS_MS * 2
+          : RECOVERY_BANNER_DISMISS_MS;
+
+        recoveryTimer.current = setTimeout(() => {
+          setRecoveryBanner(null);
+          recoveryTimer.current = null;
+        }, dismissMs);
+        return;
+      }
+
+      setRecoveryBanner({
+        tone: "error",
+        message: "Server restarted, but workspace refresh did not complete.",
+        detail: "Your draft message is still preserved locally. Use manual refresh to retry sync.",
+      });
     }
 
     void handleReconnect();

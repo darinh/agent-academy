@@ -22,7 +22,6 @@ import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot } from "./api";
-import RecoveryBanner, { type RecoveryBannerState } from "./RecoveryBanner";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
 import type { ThinkingAgent } from "./useWorkspace";
 import type { ConnectionStatus } from "./useActivityHub";
@@ -254,7 +253,6 @@ const ChatPanel = memo(function ChatPanel(props: {
   thinkingAgents: ThinkingAgent[];
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
-  recoveryBanner?: RecoveryBannerState | null;
   readOnly?: boolean;
 }) {
   const s = useStyles();
@@ -268,7 +266,6 @@ const ChatPanel = memo(function ChatPanel(props: {
   const onSendMessage = props.onSendMessage;
   const thinkingAgents = props.thinkingAgents;
   const connectionStatus = props.connectionStatus;
-  const recoveryBanner = props.recoveryBanner;
 
   // Filters use checkedValues where checked = visible (not hidden)
   const checkedValues = useMemo(() => {
@@ -374,7 +371,6 @@ const ChatPanel = memo(function ChatPanel(props: {
       </div>
 
        <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
-        {recoveryBanner ? <RecoveryBanner state={recoveryBanner} /> : null}
         {filteredMessages.length ? (
           filteredMessages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />

@@ -37,6 +37,7 @@ import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
 import CommandsPanel from "./CommandsPanel";
+import RecoveryBanner from "./RecoveryBanner";
 import {
   getCopilotStatusCopy,
   hasDisplayUser,
@@ -398,6 +399,12 @@ function AppShell() {
         </div>
       )}
 
+      {recoveryBanner && (
+        <div className={s.recoveryBannerGlobal}>
+          <RecoveryBanner state={recoveryBanner} />
+        </div>
+      )}
+
       {showProjectSelector ? (
         <ProjectSelectorPage
           onProjectSelected={handleProjectSelected}
@@ -599,7 +606,6 @@ function AppShell() {
                     <ChatPanel
                       room={room}
                       thinkingAgents={thinkingAgentList}
-                      recoveryBanner={recoveryBanner}
                       connectionStatus={connectionStatus}
                       onSendMessage={handleSendMessage}
                       readOnly={workspaceLimited}

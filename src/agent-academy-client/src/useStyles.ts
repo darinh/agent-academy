@@ -821,6 +821,15 @@ export const useStyles = makeStyles({
     fontSize: "13px",
     textAlign: "center",
   },
+  recoveryBannerGlobal: {
+    position: "fixed",
+    top: "16px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    zIndex: 1000,
+    maxWidth: "560px",
+    width: "calc(100% - 32px)",
+  },
   recoveryBanner: {
     justifySelf: "stretch",
     display: "grid",
@@ -833,6 +842,14 @@ export const useStyles = makeStyles({
   recoveryBannerSyncing: {
     background:
       "linear-gradient(135deg, rgba(124, 176, 248, 0.18), rgba(28, 40, 63, 0.92) 45%, rgba(11, 16, 25, 0.96))",
+  },
+  recoveryBannerReconnecting: {
+    background:
+      "linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(60, 45, 15, 0.92) 45%, rgba(20, 15, 8, 0.96))",
+  },
+  recoveryBannerCrash: {
+    background:
+      "linear-gradient(135deg, rgba(220, 120, 60, 0.22), rgba(80, 30, 18, 0.92) 45%, rgba(25, 12, 8, 0.96))",
   },
   recoveryBannerError: {
     background:

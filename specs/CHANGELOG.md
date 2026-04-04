@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **011-state-recovery**: Frontend reconnect UX — global `RecoveryBanner` with 4 tones (reconnecting, syncing, crash, error) renders above all tabs. `healthCheck.ts` module encapsulates `evaluateReconnect()` logic for instance-mismatch, crash-recovery, and resume-success states. Shows reconnecting banner immediately on SignalR disconnect. Crash-recovered state surfaces `crashDetected` from health endpoint with extended visibility. Spec 011 status → Implemented. 7 new frontend tests.
+
+### Added
 - **011-state-recovery**: Breakout stuck-detection — `AgentOrchestrator` now tracks consecutive idle rounds (zero commands parsed) and enforces an absolute max-round cap (200). After 5 consecutive idle rounds, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room. Prevents infinite agent loops and resource waste. 3 new tests.
 - **007-agent-commands**: `ROOM_TOPIC` command — any agent can set or clear a room's topic description. DB migration adds `Topic` column to rooms. `RoomSnapshot` model updated with `topic` field. `RESTORE_ROOM` consolidated into existing `REOPEN_ROOM`. All Tier 2 room commands now implemented. 5 new tests.
 

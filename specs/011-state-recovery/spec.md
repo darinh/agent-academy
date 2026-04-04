@@ -6,7 +6,7 @@ Documents the supervised restart and state recovery system that enables Agent Ac
 
 ## Current Behavior
 
-**Status: Partially Implemented** (Wrapper script, server instances, startup crash recovery, restart command, health endpoint, and auth recovery implemented. Client reconnect UX planned.)
+**Status: Implemented** (Wrapper script, server instances, startup crash recovery, restart command, health endpoint, auth recovery, and client reconnect UX all implemented.)
 
 The state recovery system consists of eight components working together:
 
@@ -108,16 +108,18 @@ When the server restarts, connected clients must detect the restart and refresh 
 }
 ```
 
-**Frontend Reconnect Logic** (planned):
-- Store `instanceId` from initial health check
-- On SignalR reconnect: call `/api/health/instance`
-- If `instanceId` changed: display "Server restarted" banner, refresh room list, active room, task detail, task comments, and direct-message state
-- If `instanceId` unchanged: resume normally without clearing current room selection
-- If the health check fails during reconnect, keep the UI in reconnecting state and retry instead of assuming a clean resume
+**Frontend Reconnect Logic** (**implemented**):
+- Store `instanceId` from initial health check (`useWorkspace.ts` mount effect)
+- On SignalR disconnect: immediately show reconnecting banner globally (above all tabs)
+- On SignalR reconnect: call `evaluateReconnect()` which fetches `/api/health/instance`
+- If `instanceId` changed: display "Server restarted" syncing banner, clear thinking indicators, refresh workspace data
+- If `instanceId` unchanged: dismiss banner and resume normally
+- If `crashDetected` is true: display "Crash recovered" banner with extended visibility (8s vs 4s)
+- If the health check fails during reconnect: show error banner, preserve last known state
 
-**File**: `src/agent-academy-client/src/services/healthCheck.ts` (planned)
+**Files**: `src/agent-academy-client/src/healthCheck.ts` (evaluateReconnect, RECONNECTING_BANNER), `src/agent-academy-client/src/RecoveryBanner.tsx` (4 tones: reconnecting, syncing, crash, error), `src/agent-academy-client/src/useWorkspace.ts` (reconnect orchestration)
 
-#### Client UX States (planned)
+#### Client UX States (**implemented**)
 
 | State | Trigger | Expected UX |
 |-------|---------|-------------|
