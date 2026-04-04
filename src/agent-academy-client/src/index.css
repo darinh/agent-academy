@@ -1,15 +1,21 @@
 :root {
-  --aa-text: #e6edf9;
-  --aa-text-strong: #fbfdff;
-  --aa-muted: #afc0dc;
-  --aa-soft: #8599bc;
-  --aa-bg: #060d18;
-  --aa-panel: #0f1a2d;
-  --aa-border: rgba(174, 192, 222, 0.16);
-  --aa-cyan: #83cfff;
-  --aa-gold: #dfab69;
-  --aa-plum: #9180ff;
-  --aa-shadow: 0 34px 90px rgba(0, 0, 0, 0.46);
+  --aa-text: #dfe6f2;
+  --aa-text-strong: #fbf7ef;
+  --aa-muted: #b6c0d1;
+  --aa-soft: #7f8ca4;
+  --aa-bg: #080b10;
+  --aa-panel: rgba(16, 21, 31, 0.9);
+  --aa-panel-alt: rgba(26, 33, 47, 0.78);
+  --aa-panel-strong: rgba(11, 15, 23, 0.96);
+  --aa-border: rgba(196, 173, 141, 0.18);
+  --aa-border-strong: rgba(214, 188, 149, 0.28);
+  --aa-hairline: rgba(255, 244, 227, 0.07);
+  --aa-cyan: #7cb0f8;
+  --aa-gold: #d1a06a;
+  --aa-copper: #b56e4f;
+  --aa-plum: #8e81da;
+  --aa-lime: #87c28f;
+  --aa-shadow: 0 40px 90px rgba(0, 0, 0, 0.5);
   --sans: "Avenir Next", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --heading: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
@@ -41,10 +47,10 @@ body {
   color: var(--aa-text);
   font-family: var(--sans);
   background:
-    radial-gradient(circle at 10% 12%, rgba(131, 207, 255, 0.16), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(145, 128, 255, 0.14), transparent 18%),
-    radial-gradient(circle at 62% 82%, rgba(223, 171, 105, 0.12), transparent 26%),
-    linear-gradient(180deg, #060d18 0%, #0a1321 48%, #09111a 100%);
+    radial-gradient(circle at 12% 14%, rgba(124, 176, 248, 0.18), transparent 24%),
+    radial-gradient(circle at 84% 12%, rgba(209, 160, 106, 0.18), transparent 21%),
+    radial-gradient(circle at 72% 76%, rgba(181, 110, 79, 0.14), transparent 24%),
+    linear-gradient(180deg, #07090d 0%, #0c1017 44%, #090c12 100%);
 }
 
 body::before {
@@ -53,10 +59,24 @@ body::before {
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.018), transparent 42%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0, rgba(255, 255, 255, 0) 1px),
+    linear-gradient(rgba(255, 255, 255, 0.015) 0, rgba(255, 255, 255, 0) 1px),
+    linear-gradient(135deg, rgba(255, 246, 230, 0.02), transparent 42%),
     radial-gradient(circle at center, rgba(255, 255, 255, 0.015), transparent 54%);
+  background-size: 120px 120px, 120px 120px, auto, auto;
   mix-blend-mode: screen;
-  opacity: 0.6;
+  opacity: 0.5;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top, rgba(255, 244, 227, 0.03), transparent 42%),
+    linear-gradient(180deg, rgba(255, 244, 227, 0.03), transparent 16%, transparent 84%, rgba(255, 244, 227, 0.02));
+  opacity: 0.7;
 }
 
 #root {
@@ -78,7 +98,7 @@ select {
 }
 
 ::selection {
-  background: rgba(131, 207, 255, 0.24);
+  background: rgba(209, 160, 106, 0.3);
   color: #ffffff;
 }
 
@@ -115,7 +135,7 @@ code {
   font-size: 14px;
   line-height: 1.4;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 244, 227, 0.08);
 }
 
 *::-webkit-scrollbar {
@@ -124,7 +144,7 @@ code {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(163, 180, 208, 0.3);
+  background: rgba(209, 160, 106, 0.28);
   border: 2px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;

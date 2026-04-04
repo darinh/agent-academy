@@ -155,7 +155,16 @@ This mirrors the broader frontend rule that degraded mode is still a readable wo
 
 ## Theme / Role Colors
 
-Defined in `theme.ts`. Each agent role maps to accent/foreground/avatar colors:
+Global design tokens live in `src/agent-academy-client/src/index.css`, while role-specific accent mapping remains in `theme.ts`.
+
+The current shell uses an **editorial war-room** visual system:
+
+- Ink-dark canvas with layered radial gradients and a faint drafting-grid overlay
+- Warm brass/copper accents paired with cool slate-blue highlights instead of generic neon gradients
+- Serif display typography (`--heading`) for titles and metrics, with a cleaner sans serif body stack for controls and narrative text
+- Shared panel treatment across the sidebar, workspace masthead, tabs, chat cards, and dashboard surfaces so the product reads as one cohesive interface
+
+Each agent role still maps to accent/foreground/avatar colors:
 
 | Role | Accent | Source |
 |------|--------|--------|
@@ -170,10 +179,11 @@ Defined in `theme.ts`. Each agent role maps to accent/foreground/avatar colors:
 ## Layout
 
 - Full viewport: `100vh` with CSS grid
-- Sidebar + main content: `320px minmax(0, 1fr)` (open) / `88px minmax(0, 1fr)` (collapsed)
-- Dark gradient background with glassmorphism panels
+- Sidebar + main content: `356px minmax(0, 1fr)` (open) / `94px minmax(0, 1fr)` (collapsed)
+- The main shell is split into a left navigation rail and a right workspace canvas with a prominent masthead, spotlight card, limited-mode banner, tab deck, and panel body
+- Surfaces use layered dark panels with warm metallic borders and inset highlights rather than the previous generic glassmorphism treatment
 - Authentication surfaces (`LoginPage.tsx`, `ProjectSelectorPage.tsx`) use a two-panel editorial layout: narrative rail on the left, actionable system/status card on the right
-- `index.css` provides minimal resets; all component styles use Griffel `makeStyles`
+- `index.css` now owns the global color/typography tokens, background atmosphere, scrollbar styling, and shell overlay effects; component-level structure and treatments remain in Griffel `makeStyles`
 
 ## Real-Time Updates
 

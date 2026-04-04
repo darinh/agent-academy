@@ -15,6 +15,7 @@ All changes to specifications are documented here.
 
 ### Changed
 - **010-task-management**: Removed unimplemented GitHub PR integration content from spec. Sections describing PR creation, review via GitHub API, and remote push workflows marked as "Planned" or rewritten to describe actual local branch workflow with `MERGE_TASK`. PR metadata fields remain in task model for future use.
+- **300-frontend-ui**: Main workspace shell now uses an editorial war-room redesign. The client ships new global design tokens in `index.css`, a wider navigation rail (`356px` open / `94px` collapsed), a stronger masthead/spotlight hierarchy, brass-and-slate panel treatments, and aligned styling across dashboard, overview, tasks, commands, chat, and compose surfaces while preserving the existing auth and tab contracts.
 
 ### Fixed
 - **011-state-recovery / 300-frontend-ui**: Restored degraded-session limited mode in the frontend render contract. `copilotStatus = degraded` now keeps the workspace shell visible with an in-shell reconnect banner while chat sends, DM sends, and phase transitions stay paused; `LoginPage` is reserved for the fully unavailable sign-in path.
