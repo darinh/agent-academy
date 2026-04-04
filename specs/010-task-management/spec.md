@@ -11,8 +11,7 @@ Defines the task lifecycle, local branch-based Git workflow, review pipeline, ag
 When agents work on tasks, they follow a branch-based local squash-merge workflow:
 
 1. A task is created (manually or automatically, e.g., after onboarding)
-2. An agent claims the task and is automatically switched to a `task/{slug}-{suffix}` branch
-3. The agent works from the main collaboration room on the task branch while automatic breakout creation is disabled
+2. An agent claims the task and is moved to a dedicated breakout room on a `task/{slug}-{suffix}` branch
 4. When complete, the agent sets the task status to `InReview`
 5. Socrates (Reviewer) performs adversarial review on the task branch
 6. If changes are requested, the agent makes fixes on the same task branch
@@ -194,9 +193,9 @@ Author is always the named agent's git identity, never the fleet model.
 
 ---
 
-## 3.5. Branch Workflow While Breakouts Are Disabled
+## 3.5. Breakout Room Branch Workflow
 
-Automatic breakout-room creation is currently disabled system-wide for task assignments. The platform still creates a dedicated task branch to isolate assigned work from `develop`, but the assignee remains in the main collaboration room.
+When a task is assigned, the platform creates a dedicated breakout room and task branch. The agent works in isolation on its own branch, and commands (such as `SHELL git-commit`) execute on the task branch — not `develop`.
 
 ### Branch Creation
 
@@ -206,9 +205,9 @@ Automatic breakout-room creation is currently disabled system-wide for task assi
 
 ### Assignment Behavior
 
-- Task assignment creates a `TaskItemEntity` with `BreakoutRoomId = null`
+- Task assignment creates a `BreakoutRoomEntity` and a `TaskItemEntity` linked to it
 - The orchestrator ensures or creates the linked `TaskEntity` and records the generated branch name
-- The system posts an assignment notice in the main room instead of moving the assignee into a breakout room
+- The system posts an assignment notice in the main room and moves the assignee into the breakout room
 
 ### Completion Flow
 

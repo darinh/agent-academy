@@ -68,16 +68,16 @@ public class TaskAssignmentWorkflowTests : IDisposable
     }
 
     [Fact]
-    public async Task TaskAssignment_KeepsWorkInMainRoom_WhenBreakoutsAreDisabled()
+    public async Task TaskAssignment_CreatesBreakoutRoomWithBranch()
     {
         const string assignmentResponse = """
             TASK ASSIGNMENT:
             Agent: @Hephaestus
-            Title: Disable breakout creation
-            Description: Keep assigned work in the main room
+            Title: Implement the feature
+            Description: Build the new feature in a breakout room
             Acceptance Criteria:
-            - No breakout room created
-            - Branch still created
+            - Breakout room created
+            - Branch created
             """;
 
         _executor.RunAsync(
@@ -89,12 +89,14 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Task.FromResult(assignmentResponse),
                 Task.FromResult("PASS"));
 
+        // Engineer returns a work report so the breakout loop completes
         _executor.RunAsync(
                 Arg.Is<AgentDefinition>(a => a.Role == "SoftwareEngineer"),
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult("PASS"));
+            .Returns(Task.FromResult(
+                "WORK REPORT:\nStatus: COMPLETE\nFiles: none\nEvidence: Done"));
 
         using (var scope = _serviceProvider.CreateScope())
         {
@@ -114,36 +116,36 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         await InvokeConversationRoundAsync(orchestrator, "main");
 
+        // Allow fire-and-forget breakout loop to complete
+        await Task.Delay(2000);
+
         using var assertScope = _serviceProvider.CreateScope();
         var db = assertScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         var runtimeAfter = assertScope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
 
-        Assert.Empty(await runtimeAfter.GetBreakoutRoomsAsync("main"));
+        // Breakout room should have been created (may be closed by now if loop completed)
+        var breakoutEntity = await db.BreakoutRooms.SingleAsync();
+        Assert.StartsWith("BR: Implement the feature", breakoutEntity.Name, StringComparison.Ordinal);
+        Assert.Equal("main", breakoutEntity.ParentRoomId);
+        Assert.Equal("engineer-1", breakoutEntity.AssignedAgentId);
 
         var taskItem = await db.TaskItems.SingleAsync();
-        Assert.Equal("Disable breakout creation", taskItem.Title);
-        Assert.Null(taskItem.BreakoutRoomId);
+        Assert.Equal("Implement the feature", taskItem.Title);
+        Assert.NotNull(taskItem.BreakoutRoomId);
 
         var task = await db.Tasks.SingleAsync();
-        Assert.Equal("Disable breakout creation", task.Title);
+        Assert.Equal("Implement the feature", task.Title);
         Assert.NotNull(task.BranchName);
-        Assert.StartsWith("task/disable-breakout-creation-", task.BranchName, StringComparison.Ordinal);
-
-        var engineerLocation = await runtimeAfter.GetAgentLocationAsync("engineer-1");
-        Assert.NotNull(engineerLocation);
-        Assert.Equal("main", engineerLocation!.RoomId);
-        Assert.Equal(AgentState.Idle, engineerLocation.State);
-        Assert.Null(engineerLocation.BreakoutRoomId);
+        Assert.StartsWith("task/implement-the-feature-", task.BranchName, StringComparison.Ordinal);
 
         var systemMessages = await db.Messages
             .Where(m => m.RoomId == "main" && m.SenderId == "system")
             .Select(m => m.Content)
             .ToListAsync();
         Assert.Contains(systemMessages, content =>
-            content.Contains("work from the main room while breakout rooms are disabled", StringComparison.Ordinal));
-        Assert.DoesNotContain(systemMessages, content =>
             content.Contains("heading to breakout room", StringComparison.OrdinalIgnoreCase));
-
+        Assert.DoesNotContain(systemMessages, content =>
+            content.Contains("breakout rooms are disabled", StringComparison.OrdinalIgnoreCase));
     }
 
     public void Dispose()

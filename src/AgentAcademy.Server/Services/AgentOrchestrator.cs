@@ -531,11 +531,13 @@ public sealed class AgentOrchestrator
                 ? "\n\nAcceptance Criteria:\n" + string.Join("\n", assignment.Criteria.Select(c => $"- {c}"))
                 : "");
 
+        var brName = $"BR: {assignment.Title}";
+        var br = await runtime.CreateBreakoutRoomAsync(roomId, agent.Id, brName);
+
         await runtime.CreateTaskItemAsync(
             assignment.Title, descriptionWithCriteria,
-            agent.Id, roomId, breakoutRoomId: null);
+            agent.Id, roomId, br.Id);
 
-        // Keep branch-based task workflow active even while breakout rooms are disabled.
         string? taskBranch = null;
         try
         {
@@ -545,16 +547,34 @@ public sealed class AgentOrchestrator
 
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
             await runtime.UpdateTaskBranchAsync(taskId, taskBranch);
+            await runtime.SetBreakoutTaskIdAsync(br.Id, taskId);
+            var task = await runtime.GetTaskAsync(taskId);
+            var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
+                ? task.CurrentPlan
+                : BuildAssignmentPlanContent(assignment);
+            await runtime.SetPlanAsync(br.Id, planContent);
             await _gitService.ReturnToDevelopAsync(taskBranch);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to create task branch for {Title}", assignment.Title);
+            _logger.LogError(ex, "Failed to create task branch for {Title} — closing breakout", assignment.Title);
+            await runtime.CloseBreakoutRoomAsync(br.Id, BreakoutRoomCloseReason.Cancelled);
+            await runtime.PostSystemStatusAsync(roomId,
+                $"⚠️ Failed to set up branch for \"{assignment.Title}\". Breakout cancelled.");
+            return;
         }
 
-        var branchInfo = taskBranch != null ? $" on branch `{taskBranch}`" : "";
         await runtime.PostSystemStatusAsync(roomId,
-            $"📋 {agent.Name} has been assigned \"{assignment.Title}\"{branchInfo}. They will work from the main room while breakout rooms are disabled.");
+            $"📋 {agent.Name} has been assigned \"{assignment.Title}\" and is heading to breakout room \"{brName}\" on branch `{taskBranch}`.");
+
+        _ = Task.Run(async () =>
+        {
+            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Breakout loop failed for {AgentName} in {BreakoutId}", agent.Name, br.Id);
+            }
+        });
     }
 
     // ── BREAKOUT ROOM ───────────────────────────────────────────
@@ -602,6 +622,7 @@ public sealed class AgentOrchestrator
                 round, agent.Name);
 
             var response = "";
+            var isStubOffline = false;
             if (taskBranch != null)
                 await _gitService.AcquireRoundLockAsync();
             try
@@ -622,6 +643,15 @@ public sealed class AgentOrchestrator
                     _logger.LogWarning(ex, "Breakout agent {AgentName} failed in round {Round}", agent.Name, round);
                     continue;
                 }
+
+                // Process commands while still on the task branch so git
+                // operations (SHELL git-commit, etc.) target the correct branch.
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    isStubOffline = IsStubOfflineResponse(response);
+                    if (!isStubOffline)
+                        await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                }
             }
             finally
             {
@@ -632,27 +662,22 @@ public sealed class AgentOrchestrator
                 }
             }
 
+            // DB-only operations after branch switch-back
+            if (isStubOffline)
+            {
+                _logger.LogWarning(
+                    "Agent {AgentName} returned stub offline notice in breakout — aborting loop",
+                    agent.Name);
+                await runtime.PostBreakoutMessageAsync(
+                    breakoutRoomId, "system", "LocalAgentHost", "System",
+                    $"⚠️ {agent.Name} is offline. Breakout suspended until the Copilot SDK is reconnected.");
+                return; // Don't fall through to HandleBreakoutCompleteAsync
+            }
+
             if (!string.IsNullOrWhiteSpace(response))
             {
-                // Bail immediately if agent returned a stub offline notice —
-                // retrying will produce the same result every round.
-                if (IsStubOfflineResponse(response))
-                {
-                    _logger.LogWarning(
-                        "Agent {AgentName} returned stub offline notice in breakout — aborting loop",
-                        agent.Name);
-                    await runtime.PostBreakoutMessageAsync(
-                        breakoutRoomId, "system", "LocalAgentHost", "System",
-                        $"⚠️ {agent.Name} is offline. Breakout suspended until the Copilot SDK is reconnected.");
-                    return; // Don't fall through to HandleBreakoutCompleteAsync
-                }
-
-                // Record full agent response in breakout room for activity trail
                 await runtime.PostBreakoutMessageAsync(
                     breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
-
-                // Process commands from breakout response
-                await ProcessCommandsAsync(agent, response, breakoutRoomId);
             }
 
             var report = ParseWorkReport(response);
