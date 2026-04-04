@@ -44,6 +44,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "SHELL is restricted to Planner and Reviewer role agents."
             };
         }
@@ -53,6 +54,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = error
             };
         }
@@ -68,6 +70,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             _ => command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = $"Unsupported SHELL operation '{parsed.Operation}'."
             }
         };
@@ -98,6 +101,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = $"git-checkout failed: {ex.Message}"
             };
         }
@@ -128,6 +132,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = $"git-commit failed: {ex.Message}"
             };
         }
@@ -143,6 +148,7 @@ public sealed class ShellCommandHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.NotFound,
                     Error = $"git-stash-pop failed: no auto-stash found for branch '{parsed.Branch}'."
                 };
             }
@@ -166,6 +172,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = $"git-stash-pop failed: {ex.Message}"
             };
         }
@@ -225,6 +232,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = result.ExitCode == 0 ? CommandStatus.Success : CommandStatus.Error,
+                ErrorCode = result.ExitCode == 0 ? null : CommandErrorCode.Execution,
                 Result = new Dictionary<string, object?>
                 {
                     ["operation"] = operation,
@@ -240,6 +248,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Timeout,
                 Error = $"{operation} timed out after {DotnetTimeout.TotalMinutes} minutes."
             };
         }
@@ -249,6 +258,7 @@ public sealed class ShellCommandHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = $"{operation} failed: {ex.Message}"
             };
         }

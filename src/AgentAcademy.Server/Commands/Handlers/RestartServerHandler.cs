@@ -36,6 +36,7 @@ public sealed class RestartServerHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = error
             };
         }
@@ -52,6 +53,7 @@ public sealed class RestartServerHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "RESTART_SERVER is restricted to Planner role agents."
             };
         }

@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **007-agent-commands**: Structured error codes — every command failure now includes an `errorCode` string field (`VALIDATION`, `NOT_FOUND`, `PERMISSION`, `CONFLICT`, `TIMEOUT`, `EXECUTION`, `INTERNAL`) so agents can programmatically branch on error type instead of parsing message strings. Applied across all 24 handlers, the command pipeline, the command authorizer, and the human command API. Frontend shows error code as a badge. String constants (not enum) for extensibility.
+
 ### Fixed
 - **007-agent-commands**: DM duplication eliminated — added per-recipient `AcknowledgedAt` tracking to `MessageEntity`. `GetDirectMessagesForAgentAsync` defaults to `unreadOnly=true`, filtering to unacknowledged DMs where the agent is the recipient (not sender). `AcknowledgeDirectMessagesAsync` takes explicit message IDs to prevent race conditions between fetch and ack. Breakout forwarding now posts all unread DMs (not just the last one). 4 new tests.
 - **007-agent-commands**: `READ_FILE` auto-truncates large file content at 12,000 characters. Returns `truncated=true` and a continuation hint with `startLine` for the next chunk. Prevents agents from blowing out their context window. 8 new handler tests.

@@ -40,6 +40,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "Only Planner or Reviewer roles can merge tasks"
             };
         }
@@ -54,6 +55,7 @@ public sealed class MergeTaskHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Validation,
                     Error = "Missing required argument: TaskId"
                 };
             }
@@ -69,6 +71,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Task '{taskId}' not found"
             };
         }
@@ -79,6 +82,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = $"Task must be in Approved status to merge (current: {task.Status})"
             };
         }
@@ -89,6 +93,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = "Task has no branch to merge"
             };
         }
@@ -133,6 +138,7 @@ public sealed class MergeTaskHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Execution,
                     Error = $"Merge failed: {ex.Message} (task status recovery also failed: {recoveryEx.Message})"
                 };
             }
@@ -140,6 +146,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = $"Merge failed: {ex.Message}"
             };
         }

@@ -78,10 +78,13 @@ public sealed class CommandPipeline
             var denied = _authorizer.Authorize(envelope, agent);
             if (denied != null)
             {
+                var deniedWithCode = denied.ErrorCode is null
+                    ? denied with { ErrorCode = CommandErrorCode.Permission }
+                    : denied;
                 _logger.LogWarning("Command {Command} denied for agent {AgentId}: {Error}",
-                    parsed.Command, agentId, denied.Error);
-                await AuditAsync(denied, roomId, scopedServices);
-                results.Add(denied);
+                    parsed.Command, agentId, deniedWithCode.Error);
+                await AuditAsync(deniedWithCode, roomId, scopedServices);
+                results.Add(deniedWithCode);
                 continue;
             }
 
@@ -91,6 +94,7 @@ public sealed class CommandPipeline
                 var unknown = envelope with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.NotFound,
                     Error = $"Unknown command: {parsed.Command}"
                 };
                 await AuditAsync(unknown, roomId, scopedServices);
@@ -113,6 +117,7 @@ public sealed class CommandPipeline
                 var error = envelope with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Internal,
                     Error = $"Command execution failed: {ex.Message}"
                 };
                 await AuditAsync(error, roomId, scopedServices);
@@ -135,6 +140,8 @@ public sealed class CommandPipeline
         foreach (var r in results)
         {
             lines.Add($"[{r.Status}] {r.Command} ({r.CorrelationId})");
+            if (r.ErrorCode != null)
+                lines.Add($"  ErrorCode: {r.ErrorCode}");
             if (r.Error != null)
                 lines.Add($"  Error: {r.Error}");
             if (r.Result != null)

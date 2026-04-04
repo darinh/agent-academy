@@ -19,6 +19,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "Only planners can close collaboration rooms"
             };
         }
@@ -28,6 +29,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: roomId. Use LIST_ROOMS to see available rooms."
             };
         }
@@ -39,6 +41,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Room '{roomId}' not found. Use LIST_ROOMS to see available rooms."
             };
         }
@@ -48,6 +51,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = $"Room '{room.Name}' is the main collaboration room and cannot be closed."
             };
         }
@@ -57,6 +61,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = $"Room '{room.Name}' has {room.Participants.Count} active participant(s) and cannot be closed."
             };
         }

@@ -26,6 +26,7 @@ Every command flows through a stable envelope from day 1:
   "status": "success",
   "result": { "content": "...", "lines": 42 },
   "error": null,
+  "errorCode": null,
   "correlationId": "cmd-a1b2c3",
   "timestamp": "2026-03-28T12:00:00Z",
   "executedBy": "software-engineer-1"
@@ -39,9 +40,34 @@ Every command flows through a stable envelope from day 1:
 | `status` | `"success"` \| `"error"` \| `"denied"` | Outcome |
 | `result` | object? | Command-specific return data (null on error) |
 | `error` | string? | Human-readable error message |
+| `errorCode` | string? | Structured error category for programmatic handling (null on success) |
 | `correlationId` | string | Unique ID for audit linkage |
 | `timestamp` | DateTime | ISO 8601 execution time |
 | `executedBy` | string | Agent ID that issued the command |
+
+### Error Codes
+
+Every failed command includes an `errorCode` string that agents can branch on instead of parsing error messages. Defined in `CommandErrorCode` (`src/AgentAcademy.Shared/Models/Commands.cs`):
+
+| Code | Meaning | Example |
+|------|---------|---------|
+| `VALIDATION` | Missing or invalid arguments | `"Missing required argument: path"` |
+| `NOT_FOUND` | Referenced resource does not exist | `"File not found: foo.cs"`, `"Task 'x' not found"` |
+| `PERMISSION` | Agent lacks permission or path traversal denied | `"Only planners can close rooms"` |
+| `CONFLICT` | Operation conflicts with current state | `"Task is already Completed"`, `"Room has active participants"` |
+| `TIMEOUT` | Operation exceeded its time limit | `"Tests timed out after 5 minutes"` |
+| `EXECUTION` | Runtime/process failure (crash, non-zero exit) | `"Build failed with exit code 1"` |
+| `INTERNAL` | Unexpected internal error | `"Command execution failed: NullReferenceException"` |
+
+Error codes are string constants (not an enum) for extensibility. The `error` field retains the human-readable detail; `errorCode` provides the category.
+
+The `FormatResultsForContext` method (used to inject command results into agent conversation history) includes the `ErrorCode` on a separate line when present:
+
+```
+[Error] READ_FILE (cmd-a1b2c3)
+  ErrorCode: NOT_FOUND
+  Error: File not found: nonexistent.cs
+```
 
 ### Pipeline
 
@@ -564,7 +590,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 ## Known Gaps
 
 - **Command discovery**: How do agents learn what commands are available? Added to agent startup prompts as of commit `6117b4e` (2026-03-28). No `HELP` command yet — agents must reference startup prompt or remember syntax.
-- **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?).
+- **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: No rate limiting defined for commands. An agent could spam READ_FILE in a tight loop.
 - **Frontend surfaces**: Phase 1A shipped backend-only. Command execution is invisible to users. Results are posted as system messages in agent conversation history. Command palette, task panel enhancements, and navigation affordances are planned but not implemented.
 - **Tier 2 room commands**: `RETURN_TO_MAIN`, `INVITE_TO_ROOM`, `CREATE_ROOM`, `RESTORE_ROOM`, and `ROOM_TOPIC` remain planned. `CLOSE_ROOM` is now implemented with planner-only authorization and archive semantics.

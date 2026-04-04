@@ -699,7 +699,14 @@ function CommandResultCard({ item, compact = false }: { item: CommandHistoryItem
       </div>
 
       {item.response.error && (
-        <div className={s.errorBox}>{item.response.error}</div>
+        <div className={s.errorBox}>
+          {item.response.errorCode && (
+            <Badge appearance="filled" color="danger" style={{ marginRight: 8 }}>
+              {item.response.errorCode}
+            </Badge>
+          )}
+          {item.response.error}
+        </div>
       )}
 
       {metadata.length > 0 && (

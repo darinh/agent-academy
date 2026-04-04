@@ -28,6 +28,7 @@ public sealed class CancelTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "Only Planner or Reviewer roles can cancel tasks"
             };
         }
@@ -41,6 +42,7 @@ public sealed class CancelTaskHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Validation,
                     Error = "Missing required argument: taskId"
                 };
             }
@@ -69,6 +71,7 @@ public sealed class CancelTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Task '{taskId}' not found"
             };
         }
@@ -79,6 +82,7 @@ public sealed class CancelTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = $"Task '{task.Title}' is already {task.Status}"
             };
         }
@@ -127,6 +131,7 @@ public sealed class CancelTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = ex.Message
             };
         }

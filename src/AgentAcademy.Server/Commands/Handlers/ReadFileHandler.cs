@@ -17,6 +17,7 @@ public sealed class ReadFileHandler : ICommandHandler
             return Task.FromResult(command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: path"
             });
         }
@@ -34,6 +35,7 @@ public sealed class ReadFileHandler : ICommandHandler
             return Task.FromResult(command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "Path traversal denied: file must be within the project directory."
             });
         }
@@ -62,11 +64,21 @@ public sealed class ReadFileHandler : ICommandHandler
                         }
                     });
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                catch (UnauthorizedAccessException ex)
                 {
                     return Task.FromResult(command with
                     {
                         Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Permission,
+                        Error = $"Cannot read directory: {ex.Message}"
+                    });
+                }
+                catch (IOException ex)
+                {
+                    return Task.FromResult(command with
+                    {
+                        Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Execution,
                         Error = $"Cannot read directory: {ex.Message}"
                     });
                 }
@@ -75,6 +87,7 @@ public sealed class ReadFileHandler : ICommandHandler
             return Task.FromResult(command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"File not found: {path}"
             });
         }

@@ -22,6 +22,7 @@ public sealed class RecallAgentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Denied,
+                ErrorCode = CommandErrorCode.Permission,
                 Error = "Only planners can recall agents from breakout rooms"
             };
         }
@@ -44,6 +45,7 @@ public sealed class RecallAgentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: AgentId (name or ID of the agent to recall)"
             };
         }
@@ -61,6 +63,7 @@ public sealed class RecallAgentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Agent '{targetAgent}' not found"
             };
         }
@@ -72,6 +75,7 @@ public sealed class RecallAgentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = $"Agent '{agent.Name}' is not currently in a breakout room"
             };
         }
@@ -111,6 +115,7 @@ public sealed class RecallAgentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Infer(ex.Message),
                 Error = ex.Message
             };
         }

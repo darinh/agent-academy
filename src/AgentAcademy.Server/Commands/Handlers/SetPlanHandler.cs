@@ -18,6 +18,7 @@ public sealed class SetPlanHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = error
             };
         }
@@ -28,6 +29,7 @@ public sealed class SetPlanHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = "SET_PLAN requires an active room context."
             };
         }
@@ -54,6 +56,7 @@ public sealed class SetPlanHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Infer(ex.Message),
                 Error = ex.Message
             };
         }

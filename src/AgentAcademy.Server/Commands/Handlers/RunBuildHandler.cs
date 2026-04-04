@@ -34,7 +34,7 @@ public sealed class RunBuildHandler : ICommandHandler
 
             using var process = Process.Start(psi);
             if (process is null)
-                return command with { Status = CommandStatus.Error, Error = "Failed to start build process." };
+                return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = "Failed to start build process." };
 
             using var cts = new CancellationTokenSource(BuildTimeout);
             var stdout = await process.StandardOutput.ReadToEndAsync(cts.Token);
@@ -49,6 +49,7 @@ public sealed class RunBuildHandler : ICommandHandler
             return command with
             {
                 Status = process.ExitCode == 0 ? CommandStatus.Success : CommandStatus.Error,
+                ErrorCode = process.ExitCode != 0 ? CommandErrorCode.Execution : null,
                 Result = new Dictionary<string, object?>
                 {
                     ["exitCode"] = process.ExitCode,
@@ -60,11 +61,11 @@ public sealed class RunBuildHandler : ICommandHandler
         }
         catch (OperationCanceledException)
         {
-            return command with { Status = CommandStatus.Error, Error = $"Build timed out after {BuildTimeout.TotalMinutes} minutes." };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Timeout, Error = $"Build timed out after {BuildTimeout.TotalMinutes} minutes." };
         }
         catch (Exception ex)
         {
-            return command with { Status = CommandStatus.Error, Error = $"Build failed: {ex.Message}" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = $"Build failed: {ex.Message}" };
         }
         finally
         {

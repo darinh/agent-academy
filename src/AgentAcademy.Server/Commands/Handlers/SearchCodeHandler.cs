@@ -21,6 +21,7 @@ public sealed class SearchCodeHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: query"
             };
         }
@@ -76,6 +77,7 @@ public sealed class SearchCodeHandler : ICommandHandler
                     return command with
                     {
                         Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.NotFound,
                         Error = $"Path not found: {subPath}. Use paths relative to the project root (e.g., src/AgentAcademy.Server/Commands)."
                     };
                 }
@@ -109,7 +111,7 @@ public sealed class SearchCodeHandler : ICommandHandler
             using var process = Process.Start(psi);
             if (process == null)
             {
-                return command with { Status = CommandStatus.Error, Error = "Failed to start search process." };
+                return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = "Failed to start search process." };
             }
 
             var output = await process.StandardOutput.ReadToEndAsync();
@@ -160,6 +162,7 @@ public sealed class SearchCodeHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Execution,
                 Error = $"Search failed: {ex.Message}"
             };
         }

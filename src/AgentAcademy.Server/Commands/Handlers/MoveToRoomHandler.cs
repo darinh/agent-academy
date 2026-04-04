@@ -21,6 +21,7 @@ public sealed class MoveToRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: roomId. Use LIST_ROOMS to see available rooms."
             };
         }
@@ -34,6 +35,7 @@ public sealed class MoveToRoomHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Room '{roomId}' not found. Use LIST_ROOMS to see available rooms."
             };
         }

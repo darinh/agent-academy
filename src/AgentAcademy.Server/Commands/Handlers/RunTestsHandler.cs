@@ -65,7 +65,7 @@ public sealed class RunTestsHandler : ICommandHandler
 
             using var process = Process.Start(psi);
             if (process is null)
-                return command with { Status = CommandStatus.Error, Error = "Failed to start test process." };
+                return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = "Failed to start test process." };
 
             using var cts = new CancellationTokenSource(TestTimeout);
             var stdout = await process.StandardOutput.ReadToEndAsync(cts.Token);
@@ -79,6 +79,7 @@ public sealed class RunTestsHandler : ICommandHandler
             return command with
             {
                 Status = process.ExitCode == 0 ? CommandStatus.Success : CommandStatus.Error,
+                ErrorCode = process.ExitCode != 0 ? CommandErrorCode.Execution : null,
                 Result = new Dictionary<string, object?>
                 {
                     ["exitCode"] = process.ExitCode,
@@ -91,11 +92,11 @@ public sealed class RunTestsHandler : ICommandHandler
         }
         catch (OperationCanceledException)
         {
-            return command with { Status = CommandStatus.Error, Error = $"Tests timed out after {TestTimeout.TotalMinutes} minutes." };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Timeout, Error = $"Tests timed out after {TestTimeout.TotalMinutes} minutes." };
         }
         catch (Exception ex)
         {
-            return command with { Status = CommandStatus.Error, Error = $"Test run failed: {ex.Message}" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = $"Test run failed: {ex.Message}" };
         }
         finally
         {

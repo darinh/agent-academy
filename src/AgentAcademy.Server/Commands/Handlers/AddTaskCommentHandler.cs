@@ -20,6 +20,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: TaskId"
             };
         }
@@ -30,6 +31,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: Content"
             };
         }
@@ -43,6 +45,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Validation,
                     Error = $"Invalid comment type: '{typeStr}'. Valid types: Comment, Finding, Evidence, Blocker"
                 };
             }
@@ -59,6 +62,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.NotFound,
                     Error = $"Task '{taskId}' not found"
                 };
             }
@@ -72,6 +76,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Permission,
                     Error = $"Only the assignee, reviewer, or planner can comment on task '{taskId}'"
                 };
             }
@@ -96,6 +101,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Infer(ex.Message),
                 Error = ex.Message
             };
         }

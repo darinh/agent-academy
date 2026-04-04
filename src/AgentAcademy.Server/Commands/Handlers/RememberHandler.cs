@@ -23,16 +23,16 @@ public sealed class RememberHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         if (!command.Args.TryGetValue("key", out var keyObj) || keyObj is not string key || string.IsNullOrWhiteSpace(key))
-            return command with { Status = CommandStatus.Error, Error = "Missing required argument: key" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = "Missing required argument: key" };
 
         if (!command.Args.TryGetValue("value", out var valueObj) || valueObj is not string value || string.IsNullOrWhiteSpace(value))
-            return command with { Status = CommandStatus.Error, Error = "Missing required argument: value" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = "Missing required argument: value" };
 
         if (!command.Args.TryGetValue("category", out var catObj) || catObj is not string category || string.IsNullOrWhiteSpace(category))
-            return command with { Status = CommandStatus.Error, Error = "Missing required argument: category" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = "Missing required argument: category" };
 
         if (!ValidCategories.Contains(category))
-            return command with { Status = CommandStatus.Error, Error = $"Invalid category '{category}'. Valid: {string.Join(", ", ValidCategories.Order())}" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = $"Invalid category '{category}'. Valid: {string.Join(", ", ValidCategories.Order())}" };
 
         var db = context.Services.GetRequiredService<AgentAcademyDbContext>();
         var existing = await db.AgentMemories.FindAsync(context.AgentId, key);

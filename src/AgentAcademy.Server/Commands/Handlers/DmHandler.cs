@@ -21,6 +21,7 @@ public sealed class DmHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required arg: recipient. Usage: DM:\n  Recipient: @Human or @AgentName\n  Message: <your message>"
             };
         }
@@ -31,6 +32,7 @@ public sealed class DmHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required arg: message. Usage: DM:\n  Recipient: @Human or @AgentName\n  Message: <your message>"
             };
         }
@@ -131,6 +133,7 @@ public sealed class DmHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Unknown recipient '{recipientId}'. Available agents: {availableAgents}, or use @Human."
             };
         }
@@ -141,6 +144,7 @@ public sealed class DmHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Conflict,
                 Error = "Cannot send a DM to yourself."
             };
         }

@@ -20,6 +20,7 @@ public sealed class RequestChangesHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: taskId"
             };
         }
@@ -30,6 +31,7 @@ public sealed class RequestChangesHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: findings"
             };
         }
@@ -58,6 +60,7 @@ public sealed class RequestChangesHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Infer(ex.Message),
                 Error = ex.Message
             };
         }

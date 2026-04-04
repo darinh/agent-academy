@@ -61,7 +61,7 @@ public sealed class GitLogHandler : ICommandHandler
         {
             using var process = Process.Start(psi);
             if (process is null)
-                return command with { Status = CommandStatus.Error, Error = "Failed to start git process." };
+                return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = "Failed to start git process." };
 
             var output = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();
@@ -89,7 +89,7 @@ public sealed class GitLogHandler : ICommandHandler
         }
         catch (Exception ex)
         {
-            return command with { Status = CommandStatus.Error, Error = $"Git log failed: {ex.Message}" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = $"Git log failed: {ex.Message}" };
         }
     }
 

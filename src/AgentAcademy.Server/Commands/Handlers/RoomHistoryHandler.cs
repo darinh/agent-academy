@@ -24,6 +24,7 @@ public sealed class RoomHistoryHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: roomId"
             };
         }
@@ -45,6 +46,7 @@ public sealed class RoomHistoryHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"Room '{roomId}' not found."
             };
         }

@@ -30,6 +30,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "Missing required argument: taskId"
             };
         }
@@ -46,6 +47,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
                 Error = "At least one of status, blocker, or note is required"
             };
         }
@@ -68,6 +70,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
                     return command with
                     {
                         Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Validation,
                         Error = "Cannot specify both 'blocker' and 'status' — blocker implies Blocked status"
                     };
                 }
@@ -85,6 +88,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
                     return command with
                     {
                         Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Validation,
                         Error = $"Invalid status '{statusValue}'. Allowed: {string.Join(", ", AllowedStatuses)}"
                     };
                 }
@@ -94,6 +98,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
                     return command with
                     {
                         Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Validation,
                         Error = $"Unknown status: {statusValue}"
                     };
                 }
@@ -132,6 +137,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = ex.Message
             };
         }

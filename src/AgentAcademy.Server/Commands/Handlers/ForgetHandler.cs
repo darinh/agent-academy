@@ -14,7 +14,7 @@ public sealed class ForgetHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         if (!command.Args.TryGetValue("key", out var keyObj) || keyObj is not string key || string.IsNullOrWhiteSpace(key))
-            return command with { Status = CommandStatus.Error, Error = "Missing required argument: key" };
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = "Missing required argument: key" };
 
         var db = context.Services.GetRequiredService<AgentAcademyDbContext>();
         var entity = await db.AgentMemories.FindAsync(context.AgentId, key);
@@ -24,6 +24,7 @@ public sealed class ForgetHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.NotFound,
                 Error = $"No memory found with key '{key}'."
             };
         }

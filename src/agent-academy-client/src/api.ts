@@ -47,6 +47,7 @@ export interface CommandExecutionResponse {
   status: CommandExecutionStatus;
   result: unknown;
   error: string | null;
+  errorCode: string | null;
   correlationId: string;
   timestamp: string;
   executedBy: string;

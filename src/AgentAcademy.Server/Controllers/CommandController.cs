@@ -111,6 +111,7 @@ public sealed class CommandController : ControllerBase
                 Status: "pending",
                 Result: null,
                 Error: null,
+                ErrorCode: null,
                 CorrelationId: correlationId,
                 Timestamp: DateTime.UtcNow,
                 ExecutedBy: HumanAgentId));
@@ -205,6 +206,7 @@ public sealed class CommandController : ControllerBase
             return envelope with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Internal,
                 Error = $"Command execution failed: {ex.Message}"
             };
         }
@@ -287,6 +289,7 @@ public sealed class CommandController : ControllerBase
             Status: MapAuditStatus(envelope.Status.ToString()),
             Result: envelope.Result,
             Error: envelope.Error,
+            ErrorCode: envelope.ErrorCode,
             CorrelationId: envelope.CorrelationId,
             Timestamp: envelope.Timestamp,
             ExecutedBy: envelope.ExecutedBy);
@@ -297,6 +300,7 @@ public sealed class CommandController : ControllerBase
             Status: MapAuditStatus(audit.Status),
             Result: DeserializeResult(audit.ResultJson),
             Error: audit.ErrorMessage,
+            ErrorCode: null, // Audit entities don't store ErrorCode yet
             CorrelationId: audit.CorrelationId,
             Timestamp: audit.Timestamp,
             ExecutedBy: audit.AgentId);
@@ -354,6 +358,7 @@ public sealed record ExecuteCommandResponse(
     string Status,
     object? Result,
     string? Error,
+    string? ErrorCode,
     string CorrelationId,
     DateTime Timestamp,
     string ExecutedBy);

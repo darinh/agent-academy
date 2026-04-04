@@ -23,6 +23,7 @@ public sealed class ReleaseTaskHandler : ICommandHandler
                 return command with
                 {
                     Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Validation,
                     Error = "Missing required argument: taskId"
                 };
             }
@@ -51,6 +52,7 @@ public sealed class ReleaseTaskHandler : ICommandHandler
             return command with
             {
                 Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Infer(ex.Message),
                 Error = ex.Message
             };
         }

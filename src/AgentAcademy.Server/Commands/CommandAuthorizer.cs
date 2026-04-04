@@ -74,6 +74,7 @@ public sealed class CommandAuthorizer
         return command with
         {
             Status = CommandStatus.Denied,
+            ErrorCode = CommandErrorCode.Permission,
             Error = reason,
             Result = null
         };
