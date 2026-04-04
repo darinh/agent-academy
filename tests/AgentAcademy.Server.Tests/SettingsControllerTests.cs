@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Controllers;
@@ -30,7 +31,7 @@ public class SettingsControllerTests : IDisposable
         _db.Database.EnsureCreated();
 
         _settingsService = new SystemSettingsService(_db);
-        _controller = new SettingsController(_settingsService);
+        _controller = new SettingsController(_settingsService, new CommandRateLimiter());
     }
 
     public void Dispose()
@@ -103,5 +104,35 @@ public class SettingsControllerTests : IDisposable
         var settings = Assert.IsType<Dictionary<string, string>>(ok.Value);
 
         Assert.Equal("200", settings["conversation.mainRoomEpochSize"]);
+    }
+
+    [Fact]
+    public async Task UpsertSettings_ReconfiguresRateLimiter()
+    {
+        var rateLimiter = new CommandRateLimiter();
+        var controller = new SettingsController(_settingsService, rateLimiter);
+
+        Assert.Equal(30, rateLimiter.MaxCommands);
+        Assert.Equal(60, rateLimiter.WindowSeconds);
+
+        await controller.UpsertSettings(new Dictionary<string, string>
+        {
+            ["commands.rateLimitMaxCommands"] = "10",
+            ["commands.rateLimitWindowSeconds"] = "30",
+        });
+
+        Assert.Equal(10, rateLimiter.MaxCommands);
+        Assert.Equal(30, rateLimiter.WindowSeconds);
+    }
+
+    [Fact]
+    public async Task GetAll_IncludesRateLimitDefaults()
+    {
+        var result = await _controller.GetAll();
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var settings = Assert.IsType<Dictionary<string, string>>(ok.Value);
+
+        Assert.Equal("30", settings["commands.rateLimitMaxCommands"]);
+        Assert.Equal("60", settings["commands.rateLimitWindowSeconds"]);
     }
 }

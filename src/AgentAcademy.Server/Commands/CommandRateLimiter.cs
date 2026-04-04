@@ -9,8 +9,8 @@ namespace AgentAcademy.Server.Commands;
 /// </summary>
 public sealed class CommandRateLimiter
 {
-    private readonly int _maxCommands;
-    private readonly TimeSpan _window;
+    private int _maxCommands;
+    private TimeSpan _window;
     private readonly ConcurrentDictionary<string, Queue<DateTime>> _timestamps = new();
 
     public CommandRateLimiter(int maxCommands = 30, int windowSeconds = 60)
@@ -20,6 +20,21 @@ public sealed class CommandRateLimiter
         _maxCommands = maxCommands;
         _window = TimeSpan.FromSeconds(windowSeconds);
     }
+
+    /// <summary>
+    /// Reconfigures the rate limiter at runtime. Existing windows continue
+    /// with the new limits applied on the next TryAcquire call.
+    /// </summary>
+    public void Configure(int maxCommands, int windowSeconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxCommands, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(windowSeconds, 0);
+        _maxCommands = maxCommands;
+        _window = TimeSpan.FromSeconds(windowSeconds);
+    }
+
+    public int MaxCommands => _maxCommands;
+    public int WindowSeconds => (int)_window.TotalSeconds;
 
     /// <summary>
     /// Attempt to acquire a rate-limit token for the given agent.

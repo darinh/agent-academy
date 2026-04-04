@@ -303,6 +303,12 @@ using (var scope = app.Services.CreateScope())
         await orchestrator.HandleStartupRecoveryAsync(mainRoomId);
     }
 
+    // Configure rate limiter from persisted settings
+    var settingsService = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
+    var rateLimiter = app.Services.GetRequiredService<CommandRateLimiter>();
+    var maxCmds = await settingsService.GetRateLimitMaxCommandsAsync();
+    var windowSecs = await settingsService.GetRateLimitWindowSecondsAsync();
+    rateLimiter.Configure(maxCmds, windowSecs);
 }
 
 // Register shutdown hook for graceful cleanup

@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,10 +12,12 @@ namespace AgentAcademy.Server.Controllers;
 public class SettingsController : ControllerBase
 {
     private readonly SystemSettingsService _settings;
+    private readonly CommandRateLimiter _rateLimiter;
 
-    public SettingsController(SystemSettingsService settings)
+    public SettingsController(SystemSettingsService settings, CommandRateLimiter rateLimiter)
     {
         _settings = settings;
+        _rateLimiter = rateLimiter;
     }
 
     /// <summary>
@@ -50,6 +53,16 @@ public class SettingsController : ControllerBase
         {
             await _settings.SetAsync(key, value);
         }
+
+        // Live-reconfigure rate limiter if relevant keys changed
+        if (settings.ContainsKey(SystemSettingsService.RateLimitMaxCommandsKey) ||
+            settings.ContainsKey(SystemSettingsService.RateLimitWindowSecondsKey))
+        {
+            var maxCmds = await _settings.GetRateLimitMaxCommandsAsync();
+            var windowSecs = await _settings.GetRateLimitWindowSecondsAsync();
+            _rateLimiter.Configure(maxCmds, windowSecs);
+        }
+
         return Ok(await _settings.GetAllWithDefaultsAsync());
     }
 }
