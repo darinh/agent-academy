@@ -26,10 +26,13 @@ public sealed class MergeTaskHandler : ICommandHandler
     private static string GetConventionalCommitPrefix(TaskType taskType)
         => taskType switch
         {
+            TaskType.Feature => "feat: ",
             TaskType.Bug => "fix: ",
             TaskType.Chore => "chore: ",
             TaskType.Spike => "docs: ",
-            _ => "feat: "
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(taskType), taskType,
+                $"No conventional commit prefix defined for TaskType '{taskType}'.")
         };
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
