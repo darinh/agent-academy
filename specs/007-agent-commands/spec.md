@@ -89,7 +89,7 @@ These formalize existing capabilities with audit trails and structured output.
 
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
-| `READ_FILE` | `path`, `startLine?`, `endLine?` | File content, line count (files); entry listing (directories) | Audit event | `ReadFileHandler.cs` — validates path, reads lines, lists directories, protects against traversal |
+| `READ_FILE` | `path`, `startLine?`, `endLine?` | File content, line count (files); entry listing (directories). Auto-truncates at 12,000 chars with `truncated=true` and continuation hint. | Audit event | `ReadFileHandler.cs` — validates path, reads lines, lists directories, protects against traversal, truncates large output |
 | `SEARCH_CODE` | `query`, `path?`, `glob?` | Matching lines with file/line refs | Audit event | `SearchCodeHandler.cs` — `git grep`-based search; respects .gitignore, skips binary files |
 | `LIST_ROOMS` | — | All rooms: id, name, status, phase, participant count, message count, active task | Audit event | `ListRoomsHandler.cs` — queries all rooms with preloaded agent locations |
 | `LIST_AGENTS` | — | All agents: id, name, role, location (room/workspace), state, active task item | Audit event | `ListAgentsHandler.cs` — queries agent catalog + locations + presence |
@@ -466,10 +466,11 @@ All other handlers (26 of 28) require no modifications. They accept `CommandCont
 
 ### Implementation
 - **Handler**: `src/AgentAcademy.Server/Commands/Handlers/DmHandler.cs`
-- **Data model**: `MessageEntity.RecipientId` (nullable) — null = room message, non-null = DM. `MessageKind.DirectMessage`.
-- **Runtime methods**: `SendDirectMessageAsync`, `GetDirectMessagesForAgentAsync`, `GetDmThreadsForHumanAsync`, `GetDmThreadMessagesAsync` in `WorkspaceRuntime.cs`
-- **Orchestrator**: `HandleDirectMessage(agentId)` triggers targeted agent round via extended `QueueItem(RoomId, TargetAgentId?)` queue.
-- **Context injection**: DMs injected as `=== DIRECT MESSAGES ===` section in agent prompts.
+- **Data model**: `MessageEntity.RecipientId` (nullable) — null = room message, non-null = DM. `MessageKind.DirectMessage`. `MessageEntity.AcknowledgedAt` (nullable) — set when the recipient has seen the DM in a prompt.
+- **Runtime methods**: `SendDirectMessageAsync`, `GetDirectMessagesForAgentAsync` (defaults `unreadOnly=true`, filtering to recipient-only unacknowledged DMs), `AcknowledgeDirectMessagesAsync` (takes explicit message IDs to prevent races), `GetDmThreadsForHumanAsync`, `GetDmThreadMessagesAsync` in `WorkspaceRuntime.cs`
+- **Orchestrator**: `HandleDirectMessage(agentId)` triggers targeted agent round via extended `QueueItem(RoomId, TargetAgentId?)` queue. After building a prompt that includes DMs, all included message IDs are acknowledged so they don't repeat on the next round.
+- **Context injection**: DMs injected as `=== DIRECT MESSAGES ===` section in agent prompts. Only unacknowledged DMs are shown to prevent duplication across rounds.
+- **Breakout forwarding**: When a DM is sent to an agent in a breakout room, all unread DMs are posted as individual breakout messages and then acknowledged.
 - **System notification**: "📩 {sender} sent a direct message to {recipient}." posted in recipient's room (audit metadata, no content).
 - **Frontend**: Telegram-style DM panel (`DmPanel.tsx`) with conversation list + chat view. "Messages" tab in tab bar.
 - **API**: `DmController.cs` — `GET /api/dm/threads`, `GET /api/dm/threads/{agentId}`, `POST /api/dm/threads/{agentId}`

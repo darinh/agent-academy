@@ -4,6 +4,10 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **007-agent-commands**: DM duplication eliminated — added per-recipient `AcknowledgedAt` tracking to `MessageEntity`. `GetDirectMessagesForAgentAsync` defaults to `unreadOnly=true`, filtering to unacknowledged DMs where the agent is the recipient (not sender). `AcknowledgeDirectMessagesAsync` takes explicit message IDs to prevent race conditions between fetch and ack. Breakout forwarding now posts all unread DMs (not just the last one). 4 new tests.
+- **007-agent-commands**: `READ_FILE` auto-truncates large file content at 12,000 characters. Returns `truncated=true` and a continuation hint with `startLine` for the next chunk. Prevents agents from blowing out their context window.
+
 ### Added
 - **007-agent-commands**: Human Command Execution API — `POST /api/commands/execute` and `GET /api/commands/{correlationId}` endpoints for Week 1 frontend Commands tab. 11 allowlisted commands (all read-only + RUN_BUILD/RUN_TESTS). CommandController bypasses agent pipeline, uses controller-level allowlist and cookie auth. Async commands (build/test) return 202 Accepted with polling. Added `CommandAuditEntity.Source` field to distinguish human-ui from agent invocations. Build/test handlers serialized via SemaphoreSlim.
 - **300-frontend-ui**: Commands tab — added `CommandsPanel.tsx` to the workspace shell for the 11-command Week 1 human allowlist. The client hardcodes command metadata, submits scalar args only, polls async build/test executions every 2.5 seconds, keeps the last 10 runs in a result rail, and leaves the tab readable-but-disabled during degraded Copilot sessions.
