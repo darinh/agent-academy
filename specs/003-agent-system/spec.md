@@ -188,7 +188,7 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
 ### SDK Tool Calling
 
-> **Status: Implemented** — Read-only tools registered per agent based on `EnabledTools`.
+> **Status: Implemented** — Read-only and write tools registered per agent based on `EnabledTools`. Write tools scoped to calling agent identity.
 
 The Copilot SDK supports registering C# methods as tools that the LLM can invoke via structured function calls. This is more reliable than text-based command parsing.
 
@@ -210,15 +210,19 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 
 #### Tool Groups
 
-| Group | Tools | Agents |
-|-------|-------|--------|
-| `task-state` | `list_tasks`, `list_rooms`, `list_agents` | All agents |
-| `code` | `read_file`, `search_code` | Engineers, Writer |
-| `chat` | (platform concept, not an SDK tool) | All agents |
+| Group | Tools | Type | Agents |
+|-------|-------|------|--------|
+| `task-state` | `list_tasks`, `list_rooms`, `list_agents` | Read-only (shared) | All agents |
+| `code` | `read_file`, `search_code` | Read-only (shared) | Engineers, Writer |
+| `task-write` | `create_task`, `update_task_status`, `add_task_comment` | Write (per-agent) | All agents |
+| `memory` | `remember`, `recall` | Write/Read (per-agent) | All agents |
+| `chat` | (platform concept, not an SDK tool) | — | All agents |
 
 #### Tool Functions
 
 **File**: `src/AgentAcademy.Server/Services/AgentToolFunctions.cs`
+
+**Read-only tools** (static, agent-agnostic):
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
@@ -228,13 +232,25 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 | `read_file` | Reads file content with optional line range | `path`, `startLine?`, `endLine?` |
 | `search_code` | Searches codebase via `git grep` | `query`, `path?`, `glob?`, `ignoreCase?` |
 
+**Write tools** (contextual, scoped to calling agent via inner wrapper classes):
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `create_task` | Creates a new task and room | `title`, `description`, `successCriteria`, `preferredRoles?`, `type?` |
+| `update_task_status` | Updates task status, reports blockers, posts notes | `taskId`, `status?`, `blocker?`, `note?` |
+| `add_task_comment` | Adds a comment/finding to a task | `taskId`, `content`, `commentType?` |
+| `remember` | Stores a memory that persists across sessions | `key`, `value`, `category`, `ttl?` |
+| `recall` | Searches and retrieves memories (FTS5 + LIKE fallback) | `query?`, `category?`, `key?`, `includeExpired?` |
+
 **Safety**:
 - `read_file` restricts paths to the project directory (path traversal denied)
 - `read_file` truncates content at 12KB to prevent huge responses
 - `search_code` caps results at 50 matches
-- All tools are read-only — no write operations
+- `update_task_status` restricts to safe statuses (Active, Blocked, AwaitingValidation, InReview, Queued — cannot set Completed/Cancelled)
+- Write tools capture `agentId` at session creation via closures — agents cannot impersonate other agents
+- Memory isolation: agents only see their own memories plus `shared` category memories from other agents
 
-**Implementation**: Tool functions use `IServiceScopeFactory` to resolve scoped services (`WorkspaceRuntime`) at invocation time. The functions return formatted text strings.
+**Implementation**: Read-only tools are created once and shared. Write tools use inner wrapper classes (`TaskWriteToolWrapper`, `MemoryToolWrapper`) that capture agent identity via closures. All tools use `IServiceScopeFactory` to resolve scoped services at invocation time.
 
 #### Registry
 
@@ -242,7 +258,7 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 **Interface**: `src/AgentAcademy.Server/Services/IAgentToolRegistry.cs`
 **DI**: Singleton
 
-Maps `AgentDefinition.EnabledTools` group names to `AIFunction` instances. Group names are case-insensitive. Unknown groups are silently ignored. Duplicate groups don't produce duplicate tools.
+Maps `AgentDefinition.EnabledTools` group names to `AIFunction` instances. Read-only groups (`task-state`, `code`) use shared tool instances. Contextual groups (`task-write`, `memory`) create per-agent tool instances at resolution time, requiring `agentId` and `agentName` parameters. Group names are case-insensitive. Unknown groups are silently ignored. Duplicate groups don't produce duplicate tools.
 
 #### Permission Handler
 
@@ -254,24 +270,27 @@ Maps `AgentDefinition.EnabledTools` group names to `AIFunction` instances. Group
 - Denies dangerous permission kinds (`shell`, `write`, `url`, `mcp`) with `DeniedByRules`
 - Logs all approved and denied permission requests for diagnostics
 
+Note: The SDK's `write` permission kind refers to file write operations by the SDK itself, not our custom tool write operations. Our custom tools (including write tools) use the `custom-tool` or `tool` permission kind.
+
 #### CopilotExecutor Integration
 
 **File**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`
 
 In `GetOrCreateSessionEntryAsync`, the executor:
-1. Calls `_toolRegistry.GetToolsForAgent(agent.EnabledTools)` to resolve tools
+1. Calls `_toolRegistry.GetToolsForAgent(agent.EnabledTools, agent.Id, agent.Name)` to resolve tools (passing agent identity for contextual groups)
 2. Creates `SessionConfig` with `Tools = [.. tools]`
 3. Sets `OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger)`
 4. Logs tool registration for diagnostics
 
 #### Tests
 
-**File**: `tests/AgentAcademy.Server.Tests/AgentToolTests.cs` — 29 tests
+**File**: `tests/AgentAcademy.Server.Tests/AgentToolTests.cs` — 62 tests
 
 | Test Class | Tests | Validates |
 |------------|-------|-----------|
-| `AgentToolRegistryTests` | 12 | Group resolution, dedup, case-insensitive, all tool names, planner vs engineer config |
+| `AgentToolRegistryTests` | 17 | Group resolution (static + contextual), dedup, case-insensitive, all tool names, planner/engineer config, task-write/memory groups, no-agentId fallback |
 | `AgentToolFunctionsTests` | 15 | Tool creation, list_tasks/rooms/agents execution, read_file (happy path, not found, path traversal, directory, line range), search_code (results, no results, glob filter, path traversal), FindProjectRoot |
+| `AgentWriteToolTests` | 23 | create_task (valid, missing title, invalid type, with type), update_task_status (valid, invalid, blocker, blocker+status, note, nonexistent, no args), add_task_comment (valid, finding type, invalid type, nonexistent), remember (create, upsert, TTL, invalid category, invalid TTL), recall (empty, after remember, by category, by key, agent isolation, shared visibility, expired exclusion, expired inclusion) |
 | `AgentPermissionHandlerTests` | 7 | No-tools approval, tool-call approval, read approval, shell denial, write denial, URL denial, multiple safe kinds |
 
 ### Conversation Session Management
@@ -647,3 +666,4 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-03-30 | Frontend agent config UI — Settings panel with agent config cards, template management, 3 seed templates | agent-config-phase3-4 |
 | 2026-04-04 | LLM usage tracking — `LlmUsageTracker` captures `AssistantUsageEvent` from Copilot SDK. Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. REST APIs: room usage aggregation, per-agent breakdown, individual records, global usage with time filter. Resolves "No token/usage tracking" known gap. Adversarial review (GPT-5.3 Codex): 4 findings — 3 fixed (decimal precision, unsafe casts, input validation), 1 accepted (multi-query race). 20 new tests. | usage-tracking |
 | 2026-04-05 | SDK tool calling — `AgentToolRegistry` maps `EnabledTools` groups to `AIFunction` objects. 5 read-only tools: `list_tasks`, `list_rooms`, `list_agents` (task-state group), `read_file`, `search_code` (code group). `AgentPermissionHandler` denies dangerous permission kinds (shell/write/url). `CopilotExecutor` passes tools in `SessionConfig`. Resolves "No tool calling" known gap. Adversarial review (GPT-5.3 Codex, Claude Opus 4.6, Claude Sonnet 4.5): 14 findings — 7 fixed (permission handler blanket approve, stderr deadlock, path traversal bypass, FindProjectRoot fallback, max-count per-file, no timeout, regex vs fixed-string). 34 new tests. | sdk-tool-calling |
+| 2026-04-05 | Agent write tools — 5 new tools in 2 groups: `task-write` (create_task, update_task_status, add_task_comment) and `memory` (remember, recall). Inner wrapper classes capture agent identity via closures. `IAgentToolRegistry` extended with agentId/agentName parameters for contextual groups. Reuses `RememberHandler.ValidCategories` and `RecallHandler.SearchWithFts5Async`. All 6 agents updated. 35 new tests (1154 total). | agent-write-tools |

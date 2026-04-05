@@ -446,7 +446,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 "Creating new CopilotSession for agent {AgentId}, model={Model}, key={Key}",
                 agent.Id, agent.Model ?? "default", sessionKey);
 
-            var tools = _toolRegistry.GetToolsForAgent(agent.EnabledTools);
+            var tools = _toolRegistry.GetToolsForAgent(agent.EnabledTools, agent.Id, agent.Name);
             var toolNames = new HashSet<string>(tools.Select(t => t.Name), StringComparer.Ordinal);
 
             var config = new SessionConfig
