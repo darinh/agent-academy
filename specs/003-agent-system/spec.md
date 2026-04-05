@@ -76,7 +76,7 @@ Key behaviors:
   - Other/unknown → `CopilotTransientException` (retried with backoff: 2s/4s/8s, max 3 attempts)
 - **Auth failure handling**: On definitive auth failure, the executor sets `IsAuthFailed = true`, posts a re-authentication notice to the main room, and notifies via the notification system. When the user re-authenticates (token changes), the flag is cleared and a recovery message is posted automatically.
 - **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state.
-- **Permission handling**: Sessions are created with `OnPermissionRequest = PermissionHandler.ApproveAll` (required by SDK v0.2.0). Safe because no SDK tools are registered in session config. Must be revisited when tool calling is wired up.
+- **Permission handling**: Sessions use `AgentPermissionHandler.Create()` which approves tool calls for the registered tools. When no tools are registered for an agent, all permissions are approved (same as `PermissionHandler.ApproveAll`). The handler logs all permission requests for diagnostics.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity. The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
@@ -183,8 +183,96 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
 - **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy.
 - ~~**No token/usage tracking**~~ — **Resolved**: `LlmUsageTracker` captures `AssistantUsageEvent` from the Copilot SDK on every LLM call (including session priming). Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. Room-level aggregation via `GET /api/rooms/{id}/usage`, per-agent breakdown via `/usage/agents`, individual records via `/usage/records`. Global usage via `GET /api/usage` with optional `hoursBack` filter.
-- **No tool calling**: The Copilot SDK supports registering C# methods as tools callable by the model. Not yet wired up. When enabled, `OnPermissionRequest` must be changed from `ApproveAll` to a restrictive handler.
+- ~~**No tool calling**~~ — **Resolved**: SDK tool calling is wired up via `AgentToolRegistry` and `AgentToolFunctions`. See "SDK Tool Calling" section below.
 - **No per-project session resume**: Sessions are cleared on project switch. If a user returns to a previous project, agents start fresh — they don't resume their prior conversation context.
+
+### SDK Tool Calling
+
+> **Status: Implemented** — Read-only tools registered per agent based on `EnabledTools`.
+
+The Copilot SDK supports registering C# methods as tools that the LLM can invoke via structured function calls. This is more reliable than text-based command parsing.
+
+#### Architecture
+
+```
+AgentDefinition.EnabledTools ["task-state", "code"]
+         │
+         ▼
+IAgentToolRegistry.GetToolsForAgent(enabledTools)
+         │  resolves tool groups → AIFunction list
+         ▼
+List<AIFunction> [list_tasks, list_rooms, list_agents, read_file, search_code]
+         │
+         ▼
+SessionConfig.Tools = [.. tools]
+SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, logger)
+```
+
+#### Tool Groups
+
+| Group | Tools | Agents |
+|-------|-------|--------|
+| `task-state` | `list_tasks`, `list_rooms`, `list_agents` | All agents |
+| `code` | `read_file`, `search_code` | Engineers, Writer |
+| `chat` | (platform concept, not an SDK tool) | All agents |
+
+#### Tool Functions
+
+**File**: `src/AgentAcademy.Server/Services/AgentToolFunctions.cs`
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `list_tasks` | Lists tasks with status, assignee, metadata | `status?` (filter) |
+| `list_rooms` | Lists rooms with status and participants | `includeArchived?` (bool) |
+| `list_agents` | Lists agents with location and state | (none) |
+| `read_file` | Reads file content with optional line range | `path`, `startLine?`, `endLine?` |
+| `search_code` | Searches codebase via `git grep` | `query`, `path?`, `glob?`, `ignoreCase?` |
+
+**Safety**:
+- `read_file` restricts paths to the project directory (path traversal denied)
+- `read_file` truncates content at 12KB to prevent huge responses
+- `search_code` caps results at 50 matches
+- All tools are read-only — no write operations
+
+**Implementation**: Tool functions use `IServiceScopeFactory` to resolve scoped services (`WorkspaceRuntime`) at invocation time. The functions return formatted text strings.
+
+#### Registry
+
+**File**: `src/AgentAcademy.Server/Services/AgentToolRegistry.cs`
+**Interface**: `src/AgentAcademy.Server/Services/IAgentToolRegistry.cs`
+**DI**: Singleton
+
+Maps `AgentDefinition.EnabledTools` group names to `AIFunction` instances. Group names are case-insensitive. Unknown groups are silently ignored. Duplicate groups don't produce duplicate tools.
+
+#### Permission Handler
+
+**File**: `src/AgentAcademy.Server/Services/AgentPermissionHandler.cs`
+
+`AgentPermissionHandler.Create(registeredToolNames, logger)` returns a `PermissionRequestHandler` delegate that:
+- Approves all permissions when no tools are registered (backward-compatible)
+- Approves only safe permission kinds (`custom-tool`, `read`, `tool`) when tools are registered
+- Denies dangerous permission kinds (`shell`, `write`, `url`, `mcp`) with `DeniedByRules`
+- Logs all approved and denied permission requests for diagnostics
+
+#### CopilotExecutor Integration
+
+**File**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`
+
+In `GetOrCreateSessionEntryAsync`, the executor:
+1. Calls `_toolRegistry.GetToolsForAgent(agent.EnabledTools)` to resolve tools
+2. Creates `SessionConfig` with `Tools = [.. tools]`
+3. Sets `OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger)`
+4. Logs tool registration for diagnostics
+
+#### Tests
+
+**File**: `tests/AgentAcademy.Server.Tests/AgentToolTests.cs` — 29 tests
+
+| Test Class | Tests | Validates |
+|------------|-------|-----------|
+| `AgentToolRegistryTests` | 12 | Group resolution, dedup, case-insensitive, all tool names, planner vs engineer config |
+| `AgentToolFunctionsTests` | 15 | Tool creation, list_tasks/rooms/agents execution, read_file (happy path, not found, path traversal, directory, line range), search_code (results, no results, glob filter, path traversal), FindProjectRoot |
+| `AgentPermissionHandlerTests` | 7 | No-tools approval, tool-call approval, read approval, shell denial, write denial, URL denial, multiple safe kinds |
 
 ### Conversation Session Management
 
@@ -558,3 +646,4 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-03-29 | Agent config API — CRUD endpoints for agent config overrides and instruction templates | agent-config-phase2 |
 | 2026-03-30 | Frontend agent config UI — Settings panel with agent config cards, template management, 3 seed templates | agent-config-phase3-4 |
 | 2026-04-04 | LLM usage tracking — `LlmUsageTracker` captures `AssistantUsageEvent` from Copilot SDK. Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. REST APIs: room usage aggregation, per-agent breakdown, individual records, global usage with time filter. Resolves "No token/usage tracking" known gap. Adversarial review (GPT-5.3 Codex): 4 findings — 3 fixed (decimal precision, unsafe casts, input validation), 1 accepted (multi-query race). 20 new tests. | usage-tracking |
+| 2026-04-05 | SDK tool calling — `AgentToolRegistry` maps `EnabledTools` groups to `AIFunction` objects. 5 read-only tools: `list_tasks`, `list_rooms`, `list_agents` (task-state group), `read_file`, `search_code` (code group). `AgentPermissionHandler` denies dangerous permission kinds (shell/write/url). `CopilotExecutor` passes tools in `SessionConfig`. Resolves "No tool calling" known gap. Adversarial review (GPT-5.3 Codex, Claude Opus 4.6, Claude Sonnet 4.5): 14 findings — 7 fixed (permission handler blanket approve, stderr deadlock, path traversal bypass, FindProjectRoot fallback, max-count per-file, no timeout, regex vs fixed-string). 34 new tests. | sdk-tool-calling |

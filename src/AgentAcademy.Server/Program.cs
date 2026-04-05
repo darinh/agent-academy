@@ -203,6 +203,10 @@ builder.Services.AddSingleton<CopilotTokenProvider>();
 builder.Services.AddSingleton<LlmUsageTracker>();
 builder.Services.AddSingleton<AgentErrorTracker>();
 
+// SDK tool calling — tool functions use IServiceScopeFactory for scoped service access
+builder.Services.AddSingleton<AgentToolFunctions>();
+builder.Services.AddSingleton<IAgentToolRegistry, AgentToolRegistry>();
+
 // Agent execution — CopilotExecutor falls back to StubExecutor internally
 // if the Copilot CLI is not available.
 builder.Services.AddSingleton<CopilotExecutor>();

@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **003-agent-system**: SDK tool calling — `AgentToolRegistry` maps agent `EnabledTools` groups to Copilot SDK `AIFunction` objects. 5 read-only tools: `list_tasks`, `list_rooms`, `list_agents` (task-state group, all agents), `read_file`, `search_code` (code group, engineers + writer). Tools call into existing services (`WorkspaceRuntime`) via `IServiceScopeFactory`. `AgentPermissionHandler` replaces `PermissionHandler.ApproveAll` with a deny-by-default handler that approves only safe permission kinds (custom-tool, read, tool) and denies dangerous ones (shell, write, url). `CopilotExecutor.GetOrCreateSessionEntryAsync` passes resolved tools in `SessionConfig.Tools`. Security: path traversal denied in both read_file and search_code, FindProjectRoot throws on missing .sln (fail-closed), search_code reads line-by-line with global cap + timeout + stderr drain (prevents deadlock), fixed-string search by default. Adversarial review (3 models, 14 total findings, 7 fixed). 34 new tests (1119 total). Resolves spec 003 known gap: "No tool calling".
+
+### Added
 - **010-task-management**: MERGE_PR command — squash-merge task PRs via the GitHub API (`gh pr merge --squash`). Added `MergePullRequestAsync` + `PrMergeResult` to `IGitHubService`. `MergePrHandler` validates Approved status + PR existence, merges via GitHub API, updates PR status to Merged, completes task with merge commit SHA. Reverts to Approved on failure. Role gate: Planner/Reviewer/Human. Optional `deleteBranch` flag. Registered in `HumanCommandRegistry`, `CommandController` allowlist (async), and `CommandParser`. 25 new tests (1083 total). Resolves spec 010 Phase 2 gap: "No PR merge via API".
 
 ### Added

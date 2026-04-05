@@ -3,6 +3,7 @@ using System.Text;
 using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Notifications;
 using GitHub.Copilot.SDK;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -62,6 +63,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly CopilotTokenProvider _tokenProvider;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NotificationManager _notificationManager;
+    private readonly IAgentToolRegistry _toolRegistry;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly string? _configToken;
@@ -85,6 +87,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotTokenProvider tokenProvider,
         IServiceScopeFactory scopeFactory,
         NotificationManager notificationManager,
+        IAgentToolRegistry toolRegistry,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker)
     {
@@ -95,6 +98,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _tokenProvider = tokenProvider;
         _scopeFactory = scopeFactory;
         _notificationManager = notificationManager;
+        _toolRegistry = toolRegistry;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
         _cleanupTimer = new Timer(
@@ -442,15 +446,23 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 "Creating new CopilotSession for agent {AgentId}, model={Model}, key={Key}",
                 agent.Id, agent.Model ?? "default", sessionKey);
 
+            var tools = _toolRegistry.GetToolsForAgent(agent.EnabledTools);
+            var toolNames = new HashSet<string>(tools.Select(t => t.Name), StringComparer.Ordinal);
+
             var config = new SessionConfig
             {
                 Model = agent.Model ?? "gpt-5",
                 Streaming = true,
-                // Safe: no SDK tools are registered in the session config, so
-                // no permission requests fire. Revisit with a restrictive handler
-                // when tool calling is wired up (see spec Known Gaps).
-                OnPermissionRequest = PermissionHandler.ApproveAll,
+                Tools = [.. tools],
+                OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger),
             };
+
+            if (tools.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Agent {AgentId} session created with {ToolCount} tools: {ToolNames}",
+                    agent.Id, tools.Count, string.Join(", ", toolNames));
+            }
 
             var session = await client.CreateSessionAsync(config);
 
