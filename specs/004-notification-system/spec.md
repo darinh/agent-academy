@@ -136,12 +136,17 @@ Provider configuration is persisted in the `notification_configs` SQLite table v
 
 ### Frontend Integration
 
-The `NotificationSetupWizard` component is accessible via the **Settings** tab in the main workspace tab bar.
+The `NotificationSetupWizard` component is accessible via the **Settings** tab in the main workspace tab bar. It supports **any registered notification provider** through a data-driven approach.
 
-- Uses the `SettingsRegular` icon from `@fluentui/react-icons`
+- Accepts a `providerId` prop — determines which provider to configure
+- Fetches config schema dynamically from `GET /api/notifications/providers/{id}/schema`
+- **Step 1** — Provider-specific setup instructions (Discord: Developer Portal + invite URL; Slack: app creation + OAuth scopes; unknown: generic fallback)
+- **Step 2** — Dynamic credential form rendered from the schema's `fields` array (secret fields use `type="password"`)
+- **Step 3** — Configure → Connect → Test flow (identical for all providers)
 - Wizard renders in **inline mode** (no overlay backdrop) when used as tab content
 - Wizard supports both `inline` and overlay modes via the `inline` prop
 - `onClose` prop is optional when in inline mode
+- Provider-specific instruction components: `DiscordInstructions`, `SlackInstructions`, `GenericInstructions`
 
 ### Discord Provider
 
@@ -362,7 +367,7 @@ Questions are posted to the room channel with Block Kit formatting (header, sect
 | `src/AgentAcademy.Server/Notifications/ActivityNotificationBroadcaster.cs` | Activity event → notification bridge |
 | `src/AgentAcademy.Server/Data/Entities/NotificationConfigEntity.cs` | Config persistence entity |
 | `src/AgentAcademy.Server/Controllers/NotificationController.cs` | REST API (with config persistence) |
-| `src/agent-academy-client/src/NotificationSetupWizard.tsx` | Discord setup wizard UI |
+| `src/agent-academy-client/src/NotificationSetupWizard.tsx` | Multi-provider setup wizard UI |
 | `src/agent-academy-client/src/NotificationSetupWizard.css` | Wizard styles (overlay + inline) |
 | `src/AgentAcademy.Server/Notifications/NotificationRetryPolicy.cs` | Retry with exponential backoff for transient failures |
 | `tests/AgentAcademy.Server.Tests/NotificationManagerTests.cs` | Manager unit tests |
@@ -451,11 +456,13 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
 - Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
 - ~~Provider config values (including secrets) stored in plaintext in SQLite~~ — **resolved**: `ConfigEncryptionService` encrypts secret config values (Type = "secret" in schema) using ASP.NET Core Data Protection API before DB persistence. Versioned `ENC.v1:` prefix enables transparent migration of existing plaintext values. `TryDecrypt` API distinguishes decrypt failure from legitimate empty values. Explicit key-ring persistence at `~/.local/share/AgentAcademy/DataProtection-Keys/`.
-- Settings tab currently shows only Discord wizard; will need expansion for multiple providers
+- ~~Settings tab currently shows only Discord wizard; will need expansion for multiple providers~~ — **resolved**: `NotificationSetupWizard` now accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and any future provider with provider-specific instructions and generic fallback
 - DiceBear avatar URLs are an external dependency — consider caching/bundling if availability matters
 - ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.
 
 ## Revision History
+
+- **2026-04-05**: Multi-provider setup wizard — `NotificationSetupWizard` refactored from Discord-only to accept `providerId` prop. Fetches config schema from `GET /api/notifications/providers/{id}/schema`. Provider-specific instructions for Discord (Developer Portal, invite URL generator) and Slack (app creation, OAuth scopes). Generic fallback for unknown providers. Dynamic credential form from schema fields. Settings panel now routes any provider to the wizard. 19 new frontend tests (138 total vitest).
 
 - **2026-04-05**: Slack notification provider — `SlackNotificationProvider` delivers notifications, agent questions, and DMs via Slack Web API using raw `HttpClient` (no NuGet dependency). `SlackApiClient` wraps 8 Slack API methods. Room-based channel routing with lazy creation, startup recovery via channel topic parsing, agent identity via `username`/`icon_emoji`, Block Kit message formatting. No input collection (stateless HTTP — would need Events API). 58 new tests (1250 total). 3 adversarial reviews.
 

@@ -399,16 +399,11 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
 
                 {expandedProvider === p.providerId && (
                   <div className={s.wizardContainer}>
-                    {p.providerId === "discord" ? (
-                      <NotificationSetupWizard
-                        inline
-                        onClose={handleSetupComplete}
-                      />
-                    ) : (
-                      <div className={s.emptyState}>
-                        Setup wizard not available for this provider.
-                      </div>
-                    )}
+                    <NotificationSetupWizard
+                      providerId={p.providerId}
+                      inline
+                      onClose={handleSetupComplete}
+                    />
                   </div>
                 )}
               </div>

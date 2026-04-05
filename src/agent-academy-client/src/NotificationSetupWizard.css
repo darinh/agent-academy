@@ -1,4 +1,4 @@
-/* NotificationSetupWizard – step-by-step Discord bot setup */
+/* NotificationSetupWizard – multi-provider setup wizard */
 .wizard-overlay {
   position: fixed;
   inset: 0;
@@ -127,6 +127,25 @@
   &:focus {
     border-color: var(--colorBrandStroke1, #479ef5);
   }
+}
+
+/* ── Field hint ───────────────────────────────────────────────────── */
+.wizard-field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--colorNeutralForeground3, #999);
+}
+
+/* ── Scope list (Slack) ──────────────────────────────────────────── */
+.scope-list {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.scope-list li {
+  font-size: 0.85rem;
+  margin: 4px 0;
 }
 
 /* ── Invite link display ──────────────────────────────────────────── */
