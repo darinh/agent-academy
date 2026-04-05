@@ -135,6 +135,91 @@ public sealed class ConversationSessionService
     }
 
     /// <summary>
+    /// Lists conversation sessions for a specific room, ordered by sequence number descending.
+    /// </summary>
+    public async Task<(List<ConversationSessionSnapshot> Sessions, int TotalCount)> GetRoomSessionsAsync(
+        string roomId, string? status = null, int limit = 20, int offset = 0)
+    {
+        var query = _db.ConversationSessions
+            .Where(s => s.RoomId == roomId);
+
+        if (!string.IsNullOrEmpty(status))
+            query = query.Where(s => s.Status == status);
+
+        var totalCount = await query.CountAsync();
+        var safeOffset = Math.Max(offset, 0);
+
+        var sessions = await query
+            .OrderByDescending(s => s.SequenceNumber)
+            .Skip(safeOffset)
+            .Take(Math.Clamp(limit, 1, 100))
+            .Select(s => new ConversationSessionSnapshot(
+                s.Id, s.RoomId, s.RoomType, s.SequenceNumber,
+                s.Status, s.Summary, s.MessageCount, s.CreatedAt, s.ArchivedAt))
+            .ToListAsync();
+
+        return (sessions, totalCount);
+    }
+
+    /// <summary>
+    /// Lists conversation sessions across all rooms, ordered by creation date descending.
+    /// </summary>
+    public async Task<(List<ConversationSessionSnapshot> Sessions, int TotalCount)> GetAllSessionsAsync(
+        string? status = null, int limit = 20, int offset = 0, int? hoursBack = null)
+    {
+        var query = _db.ConversationSessions.AsQueryable();
+
+        if (!string.IsNullOrEmpty(status))
+            query = query.Where(s => s.Status == status);
+
+        if (hoursBack.HasValue)
+        {
+            var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
+            query = query.Where(s => s.CreatedAt >= since);
+        }
+
+        var totalCount = await query.CountAsync();
+        var safeOffset = Math.Max(offset, 0);
+
+        var sessions = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Skip(safeOffset)
+            .Take(Math.Clamp(limit, 1, 100))
+            .Select(s => new ConversationSessionSnapshot(
+                s.Id, s.RoomId, s.RoomType, s.SequenceNumber,
+                s.Status, s.Summary, s.MessageCount, s.CreatedAt, s.ArchivedAt))
+            .ToListAsync();
+
+        return (sessions, totalCount);
+    }
+
+    /// <summary>
+    /// Returns a summary of session stats: total sessions, active/archived counts,
+    /// total messages across all sessions.
+    /// </summary>
+    public async Task<SessionStats> GetSessionStatsAsync(int? hoursBack = null)
+    {
+        var query = _db.ConversationSessions.AsQueryable();
+
+        if (hoursBack.HasValue)
+        {
+            var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
+            query = query.Where(s => s.CreatedAt >= since);
+        }
+
+        var stats = await query
+            .GroupBy(_ => 1)
+            .Select(g => new SessionStats(
+                g.Count(),
+                g.Count(s => s.Status == "Active"),
+                g.Count(s => s.Status == "Archived"),
+                g.Sum(s => s.MessageCount)))
+            .FirstOrDefaultAsync();
+
+        return stats ?? new SessionStats(0, 0, 0, 0);
+    }
+
+    /// <summary>
     /// Archives all active conversation sessions with LLM summaries.
     /// Called before workspace switch so agents can resume context when
     /// the user returns to this project. Empty sessions (no messages)

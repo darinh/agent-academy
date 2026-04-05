@@ -555,4 +555,287 @@ public class ConversationSessionServiceTests : IDisposable
         var session = await _db.ConversationSessions.FindAsync("already-archived");
         Assert.Equal("Old summary", session!.Summary);
     }
+
+    // ── GetRoomSessionsAsync ──
+
+    [Fact]
+    public async Task GetRoomSessions_ReturnsAllSessionsForRoom()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "s1", RoomId = "room-1", SequenceNumber = 1, Status = "Archived", MessageCount = 5, Summary = "Summary 1", ArchivedAt = DateTime.UtcNow.AddMinutes(-10) },
+            new ConversationSessionEntity { Id = "s2", RoomId = "room-1", SequenceNumber = 2, Status = "Active", MessageCount = 3 },
+            new ConversationSessionEntity { Id = "s3", RoomId = "room-2", SequenceNumber = 1, Status = "Active", MessageCount = 1 }
+        );
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("room-1");
+
+        Assert.Equal(2, totalCount);
+        Assert.Equal(2, sessions.Count);
+        Assert.Equal("s2", sessions[0].Id); // Active (seq 2) first — descending
+        Assert.Equal("s1", sessions[1].Id);
+    }
+
+    [Fact]
+    public async Task GetRoomSessions_FiltersbyStatus()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "s1", RoomId = "room-1", SequenceNumber = 1, Status = "Archived", Summary = "Archived", ArchivedAt = DateTime.UtcNow },
+            new ConversationSessionEntity { Id = "s2", RoomId = "room-1", SequenceNumber = 2, Status = "Active", MessageCount = 3 }
+        );
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("room-1", status: "Archived");
+
+        Assert.Equal(1, totalCount);
+        Assert.Single(sessions);
+        Assert.Equal("Archived", sessions[0].Status);
+    }
+
+    [Fact]
+    public async Task GetRoomSessions_PaginatesCorrectly()
+    {
+        for (int i = 0; i < 15; i++)
+        {
+            _db.ConversationSessions.Add(new ConversationSessionEntity
+            {
+                Id = $"s-{i:D2}",
+                RoomId = "room-1",
+                SequenceNumber = i + 1,
+                Status = "Archived",
+                MessageCount = i,
+                ArchivedAt = DateTime.UtcNow,
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var (page1, total1) = await _service.GetRoomSessionsAsync("room-1", limit: 5, offset: 0);
+        var (page2, total2) = await _service.GetRoomSessionsAsync("room-1", limit: 5, offset: 5);
+
+        Assert.Equal(15, total1);
+        Assert.Equal(15, total2);
+        Assert.Equal(5, page1.Count);
+        Assert.Equal(5, page2.Count);
+        Assert.NotEqual(page1[0].Id, page2[0].Id);
+    }
+
+    [Fact]
+    public async Task GetRoomSessions_ReturnsEmptyForUnknownRoom()
+    {
+        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("nonexistent");
+
+        Assert.Empty(sessions);
+        Assert.Equal(0, totalCount);
+    }
+
+    [Fact]
+    public async Task GetRoomSessions_ClampsLimit()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            _db.ConversationSessions.Add(new ConversationSessionEntity
+            {
+                Id = $"cl-{i}",
+                RoomId = "room-1",
+                SequenceNumber = i + 1,
+                Status = "Active",
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var (sessions, _) = await _service.GetRoomSessionsAsync("room-1", limit: 0);
+        Assert.Single(sessions); // Clamped to minimum of 1
+    }
+
+    [Fact]
+    public async Task GetRoomSessions_MapsSnapshotFieldsCorrectly()
+    {
+        var created = DateTime.UtcNow.AddMinutes(-30);
+        var archived = DateTime.UtcNow.AddMinutes(-5);
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "map-test",
+            RoomId = "room-1",
+            RoomType = "Breakout",
+            SequenceNumber = 42,
+            Status = "Archived",
+            Summary = "Test summary",
+            MessageCount = 99,
+            CreatedAt = created,
+            ArchivedAt = archived,
+        });
+        await _db.SaveChangesAsync();
+
+        var (sessions, _) = await _service.GetRoomSessionsAsync("room-1");
+
+        var snap = Assert.Single(sessions);
+        Assert.Equal("map-test", snap.Id);
+        Assert.Equal("room-1", snap.RoomId);
+        Assert.Equal("Breakout", snap.RoomType);
+        Assert.Equal(42, snap.SequenceNumber);
+        Assert.Equal("Archived", snap.Status);
+        Assert.Equal("Test summary", snap.Summary);
+        Assert.Equal(99, snap.MessageCount);
+        Assert.Equal(created, snap.CreatedAt);
+        Assert.Equal(archived, snap.ArchivedAt);
+    }
+
+    // ── GetAllSessionsAsync ──
+
+    [Fact]
+    public async Task GetAllSessions_ReturnsSessionsAcrossRooms()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "r1-s1", RoomId = "room-1", SequenceNumber = 1, Status = "Active", CreatedAt = DateTime.UtcNow.AddMinutes(-10) },
+            new ConversationSessionEntity { Id = "r2-s1", RoomId = "room-2", SequenceNumber = 1, Status = "Archived", CreatedAt = DateTime.UtcNow.AddMinutes(-5), ArchivedAt = DateTime.UtcNow },
+            new ConversationSessionEntity { Id = "r3-s1", RoomId = "room-3", SequenceNumber = 1, Status = "Active", CreatedAt = DateTime.UtcNow }
+        );
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetAllSessionsAsync();
+
+        Assert.Equal(3, totalCount);
+        Assert.Equal(3, sessions.Count);
+        Assert.Equal("r3-s1", sessions[0].Id); // Newest first
+    }
+
+    [Fact]
+    public async Task GetAllSessions_FiltersByStatus()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "a1", RoomId = "room-1", SequenceNumber = 1, Status = "Active" },
+            new ConversationSessionEntity { Id = "a2", RoomId = "room-2", SequenceNumber = 1, Status = "Archived", ArchivedAt = DateTime.UtcNow }
+        );
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetAllSessionsAsync(status: "Active");
+
+        Assert.Equal(1, totalCount);
+        Assert.Single(sessions);
+        Assert.Equal("Active", sessions[0].Status);
+    }
+
+    [Fact]
+    public async Task GetAllSessions_PaginatesCorrectly()
+    {
+        for (int i = 0; i < 25; i++)
+        {
+            _db.ConversationSessions.Add(new ConversationSessionEntity
+            {
+                Id = $"all-{i:D2}",
+                RoomId = $"room-{i % 3}",
+                SequenceNumber = i / 3 + 1,
+                Status = "Archived",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-i),
+                ArchivedAt = DateTime.UtcNow,
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        var (page1, total1) = await _service.GetAllSessionsAsync(limit: 10, offset: 0);
+        var (page2, total2) = await _service.GetAllSessionsAsync(limit: 10, offset: 10);
+        var (page3, total3) = await _service.GetAllSessionsAsync(limit: 10, offset: 20);
+
+        Assert.Equal(25, total1);
+        Assert.Equal(10, page1.Count);
+        Assert.Equal(10, page2.Count);
+        Assert.Equal(5, page3.Count);
+    }
+
+    // ── GetSessionStatsAsync ──
+
+    [Fact]
+    public async Task GetSessionStats_ReturnsCorrectCounts()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "s1", RoomId = "room-1", SequenceNumber = 1, Status = "Active", MessageCount = 10 },
+            new ConversationSessionEntity { Id = "s2", RoomId = "room-1", SequenceNumber = 2, Status = "Archived", MessageCount = 25, ArchivedAt = DateTime.UtcNow },
+            new ConversationSessionEntity { Id = "s3", RoomId = "room-2", SequenceNumber = 1, Status = "Archived", MessageCount = 15, ArchivedAt = DateTime.UtcNow },
+            new ConversationSessionEntity { Id = "s4", RoomId = "room-3", SequenceNumber = 1, Status = "Active", MessageCount = 5 }
+        );
+        await _db.SaveChangesAsync();
+
+        var stats = await _service.GetSessionStatsAsync();
+
+        Assert.Equal(4, stats.TotalSessions);
+        Assert.Equal(2, stats.ActiveSessions);
+        Assert.Equal(2, stats.ArchivedSessions);
+        Assert.Equal(55, stats.TotalMessages);
+    }
+
+    [Fact]
+    public async Task GetSessionStats_ReturnsZerosWhenEmpty()
+    {
+        var stats = await _service.GetSessionStatsAsync();
+
+        Assert.Equal(0, stats.TotalSessions);
+        Assert.Equal(0, stats.ActiveSessions);
+        Assert.Equal(0, stats.ArchivedSessions);
+        Assert.Equal(0, stats.TotalMessages);
+    }
+
+    // ── Time filtering (hoursBack) ──
+
+    [Fact]
+    public async Task GetAllSessions_FiltersbyHoursBack()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "old", RoomId = "room-1", SequenceNumber = 1, Status = "Archived", CreatedAt = DateTime.UtcNow.AddHours(-48), ArchivedAt = DateTime.UtcNow.AddHours(-47) },
+            new ConversationSessionEntity { Id = "recent", RoomId = "room-1", SequenceNumber = 2, Status = "Active", CreatedAt = DateTime.UtcNow.AddHours(-1) }
+        );
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetAllSessionsAsync(hoursBack: 24);
+
+        Assert.Equal(1, totalCount);
+        Assert.Single(sessions);
+        Assert.Equal("recent", sessions[0].Id);
+    }
+
+    [Fact]
+    public async Task GetSessionStats_FiltersbyHoursBack()
+    {
+        _db.ConversationSessions.AddRange(
+            new ConversationSessionEntity { Id = "old", RoomId = "room-1", SequenceNumber = 1, Status = "Archived", MessageCount = 100, CreatedAt = DateTime.UtcNow.AddHours(-48), ArchivedAt = DateTime.UtcNow.AddHours(-47) },
+            new ConversationSessionEntity { Id = "recent", RoomId = "room-1", SequenceNumber = 2, Status = "Active", MessageCount = 5, CreatedAt = DateTime.UtcNow.AddHours(-1) }
+        );
+        await _db.SaveChangesAsync();
+
+        var stats = await _service.GetSessionStatsAsync(hoursBack: 24);
+
+        Assert.Equal(1, stats.TotalSessions);
+        Assert.Equal(5, stats.TotalMessages);
+    }
+
+    // ── Negative offset safety ──
+
+    [Fact]
+    public async Task GetRoomSessions_NegativeOffsetClampedToZero()
+    {
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "safe", RoomId = "room-1", SequenceNumber = 1, Status = "Active",
+        });
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("room-1", offset: -5);
+
+        Assert.Equal(1, totalCount);
+        Assert.Single(sessions);
+    }
+
+    [Fact]
+    public async Task GetAllSessions_NegativeOffsetClampedToZero()
+    {
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "safe", RoomId = "room-1", SequenceNumber = 1, Status = "Active",
+        });
+        await _db.SaveChangesAsync();
+
+        var (sessions, totalCount) = await _service.GetAllSessionsAsync(offset: -10);
+
+        Assert.Equal(1, totalCount);
+        Assert.Single(sessions);
+    }
 }

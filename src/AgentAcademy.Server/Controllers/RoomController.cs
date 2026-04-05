@@ -227,6 +227,30 @@ public class RoomController : ControllerBase
             return Problem("Failed to cleanup stale rooms.");
         }
     }
+
+    /// <summary>
+    /// GET /api/rooms/{roomId}/sessions — conversation sessions for a room.
+    /// </summary>
+    [HttpGet("{roomId}/sessions")]
+    public async Task<ActionResult<SessionListResponse>> GetRoomSessions(
+        string roomId,
+        [FromQuery] string? status = null,
+        [FromQuery] int limit = 20,
+        [FromQuery] int offset = 0,
+        [FromServices] ConversationSessionService sessionService = default!)
+    {
+        try
+        {
+            var (sessions, totalCount) = await sessionService.GetRoomSessionsAsync(
+                roomId, status, limit, offset);
+            return Ok(new SessionListResponse(sessions, totalCount));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sessions for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve session history.");
+        }
+    }
 }
 
 public record RenameRoomRequest(string Name);

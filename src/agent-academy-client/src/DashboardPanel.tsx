@@ -16,6 +16,7 @@ import {
   ErrorCircleRegular,
   ClockRegular,
   ClipboardTaskListLtrRegular,
+  ChatHistoryRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
 import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
@@ -23,6 +24,7 @@ import RestartHistoryPanel from "./RestartHistoryPanel";
 import UsagePanel from "./UsagePanel";
 import ErrorsPanel from "./ErrorsPanel";
 import AuditLogPanel from "./AuditLogPanel";
+import SessionHistoryPanel from "./SessionHistoryPanel";
 
 // ── Styles ──
 
@@ -309,6 +311,14 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
           Command Audit Log
         </div>
         <AuditLogPanel hoursBack={hoursBack} />
+      </div>
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <ChatHistoryRegular style={{ fontSize: 20 }} />
+          Conversation Sessions
+        </div>
+        <SessionHistoryPanel hoursBack={hoursBack} />
       </div>
 
       <div className={s.section}>

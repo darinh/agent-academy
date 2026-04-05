@@ -22,6 +22,7 @@ import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot } from "./api";
+import { getRoomSessions } from "./api";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
 import type { ThinkingAgent } from "./useWorkspace";
 import type { ConnectionStatus } from "./useActivityHub";
@@ -261,6 +262,7 @@ const ChatPanel = memo(function ChatPanel(props: {
   const [sending, setSending] = useState(false);
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
   const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const [hasArchivedContext, setHasArchivedContext] = useState(false);
   const room = props.room;
   const readOnly = props.readOnly ?? false;
   const onSendMessage = props.onSendMessage;
@@ -300,6 +302,23 @@ const ChatPanel = memo(function ChatPanel(props: {
     }
     setExpandedMsgs(new Set());
   }, [readOnly, room]);
+
+  // Check if this room has archived session context
+  useEffect(() => {
+    if (!room) {
+      setHasArchivedContext(false);
+      return;
+    }
+    let cancelled = false;
+    getRoomSessions(room.id, "Archived", 1)
+      .then((res) => {
+        if (!cancelled) setHasArchivedContext(res.totalCount > 0);
+      })
+      .catch(() => {
+        if (!cancelled) setHasArchivedContext(false);
+      });
+    return () => { cancelled = true; };
+  }, [room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!room || readOnly) {
@@ -371,6 +390,23 @@ const ChatPanel = memo(function ChatPanel(props: {
       </div>
 
        <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
+        {hasArchivedContext && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "8px 14px",
+            borderRadius: "12px",
+            backgroundColor: "rgba(183, 148, 255, 0.08)",
+            border: "1px solid rgba(183, 148, 255, 0.18)",
+            fontSize: "12px",
+            color: "var(--aa-soft)",
+            marginBottom: "8px",
+          }}>
+            <span style={{ fontSize: "14px" }}>📋</span>
+            Agents have context from a previous conversation session
+          </div>
+        )}
         {filteredMessages.length ? (
           filteredMessages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />

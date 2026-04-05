@@ -70,3 +70,38 @@ public record RoomMessagesResponse(
     List<ChatEnvelope> Messages,
     bool HasMore
 );
+
+/// <summary>
+/// Snapshot of a conversation session (epoch) within a room.
+/// Sessions are rotated when message count exceeds a threshold,
+/// and archived with LLM-generated summaries for context continuity.
+/// </summary>
+public record ConversationSessionSnapshot(
+    string Id,
+    string RoomId,
+    string RoomType,
+    int SequenceNumber,
+    string Status,
+    string? Summary,
+    int MessageCount,
+    DateTime CreatedAt,
+    DateTime? ArchivedAt
+);
+
+/// <summary>
+/// Response for session list queries with pagination metadata.
+/// </summary>
+public record SessionListResponse(
+    List<ConversationSessionSnapshot> Sessions,
+    int TotalCount
+);
+
+/// <summary>
+/// Aggregate statistics about conversation sessions.
+/// </summary>
+public record SessionStats(
+    int TotalSessions,
+    int ActiveSessions,
+    int ArchivedSessions,
+    int TotalMessages
+);
