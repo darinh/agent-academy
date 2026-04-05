@@ -132,7 +132,69 @@ Provider configuration is persisted in the `notification_configs` SQLite table v
 - Unique index on `(ProviderId, Key)` — enforced by the DB
 - Upsert via `INSERT ... ON CONFLICT DO UPDATE` (atomic, no race conditions)
 - On startup: saved configs are loaded, providers are configured and connected in a background `Task.Run` (non-blocking)
-- **Config encryption**: Secret config values (e.g., Discord bot tokens) are encrypted at rest using ASP.NET Core Data Protection before persisting to `notification_configs` table. Non-secret values are stored in plaintext. Encryption uses a versioned `ENC.v1:` prefix for migration compatibility.
+
+#### Configuration Encryption
+
+Secret configuration values (e.g., Discord bot tokens, Slack OAuth tokens) are encrypted at rest using the `ConfigEncryptionService`, which wraps ASP.NET Core Data Protection API.
+
+**Service Registration** (in `Program.cs` line 292):
+```csharp
+builder.Services.AddSingleton<ConfigEncryptionService>();
+```
+
+**Implementation** (`src/AgentAcademy.Server/Notifications/ConfigEncryptionService.cs`):
+- Uses `IDataProtectionProvider.CreateProtector("AgentAcademy.NotificationConfig")` for consistent key derivation
+- Encrypts values with `Protect()`, prepends `ENC.v1:` prefix to ciphertext
+- Decrypts with `TryDecrypt()` — returns `false` only on actual decryption failure (not for plaintext/null/empty)
+- `IsEncrypted()` static method checks for `ENC.v1:` prefix
+
+**Encryption Contract:**
+- **Prefix:** `ENC.v1:` identifies encrypted values, enables versioned format evolution
+- **Empty/null handling:** `Encrypt()` returns input as-is if null or empty; `TryDecrypt()` returns `true` for null/empty
+- **Plaintext tolerance:** Values without `ENC.v1:` prefix are treated as plaintext, returned successfully by `TryDecrypt()`
+- **Failure semantics:** `TryDecrypt()` returns `false` only when decryption fails (e.g., key rotation without migration), sets `result = ""`
+
+**Field Type Detection** (schema-driven):
+
+The controller determines which fields to encrypt by inspecting the provider's `ConfigSchema`:
+
+```csharp
+var schema = provider.GetConfigSchema();
+var secretKeys = schema.Fields
+    .Where(f => string.Equals(f.Type, "secret", StringComparison.OrdinalIgnoreCase))
+    .Select(f => f.Key)
+    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+```
+
+Fields with `Type = "secret"` are encrypted before database persistence; all others stored as plaintext.
+
+**Encryption on Write** (`NotificationController.Configure`, lines 90-104):
+
+When `POST /api/notifications/providers/{id}/configure` is called:
+1. Provider's config schema is fetched
+2. Fields marked `Type = "secret"` are identified
+3. Secret values are passed through `ConfigEncryptionService.Encrypt()` before DB upsert
+4. Non-secret values stored as plaintext
+
+**Decryption on Read** (`Program.cs` startup auto-restore, lines 415-446):
+
+On server startup, saved configs are restored from DB:
+1. Schema fetched to identify secret fields (same logic as write path)
+2. Secret values passed through `ConfigEncryptionService.TryDecrypt()`
+3. Decryption failure logs warning, skips provider auto-restore: `"Notification provider '{ProviderId}' has undecryptable config keys: {Keys}. Reconfiguration required."`
+4. Non-secret values used as-is
+5. Provider configured and connected with decrypted config
+
+**Transparent Migration from Plaintext:**
+
+Existing plaintext values (from before encryption was implemented) are handled gracefully:
+- On read: `TryDecrypt()` recognizes lack of `ENC.v1:` prefix, returns plaintext as-is with `success = true`
+- On next write: plaintext value is encrypted and persisted with `ENC.v1:` prefix
+- No manual migration required — happens automatically when provider is reconfigured
+
+**Key Storage:**
+
+ASP.NET Core Data Protection keys are persisted at `~/.local/share/AgentAcademy/DataProtection-Keys/` (explicit configuration in `Program.cs` via `PersistKeysToFileSystem`). Key rotation is handled automatically by the Data Protection API.
 
 ### Frontend Integration
 
@@ -365,6 +427,7 @@ Questions are posted to the room channel with Block Kit formatting (header, sect
 | `src/AgentAcademy.Server/Notifications/SlackApiClient.cs` | Slack Web API HTTP wrapper |
 | `src/AgentAcademy.Server/Notifications/SlackNotificationProvider.cs` | Slack notification provider |
 | `src/AgentAcademy.Server/Notifications/ActivityNotificationBroadcaster.cs` | Activity event → notification bridge |
+| `src/AgentAcademy.Server/Notifications/ConfigEncryptionService.cs` | Config value encryption service |
 | `src/AgentAcademy.Server/Data/Entities/NotificationConfigEntity.cs` | Config persistence entity |
 | `src/AgentAcademy.Server/Controllers/NotificationController.cs` | REST API (with config persistence) |
 | `src/agent-academy-client/src/NotificationSetupWizard.tsx` | Multi-provider setup wizard UI |
