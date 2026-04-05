@@ -23,13 +23,14 @@ public sealed class CancelTaskHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         if (!string.Equals(context.AgentRole, "Planner", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(context.AgentRole, "Reviewer", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(context.AgentRole, "Reviewer", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(context.AgentRole, "Human", StringComparison.OrdinalIgnoreCase))
         {
             return command with
             {
                 Status = CommandStatus.Denied,
                 ErrorCode = CommandErrorCode.Permission,
-                Error = "Only Planner or Reviewer roles can cancel tasks"
+                Error = "Only Planner, Reviewer, or Human roles can cancel tasks"
             };
         }
 

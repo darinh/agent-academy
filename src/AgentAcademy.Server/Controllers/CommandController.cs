@@ -49,6 +49,9 @@ public sealed class CommandController : ControllerBase
         "MERGE_PR",
         "LINK_TASK_TO_SPEC",
         "SHOW_UNLINKED_CHANGES",
+        "UPDATE_TASK",
+        "CANCEL_TASK",
+        "APPROVE_TASK",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

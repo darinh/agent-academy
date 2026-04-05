@@ -320,6 +320,45 @@ public static class HumanCommandRegistry
             "Detects potential spec drift by finding tasks without traceability to spec sections. Use LINK_TASK_TO_SPEC to resolve.",
             IsAsync: false,
             Fields: []),
+
+        new("UPDATE_TASK", "Update task", "workspace",
+            "Update a task's status, blocker, or note.",
+            "Change task state directly. Allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued. Use CANCEL_TASK or APPROVE_TASK + MERGE_TASK for terminal states.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to update.",
+                    Required: true),
+                new("status", "Status", "text", "New status for the task.",
+                    Placeholder: "Completed"),
+                new("blocker", "Blocker", "text", "Blocker description (implies Blocked status)."),
+                new("note", "Note", "text", "Note to attach to the task."),
+            ]),
+
+        new("CANCEL_TASK", "Cancel task", "workspace",
+            "Cancel a task and optionally delete its branch.",
+            "Cancels a task in any non-terminal state. Useful for cleaning up abandoned or duplicate work.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to cancel.",
+                    Required: true),
+                new("reason", "Reason", "text", "Why the task is being cancelled.",
+                    Placeholder: "Work completed via alternate path"),
+                new("deleteBranch", "Delete branch", "text", "Set to 'false' to keep the branch.",
+                    Placeholder: "true"),
+            ]),
+
+        new("APPROVE_TASK", "Approve task", "workspace",
+            "Approve a task after review.",
+            "Marks a task as approved. Only works on tasks in InReview or AwaitingValidation status.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to approve.",
+                    Required: true),
+                new("findings", "Findings", "text", "Optional review findings or notes."),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =
