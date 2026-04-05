@@ -151,7 +151,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
     }
 
     [Fact]
-    public async Task TaskAssignment_BranchCreationFails_CancelsOrphanedTask()
+    public async Task TaskAssignment_BranchCreationFails_NoOrphanedTask()
     {
         const string assignmentResponse = """
             TASK ASSIGNMENT:
@@ -215,10 +215,8 @@ public class TaskAssignmentWorkflowTests : IDisposable
         Assert.Equal("Archived", breakout.Status);
         Assert.Equal("Cancelled", breakout.CloseReason);
 
-        // The orphaned task entity should be cancelled
-        var task = await db.Tasks.SingleAsync();
-        Assert.Equal("Build the widget", task.Title);
-        Assert.Equal("Cancelled", task.Status);
+        // No task entity should exist — branch failed before task was persisted
+        Assert.Empty(await db.Tasks.ToListAsync());
 
         // A system message about the failure should have been posted
         var systemMessages = await db.Messages

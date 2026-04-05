@@ -617,6 +617,42 @@ public class BranchWorkflowTests : IDisposable
     }
 
     [Fact]
+    public async Task EnsureTaskForBreakout_WithBranchName_PersistsBranchAtomically()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Atomic Task");
+
+        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            breakout.Id, "Atomic Task", "desc", "engineer-1", "room-1",
+            branchName: "task/atomic-task-abc123");
+
+        var task = await runtime.GetTaskAsync(taskId);
+        Assert.NotNull(task);
+        Assert.Equal("task/atomic-task-abc123", task.BranchName);
+        Assert.Equal("Atomic Task", task.Title);
+    }
+
+    [Fact]
+    public async Task EnsureTaskForBreakout_WithoutBranchName_LeavesNullBranch()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await EnsureRoom(db, "room-1");
+        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: No Branch");
+
+        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+            breakout.Id, "No Branch Task", "desc", "engineer-1", "room-1");
+
+        var task = await runtime.GetTaskAsync(taskId);
+        Assert.NotNull(task);
+        Assert.Null(task.BranchName);
+    }
+
+    [Fact]
     public async Task SetBreakoutTaskId_PersistsLink()
     {
         using var scope = _serviceProvider.CreateScope();
