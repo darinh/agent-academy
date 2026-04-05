@@ -7,6 +7,7 @@ namespace AgentAcademy.Server.Tests;
 /// Unit tests for <see cref="GitHubService"/>.
 /// Uses a wrapper script to simulate gh CLI responses without hitting GitHub.
 /// </summary>
+[Collection("ProcessIntensive")]
 public class GitHubServiceTests : IDisposable
 {
     private readonly string _tempDir;
