@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **012-consultant-api**: Task management commands — Added `UPDATE_TASK`, `CANCEL_TASK`, `APPROVE_TASK` to the human command allowlist in `CommandController`. `CancelTaskHandler` now accepts Human role (was Planner/Reviewer only). `HumanCommandRegistry` updated with metadata entries for dynamic UI rendering. Documented full command execution surface in spec 012 including allowlisted commands table, async command polling, and identity semantics.
+
+### Added
 - **003-agent-system**: Per-project session resume — On workspace switch, `ConversationSessionService.ArchiveAllActiveSessionsAsync()` summarizes all active conversation sessions via LLM before clearing SDK sessions. When the user returns to a previous project, `GetSessionContextAsync()` retrieves the archived summary and the orchestrator injects it into agent prompts for context continuity. Empty sessions (0 messages) archived without summaries. Fallback summaries generated when executor is offline. No schema changes — reuses existing `conversation_sessions` table. 8 new tests (1298 total). Resolves spec 003 known gap: "No per-project session resume".
 
 ### Added

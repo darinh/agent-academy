@@ -123,6 +123,40 @@ GET  /api/dm/threads/{agentId}    # Read DM thread
 GET  /api/dm/threads              # List DM threads
 ```
 
+### Command Execution
+
+The consultant can execute commands through the human command API:
+
+```
+POST /api/commands/execute
+Content-Type: application/json
+X-Consultant-Key: {secret}
+
+{
+  "command": "COMMAND_NAME",
+  "args": { "key": "value" }
+}
+```
+
+Returns: `ExecuteCommandResponse` with status, result, and correlationId.
+
+**Command catalog**: `GET /api/commands/metadata` returns all available commands with field schemas for dynamic UI rendering.
+
+**Allowlisted commands** (subset of agent commands safe for human/consultant use):
+
+| Category | Commands |
+|----------|----------|
+| Code | `READ_FILE`, `SEARCH_CODE` |
+| Workspace | `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `LIST_COMMANDS`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY`, `ROOM_TOPIC`, `CREATE_ROOM`, `REOPEN_ROOM`, `CLOSE_ROOM`, `CLEANUP_ROOMS`, `INVITE_TO_ROOM`, `SHOW_UNLINKED_CHANGES`, `LINK_TASK_TO_SPEC` |
+| Task mgmt | `UPDATE_TASK`, `CANCEL_TASK`, `APPROVE_TASK` |
+| Git | `SHOW_DIFF`, `GIT_LOG`, `CREATE_PR`, `POST_PR_REVIEW`, `GET_PR_REVIEWS`, `MERGE_PR` |
+| Operations | `RUN_BUILD`, `RUN_TESTS` |
+| Memory | `EXPORT_MEMORIES` |
+
+Async commands (`RUN_BUILD`, `RUN_TESTS`, `CREATE_PR`, `MERGE_PR`) return `status: "pending"` with a `correlationId`. Poll `GET /api/commands/{correlationId}` for completion.
+
+**Identity**: Commands execute with `agentId = "human"`, `agentRole = "Human"`. Role gates on handlers respect this (e.g., `APPROVE_TASK` accepts Human role).
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
