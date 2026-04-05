@@ -18,8 +18,8 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 │  SendToAllAsync()      → fan-out broadcast   │
 │  RequestInputFromAnyAsync() → first-wins     │
 ├──────────┬──────────┬────────────────────────┤
-│ Console  │ Discord  │  Slack?    │  Custom?  │
-│ Provider │ Provider │  (future)  │  (future) │
+│ Console  │ Discord  │  Slack     │  Custom?  │
+│ Provider │ Provider │  Provider  │  (future) │
 └──────────┴──────────┴────────────┴───────────┘
 ```
 
@@ -89,6 +89,7 @@ In `Program.cs`:
 - `NotificationManager` registered as singleton
 - `ConsoleNotificationProvider` registered as singleton
 - `DiscordNotificationProvider` registered as singleton
+- `SlackNotificationProvider` registered as singleton
 - `ActivityNotificationBroadcaster` registered as hosted service
 - All providers registered with manager at startup
 - Saved provider configs auto-restored from DB on startup (non-blocking)
@@ -257,6 +258,94 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 - Disconnections are logged via the client's `Disconnected` event
 - Connection uses `SemaphoreSlim` to prevent concurrent connect/disconnect races
 
+### Slack Provider
+
+The `SlackNotificationProvider` connects to Slack via the Slack Web API using raw `HttpClient` (no external Slack NuGet dependency). Sends notifications, agent questions, and DMs to Slack channels.
+
+**Configuration** (via `ConfigureAsync`):
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `BotToken` | `secret` | Yes | Slack bot token (xoxb-...) from https://api.slack.com/apps |
+| `DefaultChannelId` | `string` | Yes | Fallback channel ID for notifications |
+
+**Required bot scopes** (OAuth & Permissions):
+- `chat:write` — post messages in channels
+- `chat:write.customize` — customize bot name/icon per message
+- `channels:manage` — create and rename channels
+- `channels:read` — list channels for startup recovery
+- `channels:join` — join channels the bot creates
+
+**Connection lifecycle**:
+- `ConfigureAsync` — validates and stores bot token and default channel ID
+- `ConnectAsync` — creates `SlackApiClient`, validates token via `auth.test`, rebuilds channel mappings from existing Slack channels
+- `DisconnectAsync` — marks provider as disconnected (no persistent connection to tear down — Slack Web API is stateless)
+
+#### HTTP API Client (`SlackApiClient`)
+
+Thin wrapper around `HttpClient` for Slack Web API methods. All responses are deserialized into strongly-typed `SlackBaseResponse` derivatives.
+
+**Supported methods**:
+| Slack API Method | Client Method | Purpose |
+|---|---|---|
+| `auth.test` | `AuthTestAsync` | Validate bot token |
+| `chat.postMessage` | `PostMessageAsync` | Send messages to channels |
+| `conversations.create` | `CreateChannelAsync` | Create room channels |
+| `conversations.list` | `ListChannelsAsync` | List channels for recovery |
+| `conversations.setTopic` | `SetChannelTopicAsync` | Set channel topic with room ID |
+| `conversations.rename` | `RenameChannelAsync` | Rename room channels |
+| `conversations.archive` | `ArchiveChannelAsync` | Archive closed room channels |
+| `conversations.join` | `JoinChannelAsync` | Join created channels |
+
+#### Room-Based Channel Routing
+
+Each Agent Academy room gets a dedicated Slack channel. Channel names are derived from the project name and a truncated room ID (e.g., `agent-academy-a1b2c3d4`).
+
+**Channel creation**: Lazy (on first message to a room). Created inside a `_channelCreateLock` semaphore to prevent duplicates. If channel name is taken, the provider searches for the existing channel and reuses it.
+
+**Channel naming**: `{project-name}-{roomId[0:8]}` in kebab-case, lowercased, max 80 chars. `ToSlackChannelName()` strips invalid characters (Slack allows only lowercase alphanumeric, hyphens, underscores).
+
+**Channel topic**: Room channels use `"Agent Academy room · ID: {roomId}"` for startup recovery.
+
+**Fallback**: If room channel creation fails, notifications fall back to the configured `DefaultChannelId`.
+
+**Startup recovery** (`RebuildChannelMappingAsync`): Scans all Slack channels via `conversations.list` pagination. Channels with `"ID: {roomId}"` in their topic are mapped back to their room.
+
+#### Agent Identity
+
+Messages include the agent's name as the `username` parameter and a role-based emoji as `icon_emoji`. This requires the `chat:write.customize` scope. Role → emoji mapping:
+
+| Role | Emoji |
+|------|-------|
+| Planner | :crystal_ball: |
+| Architect | :building_construction: |
+| SoftwareEngineer | :computer: |
+| Reviewer | :mag: |
+| Validator | :white_check_mark: |
+| TechnicalWriter | :pencil: |
+| Human | :bust_in_silhouette: |
+| (default) | :robot_face: |
+
+#### Message Formatting
+
+Notifications use Slack Block Kit:
+- **Header section**: Type emoji + bold title
+- **Body section**: Message body (truncated to 2900 chars for Slack's 3000-char block text limit)
+- **Context**: Agent name and room ID
+
+Text is escaped for Slack mrkdwn (`&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`).
+
+#### Agent Questions
+
+Questions are posted to the room channel with Block Kit formatting (header, section, context). No threading — questions appear as standalone messages. Reply routing back to Agent Academy is not supported in this version (would require Slack Events API or Socket Mode).
+
+#### Limitations (vs. Discord)
+
+- **No input collection**: `RequestInputAsync` returns null (would require Events API / Socket Mode)
+- **No reply routing**: Human replies in Slack are not routed back to Agent Academy
+- **No webhook-based identity**: Uses `username`/`icon_emoji` params instead (requires `chat:write.customize` scope)
+- **No category grouping**: Slack doesn't have channel categories like Discord
+- **Stateless connection**: No persistent WebSocket — each API call is independent HTTP
+
 ## Interfaces & Contracts
 
 ### File Locations
@@ -268,6 +357,8 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 | `src/AgentAcademy.Server/Notifications/NotificationManager.cs` | Provider orchestrator |
 | `src/AgentAcademy.Server/Notifications/ConsoleNotificationProvider.cs` | Reference provider |
 | `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs` | Discord bot provider |
+| `src/AgentAcademy.Server/Notifications/SlackApiClient.cs` | Slack Web API HTTP wrapper |
+| `src/AgentAcademy.Server/Notifications/SlackNotificationProvider.cs` | Slack notification provider |
 | `src/AgentAcademy.Server/Notifications/ActivityNotificationBroadcaster.cs` | Activity event → notification bridge |
 | `src/AgentAcademy.Server/Data/Entities/NotificationConfigEntity.cs` | Config persistence entity |
 | `src/AgentAcademy.Server/Controllers/NotificationController.cs` | REST API (with config persistence) |
@@ -277,6 +368,8 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
 | `tests/AgentAcademy.Server.Tests/NotificationManagerTests.cs` | Manager unit tests |
 | `tests/AgentAcademy.Server.Tests/NotificationRetryPolicyTests.cs` | Retry policy + manager retry behavior tests |
 | `tests/AgentAcademy.Server.Tests/DiscordNotificationProviderTests.cs` | Discord provider unit tests |
+| `tests/AgentAcademy.Server.Tests/SlackNotificationProviderTests.cs` | Slack provider unit tests |
+| `tests/AgentAcademy.Server.Tests/SlackApiClientTests.cs` | Slack API client unit tests |
 | `tests/AgentAcademy.Server.Tests/ActivityNotificationBroadcasterTests.cs` | Bridge unit tests (35 tests) |
 
 ## Invariants
@@ -351,7 +444,7 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 
 ## Known Gaps
 
-- No Slack provider implementation yet
+- ~~No Slack provider implementation yet~~ — **resolved**: `SlackNotificationProvider` sends notifications, agent questions, and DMs via Slack Web API. Room-based channel routing, agent identity via username/icon_emoji, startup channel recovery. No input collection (would require Events API).
 - ~~No persistent notification history or delivery tracking~~ — **resolved**: `NotificationDeliveryTracker` records every outbound delivery attempt per provider with status, error, and context. Query via REST API.
 - ~~No retry/backoff on transient provider failures~~ — **resolved**: `NotificationRetryPolicy` with exponential backoff (200ms base, 3 retries, 2s cap, ±50ms jitter). Applied to all outbound provider calls except `RequestInputFromAnyAsync`.
 - ~~No authentication on notification API endpoints~~ — **resolved**: System-wide `FallbackPolicy` in `Program.cs` requires `RequireAuthenticatedUser()` on all endpoints without `[AllowAnonymous]`. `NotificationController` has no `[AllowAnonymous]`, so all notification endpoints are protected when auth is enabled.
@@ -363,6 +456,8 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.
 
 ## Revision History
+
+- **2026-04-05**: Slack notification provider — `SlackNotificationProvider` delivers notifications, agent questions, and DMs via Slack Web API using raw `HttpClient` (no NuGet dependency). `SlackApiClient` wraps 8 Slack API methods. Room-based channel routing with lazy creation, startup recovery via channel topic parsing, agent identity via `username`/`icon_emoji`, Block Kit message formatting. No input collection (stateless HTTP — would need Events API). 58 new tests (1250 total). 3 adversarial reviews.
 
 - **2026-04-04**: Room channel cleanup — `OnRoomClosedAsync` added to `INotificationProvider`. Discord provider deletes channel, disposes webhook, and clears mapping caches when a room is archived. `ActivityNotificationBroadcaster` routes `RoomClosed` events as structural provider notifications. `NotificationManager.NotifyRoomClosedAsync` fans out to all providers with retry. 7 new tests.
 

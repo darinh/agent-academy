@@ -294,6 +294,8 @@ builder.Services.AddSingleton<NotificationDeliveryTracker>();
 builder.Services.AddSingleton<NotificationManager>();
 builder.Services.AddSingleton<ConsoleNotificationProvider>();
 builder.Services.AddSingleton<DiscordNotificationProvider>();
+builder.Services.AddSingleton<SlackNotificationProvider>();
+builder.Services.AddHttpClient("Slack");
 
 // SignalR hub broadcaster (hosted service — bridges ActivityBroadcaster → SignalR)
 builder.Services.AddHostedService<ActivityHubBroadcaster>();
@@ -388,6 +390,9 @@ notificationManager.RegisterProvider(consoleProvider);
 
 var discordProvider = app.Services.GetRequiredService<DiscordNotificationProvider>();
 notificationManager.RegisterProvider(discordProvider);
+
+var slackProvider = app.Services.GetRequiredService<SlackNotificationProvider>();
+notificationManager.RegisterProvider(slackProvider);
 
 // Auto-restore saved notification provider configs from DB (non-blocking)
 _ = Task.Run(async () =>
