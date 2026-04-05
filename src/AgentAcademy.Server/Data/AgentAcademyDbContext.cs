@@ -36,6 +36,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<NotificationDeliveryEntity> NotificationDeliveries => Set<NotificationDeliveryEntity>();
     public DbSet<LlmUsageEntity> LlmUsage => Set<LlmUsageEntity>();
     public DbSet<AgentErrorEntity> AgentErrors => Set<AgentErrorEntity>();
+    public DbSet<SpecTaskLinkEntity> SpecTaskLinks => Set<SpecTaskLinkEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -396,6 +397,31 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_agent_errors_room");
             entity.HasIndex(e => e.OccurredAt).HasDatabaseName("idx_agent_errors_time");
             entity.HasIndex(e => e.ErrorType).HasDatabaseName("idx_agent_errors_type");
+        });
+
+        // ── Spec–Task Links ──────────────────────────────────
+        modelBuilder.Entity<SpecTaskLinkEntity>(entity =>
+        {
+            entity.ToTable("spec_task_links");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TaskId).IsRequired();
+            entity.Property(e => e.SpecSectionId).IsRequired();
+            entity.Property(e => e.LinkType).IsRequired().HasDefaultValue("Implements");
+            entity.Property(e => e.LinkedByAgentId).IsRequired();
+            entity.Property(e => e.LinkedByAgentName).IsRequired();
+            entity.Property(e => e.Note).IsRequired(false);
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Task)
+                .WithMany()
+                .HasForeignKey(e => e.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.TaskId).HasDatabaseName("idx_spec_task_links_task");
+            entity.HasIndex(e => e.SpecSectionId).HasDatabaseName("idx_spec_task_links_spec");
+            entity.HasIndex(e => new { e.TaskId, e.SpecSectionId })
+                .IsUnique()
+                .HasDatabaseName("idx_spec_task_links_unique");
         });
     }
 }

@@ -77,6 +77,33 @@ public class CollaborationController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/tasks/{taskId}/specs — get spec links for a task.
+    /// </summary>
+    [HttpGet("api/tasks/{taskId}/specs")]
+    public async Task<ActionResult<List<SpecTaskLink>>> GetTaskSpecLinks(string taskId)
+    {
+        try
+        {
+            var links = await _runtime.GetSpecLinksForTaskAsync(taskId);
+            return Ok(links);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// GET /api/specs/{sectionId}/tasks — get tasks linked to a spec section.
+    /// </summary>
+    [HttpGet("api/specs/{sectionId}/tasks")]
+    public async Task<ActionResult<List<SpecTaskLink>>> GetSpecTaskLinks(string sectionId)
+    {
+        var links = await _runtime.GetTasksForSpecAsync(sectionId);
+        return Ok(links);
+    }
+
+    /// <summary>
     /// POST /api/rooms/{roomId}/messages — post a message (agent-to-agent or system).
     /// </summary>
     [HttpPost("api/rooms/{roomId}/messages")]

@@ -1625,6 +1625,172 @@ public sealed class WorkspaceRuntime
         );
     }
 
+    // ── Spec–Task Linking ───────────────────────────────────────
+
+    /// <summary>
+    /// Valid spec-task link types.
+    /// </summary>
+    public static readonly HashSet<string> ValidLinkTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Implements", "Modifies", "Fixes", "References"
+    };
+
+    /// <summary>
+    /// Links a task to a spec section. Idempotent — updates link type if the pair already exists.
+    /// </summary>
+    public async Task<SpecTaskLink> LinkTaskToSpecAsync(
+        string taskId, string specSectionId, string agentId, string agentName,
+        string linkType = "Implements", string? note = null)
+    {
+        if (string.IsNullOrWhiteSpace(taskId))
+            throw new ArgumentException("taskId is required");
+        if (string.IsNullOrWhiteSpace(specSectionId))
+            throw new ArgumentException("specSectionId is required");
+        if (!ValidLinkTypes.Contains(linkType))
+            throw new ArgumentException(
+                $"Invalid link type '{linkType}'. Valid types: {string.Join(", ", ValidLinkTypes)}");
+
+        var task = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        // Upsert with retry: catch unique constraint violation on concurrent insert
+        try
+        {
+            return await UpsertSpecLinkCoreAsync(
+                task, taskId, specSectionId, agentId, agentName, linkType, note);
+        }
+        catch (DbUpdateException)
+        {
+            // Concurrent insert hit unique constraint — reload and update
+            _db.ChangeTracker.Clear();
+            return await UpsertSpecLinkCoreAsync(
+                task, taskId, specSectionId, agentId, agentName, linkType, note);
+        }
+    }
+
+    private async Task<SpecTaskLink> UpsertSpecLinkCoreAsync(
+        TaskEntity task, string taskId, string specSectionId,
+        string agentId, string agentName, string linkType, string? note)
+    {
+        var existing = await _db.SpecTaskLinks
+            .FirstOrDefaultAsync(l => l.TaskId == taskId && l.SpecSectionId == specSectionId);
+
+        if (existing is not null)
+        {
+            existing.LinkType = linkType;
+            existing.Note = note ?? existing.Note;
+            existing.LinkedByAgentId = agentId;
+            existing.LinkedByAgentName = agentName;
+
+            Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
+                $"{agentName} updated spec link: {specSectionId} → {task.Title}");
+            await _db.SaveChangesAsync();
+
+            return BuildSpecTaskLink(existing);
+        }
+
+        var entity = new SpecTaskLinkEntity
+        {
+            Id = Guid.NewGuid().ToString("N")[..12],
+            TaskId = taskId,
+            SpecSectionId = specSectionId,
+            LinkType = linkType,
+            LinkedByAgentId = agentId,
+            LinkedByAgentName = agentName,
+            Note = note,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.SpecTaskLinks.Add(entity);
+        Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
+            $"{agentName} linked spec {specSectionId} to task: {Truncate(task.Title, 60)}");
+        await _db.SaveChangesAsync();
+
+        return BuildSpecTaskLink(entity);
+    }
+
+    /// <summary>
+    /// Removes a spec-task link.
+    /// </summary>
+    public async Task UnlinkTaskFromSpecAsync(string taskId, string specSectionId)
+    {
+        var link = await _db.SpecTaskLinks
+            .FirstOrDefaultAsync(l => l.TaskId == taskId && l.SpecSectionId == specSectionId)
+            ?? throw new InvalidOperationException(
+                $"No link exists between task '{taskId}' and spec '{specSectionId}'");
+
+        _db.SpecTaskLinks.Remove(link);
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Gets all spec links for a task.
+    /// </summary>
+    public async Task<List<SpecTaskLink>> GetSpecLinksForTaskAsync(string taskId)
+    {
+        _ = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var links = await _db.SpecTaskLinks
+            .Where(l => l.TaskId == taskId)
+            .OrderBy(l => l.SpecSectionId)
+            .ToListAsync();
+
+        return links.Select(BuildSpecTaskLink).ToList();
+    }
+
+    /// <summary>
+    /// Gets all tasks linked to a spec section.
+    /// </summary>
+    public async Task<List<SpecTaskLink>> GetTasksForSpecAsync(string specSectionId)
+    {
+        var links = await _db.SpecTaskLinks
+            .Where(l => l.SpecSectionId == specSectionId)
+            .OrderByDescending(l => l.CreatedAt)
+            .ToListAsync();
+
+        return links.Select(BuildSpecTaskLink).ToList();
+    }
+
+    /// <summary>
+    /// Gets tasks that have no spec links.
+    /// </summary>
+    public async Task<List<TaskSnapshot>> GetUnlinkedTasksAsync()
+    {
+        var linkedTaskIds = await _db.SpecTaskLinks
+            .Select(l => l.TaskId)
+            .Distinct()
+            .ToListAsync();
+
+        var unlinkedTasks = await _db.Tasks
+            .Where(t => !linkedTaskIds.Contains(t.Id)
+                && t.Status != "Completed" && t.Status != "Cancelled")
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync();
+
+        var snapshots = new List<TaskSnapshot>();
+        foreach (var entity in unlinkedTasks)
+        {
+            var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == entity.Id);
+            snapshots.Add(BuildTaskSnapshot(entity, commentCount));
+        }
+        return snapshots;
+    }
+
+    private static SpecTaskLink BuildSpecTaskLink(SpecTaskLinkEntity entity)
+    {
+        return new SpecTaskLink(
+            Id: entity.Id,
+            TaskId: entity.TaskId,
+            SpecSectionId: entity.SpecSectionId,
+            LinkType: Enum.TryParse<SpecLinkType>(entity.LinkType, out var lt) ? lt : SpecLinkType.Implements,
+            LinkedByAgentId: entity.LinkedByAgentId,
+            LinkedByAgentName: entity.LinkedByAgentName,
+            Note: entity.Note,
+            CreatedAt: entity.CreatedAt
+        );
+    }
+
     // ── Message Management ──────────────────────────────────────
 
     /// <summary>

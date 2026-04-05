@@ -209,7 +209,8 @@ public enum ActivityEventType
     TaskPrStatusChanged,
     AgentRecalled,
     RoomRenamed,
-    DirectMessageSent
+    DirectMessageSent,
+    SpecTaskLinked
 }
 
 /// <summary>
@@ -256,4 +257,16 @@ public enum CommandStatus
     Success,
     Error,
     Denied
+}
+
+/// <summary>
+/// Describes the relationship between a task and a spec section.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpecLinkType
+{
+    Implements,
+    Modifies,
+    Fixes,
+    References
 }

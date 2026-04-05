@@ -285,6 +285,8 @@ builder.Services.AddSingleton<ICommandHandler, CreatePrHandler>();
 builder.Services.AddSingleton<ICommandHandler, MergePrHandler>();
 builder.Services.AddSingleton<ICommandHandler, PostPrReviewHandler>();
 builder.Services.AddSingleton<ICommandHandler, GetPrReviewsHandler>();
+builder.Services.AddSingleton<ICommandHandler, LinkTaskToSpecHandler>();
+builder.Services.AddSingleton<ICommandHandler, ShowUnlinkedChangesHandler>();
 
 // Notification system
 builder.Services.AddSingleton<ConfigEncryptionService>();

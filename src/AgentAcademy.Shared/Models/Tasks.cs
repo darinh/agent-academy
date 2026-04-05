@@ -94,3 +94,17 @@ public record TaskComment(
     string Content,
     DateTime CreatedAt
 );
+
+/// <summary>
+/// Links a task to a spec section for traceability.
+/// </summary>
+public record SpecTaskLink(
+    string Id,
+    string TaskId,
+    string SpecSectionId,
+    SpecLinkType LinkType,
+    string LinkedByAgentId,
+    string LinkedByAgentName,
+    string? Note,
+    DateTime CreatedAt
+);

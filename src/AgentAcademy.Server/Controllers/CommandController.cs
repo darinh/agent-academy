@@ -47,6 +47,8 @@ public sealed class CommandController : ControllerBase
         "POST_PR_REVIEW",
         "GET_PR_REVIEWS",
         "MERGE_PR",
+        "LINK_TASK_TO_SPEC",
+        "SHOW_UNLINKED_CHANGES",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

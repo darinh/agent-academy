@@ -62,6 +62,8 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["IMPORT_MEMORIES"] = "Import memories from a structured JSON array",
         ["REBASE_TASK"] = "Rebase a task's feature branch onto develop",
         ["REJECT_TASK"] = "Reject an approved or completed task back to ChangesRequested",
+        ["LINK_TASK_TO_SPEC"] = "Link a task to a spec section for traceability",
+        ["SHOW_UNLINKED_CHANGES"] = "Show active tasks with no spec links",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)

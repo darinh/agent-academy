@@ -298,6 +298,28 @@ public static class HumanCommandRegistry
                 new("deleteBranch", "Delete branch", "text", "Set to 'true' to delete the head branch after merging.",
                     Placeholder: "false", DefaultValue: "false"),
             ]),
+
+        new("LINK_TASK_TO_SPEC", "Link task to spec", "workspace",
+            "Create a traceability link between a task and a spec section.",
+            "Records which spec sections a task implements, modifies, fixes, or references. Enables filtered spec loading and drift detection.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to link.",
+                    Required: true),
+                new("specSectionId", "Spec section", "text", "The spec directory name (e.g., '003-agent-system').",
+                    Placeholder: "003-agent-system", Required: true),
+                new("linkType", "Link type", "text", "Relationship type: Implements, Modifies, Fixes, or References.",
+                    Placeholder: "Implements", DefaultValue: "Implements"),
+                new("note", "Note", "text", "Optional note describing what the task changes in this spec.",
+                    Placeholder: "Adds SDK tool calling section"),
+            ]),
+
+        new("SHOW_UNLINKED_CHANGES", "Show unlinked changes", "workspace",
+            "List active tasks that have no spec links.",
+            "Detects potential spec drift by finding tasks without traceability to spec sections. Use LINK_TASK_TO_SPEC to resolve.",
+            IsAsync: false,
+            Fields: []),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

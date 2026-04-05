@@ -215,8 +215,8 @@ When specs exist, review prompts include a `Spec Accuracy` section requesting:
 
 ## Known Gaps
 
-1. **No automated spec drift detection**: There is no CI job or tool that automatically detects when code changes without corresponding spec updates. This relies entirely on the agent workflow and adversarial review.
-2. **No spec search**: `LoadSpecContext()` loads all spec section headings. There is no semantic search or filtering by relevance to the current task — all sections are included.
+1. **No automated spec drift detection**: There is no CI job or tool that automatically detects when code changes without corresponding spec updates. This relies entirely on the agent workflow and adversarial review. Partial mitigation: `SHOW_UNLINKED_CHANGES` command lists active tasks without spec links.
+2. ~~**No spec search**: `LoadSpecContext()` loads all spec section headings. There is no semantic search or filtering by relevance to the current task — all sections are included.~~ **Partially resolved**: `SpecManager.LoadSpecContextForTaskAsync` accepts a list of linked spec section IDs and marks linked sections with ★ in the spec context. `LINK_TASK_TO_SPEC` command creates traceability links. Full semantic search is not yet implemented, but task-scoped filtering is available.
 3. **No spec versioning beyond git**: Spec changes are tracked in CHANGELOG.md and git history, but there's no formal versioning scheme for the spec itself.
 
 ## Revision History
@@ -224,3 +224,4 @@ When specs exist, review prompts include a `Spec Accuracy` section requesting:
 | Date | Task | Changes |
 |------|------|---------|
 | 2025-07-25 | Port spec system | Created SpecManager service, integrated with orchestrator, added agent spec awareness |
+| 2026-04-05 | spec-task-linking | Added `LoadSpecContextForTaskAsync` to SpecManager for task-filtered spec loading. Updated known gap #2. |

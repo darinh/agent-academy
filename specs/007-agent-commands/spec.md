@@ -560,9 +560,9 @@ All other handlers (26 of 28) require no modifications. They accept `CommandCont
 - `AgentMemoryEntity` — Per-agent persistent memory (Phase 1, Week 1 Day 5)
 
 ### Phase 2 — State Management (Tier 1B)
-- Spec-task linking (new junction table)
-- Review workflow commands (APPROVE/REQUEST_CHANGES)
-- Task claiming (optimistic locking to prevent duplicate work)
+- Spec-task linking (new junction table) — **IMPLEMENTED**: `SpecTaskLinkEntity` junction table, `LINK_TASK_TO_SPEC` and `SHOW_UNLINKED_CHANGES` commands, `SpecManager.LoadSpecContextForTaskAsync` for filtered spec loading, REST endpoints
+- Review workflow commands (APPROVE/REQUEST_CHANGES) — **IMPLEMENTED**
+- Task claiming (optimistic locking to prevent duplicate work) — **IMPLEMENTED**: `CLAIM_TASK` / `RELEASE_TASK` commands
 
 ### Phase 3 — Verification + Communication (Tier 1C + 1D)
 - Build/test execution (sandboxed, with timeouts)
@@ -680,3 +680,4 @@ Discord Server
 | 2026-04-04 | `REJECT_TASK` command added (Tier 2 Task Management). Reverts Approved/Completed → ChangesRequested, reverts merge if needed, reopens breakout. Role-gated. `APPROVE_TASK` and `REQUEST_CHANGES` also got role gates. Review round limit (5) enforced. | reject-task | (this change) |
 | 2026-04-04 | Rate limit runtime configuration. `CommandRateLimiter.Configure()` method + settings keys (`commands.rateLimitMaxCommands`, `commands.rateLimitWindowSeconds`). Live-reconfigured via `PUT /api/settings`. | rate-limit-config | (this change) |
 | 2026-04-04 | Command metadata endpoint: `GET /api/commands/metadata` returns `HumanCommandMetadata[]` from `HumanCommandRegistry`. Filters by allowlist + handler existence. Frontend loads dynamically with hardcoded fallback. Resolves known gap #2. 13 new backend tests, 3 new frontend tests. | command-metadata-endpoint | (this change) |
+| 2026-04-05 | Spec-task linking (Phase 2): `SpecTaskLinkEntity` junction table, `LINK_TASK_TO_SPEC` and `SHOW_UNLINKED_CHANGES` commands, `SpecManager.LoadSpecContextForTaskAsync` for task-filtered spec loading, REST endpoints `GET /api/tasks/{id}/specs` and `GET /api/specs/{sectionId}/tasks`, cascade delete, unique constraint, `SpecTaskLinked` activity event. 36 new tests. | spec-task-linking | (this change) |

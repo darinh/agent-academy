@@ -133,4 +133,50 @@ public sealed class SpecManager
             return null;
         }
     }
+
+    /// <summary>
+    /// Loads spec context filtered to only the sections linked to a task.
+    /// Falls back to full context if no links exist or if linkedSectionIds is empty.
+    /// </summary>
+    public async Task<string?> LoadSpecContextForTaskAsync(IEnumerable<string> linkedSectionIds)
+    {
+        var sectionIdSet = linkedSectionIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (sectionIdSet.Count == 0)
+            return await LoadSpecContextAsync();
+
+        if (!Directory.Exists(_specsDir)) return null;
+
+        try
+        {
+            var sections = new List<string>();
+
+            foreach (var dir in Directory.GetDirectories(_specsDir).OrderBy(d => d))
+            {
+                var dirName = Path.GetFileName(dir);
+                var specFile = Path.Combine(dir, "spec.md");
+                if (!File.Exists(specFile)) continue;
+
+                var isLinked = sectionIdSet.Contains(dirName);
+
+                var content = await File.ReadAllTextAsync(specFile);
+                var headingMatch = Regex.Match(content, @"^#\s+(.+)", RegexOptions.Multiline);
+                var heading = headingMatch.Success ? headingMatch.Groups[1].Value : dirName;
+
+                var purposeMatch = Regex.Match(content, @"## Purpose\s*\n([\s\S]*?)(?=\n##|\z)");
+                var summary = purposeMatch.Success
+                    ? purposeMatch.Groups[1].Value.Trim().Split('\n')[0]
+                    : "";
+
+                var marker = isLinked ? "★" : " ";
+                sections.Add($"- [{marker}] specs/{dirName}/spec.md: {heading}" +
+                    (string.IsNullOrEmpty(summary) ? "" : $" — {summary}"));
+            }
+
+            return sections.Count == 0 ? null : string.Join("\n", sections);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
