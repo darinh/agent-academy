@@ -44,6 +44,8 @@ public sealed class CommandController : ControllerBase
         "INVITE_TO_ROOM",
         "EXPORT_MEMORIES",
         "CREATE_PR",
+        "POST_PR_REVIEW",
+        "GET_PR_REVIEWS",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

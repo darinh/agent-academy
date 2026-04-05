@@ -278,6 +278,8 @@ builder.Services.AddSingleton<ICommandHandler, ListTaskItemsHandler>();
 builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();
 builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
 builder.Services.AddSingleton<ICommandHandler, CreatePrHandler>();
+builder.Services.AddSingleton<ICommandHandler, PostPrReviewHandler>();
+builder.Services.AddSingleton<ICommandHandler, GetPrReviewsHandler>();
 
 // Notification system
 builder.Services.AddSingleton<ConfigEncryptionService>();

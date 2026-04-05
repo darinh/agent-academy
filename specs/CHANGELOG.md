@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **010-task-management**: PR review comments — `POST_PR_REVIEW` command posts reviews (approve/request changes/comment) on a task's GitHub PR via `gh pr review`. `GET_PR_REVIEWS` command fetches review history via `gh pr view --json reviews`. Added `PullRequestReview` record (Author, Body, State, SubmittedAt) and `PrReviewAction` enum to `IGitHubService`. Role gates: POST restricted to Planner/Reviewer/Human (engineers cannot self-review); GET allows assigned agent too. Both registered in `HumanCommandRegistry` and `CommandController` allowlist. `ListCommandsHandler` descriptions updated. 40 new tests (1057 total). Resolves spec 010 Phase 2 gap: "No review comments".
+
+### Added
 - **010-task-management**: PR status sync via polling — `PullRequestSyncService` background service polls GitHub every 2 minutes for PR status changes on tasks with active (non-terminal) PRs. Uses `gh pr view --json reviewDecision` to detect review state. Maps GitHub states to `PullRequestStatus` enum: `REVIEW_REQUIRED` → `ReviewRequested`, `APPROVED` → `Approved`, `CHANGES_REQUESTED` → `ChangesRequested`, merged → `Merged`, closed → `Closed`. Added `ReviewDecision` field to `PullRequestInfo` record. Added `SyncTaskPrStatusAsync` and `GetTasksWithActivePrsAsync` to `WorkspaceRuntime`. Emits `TaskPrStatusChanged` activity event on status transitions. Frontend refreshes task list on `TaskPrStatusChanged`. Error isolation: single PR failure doesn't block others. CancellationToken checks between PR polls for clean shutdown. 36 new tests (1017 total). Resolves spec 010 Phase 2 gap: "No PR status sync".
 
 ### Added
