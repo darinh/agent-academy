@@ -2500,7 +2500,8 @@ public sealed class WorkspaceRuntime
         string description,
         string agentId,
         string roomId,
-        string? currentPlan = null)
+        string? currentPlan = null,
+        string? branchName = null)
     {
         if (string.IsNullOrWhiteSpace(breakoutRoomId))
             throw new ArgumentException("Breakout room ID is required.", nameof(breakoutRoomId));
@@ -2563,6 +2564,7 @@ public sealed class WorkspaceRuntime
             RoomId = roomId,
             AssignedAgentId = agentId,
             AssignedAgentName = agent?.Name,
+            BranchName = branchName,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now

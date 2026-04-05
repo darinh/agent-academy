@@ -607,18 +607,18 @@ public sealed class AgentOrchestrator
         string? taskId = null;
         try
         {
+            taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
+            await _gitService.ReturnToDevelopAsync(taskBranch);
+
             taskId = await runtime.EnsureTaskForBreakoutAsync(
                 br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
-                BuildAssignmentPlanContent(assignment));
+                BuildAssignmentPlanContent(assignment), taskBranch);
 
-            taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
-            await runtime.UpdateTaskBranchAsync(taskId, taskBranch);
             var task = await runtime.GetTaskAsync(taskId);
             var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
                 ? task.CurrentPlan
                 : BuildAssignmentPlanContent(assignment);
             await runtime.SetPlanAsync(br.Id, planContent);
-            await _gitService.ReturnToDevelopAsync(taskBranch);
         }
         catch (Exception ex)
         {
@@ -635,6 +635,27 @@ public sealed class AgentOrchestrator
                 catch (Exception cancelEx)
                 {
                     _logger.LogWarning(cancelEx, "Failed to cancel orphaned task {TaskId}", taskId);
+                }
+            }
+
+            // Clean up the git branch if it was created before the failure.
+            // ReturnToDevelopAsync may have failed, leaving us on the task branch —
+            // must checkout develop first since git can't delete the checked-out branch.
+            if (taskBranch is not null)
+            {
+                try
+                {
+                    await _gitService.ReturnToDevelopAsync(taskBranch);
+                }
+                catch { /* best-effort — may already be on develop */ }
+
+                try
+                {
+                    await _gitService.DeleteBranchAsync(taskBranch);
+                }
+                catch (Exception branchEx)
+                {
+                    _logger.LogWarning(branchEx, "Failed to delete orphaned branch {Branch}", taskBranch);
                 }
             }
 
