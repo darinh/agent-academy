@@ -1013,3 +1013,69 @@ export async function updateSystemSettings(
     body: JSON.stringify(settings),
   });
 }
+
+// ── Session History ────────────────────────────────────────────────────
+
+export interface ConversationSessionSnapshot {
+  id: string;
+  roomId: string;
+  roomType: string;
+  sequenceNumber: number;
+  status: string;
+  summary: string | null;
+  messageCount: number;
+  createdAt: string;
+  archivedAt: string | null;
+}
+
+export interface SessionListResponse {
+  sessions: ConversationSessionSnapshot[];
+  totalCount: number;
+}
+
+export interface SessionStats {
+  totalSessions: number;
+  activeSessions: number;
+  archivedSessions: number;
+  totalMessages: number;
+}
+
+export function getSessions(
+  status?: string,
+  limit = 20,
+  offset = 0,
+  hoursBack?: number,
+): Promise<SessionListResponse> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (limit !== 20) params.set("limit", String(limit));
+  if (offset > 0) params.set("offset", String(offset));
+  if (hoursBack != null) params.set("hoursBack", String(hoursBack));
+  const qs = params.toString();
+  return request<SessionListResponse>(
+    apiUrl(`/api/sessions${qs ? `?${qs}` : ""}`),
+  );
+}
+
+export function getSessionStats(hoursBack?: number): Promise<SessionStats> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<SessionStats>(apiUrl(`/api/sessions/stats${qs}`));
+}
+
+export function getRoomSessions(
+  roomId: string,
+  status?: string,
+  limit = 20,
+  offset = 0,
+): Promise<SessionListResponse> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (limit !== 20) params.set("limit", String(limit));
+  if (offset > 0) params.set("offset", String(offset));
+  const qs = params.toString();
+  return request<SessionListResponse>(
+    apiUrl(
+      `/api/rooms/${encodeURIComponent(roomId)}/sessions${qs ? `?${qs}` : ""}`,
+    ),
+  );
+}

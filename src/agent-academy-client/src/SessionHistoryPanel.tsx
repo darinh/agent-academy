@@ -1,0 +1,508 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Badge,
+  Spinner,
+  makeStyles,
+  shorthands,
+  Tooltip,
+} from "@fluentui/react-components";
+import {
+  ArrowSyncRegular,
+  ChatRegular,
+  ArchiveRegular,
+  PlayRegular,
+} from "@fluentui/react-icons";
+import {
+  getSessions,
+  getSessionStats,
+  type ConversationSessionSnapshot,
+  type SessionStats,
+} from "./api";
+
+// ── Styles ──
+
+const useLocalStyles = makeStyles({
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
+  },
+  statsRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: "12px",
+  },
+  statCard: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    ...shorthands.padding("14px", "8px"),
+    ...shorthands.borderRadius("16px"),
+    border: "1px solid rgba(214, 188, 149, 0.10)",
+    backgroundColor: "rgba(255, 255, 255, 0.025)",
+  },
+  statValue: {
+    fontFamily: "var(--heading)",
+    fontSize: "28px",
+    fontWeight: 780,
+    color: "var(--aa-text-strong)",
+    lineHeight: 1,
+    letterSpacing: "-0.04em",
+  },
+  statLabel: {
+    color: "var(--aa-muted)",
+    fontSize: "11px",
+    fontWeight: 600,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.08em",
+    marginTop: "6px",
+    textAlign: "center" as const,
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse" as const,
+    fontSize: "13px",
+  },
+  th: {
+    textAlign: "left" as const,
+    color: "var(--aa-soft)",
+    fontSize: "11px",
+    fontWeight: 700,
+    letterSpacing: "0.10em",
+    textTransform: "uppercase" as const,
+    ...shorthands.padding("8px", "12px"),
+    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+  },
+  td: {
+    ...shorthands.padding("10px", "12px"),
+    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    color: "var(--aa-text)",
+    verticalAlign: "top" as const,
+  },
+  activeRow: {
+    backgroundColor: "rgba(72, 214, 122, 0.06)",
+  },
+  mono: {
+    fontFamily: "var(--mono, monospace)",
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+  },
+  summaryCell: {
+    fontSize: "12px",
+    color: "var(--aa-soft)",
+    lineHeight: 1.5,
+    maxWidth: "400px",
+    whiteSpace: "pre-wrap" as const,
+  },
+  summaryToggle: {
+    background: "none",
+    ...shorthands.border("none"),
+    color: "var(--aa-accent)",
+    cursor: "pointer",
+    fontSize: "12px",
+    ...shorthands.padding("0"),
+    ":hover": {
+      textDecoration: "underline",
+    },
+  },
+  emptyNote: {
+    color: "var(--aa-muted)",
+    fontSize: "13px",
+    textAlign: "center" as const,
+    ...shorthands.padding("24px"),
+  },
+  error: {
+    color: "#f85149",
+    fontSize: "13px",
+    ...shorthands.padding("12px"),
+    ...shorthands.borderRadius("8px"),
+    backgroundColor: "rgba(248, 81, 73, 0.08)",
+  },
+  pagerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+  },
+  pagerBtn: {
+    background: "none",
+    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("4px", "12px"),
+    color: "var(--aa-text)",
+    cursor: "pointer",
+    fontSize: "12px",
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+    },
+    ":disabled": {
+      opacity: 0.4,
+      cursor: "default",
+    },
+  },
+  refreshBtn: {
+    background: "none",
+    ...shorthands.border("none"),
+    color: "var(--aa-soft)",
+    cursor: "pointer",
+    fontSize: "12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    ":hover": {
+      color: "var(--aa-text)",
+    },
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  filterRow: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+  },
+  filterBtn: {
+    background: "none",
+    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.15)"),
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("4px", "12px"),
+    color: "var(--aa-soft)",
+    cursor: "pointer",
+    fontSize: "12px",
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+    },
+  },
+  filterBtnActive: {
+    background: "rgba(108, 182, 255, 0.12)",
+    ...shorthands.border("1px", "solid", "rgba(108, 182, 255, 0.30)"),
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("4px", "12px"),
+    color: "var(--aa-text)",
+    cursor: "pointer",
+    fontSize: "12px",
+  },
+});
+
+// ── Helpers ──
+
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatRelativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function truncateSummary(summary: string, maxLen = 120): string {
+  if (summary.length <= maxLen) return summary;
+  return summary.slice(0, maxLen).trimEnd() + "…";
+}
+
+const PAGE_SIZE = 10;
+
+// ── Component ──
+
+export interface SessionHistoryPanelProps {
+  hoursBack?: number;
+}
+
+export default function SessionHistoryPanel({
+  hoursBack,
+}: SessionHistoryPanelProps) {
+  const s = useLocalStyles();
+  const [sessions, setSessions] = useState<ConversationSessionSnapshot[]>([]);
+  const [stats, setStats] = useState<SessionStats | null>(null);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string | undefined>(undefined);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const fetchIdRef = useRef(0);
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const fetchData = useCallback(
+    async (pageOffset: number) => {
+      const id = ++fetchIdRef.current;
+      setLoading(true);
+      setError(null);
+
+      const [sessionsResult, statsResult] = await Promise.allSettled([
+        getSessions(filter, PAGE_SIZE, pageOffset, hoursBack),
+        getSessionStats(hoursBack),
+      ]);
+
+      if (id !== fetchIdRef.current) return;
+
+      if (sessionsResult.status === "fulfilled") {
+        setSessions(sessionsResult.value.sessions);
+        setTotal(sessionsResult.value.totalCount);
+        if (pageOffset > 0 && pageOffset >= sessionsResult.value.totalCount) {
+          const clamped = Math.max(
+            0,
+            Math.floor((sessionsResult.value.totalCount - 1) / PAGE_SIZE) *
+              PAGE_SIZE,
+          );
+          setOffset(clamped);
+        }
+      } else {
+        setError(
+          sessionsResult.reason instanceof Error
+            ? sessionsResult.reason.message
+            : "Failed to load session history",
+        );
+      }
+
+      if (statsResult.status === "fulfilled") {
+        setStats(statsResult.value);
+      }
+
+      setLoading(false);
+    },
+    [filter, hoursBack],
+  );
+
+  useEffect(() => {
+    setOffset(0);
+  }, [filter]);
+
+  useEffect(() => {
+    fetchData(offset);
+  }, [fetchData, offset]);
+
+  if (loading && sessions.length === 0) {
+    return (
+      <div className={s.root}>
+        <Spinner size="small" label="Loading session history…" />
+      </div>
+    );
+  }
+
+  if (error && sessions.length === 0) {
+    return (
+      <div className={s.root}>
+        <div className={s.error}>{error}</div>
+      </div>
+    );
+  }
+
+  const hasNext = offset + PAGE_SIZE < total;
+  const hasPrev = offset > 0;
+
+  return (
+    <div className={s.root}>
+      {error && sessions.length > 0 && (
+        <div className={s.error}>{error} — showing cached data.</div>
+      )}
+
+      {stats && (
+        <div className={s.statsRow}>
+          <div className={s.statCard}>
+            <span className={s.statValue}>{stats.totalSessions}</span>
+            <span className={s.statLabel}>Total Sessions</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "#48d67a" }}>
+              {stats.activeSessions}
+            </span>
+            <span className={s.statLabel}>Active</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "#b794ff" }}>
+              {stats.archivedSessions}
+            </span>
+            <span className={s.statLabel}>Archived</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "#6cb6ff" }}>
+              {stats.totalMessages}
+            </span>
+            <span className={s.statLabel}>Total Messages</span>
+          </div>
+        </div>
+      )}
+
+      <div className={s.headerRow}>
+        <div className={s.filterRow}>
+          <button
+            className={filter === undefined ? s.filterBtnActive : s.filterBtn}
+            onClick={() => setFilter(undefined)}
+          >
+            All
+          </button>
+          <button
+            className={filter === "Active" ? s.filterBtnActive : s.filterBtn}
+            onClick={() => setFilter("Active")}
+          >
+            Active
+          </button>
+          <button
+            className={filter === "Archived" ? s.filterBtnActive : s.filterBtn}
+            onClick={() => setFilter("Archived")}
+          >
+            Archived
+          </button>
+        </div>
+        <button className={s.refreshBtn} onClick={() => fetchData(offset)}>
+          <ArrowSyncRegular style={{ fontSize: 14 }} /> Refresh
+        </button>
+      </div>
+
+      {sessions.length === 0 ? (
+        <div className={s.emptyNote}>No conversation sessions recorded yet.</div>
+      ) : (
+        <>
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th className={s.th}>Status</th>
+                <th className={s.th}>Room</th>
+                <th className={s.th}>Epoch</th>
+                <th className={s.th}>Messages</th>
+                <th className={s.th}>Created</th>
+                <th className={s.th}>Summary</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((session) => {
+                const isActive = session.status === "Active";
+                const hasSummary =
+                  session.summary != null && session.summary.length > 0;
+                const isExpanded = expandedIds.has(session.id);
+
+                return (
+                  <tr
+                    key={session.id}
+                    className={isActive ? s.activeRow : undefined}
+                  >
+                    <td className={s.td}>
+                      <Badge
+                        appearance="filled"
+                        color={isActive ? "success" : "informative"}
+                        icon={
+                          isActive ? (
+                            <PlayRegular style={{ fontSize: 14 }} />
+                          ) : (
+                            <ArchiveRegular style={{ fontSize: 14 }} />
+                          )
+                        }
+                      >
+                        {session.status}
+                      </Badge>
+                    </td>
+                    <td className={s.td}>
+                      <Tooltip
+                        content={`${session.roomType} room`}
+                        relationship="label"
+                      >
+                        <span>
+                          <ChatRegular
+                            style={{ fontSize: 14, marginRight: 4 }}
+                          />
+                          <span className={s.mono}>{session.roomId}</span>
+                        </span>
+                      </Tooltip>
+                    </td>
+                    <td className={s.td}>
+                      <span className={s.mono}>#{session.sequenceNumber}</span>
+                    </td>
+                    <td className={s.td}>{session.messageCount}</td>
+                    <td className={s.td}>
+                      <Tooltip
+                        content={formatTimestamp(session.createdAt)}
+                        relationship="label"
+                      >
+                        <span>{formatRelativeTime(session.createdAt)}</span>
+                      </Tooltip>
+                      {session.archivedAt && (
+                        <div
+                          style={{
+                            fontSize: "11px",
+                            color: "var(--aa-muted)",
+                          }}
+                        >
+                          Archived{" "}
+                          {formatRelativeTime(session.archivedAt)}
+                        </div>
+                      )}
+                    </td>
+                    <td className={s.td}>
+                      {hasSummary ? (
+                        <div className={s.summaryCell}>
+                          {isExpanded
+                            ? session.summary
+                            : truncateSummary(session.summary!)}
+                          {session.summary!.length > 120 && (
+                            <>
+                              {" "}
+                              <button
+                                className={s.summaryToggle}
+                                onClick={() => toggleExpanded(session.id)}
+                              >
+                                {isExpanded ? "Show less" : "Show more"}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <span className={s.mono}>
+                          {isActive ? "In progress" : "—"}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className={s.pagerRow}>
+            <button
+              className={s.pagerBtn}
+              disabled={!hasPrev}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            >
+              ← Newer
+            </button>
+            <span>
+              {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+            </span>
+            <button
+              className={s.pagerBtn}
+              disabled={!hasNext}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
+            >
+              Older →
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
