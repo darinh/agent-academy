@@ -39,6 +39,12 @@ public interface IGitHubService
     /// Gets all reviews on a pull request.
     /// </summary>
     Task<IReadOnlyList<PullRequestReview>> GetPrReviewsAsync(int prNumber);
+
+    /// <summary>
+    /// Squash-merges a pull request on GitHub and returns the merge result.
+    /// Optionally deletes the head branch after merging.
+    /// </summary>
+    Task<PrMergeResult> MergePullRequestAsync(int prNumber, string? commitTitle = null, bool deleteBranch = false);
 }
 
 /// <summary>
@@ -74,3 +80,11 @@ public enum PrReviewAction
     Approve,
     RequestChanges
 }
+
+/// <summary>
+/// Result of merging a pull request via the GitHub API.
+/// </summary>
+public record PrMergeResult(
+    int PrNumber,
+    string? MergeCommitSha
+);

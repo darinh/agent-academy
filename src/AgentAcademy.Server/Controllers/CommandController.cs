@@ -46,6 +46,7 @@ public sealed class CommandController : ControllerBase
         "CREATE_PR",
         "POST_PR_REVIEW",
         "GET_PR_REVIEWS",
+        "MERGE_PR",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
@@ -53,6 +54,7 @@ public sealed class CommandController : ControllerBase
         "RUN_BUILD",
         "RUN_TESTS",
         "CREATE_PR",
+        "MERGE_PR",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;

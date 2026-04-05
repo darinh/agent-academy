@@ -286,6 +286,18 @@ public static class HumanCommandRegistry
                 new("taskId", "Task ID", "text", "The task whose PR reviews to fetch.",
                     Required: true),
             ]),
+
+        new("MERGE_PR", "Merge pull request", "git",
+            "Squash-merge a task's pull request on GitHub.",
+            "Merges the task's PR via the GitHub API using squash merge. Updates the task to Completed with the merge commit SHA. Use instead of MERGE_TASK when a PR exists.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task whose PR to merge.",
+                    Required: true),
+                new("deleteBranch", "Delete branch", "text", "Set to 'true' to delete the head branch after merging.",
+                    Placeholder: "false", DefaultValue: "false"),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

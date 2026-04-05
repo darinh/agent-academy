@@ -218,4 +218,31 @@ public class CommandParserTests
         Assert.Contains("# Execution Plan", result.Commands[0].Args["Content"]);
         Assert.Contains("- Implement fix", result.Commands[0].Args["Content"]);
     }
+
+    [Fact]
+    public void Parse_MergePr_Recognized()
+    {
+        var text = "MERGE_PR: taskId=task-abc123";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("MERGE_PR", result.Commands[0].Command);
+        Assert.Equal("task-abc123", result.Commands[0].Args["taskId"]);
+    }
+
+    [Fact]
+    public void Parse_MergePr_WithDeleteBranch_Recognized()
+    {
+        var text = """
+            MERGE_PR:
+              taskId: task-abc123
+              deleteBranch: true
+            """;
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("MERGE_PR", result.Commands[0].Command);
+        Assert.Equal("task-abc123", result.Commands[0].Args["taskId"]);
+        Assert.Equal("true", result.Commands[0].Args["deleteBranch"]);
+    }
 }

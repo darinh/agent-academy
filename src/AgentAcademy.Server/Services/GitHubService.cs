@@ -104,6 +104,38 @@ public sealed class GitHubService : IGitHubService
         return ParseReviewsJson(json);
     }
 
+    public async Task<PrMergeResult> MergePullRequestAsync(int prNumber, string? commitTitle = null, bool deleteBranch = false)
+    {
+        var args = new List<string> { "pr", "merge", prNumber.ToString(), "--squash" };
+
+        if (!string.IsNullOrWhiteSpace(commitTitle))
+        {
+            args.Add("--subject");
+            args.Add(commitTitle);
+        }
+
+        if (deleteBranch)
+            args.Add("--delete-branch");
+
+        await RunGhAsync(args.ToArray());
+
+        // Fetch the merge commit SHA from the now-merged PR
+        string? mergeCommitSha = null;
+        try
+        {
+            var sha = await RunGhAsync(
+                "pr", "view", prNumber.ToString(),
+                "--json", "mergeCommit", "-q", ".mergeCommit.oid");
+            mergeCommitSha = string.IsNullOrWhiteSpace(sha) ? null : sha;
+        }
+        catch
+        {
+            // Best-effort — the PR is already merged, just can't get the SHA
+        }
+
+        return new PrMergeResult(prNumber, mergeCommitSha);
+    }
+
     private static IReadOnlyList<PullRequestReview> ParseReviewsJson(string json)
     {
         using var doc = JsonDocument.Parse(json);

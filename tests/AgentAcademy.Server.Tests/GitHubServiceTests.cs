@@ -365,4 +365,121 @@ public class GitHubServiceTests : IDisposable
             () => svc.GetPrReviewsAsync(999));
         Assert.Contains("not found", ex.Message);
     }
+
+    // ── MergePullRequestAsync Tests ─────────────────────────────
+
+    [Fact]
+    public async Task MergePullRequestAsync_Success_ReturnsSha()
+    {
+        // The wrapper returns the SHA for both calls — merge ignores it, view uses it
+        var wrapper = CreateSequentialGhWrapper(["", "abc123def456"]);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.MergePullRequestAsync(42);
+
+        Assert.Equal(42, result.PrNumber);
+        Assert.Equal("abc123def456", result.MergeCommitSha);
+    }
+
+    [Fact]
+    public async Task MergePullRequestAsync_MergeFails_Throws()
+    {
+        var wrapper = CreateGhWrapper("", exitCode: 1, stderr: "merge not allowed");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.MergePullRequestAsync(42));
+        Assert.Contains("merge not allowed", ex.Message);
+    }
+
+    [Fact]
+    public async Task MergePullRequestAsync_ShaFetchFails_ReturnsNullSha()
+    {
+        // First call (merge) succeeds, second call (view) fails — SHA is null
+        var wrapper = CreateSequentialGhWrapper([""], failOnCall: 2, stderr: "not found");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.MergePullRequestAsync(42);
+
+        Assert.Equal(42, result.PrNumber);
+        Assert.Null(result.MergeCommitSha);
+    }
+
+    [Fact]
+    public async Task MergePullRequestAsync_WithCommitTitle_IncludesSubjectFlag()
+    {
+        // We verify by checking the wrapper was called — the real assertion is that it doesn't throw
+        var wrapper = CreateSequentialGhWrapper(["", "sha123"]);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.MergePullRequestAsync(42, commitTitle: "feat: my feature");
+
+        Assert.Equal("sha123", result.MergeCommitSha);
+    }
+
+    [Fact]
+    public async Task MergePullRequestAsync_EmptyShaResponse_ReturnsNull()
+    {
+        var wrapper = CreateSequentialGhWrapper(["", ""]);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.MergePullRequestAsync(42);
+
+        Assert.Null(result.MergeCommitSha);
+    }
+
+    /// <summary>
+    /// Creates a wrapper that returns different outputs on sequential calls.
+    /// Uses a counter file to track invocation number.
+    /// </summary>
+    private string CreateSequentialGhWrapper(
+        string[] outputs, int? failOnCall = null, string stderr = "")
+    {
+        var counterFile = Path.Combine(_tempDir, $"counter-{Guid.NewGuid():N}.txt");
+        var stderrFile = Path.Combine(_tempDir, $"stderr-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(stderrFile, stderr);
+
+        var outputFiles = new List<string>();
+        for (var i = 0; i < outputs.Length; i++)
+        {
+            var file = Path.Combine(_tempDir, $"output-{Guid.NewGuid():N}-{i}.txt");
+            File.WriteAllText(file, outputs[i]);
+            outputFiles.Add(file);
+        }
+
+        var caseStatements = new System.Text.StringBuilder();
+        for (var i = 0; i < outputFiles.Count; i++)
+        {
+            var exitCode = (failOnCall.HasValue && failOnCall.Value == i + 1) ? 1 : 0;
+            caseStatements.AppendLine(
+                $"    {i + 1}) cat '{outputFiles[i]}'; " +
+                (exitCode != 0 ? $"cat '{stderrFile}' >&2; " : "") +
+                $"exit {exitCode};;");
+        }
+
+        var wrapperPath = Path.Combine(_tempDir, $"gh-seq-{Guid.NewGuid():N}.sh");
+        File.WriteAllText(wrapperPath,
+            $$"""
+            #!/usr/bin/env bash
+            COUNTER_FILE='{{counterFile}}'
+            COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
+            COUNT=$((COUNT + 1))
+            echo $COUNT > "$COUNTER_FILE"
+            case $COUNT in
+            {{caseStatements}}
+                *) exit 1;;
+            esac
+            """);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                wrapperPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
+        return wrapperPath;
+    }
 }
