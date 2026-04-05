@@ -19,7 +19,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
         nameof(TaskStatus.Blocked),
         nameof(TaskStatus.AwaitingValidation),
         nameof(TaskStatus.InReview),
-        nameof(TaskStatus.Queued)
+        nameof(TaskStatus.Queued),
     };
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
