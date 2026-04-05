@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Spinner,
@@ -17,6 +17,8 @@ import {
   type AuditLogEntry,
   type AuditStatsResponse,
 } from "./api";
+import Sparkline from "./Sparkline";
+import { bucketByTime } from "./sparklineUtils";
 
 // ── Styles ──
 
@@ -179,6 +181,23 @@ const useLocalStyles = makeStyles({
     gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
     gap: "16px",
   },
+  sparklineRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    ...shorthands.padding("8px", "12px"),
+    ...shorthands.borderRadius("12px"),
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    border: "1px solid rgba(214, 188, 149, 0.06)",
+  },
+  sparklineLabel: {
+    color: "var(--aa-muted)",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    whiteSpace: "nowrap" as const,
+  },
 });
 
 // ── Helpers ──
@@ -223,6 +242,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
   const s = useLocalStyles();
   const [stats, setStats] = useState<AuditStatsResponse | null>(null);
   const [records, setRecords] = useState<AuditLogEntry[]>([]);
+  const [allRecordsForTrend, setAllRecordsForTrend] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -261,9 +281,10 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
     setRecordsError(null);
     setPage(0);
 
-    const [statsResult, recordsResult] = await Promise.allSettled([
+    const [statsResult, recordsResult, trendResult] = await Promise.allSettled([
       getAuditStats(hoursBack),
       getAuditLog({ hoursBack, limit: RECORDS_PAGE, offset: 0 }),
+      getAuditLog({ hoursBack, limit: 200, offset: 0 }),
     ]);
 
     if (id !== fetchIdRef.current) return;
@@ -290,6 +311,10 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
       );
     }
 
+    if (trendResult.status === "fulfilled") {
+      setAllRecordsForTrend(trendResult.value.records);
+    }
+
     setLoading(false);
   }, [hoursBack]);
 
@@ -303,6 +328,12 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
   };
 
   const totalPages = Math.ceil(total / RECORDS_PAGE);
+
+  const SPARKLINE_BUCKETS = 24;
+  const commandTrend = useMemo(
+    () => bucketByTime(allRecordsForTrend, (r) => r.timestamp, SPARKLINE_BUCKETS, hoursBack),
+    [allRecordsForTrend, hoursBack],
+  );
 
   if (loading && !stats && records.length === 0) {
     return (
@@ -366,6 +397,14 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
             </span>
             <span className={s.statLabel}>Denied</span>
           </div>
+        </div>
+      )}
+
+      {/* Command trend sparkline */}
+      {allRecordsForTrend.length >= 2 && (
+        <div className={s.sparklineRow} data-testid="audit-sparkline">
+          <span className={s.sparklineLabel}>Commands</span>
+          <Sparkline data={commandTrend} color="#b794ff" width={180} height={28} />
         </div>
       )}
 

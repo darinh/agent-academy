@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Spinner,
@@ -18,6 +18,8 @@ import {
   type ErrorRecord,
 } from "./api";
 import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
+import Sparkline from "./Sparkline";
+import { bucketByTime } from "./sparklineUtils";
 
 // ── Styles ──
 
@@ -205,6 +207,23 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-muted)",
     marginLeft: "auto",
   },
+  sparklineRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    ...shorthands.padding("8px", "12px"),
+    ...shorthands.borderRadius("12px"),
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    border: "1px solid rgba(214, 188, 149, 0.06)",
+  },
+  sparklineLabel: {
+    color: "var(--aa-muted)",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    whiteSpace: "nowrap" as const,
+  },
 });
 
 // ── Helpers ──
@@ -333,6 +352,12 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
   const pagedRecords = records.slice(page * RECORDS_PAGE, (page + 1) * RECORDS_PAGE);
   const totalPages = Math.ceil(records.length / RECORDS_PAGE);
 
+  const SPARKLINE_BUCKETS = 24;
+  const errorTrend = useMemo(
+    () => bucketByTime(records, (r) => r.timestamp, SPARKLINE_BUCKETS, hoursBack),
+    [records, hoursBack],
+  );
+
   if (loading && !summary && records.length === 0) {
     return (
       <div className={s.root}>
@@ -410,6 +435,14 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
             </span>
             <span className={s.statLabel}>Unrecoverable</span>
           </div>
+        </div>
+      )}
+
+      {/* Error trend sparkline */}
+      {records.length >= 2 && (
+        <div className={s.sparklineRow} data-testid="errors-sparkline">
+          <span className={s.sparklineLabel}>Error Rate</span>
+          <Sparkline data={errorTrend} color="#f85149" width={180} height={28} />
         </div>
       )}
 

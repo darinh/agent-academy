@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Spinner,
@@ -17,6 +17,8 @@ import {
   type UsageSummary,
   type LlmUsageRecord,
 } from "./api";
+import Sparkline from "./Sparkline";
+import { bucketByTime, bucketByTimeSum } from "./sparklineUtils";
 
 // ── Styles ──
 
@@ -177,9 +179,24 @@ const useLocalStyles = makeStyles({
       cursor: "default",
     },
   },
-});
-
-// ── Helpers ──
+  sparklineRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    ...shorthands.padding("8px", "12px"),
+    ...shorthands.borderRadius("12px"),
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    border: "1px solid rgba(214, 188, 149, 0.06)",
+  },
+  sparklineLabel: {
+    color: "var(--aa-muted)",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    whiteSpace: "nowrap" as const,
+  },
+});// ── Helpers ──
 
 function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -285,6 +302,16 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
       .sort((a, b) => b.cost - a.cost || b.count - a.count);
   })();
 
+  const SPARKLINE_BUCKETS = 24;
+  const requestTrend = useMemo(
+    () => bucketByTime(records, (r) => r.recordedAt, SPARKLINE_BUCKETS, hoursBack),
+    [records, hoursBack],
+  );
+  const tokenTrend = useMemo(
+    () => bucketByTimeSum(records, (r) => r.recordedAt, (r) => r.inputTokens + r.outputTokens, SPARKLINE_BUCKETS, hoursBack),
+    [records, hoursBack],
+  );
+
   // Pagination for records
   const pagedRecords = records.slice(page * RECORDS_PAGE, (page + 1) * RECORDS_PAGE);
   const totalPages = Math.ceil(records.length / RECORDS_PAGE);
@@ -337,6 +364,20 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
               {summary.requestCount}
             </span>
             <span className={s.statLabel}>LLM Calls</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sparklines */}
+      {records.length >= 2 && (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <div className={s.sparklineRow} data-testid="usage-sparkline-requests">
+            <span className={s.sparklineLabel}>Requests</span>
+            <Sparkline data={requestTrend} color="#ffbe70" width={140} height={28} />
+          </div>
+          <div className={s.sparklineRow} data-testid="usage-sparkline-tokens">
+            <span className={s.sparklineLabel}>Tokens</span>
+            <Sparkline data={tokenTrend} color="#6cb6ff" width={140} height={28} />
           </div>
         </div>
       )}

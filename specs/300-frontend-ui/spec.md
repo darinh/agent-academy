@@ -235,6 +235,28 @@ The frontend monitors the Copilot circuit breaker state (see spec 003) and surfa
 2. **Header signal chip** (`App.tsx`): Inline chip in the workspace header signals row. Shows "Circuit open" or "Circuit probing" with warning styling. Hidden when Closed.
 3. **ErrorsPanel status row**: Color-coded dot + label + detail text. Shows all states including Closed (green). Appears above error summary stats in the dashboard.
 
+### Dashboard Sparklines (`Sparkline.tsx` + `sparklineUtils.ts`)
+
+Mini SVG trend charts in the dashboard panels showing activity over time.
+
+**Sparkline component (`Sparkline.tsx`):**
+- Minimal SVG polyline with linear gradient fill, no axes or labels
+- Accessible: `role="img"` + `aria-label="Sparkline trend"`
+- Unique gradient IDs via React `useId()` (no cross-instance collisions)
+- Configurable: color, dimensions, fill opacity, stroke width
+- Renders nothing for fewer than 2 data points
+
+**Bucketing utilities (`sparklineUtils.ts`):**
+- `bucketByTime(records, getTimestamp, bucketCount, hoursBack?)` — counts records per bucket
+- `bucketByTimeSum(records, getTimestamp, getValue, bucketCount, hoursBack?)` — sums a numeric value per bucket
+- Invalid timestamps (`NaN`) are filtered before computation
+- Auto-ranges from data when `hoursBack` is not provided
+
+**Panel integration (24 buckets, computed via `useMemo`):**
+- **UsagePanel**: Two sparklines — request count trend (amber) and token volume trend (blue)
+- **ErrorsPanel**: Error rate trend (red)
+- **AuditLogPanel**: Command count trend (purple), using a separate 200-record fetch for accurate trend data (not the paged table slice)
+
 ## Future Work
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
