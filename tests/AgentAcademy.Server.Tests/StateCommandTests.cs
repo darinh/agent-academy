@@ -637,6 +637,23 @@ public class StateCommandTests : IDisposable
         var result = await handler.ExecuteAsync(cmd, ctx);
 
         Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Contains("Human", result.Error!);
+    }
+
+    [Fact]
+    public async Task CancelTask_Success_HumanCanCancel()
+    {
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
+        var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
+        var handler = new CancelTaskHandler(gitService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId, ["reason"] = "Consultant cleanup" },
+            "human", "Human");
+        ctx = ctx with { AgentRole = "Human" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
     }
 
     [Fact]
