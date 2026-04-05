@@ -85,7 +85,7 @@ Key behaviors:
   - `quota`, `rate_limit` → `CopilotQuotaException` (retried with longer backoff: 5s/15s/30s, max 3 attempts)
   - Other/unknown → `CopilotTransientException` (retried with backoff: 2s/4s/8s, max 3 attempts)
 - **Auth failure handling**: On definitive auth failure, the executor sets `IsAuthFailed = true`, posts a re-authentication notice to the main room, and notifies via the notification system. When the user re-authenticates (token changes), the flag is cleared and a recovery message is posted automatically.
-- **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state.
+- **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state. Before probing, the monitor checks if the token is expiring soon (within 30 minutes); if so, it proactively refreshes via `ICopilotAuthProbe.RefreshTokenAsync()`. On auth failure, a refresh is attempted before degrading the system.
 - **Permission handling**: Sessions use `AgentPermissionHandler.Create()` which approves tool calls for the registered tools. When no tools are registered for an agent, all permissions are approved (same as `PermissionHandler.ApproveAll`). The handler logs all permission requests for diagnostics.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
@@ -101,9 +101,15 @@ Key behaviors:
 **File**: `src/AgentAcademy.Server/Services/CopilotTokenProvider.cs`
 
 Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
-- `SetToken(string)` — called during `OnCreatingTicket` in the OAuth flow to capture the user's access token. Records `TokenSetAt` timestamp for diagnostics.
-- `ClearToken()` — called by `AuthController.Logout` to remove the stored token and timestamp.
+- `SetToken(string)` — backward-compatible entry point; captures access token only.
+- `SetTokens(accessToken, refreshToken?, expiresIn?, refreshTokenExpiresIn?)` — captures access token, refresh token, and expiry timestamps. Preserves existing refresh token when the new value is null (supports partial updates during token refresh).
+- `ClearToken()` — called by `AuthController.Logout` to remove all stored tokens and timestamps.
 - `Token` — volatile read; available to the executor even during background orchestration (where `HttpContext` is null).
+- `RefreshToken` — the OAuth refresh token for automatic renewal (valid ~6 months).
+- `ExpiresAtUtc` — UTC expiry time of the current access token.
+- `IsTokenExpiringSoon` — true when the access token is within 30 minutes of expiry.
+- `CanRefresh` — true when a non-expired refresh token is available.
+- `HasPendingCookieUpdate` / `MarkCookieUpdatePending()` / `ClearCookieUpdatePending()` — flag for middleware to write refreshed tokens back to the auth cookie.
 - `TokenSetAt` — UTC timestamp of when the token was last set (nullable, null if never set). Used by the health endpoint for diagnostics.
 
 ### Authentication Flow → Copilot SDK Activation
@@ -113,7 +119,7 @@ Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
 │  User Browser  │────▶│  GitHub OAuth      │────▶│  OnCreatingTicket │
 │  GET /login    │     │  (GitHub.com)      │     │  (Program.cs)     │
 └────────────────┘     └───────────────────┘     └────────┬─────────┘
-                                                          │ SetToken()
+                                                          │ SetTokens()
                                                           ▼
                                                  ┌──────────────────┐
                                                  │ CopilotToken     │
@@ -127,19 +133,36 @@ Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
 │  Orchestrator    │     │  ResolveToken()   │   │  (SDK CLI proc)  │
 │  (background)    │     └───────────────────┘   └──────────────────┘
 └──────────────────┘
+
+         ┌──────────────────────────────────────────────────┐
+         │  CopilotAuthMonitorService (every 5 min)         │
+         │  ├─ Token expiring soon? → RefreshTokenAsync()   │
+         │  ├─ Probe returns AuthFailed? → try refresh first│
+         │  └─ Refresh succeeds → SetTokens() + cookie flag │
+         └──────────────────────────────────────────────────┘
 ```
 
 **OAuth Configuration** (in `Program.cs`):
-- `SaveTokens = true` — the OAuth access token persists in the encrypted auth cookie, surviving server restarts
-- Token restoration middleware: on the first authenticated request after a server restart, extracts the token from the cookie and populates `CopilotTokenProvider`
+- `SaveTokens = true` — the OAuth access token and refresh token persist in the encrypted auth cookie, surviving server restarts
+- Token restoration middleware: on the first authenticated request after a server restart, extracts access token, refresh token, and expiry from the cookie and populates `CopilotTokenProvider`
+- Cookie write-back middleware: when tokens are refreshed server-side, merges updated tokens into the existing auth cookie on the next HTTP request
 - Scopes: `read:user`, `user:email`
 - GitHub App credentials stored in user-secrets (`GitHub:ClientId`, `GitHub:ClientSecret`, `GitHub:AppId`)
+
+**Token Refresh** (GitHub App user-to-server tokens expire after 8 hours):
+- `CopilotAuthMonitorService` proactively refreshes tokens 30 minutes before expiry via `ICopilotAuthProbe.RefreshTokenAsync()`
+- On auth probe failure (401/403), attempts a refresh before degrading
+- Refresh calls `POST https://github.com/login/oauth/access_token` with `grant_type=refresh_token`
+- GitHub rotates refresh tokens on each use; the new refresh token is stored
+- Refresh token lifetime: ~6 months (180 days); access token: 8 hours
+- On successful refresh, `HasPendingCookieUpdate` is set → next HTTP request writes new tokens to the cookie
 
 **Behavior**:
 - Before any user logs in: executor uses config token or env vars; falls back to `StubExecutor` if none available
 - After user logs in: OAuth token is captured → executor creates/recreates `CopilotClient` with user's token → agents produce real responses
 - On server restart: first authenticated request restores the token from the auth cookie via middleware — no re-login needed
-- On logout: token is cleared → executor falls back to config token or stub on next call
+- On token expiry: automatic refresh via monitor service — no re-login needed (for up to 6 months)
+- On logout: all tokens are cleared → executor falls back to config token or stub on next call
 
 ### Implementation: `StubExecutor`
 
@@ -679,3 +702,4 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-04-05 | SDK tool calling — `AgentToolRegistry` maps `EnabledTools` groups to `AIFunction` objects. 5 read-only tools: `list_tasks`, `list_rooms`, `list_agents` (task-state group), `read_file`, `search_code` (code group). `AgentPermissionHandler` denies dangerous permission kinds (shell/write/url). `CopilotExecutor` passes tools in `SessionConfig`. Resolves "No tool calling" known gap. Adversarial review (GPT-5.3 Codex, Claude Opus 4.6, Claude Sonnet 4.5): 14 findings — 7 fixed (permission handler blanket approve, stderr deadlock, path traversal bypass, FindProjectRoot fallback, max-count per-file, no timeout, regex vs fixed-string). 34 new tests. | sdk-tool-calling |
 | 2026-04-05 | Agent write tools — 5 new tools in 2 groups: `task-write` (create_task, update_task_status, add_task_comment) and `memory` (remember, recall). Inner wrapper classes capture agent identity via closures. `IAgentToolRegistry` extended with agentId/agentName parameters for contextual groups. Reuses `RememberHandler.ValidCategories` and `RecallHandler.SearchWithFts5Async`. All 6 agents updated. 35 new tests (1154 total). | agent-write-tools |
 | 2026-04-05 | Session history UI — `ConversationSessionService` extended with `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync` query methods with pagination, status filtering, and `hoursBack` time window. New `SessionController` (`GET /api/sessions`, `GET /api/sessions/stats`), room sessions endpoint (`GET /api/rooms/{roomId}/sessions`). Frontend: `SessionHistoryPanel` in dashboard with stats cards, filter tabs, expandable summaries, pagination. `ChatPanel` session resume indicator shows when agents have archived context. 21 new backend tests (1319 total), 16 new frontend tests (218 total). | session-history |
+| 2026-04-05 | OAuth refresh token — `CopilotTokenProvider` extended with `RefreshToken`, `ExpiresAtUtc`, `IsTokenExpiringSoon`, `CanRefresh`, cookie write-back flag. `ICopilotAuthProbe.RefreshTokenAsync()` exchanges refresh tokens at GitHub's OAuth endpoint. `CopilotAuthMonitorService` proactively refreshes 30 min before expiry and attempts refresh before degrading on auth failure. `Program.cs` captures refresh token in OAuth callback, restores from cookie on restart, merges refreshed tokens into cookie. Access tokens auto-renew for up to 6 months without re-authentication. 21 new tests (1343 total). Adversarial review (GPT-5.2, Claude Sonnet 4, Claude Haiku 4.5): timeout handling, token clobbering, and cookie error handling fixed. | token-refresh |

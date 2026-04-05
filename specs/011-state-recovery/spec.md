@@ -217,9 +217,11 @@ When the Copilot SDK returns an authentication error during agent execution:
       - `_authFailed` is cleared to `false`
       - Posts recovery message: "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online."
     - `CopilotAuthMonitorService` proactively probes `GET /user` every 5 minutes:
+      - Before probing: checks if token is expiring soon (within 30 minutes of its 8-hour lifetime). If so, proactively refreshes via `RefreshTokenAsync()` before the token expires.
       - `200` → executor transitions back to operational if it was previously degraded
-      - `401` / `403` → executor transitions to degraded immediately, posts the re-authentication notice, and sends a notification via `NotificationManager`
+      - `401` / `403` → attempts token refresh via `ICopilotAuthProbe.RefreshTokenAsync()` before degrading. If refresh succeeds, the system recovers without user intervention. If refresh fails (expired refresh token, revoked app), executor transitions to degraded and posts the re-authentication notice.
       - Network failures, timeouts, and other non-auth responses are logged and ignored so transient outages do not force degraded mode
+    - Token refresh exchanges the stored refresh token at `POST https://github.com/login/oauth/access_token` with `grant_type=refresh_token`. GitHub rotates refresh tokens on each use; both the new access token and new refresh token are stored. Refreshed tokens are written back to the auth cookie on the next HTTP request via middleware.
     - `/api/auth/status` exposes `copilotStatus` with three states:
       - `operational` — browser auth cookie and Copilot SDK token are both healthy
       - `degraded` — browser auth cookie is still valid, but the SDK token is missing or `_authFailed = true`
@@ -237,7 +239,7 @@ When the Copilot SDK returns an authentication error during agent execution:
 
 **Why No Restart Escalation**:
 
-Auth failures are caused by expired/revoked OAuth tokens, not by corrupted SDK state or broken file handles. The correct fix is to refresh the token via user re-authentication, not to restart the server. The system:
+Auth failures are caused by expired/revoked OAuth tokens, not by corrupted SDK state or broken file handles. The correct fix is to refresh the token automatically (via the stored refresh token) or, if the refresh token is also expired, via user re-authentication. The system:
 
 - Exposes `copilotStatus` in `/api/auth/status` so the UI can distinguish normal login from re-authentication, while `authFailed` remains available from the health endpoint for diagnostics
 - Continues serving non-agent endpoints (workspace, tasks, rooms) during auth failure
