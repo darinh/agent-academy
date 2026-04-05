@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
@@ -77,6 +78,70 @@ public sealed class GitHubService : IGitHubService
             "--json", "number,url,state,title,baseRefName,headRefName,mergedAt,reviewDecision");
 
         return ParsePrJson(json);
+    }
+
+    public async Task PostPrReviewAsync(int prNumber, string body, PrReviewAction action = PrReviewAction.Comment)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            throw new ArgumentException("Review body is required.", nameof(body));
+
+        var flag = action switch
+        {
+            PrReviewAction.Approve => "--approve",
+            PrReviewAction.RequestChanges => "--request-changes",
+            _ => "--comment"
+        };
+
+        await RunGhAsync("pr", "review", prNumber.ToString(), flag, "--body", body);
+    }
+
+    public async Task<IReadOnlyList<PullRequestReview>> GetPrReviewsAsync(int prNumber)
+    {
+        var json = await RunGhAsync(
+            "pr", "view", prNumber.ToString(),
+            "--json", "reviews");
+
+        return ParseReviewsJson(json);
+    }
+
+    private static IReadOnlyList<PullRequestReview> ParseReviewsJson(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("reviews", out var reviews) || reviews.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var result = new List<PullRequestReview>();
+        foreach (var review in reviews.EnumerateArray())
+        {
+            var author = review.TryGetProperty("author", out var authorEl)
+                && authorEl.ValueKind == JsonValueKind.Object
+                && authorEl.TryGetProperty("login", out var loginEl)
+                ? loginEl.GetString() ?? "unknown"
+                : "unknown";
+
+            var body = review.TryGetProperty("body", out var bodyEl)
+                ? bodyEl.GetString() ?? string.Empty
+                : string.Empty;
+
+            var state = review.TryGetProperty("state", out var stateEl)
+                ? stateEl.GetString() ?? "COMMENTED"
+                : "COMMENTED";
+
+            DateTime? submittedAt = null;
+            if (review.TryGetProperty("submittedAt", out var submittedEl)
+                && submittedEl.ValueKind == JsonValueKind.String)
+            {
+                if (DateTimeOffset.TryParse(submittedEl.GetString(),
+                    CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+                    submittedAt = parsed.UtcDateTime;
+            }
+
+            result.Add(new PullRequestReview(author, body, state, submittedAt));
+        }
+
+        return result;
     }
 
     private static PullRequestInfo ParsePrJson(string json)

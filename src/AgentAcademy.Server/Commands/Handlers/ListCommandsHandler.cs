@@ -55,6 +55,13 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["RETURN_TO_MAIN"] = "Return to the main collaboration room",
         ["ROOM_TOPIC"] = "Set or clear the topic description for a room",
         ["RESTART_SERVER"] = "Request a server restart via exit code 75",
+        ["CREATE_PR"] = "Push a task branch to GitHub and open a pull request",
+        ["POST_PR_REVIEW"] = "Post a review (approve, request changes, or comment) on a task's PR",
+        ["GET_PR_REVIEWS"] = "Retrieve all reviews on a task's pull request",
+        ["EXPORT_MEMORIES"] = "Export an agent's stored memories as structured JSON",
+        ["IMPORT_MEMORIES"] = "Import memories from a structured JSON array",
+        ["REBASE_TASK"] = "Rebase a task's feature branch onto develop",
+        ["REJECT_TASK"] = "Reject an approved or completed task back to ChangesRequested",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)

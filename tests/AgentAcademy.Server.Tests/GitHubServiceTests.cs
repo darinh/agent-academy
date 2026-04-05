@@ -173,4 +173,196 @@ public class GitHubServiceTests : IDisposable
         Assert.Contains("failed", ex.Message);
         Assert.Contains("something went wrong", ex.Message);
     }
+
+    // ── PostPrReviewAsync Tests ─────────────────────────────────
+
+    [Fact]
+    public async Task PostPrReviewAsync_Comment_RunsCorrectFlags()
+    {
+        var wrapper = CreateGhWrapper("");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        // Should not throw
+        await svc.PostPrReviewAsync(42, "Looks good", PrReviewAction.Comment);
+    }
+
+    [Fact]
+    public async Task PostPrReviewAsync_Approve_RunsCorrectFlags()
+    {
+        var wrapper = CreateGhWrapper("");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        await svc.PostPrReviewAsync(42, "Ship it", PrReviewAction.Approve);
+    }
+
+    [Fact]
+    public async Task PostPrReviewAsync_RequestChanges_RunsCorrectFlags()
+    {
+        var wrapper = CreateGhWrapper("");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        await svc.PostPrReviewAsync(42, "Please fix tests", PrReviewAction.RequestChanges);
+    }
+
+    [Fact]
+    public async Task PostPrReviewAsync_EmptyBody_Throws()
+    {
+        var wrapper = CreateGhWrapper("");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => svc.PostPrReviewAsync(42, "", PrReviewAction.Comment));
+    }
+
+    [Fact]
+    public async Task PostPrReviewAsync_Failure_Throws()
+    {
+        var wrapper = CreateGhWrapper("", exitCode: 1, stderr: "permission denied");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.PostPrReviewAsync(42, "LGTM", PrReviewAction.Comment));
+        Assert.Contains("permission denied", ex.Message);
+    }
+
+    // ── GetPrReviewsAsync Tests ─────────────────────────────────
+
+    [Fact]
+    public async Task GetPrReviewsAsync_ReturnsReviews()
+    {
+        var json = """
+        {
+            "reviews": [
+                {
+                    "author": {"login": "user1"},
+                    "body": "LGTM",
+                    "state": "APPROVED",
+                    "submittedAt": "2026-04-01T12:00:00Z"
+                },
+                {
+                    "author": {"login": "user2"},
+                    "body": "Please fix",
+                    "state": "CHANGES_REQUESTED",
+                    "submittedAt": "2026-04-01T13:00:00Z"
+                }
+            ]
+        }
+        """;
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var reviews = await svc.GetPrReviewsAsync(42);
+
+        Assert.Equal(2, reviews.Count);
+        Assert.Equal("user1", reviews[0].Author);
+        Assert.Equal("LGTM", reviews[0].Body);
+        Assert.Equal("APPROVED", reviews[0].State);
+        Assert.NotNull(reviews[0].SubmittedAt);
+        Assert.Equal("user2", reviews[1].Author);
+        Assert.Equal("CHANGES_REQUESTED", reviews[1].State);
+    }
+
+    [Fact]
+    public async Task GetPrReviewsAsync_NullAuthor_DefaultsToUnknown()
+    {
+        var json = """
+        {
+            "reviews": [
+                {
+                    "author": null,
+                    "body": "ghost review",
+                    "state": "COMMENTED"
+                }
+            ]
+        }
+        """;
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var reviews = await svc.GetPrReviewsAsync(42);
+
+        Assert.Single(reviews);
+        Assert.Equal("unknown", reviews[0].Author);
+    }
+
+    [Fact]
+    public async Task GetPrReviewsAsync_EmptyReviews_ReturnsEmptyList()
+    {
+        var json = """{"reviews": []}""";
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var reviews = await svc.GetPrReviewsAsync(42);
+
+        Assert.Empty(reviews);
+    }
+
+    [Fact]
+    public async Task GetPrReviewsAsync_NullSubmittedAt_ReturnsNull()
+    {
+        var json = """
+        {
+            "reviews": [
+                {
+                    "author": {"login": "user1"},
+                    "body": "draft",
+                    "state": "COMMENTED",
+                    "submittedAt": null
+                }
+            ]
+        }
+        """;
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var reviews = await svc.GetPrReviewsAsync(42);
+
+        Assert.Single(reviews);
+        Assert.Null(reviews[0].SubmittedAt);
+    }
+
+    [Fact]
+    public async Task GetPrReviewsAsync_MissingAuthor_DefaultsToUnknown()
+    {
+        var json = """
+        {
+            "reviews": [
+                {
+                    "body": "test",
+                    "state": "COMMENTED"
+                }
+            ]
+        }
+        """;
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var reviews = await svc.GetPrReviewsAsync(42);
+
+        Assert.Single(reviews);
+        Assert.Equal("unknown", reviews[0].Author);
+    }
+
+    [Fact]
+    public async Task GetPrReviewsAsync_NoReviewsProperty_ReturnsEmptyList()
+    {
+        var json = """{}""";
+        var wrapper = CreateGhWrapper(json);
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var reviews = await svc.GetPrReviewsAsync(42);
+
+        Assert.Empty(reviews);
+    }
+
+    [Fact]
+    public async Task GetPrReviewsAsync_Failure_Throws()
+    {
+        var wrapper = CreateGhWrapper("", exitCode: 1, stderr: "not found");
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.GetPrReviewsAsync(999));
+        Assert.Contains("not found", ex.Message);
+    }
 }

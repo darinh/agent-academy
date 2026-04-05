@@ -262,6 +262,30 @@ public static class HumanCommandRegistry
                 new("baseBranch", "Base branch", "text", "Target branch for the PR.",
                     Placeholder: "develop"),
             ]),
+
+        new("POST_PR_REVIEW", "Post PR review", "git",
+            "Post a review comment, approval, or change request on a task's pull request.",
+            "Posts a review on the task's GitHub PR. Supports APPROVE, REQUEST_CHANGES, and COMMENT actions. Only Planner, Reviewer, and Human roles can post reviews.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task whose PR to review.",
+                    Required: true),
+                new("body", "Review body", "text", "The review comment text.",
+                    Placeholder: "LGTM — tests pass and code is clean.", Required: true),
+                new("action", "Action", "text", "APPROVE, REQUEST_CHANGES, or COMMENT.",
+                    Placeholder: "COMMENT", DefaultValue: "COMMENT"),
+            ]),
+
+        new("GET_PR_REVIEWS", "Get PR reviews", "git",
+            "Retrieve all reviews on a task's pull request.",
+            "Fetches review history from GitHub including author, verdict, body, and timestamp. Useful for checking review status before merging.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task whose PR reviews to fetch.",
+                    Required: true),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

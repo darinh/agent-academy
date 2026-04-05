@@ -420,10 +420,65 @@ Creates a GitHub pull request for a task.
 
 `GitService.PushBranchAsync(branch)` runs `git push --set-upstream origin {branch}` under the git lock. This is used by `CREATE_PR` to push task branches before opening a PR.
 
+### `POST_PR_REVIEW` Command
+
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/PostPrReviewHandler.cs`
+
+Posts a review on a task's GitHub pull request.
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `taskId` | ✅ | — | Task whose PR to review |
+| `body` | ✅ | — | Review comment text |
+| `action` | — | `COMMENT` | `APPROVE`, `REQUEST_CHANGES`, or `COMMENT` |
+
+**Role gate**: Planner, Reviewer, or Human only. Engineers cannot self-review.
+
+**Workflow**:
+1. Validates role gate (Planner/Reviewer/Human)
+2. Validates `taskId` and `body` are present
+3. Validates `action` is a known value (if provided)
+4. Loads task and verifies it has a PR
+5. Checks GitHub is configured
+6. Posts review via `gh pr review {prNumber} {--approve|--request-changes|--comment} --body {body}`
+7. Posts a system status message to the task's room
+
+### `GET_PR_REVIEWS` Command
+
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/GetPrReviewsHandler.cs`
+
+Retrieves all reviews on a task's GitHub pull request.
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `taskId` | ✅ | — | Task whose PR reviews to fetch |
+
+**Role gate**: Assigned agent, Planner, Reviewer, or Human.
+
+**Workflow**:
+1. Validates `taskId` is present
+2. Loads task and verifies caller has access
+3. Verifies task has a PR
+4. Checks GitHub is configured
+5. Fetches reviews via `gh pr view {prNumber} --json reviews`
+6. Returns review list with author, body, state, and submittedAt
+
+**Result format**:
+```json
+{
+  "taskId": "task-abc",
+  "prNumber": 42,
+  "reviewCount": 2,
+  "reviews": [
+    { "author": "user1", "body": "LGTM", "state": "APPROVED", "submittedAt": "2026-04-01T12:00:00Z" }
+  ]
+}
+```
+
 ### Known Gaps (Phase 2)
 
 - ~~**No PR status sync**: Task PR status is set to `Open` on creation but not updated when the PR is reviewed, approved, or merged on GitHub. Needs webhook or polling.~~ — **resolved**: `PullRequestSyncService` polls GitHub every 2 minutes via `gh pr view --json reviewDecision`. Maps `REVIEW_REQUIRED` → `ReviewRequested`, `APPROVED` → `Approved`, `CHANGES_REQUESTED` → `ChangesRequested`, merged → `Merged`, closed → `Closed`. Emits `TaskPrStatusChanged` activity events. Skips tasks with terminal PR statuses. Error isolation per PR — one failure doesn't block others. 36 tests.
-- **No review comments**: Cannot post or read PR review comments from Agent Academy.
+- ~~**No review comments**: Cannot post or read PR review comments from Agent Academy.~~ — **resolved**: `POST_PR_REVIEW` command posts reviews (approve/request changes/comment) via `gh pr review`. `GET_PR_REVIEWS` command fetches review history via `gh pr view --json reviews`. `PullRequestReview` record (Author, Body, State, SubmittedAt). `PrReviewAction` enum. Role gates: POST restricted to Planner/Reviewer/Human; GET allows assigned agent too. Both registered in `HumanCommandRegistry` and `CommandController` allowlist. 40 new tests (1057 total).
 - **No PR merge via API**: `MERGE_TASK` still uses local squash-merge. Future: option to merge via GitHub API.
 - **No OAuth flow**: Relies on server-side `gh auth login`. A user-facing OAuth flow would enable self-service setup.
 
@@ -709,7 +764,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 ## Known Gaps
 
-- ~~**GitHub PR integration not implemented** — task model has PR fields but no API service exists~~ — **resolved**: `IGitHubService` / `GitHubService` wraps `gh` CLI for PR creation and status queries. `CREATE_PR` command pushes branch + opens PR + updates task entity. `PullRequestSyncService` polls for status changes every 2 minutes. `GET /api/github/status` reports auth status. Phase 2 gaps: no review comments, no PR merge via API, no OAuth flow.
+- ~~**GitHub PR integration not implemented** — task model has PR fields but no API service exists~~ — **resolved**: `IGitHubService` / `GitHubService` wraps `gh` CLI for PR creation, status queries, and review operations. `CREATE_PR` command pushes branch + opens PR + updates task entity. `POST_PR_REVIEW` posts reviews (approve/request changes/comment). `GET_PR_REVIEWS` fetches review history. `PullRequestSyncService` polls for status changes every 2 minutes. `GET /api/github/status` reports auth status. Phase 2 gaps: no PR merge via API, no OAuth flow.
 - ~~No remote push capability — all work is local-only~~ — **resolved**: `GitService.PushBranchAsync` pushes branches to remote origin. Used by `CREATE_PR` command.
 - ~~No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`~~ — **resolved**: `REJECT_TASK` handler supports `Approved` → `ChangesRequested` (simple status change + breakout reopen) and `Completed` → `ChangesRequested` (reverts merge commit on develop + breakout reopen). Role-gated to Planner, Reviewer, Human. 19 tests.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
@@ -721,6 +776,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-05 | PR review comments — POST_PR_REVIEW (approve/request changes/comment via `gh pr review`) and GET_PR_REVIEWS (fetch review history via `gh pr view --json reviews`). PullRequestReview record, PrReviewAction enum. Role gates: POST restricted to Planner/Reviewer/Human; GET allows assigned agent too. HumanCommandRegistry + CommandController allowlist. 40 new tests (1057 total). Resolves Phase 2 gap: "No review comments". | Anvil |
 | 2026-04-05 | GitHub PR integration (Phase 1) — IGitHubService/GitHubService via gh CLI. CREATE_PR command pushes branch + opens PR + updates task entity. GitService.PushBranchAsync. GET /api/github/status endpoint. HumanCommandRegistry + CommandController allowlist. 23 new tests (980 total). | Anvil |
 | 2026-04-04 | REBASE_TASK command + MERGE_TASK conflict reporting — rebase task branches onto develop with conflict detection, dry-run mode, MergeConflictException. MERGE_TASK now detects conflicting files on failure and suggests REBASE_TASK. 18 new tests (888 total). | Anvil |
 | 2026-04-04 | REJECT_TASK command — reverts Approved/Completed tasks to ChangesRequested, reverts merge commit for completed tasks, reopens breakout rooms. Role-gated to Planner/Reviewer/Human. 19 tests. | Anvil |
