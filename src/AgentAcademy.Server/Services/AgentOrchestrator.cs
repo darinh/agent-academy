@@ -734,7 +734,23 @@ public sealed class AgentOrchestrator
                     if (breakoutDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(agent.Id, breakoutDms.Select(m => m.Id).ToList());
                     var breakoutSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
-                    var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary);
+
+                    // Load task-filtered spec context for breakout
+                    string? breakoutSpecContext = null;
+                    var breakoutTaskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+                    if (breakoutTaskId is not null)
+                    {
+                        try
+                        {
+                            var specLinks = await runtime.GetSpecLinksForTaskAsync(breakoutTaskId);
+                            var linkedSectionIds = specLinks.Select(l => l.SpecSectionId);
+                            breakoutSpecContext = await _specManager.LoadSpecContextForTaskAsync(linkedSectionIds);
+                        }
+                        catch { /* non-critical: fall through with null spec context */ }
+                    }
+                    breakoutSpecContext ??= await _specManager.LoadSpecContextAsync();
+
+                    var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext);
                     response = await RunAgentAsync(agent, prompt, breakoutRoomId);
                 }
                 catch (Exception ex)
@@ -1079,8 +1095,24 @@ public sealed class AgentOrchestrator
                 if (fixDms.Count > 0)
                     await runtime.AcknowledgeDirectMessagesAsync(agent.Id, fixDms.Select(m => m.Id).ToList());
                 var fixSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
+
+                // Reuse spec context from the task linkage
+                string? fixSpecContext = null;
+                var fixTaskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+                if (fixTaskId is not null)
+                {
+                    try
+                    {
+                        var fixSpecLinks = await runtime.GetSpecLinksForTaskAsync(fixTaskId);
+                        fixSpecContext = await _specManager.LoadSpecContextForTaskAsync(
+                            fixSpecLinks.Select(l => l.SpecSectionId));
+                    }
+                    catch { /* non-critical */ }
+                }
+                fixSpecContext ??= await _specManager.LoadSpecContextAsync();
+
                 response = await RunAgentAsync(
-                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary),
+                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary, fixSpecContext),
                     breakoutRoomId);
             }
             catch { continue; }
@@ -1381,7 +1413,8 @@ public sealed class AgentOrchestrator
     private static string BuildBreakoutPrompt(AgentDefinition agent, BreakoutRoom br, int round,
         List<AgentMemory>? memories = null,
         List<Data.Entities.MessageEntity>? directMessages = null,
-        string? sessionSummary = null)
+        string? sessionSummary = null,
+        string? specContext = null)
     {
         // Note: agent.StartupPrompt is NOT included here — it's already sent
         // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
@@ -1427,6 +1460,14 @@ public sealed class AgentOrchestrator
 
         lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
         lines.Add($"Round: {round}");
+
+        if (specContext is not null)
+        {
+            lines.Add("");
+            lines.Add("=== PROJECT SPECIFICATIONS ===");
+            lines.Add("Sections marked with ★ are linked to your current task.");
+            lines.Add(specContext);
+        }
 
         if (br.Tasks.Count > 0)
         {
