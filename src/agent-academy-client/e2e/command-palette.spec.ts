@@ -28,10 +28,14 @@ test.describe("Command palette", () => {
     await expect(page).toHaveTitle(/Main Room/, { timeout: 10_000 });
 
     await page.keyboard.press("Control+k");
-    await expect(page.getByPlaceholder("Search commands…")).toBeVisible({ timeout: 5_000 });
+    const searchInput = page.getByPlaceholder("Search commands…");
+    await expect(searchInput).toBeVisible({ timeout: 5_000 });
 
-    await page.keyboard.press("Escape");
-    await expect(page.getByPlaceholder("Search commands…")).not.toBeVisible({ timeout: 3_000 });
+    // Press Escape ON the search input (not page.keyboard) to avoid a race where
+    // the 50ms focus setTimeout hasn't fired yet and the keydown lands on body,
+    // which is outside the container's onKeyDown handler.
+    await searchInput.press("Escape");
+    await expect(searchInput).not.toBeVisible({ timeout: 3_000 });
   });
 
   test("palette filters commands by search query", async ({ mockedPage: page }) => {
@@ -57,11 +61,15 @@ test.describe("Command palette", () => {
     await page.keyboard.press("Control+k");
     await expect(page.getByPlaceholder("Search commands…")).toBeVisible({ timeout: 5_000 });
 
-    // Blur the input first (the Ctrl+K handler skips when focused on INPUT)
-    await page.keyboard.press("Escape");
+    // Blur the search input so the App-level Ctrl+K handler doesn't skip it
+    // (it ignores keypresses when focus is on INPUT/TEXTAREA/SELECT elements)
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur?.());
+
+    // Close with second Ctrl+K
+    await page.keyboard.press("Control+k");
     await expect(page.getByPlaceholder("Search commands…")).not.toBeVisible({ timeout: 3_000 });
 
-    // Reopen
+    // Reopen with third Ctrl+K
     await page.keyboard.press("Control+k");
     await expect(page.getByPlaceholder("Search commands…")).toBeVisible({ timeout: 3_000 });
   });
