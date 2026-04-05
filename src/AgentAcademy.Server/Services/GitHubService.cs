@@ -74,7 +74,7 @@ public sealed class GitHubService : IGitHubService
     {
         var json = await RunGhAsync(
             "pr", "view", prNumber.ToString(),
-            "--json", "number,url,state,title,baseRefName,headRefName,mergedAt");
+            "--json", "number,url,state,title,baseRefName,headRefName,mergedAt,reviewDecision");
 
         return ParsePrJson(json);
     }
@@ -95,7 +95,12 @@ public sealed class GitHubService : IGitHubService
         var isMerged = root.TryGetProperty("mergedAt", out var mergedAt)
             && mergedAt.ValueKind != JsonValueKind.Null;
 
-        return new PullRequestInfo(number, url, state, title, baseBranch, headBranch, isMerged);
+        // reviewDecision is present in pr view but not pr create
+        string? reviewDecision = null;
+        if (root.TryGetProperty("reviewDecision", out var rd) && rd.ValueKind == JsonValueKind.String)
+            reviewDecision = rd.GetString();
+
+        return new PullRequestInfo(number, url, state, title, baseBranch, headBranch, isMerged, reviewDecision);
     }
 
     /// <summary>

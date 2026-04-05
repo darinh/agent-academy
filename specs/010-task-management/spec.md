@@ -422,7 +422,7 @@ Creates a GitHub pull request for a task.
 
 ### Known Gaps (Phase 2)
 
-- **No PR status sync**: Task PR status is set to `Open` on creation but not updated when the PR is reviewed, approved, or merged on GitHub. Needs webhook or polling.
+- ~~**No PR status sync**: Task PR status is set to `Open` on creation but not updated when the PR is reviewed, approved, or merged on GitHub. Needs webhook or polling.~~ — **resolved**: `PullRequestSyncService` polls GitHub every 2 minutes via `gh pr view --json reviewDecision`. Maps `REVIEW_REQUIRED` → `ReviewRequested`, `APPROVED` → `Approved`, `CHANGES_REQUESTED` → `ChangesRequested`, merged → `Merged`, closed → `Closed`. Emits `TaskPrStatusChanged` activity events. Skips tasks with terminal PR statuses. Error isolation per PR — one failure doesn't block others. 36 tests.
 - **No review comments**: Cannot post or read PR review comments from Agent Academy.
 - **No PR merge via API**: `MERGE_TASK` still uses local squash-merge. Future: option to merge via GitHub API.
 - **No OAuth flow**: Relies on server-side `gh auth login`. A user-facing OAuth flow would enable self-service setup.
@@ -709,7 +709,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 ## Known Gaps
 
-- ~~**GitHub PR integration not implemented** — task model has PR fields but no API service exists~~ — **resolved**: `IGitHubService` / `GitHubService` wraps `gh` CLI for PR creation. `CREATE_PR` command pushes branch + opens PR + updates task entity. `GET /api/github/status` reports auth status. 23 tests. Phase 2 gaps: no PR status sync, no review comments, no PR merge via API, no OAuth flow.
+- ~~**GitHub PR integration not implemented** — task model has PR fields but no API service exists~~ — **resolved**: `IGitHubService` / `GitHubService` wraps `gh` CLI for PR creation and status queries. `CREATE_PR` command pushes branch + opens PR + updates task entity. `PullRequestSyncService` polls for status changes every 2 minutes. `GET /api/github/status` reports auth status. Phase 2 gaps: no review comments, no PR merge via API, no OAuth flow.
 - ~~No remote push capability — all work is local-only~~ — **resolved**: `GitService.PushBranchAsync` pushes branches to remote origin. Used by `CREATE_PR` command.
 - ~~No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`~~ — **resolved**: `REJECT_TASK` handler supports `Approved` → `ChangesRequested` (simple status change + breakout reopen) and `Completed` → `ChangesRequested` (reverts merge commit on develop + breakout reopen). Role-gated to Planner, Reviewer, Human. 19 tests.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
