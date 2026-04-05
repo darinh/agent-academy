@@ -381,6 +381,131 @@ public sealed class CommandController : ControllerBase
             nameof(CommandStatus.Denied) => "denied",
             _ => "failed"
         };
+
+    /// <summary>
+    /// GET /api/commands/audit — paginated command audit log with optional filters.
+    /// </summary>
+    [HttpGet("audit")]
+    public async Task<IActionResult> GetAuditLog(
+        [FromQuery] string? agentId = null,
+        [FromQuery] string? command = null,
+        [FromQuery] string? status = null,
+        [FromQuery] int? hoursBack = null,
+        [FromQuery] int limit = 50,
+        [FromQuery] int offset = 0)
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+
+        if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
+            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760." });
+
+        limit = Math.Clamp(limit, 1, 200);
+        offset = Math.Max(offset, 0);
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        var query = db.CommandAudits.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(agentId))
+            query = query.Where(a => a.AgentId == agentId);
+
+        if (!string.IsNullOrWhiteSpace(command))
+            query = query.Where(a => a.Command == command.ToUpperInvariant());
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            // Normalize common casing variants
+            var normalized = status switch
+            {
+                var s when s.Equals("Success", StringComparison.OrdinalIgnoreCase) => "Success",
+                var s when s.Equals("Error", StringComparison.OrdinalIgnoreCase) => "Error",
+                var s when s.Equals("Denied", StringComparison.OrdinalIgnoreCase) => "Denied",
+                var s when s.Equals("Pending", StringComparison.OrdinalIgnoreCase) => "Pending",
+                _ => status
+            };
+            query = query.Where(a => a.Status == normalized);
+        }
+
+        if (hoursBack.HasValue)
+        {
+            var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
+            query = query.Where(a => a.Timestamp >= since);
+        }
+
+        var total = await query.CountAsync();
+
+        var records = await query
+            .OrderByDescending(a => a.Timestamp)
+            .Skip(offset)
+            .Take(limit)
+            .Select(a => new AuditLogEntry(
+                a.Id,
+                a.CorrelationId,
+                a.AgentId,
+                a.Source,
+                a.Command,
+                a.Status,
+                a.ErrorMessage,
+                a.ErrorCode,
+                a.RoomId,
+                a.Timestamp))
+            .ToListAsync();
+
+        return Ok(new AuditLogResponse(records, total, limit, offset));
+    }
+
+    /// <summary>
+    /// GET /api/commands/audit/stats — aggregate command execution statistics.
+    /// </summary>
+    [HttpGet("audit/stats")]
+    public async Task<IActionResult> GetAuditStats([FromQuery] int? hoursBack = null)
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+
+        if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
+            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760." });
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        var query = db.CommandAudits.AsNoTracking().AsQueryable();
+
+        if (hoursBack.HasValue)
+        {
+            var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
+            query = query.Where(a => a.Timestamp >= since);
+        }
+
+        var totalCommands = await query.CountAsync();
+
+        var byStatus = await query
+            .GroupBy(a => a.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var byAgent = await query
+            .GroupBy(a => a.AgentId)
+            .Select(g => new { AgentId = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .ToListAsync();
+
+        var byCommand = await query
+            .GroupBy(a => a.Command)
+            .Select(g => new { Command = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .Take(20)
+            .ToListAsync();
+
+        return Ok(new AuditStatsResponse(
+            TotalCommands: totalCommands,
+            ByStatus: byStatus.ToDictionary(x => x.Status, x => x.Count),
+            ByAgent: byAgent.ToDictionary(x => x.AgentId, x => x.Count),
+            ByCommand: byCommand.ToDictionary(x => x.Command, x => x.Count),
+            WindowHours: hoursBack));
+    }
 }
 
 public sealed record ExecuteCommandRequest(
@@ -396,3 +521,28 @@ public sealed record ExecuteCommandResponse(
     string CorrelationId,
     DateTime Timestamp,
     string ExecutedBy);
+
+public sealed record AuditLogEntry(
+    string Id,
+    string CorrelationId,
+    string AgentId,
+    string? Source,
+    string Command,
+    string Status,
+    string? ErrorMessage,
+    string? ErrorCode,
+    string? RoomId,
+    DateTime Timestamp);
+
+public sealed record AuditLogResponse(
+    List<AuditLogEntry> Records,
+    int Total,
+    int Limit,
+    int Offset);
+
+public sealed record AuditStatsResponse(
+    int TotalCommands,
+    Dictionary<string, int> ByStatus,
+    Dictionary<string, int> ByAgent,
+    Dictionary<string, int> ByCommand,
+    int? WindowHours);

@@ -70,6 +70,8 @@ public class SystemController : ControllerBase
                 "POST /api/tasks",
                 "POST /api/commands/execute",
                 "GET  /api/commands/:correlationId",
+                "GET  /api/commands/audit",
+                "GET  /api/commands/audit/stats",
                 "POST /api/rooms/:roomId/messages",
                 "POST /api/rooms/:roomId/human",
                 "POST /api/rooms/:roomId/phase",

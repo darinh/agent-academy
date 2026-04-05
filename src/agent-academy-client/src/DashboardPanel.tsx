@@ -15,11 +15,13 @@ import {
   MoneyRegular,
   ErrorCircleRegular,
   ClockRegular,
+  ClipboardTaskListLtrRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
 import RestartHistoryPanel from "./RestartHistoryPanel";
 import UsagePanel from "./UsagePanel";
 import ErrorsPanel from "./ErrorsPanel";
+import AuditLogPanel from "./AuditLogPanel";
 
 // ── Styles ──
 
@@ -297,6 +299,14 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           Agent Errors
         </div>
         <ErrorsPanel hoursBack={hoursBack} />
+      </div>
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <ClipboardTaskListLtrRegular style={{ fontSize: 20 }} />
+          Command Audit Log
+        </div>
+        <AuditLogPanel hoursBack={hoursBack} />
       </div>
 
       <div className={s.section}>

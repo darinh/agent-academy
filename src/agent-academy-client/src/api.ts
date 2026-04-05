@@ -632,6 +632,60 @@ export function getCommandMetadata(): Promise<CommandMetadata[]> {
   return request<CommandMetadata[]>(apiUrl("/api/commands/metadata"));
 }
 
+// ── Command Audit Log ──────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string;
+  correlationId: string;
+  agentId: string;
+  source: string | null;
+  command: string;
+  status: string;
+  errorMessage: string | null;
+  errorCode: string | null;
+  roomId: string | null;
+  timestamp: string;
+}
+
+export interface AuditLogResponse {
+  records: AuditLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AuditStatsResponse {
+  totalCommands: number;
+  byStatus: Record<string, number>;
+  byAgent: Record<string, number>;
+  byCommand: Record<string, number>;
+  windowHours: number | null;
+}
+
+export function getAuditLog(opts: {
+  agentId?: string;
+  command?: string;
+  status?: string;
+  hoursBack?: number;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<AuditLogResponse> {
+  const params = new URLSearchParams();
+  if (opts.agentId) params.set("agentId", opts.agentId);
+  if (opts.command) params.set("command", opts.command);
+  if (opts.status) params.set("status", opts.status);
+  if (opts.hoursBack != null) params.set("hoursBack", String(opts.hoursBack));
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.offset != null) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return request<AuditLogResponse>(apiUrl(`/api/commands/audit${qs ? `?${qs}` : ""}`));
+}
+
+export function getAuditStats(hoursBack?: number): Promise<AuditStatsResponse> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<AuditStatsResponse>(apiUrl(`/api/commands/audit/stats${qs}`));
+}
+
 export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {
   return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}/name`), {
     method: "PUT",

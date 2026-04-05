@@ -627,7 +627,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - **Error recovery**: The spec describes idempotent mutations but doesn't define retry semantics (exponential backoff? max retries? circuit breaker?). Structured error codes (`errorCode` field) now enable agents to make programmatic retry/skip decisions based on error category.
 - **Rate limiting**: Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
-- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette (Cmd+K) implemented with search, keyboard navigation, and inline execution. Task panel enhancements still planned.
+- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette (Cmd+K) implemented with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard shows execution stats (total, success, error, denied), breakdowns by agent and command, and paginated recent command records. Task panel enhancements still planned.
 - **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
 
 ## Discord Agent Question Bridge
@@ -662,6 +662,7 @@ Discord Server
 
 | Date | Change | Task | Commit |
 |------|--------|------|--------|
+| 2026-04-05 | Command audit log: `GET /api/commands/audit` (paginated, filterable) and `GET /api/commands/audit/stats` (aggregates by status/agent/command). AuditLogPanel on Dashboard. 15 backend + 19 frontend tests. | command-audit-log | — |
 | 2026-03-28 | Initial spec from agent team feature request v3 | agent-command-system | — |
 | 2026-03-28 | Implemented Phase 1A: envelope, parser, pipeline, authorization, audit, read handlers (LIST_ROOMS, LIST_AGENTS, LIST_TASKS, READ_FILE, SEARCH_CODE), memory handlers (REMEMBER, RECALL, LIST_MEMORIES, FORGET) | command-system-phase1 | `63b596c` |
 | 2026-03-28 | Added command reference to agent startup prompts | command-discoverability | `6117b4e` |

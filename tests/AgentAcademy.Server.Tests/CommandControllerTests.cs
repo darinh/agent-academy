@@ -205,6 +205,288 @@ public sealed class CommandControllerTests : IDisposable
         Assert.Equal("GIT_LOG", commands[0].Command);
     }
 
+    // ── Audit Log Endpoint Tests ─────────────────────────────────────────
+
+    [Fact]
+    public async Task GetAuditLog_ReturnsEmptyWhenNoAudits()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.Empty(response.Records);
+        Assert.Equal(0, response.Total);
+    }
+
+    [Fact]
+    public async Task GetAuditLog_ReturnsRecordsAfterCommandExecution()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        await controller.Execute(new ExecuteCommandRequest("LIST_ROOMS", null));
+
+        var result = await controller.GetAuditLog();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.Single(response.Records);
+        Assert.Equal("LIST_ROOMS", response.Records[0].Command);
+        Assert.Equal("human", response.Records[0].AgentId);
+        Assert.Equal("Success", response.Records[0].Status);
+        Assert.Equal(1, response.Total);
+    }
+
+    [Fact]
+    public async Task GetAuditLog_FiltersbyAgentId()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(agentId: "architect");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.All(response.Records, r => Assert.Equal("architect", r.AgentId));
+        Assert.True(response.Total > 0);
+    }
+
+    [Fact]
+    public async Task GetAuditLog_FiltersByCommand()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(command: "READ_FILE");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.All(response.Records, r => Assert.Equal("READ_FILE", r.Command));
+    }
+
+    [Fact]
+    public async Task GetAuditLog_FiltersByStatus()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(status: "Error");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.All(response.Records, r => Assert.Equal("Error", r.Status));
+    }
+
+    [Fact]
+    public async Task GetAuditLog_StatusFilterIsCaseInsensitive()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(status: "error");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.All(response.Records, r => Assert.Equal("Error", r.Status));
+        Assert.True(response.Total > 0, "Case-insensitive status should find Error records");
+    }
+
+    [Fact]
+    public async Task GetAuditLog_FiltersByHoursBack()
+    {
+        await SeedAuditRecords(includeOld: true);
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(hoursBack: 1);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        // Old record (48h ago) should be excluded
+        Assert.All(response.Records, r => Assert.True(
+            (DateTime.UtcNow - r.Timestamp).TotalHours < 2));
+    }
+
+    [Fact]
+    public async Task GetAuditLog_PaginatesCorrectly()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(limit: 2, offset: 0);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        Assert.Equal(2, response.Records.Count);
+        Assert.Equal(2, response.Limit);
+        Assert.Equal(0, response.Offset);
+        Assert.True(response.Total >= 3); // we seed at least 3
+    }
+
+    [Fact]
+    public async Task GetAuditLog_InvalidHoursBack_ReturnsBadRequest()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog(hoursBack: 0);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetAuditLog_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"), authenticated: false);
+
+        var result = await controller.GetAuditLog();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetAuditLog_OrdersNewestFirst()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditLog();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<AuditLogResponse>(ok.Value);
+        for (var i = 1; i < response.Records.Count; i++)
+        {
+            Assert.True(response.Records[i - 1].Timestamp >= response.Records[i].Timestamp,
+                "Records should be ordered newest-first");
+        }
+    }
+
+    // ── Audit Stats Endpoint Tests ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetAuditStats_ReturnsZerosWhenEmpty()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditStats();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var stats = Assert.IsType<AuditStatsResponse>(ok.Value);
+        Assert.Equal(0, stats.TotalCommands);
+        Assert.Empty(stats.ByStatus);
+        Assert.Empty(stats.ByAgent);
+        Assert.Empty(stats.ByCommand);
+    }
+
+    [Fact]
+    public async Task GetAuditStats_ReturnsCorrectAggregates()
+    {
+        await SeedAuditRecords();
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditStats();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var stats = Assert.IsType<AuditStatsResponse>(ok.Value);
+        Assert.True(stats.TotalCommands >= 3);
+        Assert.True(stats.ByStatus.ContainsKey("Success"));
+        Assert.True(stats.ByAgent.ContainsKey("architect"));
+        Assert.True(stats.ByCommand.ContainsKey("READ_FILE"));
+    }
+
+    [Fact]
+    public async Task GetAuditStats_FiltersByHoursBack()
+    {
+        await SeedAuditRecords(includeOld: true);
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var resultAll = await controller.GetAuditStats();
+        var resultRecent = await controller.GetAuditStats(hoursBack: 1);
+
+        var allOk = Assert.IsType<OkObjectResult>(resultAll);
+        var allStats = Assert.IsType<AuditStatsResponse>(allOk.Value);
+        var recentOk = Assert.IsType<OkObjectResult>(resultRecent);
+        var recentStats = Assert.IsType<AuditStatsResponse>(recentOk.Value);
+
+        Assert.True(allStats.TotalCommands > recentStats.TotalCommands,
+            "All-time should include more records than recent-only");
+    }
+
+    [Fact]
+    public async Task GetAuditStats_WhenUnauthenticated_ReturnsUnauthorized()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"), authenticated: false);
+
+        var result = await controller.GetAuditStats();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetAuditStats_InvalidHoursBack_ReturnsBadRequest()
+    {
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+
+        var result = await controller.GetAuditStats(hoursBack: -5);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    private async Task SeedAuditRecords(bool includeOld = false)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        db.CommandAudits.AddRange(
+            new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = $"cmd-{Guid.NewGuid():N}",
+                AgentId = "architect",
+                Command = "READ_FILE",
+                ArgsJson = """{"path":"src/main.cs"}""",
+                Status = "Success",
+                Timestamp = DateTime.UtcNow.AddMinutes(-5)
+            },
+            new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = $"cmd-{Guid.NewGuid():N}",
+                AgentId = "architect",
+                Command = "SEARCH_CODE",
+                ArgsJson = """{"query":"TODO"}""",
+                Status = "Success",
+                Timestamp = DateTime.UtcNow.AddMinutes(-10)
+            },
+            new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = $"cmd-{Guid.NewGuid():N}",
+                AgentId = "coder",
+                Command = "RUN_BUILD",
+                ArgsJson = "{}",
+                Status = "Error",
+                ErrorMessage = "Build failed",
+                ErrorCode = "EXECUTION",
+                Timestamp = DateTime.UtcNow.AddMinutes(-15)
+            });
+
+        if (includeOld)
+        {
+            db.CommandAudits.Add(new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = $"cmd-{Guid.NewGuid():N}",
+                AgentId = "reviewer",
+                Command = "READ_FILE",
+                ArgsJson = """{"path":"old.txt"}""",
+                Status = "Success",
+                Timestamp = DateTime.UtcNow.AddHours(-48)
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
     private CommandController CreateController(ICommandHandler handler, bool authenticated = true) =>
         CreateController(new[] { handler }, authenticated);
 
