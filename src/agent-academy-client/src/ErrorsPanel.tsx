@@ -17,6 +17,7 @@ import {
   type ErrorSummary,
   type ErrorRecord,
 } from "./api";
+import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
 
 // ── Styles ──
 
@@ -179,6 +180,31 @@ const useLocalStyles = makeStyles({
     gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
     gap: "16px",
   },
+  cbRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    ...shorthands.padding("12px", "16px"),
+    ...shorthands.borderRadius("14px"),
+    border: "1px solid rgba(214, 188, 149, 0.10)",
+    backgroundColor: "rgba(255, 255, 255, 0.025)",
+  },
+  cbDot: {
+    width: "10px",
+    height: "10px",
+    ...shorthands.borderRadius("50%"),
+    flexShrink: 0,
+  },
+  cbLabel: {
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
+  },
+  cbDetail: {
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+    marginLeft: "auto",
+  },
 });
 
 // ── Helpers ──
@@ -211,15 +237,49 @@ function formatTimestamp(iso: string): string {
   });
 }
 
+export function circuitBreakerDisplay(state: CircuitBreakerState): {
+  color: string;
+  label: string;
+  detail: string;
+} {
+  switch (state) {
+    case "Open":
+      return {
+        color: "#f85149",
+        label: "Circuit Open",
+        detail: "Agent requests are blocked. Waiting for cooldown before probing.",
+      };
+    case "HalfOpen":
+      return {
+        color: "#ffbe70",
+        label: "Circuit Half-Open",
+        detail: "Probing with a single request to test if the backend has recovered.",
+      };
+    case "Closed":
+      return {
+        color: "#48d67a",
+        label: "Circuit Closed",
+        detail: "All systems normal.",
+      };
+    default:
+      return {
+        color: "var(--aa-muted)",
+        label: "Unknown",
+        detail: "Circuit breaker state is unavailable.",
+      };
+  }
+}
+
 const RECORDS_PAGE = 15;
 
 // ── Component ──
 
 interface ErrorsPanelProps {
   hoursBack?: number;
+  circuitBreakerState?: CircuitBreakerState;
 }
 
-export default function ErrorsPanel({ hoursBack }: ErrorsPanelProps) {
+export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPanelProps) {
   const s = useLocalStyles();
   const [summary, setSummary] = useState<ErrorSummary | null>(null);
   const [records, setRecords] = useState<ErrorRecord[]>([]);
@@ -292,8 +352,16 @@ export default function ErrorsPanel({ hoursBack }: ErrorsPanelProps) {
 
   // Zero errors — show clean state
   if (summary && summary.totalErrors === 0 && records.length === 0) {
+    const cbInfo = circuitBreakerState ? circuitBreakerDisplay(circuitBreakerState) : null;
     return (
       <div className={s.root}>
+        {cbInfo && circuitBreakerState !== "Closed" && (
+          <div className={s.cbRow} data-testid="circuit-breaker-status">
+            <span className={s.cbDot} style={{ backgroundColor: cbInfo.color }} />
+            <span className={s.cbLabel}>{cbInfo.label}</span>
+            <span className={s.cbDetail}>{cbInfo.detail}</span>
+          </div>
+        )}
         <div className={s.emptyNote}>
           <CheckmarkCircleRegular style={{ fontSize: 20, color: "#48d67a", marginRight: 6 }} />
           No errors recorded. All agents operating normally.
@@ -302,8 +370,18 @@ export default function ErrorsPanel({ hoursBack }: ErrorsPanelProps) {
     );
   }
 
+  const cbInfo = circuitBreakerState ? circuitBreakerDisplay(circuitBreakerState) : null;
+
   return (
     <div className={s.root}>
+      {cbInfo && (
+        <div className={s.cbRow} data-testid="circuit-breaker-status">
+          <span className={s.cbDot} style={{ backgroundColor: cbInfo.color }} />
+          <span className={s.cbLabel}>{cbInfo.label}</span>
+          <span className={s.cbDetail}>{cbInfo.detail}</span>
+        </div>
+      )}
+
       {summaryError && (
         <div className={s.error}>{summaryError}</div>
       )}

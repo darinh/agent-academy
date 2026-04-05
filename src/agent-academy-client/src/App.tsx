@@ -39,6 +39,8 @@ import AgentSessionPanel from "./AgentSessionPanel";
 import CommandsPanel from "./CommandsPanel";
 import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
+import CircuitBreakerBanner from "./CircuitBreakerBanner";
+import { useCircuitBreakerPolling } from "./useCircuitBreakerPolling";
 import {
   getCopilotStatusCopy,
   hasDisplayUser,
@@ -114,6 +116,8 @@ function AppShell() {
     handleSendMessage,
     handlePhaseTransition,
   } = useWorkspace();
+
+  const { circuitBreakerState } = useCircuitBreakerPolling();
 
   // Per-room thinking sets for sidebar; per-active-room set for other uses
   const thinkingByRoomIds = useMemo(() => {
@@ -423,6 +427,8 @@ function AppShell() {
         </div>
       )}
 
+      <CircuitBreakerBanner state={circuitBreakerState} />
+
       {showProjectSelector ? (
         <ProjectSelectorPage
           onProjectSelected={handleProjectSelected}
@@ -466,6 +472,11 @@ function AppShell() {
                       <div className={mergeClasses(s.workspaceSignal, workspaceLimited && s.workspaceSignalWarning)}>
                         {workspaceLimited ? degradedCopy?.eyebrow ?? "Limited mode" : "Copilot ready"}
                       </div>
+                      {circuitBreakerState && circuitBreakerState !== "Closed" && (
+                        <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
+                          Circuit {circuitBreakerState === "Open" ? "open" : "probing"}
+                        </div>
+                      )}
                       <div className={s.workspaceSignal}>{connectionLabel}</div>
                     </div>
                   </div>
@@ -646,7 +657,7 @@ function AppShell() {
                     <TimelinePanel activity={activity} />
                   )}
                   {tab === "dashboard" && (
-                    <DashboardPanel overview={ov} />
+                    <DashboardPanel overview={ov} circuitBreakerState={circuitBreakerState} />
                   )}
                   {tab === "overview" && (
                     <WorkspaceOverviewPanel

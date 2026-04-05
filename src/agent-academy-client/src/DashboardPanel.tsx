@@ -18,6 +18,7 @@ import {
   ClipboardTaskListLtrRegular,
 } from "@fluentui/react-icons";
 import type { CollaborationPhase, WorkspaceOverview } from "./api";
+import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
 import RestartHistoryPanel from "./RestartHistoryPanel";
 import UsagePanel from "./UsagePanel";
 import ErrorsPanel from "./ErrorsPanel";
@@ -191,9 +192,10 @@ function saveTimeRange(v: TimeRange) {
 
 interface DashboardPanelProps {
   overview: WorkspaceOverview;
+  circuitBreakerState?: CircuitBreakerState;
 }
 
-export default function DashboardPanel({ overview }: DashboardPanelProps) {
+export default function DashboardPanel({ overview, circuitBreakerState }: DashboardPanelProps) {
   const s = useLocalStyles();
   const [hoursBack, setHoursBack] = useState<TimeRange>(loadTimeRange);
 
@@ -298,7 +300,7 @@ export default function DashboardPanel({ overview }: DashboardPanelProps) {
           <ErrorCircleRegular style={{ fontSize: 20 }} />
           Agent Errors
         </div>
-        <ErrorsPanel hoursBack={hoursBack} />
+        <ErrorsPanel hoursBack={hoursBack} circuitBreakerState={circuitBreakerState} />
       </div>
 
       <div className={s.section}>

@@ -219,6 +219,22 @@ When an agent is in the thinking state (populated via SignalR events), a spinnin
 
 Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear correctly across all room cards — not just the selected room.
 
+### Circuit Breaker Indicator (`CircuitBreakerBanner.tsx` + `useCircuitBreakerPolling.ts`)
+
+The frontend monitors the Copilot circuit breaker state (see spec 003) and surfaces degradation to the operator.
+
+**Polling hook (`useCircuitBreakerPolling.ts`):**
+- Polls `GET /api/health/instance` for `circuitBreakerState` field
+- Adaptive intervals: 60s when Closed (normal), 10s when Open/HalfOpen (degraded)
+- Request ID guard prevents stale responses from overwriting current state
+- Pauses polling when `document.visibilityState === "hidden"`, resumes on tab focus
+- Exports: `useCircuitBreakerPolling()` hook, `CircuitBreakerState` type, `isDegraded()`, `parseCircuitBreakerState()`
+
+**Visual indicators (three locations):**
+1. **Floating banner** (`CircuitBreakerBanner.tsx`): Fixed-position banner at top center, visible when state is Open or HalfOpen. Uses `role="alert"` + `aria-live="assertive"`. Open state: red gradient, "Agent requests are temporarily blocked". HalfOpen state: amber gradient, "Testing backend recovery with a probe request".
+2. **Header signal chip** (`App.tsx`): Inline chip in the workspace header signals row. Shows "Circuit open" or "Circuit probing" with warning styling. Hidden when Closed.
+3. **ErrorsPanel status row**: Color-coded dot + label + detail text. Shows all states including Closed (green). Appears above error summary stats in the dashboard.
+
 ## Future Work
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)

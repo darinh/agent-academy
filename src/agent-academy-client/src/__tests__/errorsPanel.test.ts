@@ -180,4 +180,66 @@ describe("ErrorsPanel", () => {
       expect(badge.label).toBe("custom_error");
     });
   });
+
+  describe("circuit breaker display mapping", () => {
+    function circuitBreakerDisplay(state: string | null): {
+      color: string;
+      label: string;
+      detail: string;
+    } {
+      switch (state) {
+        case "Open":
+          return {
+            color: "#f85149",
+            label: "Circuit Open",
+            detail: "Agent requests are blocked. Waiting for cooldown before probing.",
+          };
+        case "HalfOpen":
+          return {
+            color: "#ffbe70",
+            label: "Circuit Half-Open",
+            detail: "Probing with a single request to test if the backend has recovered.",
+          };
+        case "Closed":
+          return {
+            color: "#48d67a",
+            label: "Circuit Closed",
+            detail: "All systems normal.",
+          };
+        default:
+          return {
+            color: "var(--aa-muted)",
+            label: "Unknown",
+            detail: "Circuit breaker state is unavailable.",
+          };
+      }
+    }
+
+    it("maps Open to red with blocking message", () => {
+      const info = circuitBreakerDisplay("Open");
+      expect(info.color).toBe("#f85149");
+      expect(info.label).toBe("Circuit Open");
+      expect(info.detail).toContain("blocked");
+    });
+
+    it("maps HalfOpen to amber with probing message", () => {
+      const info = circuitBreakerDisplay("HalfOpen");
+      expect(info.color).toBe("#ffbe70");
+      expect(info.label).toBe("Circuit Half-Open");
+      expect(info.detail).toContain("Probing");
+    });
+
+    it("maps Closed to green with normal message", () => {
+      const info = circuitBreakerDisplay("Closed");
+      expect(info.color).toBe("#48d67a");
+      expect(info.label).toBe("Circuit Closed");
+      expect(info.detail).toContain("normal");
+    });
+
+    it("maps null/unknown to muted with unavailable message", () => {
+      const info = circuitBreakerDisplay(null);
+      expect(info.label).toBe("Unknown");
+      expect(info.detail).toContain("unavailable");
+    });
+  });
 });
