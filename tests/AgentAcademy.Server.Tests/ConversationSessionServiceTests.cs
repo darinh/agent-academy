@@ -374,4 +374,185 @@ public class ConversationSessionServiceTests : IDisposable
         Assert.Equal(4, sessions[3].SequenceNumber);
         Assert.Equal("Active", sessions[3].Status);
     }
+
+    // ── ArchiveAllActiveSessionsAsync ──
+
+    [Fact]
+    public async Task ArchiveAll_ReturnsZeroWhenNoActiveSessions()
+    {
+        var count = await _service.ArchiveAllActiveSessionsAsync();
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task ArchiveAll_ArchivesEmptySessionWithoutSummary()
+    {
+        await _service.GetOrCreateActiveSessionAsync("room-1");
+
+        var count = await _service.ArchiveAllActiveSessionsAsync();
+
+        Assert.Equal(1, count);
+        var session = await _db.ConversationSessions.FirstAsync(s => s.RoomId == "room-1");
+        Assert.Equal("Archived", session.Status);
+        Assert.Null(session.Summary);
+        Assert.NotNull(session.ArchivedAt);
+    }
+
+    [Fact]
+    public async Task ArchiveAll_SummarizesSessionsWithMessages()
+    {
+        await SeedRoomAsync("room-1");
+        var session = await _service.GetOrCreateActiveSessionAsync("room-1");
+
+        // Add messages
+        for (int i = 0; i < 3; i++)
+        {
+            await _service.IncrementMessageCountAsync(session.Id);
+            _db.Messages.Add(new MessageEntity
+            {
+                Id = Guid.NewGuid().ToString(),
+                RoomId = "room-1",
+                SessionId = session.Id,
+                SenderId = "agent-1",
+                SenderName = "TestAgent",
+                SenderKind = "Agent",
+                Kind = "Response",
+                Content = $"Message {i}",
+                SentAt = DateTime.UtcNow,
+            });
+        }
+        await _db.SaveChangesAsync();
+
+        _executor.IsFullyOperational.Returns(true);
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(),
+            Arg.Any<string>(),
+            Arg.Is<string?>(x => x == null),
+            Arg.Any<CancellationToken>())
+            .Returns("LLM summary of workspace.");
+
+        var count = await _service.ArchiveAllActiveSessionsAsync();
+
+        Assert.Equal(1, count);
+        var archived = await _db.ConversationSessions.FindAsync(session.Id);
+        Assert.Equal("Archived", archived!.Status);
+        Assert.Equal("LLM summary of workspace.", archived.Summary);
+        Assert.NotNull(archived.ArchivedAt);
+    }
+
+    [Fact]
+    public async Task ArchiveAll_ArchivesMultipleRooms()
+    {
+        var s1 = await _service.GetOrCreateActiveSessionAsync("room-1");
+        var s2 = await _service.GetOrCreateActiveSessionAsync("room-2");
+        var s3 = await _service.GetOrCreateActiveSessionAsync("room-3");
+
+        var count = await _service.ArchiveAllActiveSessionsAsync();
+
+        Assert.Equal(3, count);
+        var all = await _db.ConversationSessions.ToListAsync();
+        Assert.All(all, s => Assert.Equal("Archived", s.Status));
+    }
+
+    [Fact]
+    public async Task ArchiveAll_DoesNotCreateReplacementSessions()
+    {
+        await _service.GetOrCreateActiveSessionAsync("room-1");
+        await _service.GetOrCreateActiveSessionAsync("room-2");
+
+        await _service.ArchiveAllActiveSessionsAsync();
+
+        var activeSessions = await _db.ConversationSessions
+            .Where(s => s.Status == "Active")
+            .CountAsync();
+        Assert.Equal(0, activeSessions);
+    }
+
+    [Fact]
+    public async Task ArchiveAll_SummaryAvailableViaGetSessionContext()
+    {
+        await SeedRoomAsync("room-1");
+        var session = await _service.GetOrCreateActiveSessionAsync("room-1");
+
+        await _service.IncrementMessageCountAsync(session.Id);
+        _db.Messages.Add(new MessageEntity
+        {
+            Id = Guid.NewGuid().ToString(),
+            RoomId = "room-1",
+            SessionId = session.Id,
+            SenderId = "agent-1",
+            SenderName = "Agent",
+            SenderKind = "Agent",
+            Kind = "Response",
+            Content = "Important context",
+            SentAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        _executor.IsFullyOperational.Returns(true);
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(),
+            Arg.Any<string>(),
+            Arg.Is<string?>(x => x == null),
+            Arg.Any<CancellationToken>())
+            .Returns("Resume context: important decisions were made.");
+
+        await _service.ArchiveAllActiveSessionsAsync();
+
+        // The summary should be retrievable for session resume
+        var summary = await _service.GetSessionContextAsync("room-1");
+        Assert.Equal("Resume context: important decisions were made.", summary);
+    }
+
+    [Fact]
+    public async Task ArchiveAll_FallbackWhenExecutorOffline()
+    {
+        await SeedRoomAsync("room-1");
+        var session = await _service.GetOrCreateActiveSessionAsync("room-1");
+
+        await _service.IncrementMessageCountAsync(session.Id);
+        _db.Messages.Add(new MessageEntity
+        {
+            Id = Guid.NewGuid().ToString(),
+            RoomId = "room-1",
+            SessionId = session.Id,
+            SenderId = "agent-1",
+            SenderName = "TestAgent",
+            SenderKind = "Agent",
+            Kind = "Response",
+            Content = "msg",
+            SentAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        _executor.IsFullyOperational.Returns(false);
+
+        await _service.ArchiveAllActiveSessionsAsync();
+
+        var archived = await _db.ConversationSessions.FindAsync(session.Id);
+        Assert.Equal("Archived", archived!.Status);
+        Assert.Contains("TestAgent", archived.Summary);
+    }
+
+    [Fact]
+    public async Task ArchiveAll_IgnoresAlreadyArchivedSessions()
+    {
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "already-archived",
+            RoomId = "room-1",
+            RoomType = "Main",
+            SequenceNumber = 1,
+            Status = "Archived",
+            Summary = "Old summary",
+            ArchivedAt = DateTime.UtcNow.AddHours(-1),
+        });
+        await _db.SaveChangesAsync();
+
+        var count = await _service.ArchiveAllActiveSessionsAsync();
+
+        Assert.Equal(0, count);
+        var session = await _db.ConversationSessions.FindAsync("already-archived");
+        Assert.Equal("Old summary", session!.Summary);
+    }
 }

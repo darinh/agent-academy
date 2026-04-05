@@ -18,6 +18,7 @@ public class WorkspaceController : ControllerBase
     private readonly WorkspaceRuntime _runtime;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
+    private readonly ConversationSessionService _sessionService;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceController> _logger;
 
@@ -26,6 +27,7 @@ public class WorkspaceController : ControllerBase
         WorkspaceRuntime runtime,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
+        ConversationSessionService sessionService,
         AgentAcademyDbContext db,
         ILogger<WorkspaceController> logger)
     {
@@ -33,6 +35,7 @@ public class WorkspaceController : ControllerBase
         _runtime = runtime;
         _orchestrator = orchestrator;
         _executor = executor;
+        _sessionService = sessionService;
         _db = db;
         _logger = logger;
     }
@@ -78,13 +81,28 @@ public class WorkspaceController : ControllerBase
             var scan = _scanner.ScanProject(resolved);
             var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
 
-            // On workspace switch: clear agent sessions and set up rooms for new project
+            // On workspace switch: archive sessions with summaries, then clear SDK state
             if (previousWorkspace != scan.Path)
             {
+                // Archive active conversation sessions with LLM summaries so agents
+                // can resume context when the user returns to this project
+                try
+                {
+                    var archived = await _sessionService.ArchiveAllActiveSessionsAsync();
+                    if (archived > 0)
+                        _logger.LogInformation(
+                            "Archived {Count} conversation sessions before workspace switch", archived);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to archive sessions before workspace switch — sessions will be lost");
+                }
+
                 await _executor.InvalidateAllSessionsAsync();
                 await _runtime.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
                 _logger.LogInformation(
-                    "Switched workspace from '{Previous}' to '{Current}' — sessions cleared, default room ensured",
+                    "Switched workspace from '{Previous}' to '{Current}' — sessions archived and cleared, default room ensured",
                     previousWorkspace ?? "(none)", scan.Path);
             }
 

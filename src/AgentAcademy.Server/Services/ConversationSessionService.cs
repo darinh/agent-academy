@@ -134,6 +134,62 @@ public sealed class ConversationSessionService
             .FirstOrDefaultAsync();
     }
 
+    /// <summary>
+    /// Archives all active conversation sessions with LLM summaries.
+    /// Called before workspace switch so agents can resume context when
+    /// the user returns to this project. Empty sessions (no messages)
+    /// are archived without summaries since there's nothing to preserve.
+    /// Does NOT create replacement Active sessions — they'll be created
+    /// on demand when the user returns to this workspace.
+    /// Each session is saved independently so partial progress is preserved
+    /// if an error occurs mid-archival.
+    /// </summary>
+    public async Task<int> ArchiveAllActiveSessionsAsync()
+    {
+        var activeSessions = await _db.ConversationSessions
+            .Where(s => s.Status == "Active")
+            .ToListAsync();
+
+        if (activeSessions.Count == 0) return 0;
+
+        var archived = 0;
+        foreach (var session in activeSessions)
+        {
+            try
+            {
+                if (session.MessageCount > 0)
+                {
+                    var summary = await GenerateSummaryAsync(session, session.RoomType);
+                    session.Summary = summary;
+                    _logger.LogInformation(
+                        "Archived session {SessionId} for room {RoomId} with summary ({MsgCount} messages)",
+                        session.Id, session.RoomId, session.MessageCount);
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Archived empty session {SessionId} for room {RoomId}",
+                        session.Id, session.RoomId);
+                }
+
+                session.Status = "Archived";
+                session.ArchivedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                archived++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to archive session {SessionId} for room {RoomId} — skipping",
+                    session.Id, session.RoomId);
+            }
+        }
+
+        _logger.LogInformation("Archived {Count}/{Total} active sessions for workspace switch",
+            archived, activeSessions.Count);
+        return archived;
+    }
+
     private async Task RotateSessionAsync(
         ConversationSessionEntity currentSession, string roomId, string roomType)
     {

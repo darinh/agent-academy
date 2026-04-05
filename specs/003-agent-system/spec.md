@@ -185,7 +185,7 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 - **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy.
 - ~~**No token/usage tracking**~~ — **Resolved**: `LlmUsageTracker` captures `AssistantUsageEvent` from the Copilot SDK on every LLM call (including session priming). Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. Room-level aggregation via `GET /api/rooms/{id}/usage`, per-agent breakdown via `/usage/agents`, individual records via `/usage/records`. Global usage via `GET /api/usage` with optional `hoursBack` filter.
 - ~~**No tool calling**~~ — **Resolved**: SDK tool calling is wired up via `AgentToolRegistry` and `AgentToolFunctions`. See "SDK Tool Calling" section below.
-- **No per-project session resume**: Sessions are cleared on project switch. If a user returns to a previous project, agents start fresh — they don't resume their prior conversation context.
+- ~~**No per-project session resume**~~ — **Resolved**: On workspace switch, `ConversationSessionService.ArchiveAllActiveSessionsAsync()` summarizes all active conversation sessions via LLM before clearing SDK sessions. When the user returns, `GetSessionContextAsync()` retrieves the archived summary and the orchestrator injects it into agent prompts for continuity. Empty sessions (no messages) are archived without summaries. Fallback summaries are generated when the executor is offline.
 
 ### SDK Tool Calling
 
