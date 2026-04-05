@@ -12,6 +12,17 @@ export const mockAuthStatus = {
   user: null,
 };
 
+export const mockAuthStatusAuthenticated = {
+  authEnabled: true,
+  authenticated: true,
+  copilotStatus: "operational" as const,
+  user: {
+    login: "testuser",
+    name: "Test User",
+    avatarUrl: null,
+  },
+};
+
 export const mockWorkspace = {
   active: {
     path: "/tmp/test-project",
@@ -65,10 +76,46 @@ export const mockRoom = {
   topic: null,
 };
 
+export const mockActivity = [
+  {
+    id: "evt-1",
+    type: "TaskCreated" as const,
+    severity: "Info" as const,
+    roomId: "main",
+    actorId: "planner-1",
+    taskId: "task-1",
+    message: "Task 'Implement user authentication' created by Aristotle",
+    correlationId: null,
+    occurredAt: new Date(Date.now() - 60_000).toISOString(),
+  },
+  {
+    id: "evt-2",
+    type: "AgentFinished" as const,
+    severity: "Info" as const,
+    roomId: "main",
+    actorId: "engineer-1",
+    taskId: "task-2",
+    message: "Hephaestus completed work on task 'Fix dashboard layout'",
+    correlationId: null,
+    occurredAt: new Date(Date.now() - 120_000).toISOString(),
+  },
+  {
+    id: "evt-3",
+    type: "AgentErrorOccurred" as const,
+    severity: "Error" as const,
+    roomId: "main",
+    actorId: "engineer-1",
+    taskId: null,
+    message: "Agent error: rate limit exceeded",
+    correlationId: null,
+    occurredAt: new Date(Date.now() - 300_000).toISOString(),
+  },
+];
+
 export const mockOverview = {
   configuredAgents: mockAgents,
   rooms: [mockRoom],
-  recentActivity: [],
+  recentActivity: mockActivity,
   agentLocations: mockAgents.map((a) => ({
     agentId: a.id,
     roomId: "main",
@@ -198,7 +245,17 @@ export async function mockAllApis(page: Page) {
     route.fulfill({ json: mockInstanceHealth }));
 
   await page.route("**/api/activity/recent", (route) =>
+    route.fulfill({ json: mockActivity }));
+
+  // Settings panel routes
+  await page.route("**/api/notifications/providers", (route) =>
     route.fulfill({ json: [] }));
+
+  await page.route("**/api/instruction-templates", (route) =>
+    route.fulfill({ json: [] }));
+
+  await page.route("**/api/settings", (route) =>
+    route.fulfill({ json: {} }));
 
   await page.route("**/healthz", (route) =>
     route.fulfill({ json: { status: "Healthy", uptime: "01:00:00", timestamp: new Date().toISOString() } }));
