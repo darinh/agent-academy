@@ -126,14 +126,24 @@ if (anyAuthEnabled)
                         var user = await response.Content.ReadFromJsonAsync<JsonElement>();
                         context.RunClaimActions(user);
 
-                        // Capture the OAuth token for the Copilot SDK.
+                        // Capture the OAuth tokens for the Copilot SDK.
                         // This makes the token available to CopilotExecutor
                         // during background orchestration (where HttpContext is null).
                         if (!string.IsNullOrEmpty(context.AccessToken))
                         {
                             var tokenProvider = context.HttpContext.RequestServices
                                 .GetRequiredService<CopilotTokenProvider>();
-                            tokenProvider.SetToken(context.AccessToken);
+                            // GitHub App refresh tokens are valid for 6 months (15,811,200 seconds).
+                            // The OAuthCreatingTicketContext doesn't expose refresh_token_expires_in,
+                            // so we use GitHub's documented default.
+                            var refreshTokenExpiry = !string.IsNullOrEmpty(context.RefreshToken)
+                                ? TimeSpan.FromDays(180)
+                                : (TimeSpan?)null;
+                            tokenProvider.SetTokens(
+                                context.AccessToken,
+                                context.RefreshToken,
+                                context.ExpiresIn,
+                                refreshTokenExpiry);
                         }
                     }
                 };
@@ -486,9 +496,53 @@ if (gitHubAuthEnabled)
             && context.User.Identity?.IsAuthenticated == true)
         {
             var accessToken = await context.GetTokenAsync("access_token");
+            var refreshToken = await context.GetTokenAsync("refresh_token");
+            var expiresAtStr = await context.GetTokenAsync("expires_at");
+
             if (!string.IsNullOrEmpty(accessToken))
-                tokenProvider.SetToken(accessToken);
+            {
+                TimeSpan? expiresIn = null;
+                if (DateTimeOffset.TryParse(expiresAtStr, out var expiresAt))
+                {
+                    var remaining = expiresAt - DateTimeOffset.UtcNow;
+                    if (remaining > TimeSpan.Zero)
+                        expiresIn = remaining;
+                }
+
+                tokenProvider.SetTokens(accessToken, refreshToken, expiresIn);
+            }
         }
+
+        // Write back refreshed tokens to the auth cookie so they survive server restarts
+        if (tokenProvider.HasPendingCookieUpdate
+            && context.User.Identity?.IsAuthenticated == true)
+        {
+            try
+            {
+                var authenticateResult = await context.AuthenticateAsync();
+                if (authenticateResult.Succeeded && authenticateResult.Properties is not null)
+                {
+                    // Merge with existing tokens to avoid clobbering token_type, scope, etc.
+                    var existingTokens = authenticateResult.Properties.GetTokens()
+                        .Where(t => t.Name is not ("access_token" or "refresh_token" or "expires_at"))
+                        .ToList();
+                    existingTokens.Add(new AuthenticationToken { Name = "access_token", Value = tokenProvider.Token ?? "" });
+                    existingTokens.Add(new AuthenticationToken { Name = "refresh_token", Value = tokenProvider.RefreshToken ?? "" });
+                    existingTokens.Add(new AuthenticationToken { Name = "expires_at", Value = tokenProvider.ExpiresAtUtc?.ToString("o") ?? "" });
+                    authenticateResult.Properties.StoreTokens(existingTokens);
+                    await context.SignInAsync(
+                        CookieAuthenticationDefaults.AuthenticationScheme,
+                        authenticateResult.Principal!,
+                        authenticateResult.Properties);
+                    tokenProvider.ClearCookieUpdatePending();
+                }
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogWarning(ex, "Failed to write refreshed tokens to auth cookie — will retry on next request");
+            }
+        }
+
         await next();
     });
 }

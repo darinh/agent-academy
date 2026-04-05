@@ -119,6 +119,111 @@ public class CopilotAuthMonitorServiceTests
         cts.Cancel();
         await sut.StopAsync(CancellationToken.None);
     }
+
+    [Fact]
+    public async Task ProbeOnceAsync_WhenTokenExpiringSoon_AttemptsRefresh()
+    {
+        var probe = new StubAuthProbe(CopilotAuthProbeResult.Healthy)
+            .WithRefreshResult(new TokenRefreshResult(
+                "gho_new_token", "ghr_new_refresh",
+                TimeSpan.FromHours(8), TimeSpan.FromDays(180)));
+        var executor = Substitute.For<IAgentExecutor>();
+        var tokenProvider = new CopilotTokenProvider();
+        // Set tokens with an expiry that's already within 30 minutes
+        tokenProvider.SetTokens("gho_old", "ghr_old", TimeSpan.FromMinutes(10));
+        var sut = new CopilotAuthMonitorService(
+            probe, executor, tokenProvider,
+            NullLogger<CopilotAuthMonitorService>.Instance);
+
+        await sut.ProbeOnceAsync();
+
+        // Should have refreshed — new token should be set
+        Assert.Equal("gho_new_token", tokenProvider.Token);
+        Assert.Equal("ghr_new_refresh", tokenProvider.RefreshToken);
+        Assert.True(tokenProvider.HasPendingCookieUpdate);
+        await executor.Received().MarkAuthOperationalAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProbeOnceAsync_WhenAuthFailed_TriesRefreshBeforeDegrading()
+    {
+        var probe = new StubAuthProbe(CopilotAuthProbeResult.AuthFailed)
+            .WithRefreshResult(new TokenRefreshResult(
+                "gho_refreshed", "ghr_refreshed",
+                TimeSpan.FromHours(8), TimeSpan.FromDays(180)));
+        var executor = Substitute.For<IAgentExecutor>();
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetTokens("gho_expired", "ghr_valid", TimeSpan.FromHours(8));
+        var sut = new CopilotAuthMonitorService(
+            probe, executor, tokenProvider,
+            NullLogger<CopilotAuthMonitorService>.Instance);
+
+        await sut.ProbeOnceAsync();
+
+        // Should have refreshed instead of degrading
+        Assert.Equal("gho_refreshed", tokenProvider.Token);
+        await executor.Received().MarkAuthOperationalAsync(Arg.Any<CancellationToken>());
+        await executor.DidNotReceive().MarkAuthDegradedAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProbeOnceAsync_WhenAuthFailedAndRefreshFails_DegradesFallback()
+    {
+        var probe = new StubAuthProbe(CopilotAuthProbeResult.AuthFailed)
+            .WithRefreshResult(null); // refresh fails
+        var executor = Substitute.For<IAgentExecutor>();
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetTokens("gho_expired", "ghr_also_expired", TimeSpan.FromHours(8));
+        var sut = new CopilotAuthMonitorService(
+            probe, executor, tokenProvider,
+            NullLogger<CopilotAuthMonitorService>.Instance);
+
+        await sut.ProbeOnceAsync();
+
+        // Should degrade since refresh failed
+        await executor.Received().MarkAuthDegradedAsync(Arg.Any<CancellationToken>());
+        await executor.DidNotReceive().MarkAuthOperationalAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProbeOnceAsync_WhenAuthFailedAndNoRefreshToken_DegradeImmediately()
+    {
+        var probe = new StubAuthProbe(CopilotAuthProbeResult.AuthFailed);
+        var executor = Substitute.For<IAgentExecutor>();
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken("gho_expired"); // no refresh token
+        var sut = new CopilotAuthMonitorService(
+            probe, executor, tokenProvider,
+            NullLogger<CopilotAuthMonitorService>.Instance);
+
+        await sut.ProbeOnceAsync();
+
+        await executor.Received().MarkAuthDegradedAsync(Arg.Any<CancellationToken>());
+        Assert.Equal(0, probe.RefreshCallCount);
+    }
+
+    [Fact]
+    public async Task TryRefreshTokenAsync_UpdatesProviderAndMarksCookieUpdate()
+    {
+        var probe = new StubAuthProbe(CopilotAuthProbeResult.Healthy)
+            .WithRefreshResult(new TokenRefreshResult(
+                "gho_fresh", "ghr_fresh",
+                TimeSpan.FromHours(8), TimeSpan.FromDays(180)));
+        var executor = Substitute.For<IAgentExecutor>();
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetTokens("gho_old", "ghr_old", TimeSpan.FromMinutes(5));
+        var sut = new CopilotAuthMonitorService(
+            probe, executor, tokenProvider,
+            NullLogger<CopilotAuthMonitorService>.Instance);
+
+        var result = await sut.TryRefreshTokenAsync();
+
+        Assert.True(result);
+        Assert.Equal("gho_fresh", tokenProvider.Token);
+        Assert.Equal("ghr_fresh", tokenProvider.RefreshToken);
+        Assert.True(tokenProvider.HasPendingCookieUpdate);
+        Assert.NotNull(tokenProvider.ExpiresAtUtc);
+    }
 }
 
 internal sealed class CountingAuthProbe : ICopilotAuthProbe
@@ -132,6 +237,9 @@ internal sealed class CountingAuthProbe : ICopilotAuthProbe
 
     public Task<CopilotAuthProbeResult> ProbeAsync(CancellationToken ct = default)
         => Task.FromResult(_resultFactory());
+
+    public Task<TokenRefreshResult?> RefreshTokenAsync(string refreshToken, CancellationToken ct = default)
+        => Task.FromResult<TokenRefreshResult?>(null);
 }
 
 public class GitHubCopilotAuthProbeTests
@@ -187,19 +295,107 @@ public class GitHubCopilotAuthProbeTests
         Assert.Equal(CopilotAuthProbeResult.TransientFailure, result);
     }
 
+    [Fact]
+    public async Task RefreshTokenAsync_WhenSuccessful_ReturnsNewTokens()
+    {
+        var responseJson = """
+        {
+            "access_token": "ghu_new_access",
+            "refresh_token": "ghr_new_refresh",
+            "expires_in": 28800,
+            "refresh_token_expires_in": 15811200,
+            "token_type": "bearer",
+            "scope": ""
+        }
+        """;
+        var probe = CreateProbe(
+            new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseJson, System.Text.Encoding.UTF8, "application/json")
+            }),
+            config: new Dictionary<string, string?>
+            {
+                ["GitHub:ClientId"] = "test-client-id",
+                ["GitHub:ClientSecret"] = "test-client-secret",
+            });
+
+        var result = await probe.RefreshTokenAsync("ghr_old_refresh");
+
+        Assert.NotNull(result);
+        Assert.Equal("ghu_new_access", result.AccessToken);
+        Assert.Equal("ghr_new_refresh", result.RefreshToken);
+        Assert.Equal(TimeSpan.FromSeconds(28800), result.ExpiresIn);
+        Assert.Equal(TimeSpan.FromSeconds(15811200), result.RefreshTokenExpiresIn);
+    }
+
+    [Fact]
+    public async Task RefreshTokenAsync_WhenGitHubReturnsError_ReturnsNull()
+    {
+        var responseJson = """{"error":"bad_refresh_token","error_description":"The refresh token is invalid."}""";
+        var probe = CreateProbe(
+            new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseJson, System.Text.Encoding.UTF8, "application/json")
+            }),
+            config: new Dictionary<string, string?>
+            {
+                ["GitHub:ClientId"] = "test-client-id",
+                ["GitHub:ClientSecret"] = "test-client-secret",
+            });
+
+        var result = await probe.RefreshTokenAsync("ghr_invalid");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task RefreshTokenAsync_WhenHttpFails_ReturnsNull()
+    {
+        var probe = CreateProbe(
+            new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent("server error")
+            }),
+            config: new Dictionary<string, string?>
+            {
+                ["GitHub:ClientId"] = "test-client-id",
+                ["GitHub:ClientSecret"] = "test-client-secret",
+            });
+
+        var result = await probe.RefreshTokenAsync("ghr_test");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task RefreshTokenAsync_WhenNoClientCredentials_ReturnsNull()
+    {
+        var probe = CreateProbe(
+            new StubHttpMessageHandler(_ => throw new InvalidOperationException("should not send")));
+
+        var result = await probe.RefreshTokenAsync("ghr_test");
+
+        Assert.Null(result);
+    }
+
     private static GitHubCopilotAuthProbe CreateProbe(
         HttpMessageHandler handler,
-        CopilotTokenProvider? tokenProvider = null)
+        CopilotTokenProvider? tokenProvider = null,
+        Dictionary<string, string?>? config = null)
     {
         var client = new HttpClient(handler)
         {
             BaseAddress = new Uri("https://api.github.com/")
         };
 
+        var configBuilder = new ConfigurationBuilder();
+        if (config is not null)
+            configBuilder.AddInMemoryCollection(config);
+
         return new GitHubCopilotAuthProbe(
             client,
             tokenProvider ?? new CopilotTokenProvider(),
-            new ConfigurationBuilder().Build(),
+            configBuilder.Build(),
             NullLogger<GitHubCopilotAuthProbe>.Instance);
     }
 
@@ -216,6 +412,146 @@ public class GitHubCopilotAuthProbeTests
         {
             return Task.FromResult(_handler(request));
         }
+    }
+}
+
+public class CopilotTokenProviderRefreshTests
+{
+    [Fact]
+    public void SetTokens_StoresAllFields()
+    {
+        var provider = new CopilotTokenProvider();
+
+        provider.SetTokens("access", "refresh", TimeSpan.FromHours(8), TimeSpan.FromDays(180));
+
+        Assert.Equal("access", provider.Token);
+        Assert.Equal("refresh", provider.RefreshToken);
+        Assert.NotNull(provider.ExpiresAtUtc);
+        Assert.NotNull(provider.RefreshTokenExpiresAtUtc);
+        Assert.NotNull(provider.TokenSetAt);
+    }
+
+    [Fact]
+    public void IsTokenExpiringSoon_WhenFarFromExpiry_ReturnsFalse()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetTokens("access", "refresh", TimeSpan.FromHours(8));
+
+        Assert.False(provider.IsTokenExpiringSoon);
+    }
+
+    [Fact]
+    public void IsTokenExpiringSoon_WhenWithin30Minutes_ReturnsTrue()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetTokens("access", "refresh", TimeSpan.FromMinutes(20));
+
+        Assert.True(provider.IsTokenExpiringSoon);
+    }
+
+    [Fact]
+    public void IsTokenExpiringSoon_WhenNoExpiry_ReturnsFalse()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetToken("access");
+
+        Assert.False(provider.IsTokenExpiringSoon);
+    }
+
+    [Fact]
+    public void CanRefresh_WhenHasRefreshToken_ReturnsTrue()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetTokens("access", "refresh", TimeSpan.FromHours(8), TimeSpan.FromDays(180));
+
+        Assert.True(provider.CanRefresh);
+    }
+
+    [Fact]
+    public void CanRefresh_WhenNoRefreshToken_ReturnsFalse()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetToken("access");
+
+        Assert.False(provider.CanRefresh);
+    }
+
+    [Fact]
+    public void CanRefresh_WhenRefreshTokenExpired_ReturnsFalse()
+    {
+        var provider = new CopilotTokenProvider();
+        // Set with zero-duration refresh token expiry (already expired)
+        provider.SetTokens("access", "refresh", TimeSpan.FromHours(8), TimeSpan.Zero);
+
+        Assert.False(provider.CanRefresh);
+    }
+
+    [Fact]
+    public void ClearToken_ClearsAllFields()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetTokens("access", "refresh", TimeSpan.FromHours(8), TimeSpan.FromDays(180));
+        provider.MarkCookieUpdatePending();
+
+        provider.ClearToken();
+
+        Assert.Null(provider.Token);
+        Assert.Null(provider.RefreshToken);
+        Assert.Null(provider.ExpiresAtUtc);
+        Assert.Null(provider.RefreshTokenExpiresAtUtc);
+        Assert.Null(provider.TokenSetAt);
+        Assert.False(provider.HasPendingCookieUpdate);
+    }
+
+    [Fact]
+    public void SetTokens_PreservesExistingRefreshToken_WhenNotProvided()
+    {
+        var provider = new CopilotTokenProvider();
+        provider.SetTokens("access1", "refresh1", TimeSpan.FromHours(8));
+
+        // Update access token only (refresh token null) — should keep old refresh
+        provider.SetTokens("access2");
+
+        Assert.Equal("access2", provider.Token);
+        Assert.Equal("refresh1", provider.RefreshToken);
+    }
+
+    [Fact]
+    public void SetToken_FiresTokenChanged()
+    {
+        var provider = new CopilotTokenProvider();
+        var fired = false;
+        provider.TokenChanged += () => fired = true;
+
+        provider.SetToken("test");
+
+        Assert.True(fired);
+    }
+
+    [Fact]
+    public void SetTokens_FiresTokenChanged()
+    {
+        var provider = new CopilotTokenProvider();
+        var fired = false;
+        provider.TokenChanged += () => fired = true;
+
+        provider.SetTokens("test", "refresh", TimeSpan.FromHours(8));
+
+        Assert.True(fired);
+    }
+
+    [Fact]
+    public void CookieUpdatePending_WorksCorrectly()
+    {
+        var provider = new CopilotTokenProvider();
+
+        Assert.False(provider.HasPendingCookieUpdate);
+
+        provider.MarkCookieUpdatePending();
+        Assert.True(provider.HasPendingCookieUpdate);
+
+        provider.ClearCookieUpdatePending();
+        Assert.False(provider.HasPendingCookieUpdate);
     }
 }
 
@@ -361,14 +697,29 @@ public class CopilotExecutorAuthTransitionTests
 internal sealed class StubAuthProbe : ICopilotAuthProbe
 {
     private readonly CopilotAuthProbeResult _result;
+    private TokenRefreshResult? _refreshResult;
 
     public StubAuthProbe(CopilotAuthProbeResult result)
     {
         _result = result;
     }
 
+    public int RefreshCallCount { get; private set; }
+
+    public StubAuthProbe WithRefreshResult(TokenRefreshResult? result)
+    {
+        _refreshResult = result;
+        return this;
+    }
+
     public Task<CopilotAuthProbeResult> ProbeAsync(CancellationToken ct = default)
     {
         return Task.FromResult(_result);
+    }
+
+    public Task<TokenRefreshResult?> RefreshTokenAsync(string refreshToken, CancellationToken ct = default)
+    {
+        RefreshCallCount++;
+        return Task.FromResult(_refreshResult);
     }
 }
