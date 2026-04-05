@@ -131,7 +131,7 @@ Applied to all .NET projects in the solution via MSBuild import convention.
 2. No direct pushes to `main` — enforced by `pre-push` hook locally and should be enforced by GitHub branch protection.
 3. All commits follow conventional commit format — enforced by `commit-msg` hook.
 4. Version is auto-bumped on every merge to `main`.
-5. `.NET` and client versions stay in sync (both updated by version-bump workflow).
+5. `.NET` and client versions should stay in sync (both updated by version-bump workflow). **Note**: Currently `.NET` version is `0.1.0` and client `package.json` is `0.0.0` — will align on next version bump to `main`.
 
 ## Known Gaps
 

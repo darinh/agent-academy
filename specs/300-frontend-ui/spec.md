@@ -27,7 +27,7 @@ App.tsx (FluentProvider + AppShell)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview)
+        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview, directMessages)
         └── Tab content panels
             ├── ChatPanel.tsx (with SignalR connection status bar)
             ├── TaskListPanel.tsx
@@ -35,7 +35,13 @@ App.tsx (FluentProvider + AppShell)
             ├── CommandsPanel.tsx
             ├── TimelinePanel.tsx
             ├── DashboardPanel.tsx
-            └── WorkspaceOverviewPanel.tsx
+            ├── WorkspaceOverviewPanel.tsx
+            ├── DmPanel.tsx (Telegram-style DM conversations)
+            ├── SettingsPanel.tsx (notification provider setup)
+            ├── AgentSessionPanel.tsx (per-agent session inspector)
+            ├── CommandPalette.tsx (Cmd+K overlay)
+            ├── RecoveryBanner.tsx (crash recovery notification)
+            └── CircuitBreakerBanner.tsx (auth degradation warning)
 ```
 
 ## State Management

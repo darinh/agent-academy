@@ -138,7 +138,7 @@ public record HealthCheckResponse(string Status, List<DependencyStatus> Dependen
 public record ModelInfo(string Id, string Name);
 public record PermissionPolicy(bool AllowFileAccess, bool AllowMcpServers, bool AllowShellExecution, bool AllowUrlFetch, List<string> AllowedToolCategories);
 public record DependencyStatus(string Name, string Status, string? Detail = null);
-public record UsageSummary(long TotalInputTokens, long TotalOutputTokens, decimal TotalCost, int RequestCount, List<string> Models);
+public record UsageSummary(long TotalInputTokens, long TotalOutputTokens, double TotalCost, int RequestCount, List<string> Models);
 public record ErrorRecord(string AgentId, string RoomId, string ErrorType, string Message, bool Recoverable, DateTime Timestamp);
 public record PlanContent(string Content);
 

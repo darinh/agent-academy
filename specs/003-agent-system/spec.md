@@ -41,9 +41,14 @@ Defines how Agent Academy sends prompts to LLM providers and receives responses.
 public interface IAgentExecutor
 {
     bool IsFullyOperational { get; }
+    bool IsAuthFailed { get; }
+    CircuitState CircuitBreakerState { get; }
+    Task MarkAuthDegradedAsync(CancellationToken ct = default);
+    Task MarkAuthOperationalAsync(CancellationToken ct = default);
     Task<string> RunAsync(AgentDefinition agent, string prompt, string? roomId, CancellationToken ct = default);
     Task InvalidateSessionAsync(string agentId, string? roomId);
     Task InvalidateRoomSessionsAsync(string roomId);
+    Task InvalidateAllSessionsAsync();
     Task DisposeAsync();
 }
 ```
@@ -51,9 +56,14 @@ public interface IAgentExecutor
 | Member | Description |
 |--------|-------------|
 | `IsFullyOperational` | `true` when backed by a live LLM provider |
+| `IsAuthFailed` | `true` when auth failure detected requiring user re-authentication |
+| `CircuitBreakerState` | Current circuit breaker state: `Closed` (normal), `Open` (fallback), `HalfOpen` (probing) |
+| `MarkAuthDegradedAsync` | Transitions to auth-degraded; emits room notice + notifications on first failure |
+| `MarkAuthOperationalAsync` | Transitions back to auth-operational; emits recovery notice on state change |
 | `RunAsync` | Sends prompt, returns complete response text |
 | `InvalidateSessionAsync` | Disposes a single cached session |
 | `InvalidateRoomSessionsAsync` | Disposes all sessions for a room |
+| `InvalidateAllSessionsAsync` | Disposes all sessions across all rooms and agents |
 | `DisposeAsync` | Releases all resources |
 
 ### Implementation: `CopilotExecutor`

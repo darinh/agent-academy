@@ -104,7 +104,8 @@ When the server restarts, connected clients must detect the restart and refresh 
   "version": "1.2.3",
   "crashDetected": false,
   "executorOperational": true,
-  "authFailed": false
+  "authFailed": false,
+  "circuitBreakerState": "Closed"
 }
 ```
 

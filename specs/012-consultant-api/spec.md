@@ -93,7 +93,7 @@ Returns:
 }
 ```
 
-Messages are ordered chronologically (oldest first). This endpoint respects session boundaries (only returns messages from the active conversation session).
+Messages are ordered chronologically (oldest first). This endpoint includes sessionless messages and messages with `SenderKind = User` from any session, so consultant/human messages are always visible regardless of session boundaries.
 
 #### List Rooms
 
@@ -102,7 +102,7 @@ GET /api/rooms
 X-Consultant-Key: {secret}
 ```
 
-**Existing endpoint** — no changes needed. Returns all rooms with recent messages. Use to discover the main room ID.
+**Existing endpoint** — no changes needed. Returns all non-archived rooms with recent messages. Use to discover the main room ID. Pass `includeArchived=true` to also return archived rooms.
 
 #### Get Room Details
 
@@ -140,7 +140,7 @@ X-Consultant-Key: {secret}
 
 Returns: `ExecuteCommandResponse` with status, result, and correlationId.
 
-**Command catalog**: `GET /api/commands/metadata` returns all available commands with field schemas for dynamic UI rendering.
+**Command catalog**: `GET /api/commands/metadata` returns the allowlisted and implemented commands with field schemas for dynamic UI rendering. Commands not in the allowlist or not backed by an implemented handler are filtered out.
 
 **Allowlisted commands** (subset of agent commands safe for human/consultant use):
 

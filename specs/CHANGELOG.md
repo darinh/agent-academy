@@ -4,6 +4,19 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **006-orchestrator**: Fixed `HandleDirectMessage` signature (takes `recipientAgentId` only, not `agentId, roomId`). Corrected breakout loop caps (`MaxBreakoutRounds=200`, `MaxConsecutiveIdleRounds=5`) — body text previously said "no round cap" while Known Gaps said resolved. Fixed DM handling in breakout rooms (posted as messages, not injected into prompt). Added constants table.
+- **007-agent-commands**: Updated handler count from 24 to 50. Fixed pipeline description to include rate limit stage. Fixed audit target from `ActivityEvent` to `CommandAuditEntity`. Fixed DM syntax to match parser format (indented `Key: value` lines, not comma-separated). Fixed `CLOSE_ROOM` role permission (Planner or Human, not Planner-only). Updated memory commands to include `EXPORT_MEMORIES`, `IMPORT_MEMORIES`, TTL, FTS5 search, shared category.
+- **003-agent-system**: Updated `IAgentExecutor` interface to include `IsAuthFailed`, `CircuitBreakerState`, `MarkAuthDegradedAsync`, `MarkAuthOperationalAsync`, `InvalidateAllSessionsAsync`.
+- **008-agent-memory**: Removed false claim that FORGET requires confirmation step and audit logging (it does neither).
+- **012-consultant-api**: Fixed `/api/commands/metadata` description (returns allowlisted+implemented, not "all"). Fixed room messages endpoint (includes sessionless and User messages cross-session, not session-restricted). Noted archived rooms excluded by default from `GET /api/rooms`.
+- **010-task-management**: Fixed `REBASE_TASK` permissions (Assignee/Planner/Reviewer/Human, not Any). Fixed `CANCEL_TASK` permissions (added Human role). Fixed `APPROVE_TASK` room message (conditional on findings). Added note about TaskEntity JSON-serialized list fields.
+- **004-notification-system**: Added `SendDirectMessageAsync` to `INotificationProvider` interface. Added `/deliveries` and `/deliveries/stats` REST endpoints. Added `RoomClosed` to tracked delivery channels (was 4, now 5). Fixed `RequestInputFromAnyAsync` iteration order note.
+- **001-domain-model**: Fixed `UsageSummary.TotalCost` type from `decimal` to `double`.
+- **002-development-workflow**: Noted version sync gap between .NET (`0.1.0`) and client (`0.0.0`).
+- **011-state-recovery**: Added `circuitBreakerState` to health endpoint response.
+- **300-frontend-ui**: Added missing tabs and components (DmPanel, SettingsPanel, AgentSessionPanel, CommandPalette, RecoveryBanner, CircuitBreakerBanner, directMessages tab).
+
 ### Added
 - **012-consultant-api**: Task management commands — Added `UPDATE_TASK`, `CANCEL_TASK`, `APPROVE_TASK` to the human command allowlist in `CommandController`. `CancelTaskHandler` now accepts Human role (was Planner/Reviewer only). `HumanCommandRegistry` updated with metadata entries for dynamic UI rendering. Documented full command execution surface in spec 012 including allowlisted commands table, async command polling, and identity semantics.
 

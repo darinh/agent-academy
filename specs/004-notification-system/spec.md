@@ -39,6 +39,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 | `SendNotificationAsync()` | `Task<bool>` | Deliver a notification message |
 | `RequestInputAsync()` | `Task<UserResponse?>` | Collect user input (null if unsupported) |
 | `SendAgentQuestionAsync()` | `Task<(bool, string?)>` | Send agent question to human; returns sent status + error detail |
+| `SendDirectMessageAsync()` | `Task<bool>` | Send a direct message notification (e.g., to Discord channel) |
 | `GetConfigSchema()` | `ProviderConfigSchema` | Describe required configuration fields |
 | `OnRoomRenamedAsync()` | `Task` | Update external resources on room rename (default: no-op) |
 | `OnRoomClosedAsync()` | `Task` | Clean up external resources on room archive (default: no-op) |
@@ -48,7 +49,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 - **Thread-safe**: Uses `ConcurrentDictionary` for provider storage
 - **Fan-out delivery**: `SendToAllAsync` sends to every connected provider
 - **Failure isolation**: Individual provider failures are logged, never propagated
-- **Input collection**: `RequestInputFromAnyAsync` tries providers in order, returns first non-null response
+- **Input collection**: `RequestInputFromAnyAsync` iterates connected providers (order not guaranteed — uses `ConcurrentDictionary.Values`), returns first non-null response
 - **Agent questions**: `SendAgentQuestionAsync` returns `(bool Sent, string? Error)` tuple — surfaces actual provider errors instead of generic failure messages; tries all providers before failing
 
 ### Built-in Provider: Console
@@ -71,6 +72,8 @@ All endpoints under `/api/notifications`:
 | `POST` | `/providers/{id}/connect` | Connect provider |
 | `POST` | `/providers/{id}/disconnect` | Disconnect provider |
 | `POST` | `/test` | Send test notification to all |
+| `GET` | `/deliveries` | List notification delivery records (filterable by channel, providerId, status, roomId) |
+| `GET` | `/deliveries/stats` | Aggregate delivery counts by status within a time window |
 
 ### Shared Types
 
@@ -477,7 +480,7 @@ Questions are posted to the room channel with Block Kit formatting (header, sect
 
 Every outbound notification attempt is persisted to the `notification_deliveries` table via `NotificationDeliveryTracker`. This provides a complete audit trail for notification observability.
 
-**Tracked channels**: `Broadcast`, `AgentQuestion`, `DirectMessage`, `RoomRenamed`
+**Tracked channels**: `Broadcast`, `AgentQuestion`, `DirectMessage`, `RoomRenamed`, `RoomClosed`
 
 **Delivery statuses**:
 - `Delivered` — provider returned success
@@ -531,7 +534,7 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 
 - **2026-04-04**: Room channel cleanup — `OnRoomClosedAsync` added to `INotificationProvider`. Discord provider deletes channel, disposes webhook, and clears mapping caches when a room is archived. `ActivityNotificationBroadcaster` routes `RoomClosed` events as structural provider notifications. `NotificationManager.NotifyRoomClosedAsync` fans out to all providers with retry. 7 new tests.
 
-- **2026-04-04**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 4 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed) with Delivered/Skipped/Failed status. REST API for delivery history and stats. 18 new tests. Adversarial review by GPT-5.3 Codex.
+- **2026-04-04**: Notification delivery tracking — `NotificationDeliveryTracker` records every outbound notification attempt per provider to `notification_deliveries` table. Tracks 5 channels (Broadcast, AgentQuestion, DirectMessage, RoomRenamed, RoomClosed) with Delivered/Skipped/Failed status. REST API for delivery history and stats. 18 new tests. Adversarial review by GPT-5.3 Codex.
 
 - **2026-04-04**: Retry with exponential backoff — `NotificationRetryPolicy` (200ms base, 3 retries, 2s cap, ±50ms jitter) applied to `SendToAllAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`. Transient classification: timeouts, network failures, HTTP 429/5xx; excludes 4xx auth/config errors. HttpClient timeout (`TaskCanceledException`) retried when caller token not cancelled. 33 new tests. Adversarial review by GPT-5.3 Codex — 3 findings, 2 fixed.
 

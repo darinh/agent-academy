@@ -3,7 +3,7 @@
 ## Purpose
 Defines a unified command pipeline through which agents interact with the platform, codebase, and each other. Every agent action — reading files, moving between rooms, sending messages, managing tasks — flows through a structured envelope with authorization, audit trails, and consistent error handling.
 
-> **Status: Implemented** — All Tier 1 command phases (1A–1G) and all Tier 2 Room Management commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 24 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET) are implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Communication, Task Management, Code & Spec, Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
+> **Status: Implemented** — All Tier 1 command phases (1A–1G) and all Tier 2 Room Management commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 50 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Communication, Task Management, Code & Spec, Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
 
 ## Motivation
 Today, agents have no formalized way to interact with the platform. The orchestrator parses free-text blocks like `TASK ASSIGNMENT:` from agent responses. This creates:
@@ -73,15 +73,16 @@ The `FormatResultsForContext` method (used to inject command results into agent 
 ### Pipeline
 
 ```
-Agent Response (text) → Command Parser → Authorization → Execution → Audit Event → Response
+Agent Response (text) → Command Parser → Authorization → Rate Limit → Execution → Audit → Response
 ```
 
 Each stage:
-1. **Command Parser**: Extracts structured commands from agent text. Commands use `COMMAND_NAME: args` syntax in agent responses. Parser returns remaining text + extracted commands.
+1. **Command Parser**: Extracts structured commands from agent text. Commands use `COMMAND_NAME:` syntax with either indented `Key: value` lines or inline `key=value` pairs. Parser returns remaining text + extracted commands.
 2. **Authorization**: Checks agent permissions against command + args. Returns `denied` if unauthorized.
-3. **Execution**: Dispatches to the appropriate handler. Read commands are side-effect-free. Write commands are idempotent where possible.
-4. **Audit Event**: Every command execution is recorded as an `ActivityEvent` with the full envelope.
-5. **Response**: Result is injected into the agent's next context turn.
+3. **Rate Limit**: Sliding-window rate limiter (default: 30 commands per 60 seconds). Returns `RATE_LIMIT` error code if exceeded.
+4. **Execution**: Dispatches to the appropriate handler. Read commands are side-effect-free. Write commands are idempotent where possible.
+5. **Audit**: Every command execution is recorded as a `CommandAuditEntity` with the full envelope, including `ErrorCode` if applicable.
+6. **Response**: Result is injected into the agent's next context turn.
 
 ### Permission Model
 
@@ -144,7 +145,7 @@ These formalize existing capabilities with audit trails and structured output.
 | `UPDATE_TASK_ITEM` | `taskItemId`, `status` (Pending\|Active\|Done\|Rejected), `evidence?` | Task item ID, title, status, evidence | Validates item exists, caller is assignee/Planner/Reviewer/Human. Updates status and optional evidence. | `UpdateTaskItemHandler.cs` + `WorkspaceRuntime.UpdateTaskItemStatusAsync()` |
 | `LIST_TASK_ITEMS` | `roomId?`, `status?` (Pending\|Active\|Done\|Rejected) | List of task items with count and applied filters | Scoped to active workspace when no room filter. Any agent can list. | `ListTaskItemsHandler.cs` + `WorkspaceRuntime.GetTaskItemsAsync()` |
 | `RECALL_AGENT` | `agentId` (name or ID) | Agent info and room transition details | Validates caller has Planner role, target agent is in Working state in a breakout room. Closes breakout room, moves agent to Idle in parent room. Posts recall notices to both breakout and parent rooms | |
-| `CLOSE_ROOM` | `roomId` | Room ID, room name, archived status | Validates caller has Planner role, target room exists, target is not the workspace's main collaboration room, and the room has no active participants. Sets `RoomEntity.Status = Archived`, updates `UpdatedAt`, and publishes a `RoomClosed` activity event. Repeating the command against an already archived room is a no-op success. | `CloseRoomHandler.cs` + `WorkspaceRuntime.CloseRoomAsync()` |
+| `CLOSE_ROOM` | `roomId` | Room ID, room name, archived status | Validates caller has Planner or Human role, target room exists, target is not the workspace's main collaboration room, and the room has no active participants. Sets `RoomEntity.Status = Archived`, updates `UpdatedAt`, and publishes a `RoomClosed` activity event. Repeating the command against an already archived room is a no-op success. | `CloseRoomHandler.cs` + `WorkspaceRuntime.CloseRoomAsync()` |
 | `MERGE_TASK` | `taskId` | Task ID, title, branch, `mergeCommitSha` | Validates caller is Reviewer or Planner, task status is Approved, task has BranchName. Sets task to Merging status, squash-merges task branch to develop, runs `git add -A` to stage the full squash result, then commits using conventional-commit subject `{prefix}{task.Title}` where `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, and `Spike -> docs: `. On success: updates task to Completed, records merge commit SHA on TaskEntity, and returns it in the result. On conflict: aborts the merge, restores task status to Approved, and returns an error. Authorization enforced at handler level. | `MergeTaskHandler.cs` lines 25-31 — Planner/Reviewer role guard |
 
 #### Phase 1C: Verification — IMPLEMENTED
@@ -240,10 +241,12 @@ Persistent per-agent key-value store for learned knowledge across sessions.
 
 | Command | Args | Returns | Implementation |
 |---------|------|---------|----------------|
-| `REMEMBER` | `category`, `key`, `value` | Confirmation | `RememberHandler.cs` — upsert with validation against 14 allowed categories |
-| `RECALL` | `category?`, `key?`, `query?` | Matching memories | `RecallHandler.cs` — LIKE-based search on key/value, optional category filter |
-| `LIST_MEMORIES` | `category?` | All memories (optionally filtered) | `ListMemoriesHandler.cs` — query all or by category |
-| `FORGET` | `key` | Confirmation | `ForgetHandler.cs` — soft delete by key |
+| `REMEMBER` | `category`, `key`, `value`, `ttl?` (hours) | Confirmation + expiresAt | `RememberHandler.cs` — upsert with validation against allowed categories |
+| `RECALL` | `category?`, `key?`, `query?`, `include_expired?` | Matching memories (with stale flag) | `RecallHandler.cs` — FTS5-based search with BM25 ranking, LIKE fallback |
+| `LIST_MEMORIES` | `category?`, `include_expired?` | All memories (filtered, with stale flag) | `ListMemoriesHandler.cs` — query all or by category |
+| `FORGET` | `key` | Confirmation | `ForgetHandler.cs` — hard delete by key |
+| `EXPORT_MEMORIES` | `include_expired?` | Full memory dump (JSON) | `ExportMemoriesHandler.cs` — all memories with metadata |
+| `IMPORT_MEMORIES` | JSON payload (up to 500 entries) | Import summary | `ImportMemoriesHandler.cs` — validates categories, 500-char limit, upsert semantics |
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{Remember,Recall,ListMemories,Forget}Handler.cs`
 
@@ -275,7 +278,9 @@ public record AgentMemory(
     string Key,
     string Value,
     DateTime CreatedAt,
-    DateTime? UpdatedAt
+    DateTime? UpdatedAt,
+    DateTime? LastAccessedAt = null,
+    DateTime? ExpiresAt = null
 );
 ```
 
@@ -479,7 +484,7 @@ All human commands audit with:
 - **RunBuildHandler.cs**: Added static `SemaphoreSlim BuildLock = new(1, 1)` (line 13). `WaitAsync` at line 40, `Release()` in finally block at line 71. Prevents overlapping builds from human UI and agent commands.
 - **RunTestsHandler.cs**: Added static `SemaphoreSlim TestLock = new(1, 1)` (line 13). Same pattern as build handler. Prevents overlapping test runs.
 
-All other handlers (26 of 28) require no modifications. They accept `CommandContext` and return `CommandEnvelope` identically for human and agent invocation.
+All other handlers require no modifications. They accept `CommandContext` and return `CommandEnvelope` identically for human and agent invocation.
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/RunBuildHandler.cs` (lines 13, 40, 71), `src/AgentAcademy.Server/Commands/Handlers/RunTestsHandler.cs` (lines 13, 40, 71)
 
@@ -496,7 +501,19 @@ All other handlers (26 of 28) require no modifications. They accept `CommandCont
 ## Private Communication (DM)
 
 ### Command
-`DM: Recipient: @Human/AgentName, Message: <text>` — Available to ALL agents. **IMPLEMENTED**.
+`DM` — Available to ALL agents. **IMPLEMENTED**.
+
+Syntax (indented multi-line):
+```
+DM:
+  Recipient: @Human
+  Message: I need clarification on the database schema
+```
+
+Syntax (inline key=value):
+```
+DM: recipient=@Human message=I need clarification on the database schema
+```
 
 ### Use Cases
 - Escalation of blocking issues
@@ -645,7 +662,7 @@ Discord Server
 ```
 
 ### Flow
-1. Agent uses `DM: Recipient: @Human, Message: <text>` command
+1. Agent uses `DM:` command with `Recipient: @Human` and `Message: <text>` args
 2. `DmHandler` stores the DM, then delegates to `NotificationManager.SendAgentQuestionAsync`
 3. `DiscordNotificationProvider` lazily creates category → channel → thread
 4. Message posted as embed in the thread

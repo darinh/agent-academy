@@ -15,7 +15,7 @@ Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await pat
 Human messages and DM triggers are enqueued by room ID. A single processing loop drains the queue, running one conversation round per room. If the orchestrator is already processing, new messages wait in the FIFO queue.
 
 - Entry point: `HandleHumanMessage(roomId)` — enqueues `{RoomId}` and kicks off `ProcessQueueAsync()`
-- Entry point: `HandleDirectMessage(agentId, roomId)` — enqueues with dedupe for the same agent/room
+- Entry point: `HandleDirectMessage(recipientAgentId)` — resolves the agent's current room, enqueues with dedupe
 - Processing is serialized via `_processing` flag + `_lock` — only one room is processed at a time
 - The orchestrator can be stopped via `Stop()`, which flips `_stopped` and halts queue processing
 - **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
@@ -62,7 +62,7 @@ On setup failure, the breakout room is closed and any orphan task is cancelled.
 
 ### Breakout Room Workflow
 
-Inside a breakout room, the assigned agent works in an **open-ended loop** (`for (round = 1; ; round++)`) — there is no round cap:
+Inside a breakout room, the assigned agent works in a loop capped at `MaxBreakoutRounds = 200`. Stuck detection closes after `MaxConsecutiveIdleRounds = 5` idle rounds:
 
 1. Session rotation check runs before each round
 2. Git round lock is acquired and the task branch is ensured
@@ -83,7 +83,7 @@ When a breakout completes:
 Two review paths exist:
 
 - **Branch-backed tasks** (current default): Auto-review is skipped. The task awaits manual `APPROVE_TASK` → `MERGE_TASK` commands from a reviewer or planner.
-- **Legacy path**: A reviewer agent runs in the main room and produces a `REVIEW:` block with verdict `APPROVED` or `NEEDS FIX`. If rejected, the agent returns to breakout for an **open-ended fix loop** (`for (round = 1; ; round++)`) — there is no fix-round cap.
+- **Legacy path**: A reviewer agent runs in the main room and produces a `REVIEW:` block with verdict `APPROVED` or `NEEDS FIX`. If rejected, the agent returns to breakout for a fix loop (same caps as the main breakout loop).
 
 The breakout room is closed after review completes.
 
@@ -91,9 +91,9 @@ The breakout room is closed after review completes.
 
 The orchestrator has full DM integration:
 
-- `HandleDirectMessage(agentId, roomId)` provides a dedicated queue path for DM-triggered processing
-- If the target agent is in a breakout room, unread DMs are posted into the breakout room as system messages
-- Otherwise, DMs are injected into the agent's prompt in both main-room and breakout contexts
+- `HandleDirectMessage(recipientAgentId)` provides a dedicated queue path for DM-triggered processing
+- If the target agent is in a breakout room, unread DMs are posted into the breakout room as messages and acknowledged
+- In the main room, DMs are injected into the agent's prompt via the conversation prompt builder
 - DMs use per-recipient `AcknowledgedAt` tracking to prevent duplication
 
 ### Prompt Building
@@ -164,7 +164,10 @@ Registered as a singleton. Uses `IServiceScopeFactory` to create scoped `Workspa
 | `MaxRoundsPerTrigger` | 3 | Max conversation rounds per human message |
 | `MaxTaggedAgents` | 6 | Cap on tagged agents per round |
 
-Note: Per-turn and breakout timeouts (`McTimeout`, `BreakoutTimeout`) were removed. Breakout rounds (`MaxBreakoutRounds`) and fix rounds (`MaxFixRounds`) are now open-ended. Session epoch sizes are configured via `SystemSettingsService`.
+| `MaxBreakoutRounds` | 200 | Absolute cap on breakout loop iterations |
+| `MaxConsecutiveIdleRounds` | 5 | Stuck detection threshold (idle rounds) |
+
+Session epoch sizes are configured via `SystemSettingsService`.
 
 ### Parsing Records
 
@@ -198,6 +201,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-05 | Spec accuracy audit: fixed HandleDirectMessage signature (takes recipientAgentId only), corrected breakout loop caps (MaxBreakoutRounds=200, MaxConsecutiveIdleRounds=5), fixed DM handling in breakouts (posted as messages, not injected into prompt), added constants to table | spec-accuracy-audit |
 | 2026-04-04 | Queue reconstruction on startup: `ReconstructQueueAsync` re-enqueues rooms with unanswered human messages on every server startup. 8 new tests. Resolved queue persistence known gap. | queue-reconstruction |
 | 2026-04-04 | Breakout failure surfacing: `HandleBreakoutFailureAsync` catches unhandled exceptions from fire-and-forget breakout loops, closes breakout with `Failed` reason, marks task as `Blocked`, and notifies parent room. Added `Failed` to `BreakoutRoomCloseReason`. | breakout-failure-handling |
 | 2026-04-04 | Full reconciliation with code: open-ended breakout/fix loops, DM handling, task gating, branch-based review split, removed stale constants | spec-006-reconciliation |

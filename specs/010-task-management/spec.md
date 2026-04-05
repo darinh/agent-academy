@@ -77,6 +77,8 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 | `RoomId` | `string?` | FK to the room where this task was created |
 | `Room` | `RoomEntity?` | Navigation property |
 
+**Note**: `TaskEntity` stores several list-typed fields as JSON strings (`PreferredRoles`, `FleetModels`, `TestsCreated`) and `Size` as a nullable string. `CommentCount` is computed at query time, not stored on the entity.
+
 ### Enums
 
 > **Source**: `src/AgentAcademy.Shared/Models/Enums.cs`
@@ -309,7 +311,7 @@ Socrates may use multiple models for review depth:
 
 | Command | Effect |
 |---------|--------|
-| `APPROVE_TASK` | Sets task status to `Approved`, increments `ReviewRounds`, posts approval message in room |
+| `APPROVE_TASK` | Sets task status to `Approved`, increments `ReviewRounds`, posts approval message in room (only when `findings` argument is provided) |
 | `REQUEST_CHANGES` | Sets task status to `ChangesRequested`, increments `ReviewRounds`, posts feedback in room |
 
 > **Source**: `src/AgentAcademy.Server/Commands/Handlers/ApproveTaskHandler.cs`, `RequestChangesHandler.cs`
@@ -712,8 +714,8 @@ All task commands are implemented as `ICommandHandler` implementations.
 | `REQUEST_CHANGES` | `RequestChangesHandler` | Any (convention: Reviewer) | Requests changes with required findings, increments ReviewRounds |
 | `MERGE_TASK` | `MergeTaskHandler` | Planner, Reviewer | Squash-merges task branch to develop; reports conflicting files on failure and suggests REBASE_TASK |
 | `MERGE_PR` | `MergePrHandler` | Planner, Reviewer, Human | Squash-merges task's PR via GitHub API (`gh pr merge --squash`); updates PR status to Merged and completes the task |
-| `REBASE_TASK` | `RebaseTaskHandler` | Any | Rebases task branch onto develop; supports `dryRun=true` for conflict-only check |
-| `CANCEL_TASK` | `CancelTaskHandler` | Planner, Reviewer | Cancels task, optionally deletes branch (default: yes) |
+| `REBASE_TASK` | `RebaseTaskHandler` | Assignee, Planner, Reviewer, Human | Rebases task branch onto develop; supports `dryRun=true` for conflict-only check |
+| `CANCEL_TASK` | `CancelTaskHandler` | Planner, Reviewer, Human | Cancels task, optionally deletes branch (default: yes) |
 | `ADD_TASK_COMMENT` | `AddTaskCommentHandler` | Assignee, Reviewer, Planner | Adds structured comment (Comment/Finding/Evidence/Blocker) |
 | `LIST_TASKS` | `ListTasksHandler` | Any | Lists tasks with optional `status` and `assignee` filters |
 | `SHOW_REVIEW_QUEUE` | `ShowReviewQueueHandler` | Any | Returns tasks in `InReview` or `AwaitingValidation` |

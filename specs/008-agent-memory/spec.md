@@ -17,7 +17,7 @@ The memory system gives agents a structured way to persist and retrieve knowledg
 | `REMEMBER` | `category`, `key`, `value`, `ttl?` (hours) | Confirmation + expiresAt | Own memories only |
 | `RECALL` | `category?`, `key?`, `query?`, `include_expired?` | Matching memories (with stale flag) | Own memories only |
 | `LIST_MEMORIES` | `category?`, `include_expired?` | All memories (filtered, with stale flag) | Own memories only |
-| `FORGET` | `key` | Confirmation (with confirmation step) | Own memories only |
+| `FORGET` | `key` | Confirmation | Own memories only |
 
 ### Syntax in Agent Responses
 
@@ -141,7 +141,6 @@ When building an agent's conversation or breakout prompt, the orchestrator loads
 - Shared memories are stored under the creating agent's `(AgentId, Key)` — no special namespace
 - FORGET only deletes the calling agent's own memories (including shared ones they created)
 - Human can view all agent memories via API for debugging
-- `FORGET` requires a confirmation step (logged as audit event)
 
 ### Prompt Injection for Shared Knowledge
 
@@ -162,7 +161,6 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 
 - Memory keys are unique per agent
 - REMEMBER with an existing key updates the value (upsert semantics)
-- All memory operations are audit-logged
 - Non-shared memory content is never included in other agents' prompts
 - Shared memory content is included in all agents' prompts (in a `=== SHARED KNOWLEDGE ===` section)
 
