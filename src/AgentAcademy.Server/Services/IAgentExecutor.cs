@@ -22,6 +22,12 @@ public interface IAgentExecutor
     bool IsAuthFailed { get; }
 
     /// <summary>
+    /// Current state of the circuit breaker protecting the upstream API.
+    /// Closed = normal, Open = short-circuiting to fallback, HalfOpen = probing.
+    /// </summary>
+    CircuitState CircuitBreakerState { get; }
+
+    /// <summary>
     /// Marks the executor as auth-degraded and emits any transition-side effects
     /// (room notice, notifications) if this is the first transition into failure.
     /// </summary>

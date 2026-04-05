@@ -20,6 +20,7 @@ public sealed class StubExecutor : IAgentExecutor
 
     public bool IsFullyOperational => false;
     public bool IsAuthFailed => false;
+    public CircuitState CircuitBreakerState => CircuitState.Closed;
 
     public Task MarkAuthDegradedAsync(CancellationToken ct = default)
     {

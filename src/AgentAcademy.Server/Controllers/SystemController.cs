@@ -125,7 +125,8 @@ public class SystemController : ControllerBase
             Version: typeof(SystemController).Assembly.GetName().Version?.ToString() ?? "0.0.0",
             CrashDetected: WorkspaceRuntime.CurrentCrashDetected,
             ExecutorOperational: _executor.IsFullyOperational,
-            AuthFailed: _executor.IsAuthFailed
+            AuthFailed: _executor.IsAuthFailed,
+            CircuitBreakerState: _executor.CircuitBreakerState.ToString()
         ));
     }
 

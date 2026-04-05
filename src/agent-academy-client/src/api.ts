@@ -279,6 +279,7 @@ export interface InstanceHealthResult {
   crashDetected: boolean;
   executorOperational: boolean;
   authFailed: boolean;
+  circuitBreakerState?: string;
 }
 
 export interface ServerInstanceDto {

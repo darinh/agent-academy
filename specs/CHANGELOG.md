@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **003-agent-system**: Circuit breaker for CopilotExecutor — Global circuit breaker prevents burning through retries when the Copilot API is consistently failing. Three states: Closed (normal), Open (immediate fallback), HalfOpen (one probe after 60s cooldown). Trips after 5 consecutive failures (quota, transient, or unknown errors). Auth errors do NOT trip the circuit (separate recovery pathway). Auto-resets on token change. State exposed in `GET /api/health/instance` (`CircuitBreakerState` field) and `IAgentExecutor.CircuitBreakerState`. Open-circuit events recorded in `AgentErrors` with type `circuit_open`. 22 new tests (1289 total). Resolves spec 007 known gap: "Error recovery" (partially — circuit breaker and retry semantics now documented).
+
+### Added
 - **007-agent-commands**: Command audit log — `GET /api/commands/audit` endpoint returns paginated, filterable command audit records (by agentId, command, status, hoursBack, with limit/offset pagination). `GET /api/commands/audit/stats` returns aggregate statistics grouped by status, agent, and command. `AuditLogPanel` on Dashboard shows stat cards (total, success, errors, denied), breakdowns by agent and top commands, and a paginated table of recent command records with status badges, error details, and source indicators (agent vs human-ui). Reuses existing `CommandAuditEntity` data — no schema migration needed. 15 new backend tests (1266 total), 19 new frontend tests (157 total).
 
 ### Added

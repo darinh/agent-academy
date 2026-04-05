@@ -162,5 +162,6 @@ public record InstanceHealthResult(
     string Version,
     bool CrashDetected,
     bool ExecutorOperational,
-    bool AuthFailed
+    bool AuthFailed,
+    string CircuitBreakerState = "Closed"
 );

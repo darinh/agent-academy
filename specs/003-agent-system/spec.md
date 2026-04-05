@@ -83,6 +83,7 @@ Key behaviors:
 - **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
 - **TTL cleanup**: Sessions expire after 10 minutes of inactivity; a background timer runs every 2 minutes.
 - **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails (after retry exhaustion), delegates to `StubExecutor`.
+- **Circuit breaker**: Prevents burning through retries when the API is consistently failing. Global (not per-agent) since all agents share the same token. States: Closed (normal flow), Open (immediate fallback, no retries), HalfOpen (one probe allowed after cooldown). Trips after 5 consecutive failures (quota, transient, or unknown — auth errors do NOT trip the circuit). Cooldown: 60 seconds before probing. Auto-resets on token change. State exposed via `GET /api/health/instance` (`CircuitBreakerState` field) and `IAgentExecutor.CircuitBreakerState`. Open-circuit events are recorded in `AgentErrors` with type `circuit_open`.
 - **Graceful disposal**: All sessions and the client are disposed on shutdown.
 
 ### Token Provider: `CopilotTokenProvider`

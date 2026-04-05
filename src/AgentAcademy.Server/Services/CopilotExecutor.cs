@@ -66,6 +66,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly IAgentToolRegistry _toolRegistry;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
+    private readonly CopilotCircuitBreaker _circuitBreaker = new();
     private readonly string? _configToken;
     private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
@@ -127,12 +128,33 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     public Task MarkAuthOperationalAsync(CancellationToken ct = default)
         => TransitionAuthStateAsync(degraded: false, ct);
 
+    /// <summary>
+    /// Current state of the circuit breaker protecting the Copilot API.
+    /// </summary>
+    public CircuitState CircuitBreakerState => _circuitBreaker.State;
+
     public async Task<string> RunAsync(
         AgentDefinition agent,
         string prompt,
         string? roomId,
         CancellationToken ct = default)
     {
+        // Circuit breaker: if the API has been consistently failing,
+        // skip directly to the fallback without burning through retries.
+        if (!_circuitBreaker.AllowRequest())
+        {
+            _logger.LogWarning(
+                "Circuit breaker OPEN for agent {AgentId} — skipping Copilot API, using fallback. " +
+                "Consecutive failures: {Failures}",
+                agent.Id, _circuitBreaker.ConsecutiveFailures);
+            await _errorTracker.RecordAsync(
+                agent.Id, roomId, "circuit_open",
+                $"Circuit breaker open ({_circuitBreaker.ConsecutiveFailures} consecutive failures). " +
+                $"Will probe again after cooldown.",
+                recoverable: true);
+            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+        }
+
         var client = await EnsureClientAsync(ct);
         if (client is null)
         {
@@ -153,6 +175,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             {
                 var response = await SendAndCollectWithRetryAsync(entry.Session, agent, prompt, roomId, ct);
                 entry.Touch();
+                _circuitBreaker.RecordSuccess();
                 return response;
             }
             finally
@@ -162,6 +185,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         }
         catch (CopilotAuthException ex)
         {
+            // Auth failures do NOT trip the circuit — they have their own
+            // recovery pathway (token refresh, auth monitor).
             _logger.LogError(ex,
                 "Authentication failure for agent {AgentId} — marking auth failed",
                 agent.Id);
@@ -171,6 +196,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         }
         catch (CopilotAuthorizationException ex)
         {
+            // Authorization failures do NOT trip the circuit — per-token issue.
             _logger.LogError(ex,
                 "Authorization failure for agent {AgentId} — token lacks required permissions",
                 agent.Id);
@@ -180,27 +206,36 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         }
         catch (CopilotQuotaException ex)
         {
+            _circuitBreaker.RecordFailure();
             _logger.LogError(ex,
-                "Quota error for agent {AgentId} in room {RoomId} — exhausted retries, falling back to stub",
-                agent.Id, roomId);
+                "Quota error for agent {AgentId} in room {RoomId} — exhausted retries, falling back to stub. " +
+                "Circuit breaker: {Failures}/{Threshold} consecutive failures",
+                agent.Id, roomId,
+                _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             // Already recorded per-attempt in SendAndCollectWithRetryAsync; no duplicate here.
             await InvalidateSessionAsync(agent.Id, roomId);
             return await GetFallback().RunAsync(agent, prompt, roomId, ct);
         }
         catch (CopilotTransientException ex)
         {
+            _circuitBreaker.RecordFailure();
             _logger.LogError(ex,
-                "Transient error for agent {AgentId} in room {RoomId} — exhausted retries, falling back to stub",
-                agent.Id, roomId);
+                "Transient error for agent {AgentId} in room {RoomId} — exhausted retries, falling back to stub. " +
+                "Circuit breaker: {Failures}/{Threshold} consecutive failures",
+                agent.Id, roomId,
+                _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             // Already recorded per-attempt in SendAndCollectWithRetryAsync; no duplicate here.
             await InvalidateSessionAsync(agent.Id, roomId);
             return await GetFallback().RunAsync(agent, prompt, roomId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            _circuitBreaker.RecordFailure();
             _logger.LogError(ex,
-                "Copilot call failed for agent {AgentId} in room {RoomId} — falling back to stub",
-                agent.Id, roomId);
+                "Copilot call failed for agent {AgentId} in room {RoomId} — falling back to stub. " +
+                "Circuit breaker: {Failures}/{Threshold} consecutive failures",
+                agent.Id, roomId,
+                _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             await _errorTracker.RecordAsync(agent.Id, roomId, "unknown", ex.Message, recoverable: true);
 
             // Invalidate the broken session so the next attempt gets a fresh one.
@@ -315,6 +350,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     DescribeTokenSource(token));
 
                 await DisposeClientSafe();
+                _circuitBreaker.Reset();
             }
 
             // If we already failed with this exact token, don't retry.
