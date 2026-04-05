@@ -267,6 +267,14 @@ export async function mockAllApis(page: Page) {
     route.fulfill({ status: 404 }));
   await page.route("**/api/activity/stream", (route) =>
     route.fulfill({ status: 404 }));
+
+  // Audit log stubs (dashboard AuditLogPanel)
+  await page.route("**/api/commands/audit/stats**", (route) =>
+    route.fulfill({ json: { totalCommands: 0, byStatus: {}, byAgent: {}, byCommand: {}, windowHours: null } }));
+  await page.route("**/api/commands/audit?**", (route) =>
+    route.fulfill({ json: { records: [], total: 0, limit: 15, offset: 0 } }));
+  await page.route("**/api/commands/audit", (route) =>
+    route.fulfill({ json: { records: [], total: 0, limit: 15, offset: 0 } }));
 }
 
 /**
