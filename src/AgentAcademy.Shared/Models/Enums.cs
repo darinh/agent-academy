@@ -206,6 +206,7 @@ public enum ActivityEventType
     TaskChangesRequested,
     TaskStatusUpdated,
     TaskCommentAdded,
+    TaskPrStatusChanged,
     AgentRecalled,
     RoomRenamed,
     DirectMessageSent

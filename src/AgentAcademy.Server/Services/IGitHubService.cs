@@ -38,5 +38,6 @@ public record PullRequestInfo(
     string Title,
     string BaseBranch,
     string HeadBranch,
-    bool IsMerged
+    bool IsMerged,
+    string? ReviewDecision = null
 );

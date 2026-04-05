@@ -1192,8 +1192,51 @@ public sealed class WorkspaceRuntime
     }
 
     /// <summary>
-    /// Marks a task as complete with final metadata.
+    /// Updates only the PR status on a task. Used by PR sync polling.
+    /// Emits a TaskPrStatusChanged activity event when the status actually changes.
+    /// Returns null if the status was already up-to-date.
     /// </summary>
+    public async Task<TaskSnapshot?> SyncTaskPrStatusAsync(
+        string taskId, Shared.Models.PullRequestStatus newStatus)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var currentStatus = entity.PullRequestStatus;
+        if (string.Equals(currentStatus, newStatus.ToString(), StringComparison.Ordinal))
+            return null; // no change
+
+        var oldStatus = currentStatus ?? "None";
+        entity.PullRequestStatus = newStatus.ToString();
+        entity.UpdatedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.TaskPrStatusChanged, entity.RoomId, null, taskId,
+            $"PR #{entity.PullRequestNumber} status changed: {oldStatus} → {newStatus}");
+
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Returns task IDs that have open (non-terminal) pull requests for polling.
+    /// </summary>
+    public async Task<List<(string TaskId, int PrNumber)>> GetTasksWithActivePrsAsync()
+    {
+        var terminalStatuses = new[]
+        {
+            nameof(Shared.Models.PullRequestStatus.Merged),
+            nameof(Shared.Models.PullRequestStatus.Closed)
+        };
+
+        return await _db.Tasks
+            .Where(t => t.PullRequestNumber != null
+                && t.PullRequestStatus != null
+                && !terminalStatuses.Contains(t.PullRequestStatus))
+            .Select(t => new { t.Id, PrNumber = t.PullRequestNumber!.Value })
+            .AsAsyncEnumerable()
+            .Select(t => (t.Id, t.PrNumber))
+            .ToListAsync();
+    }
     public async Task<TaskSnapshot> CompleteTaskAsync(
         string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
     {

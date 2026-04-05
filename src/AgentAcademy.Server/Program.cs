@@ -295,6 +295,9 @@ builder.Services.AddHostedService<ActivityNotificationBroadcaster>();
 // Proactive auth health probe (hosted service — checks GitHub /user every 5 minutes)
 builder.Services.AddHostedService<CopilotAuthMonitorService>();
 
+// PR status sync (polls GitHub every 2 minutes for PR state changes)
+builder.Services.AddHostedService<PullRequestSyncService>();
+
 var app = builder.Build();
 
 // Auto-migrate database on startup

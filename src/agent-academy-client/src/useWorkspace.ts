@@ -164,6 +164,7 @@ export function useWorkspace() {
       case "PhaseChanged":
       case "PresenceUpdated":
       case "DirectMessageSent":
+      case "TaskPrStatusChanged":
         void refreshRef.current?.({ showBusy: false });
         break;
     }

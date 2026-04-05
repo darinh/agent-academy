@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **010-task-management**: PR status sync via polling — `PullRequestSyncService` background service polls GitHub every 2 minutes for PR status changes on tasks with active (non-terminal) PRs. Uses `gh pr view --json reviewDecision` to detect review state. Maps GitHub states to `PullRequestStatus` enum: `REVIEW_REQUIRED` → `ReviewRequested`, `APPROVED` → `Approved`, `CHANGES_REQUESTED` → `ChangesRequested`, merged → `Merged`, closed → `Closed`. Added `ReviewDecision` field to `PullRequestInfo` record. Added `SyncTaskPrStatusAsync` and `GetTasksWithActivePrsAsync` to `WorkspaceRuntime`. Emits `TaskPrStatusChanged` activity event on status transitions. Frontend refreshes task list on `TaskPrStatusChanged`. Error isolation: single PR failure doesn't block others. CancellationToken checks between PR polls for clean shutdown. 36 new tests (1017 total). Resolves spec 010 Phase 2 gap: "No PR status sync".
+
+### Added
 - **010-task-management**: GitHub PR integration (Phase 1) — `IGitHubService` / `GitHubService` wraps `gh` CLI for PR operations. `CREATE_PR` agent command pushes task branch to remote via `GitService.PushBranchAsync` and opens a GitHub pull request via `gh pr create`. Updates task entity with PR URL, number, and `Open` status. Role-gated to assigned agent, Planner, Reviewer, or Human. `GET /api/github/status` REST endpoint reports `gh` CLI auth status and repository slug. `CREATE_PR` added to `HumanCommandRegistry` (frontend command palette) and `CommandController` allowlist (async execution). 23 new tests (980 total). Resolves spec 010 known gaps: "GitHub PR integration not implemented" and "No remote push capability".
 
 ### Added
