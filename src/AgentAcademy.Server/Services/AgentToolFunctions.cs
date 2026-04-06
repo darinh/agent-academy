@@ -48,7 +48,7 @@ public sealed class AgentToolFunctions
                 "List all tasks in the workspace with their status, assignee, and metadata."),
             AIFunctionFactory.Create(ListRoomsAsync, "list_rooms",
                 "List all collaboration rooms in the workspace with their status and participants."),
-            AIFunctionFactory.Create(ListAgentsAsync, "list_agents",
+            AIFunctionFactory.Create(ListAgentsAsync, "show_agents",
                 "List all agents in the workspace with their current location and state."),
         ];
     }
@@ -157,7 +157,7 @@ public sealed class AgentToolFunctions
     [Description("List all agents with their current location and state.")]
     private async Task<string> ListAgentsAsync()
     {
-        _logger.LogDebug("Tool call: list_agents");
+        _logger.LogDebug("Tool call: show_agents");
 
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();

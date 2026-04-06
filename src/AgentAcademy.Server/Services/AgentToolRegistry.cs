@@ -9,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 ///
 /// Tool groups:
 /// <list type="bullet">
-/// <item><c>task-state</c> — list_tasks, list_rooms, list_agents (read-only, shared)</item>
+/// <item><c>task-state</c> — list_tasks, list_rooms, show_agents (read-only, shared)</item>
 /// <item><c>code</c> — read_file, search_code (read-only, shared)</item>
 /// <item><c>task-write</c> — create_task, update_task_status, add_task_comment (per-agent)</item>
 /// <item><c>memory</c> — remember, recall (per-agent)</item>

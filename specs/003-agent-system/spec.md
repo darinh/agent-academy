@@ -235,7 +235,7 @@ AgentDefinition.EnabledTools ["task-state", "code"]
 IAgentToolRegistry.GetToolsForAgent(enabledTools)
          │  resolves tool groups → AIFunction list
          ▼
-List<AIFunction> [list_tasks, list_rooms, list_agents, read_file, search_code]
+List<AIFunction> [list_tasks, list_rooms, show_agents, read_file, search_code]
          │
          ▼
 SessionConfig.Tools = [.. tools]
@@ -246,7 +246,7 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 
 | Group | Tools | Type | Agents |
 |-------|-------|------|--------|
-| `task-state` | `list_tasks`, `list_rooms`, `list_agents` | Read-only (shared) | All agents |
+| `task-state` | `list_tasks`, `list_rooms`, `show_agents` | Read-only (shared) | All agents |
 | `code` | `read_file`, `search_code` | Read-only (shared) | Engineers, Writer |
 | `task-write` | `create_task`, `update_task_status`, `add_task_comment` | Write (per-agent) | All agents |
 | `memory` | `remember`, `recall` | Write/Read (per-agent) | All agents |
@@ -262,7 +262,7 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 |------|-------------|------------|
 | `list_tasks` | Lists tasks with status, assignee, metadata | `status?` (filter) |
 | `list_rooms` | Lists rooms with status and participants | `includeArchived?` (bool) |
-| `list_agents` | Lists agents with location and state | (none) |
+| `show_agents` | Lists agents with location and state | (none) |
 | `read_file` | Reads file content with optional line range | `path`, `startLine?`, `endLine?` |
 | `search_code` | Searches codebase via `git grep` | `query`, `path?`, `glob?`, `ignoreCase?` |
 
@@ -699,7 +699,7 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-03-29 | Agent config API — CRUD endpoints for agent config overrides and instruction templates | agent-config-phase2 |
 | 2026-03-30 | Frontend agent config UI — Settings panel with agent config cards, template management, 3 seed templates | agent-config-phase3-4 |
 | 2026-04-04 | LLM usage tracking — `LlmUsageTracker` captures `AssistantUsageEvent` from Copilot SDK. Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. REST APIs: room usage aggregation, per-agent breakdown, individual records, global usage with time filter. Resolves "No token/usage tracking" known gap. Adversarial review (GPT-5.3 Codex): 4 findings — 3 fixed (decimal precision, unsafe casts, input validation), 1 accepted (multi-query race). 20 new tests. | usage-tracking |
-| 2026-04-05 | SDK tool calling — `AgentToolRegistry` maps `EnabledTools` groups to `AIFunction` objects. 5 read-only tools: `list_tasks`, `list_rooms`, `list_agents` (task-state group), `read_file`, `search_code` (code group). `AgentPermissionHandler` denies dangerous permission kinds (shell/write/url). `CopilotExecutor` passes tools in `SessionConfig`. Resolves "No tool calling" known gap. Adversarial review (GPT-5.3 Codex, Claude Opus 4.6, Claude Sonnet 4.5): 14 findings — 7 fixed (permission handler blanket approve, stderr deadlock, path traversal bypass, FindProjectRoot fallback, max-count per-file, no timeout, regex vs fixed-string). 34 new tests. | sdk-tool-calling |
+| 2026-04-05 | SDK tool calling — `AgentToolRegistry` maps `EnabledTools` groups to `AIFunction` objects. 5 read-only tools: `list_tasks`, `list_rooms`, `show_agents` (task-state group), `read_file`, `search_code` (code group). `AgentPermissionHandler` denies dangerous permission kinds (shell/write/url). `CopilotExecutor` passes tools in `SessionConfig`. Resolves "No tool calling" known gap. Adversarial review (GPT-5.3 Codex, Claude Opus 4.6, Claude Sonnet 4.5): 14 findings — 7 fixed (permission handler blanket approve, stderr deadlock, path traversal bypass, FindProjectRoot fallback, max-count per-file, no timeout, regex vs fixed-string). 34 new tests. Note: `list_agents` renamed to `show_agents` (2026-04-06) to avoid conflict with Copilot CLI built-in tool of the same name. | sdk-tool-calling |
 | 2026-04-05 | Agent write tools — 5 new tools in 2 groups: `task-write` (create_task, update_task_status, add_task_comment) and `memory` (remember, recall). Inner wrapper classes capture agent identity via closures. `IAgentToolRegistry` extended with agentId/agentName parameters for contextual groups. Reuses `RememberHandler.ValidCategories` and `RecallHandler.SearchWithFts5Async`. All 6 agents updated. 35 new tests (1154 total). | agent-write-tools |
 | 2026-04-05 | Session history UI — `ConversationSessionService` extended with `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync` query methods with pagination, status filtering, and `hoursBack` time window. New `SessionController` (`GET /api/sessions`, `GET /api/sessions/stats`), room sessions endpoint (`GET /api/rooms/{roomId}/sessions`). Frontend: `SessionHistoryPanel` in dashboard with stats cards, filter tabs, expandable summaries, pagination. `ChatPanel` session resume indicator shows when agents have archived context. 21 new backend tests (1319 total), 16 new frontend tests (218 total). | session-history |
 | 2026-04-05 | OAuth refresh token — `CopilotTokenProvider` extended with `RefreshToken`, `ExpiresAtUtc`, `IsTokenExpiringSoon`, `CanRefresh`, cookie write-back flag. `ICopilotAuthProbe.RefreshTokenAsync()` exchanges refresh tokens at GitHub's OAuth endpoint. `CopilotAuthMonitorService` proactively refreshes 30 min before expiry and attempts refresh before degrading on auth failure. `Program.cs` captures refresh token in OAuth callback, restores from cookie on restart, merges refreshed tokens into cookie. Access tokens auto-renew for up to 6 months without re-authentication. 21 new tests (1343 total). Adversarial review (GPT-5.2, Claude Sonnet 4, Claude Haiku 4.5): timeout handling, token clobbering, and cookie error handling fixed. | token-refresh |

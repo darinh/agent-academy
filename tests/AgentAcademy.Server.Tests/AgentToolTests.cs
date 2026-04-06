@@ -23,7 +23,7 @@ public class AgentToolRegistryTests
         Assert.Equal(3, tools.Count);
         Assert.Contains(tools, t => t.Name == "list_tasks");
         Assert.Contains(tools, t => t.Name == "list_rooms");
-        Assert.Contains(tools, t => t.Name == "list_agents");
+        Assert.Contains(tools, t => t.Name == "show_agents");
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class AgentToolRegistryTests
         Assert.Equal(10, names.Count);
         Assert.Contains("list_tasks", names);
         Assert.Contains("list_rooms", names);
-        Assert.Contains("list_agents", names);
+        Assert.Contains("show_agents", names);
         Assert.Contains("read_file", names);
         Assert.Contains("search_code", names);
         Assert.Contains("create_task", names);
@@ -265,7 +265,7 @@ public class AgentToolFunctionsTests : IDisposable
         Assert.Equal(3, tools.Count);
         Assert.Contains(tools, t => t.Name == "list_tasks");
         Assert.Contains(tools, t => t.Name == "list_rooms");
-        Assert.Contains(tools, t => t.Name == "list_agents");
+        Assert.Contains(tools, t => t.Name == "show_agents");
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public class AgentToolFunctionsTests : IDisposable
     public async Task ListAgents_ReturnsCatalogAgents()
     {
         var tools = _toolFunctions.CreateTaskStateTools();
-        var listAgents = tools.Single(t => t.Name == "list_agents");
+        var listAgents = tools.Single(t => t.Name == "show_agents");
 
         var result = await listAgents.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments());
         var text = result?.ToString() ?? "";
