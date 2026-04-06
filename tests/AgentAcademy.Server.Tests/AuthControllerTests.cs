@@ -3,8 +3,11 @@ using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
@@ -104,10 +107,17 @@ public class AuthControllerTests
         var executor = Substitute.For<IAgentExecutor>();
         executor.IsAuthFailed.Returns(isAuthFailed);
 
+        var tokenPersistence = new TokenPersistenceService(
+            tokenProvider,
+            Substitute.For<IServiceScopeFactory>(),
+            new EphemeralDataProtectionProvider(),
+            NullLogger<TokenPersistenceService>.Instance);
+
         var controller = new AuthController(
             new GitHubAuthOptions(authEnabled),
             tokenProvider,
-            executor);
+            executor,
+            tokenPersistence);
 
         controller.ControllerContext = new ControllerContext
         {

@@ -21,15 +21,18 @@ public class AuthController : ControllerBase
     private readonly GitHubAuthOptions _authOptions;
     private readonly CopilotTokenProvider _tokenProvider;
     private readonly IAgentExecutor _executor;
+    private readonly TokenPersistenceService _tokenPersistence;
 
     public AuthController(
         GitHubAuthOptions authOptions,
         CopilotTokenProvider tokenProvider,
-        IAgentExecutor executor)
+        IAgentExecutor executor,
+        TokenPersistenceService tokenPersistence)
     {
         _authOptions = authOptions;
         _tokenProvider = tokenProvider;
         _executor = executor;
+        _tokenPersistence = tokenPersistence;
     }
 
     /// <summary>
@@ -101,7 +104,10 @@ public class AuthController : ControllerBase
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         if (User.Identity?.IsAuthenticated == true)
+        {
             _tokenProvider.ClearToken();
+            await _tokenPersistence.ClearPersistedTokensAsync();
+        }
         return Ok(new { message = "Logged out." });
     }
 }

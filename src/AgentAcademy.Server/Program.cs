@@ -208,6 +208,8 @@ builder.Services.AddScoped<ConversationSessionService>();
 
 // Copilot token provider (singleton — captures OAuth token for SDK activation)
 builder.Services.AddSingleton<CopilotTokenProvider>();
+builder.Services.AddSingleton<TokenPersistenceService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TokenPersistenceService>());
 
 // LLM usage tracking (singleton — captures AssistantUsageEvent from SDK)
 builder.Services.AddSingleton<LlmUsageTracker>();
