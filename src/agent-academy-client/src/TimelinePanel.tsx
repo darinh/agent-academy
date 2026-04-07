@@ -15,6 +15,7 @@ import {
   PlayRegular,
 } from "@fluentui/react-icons";
 import type { ActivityEvent, ActivityEventType } from "./api";
+import { relativeTime, severityColor, eventCategory } from "./timelinePanelUtils";
 import EmptyState from "./EmptyState";
 import SkeletonLoader from "./SkeletonLoader";
 
@@ -87,35 +88,26 @@ const useLocalStyles = makeStyles({
 
 // ── Helpers ──
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const secs = Math.floor(diff / 1000);
-  if (secs < 60) return "just now";
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
 function eventIcon(type: ActivityEventType) {
-  if (type.startsWith("Agent")) return <PersonRegular />;
-  if (type.startsWith("Message")) return <ChatRegular />;
-  if (type.startsWith("Task")) return <TaskListLtrRegular />;
-  if (type === "PhaseChanged") return <ArrowSyncRegular />;
-  if (type.startsWith("Subagent")) return <PlayRegular />;
-  if (type.startsWith("Room")) return <InfoRegular />;
-  return <InfoRegular />;
+  const cat = eventCategory(type);
+  switch (cat) {
+    case "agent": return <PersonRegular />;
+    case "message": return <ChatRegular />;
+    case "task": return <TaskListLtrRegular />;
+    case "phase": return <ArrowSyncRegular />;
+    case "subagent": return <PlayRegular />;
+    case "room": return <InfoRegular />;
+    default: return <InfoRegular />;
+  }
 }
 
 function severityBadge(severity: "Info" | "Warning" | "Error") {
-  const map = {
-    Info: { color: "informative" as const, icon: <CheckmarkCircleRegular /> },
-    Warning: { color: "warning" as const, icon: <WarningRegular /> },
-    Error: { color: "danger" as const, icon: <ErrorCircleRegular /> },
+  const iconMap = {
+    Info: <CheckmarkCircleRegular />,
+    Warning: <WarningRegular />,
+    Error: <ErrorCircleRegular />,
   };
-  return map[severity];
+  return { color: severityColor(severity), icon: iconMap[severity] };
 }
 
 // ── Component ──
