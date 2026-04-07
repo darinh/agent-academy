@@ -791,7 +791,7 @@ export const useStyles = makeStyles({
     alignItems: "center",
     fontFamily: "var(--mono)",
     ...shorthands.borderRadius("3px"),
-    ...shorthands.padding("2px", "6px", "1px"),
+    ...shorthands.padding("3px", "6px", "2px"),
     fontSize: "9px",
     lineHeight: "1",
     fontWeight: 600,
