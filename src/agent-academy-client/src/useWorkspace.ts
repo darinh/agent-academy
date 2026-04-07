@@ -67,7 +67,13 @@ const empty: WorkspaceOverview = {
   generatedAt: "",
 };
 
-export function useWorkspace() {
+export interface UseWorkspaceOptions {
+  onActivityEvent?: (evt: ActivityEvent) => void;
+}
+
+export function useWorkspace(options?: UseWorkspaceOptions) {
+  const onActivityEventRef = useRef(options?.onActivityEvent);
+  onActivityEventRef.current = options?.onActivityEvent;
   const recoveryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshInFlight = useRef(false);
 
@@ -129,6 +135,7 @@ export function useWorkspace() {
   const refreshRef = useRef<(opts?: { showBusy?: boolean }) => Promise<boolean>>(undefined);
 
   const handleActivityEvent = useCallback((evt: ActivityEvent) => {
+    onActivityEventRef.current?.(evt);
     switch (evt.type) {
       case "AgentThinking": {
         if (!evt.roomId || !evt.actorId) break;
@@ -165,6 +172,10 @@ export function useWorkspace() {
       case "PresenceUpdated":
       case "DirectMessageSent":
       case "TaskPrStatusChanged":
+      case "AgentErrorOccurred":
+      case "AgentWarningOccurred":
+      case "SubagentFailed":
+      case "SubagentCompleted":
         void refreshRef.current?.({ showBusy: false });
         break;
     }

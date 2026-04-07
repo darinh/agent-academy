@@ -14,6 +14,8 @@ import {
   useId,
   Toast,
   ToastTitle,
+  ToastBody,
+  Badge,
 } from "@fluentui/react-components";
 import {
   ChatRegular,
@@ -28,7 +30,7 @@ import {
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
-import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus } from "./api";
+import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
@@ -93,6 +95,30 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   directMessages: "Read private threads without losing the main-room context around them.",
 };
 
+const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
+  "AgentErrorOccurred",
+  "AgentWarningOccurred",
+  "SubagentFailed",
+  "AgentFinished",
+  "TaskCreated",
+  "PhaseChanged",
+  "SubagentCompleted",
+]);
+
+/** Events that trigger a timeline refresh in useWorkspace — badge counter stays aligned. */
+const BADGE_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
+  "MessagePosted", "RoomCreated", "TaskCreated", "PhaseChanged",
+  "PresenceUpdated", "DirectMessageSent", "AgentFinished",
+  "AgentErrorOccurred", "AgentWarningOccurred",
+  "SubagentFailed", "SubagentCompleted",
+]);
+
+function toastIntent(evt: ActivityEvent): "error" | "warning" | "info" {
+  if (evt.severity === "Error" || evt.type === "AgentErrorOccurred" || evt.type === "SubagentFailed") return "error";
+  if (evt.severity === "Warning" || evt.type === "AgentWarningOccurred") return "warning";
+  return "info";
+}
+
 export default function App() {
   return (
     <FluentProvider theme={webDarkTheme}>
@@ -103,6 +129,31 @@ export default function App() {
 
 function AppShell() {
   const s = useStyles();
+
+  const toasterId = useId("workspace-toaster");
+  const { dispatchToast } = useToastController(toasterId);
+  const tabRef = useRef("chat");
+  const [unseenActivity, setUnseenActivity] = useState(0);
+
+  const handleActivityToast = useCallback((evt: ActivityEvent) => {
+    // Increment unseen counter only for events that appear in the timeline
+    if (tabRef.current !== "timeline" && BADGE_EVENT_TYPES.has(evt.type)) {
+      setUnseenActivity((n) => n + 1);
+    }
+
+    if (!TOAST_EVENT_TYPES.has(evt.type)) return;
+
+    const intent = toastIntent(evt);
+    const timeout = intent === "error" ? 8000 : 4000;
+    dispatchToast(
+      <Toast>
+        <ToastTitle>{evt.type.replace(/([A-Z])/g, " $1").trim()}</ToastTitle>
+        <ToastBody>{evt.message}</ToastBody>
+      </Toast>,
+      { intent, timeout },
+    );
+  }, [dispatchToast]);
+
   const {
     ov,
     room,
@@ -124,7 +175,13 @@ function AppShell() {
     handleToggleSidebar,
     handleSendMessage,
     handlePhaseTransition,
-  } = useWorkspace();
+  } = useWorkspace({ onActivityEvent: handleActivityToast });
+
+  // Keep tabRef in sync and clear unseen counter when switching to timeline
+  useEffect(() => {
+    tabRef.current = tab;
+    if (tab === "timeline") setUnseenActivity(0);
+  }, [tab]);
 
   const { circuitBreakerState } = useCircuitBreakerPolling();
 
@@ -152,8 +209,6 @@ function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const toasterId = useId("workspace-toaster");
-  const { dispatchToast } = useToastController(toasterId);
   const previousAuthRef = useRef<AuthStatus | null>(null);
   const authRefreshInFlight = useRef(false);
   const loginUrl = `${apiBaseUrl}/api/auth/login`;
@@ -684,10 +739,22 @@ function AppShell() {
                   >
                     {TAB_ITEMS.map((item) => {
                       const Icon = item.Icon;
+                      const showBadge = item.value === "timeline" && unseenActivity > 0;
                       return (
                         <Tab key={item.value} value={item.value} icon={<Icon />}>
                           <span className={s.tabLabelStack}>
-                            <span className={s.tabLabelTitle}>{item.label}</span>
+                            <span className={s.tabLabelTitle}>
+                              {item.label}
+                              {showBadge && (
+                                <Badge
+                                  size="small"
+                                  color="danger"
+                                  style={{ marginLeft: 6, verticalAlign: "middle" }}
+                                >
+                                  {unseenActivity > 99 ? "99+" : unseenActivity}
+                                </Badge>
+                              )}
+                            </span>
                             <span className={s.tabLabelDetail}>{item.detail}</span>
                           </span>
                         </Tab>
