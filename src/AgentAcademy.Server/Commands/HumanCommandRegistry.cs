@@ -359,6 +359,153 @@ public static class HumanCommandRegistry
                     Required: true),
                 new("findings", "Findings", "text", "Optional review findings or notes."),
             ]),
+
+        // ── Memory management ──
+
+        new("REMEMBER", "Remember", "operations",
+            "Store a key-value memory entry.",
+            "Persists a fact or preference that agents can recall later. Supports optional category and TTL.",
+            IsAsync: true,
+            Fields:
+            [
+                new("key", "Key", "text", "Unique identifier for this memory.",
+                    Placeholder: "build-command", Required: true),
+                new("value", "Value", "text", "The content to remember.",
+                    Placeholder: "dotnet build && npm run build", Required: true),
+                new("category", "Category", "text",
+                    "Grouping tag: decision, lesson, pattern, preference, invariant, risk, gotcha, incident, constraint, finding, spec-drift, mapping, verification, gap-pattern, shared.",
+                    Placeholder: "decision", Required: true),
+                new("ttl", "TTL (hours)", "number", "Auto-expire after this many hours. Omit for permanent."),
+            ]),
+
+        new("FORGET", "Forget", "operations",
+            "Delete a memory entry by key.",
+            "Permanently removes a stored memory. Use LIST_MEMORIES to find the key first.",
+            IsAsync: true,
+            Fields:
+            [
+                new("key", "Key", "text", "The memory key to delete.",
+                    Required: true),
+            ]),
+
+        new("LIST_MEMORIES", "List memories", "operations",
+            "Browse stored memories with optional category filter.",
+            "Shows all persisted memories for the workspace. Filter by category to narrow results.",
+            IsAsync: true,
+            Fields:
+            [
+                new("category", "Category", "text", "Optional category filter.",
+                    Placeholder: "workflow"),
+                new("include_expired", "Include expired", "text", "Set to 'true' to include expired entries.",
+                    Placeholder: "false"),
+            ]),
+
+        new("RECALL", "Recall", "operations",
+            "Search memories by query, category, or key.",
+            "Fuzzy-search across all stored memories. More flexible than LIST_MEMORIES for discovery.",
+            IsAsync: true,
+            Fields:
+            [
+                new("query", "Query", "text", "Free-text search across memory values.",
+                    Placeholder: "build command"),
+                new("category", "Category", "text", "Optional category filter."),
+                new("key", "Key", "text", "Optional exact key lookup."),
+                new("include_expired", "Include expired", "text", "Set to 'true' to include expired entries.",
+                    Placeholder: "false"),
+            ]),
+
+        new("IMPORT_MEMORIES", "Import memories", "operations",
+            "Bulk import memories from JSON.",
+            "Accepts a JSON array of memory objects to upsert in batch.",
+            IsAsync: true,
+            Fields:
+            [
+                new("memories", "Memories JSON", "text",
+                    "JSON array: [{\"category\":\"...\",\"key\":\"...\",\"value\":\"...\",\"ttl\":null}]",
+                    Required: true),
+            ]),
+
+        // ── Task lifecycle ──
+
+        new("ADD_TASK_COMMENT", "Add task comment", "workspace",
+            "Attach a comment, finding, evidence, or blocker note to a task.",
+            "Adds structured annotations to a task. Type determines how the comment is displayed.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to comment on.",
+                    Required: true),
+                new("content", "Content", "text", "The comment text.",
+                    Required: true),
+                new("type", "Type", "text", "Comment | Finding | Evidence | Blocker",
+                    Placeholder: "Comment"),
+            ]),
+
+        new("CLAIM_TASK", "Claim task", "workspace",
+            "Assign yourself to a task for manual work.",
+            "Claims an unassigned or available task. Useful for human-driven implementation.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to claim.",
+                    Required: true),
+            ]),
+
+        new("RELEASE_TASK", "Release task", "workspace",
+            "Unassign yourself from a claimed task.",
+            "Releases a task back to the pool so another agent or human can pick it up.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to release.",
+                    Required: true),
+            ]),
+
+        new("REJECT_TASK", "Reject task", "workspace",
+            "Reject a task and send it back for rework.",
+            "Reverts an approved or completed task to changes-requested status with a reason.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to reject.",
+                    Required: true),
+                new("reason", "Reason", "text", "Why the task is being rejected.",
+                    Required: true),
+            ]),
+
+        new("REQUEST_CHANGES", "Request changes", "workspace",
+            "Request changes on a task with specific findings.",
+            "Sends a task back for revision with detailed feedback on what needs to change.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to request changes on.",
+                    Required: true),
+                new("findings", "Findings", "text", "Detailed description of required changes.",
+                    Required: true),
+            ]),
+
+        new("MERGE_TASK", "Merge task", "workspace",
+            "Squash-merge a task branch into develop.",
+            "Completes a task by merging its branch. Only works on approved tasks with clean branches.",
+            IsAsync: true,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to merge.",
+                    Required: true),
+            ]),
+
+        // ── Server operations ──
+
+        new("RESTART_SERVER", "Restart server", "operations",
+            "Trigger a graceful server restart.",
+            "Initiates a controlled shutdown and restart via the wrapper script. Rate-limited.",
+            IsAsync: true,
+            Fields:
+            [
+                new("reason", "Reason", "text", "Why the server is being restarted.",
+                    Placeholder: "Applied configuration changes", Required: true),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =
