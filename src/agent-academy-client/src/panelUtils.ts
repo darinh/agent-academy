@@ -59,7 +59,9 @@ export interface FormatElapsedOptions {
 /**
  * Format the elapsed time between two ISO timestamps.
  *
- * Replaces three panel-specific `formatDuration` variants:
+ * Replaces three panel-specific `formatDuration` variants (not to be
+ * confused with `formatLatency` in UsagePanel, which formats millisecond
+ * API response times):
  * - AgentSessionPanel: `formatElapsed(start, end)` — defaults
  * - TaskListPanel: `formatElapsed(start, end, { maxUnit: "days" })`
  * - RestartHistoryPanel: `formatElapsed(start, end, { granularity: "seconds", runningLabel: "(running)" })`

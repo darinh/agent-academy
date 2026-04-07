@@ -199,7 +199,7 @@ const useLocalStyles = makeStyles({
   },
 });// ── Helpers ──
 
-function formatDuration(ms: number | null): string {
+function formatLatency(ms: number | null): string {
   if (ms == null) return "—";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
@@ -461,7 +461,7 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
                     <td className={s.tdRight}>
                       {rec.cost != null ? formatCost(rec.cost) : "—"}
                     </td>
-                    <td className={s.tdRight}>{formatDuration(rec.durationMs)}</td>
+                    <td className={s.tdRight}>{formatLatency(rec.durationMs)}</td>
                     <td className={s.td}>
                       <span className={s.mono}>{formatTimestamp(rec.recordedAt)}</span>
                     </td>
