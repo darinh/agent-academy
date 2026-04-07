@@ -136,6 +136,7 @@ function AppShell() {
   const [switchError, setSwitchError] = useState("");
   const [allTasks, setAllTasks] = useState<TaskSnapshot[]>([]);
   const [tasksError, setTasksError] = useState(false);
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksFetchKey, setTasksFetchKey] = useState(0);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
@@ -219,9 +220,11 @@ function AppShell() {
     if (showProjectSelector || tab !== "tasks") return;
     let cancelled = false;
     setTasksError(false);
+    setTasksLoading(true);
     getTasks()
       .then((tasks) => { if (!cancelled) setAllTasks(tasks); })
-      .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } });
+      .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } })
+      .finally(() => { if (!cancelled) setTasksLoading(false); });
     return () => { cancelled = true; };
   }, [showProjectSelector, tab, tasksFetchKey]);
 
@@ -634,6 +637,7 @@ function AppShell() {
                   {tab === "chat" && (
                     <ChatPanel
                       room={room}
+                      loading={busy}
                       thinkingAgents={thinkingAgentList}
                       connectionStatus={connectionStatus}
                       onSendMessage={handleSendMessage}
@@ -643,6 +647,7 @@ function AppShell() {
                   {tab === "tasks" && (
                     <TaskListPanel
                       tasks={allTasks}
+                      loading={tasksLoading}
                       error={tasksError}
                       onRefresh={() => setTasksFetchKey((k) => k + 1)}
                     />
@@ -654,7 +659,7 @@ function AppShell() {
                     <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
                   )}
                   {tab === "timeline" && (
-                    <TimelinePanel activity={activity} />
+                    <TimelinePanel activity={activity} loading={busy} />
                   )}
                   {tab === "dashboard" && (
                     <DashboardPanel overview={ov} circuitBreakerState={circuitBreakerState} />

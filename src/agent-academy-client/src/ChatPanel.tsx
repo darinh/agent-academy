@@ -4,7 +4,6 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Avatar,
-  Body1,
   Body1Strong,
   Badge,
   Button,
@@ -24,6 +23,8 @@ import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot } from "./api";
 import { getRoomSessions } from "./api";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
+import EmptyState from "./EmptyState";
+import SkeletonLoader from "./SkeletonLoader";
 import type { ThinkingAgent } from "./useWorkspace";
 import type { ConnectionStatus } from "./useActivityHub";
 
@@ -251,6 +252,7 @@ const STATUS_COLORS: Record<ConnectionStatus, string> = {
 
 const ChatPanel = memo(function ChatPanel(props: {
   room: RoomSnapshot | null;
+  loading?: boolean;
   thinkingAgents: ThinkingAgent[];
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
@@ -407,14 +409,18 @@ const ChatPanel = memo(function ChatPanel(props: {
             Agents have context from a previous conversation session
           </div>
         )}
-        {filteredMessages.length ? (
+        {props.loading && filteredMessages.length === 0 ? (
+          <SkeletonLoader rows={4} variant="chat" />
+        ) : filteredMessages.length ? (
           filteredMessages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />
           ))
         ) : (
-          <Body1 className={s.emptyState}>
-            {room?.recentMessages.length ? "All messages filtered." : "No messages yet for this room."}
-          </Body1>
+          <EmptyState
+            icon={<span style={{ fontSize: "48px", opacity: 0.5 }}>💬</span>}
+            title={room?.recentMessages.length ? "All messages filtered" : "No messages yet"}
+            detail={room?.recentMessages.length ? "Adjust filters above to see hidden messages." : "Messages will appear here when the team starts collaborating."}
+          />
         )}
         {thinkingAgents.map((agent) => (
           <ThinkingBubble key={agent.id} agent={agent} />

@@ -4,10 +4,8 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Avatar,
-  Body1,
   Body1Strong,
   Button,
-  Caption1,
   makeStyles,
   mergeClasses,
   Spinner,
@@ -22,6 +20,9 @@ import {
 } from "@fluentui/react-icons";
 import { roleColor, formatRole } from "./theme";
 import { formatTime } from "./utils";
+import EmptyState from "./EmptyState";
+import ErrorState from "./ErrorState";
+import SkeletonLoader from "./SkeletonLoader";
 import type { DmThreadSummary, DmMessage } from "./api";
 import {
   getDmThreads,
@@ -267,6 +268,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   const [sending, setSending] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -276,8 +278,9 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     try {
       const data = await getDmThreads();
       setThreads(data);
+      setLoadError(false);
     } catch {
-      // silently fail
+      setLoadError(true);
     }
   }, []);
 
@@ -385,11 +388,16 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   );
 
   if (loading) {
+    return <SkeletonLoader rows={4} variant="list" />;
+  }
+
+  if (loadError && threads.length === 0) {
     return (
-      <div className={s.emptyState}>
-        <Spinner size="small" />
-        <Body1>Loading messages…</Body1>
-      </div>
+      <ErrorState
+        message="Failed to load conversations"
+        detail="Could not retrieve direct message threads."
+        onRetry={() => { setLoading(true); setLoadError(false); void refreshThreads().finally(() => setLoading(false)); }}
+      />
     );
   }
 
@@ -446,9 +454,11 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
 
         <div className={s.threadList}>
           {threads.length === 0 && !loading ? (
-            <div className={s.emptyState} style={{ height: "auto", padding: "24px 16px" }}>
-              <Caption1>No conversations yet</Caption1>
-            </div>
+            <EmptyState
+              icon={<ChatRegular />}
+              title="No conversations yet"
+              detail="Click + above to start a direct message with an agent."
+            />
           ) : (
             threads.map((thread) => {
               const colors = roleColor(thread.agentRole);
@@ -514,10 +524,11 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
 
             <div ref={scrollRef} className={s.messageList} role="log" aria-label="Direct messages">
               {messages.length === 0 ? (
-                <div className={s.emptyState}>
-                  <ChatRegular className={s.emptyIcon} />
-                  <Body1>Send a message to start the conversation</Body1>
-                </div>
+                <EmptyState
+                  icon={<ChatRegular />}
+                  title="No messages yet"
+                  detail="Send a message to start the conversation."
+                />
               ) : (
                 messages.map((msg) => (
                   <DmMessageBubble key={msg.id} message={msg} />
@@ -555,13 +566,11 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
             )}
           </>
         ) : (
-          <div className={s.emptyState}>
-            <ChatRegular className={s.emptyIcon} />
-            <Subtitle2>Direct Messages</Subtitle2>
-            <Body1>
-              Select a conversation or click + to message an agent directly.
-            </Body1>
-          </div>
+          <EmptyState
+            icon={<ChatRegular />}
+            title="Direct Messages"
+            detail="Select a conversation or click + to message an agent directly."
+          />
         )}
       </div>
     </div>

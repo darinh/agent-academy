@@ -15,6 +15,8 @@ import {
   PlayRegular,
 } from "@fluentui/react-icons";
 import type { ActivityEvent, ActivityEventType } from "./api";
+import EmptyState from "./EmptyState";
+import SkeletonLoader from "./SkeletonLoader";
 
 // ── Styles ──
 
@@ -121,9 +123,10 @@ function severityBadge(severity: "Info" | "Warning" | "Error") {
 interface TimelinePanelProps {
   /** Pre-fetched activity events from useWorkspace (room-filtered). */
   activity: ActivityEvent[];
+  loading?: boolean;
 }
 
-export default function TimelinePanel({ activity }: TimelinePanelProps) {
+export default function TimelinePanel({ activity, loading }: TimelinePanelProps) {
   const s = useLocalStyles();
 
   // Sort newest-first (activity from useWorkspace may already be ordered, but be safe)
@@ -140,10 +143,14 @@ export default function TimelinePanel({ activity }: TimelinePanelProps) {
         </Badge>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className={s.empty}>
-          <span>No activity yet</span>
-        </div>
+      {loading && sorted.length === 0 ? (
+        <SkeletonLoader rows={5} variant="list" />
+      ) : sorted.length === 0 ? (
+        <EmptyState
+          icon={<ArrowSyncRegular />}
+          title="No activity yet"
+          detail="Events will appear here as agents collaborate — messages, task updates, and phase changes."
+        />
       ) : (
         <ul className={s.list}>
           {sorted.map((ev) => {

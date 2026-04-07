@@ -27,6 +27,9 @@ import {
   CommentRegular,
   FilterRegular,
 } from "@fluentui/react-icons";
+import EmptyState from "./EmptyState";
+import ErrorState from "./ErrorState";
+import SkeletonLoader from "./SkeletonLoader";
 import type {
   TaskSnapshot,
   TaskStatus,
@@ -601,11 +604,12 @@ function TaskDetail({ task, onRefresh }: TaskDetailProps) {
 
 interface TaskListPanelProps {
   tasks: TaskSnapshot[];
+  loading?: boolean;
   error?: boolean;
   onRefresh?: () => void;
 }
 
-export default function TaskListPanel({ tasks, error, onRefresh }: TaskListPanelProps) {
+export default function TaskListPanel({ tasks, loading, error, onRefresh }: TaskListPanelProps) {
   const s = useLocalStyles();
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -618,21 +622,27 @@ export default function TaskListPanel({ tasks, error, onRefresh }: TaskListPanel
     onRefresh?.();
   }, [onRefresh]);
 
+  if (loading) {
+    return <SkeletonLoader rows={5} variant="list" />;
+  }
+
   if (error) {
     return (
-      <div className={s.empty}>
-        <ErrorCircleRegular className={s.emptyIcon} />
-        <span>Failed to load tasks</span>
-      </div>
+      <ErrorState
+        message="Failed to load tasks"
+        detail="Could not retrieve the task list. Check your connection and try again."
+        onRetry={onRefresh}
+      />
     );
   }
 
   if (tasks.length === 0) {
     return (
-      <div className={s.empty}>
-        <TaskListLtrRegular className={s.emptyIcon} />
-        <span>No tasks yet</span>
-      </div>
+      <EmptyState
+        icon={<TaskListLtrRegular />}
+        title="No tasks assigned"
+        detail="Tasks will appear here when work is submitted to the team."
+      />
     );
   }
 
