@@ -530,6 +530,9 @@ const ChatPanel = memo(function ChatPanel(props: {
             aria-label="Message to agents"
           />
           <div className={s.composerActions}>
+            <span style={{ fontSize: "11px", color: "var(--aa-muted)", marginRight: "auto" }}>
+              Enter to send · Shift+Enter for new line
+            </span>
             <Button
               appearance="subtle"
               onClick={() => {

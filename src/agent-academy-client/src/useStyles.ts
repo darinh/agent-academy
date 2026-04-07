@@ -807,8 +807,8 @@ export const useStyles = makeStyles({
     overflowY: "auto",
     display: "grid",
     alignContent: "start",
-    gap: "18px",
-    ...shorthands.padding("4px", "0"),
+    gap: "22px",
+    ...shorthands.padding("8px", "0"),
   },
   systemMessage: {
     justifySelf: "center",
