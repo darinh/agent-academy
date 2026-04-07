@@ -52,6 +52,9 @@ public sealed class CommandController : ControllerBase
         "UPDATE_TASK",
         "CANCEL_TASK",
         "APPROVE_TASK",
+        "RECORD_EVIDENCE",
+        "QUERY_EVIDENCE",
+        "CHECK_GATES",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

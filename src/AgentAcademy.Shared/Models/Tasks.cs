@@ -98,6 +98,38 @@ public record TaskComment(
 /// <summary>
 /// Links a task to a spec section for traceability.
 /// </summary>
+/// <summary>
+/// A structured verification check recorded against a task.
+/// </summary>
+public record TaskEvidence(
+    string Id,
+    string TaskId,
+    EvidencePhase Phase,
+    string CheckName,
+    string Tool,
+    string? Command,
+    int? ExitCode,
+    string? OutputSnippet,
+    bool Passed,
+    string AgentId,
+    string AgentName,
+    DateTime CreatedAt
+);
+
+/// <summary>
+/// Result of checking whether a task meets evidence gates for a phase transition.
+/// </summary>
+public record GateCheckResult(
+    string TaskId,
+    string CurrentPhase,
+    string TargetPhase,
+    bool Met,
+    int RequiredChecks,
+    int PassedChecks,
+    List<string> MissingChecks,
+    List<TaskEvidence> Evidence
+);
+
 public record SpecTaskLink(
     string Id,
     string TaskId,

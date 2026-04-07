@@ -299,6 +299,9 @@ builder.Services.AddSingleton<ICommandHandler, PostPrReviewHandler>();
 builder.Services.AddSingleton<ICommandHandler, GetPrReviewsHandler>();
 builder.Services.AddSingleton<ICommandHandler, LinkTaskToSpecHandler>();
 builder.Services.AddSingleton<ICommandHandler, ShowUnlinkedChangesHandler>();
+builder.Services.AddSingleton<ICommandHandler, RecordEvidenceHandler>();
+builder.Services.AddSingleton<ICommandHandler, QueryEvidenceHandler>();
+builder.Services.AddSingleton<ICommandHandler, CheckGatesHandler>();
 
 // Notification system
 builder.Services.AddSingleton<ConfigEncryptionService>();

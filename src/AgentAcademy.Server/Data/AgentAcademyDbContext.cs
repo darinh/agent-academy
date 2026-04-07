@@ -37,6 +37,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<LlmUsageEntity> LlmUsage => Set<LlmUsageEntity>();
     public DbSet<AgentErrorEntity> AgentErrors => Set<AgentErrorEntity>();
     public DbSet<SpecTaskLinkEntity> SpecTaskLinks => Set<SpecTaskLinkEntity>();
+    public DbSet<TaskEvidenceEntity> TaskEvidence => Set<TaskEvidenceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -153,6 +154,29 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => e.TaskId).HasDatabaseName("idx_task_comments_task");
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_task_comments_agent");
+        });
+
+        // ── Task Evidence ─────────────────────────────────────
+        modelBuilder.Entity<TaskEvidenceEntity>(entity =>
+        {
+            entity.ToTable("task_evidence");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TaskId).IsRequired();
+            entity.Property(e => e.Phase).IsRequired().HasDefaultValue("After");
+            entity.Property(e => e.CheckName).IsRequired();
+            entity.Property(e => e.Tool).IsRequired();
+            entity.Property(e => e.Passed).IsRequired();
+            entity.Property(e => e.AgentId).IsRequired();
+            entity.Property(e => e.AgentName).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Task)
+                .WithMany()
+                .HasForeignKey(e => e.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.TaskId).HasDatabaseName("idx_task_evidence_task");
+            entity.HasIndex(e => new { e.TaskId, e.Phase }).HasDatabaseName("idx_task_evidence_task_phase");
         });
 
         // ── Agent Locations ───────────────────────────────────
