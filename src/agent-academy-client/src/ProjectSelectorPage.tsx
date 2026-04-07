@@ -443,15 +443,19 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
   const classes = useStyles();
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [fetchKey, setFetchKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setFetchError(false);
+    setLoading(true);
     listWorkspaces()
       .then((ws) => {
         if (!cancelled) setWorkspaces(ws);
       })
       .catch(() => {
-        if (!cancelled) setWorkspaces([]);
+        if (!cancelled) { setWorkspaces([]); setFetchError(true); }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -459,12 +463,23 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchKey]);
 
   if (loading) {
     return (
       <div className={classes.loadingWrap}>
         <Spinner size="small" label="Loading workspaces…" />
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className={classes.placeholder}>
+        <Body1>Failed to load workspaces. Check your connection and try again.</Body1>
+        <Button appearance="subtle" onClick={() => setFetchKey((k) => k + 1)} style={{ marginTop: "12px" }}>
+          Retry
+        </Button>
       </div>
     );
   }

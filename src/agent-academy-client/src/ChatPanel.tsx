@@ -278,6 +278,9 @@ const ChatPanel = memo(function ChatPanel(props: {
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
   const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
   const [hasArchivedContext, setHasArchivedContext] = useState(false);
+  const [showNewMsgIndicator, setShowNewMsgIndicator] = useState(false);
+  const isNearBottomRef = useRef(true);
+  const prevMsgCountRef = useRef(0);
   const room = props.room;
   const readOnly = props.readOnly ?? false;
   const onSendMessage = props.onSendMessage;
@@ -343,10 +346,48 @@ const ChatPanel = memo(function ChatPanel(props: {
     saveChatDraft(room.id, humanMsg);
   }, [humanMsg, readOnly, room]);
 
+  // Track scroll position to determine if user is near bottom
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const threshold = 80;
+      isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+      if (isNearBottomRef.current) setShowNewMsgIndicator(false);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Auto-scroll only when near bottom; show indicator otherwise
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const newCount = filteredMessages.length;
+    if (newCount > prevMsgCountRef.current) {
+      if (isNearBottomRef.current) {
+        el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+      } else {
+        setShowNewMsgIndicator(true);
+      }
+    }
+    prevMsgCountRef.current = newCount;
+  }, [filteredMessages.length]);
+
+  // Always scroll on room change or thinking state change; reset indicator state
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
-  }, [filteredMessages.length, room?.id, thinkingAgents.length]);
+    setShowNewMsgIndicator(false);
+    isNearBottomRef.current = true;
+    prevMsgCountRef.current = filteredMessages.length;
+  }, [room?.id, thinkingAgents.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setShowNewMsgIndicator(false);
+  }, []);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedMsgs((cur) => {
@@ -439,6 +480,32 @@ const ChatPanel = memo(function ChatPanel(props: {
           <ThinkingBubble key={agent.id} agent={agent} />
         ))}
       </div>
+
+      {showNewMsgIndicator && (
+        <button
+          onClick={scrollToBottom}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            width: "fit-content",
+            margin: "0 auto",
+            padding: "6px 16px",
+            borderRadius: "999px",
+            border: "1px solid rgba(124, 176, 248, 0.3)",
+            background: "rgba(124, 176, 248, 0.12)",
+            color: "var(--aa-cyan)",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+          type="button"
+          aria-label="Scroll to new messages"
+        >
+          New messages ↓
+        </button>
+      )}
 
       <div className={s.statusBar} role="status" aria-label={STATUS_LABELS[connectionStatus]}>
         <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[connectionStatus] }}>
