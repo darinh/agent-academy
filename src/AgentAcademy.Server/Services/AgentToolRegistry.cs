@@ -11,6 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// <list type="bullet">
 /// <item><c>task-state</c> — list_tasks, list_rooms, show_agents (read-only, shared)</item>
 /// <item><c>code</c> — read_file, search_code (read-only, shared)</item>
+/// <item><c>code-write</c> — write_file (per-agent, SoftwareEngineer only)</item>
 /// <item><c>task-write</c> — create_task, update_task_status, add_task_comment (per-agent)</item>
 /// <item><c>memory</c> — remember, recall (per-agent)</item>
 /// </list>
@@ -26,7 +27,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
 
     // Groups that require agent context (created per-agent session)
     private static readonly HashSet<string> ContextualGroups =
-        new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory" };
+        new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory", "code-write" };
 
     public AgentToolRegistry(
         AgentToolFunctions toolFunctions,
@@ -48,7 +49,8 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         var contextualNames = new List<string>
         {
             "create_task", "update_task_status", "add_task_comment",
-            "remember", "recall"
+            "remember", "recall",
+            "write_file"
         };
 
         _allToolNames = _staticGroups.Values
@@ -129,6 +131,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         {
             "task-write" => _toolFunctions.CreateTaskWriteTools(agentId, agentName),
             "memory" => _toolFunctions.CreateMemoryTools(agentId),
+            "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName),
             _ => []
         };
     }

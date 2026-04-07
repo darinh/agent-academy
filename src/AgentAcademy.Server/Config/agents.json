@@ -153,6 +153,7 @@
           "chat",
           "task-state",
           "code",
+          "code-write",
           "task-write",
           "memory"
         ],
@@ -216,6 +217,7 @@
           "chat",
           "task-state",
           "code",
+          "code-write",
           "task-write",
           "memory"
         ],

@@ -98,8 +98,8 @@ public class AgentToolRegistryTests
         var registry = CreateRegistry();
         var names = registry.GetAllToolNames();
 
-        // 5 static + 5 contextual = 10 total
-        Assert.Equal(10, names.Count);
+        // 5 static + 6 contextual = 11 total
+        Assert.Equal(11, names.Count);
         Assert.Contains("list_tasks", names);
         Assert.Contains("list_rooms", names);
         Assert.Contains("show_agents", names);
@@ -110,6 +110,7 @@ public class AgentToolRegistryTests
         Assert.Contains("add_task_comment", names);
         Assert.Contains("remember", names);
         Assert.Contains("recall", names);
+        Assert.Contains("write_file", names);
     }
 
     [Fact]
@@ -128,14 +129,14 @@ public class AgentToolRegistryTests
     [Fact]
     public void GetToolsForAgent_MatchesTypicalEngineerAgent()
     {
-        // Engineers have: chat, task-state, code, task-write, memory
+        // Engineers have: chat, task-state, code, code-write, task-write, memory
         var registry = CreateRegistry();
         var tools = registry.GetToolsForAgent(
-            ["chat", "task-state", "code", "task-write", "memory"],
+            ["chat", "task-state", "code", "code-write", "task-write", "memory"],
             "eng-1", "Engineer");
 
-        // 5 static + 3 task-write + 2 memory = 10
-        Assert.Equal(10, tools.Count);
+        // 5 static + 1 code-write + 3 task-write + 2 memory = 11
+        Assert.Equal(11, tools.Count);
     }
 
     [Fact]
@@ -177,6 +178,16 @@ public class AgentToolRegistryTests
     }
 
     [Fact]
+    public void GetToolsForAgent_CodeWriteGroup_ReturnsWriteFileTool()
+    {
+        var registry = CreateRegistry();
+        var tools = registry.GetToolsForAgent(["code-write"], "agent-1", "Alpha");
+
+        Assert.Single(tools);
+        Assert.Contains(tools, t => t.Name == "write_file");
+    }
+
+    [Fact]
     public void GetToolsForAgent_ContextualGroupWithoutAgentId_ReturnsNoTools()
     {
         var registry = CreateRegistry();
@@ -191,12 +202,12 @@ public class AgentToolRegistryTests
     {
         var registry = CreateRegistry();
         var tools = registry.GetToolsForAgent(
-            ["task-state", "code", "task-write", "memory", "task-write", "memory"],
+            ["task-state", "code", "code-write", "task-write", "memory", "task-write", "memory"],
             "agent-1", "Alpha");
 
         var names = tools.Select(t => t.Name).ToList();
         Assert.Equal(names.Count, names.Distinct().Count());
-        Assert.Equal(10, tools.Count);
+        Assert.Equal(11, tools.Count);
     }
 
     private static AgentToolRegistry CreateRegistry()
