@@ -764,6 +764,23 @@ All task commands are implemented as `ICommandHandler` implementations.
 6. Named agents are responsible for fleet output — fleet models are recorded but the agent is the author
 7. `UpdateTaskBranchAsync` is write-once — if a branch is already set and differs, the operation logs a conflict and does not mutate (enforced in code)
 8. `SetBreakoutTaskIdAsync` is write-once — same conflict-logging behavior (enforced in code)
+9. **Git operations must succeed before database persistence** — Task/branch metadata must not persist to the database until git operations succeed. This prevents orphaned database records that reference non-existent branches.
+
+   > **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs` lines 605–627 (commit `36e0dda`)
+
+   **Implementation** (`HandleTaskAssignmentAsync`):
+   - `CreateTaskBranchAsync` runs first (line 607)
+   - `BranchExistsAsync` verifies the branch was created (lines 609–610)
+   - Only after git success does `CreateTaskItemAsync` persist to database (lines 614–616)
+   - `EnsureTaskForBreakoutAsync` links the task to the breakout room (lines 618–620)
+   - If git fails, the catch block cleans up the breakout room but no database records exist to orphan
+   - Each catch-block cleanup step is independently guarded with its own try/catch (lines 632–651)
+
+   **Failure mode hierarchy**:
+   - ✅ **Orphaned git branch** (branch exists, no DB record) — acceptable, can be cleaned up manually
+   - ❌ **Orphaned database record** (DB record exists, no branch) — dangerous, causes invisible tasks and workflow failures
+
+   **UI contract**: No branch/task metadata should appear in the frontend until confirmed persistence succeeds on the backend.
 
 ## Known Gaps
 
@@ -779,6 +796,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-07 | Added Invariant #9: git-DB transaction ordering — task metadata must not persist to database until git branch creation succeeds (commit `36e0dda`). Documents failure mode hierarchy and UI contract. | Thucydides / Anvil |
 | 2026-04-05 | MERGE_PR command — squash-merge task PRs via GitHub API (`gh pr merge --squash`). MergePullRequestAsync on IGitHubService, PrMergeResult record. MergePrHandler validates Approved status + PR existence, transitions Merging → Completed with merge commit SHA, updates PR status to Merged, reverts to Approved on failure. Role gate: Planner/Reviewer/Human. Optional deleteBranch flag. HumanCommandRegistry + CommandController allowlist (async). 25 new tests (1083 total). Resolves Phase 2 gap: "No PR merge via API". | Anvil |
 | 2026-04-05 | PR review comments — POST_PR_REVIEW (approve/request changes/comment via `gh pr review`) and GET_PR_REVIEWS (fetch review history via `gh pr view --json reviews`). PullRequestReview record, PrReviewAction enum. Role gates: POST restricted to Planner/Reviewer/Human; GET allows assigned agent too. HumanCommandRegistry + CommandController allowlist. 40 new tests (1057 total). Resolves Phase 2 gap: "No review comments". | Anvil |
 | 2026-04-05 | GitHub PR integration (Phase 1) — IGitHubService/GitHubService via gh CLI. CREATE_PR command pushes branch + opens PR + updates task entity. GitService.PushBranchAsync. GET /api/github/status endpoint. HumanCommandRegistry + CommandController allowlist. 23 new tests (980 total). | Anvil |
