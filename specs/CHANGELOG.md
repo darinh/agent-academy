@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **005-workspace-runtime**: Documented `RecoverFromCrashAsync` crash recovery behavior. Covers breakout closure, stuck agent reset, orphaned task unassignment, and correlation-deduped notification. Resolves spec gap flagged by agent team.
 - **007-agent-commands**: Added RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES to Phase 1C (Verification). Records structured verification checks against tasks with phase (Baseline/After/Review), check names, tool info, exit codes, and output. CHECK_GATES evaluates minimum evidence for status transitions. All 6 agents permitted. Human API allowlist updated. Permission model table updated with evidence command access. 23 new tests (1375 total). Committed in `42d4124`.
 - **010-task-management**: Added §6.6 Evidence Ledger documenting the task evidence system. Covers TaskEvidenceEntity data model, EvidencePhase enum, gate definitions for status transitions, authorization rules, and invariants #10 (immutable evidence) and #11 (advisory gates).
 - **010-task-management**: Added Invariant #9 documenting git-DB transaction ordering. Task metadata must not persist to database until git branch creation succeeds. Documents fix from commit `36e0dda` that moved `CreateTaskItemAsync` inside the try block after git operations complete. Prevents orphaned database records referencing non-existent branches.

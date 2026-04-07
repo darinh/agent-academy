@@ -136,6 +136,23 @@ Internal `Publish()` method:
 3. Buffers in-memory (last 100)
 4. Notifies all subscribers
 
+### Crash Recovery
+
+> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (`RecoverFromCrashAsync`)
+
+On startup, `AgentOrchestrator.HandleStartupRecoveryAsync` checks `WorkspaceRuntime.CurrentCrashDetected` (set by `RecordServerInstanceAsync` when the previous instance had no clean shutdown). If a crash is detected, `RecoverFromCrashAsync(mainRoomId)` runs the following recovery steps in order:
+
+1. **Close all active breakout rooms** — queries for non-terminal breakout rooms and calls `CloseBreakoutRoomAsync` with `BreakoutRoomCloseReason.ClosedByRecovery`
+2. **Reset stuck agents** — finds agents in `Working` state whose `BreakoutRoomId` is null or doesn't match an active breakout, moves them to `Idle` via `MoveAgentAsync`
+3. **Reset orphaned tasks** — finds tasks with in-progress status (`Active`, `AwaitingValidation`, `InReview`) whose assignee agent is no longer in an active breakout, clears their `AssignedAgentId` and `AssignedAgentName`
+4. **Post recovery notification** — if any recovery actions occurred, posts a system message to the main room with counts (e.g., "Closed 2 breakout room(s), reset 1 stuck agent(s), and reset 1 stuck task(s)"). Uses `CurrentInstanceId` as a correlation ID to prevent duplicate notifications on multiple startup calls.
+
+**Return type**: `CrashRecoveryResult(ClosedBreakoutRooms, ResetWorkingAgents, ResetTasks)` — a sealed record with the counts from each recovery step.
+
+**Idempotency**: Recovery is safe to call multiple times. The correlation-based dedup prevents duplicate system messages. Agents and tasks that are already in a clean state are not affected.
+
+**Note**: Recovery does not re-enqueue pending human messages. That is handled separately by `AgentOrchestrator.ReconstructQueueAsync` which calls `GetRoomsWithPendingHumanMessagesAsync`.
+
 ## Interfaces & Contracts
 
 ### Service Registration (Program.cs)
@@ -179,6 +196,7 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 ## Revision History
 
+- **2026-04-07**: Documented `RecoverFromCrashAsync` crash recovery behavior — closes active breakouts, resets stuck agents to Idle, unassigns orphaned in-progress tasks, posts correlation-deduped recovery notification. Called by `AgentOrchestrator.HandleStartupRecoveryAsync` on crash detection.
 - **2026-04-04**: Task item commands — `CREATE_TASK_ITEM`, `UPDATE_TASK_ITEM`, `LIST_TASK_ITEMS` commands added. Resolves the task item management known gap. Added `GetTaskItemAsync` and `GetTaskItemsAsync` to WorkspaceRuntime. `UpdateTaskItemStatusAsync` now throws on missing items (was silent no-op). Agent catalog validation on assignee, room existence validation on create.
 - **2026-04-04**: Marked "No agent knowledge persistence" as resolved — memory system (spec 008) provides persistent storage with categories, FTS5, shared memories, import/export, and TTL decay. Clarified task item gap: internal methods exist but no agent commands expose them.
 - **2026-04-04**: Stale room cleanup — auto-archive rooms when all tasks are terminal, `GetRoomsAsync` excludes archived by default, `CleanupStaleRoomsAsync` for bulk cleanup, `CLEANUP_ROOMS` command, `POST /api/rooms/cleanup` API, room reopening on task rejection
