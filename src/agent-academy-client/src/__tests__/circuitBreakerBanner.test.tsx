@@ -29,29 +29,29 @@ describe("CircuitBreakerBanner", () => {
     it("renders banner when state is Open", () => {
       const html = renderBanner("Open");
       expect(html).toContain("circuit-breaker-banner");
-      expect(html).toContain("Circuit breaker open");
-      expect(html).toContain("Agent requests are temporarily blocked");
+      expect(html).toContain("Requests paused");
+      expect(html).toContain("Agent requests are paused while the backend recovers");
     });
 
     it("renders banner when state is HalfOpen", () => {
       const html = renderBanner("HalfOpen");
       expect(html).toContain("circuit-breaker-banner");
-      expect(html).toContain("Circuit breaker probing");
-      expect(html).toContain("Testing backend recovery");
+      expect(html).toContain("Checking recovery");
+      expect(html).toContain("Sending a test request");
     });
   });
 
   describe("content", () => {
-    it("shows cooldown messaging for Open state", () => {
+    it("shows recovery messaging for Open state", () => {
       const html = renderBanner("Open");
-      expect(html).toContain("cooldown period");
+      expect(html).toContain("within a minute");
       expect(html).toContain("repeated failures");
     });
 
     it("shows probe messaging for HalfOpen state", () => {
       const html = renderBanner("HalfOpen");
       expect(html).toContain("probe request");
-      expect(html).toContain("resume if it succeeds");
+      expect(html).toContain("resumes immediately");
     });
 
     it("uses alert role for accessibility", () => {

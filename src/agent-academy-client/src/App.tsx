@@ -40,6 +40,7 @@ import CommandsPanel from "./CommandsPanel";
 import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
 import CircuitBreakerBanner from "./CircuitBreakerBanner";
+import ConfirmDialog from "./ConfirmDialog";
 import { useCircuitBreakerPolling } from "./useCircuitBreakerPolling";
 import {
   getCopilotStatusCopy,
@@ -142,6 +143,7 @@ function AppShell() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const previousAuthRef = useRef<AuthStatus | null>(null);
   const authRefreshInFlight = useRef(false);
   const loginUrl = `${apiBaseUrl}/api/auth/login`;
@@ -327,7 +329,7 @@ function AppShell() {
     [],
   );
 
-  const handleLogout = useCallback(async () => {
+  const doLogout = useCallback(async () => {
     markManualLogout();
     clearAutoReauthAttempt();
 
@@ -343,6 +345,15 @@ function AppShell() {
       clearManualLogout();
     }
   }, []);
+
+  const handleLogout = useCallback(() => {
+    setLogoutConfirmOpen(true);
+  }, []);
+
+  const confirmLogout = useCallback(() => {
+    setLogoutConfirmOpen(false);
+    void doLogout();
+  }, [doLogout]);
 
   useEffect(() => {
     const roomName = room?.name ?? "Agent Academy";
@@ -565,7 +576,7 @@ function AppShell() {
               </div>
 
               {workspaceLimited && degradedCopy && (
-                <div className={s.limitedModeBanner}>
+                <div className={s.limitedModeBanner} role="alert">
                   <div className={s.limitedModeBadge}>{degradedCopy.eyebrow}</div>
                   <div className={s.limitedModeTitle}>{degradedCopy.title}</div>
                   <div className={s.limitedModeDescription}>
@@ -697,6 +708,14 @@ function AppShell() {
         onDismiss={() => setPaletteOpen(false)}
         roomId={room?.id ?? null}
         readOnly={workspaceLimited}
+      />
+      <ConfirmDialog
+        open={logoutConfirmOpen}
+        onConfirm={confirmLogout}
+        onCancel={() => setLogoutConfirmOpen(false)}
+        title="Sign out?"
+        message="You'll lose live updates and need to sign in again to resume. Any unsaved draft messages are preserved locally."
+        confirmLabel="Sign out"
       />
     </div>
   );

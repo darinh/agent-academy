@@ -87,17 +87,17 @@ const CircuitBreakerBanner = memo(function CircuitBreakerBanner(props: {
         ) : (
           <ArrowSyncRegular style={{ fontSize: 16 }} />
         )}
-        <span>{isOpen ? "Circuit breaker open" : "Circuit breaker probing"}</span>
+        <span>{isOpen ? "Requests paused" : "Checking recovery"}</span>
       </div>
       <div className={s.message}>
         {isOpen
-          ? "Agent requests are temporarily blocked"
-          : "Testing backend recovery with a probe request"}
+          ? "Agent requests are paused while the backend recovers"
+          : "Sending a test request to verify the backend is healthy"}
       </div>
       <div className={s.detail}>
         {isOpen
-          ? "The Copilot backend has experienced repeated failures. The circuit breaker is preventing further requests until a cooldown period elapses."
-          : "A single probe request is being sent to verify the backend is healthy. Normal operation will resume if it succeeds."}
+          ? "The backend experienced repeated failures. Requests will resume automatically once the system recovers — usually within a minute."
+          : "A single probe request is being sent. If it succeeds, normal operation resumes immediately."}
       </div>
     </div>
   );
