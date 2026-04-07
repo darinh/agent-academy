@@ -42,7 +42,8 @@ const useLocalStyles = makeStyles({
     minHeight: 0,
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
-    gap: "20px",
+    gap: "16px",
+    overflowY: "auto",
     "@media (max-width: 1200px)": {
       gridTemplateColumns: "1fr",
     },
@@ -50,8 +51,9 @@ const useLocalStyles = makeStyles({
   stack: {
     minHeight: 0,
     display: "grid",
-    gap: "20px",
+    gap: "16px",
     alignContent: "start",
+    overflowY: "auto",
   },
   section: {
     display: "grid",
@@ -60,8 +62,8 @@ const useLocalStyles = makeStyles({
     background:
       "linear-gradient(180deg, rgba(255, 244, 227, 0.055), rgba(255, 255, 255, 0.018) 42%, rgba(12, 15, 22, 0.72))",
     boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05)",
-    ...shorthands.borderRadius("28px"),
-    ...shorthands.padding("24px"),
+    ...shorthands.borderRadius("22px"),
+    ...shorthands.padding("16px"),
   },
   hero: {
     position: "relative",
@@ -86,9 +88,9 @@ const useLocalStyles = makeStyles({
   heroTitle: {
     margin: 0,
     fontFamily: "var(--heading)",
-    fontSize: "38px",
-    lineHeight: 0.98,
-    letterSpacing: "-0.05em",
+    fontSize: "20px",
+    lineHeight: 1.1,
+    letterSpacing: "-0.03em",
     color: "var(--aa-text-strong)",
   },
   heroDescription: {
@@ -390,7 +392,7 @@ interface CommandHistoryItem {
 export default function CommandsPanel({ roomId, readOnly = false }: CommandsPanelProps) {
   const s = useLocalStyles();
   const [commands, setCommands] = useState<readonly HumanCommandDefinition[]>(WEEK1_COMMANDS);
-  const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [, setMetadataLoaded] = useState(false);
   const [selectedCommand, setSelectedCommand] = useState<string>("READ_FILE");
   const [drafts, setDrafts] = useState(() => createDefaultCommandDrafts());
   const [history, setHistory] = useState<CommandHistoryItem[]>([]);
@@ -532,31 +534,13 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
     <div className={s.root}>
       <div className={s.stack}>
         <section className={mergeClasses(s.section, s.hero)}>
-          <div className={s.eyebrow}>Human command surface</div>
-          <h2 className={s.heroTitle}>Operate the workspace without dropping into a terminal.</h2>
-          <div className={s.heroDescription}>
-            The command deck is loaded from the server and covers repository inspection, room management,
-            review queue access, and build/test runs with polling. Every command is allowlisted, audited,
-            and tuned to the human UI contract.
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <div className={s.eyebrow}>Command deck</div>
+            <span style={{ color: "var(--aa-muted)", fontSize: "12px" }}>
+              {commands.length} commands · {syncCount} instant · {asyncCount} polling
+            </span>
           </div>
-
-          <div className={s.metricRow}>
-            <div className={s.metricCard}>
-              <div className={s.metricLabel}>Available</div>
-              <div className={s.metricValue}>{commands.length}</div>
-              <div className={s.metricNote}>Commands loaded from the server{metadataLoaded ? "" : "…"}.</div>
-            </div>
-            <div className={s.metricCard}>
-              <div className={s.metricLabel}>Immediate</div>
-              <div className={s.metricValue}>{syncCount}</div>
-              <div className={s.metricNote}>Fast commands return inline JSON results on the first round-trip.</div>
-            </div>
-            <div className={s.metricCard}>
-              <div className={s.metricLabel}>Polling</div>
-              <div className={s.metricValue}>{asyncCount}</div>
-              <div className={s.metricNote}>Async commands stay polling, then update here as they complete.</div>
-            </div>
-          </div>
+          <h2 className={s.heroTitle}>Select a command below, fill parameters, then execute.</h2>
         </section>
 
         <section className={s.section}>
