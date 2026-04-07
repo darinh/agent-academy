@@ -50,6 +50,7 @@ import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
+import AgentActivityBar from "./AgentActivityBar";
 import CommandsPanel from "./CommandsPanel";
 import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
@@ -203,6 +204,15 @@ function AppShell() {
       result.set(rid, new Set(agentMap.keys()));
     }
     return result;
+  }, [thinkingByRoom]);
+
+  // Flat set of all currently-thinking agent IDs (for the activity bar)
+  const allThinkingAgentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const agentMap of thinkingByRoom.values()) {
+      for (const agentId of agentMap.keys()) ids.add(agentId);
+    }
+    return ids;
   }, [thinkingByRoom]);
 
   const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
@@ -703,6 +713,12 @@ function AppShell() {
                   </Button>
                 </div>
               )}
+
+              <AgentActivityBar
+                agents={ov.configuredAgents}
+                locations={ov.agentLocations ?? []}
+                thinkingAgentIds={allThinkingAgentIds}
+              />
 
               {sessionAgent ? (
                 <section className={s.tabContent}>

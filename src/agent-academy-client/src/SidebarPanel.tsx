@@ -207,6 +207,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                             style={{
                               backgroundColor: isWorking ? `${rc.accent}33` : "#ffffff11",
                               color: isWorking ? rc.accent : "#7c90b2",
+                              animation: isWorking ? "aa-pulse 2s ease-in-out infinite" : undefined,
                             }}
                             >
                               {state}
