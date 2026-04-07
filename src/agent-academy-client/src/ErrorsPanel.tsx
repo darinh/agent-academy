@@ -11,6 +11,7 @@ import {
   ErrorCircleRegular,
   CheckmarkCircleRegular,
 } from "@fluentui/react-icons";
+import { errorTypeBadge, formatTimestamp } from "./panelUtils";
 import {
   getGlobalErrorSummary,
   getGlobalErrorRecords,
@@ -227,34 +228,6 @@ const useLocalStyles = makeStyles({
 });
 
 // ── Helpers ──
-
-function errorTypeBadge(
-  errorType: string,
-): { color: "danger" | "warning" | "important" | "informative"; label: string } {
-  switch (errorType) {
-    case "authentication":
-      return { color: "danger", label: "Auth" };
-    case "authorization":
-      return { color: "danger", label: "Authz" };
-    case "quota":
-      return { color: "warning", label: "Quota" };
-    case "transient":
-      return { color: "important", label: "Transient" };
-    default:
-      return { color: "informative", label: errorType };
-  }
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
 
 export function circuitBreakerDisplay(state: CircuitBreakerState): {
   color: string;

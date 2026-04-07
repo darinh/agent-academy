@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { formatTokenCount, formatCost } from "../panelUtils";
 
 vi.mock("../api", () => ({
   getRoomUsage: vi.fn(),
@@ -151,19 +152,7 @@ describe("RoomStatsPanel", () => {
     });
   });
 
-  describe("formatting helpers (mirrored)", () => {
-    function formatTokenCount(n: number): string {
-      if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-      if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-      return String(n);
-    }
-
-    function formatCost(cost: number): string {
-      if (cost === 0) return "$0.00";
-      if (cost < 0.01) return `$${cost.toFixed(4)}`;
-      return `$${cost.toFixed(2)}`;
-    }
-
+  describe("formatting helpers (imported from panelUtils)", () => {
     it("formats room token counts", () => {
       expect(formatTokenCount(80_000)).toBe("80.0K");
       expect(formatTokenCount(25_000)).toBe("25.0K");

@@ -1,3 +1,4 @@
+import { formatTimestamp } from "./panelUtils";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -160,17 +161,6 @@ function reasonBadge(reason: string): { color: "informative" | "success" | "warn
     default:
       return { color: "important", icon: <WarningRegular style={{ fontSize: 14 }} /> };
   }
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 function formatDuration(startIso: string, endIso: string | null): string {

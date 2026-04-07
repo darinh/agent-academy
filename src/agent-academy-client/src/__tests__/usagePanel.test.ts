@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { formatTokenCount, formatCost } from "../panelUtils";
 
 vi.mock("../api", () => ({
   getGlobalUsage: vi.fn(),
@@ -194,20 +195,7 @@ describe("UsagePanel", () => {
     });
   });
 
-  describe("formatting helpers", () => {
-    // Replicate helpers for testing
-    function formatTokenCount(n: number): string {
-      if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-      if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-      return String(n);
-    }
-
-    function formatCost(cost: number): string {
-      if (cost === 0) return "$0.00";
-      if (cost < 0.01) return `$${cost.toFixed(4)}`;
-      return `$${cost.toFixed(2)}`;
-    }
-
+  describe("formatting helpers (imported from panelUtils)", () => {
     it("formats small token counts as plain numbers", () => {
       expect(formatTokenCount(0)).toBe("0");
       expect(formatTokenCount(999)).toBe("999");

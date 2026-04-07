@@ -1,3 +1,5 @@
+export { formatTimestamp } from "./panelUtils";
+
 export function formatRelativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const seconds = Math.floor(ms / 1000);
@@ -13,16 +15,6 @@ export function formatRelativeTime(iso: string): string {
 export function truncateSummary(summary: string, maxLen = 120): string {
   if (summary.length <= maxLen) return summary;
   return summary.slice(0, maxLen).trimEnd() + "…";
-}
-
-export function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 export const PAGE_SIZE = 10;

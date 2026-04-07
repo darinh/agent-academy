@@ -11,6 +11,7 @@ import {
   MoneyRegular,
   TextBulletListSquareRegular,
 } from "@fluentui/react-icons";
+import { formatCost, formatTimestamp, formatTokenCount } from "./panelUtils";
 import {
   getGlobalUsage,
   getGlobalUsageRecords,
@@ -197,29 +198,6 @@ const useLocalStyles = makeStyles({
     whiteSpace: "nowrap" as const,
   },
 });// ── Helpers ──
-
-function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function formatCost(cost: number): string {
-  if (cost === 0) return "$0.00";
-  if (cost < 0.01) return `$${cost.toFixed(4)}`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
 
 function formatDuration(ms: number | null): string {
   if (ms == null) return "—";

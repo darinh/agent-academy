@@ -410,7 +410,7 @@ export default function SessionHistoryPanel({
                     <td className={s.td}>{session.messageCount}</td>
                     <td className={s.td}>
                       <Tooltip
-                        content={formatTimestamp(session.createdAt)}
+                        content={formatTimestamp(session.createdAt, false)}
                         relationship="label"
                       >
                         <span>{formatRelativeTime(session.createdAt)}</span>

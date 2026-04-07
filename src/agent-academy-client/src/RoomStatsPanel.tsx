@@ -10,6 +10,7 @@ import {
   CheckmarkCircleRegular,
   ErrorCircleRegular,
 } from "@fluentui/react-icons";
+import { errorTypeBadge, formatCost, formatTimestamp, formatTokenCount } from "./panelUtils";
 import {
   getRoomUsage,
   getRoomUsageByAgent,
@@ -160,45 +161,6 @@ const useLocalStyles = makeStyles({
 });
 
 // ── Helpers ──
-
-function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function formatCost(cost: number): string {
-  if (cost === 0) return "$0.00";
-  if (cost < 0.01) return `$${cost.toFixed(4)}`;
-  return `$${cost.toFixed(2)}`;
-}
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function errorTypeBadge(
-  errorType: string,
-): { color: "danger" | "warning" | "important" | "informative"; label: string } {
-  switch (errorType) {
-    case "authentication":
-      return { color: "danger", label: "Auth" };
-    case "authorization":
-      return { color: "danger", label: "Authz" };
-    case "quota":
-      return { color: "warning", label: "Quota" };
-    case "transient":
-      return { color: "important", label: "Transient" };
-    default:
-      return { color: "informative", label: errorType };
-  }
-}
 
 // ── Component ──
 
@@ -408,7 +370,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
                       <span className={s.msgCell}>{rec.message}</span>
                     </td>
                     <td className={s.td}>
-                      <span className={s.mono}>{formatTimestamp(rec.timestamp)}</span>
+                      <span className={s.mono}>{formatTimestamp(rec.timestamp, false)}</span>
                     </td>
                   </tr>
                 );

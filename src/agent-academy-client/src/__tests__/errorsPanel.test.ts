@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { errorTypeBadge } from "../panelUtils";
 
 vi.mock("../api", () => ({
   getGlobalErrorSummary: vi.fn(),
@@ -144,23 +145,6 @@ describe("ErrorsPanel", () => {
   });
 
   describe("error type badge mapping", () => {
-    function errorTypeBadge(
-      errorType: string,
-    ): { color: "danger" | "warning" | "important" | "informative"; label: string } {
-      switch (errorType) {
-        case "authentication":
-          return { color: "danger", label: "Auth" };
-        case "authorization":
-          return { color: "danger", label: "Authz" };
-        case "quota":
-          return { color: "warning", label: "Quota" };
-        case "transient":
-          return { color: "important", label: "Transient" };
-        default:
-          return { color: "informative", label: errorType };
-      }
-    }
-
     it("maps auth errors to danger", () => {
       expect(errorTypeBadge("authentication").color).toBe("danger");
       expect(errorTypeBadge("authorization").color).toBe("danger");
@@ -182,6 +166,7 @@ describe("ErrorsPanel", () => {
   });
 
   describe("circuit breaker display mapping", () => {
+    // Mirrored from ErrorsPanel — can't import directly without DOM environment
     function circuitBreakerDisplay(state: string | null): {
       color: string;
       label: string;
