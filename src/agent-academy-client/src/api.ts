@@ -79,7 +79,7 @@ export type ActivityEventType =
   | "CheckpointCreated" | "AgentErrorOccurred" | "AgentWarningOccurred"
   | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
   | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
-  | "DirectMessageSent";
+  | "DirectMessageSent" | "TaskPrStatusChanged";
 
 export interface ActivityEvent {
   id: string;

@@ -110,7 +110,7 @@ const useLocalStyles = makeStyles({
   },
   filterChipActive: {
     background: "rgba(214, 188, 149, 0.1)",
-    borderColor: "rgba(214, 188, 149, 0.35)",
+    ...shorthands.borderColor("rgba(214, 188, 149, 0.35)"),
     color: "var(--aa-text-strong)",
   },
   filterCount: {
@@ -130,11 +130,11 @@ const useLocalStyles = makeStyles({
     transitionProperty: "border-color, box-shadow",
     transitionDuration: "0.15s",
     ":hover": {
-      borderColor: "rgba(214, 188, 149, 0.28)",
+      ...shorthands.borderColor("rgba(214, 188, 149, 0.28)"),
     },
   },
   cardExpanded: {
-    borderColor: "rgba(214, 188, 149, 0.3)",
+    ...shorthands.borderColor("rgba(214, 188, 149, 0.3)"),
     cursor: "default",
   },
   cardHeader: {
@@ -372,7 +372,7 @@ function getAvailableActions(status: TaskStatus): TaskAction[] {
   }
 }
 
-const ACTION_META: Record<TaskAction, { label: string; icon: React.ReactNode; appearance: "primary" | "subtle" | "outline"; command: string; needsReason: boolean }> = {
+const ACTION_META: Record<TaskAction, { label: string; icon: React.ReactElement; appearance: "primary" | "subtle" | "outline"; command: string; needsReason: boolean }> = {
   approve:        { label: "Approve",         icon: <CheckmarkRegular />, appearance: "primary", command: "APPROVE_TASK",     needsReason: false },
   requestChanges: { label: "Request Changes", icon: <EditRegular />,     appearance: "outline", command: "REQUEST_CHANGES",  needsReason: true },
   reject:         { label: "Reject",          icon: <DismissRegular />,  appearance: "subtle",  command: "REJECT_TASK",      needsReason: true },

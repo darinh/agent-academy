@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Minimal DOM stubs for Fluent UI
 vi.stubGlobal("document", {
@@ -26,11 +26,9 @@ vi.stubGlobal("document", {
 // Since CommandPalette is a React component with heavy Fluent UI dependencies,
 // we test the underlying logic functions it uses from commandCatalog instead.
 import {
-  createDefaultCommandDrafts,
   validateCommandDraft,
   buildExecuteCommandRequest,
   fromServerMetadata,
-  WEEK1_COMMANDS,
 } from "../commandCatalog";
 import type { HumanCommandDefinition } from "../commandCatalog";
 

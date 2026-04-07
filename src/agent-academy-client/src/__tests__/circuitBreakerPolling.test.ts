@@ -87,7 +87,7 @@ describe("useCircuitBreakerPolling", () => {
 
     it("handles missing circuitBreakerState gracefully", async () => {
       const health = makeHealth();
-      delete (health as Record<string, unknown>).circuitBreakerState;
+      delete (health as unknown as Record<string, unknown>).circuitBreakerState;
       mockGetInstanceHealth.mockResolvedValue(health);
       const result = await getInstanceHealth();
       expect(result.circuitBreakerState).toBeUndefined();

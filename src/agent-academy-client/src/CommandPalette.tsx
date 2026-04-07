@@ -208,10 +208,10 @@ const useLocalStyles = makeStyles({
     wordBreak: "break-word",
   },
   resultSuccess: {
-    borderColor: "rgba(72, 214, 122, 0.3)",
+    ...shorthands.borderColor("rgba(72, 214, 122, 0.3)"),
   },
   resultError: {
-    borderColor: "rgba(255, 113, 135, 0.3)",
+    ...shorthands.borderColor("rgba(255, 113, 135, 0.3)"),
   },
   validationError: {
     color: "#ff7187",
@@ -283,7 +283,7 @@ export default function CommandPalette({ open, onDismiss, roomId, readOnly }: Co
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const executionTokenRef = useRef(0);
 
   // Reset state when opened
@@ -384,7 +384,7 @@ export default function CommandPalette({ open, onDismiss, roomId, readOnly }: Co
     setValidationErrors([]);
 
     const req = buildExecuteCommandRequest(activeCommand, draft);
-    if (roomId) (req as Record<string, unknown>).roomId = roomId;
+    if (roomId) (req as unknown as Record<string, unknown>).roomId = roomId;
 
     const token = ++executionTokenRef.current;
     setExecuting(true);

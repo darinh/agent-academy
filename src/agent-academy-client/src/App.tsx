@@ -386,7 +386,7 @@ function AppShell() {
         handleManualRefresh();
         dispatchToast(
           <Toast>
-            <ToastTitle>Switched to {ws.name}</ToastTitle>
+            <ToastTitle>Switched to {ws.projectName ?? ws.path}</ToastTitle>
           </Toast>,
           { intent: "success", timeout: 2000 },
         );

@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Badge,
@@ -146,7 +147,7 @@ const useLocalStyles = makeStyles({
 
 // ── Helpers ──
 
-function reasonBadge(reason: string): { color: "informative" | "success" | "warning" | "danger" | "important"; icon: JSX.Element } {
+function reasonBadge(reason: string): { color: "informative" | "success" | "warning" | "danger" | "important"; icon: ReactElement } {
   switch (reason) {
     case "Running":
       return { color: "informative", icon: <PlayRegular style={{ fontSize: 14 }} /> };

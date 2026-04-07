@@ -19,8 +19,9 @@ import {
   ChatHistoryRegular,
 } from "@fluentui/react-icons";
 import type { WorkspaceOverview } from "./api";
+import type { CollaborationPhase } from "./api";
 import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
-import { phaseColor, loadTimeRange, saveTimeRange, TIME_RANGES, TIME_RANGE_KEY } from "./dashboardUtils";
+import { phaseColor, loadTimeRange, saveTimeRange, TIME_RANGES } from "./dashboardUtils";
 import type { TimeRange } from "./dashboardUtils";
 import RestartHistoryPanel from "./RestartHistoryPanel";
 import UsagePanel from "./UsagePanel";
@@ -56,7 +57,7 @@ const useLocalStyles = makeStyles({
     ":hover": {
       transform: "translateY(-2px)",
       boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05), 0 8px 24px rgba(0, 0, 0, 0.25)",
-      borderColor: "rgba(214, 188, 149, 0.24)",
+      ...shorthands.borderColor("rgba(214, 188, 149, 0.24)"),
     },
   },
   cardHeader: {
@@ -93,7 +94,7 @@ const useLocalStyles = makeStyles({
     transitionDuration: "0.25s",
     transitionTimingFunction: "ease",
     ":hover": {
-      borderColor: "rgba(214, 188, 149, 0.22)",
+      ...shorthands.borderColor("rgba(214, 188, 149, 0.22)"),
     },
   },
   sectionTitle: {
