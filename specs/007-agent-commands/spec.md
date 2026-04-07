@@ -322,7 +322,7 @@ PROPOSE_AGENT_UPDATE:
 Expose a subset of platform commands to authenticated human users via HTTP REST API. Enables the frontend "Commands tab" to execute read operations, builds, and tests without requiring an agent intermediary.
 
 ### Implementation Status
-**IMPLEMENTED** — Human-triggered command execution via `POST /api/commands/execute` and async polling via `GET /api/commands/{correlationId}` (commit `TBD`, 2026-04-02).
+**IMPLEMENTED** — Human-triggered command execution via `POST /api/commands/execute` and async polling via `GET /api/commands/{correlationId}` (commit `0f32f17`, 2026-04-02).
 
 ### Architecture
 
