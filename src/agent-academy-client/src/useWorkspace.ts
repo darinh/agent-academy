@@ -431,6 +431,7 @@ export function useWorkspace() {
     thinkingByRoom,
     recoveryBanner,
     connectionStatus,
+    activityTransport: transport,
     agentLocations: ov.agentLocations ?? [],
     breakoutRooms: ov.breakoutRooms ?? [],
     err,

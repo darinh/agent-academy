@@ -109,6 +109,7 @@ function AppShell() {
     thinkingByRoom,
     recoveryBanner,
     connectionStatus,
+    activityTransport,
     breakoutRooms,
     err,
     busy,
@@ -388,7 +389,13 @@ function AppShell() {
 
   const workspaceLimited = isWorkspaceLimited(auth);
   const degradedCopy = workspaceLimited ? getCopilotStatusCopy("degraded", auth.user ?? null) : null;
-  const connectionLabel = CONNECTION_STATUS_COPY[connectionStatus];
+  const baseConnectionLabel = CONNECTION_STATUS_COPY[connectionStatus];
+  const connectionLabel = connectionStatus === "connected" && activityTransport === "sse"
+    ? "Live sync (polling)"
+    : baseConnectionLabel;
+  const connectionDetail = connectionStatus === "disconnected"
+    ? "Live updates paused. Previously loaded data is still visible. Check your connection and refresh to reconnect."
+    : null;
   const currentTab = TAB_ITEMS.find((item) => item.value === tab) ?? TAB_ITEMS[0];
   const activeRoomCount = ov.rooms.filter((candidate) => candidate.status === "Active" || candidate.status === "AttentionRequired").length;
   const workingAgentCount = (ov.agentLocations ?? []).filter((location) => location.state === "Working").length;
@@ -455,6 +462,17 @@ function AppShell() {
       )}
 
       <CircuitBreakerBanner state={circuitBreakerState} />
+
+      {connectionDetail && (
+        <div className={s.errorBar}>
+          <MessageBar intent="warning">
+            <MessageBarBody>
+              <MessageBarTitle>Offline</MessageBarTitle>
+              {connectionDetail}
+            </MessageBarBody>
+          </MessageBar>
+        </div>
+      )}
 
       {showProjectSelector ? (
         <ProjectSelectorPage
