@@ -90,12 +90,12 @@ Per-agent permission boundaries:
 
 | Agent | Role | Allowed | Denied |
 |-------|------|---------|--------|
-| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | Arbitrary code execution |
-| Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT` | Code execution |
-| Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT` | Spec write, task approve |
+| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, allowlisted `SHELL` operations | Arbitrary code execution |
+| Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT`, `QUERY_EVIDENCE`, `CHECK_GATES` | Code execution |
+| Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES` | Spec write, task approve |
 | Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
-| Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT`, allowlisted `SHELL` operations | File write, arbitrary code execution |
-| Thucydides | TechnicalWriter | Spec read/write, file read, `ADD_TASK_COMMENT` | Code execution, task approve |
+| Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, allowlisted `SHELL` operations | File write, arbitrary code execution |
+| Thucydides | TechnicalWriter | Spec read/write, file read, `ADD_TASK_COMMENT`, `QUERY_EVIDENCE`, `CHECK_GATES` | Code execution, task approve |
 
 **Escalation rules:**
 - Tighten standards → Socrates review only
@@ -156,6 +156,11 @@ These formalize existing capabilities with audit trails and structured output.
 | `RUN_TESTS` | `scope?` (`all`, `frontend`, `backend`, `file:path`) | Test output, exit code | Runs test suite | `RunTestsHandler.cs` — routes frontend to `npm test`, backend to `dotnet test` |
 | `SHOW_DIFF` | `branch?` | Git diff output | Audit event | `ShowDiffHandler.cs` — `git diff --stat -p`, optional branch comparison |
 | `GIT_LOG` | `file?`, `since?`, `count?` | Commit history (sha + message) | Audit event | `GitLogHandler.cs` — `git log --oneline`, max 50 entries |
+| `RECORD_EVIDENCE` | `taskId`, `checkName`, `passed` (true/false), `phase?` (Baseline/After/Review, default: After), `tool?` (default: manual), `command?`, `exitCode?`, `output?` (max 500 chars) | Evidence ID, task ID, phase, check name, passed status, confirmation message | Records a `TaskEvidenceEntity` in the `task_evidence` table. Handler-level authorization: caller must be assignee, reviewer, planner, or human. | `RecordEvidenceHandler.cs` + `WorkspaceRuntime.RecordEvidenceAsync()` |
+| `QUERY_EVIDENCE` | `taskId`, `phase?` (Baseline/After/Review, default: all) | Task ID, phase filter, total/passed/failed counts, evidence list (id, phase, checkName, tool, command, exitCode, output, passed, agentName, createdAt) | Audit event (read-only) | `QueryEvidenceHandler.cs` + `WorkspaceRuntime.GetTaskEvidenceAsync()` |
+| `CHECK_GATES` | `taskId` | Task ID, currentPhase, targetPhase, met (bool), requiredChecks, passedChecks, missingChecks list, evidence summary | Evaluates gate requirements and publishes `GateChecked` activity event. Read-only — does not transition task status. | `CheckGatesHandler.cs` + `WorkspaceRuntime.CheckGatesAsync()` |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{RecordEvidence,QueryEvidence,CheckGates}Handler.cs` — committed in `42d4124` (2026-04-07).
 
 #### Phase 1D: Communication — IMPLEMENTED
 
@@ -698,4 +703,5 @@ Discord Server
 | 2026-04-04 | `REJECT_TASK` command added (Tier 2 Task Management). Reverts Approved/Completed → ChangesRequested, reverts merge if needed, reopens breakout. Role-gated. `APPROVE_TASK` and `REQUEST_CHANGES` also got role gates. Review round limit (5) enforced. | reject-task | (this change) |
 | 2026-04-04 | Rate limit runtime configuration. `CommandRateLimiter.Configure()` method + settings keys (`commands.rateLimitMaxCommands`, `commands.rateLimitWindowSeconds`). Live-reconfigured via `PUT /api/settings`. | rate-limit-config | (this change) |
 | 2026-04-04 | Command metadata endpoint: `GET /api/commands/metadata` returns `HumanCommandMetadata[]` from `HumanCommandRegistry`. Filters by allowlist + handler existence. Frontend loads dynamically with hardcoded fallback. Resolves known gap #2. 13 new backend tests, 3 new frontend tests. | command-metadata-endpoint | (this change) |
+| 2026-04-07 | Evidence ledger commands: RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES added to Phase 1C (Verification). Records structured verification checks against tasks with phase (Baseline/After/Review), check names, tool, command, exit code, output. CHECK_GATES evaluates minimum evidence for status transitions. All 6 agents permitted. Human API allowlist updated. Permission model table updated. 23 new tests (1375 total). | evidence-ledger | `42d4124` |
 | 2026-04-05 | Spec-task linking (Phase 2): `SpecTaskLinkEntity` junction table, `LINK_TASK_TO_SPEC` and `SHOW_UNLINKED_CHANGES` commands, `SpecManager.LoadSpecContextForTaskAsync` for task-filtered spec loading, REST endpoints `GET /api/tasks/{id}/specs` and `GET /api/specs/{sectionId}/tasks`, cascade delete, unique constraint, `SpecTaskLinked` activity event. 36 new tests. | spec-task-linking | (this change) |

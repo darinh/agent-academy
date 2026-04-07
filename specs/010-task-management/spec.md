@@ -594,6 +594,81 @@ Comments are ordered by `CreatedAt` ascending.
 
 ---
 
+## 6.6. Evidence Ledger
+
+> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (lines 1643–1769)
+
+The evidence ledger records structured verification checks against tasks. Each check captures what was verified, how, and whether it passed. Evidence accumulates on a task and is evaluated by gate checks before status transitions.
+
+### Purpose
+
+Task status transitions (e.g., Active → AwaitingValidation → InReview → Approved) require evidence that implementation or review work was actually done. The evidence ledger:
+- Prevents premature transitions (e.g., claiming "done" without running tests)
+- Provides an auditable trail of verification steps
+- Enables automated gate enforcement
+
+### Data Model
+
+`TaskEvidenceEntity` → table `task_evidence`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Id` | string | Auto-generated GUID |
+| `TaskId` | string | FK to `tasks` table |
+| `Phase` | string | `Baseline`, `After`, or `Review` |
+| `CheckName` | string | Descriptive name (e.g. `build`, `tests`, `type-check`, `code-review`) |
+| `Tool` | string | Method used (e.g. `bash`, `manual`, `ide-diagnostics`) |
+| `Command` | string? | Command that was run |
+| `ExitCode` | int? | Exit code of the command |
+| `OutputSnippet` | string? | Truncated output (max 500 chars) |
+| `Passed` | bool | Whether the check passed |
+| `AgentId` | string | Agent who recorded the evidence |
+| `AgentName` | string | Agent display name |
+| `CreatedAt` | DateTime | Timestamp |
+
+### Evidence Phases
+
+| Phase | When Used | Purpose |
+|-------|-----------|---------|
+| `Baseline` | Before implementation starts | Capture pre-existing state (build status, test counts) for regression comparison |
+| `After` | After implementation | Record verification of the implemented change (build, tests, type-check, lint) |
+| `Review` | During code review | Record reviewer verification (code-review findings, review pass/fail) |
+
+### Gate Definitions
+
+Gates are minimum evidence requirements for task status transitions. Evaluated by `WorkspaceRuntime.CheckGatesAsync()`:
+
+| Current Status | Target Status | Required Checks | Required Phase | Suggested Check Names |
+|---------------|---------------|-----------------|----------------|----------------------|
+| `Active` | `AwaitingValidation` | ≥ 1 passed | `After` | `build`, `tests`, `type-check` |
+| `AwaitingValidation` | `InReview` | ≥ 2 passed | `After` | `build`, `tests`, `type-check`, `lint` |
+| `InReview` | `Approved` | ≥ 1 passed | `Review` | `code-review` |
+
+**Gate evaluation logic:**
+- Counts distinct `CheckName` values with `Passed = true` in the required phase
+- `Met = true` when the count of distinct passed checks ≥ required threshold
+- `MissingChecks` lists suggested check names that haven't passed yet (informational, not blocking — any check name satisfies the requirement)
+- Gates are advisory (evaluated via `CHECK_GATES` command) — they do not block `UPDATE_TASK` status changes directly
+
+### Authorization
+
+- `RECORD_EVIDENCE`: Caller must be the task's assignee, reviewer, a planner, or a human
+- `QUERY_EVIDENCE`: Any agent (read-only)
+- `CHECK_GATES`: Any agent (read-only)
+
+All 3 commands are in the Human API allowlist (`HumanCommandRegistry`).
+
+### Commands
+
+See spec 007 § Phase 1C for the full command reference: `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`.
+
+### Invariants
+
+10. Evidence records are immutable — once recorded, they cannot be modified or deleted
+11. Gate checks are advisory — they evaluate requirements but do not enforce transitions. Agents or humans can still transition task status without meeting gates.
+
+---
+
 ## 7. API Endpoints
 
 ### Task Management
@@ -796,6 +871,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-07 | Evidence ledger: new §6.6 documenting task evidence system. TaskEvidenceEntity data model, EvidencePhase enum (Baseline/After/Review), gate definitions for status transitions (Active→AwaitingValidation: ≥1, AwaitingValidation→InReview: ≥2, InReview→Approved: ≥1). Authorization rules, commands cross-reference to spec 007. Invariants #10 (immutable evidence) and #11 (advisory gates). | Anvil |
 | 2026-04-07 | Added Invariant #9: git-DB transaction ordering — task metadata must not persist to database until git branch creation succeeds (commit `36e0dda`). Documents failure mode hierarchy and UI contract. | Thucydides / Anvil |
 | 2026-04-05 | MERGE_PR command — squash-merge task PRs via GitHub API (`gh pr merge --squash`). MergePullRequestAsync on IGitHubService, PrMergeResult record. MergePrHandler validates Approved status + PR existence, transitions Merging → Completed with merge commit SHA, updates PR status to Merged, reverts to Approved on failure. Role gate: Planner/Reviewer/Human. Optional deleteBranch flag. HumanCommandRegistry + CommandController allowlist (async). 25 new tests (1083 total). Resolves Phase 2 gap: "No PR merge via API". | Anvil |
 | 2026-04-05 | PR review comments — POST_PR_REVIEW (approve/request changes/comment via `gh pr review`) and GET_PR_REVIEWS (fetch review history via `gh pr view --json reviews`). PullRequestReview record, PrReviewAction enum. Role gates: POST restricted to Planner/Reviewer/Human; GET allows assigned agent too. HumanCommandRegistry + CommandController allowlist. 40 new tests (1057 total). Resolves Phase 2 gap: "No review comments". | Anvil |
