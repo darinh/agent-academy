@@ -3,18 +3,11 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Badge,
   Button,
-  Menu,
-  MenuItemCheckbox,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
   mergeClasses,
   Spinner,
   Textarea,
 } from "@fluentui/react-components";
-import type { MenuCheckedValueChangeData } from "@fluentui/react-components";
 import {
   CheckmarkCircleRegular,
   ArrowSyncRegular,
@@ -34,7 +27,6 @@ import {
   isCommandResultMessage,
   parseCommandResults,
   loadFilters,
-  saveFilters,
   shouldHideMessage,
   STATUS_LABELS,
   STATUS_COLORS,
@@ -164,13 +156,15 @@ const ChatPanel = memo(function ChatPanel(props: {
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
   readOnly?: boolean;
+  hiddenFilters?: Set<MessageFilter>;
 }) {
   const s = useStyles();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [humanMsg, setHumanMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
-  const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const [localHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const hiddenFilters = props.hiddenFilters ?? localHiddenFilters;
   const [hasArchivedContext, setHasArchivedContext] = useState(false);
   const [showNewMsgIndicator, setShowNewMsgIndicator] = useState(false);
   const isNearBottomRef = useRef(true);
@@ -180,26 +174,6 @@ const ChatPanel = memo(function ChatPanel(props: {
   const onSendMessage = props.onSendMessage;
   const thinkingAgents = props.thinkingAgents;
   const connectionStatus = props.connectionStatus;
-
-  // Filters use checkedValues where checked = visible (not hidden)
-  const checkedValues = useMemo(() => {
-    const visible: string[] = [];
-    if (!hiddenFilters.has("system")) visible.push("system");
-    if (!hiddenFilters.has("commands")) visible.push("commands");
-    return { show: visible };
-  }, [hiddenFilters]);
-
-  const onFilterChange = useCallback(
-    (_: unknown, data: MenuCheckedValueChangeData) => {
-      const nowVisible = new Set(data.checkedItems);
-      const next = new Set<MessageFilter>();
-      if (!nowVisible.has("system")) next.add("system");
-      if (!nowVisible.has("commands")) next.add("commands");
-      setHiddenFilters(next);
-      saveFilters(next);
-    },
-    [],
-  );
 
   const filteredMessages = useMemo(
     () => room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
@@ -315,30 +289,9 @@ const ChatPanel = memo(function ChatPanel(props: {
     }
   }, [doSend]);
 
-  const hiddenCount = (room?.recentMessages.length ?? 0) - filteredMessages.length;
 
   return (
     <div className={s.conversationLayout}>
-      <div className={s.chatHeader}>
-        <Menu checkedValues={checkedValues} onCheckedValueChange={onFilterChange}>
-          <MenuTrigger disableButtonEnhancement>
-            <Button size="small" appearance="subtle" className={s.filterMenuButton}>
-              Filter{hiddenCount > 0 && <Badge size="small" appearance="filled" color="informative" className={s.filterBadge}>{hiddenCount}</Badge>}
-            </Button>
-          </MenuTrigger>
-          <MenuPopover>
-            <MenuList>
-              <MenuItemCheckbox name="show" value="system">
-                System messages
-              </MenuItemCheckbox>
-              <MenuItemCheckbox name="show" value="commands">
-                Command results
-              </MenuItemCheckbox>
-            </MenuList>
-          </MenuPopover>
-        </Menu>
-      </div>
-
        <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
         {hasArchivedContext && (
           <div style={{

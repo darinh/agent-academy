@@ -4,9 +4,15 @@ import {
   FluentProvider,
   webDarkTheme,
   mergeClasses,
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItemCheckbox,
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
+  Badge,
   Toaster,
   useToastController,
   useId,
@@ -14,14 +20,16 @@ import {
   ToastTitle,
   ToastBody,
 } from "@fluentui/react-components";
-import type { Theme } from "@fluentui/react-components";
+import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
-import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType } from "./api";
+import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
+import { loadFilters, saveFilters } from "./chatUtils";
+import type { MessageFilter } from "./chatUtils";
 import PlanPanel from "./PlanPanel";
 import TimelinePanel from "./TimelinePanel";
 import DashboardPanel from "./DashboardPanel";
@@ -108,6 +116,23 @@ function AppShell() {
   const toasterId = useId("workspace-toaster");
   const { dispatchToast } = useToastController(toasterId);
   const tabRef = useRef("chat");
+
+  /* Chat filter state (lifted here so it can render in the toolbar) */
+  const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const chatFilterChecked = useMemo(() => {
+    const visible: string[] = [];
+    if (!hiddenFilters.has("system")) visible.push("system");
+    if (!hiddenFilters.has("commands")) visible.push("commands");
+    return { show: visible };
+  }, [hiddenFilters]);
+  const onChatFilterChange = useCallback((_: unknown, data: MenuCheckedValueChangeData) => {
+    const nowVisible = new Set(data.checkedItems);
+    const next = new Set<MessageFilter>();
+    if (!nowVisible.has("system")) next.add("system");
+    if (!nowVisible.has("commands")) next.add("commands");
+    setHiddenFilters(next);
+    saveFilters(next);
+  }, []);
 
   const handleActivityToast = useCallback((evt: ActivityEvent) => {
     if (!TOAST_EVENT_TYPES.has(evt.type)) return;
@@ -580,11 +605,40 @@ function AppShell() {
               {!sessionAgent && !selectedBreakout && (
                 <div className={s.tabBar}>
                   <div className={s.tabStrip}>
-                    {tab === "chat" && room && (
-                      <span className={s.workspaceMetaText}>
-                        {room.currentPhase}
-                      </span>
-                    )}
+                    {tab === "chat" && room && (<>
+                      <select
+                        className={s.toolbarSelect}
+                        value={room.currentPhase}
+                        onChange={(e) => void wrappedPhaseTransition(e.target.value as CollaborationPhase)}
+                        disabled={workspaceLimited}
+                        title="Change room phase"
+                      >
+                        <option value="Intake">Intake</option>
+                        <option value="Planning">Planning</option>
+                        <option value="Discussion">Discussion</option>
+                        <option value="Implementation">Implementation</option>
+                        <option value="Validation">Validation</option>
+                        <option value="FinalSynthesis">Final Synthesis</option>
+                      </select>
+                      <Menu checkedValues={chatFilterChecked} onCheckedValueChange={onChatFilterChange}>
+                        <MenuTrigger disableButtonEnhancement>
+                          <Button size="small" appearance="subtle" className={s.filterMenuButton}>
+                            ▾ Filter
+                            {hiddenFilters.size > 0 && (
+                              <Badge size="small" appearance="filled" color="informative" className={s.filterBadge}>
+                                {hiddenFilters.size}
+                              </Badge>
+                            )}
+                          </Button>
+                        </MenuTrigger>
+                        <MenuPopover>
+                          <MenuList>
+                            <MenuItemCheckbox name="show" value="system">System messages</MenuItemCheckbox>
+                            <MenuItemCheckbox name="show" value="commands">Command results</MenuItemCheckbox>
+                          </MenuList>
+                        </MenuPopover>
+                      </Menu>
+                    </>)}
                     {tab === "tasks" && (
                       <span className={s.workspaceMetaText}>Sorted by newest</span>
                     )}
@@ -642,6 +696,7 @@ function AppShell() {
                       connectionStatus={connectionStatus}
                       onSendMessage={handleSendMessage}
                       readOnly={workspaceLimited}
+                      hiddenFilters={hiddenFilters}
                     />
                   )}
                   {tab === "tasks" && (

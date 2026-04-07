@@ -634,6 +634,19 @@ export const useStyles = makeStyles({
   },
 
   /* ─ Contextual Toolbar (34px, below header) ─ */
+  toolbarSelect: {
+    ...shorthands.padding("3px", "8px"),
+    ...shorthands.borderRadius("4px"),
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+    background: "var(--aa-panel-alt)",
+    border: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    cursor: "pointer",
+    ":focus": {
+      ...shorthands.borderColor("var(--aa-cyan)"),
+    },
+  },
   tabBar: {
     height: "var(--toolbar-height)",
     minHeight: "var(--toolbar-height)",
