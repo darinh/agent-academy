@@ -171,11 +171,11 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 ## Known Gaps
 
-- No real-time push to external clients — SignalR hub exists (`/hubs/activity`) and `ActivityHubBroadcaster` forwards events to connected clients, but activity subscribers are also available in-process
+- ~~No real-time push to external clients~~ — **Resolved**: SignalR hub exists (`/hubs/activity`) and `ActivityHubBroadcaster` forwards events to connected clients. SSE alternative also implemented (`GET /api/activity/stream`). Frontend connects via either transport.
 - ~~No agent knowledge persistence (v1 had file-based knowledge storage)~~ — **resolved**: Agent memory system (spec 008) provides persistent key/value storage with categories, FTS5 search, shared cross-agent memories, import/export, and TTL-based decay. Replaces v1's file-based approach with a structured, queryable system.
 - ~~No task item management (v1 had `createTaskItem`, `updateTaskStatus`, etc.)~~ — **resolved**: `CREATE_TASK_ITEM`, `UPDATE_TASK_ITEM`, and `LIST_TASK_ITEMS` commands expose task item management. Agents can create, update, and query task items with role-gating, entity validation, and agent catalog resolution.
-- Activity event in-memory buffer is per-instance, not shared across scoped instances
-- Legacy rooms (created before project-scoping) have `WorkspacePath = null` — they won't appear when a workspace is active
+- ~~Activity event in-memory buffer is per-instance, not shared across scoped instances~~ — **Accepted**: Single-server deployment makes this moot. Would need redesign alongside session persistence (#3) for multi-instance.
+- ~~Legacy rooms (created before project-scoping) have `WorkspacePath = null` — they won't appear when a workspace is active~~ — **Resolved**: `GetRoomsAsync` now includes null-workspace rooms. `RetireLegacyDefaultRoomAsync` archives retired rooms to prevent reappearing.
 
 ## Revision History
 

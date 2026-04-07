@@ -92,9 +92,9 @@ The server exposes a SignalR hub at `/hubs/activity` for real-time event streami
 
 ## Known Gaps
 
-- Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted)
-- No multi-user auth model — single-user token via `CopilotTokenProvider`
-- No session persistence across server restarts — in-memory Copilot SDK sessions are lost
+- Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted). — *Tracked in #5*
+- No multi-user auth model — single-user token via `CopilotTokenProvider`. — *Tracked in #2, accepted design constraint for single-user product*
+- No session persistence across server restarts — in-memory Copilot SDK sessions are lost. — *Tracked in #3, mitigated by LLM-generated session summaries on workspace switch*
 
 ## Revision History
 

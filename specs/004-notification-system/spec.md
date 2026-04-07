@@ -519,11 +519,11 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - ~~No persistent notification history or delivery tracking~~ — **resolved**: `NotificationDeliveryTracker` records every outbound delivery attempt per provider with status, error, and context. Query via REST API.
 - ~~No retry/backoff on transient provider failures~~ — **resolved**: `NotificationRetryPolicy` with exponential backoff (200ms base, 3 retries, 2s cap, ±50ms jitter). Applied to all outbound provider calls except `RequestInputFromAnyAsync`.
 - ~~No authentication on notification API endpoints~~ — **resolved**: System-wide `FallbackPolicy` in `Program.cs` requires `RequireAuthenticatedUser()` on all endpoints without `[AllowAnonymous]`. `NotificationController` has no `[AllowAnonymous]`, so all notification endpoints are protected when auth is enabled.
-- `RequestInputFromAnyAsync` uses insertion order, not priority-based selection
-- Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)
+- ~~`RequestInputFromAnyAsync` uses insertion order, not priority-based selection~~ — **Accepted**: Single-provider deployment makes this moot. If multiple providers needed, add `Priority` property and sort.
+- ~~Discord provider freeform input captures the next message from any non-bot user in the channel (not sender-scoped)~~ — **Resolved**: Optional `OwnerId` config field scopes freeform input capture to the configured user.
 - ~~Provider config values (including secrets) stored in plaintext in SQLite~~ — **resolved**: `ConfigEncryptionService` encrypts secret config values (Type = "secret" in schema) using ASP.NET Core Data Protection API before DB persistence. Versioned `ENC.v1:` prefix enables transparent migration of existing plaintext values. `TryDecrypt` API distinguishes decrypt failure from legitimate empty values. Explicit key-ring persistence at `~/.local/share/AgentAcademy/DataProtection-Keys/`.
 - ~~Settings tab currently shows only Discord wizard; will need expansion for multiple providers~~ — **resolved**: `NotificationSetupWizard` now accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and any future provider with provider-specific instructions and generic fallback
-- DiceBear avatar URLs are an external dependency — consider caching/bundling if availability matters
+- ~~DiceBear avatar URLs are an external dependency~~ — **Accepted**: Only used for Discord webhook avatars (1 call site). Discord falls back to default avatar if URL fails. Frontend uses Fluent UI Avatar with role colors.
 - ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.
 
 ## Revision History

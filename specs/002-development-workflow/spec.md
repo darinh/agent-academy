@@ -135,9 +135,9 @@ Applied to all .NET projects in the solution via MSBuild import convention.
 
 ## Known Gaps
 
-- GitHub branch protection rules for `main` must be configured manually in the repository settings (require PR reviews, require status checks, disable force push).
-- The `pre-push` hook is local only — contributors must run `git config core.hooksPath .githooks` after cloning.
-- No automated changelog generation from conventional commits yet.
+- ~~GitHub branch protection rules for `main` must be configured manually in the repository settings (require PR reviews, require status checks, disable force push).~~ — **Resolved**: `scripts/protect-branches.sh` configures protection via `gh api`.
+- The `pre-push` hook is local only — contributors must run `git config core.hooksPath .githooks` after cloning. — *Accepted: documented in setup script and README*
+- No automated changelog generation from conventional commits yet. — *Tracked in #10*
 
 ## Revision History
 
