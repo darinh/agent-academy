@@ -33,26 +33,26 @@ describe("CommandsPanel constants", () => {
 /* ------------------------------------------------------------------ */
 
 describe("badgeColorForCategory", () => {
-  it("returns 'informative' for code", () => {
-    expect(badgeColorForCategory("code")).toBe("informative");
+  it("returns 'info' for code", () => {
+    expect(badgeColorForCategory("code")).toBe("info");
   });
 
-  it("returns 'warning' for git", () => {
-    expect(badgeColorForCategory("git")).toBe("warning");
+  it("returns 'warn' for git", () => {
+    expect(badgeColorForCategory("git")).toBe("warn");
   });
 
-  it("returns 'important' for operations", () => {
-    expect(badgeColorForCategory("operations")).toBe("important");
+  it("returns 'err' for operations", () => {
+    expect(badgeColorForCategory("operations")).toBe("err");
   });
 
-  it("returns 'success' for workspace (default)", () => {
-    expect(badgeColorForCategory("workspace")).toBe("success");
+  it("returns 'ok' for workspace (default)", () => {
+    expect(badgeColorForCategory("workspace")).toBe("ok");
   });
 
-  it("returns 'success' for unknown categories", () => {
-    expect(badgeColorForCategory("")).toBe("success");
-    expect(badgeColorForCategory("custom")).toBe("success");
-    expect(badgeColorForCategory("admin")).toBe("success");
+  it("returns 'ok' for unknown categories", () => {
+    expect(badgeColorForCategory("")).toBe("ok");
+    expect(badgeColorForCategory("custom")).toBe("ok");
+    expect(badgeColorForCategory("admin")).toBe("ok");
   });
 });
 
@@ -61,24 +61,24 @@ describe("badgeColorForCategory", () => {
 /* ------------------------------------------------------------------ */
 
 describe("badgeColorForStatus", () => {
-  it("returns 'success' for completed", () => {
-    expect(badgeColorForStatus("completed")).toBe("success");
+  it("returns 'ok' for completed", () => {
+    expect(badgeColorForStatus("completed")).toBe("ok");
   });
 
-  it("returns 'warning' for pending", () => {
-    expect(badgeColorForStatus("pending")).toBe("warning");
+  it("returns 'warn' for pending", () => {
+    expect(badgeColorForStatus("pending")).toBe("warn");
   });
 
-  it("returns 'important' for denied", () => {
-    expect(badgeColorForStatus("denied")).toBe("important");
+  it("returns 'err' for denied", () => {
+    expect(badgeColorForStatus("denied")).toBe("err");
   });
 
-  it("returns 'danger' for failed", () => {
-    expect(badgeColorForStatus("failed")).toBe("danger");
+  it("returns 'err' for failed", () => {
+    expect(badgeColorForStatus("failed")).toBe("err");
   });
 
-  it("returns 'danger' for any unknown status", () => {
-    expect(badgeColorForStatus("unknown" as CommandExecutionStatus)).toBe("danger");
+  it("returns 'err' for any unknown status", () => {
+    expect(badgeColorForStatus("unknown" as CommandExecutionStatus)).toBe("err");
   });
 });
 

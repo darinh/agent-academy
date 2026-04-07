@@ -53,7 +53,7 @@ const useLocalStyles = makeStyles({
     textTransform: "uppercase" as const,
   },
   message: {
-    color: "#f4f8ff",
+    color: "var(--aa-text-strong)",
     fontSize: "15px",
     fontWeight: 600,
   },

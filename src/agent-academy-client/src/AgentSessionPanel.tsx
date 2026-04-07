@@ -1,10 +1,11 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import {
-  Badge,
   Button,
   Spinner,
 } from "@fluentui/react-components";
 import { roleColor } from "./theme";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import type { AgentDefinition, AgentLocation, BreakoutRoom } from "./api";
 import { getAgentSessions } from "./api";
 import ChatPanel from "./ChatPanel";
@@ -56,6 +57,7 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
 
   const rc = roleColor(agent.role);
   const state = location?.state ?? "Idle";
+  const stateColor: BadgeColor = state === "Working" ? "ok" : state === "Presenting" ? "warn" : "info";
   const activeSessions = sessions.filter((s) => s.status === "Active");
   const archivedSessions = sessions.filter((s) => s.status !== "Active");
 
@@ -73,7 +75,7 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
       {/* Agent header */}
       <div style={{
         padding: "16px 20px",
-        borderBottom: "1px solid #2a2f3a",
+        borderBottom: "1px solid var(--aa-border)",
         display: "flex",
         alignItems: "center",
         gap: "12px",
@@ -82,22 +84,16 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
         <div style={{
           width: "36px", height: "36px", borderRadius: "10px",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontWeight: 600, fontSize: "16px", color: "#fff",
+          fontWeight: 600, fontSize: "16px", color: "white",
           background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)`,
         }}>
           {agent.name.charAt(0)}
         </div>
         <div>
           <div style={{ fontWeight: 600, fontSize: "14px" }}>{agent.name}</div>
-          <div style={{ fontSize: "12px", color: "#7c90b2", display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ fontSize: "12px", color: "var(--aa-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
             <span>{agent.role}</span>
-            <Badge
-              appearance="filled"
-              size="small"
-              color={state === "Working" ? "success" : state === "Presenting" ? "warning" : "informative"}
-            >
-              {state}
-            </Badge>
+            <V3Badge color={stateColor}>{state}</V3Badge>
           </div>
         </div>
         <div style={{ marginLeft: "auto" }}>
@@ -110,12 +106,12 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
           <Spinner size="small" label="Loading sessions..." />
         </div>
       ) : error ? (
-        <div style={{ padding: "20px", textAlign: "center", color: "#f87171" }}>
+        <div style={{ padding: "20px", textAlign: "center", color: "var(--aa-copper)" }}>
           Failed to load sessions.{" "}
           <Button appearance="subtle" size="small" onClick={loadSessions}>Retry</Button>
         </div>
       ) : sessions.length === 0 ? (
-        <div style={{ padding: "20px", textAlign: "center", color: "#7c90b2" }}>
+        <div style={{ padding: "20px", textAlign: "center", color: "var(--aa-muted)" }}>
           No sessions yet. This agent hasn't been assigned any breakout tasks.
         </div>
       ) : (
@@ -125,24 +121,20 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
             <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
               <div style={{
                 padding: "8px 20px",
-                backgroundColor: "#1a1f2a",
-                borderBottom: "1px solid #2a2f3a",
+                backgroundColor: "var(--aa-panel)",
+                borderBottom: "1px solid var(--aa-border)",
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
                 flexShrink: 0,
               }}>
-                <Badge
-                  appearance="filled"
-                  size="small"
-                  color={displaySession.status === "Active" ? "success" : "informative"}
-                >
+                <V3Badge color={displaySession.status === "Active" ? "ok" : "info"}>
                   {displaySession.status}
-                </Badge>
+                </V3Badge>
                 <span style={{ fontSize: "13px", fontWeight: 500 }}>
                   {displaySession.name.replace(/^BR:\s*/, "")}
                 </span>
-                <span style={{ fontSize: "11px", color: "#7c90b2", marginLeft: "auto" }}>
+                <span style={{ fontSize: "11px", color: "var(--aa-muted)", marginLeft: "auto" }}>
                   {displaySession.recentMessages.length} messages
                   {" · "}
                   {formatElapsed(displaySession.createdAt, displaySession.updatedAt)}
@@ -172,14 +164,14 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
 
           {/* Past sessions list */}
           {archivedSessions.length > 0 && (
-            <div style={{ borderTop: "1px solid #2a2f3a" }}>
+            <div style={{ borderTop: "1px solid var(--aa-border)" }}>
               <div style={{
                 padding: "8px 20px",
                 fontSize: "11px",
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
-                color: "#7c90b2",
+                color: "var(--aa-muted)",
               }}>
                 Past Sessions ({archivedSessions.length})
               </div>
@@ -197,20 +189,20 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
                     width: "100%",
                     padding: "8px 20px",
                     border: "none",
-                    background: expandedSessionId === session.id ? "#1a1f2a" : "transparent",
-                    color: "#c8d0dc",
+                    background: expandedSessionId === session.id ? "var(--aa-panel)" : "transparent",
+                    color: "var(--aa-text)",
                     cursor: "pointer",
                     textAlign: "left",
                     fontSize: "13px",
                   }}
                 >
-                  <span style={{ color: "#7c90b2" }}>
+                  <span style={{ color: "var(--aa-muted)" }}>
                     {expandedSessionId === session.id ? "▾" : "▸"}
                   </span>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {session.name.replace(/^BR:\s*/, "")}
                   </span>
-                  <span style={{ fontSize: "11px", color: "#7c90b2", flexShrink: 0 }}>
+                  <span style={{ fontSize: "11px", color: "var(--aa-muted)", flexShrink: 0 }}>
                     {session.recentMessages.length} msgs · {formatTime(session.updatedAt)}
                   </span>
                 </button>

@@ -91,7 +91,7 @@ const MessageBubble = memo(function MessageBubble(props: {
     <article className={s.bubble}>
       <div className={s.bubbleCard}>
         <div className={s.bubbleHeader}>
-          <span style={{ fontSize: "12px", fontWeight: 600 }}>{props.message.senderName}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600, lineHeight: 1 }}>{props.message.senderName}</span>
           <span
             className={s.rolePill}
             style={{ backgroundColor: colors.accent + "26", color: colors.accent }}
@@ -129,7 +129,7 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
     <article className={s.bubble}>
       <div className={mergeClasses(s.bubbleCard, s.thinkingCard)} style={{ borderLeftColor: colors.accent }}>
         <div className={s.bubbleHeader}>
-          <span style={{ fontSize: "12px", fontWeight: 600 }}>{props.agent.name}</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600, lineHeight: 1 }}>{props.agent.name}</span>
           <span className={s.rolePill} style={{ backgroundColor: colors.accent + "26", color: colors.accent }}>
             {formatRole(props.agent.role)}
           </span>
@@ -300,8 +300,8 @@ const ChatPanel = memo(function ChatPanel(props: {
             gap: "8px",
             padding: "8px 14px",
             borderRadius: "12px",
-            backgroundColor: "rgba(183, 148, 255, 0.08)",
-            border: "1px solid rgba(183, 148, 255, 0.18)",
+            backgroundColor: "rgba(156, 39, 176, 0.08)",
+            border: "1px solid rgba(156, 39, 176, 0.18)",
             fontSize: "12px",
             color: "var(--aa-soft)",
             marginBottom: "8px",
@@ -340,8 +340,8 @@ const ChatPanel = memo(function ChatPanel(props: {
             margin: "0 auto",
             padding: "6px 16px",
             borderRadius: "999px",
-            border: "1px solid rgba(124, 176, 248, 0.3)",
-            background: "rgba(124, 176, 248, 0.12)",
+            border: "1px solid rgba(91, 141, 239, 0.3)",
+            background: "rgba(91, 141, 239, 0.12)",
             color: "var(--aa-cyan)",
             fontSize: "12px",
             fontWeight: 600,

@@ -287,10 +287,10 @@ describe("ChatPanel utilities", () => {
   });
 
   describe("STATUS_COLORS", () => {
-    it("has a hex color for every status", () => {
+    it("has a CSS variable color for every status", () => {
       const statuses: ConnectionStatus[] = ["connected", "connecting", "reconnecting", "disconnected"];
       for (const s of statuses) {
-        expect(STATUS_COLORS[s]).toMatch(/^#[0-9a-fA-F]{6}$/);
+        expect(STATUS_COLORS[s]).toMatch(/^var\(--aa-/);
       }
     });
 

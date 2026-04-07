@@ -106,7 +106,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -263,7 +263,7 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
             <span className={s.statLabel}>Instances ({stats.windowHours}h)</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>{stats.crashRestarts}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>{stats.crashRestarts}</span>
             <span className={s.statLabel}>Crashes</span>
           </div>
           <div className={s.statCard}>

@@ -1,31 +1,32 @@
 import type { CommandExecutionStatus } from "./api";
+import type { BadgeColor } from "./V3Badge";
 
 export const POLL_INTERVAL_MS = 2500;
 export const MAX_HISTORY_ITEMS = 10;
 
-export function badgeColorForCategory(category: string): "informative" | "success" | "warning" | "important" {
+export function badgeColorForCategory(category: string): BadgeColor {
   switch (category) {
     case "code":
-      return "informative";
+      return "info";
     case "git":
-      return "warning";
+      return "warn";
     case "operations":
-      return "important";
+      return "err";
     default:
-      return "success";
+      return "ok";
   }
 }
 
-export function badgeColorForStatus(status: CommandExecutionStatus): "success" | "warning" | "danger" | "important" {
+export function badgeColorForStatus(status: CommandExecutionStatus): BadgeColor {
   switch (status) {
     case "completed":
-      return "success";
+      return "ok";
     case "pending":
-      return "warning";
+      return "warn";
     case "denied":
-      return "important";
+      return "err";
     default:
-      return "danger";
+      return "err";
   }
 }
 

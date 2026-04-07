@@ -3,16 +3,12 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Avatar,
-  Body1Strong,
   Button,
   makeStyles,
   mergeClasses,
   shorthands,
   Spinner,
-  Subtitle2,
   Textarea,
-  tokens,
 } from "@fluentui/react-components";
 import {
   ChatRegular,
@@ -253,6 +249,18 @@ const useLocalStyles = makeStyles({
     fontSize: "12px",
     lineHeight: 1.6,
   },
+  avatar: {
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "50%",
+    fontFamily: "var(--mono)",
+    fontWeight: 700,
+    color: "white",
+    flexShrink: 0,
+  },
+  avatarSm: { width: "28px", height: "28px", fontSize: "9px" },
+  avatarMd: { width: "32px", height: "32px", fontSize: "10px" },
+  avatarLg: { width: "36px", height: "36px", fontSize: "11px" },
 });
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -266,6 +274,10 @@ interface AgentInfo {
 interface DmPanelProps {
   agents: AgentInfo[];
   readOnly?: boolean;
+}
+
+function initials(name: string): string {
+  return name.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
 // ── Component ────────────────────────────────────────────────────────────
@@ -418,7 +430,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       {/* ── Conversation list ──────────────── */}
       <div className={s.sidebar}>
         <div className={s.sidebarHeader}>
-          <Subtitle2>Messages</Subtitle2>
+          <span style={{ fontWeight: 600, fontSize: "14px" }}>Messages</span>
           <div className={s.newMsgWrapper} ref={pickerRef}>
             <Button
               appearance="subtle"
@@ -431,7 +443,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
             {showAgentPicker && (
               <div className={s.agentDropdown}>
                 {agentsWithoutThread.length === 0 ? (
-                  <div style={{ padding: "8px 12px", color: tokens.colorNeutralForeground3, fontSize: "13px" }}>
+                  <div style={{ padding: "8px 12px", color: "var(--aa-soft)", fontSize: "13px" }}>
                     All agents have threads
                   </div>
                 ) : (
@@ -444,14 +456,15 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
                         onClick={() => startNewThread(agent.id)}
                         type="button"
                       >
-                        <Avatar
-                          name={agent.name}
-                          size={28}
-                          style={{ backgroundColor: colors.accent, color: colors.foreground }}
-                        />
+                        <span
+                          className={mergeClasses(s.avatar, s.avatarSm)}
+                          style={{ backgroundColor: colors.accent }}
+                        >
+                          {initials(agent.name)}
+                        </span>
                         <div>
-                          <Body1Strong style={{ fontSize: "13px" }}>{agent.name}</Body1Strong>
-                          <div style={{ fontSize: "11px", color: tokens.colorNeutralForeground3 }}>
+                          <span style={{ fontWeight: 600, fontSize: "13px" }}>{agent.name}</span>
+                          <div style={{ fontSize: "11px", color: "var(--aa-soft)" }}>
                             {formatRole(agent.role)}
                           </div>
                         </div>
@@ -484,16 +497,17 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
                   onClick={() => selectThread(thread.agentId)}
                   type="button"
                 >
-                  <Avatar
-                    name={thread.agentName}
-                    size={36}
-                    style={{ backgroundColor: colors.accent, color: colors.foreground }}
-                  />
+                  <span
+                    className={mergeClasses(s.avatar, s.avatarLg)}
+                    style={{ backgroundColor: colors.accent }}
+                  >
+                    {initials(thread.agentName)}
+                  </span>
                   <div className={s.threadInfo}>
                     <div className={s.threadNameRow}>
-                      <Body1Strong style={{ fontSize: "13px" }}>
+                      <span style={{ fontWeight: 600, fontSize: "13px" }}>
                         {thread.agentName}
-                      </Body1Strong>
+                      </span>
                       <span
                         className={s.rolePill}
                         style={{ backgroundColor: colors.accent, color: colors.foreground }}
@@ -518,17 +532,15 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
         {selectedAgent ? (
           <>
             <div className={s.chatHeader}>
-              <Avatar
-                name={selectedAgent.name}
-                size={32}
-                style={{
-                  backgroundColor: roleColor(selectedAgent.role).accent,
-                  color: roleColor(selectedAgent.role).foreground,
-                }}
-              />
+              <span
+                className={mergeClasses(s.avatar, s.avatarMd)}
+                style={{ backgroundColor: roleColor(selectedAgent.role).accent }}
+              >
+                {initials(selectedAgent.name)}
+              </span>
               <div>
-                <Body1Strong>{selectedAgent.name}</Body1Strong>
-                <div style={{ fontSize: "12px", color: tokens.colorNeutralForeground3 }}>
+                <span style={{ fontWeight: 600 }}>{selectedAgent.name}</span>
+                <div style={{ fontSize: "12px", color: "var(--aa-soft)" }}>
                   {formatRole(selectedAgent.role)}
                 </div>
               </div>
@@ -602,22 +614,20 @@ const DmMessageBubble = memo(function DmMessageBubble({
   return (
     <div className={mergeClasses(s.msgRow, isHuman && s.msgRowHuman)}>
       {!isHuman && (
-        <Avatar
-          name={message.senderName}
-          size={32}
-          style={{
-            backgroundColor: roleColor("Agent").accent,
-            color: roleColor("Agent").foreground,
-          }}
-        />
+        <span
+          className={mergeClasses(s.avatar, s.avatarMd)}
+          style={{ backgroundColor: roleColor("Agent").accent }}
+        >
+          {initials(message.senderName)}
+        </span>
       )}
       <div>
         <div className={mergeClasses(s.msgBubble, isHuman && s.msgBubbleHuman)}>
           {!isHuman && (
             <div className={s.msgMeta}>
-              <Body1Strong style={{ fontSize: "13px" }}>
+              <span style={{ fontWeight: 600, fontSize: "13px" }}>
                 {message.senderName}
-              </Body1Strong>
+              </span>
             </div>
           )}
           <div className={s.msgContent}>

@@ -1,17 +1,16 @@
 import type { CollaborationPhase } from "./api";
+import type { BadgeColor } from "./V3Badge";
 
 export type TimeRange = 24 | 168 | 720 | undefined;
 
-export type BadgeColor = "informative" | "success" | "warning" | "important" | "severe" | "subtle";
-
 export function phaseColor(phase: CollaborationPhase): BadgeColor {
   const map: Record<CollaborationPhase, BadgeColor> = {
-    Intake: "informative",
-    Planning: "warning",
-    Discussion: "important",
-    Validation: "severe",
-    Implementation: "success",
-    FinalSynthesis: "subtle",
+    Intake: "info",
+    Planning: "warn",
+    Discussion: "active",
+    Validation: "review",
+    Implementation: "ok",
+    FinalSynthesis: "muted",
   };
   return map[phase];
 }

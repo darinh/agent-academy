@@ -1,16 +1,15 @@
 import { useEffect, useRef, useMemo, useState } from "react";
 import {
-  Badge,
   Button,
   Input,
   makeStyles,
   mergeClasses,
   shorthands,
   Spinner,
-  Text,
   Textarea,
 } from "@fluentui/react-components";
 import { PlayRegular } from "@fluentui/react-icons";
+import V3Badge from "./V3Badge";
 import {
   executeCommand,
   getCommandExecution,
@@ -126,7 +125,7 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-text-strong)",
     fontFamily: "var(--mono)",
     fontSize: "14px",
-    fontWeight: 760,
+    fontWeight: 600,
   },
   metricNote: {
     color: "var(--aa-muted)",
@@ -195,7 +194,7 @@ const useLocalStyles = makeStyles({
     margin: 0,
     color: "var(--aa-text-strong)",
     fontSize: "13px",
-    fontWeight: 720,
+    fontWeight: 700,
   },
   sectionText: {
     color: "var(--aa-muted)",
@@ -217,8 +216,7 @@ const useLocalStyles = makeStyles({
   fieldLabel: {
     color: "var(--aa-text-strong)",
     fontSize: "12px",
-    fontWeight: 650,
-    letterSpacing: "0.02em",
+    fontWeight: 600,
   },
   fieldDescription: {
     color: "var(--aa-soft)",
@@ -247,9 +245,9 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-soft)",
   },
   errorBox: {
-    color: "#ffd6dc",
-    border: "1px solid rgba(181, 110, 79, 0.22)",
-    backgroundColor: "rgba(74, 22, 20, 0.3)",
+    color: "var(--aa-copper)",
+    border: "1px solid rgba(232, 93, 93, 0.22)",
+    backgroundColor: "rgba(232, 93, 93, 0.08)",
     ...shorthands.borderRadius("6px"),
     ...shorthands.padding("12px", "14px"),
     fontSize: "13px",
@@ -563,12 +561,12 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
                 }}
               >
                 <div className={s.commandMetaRow}>
-                  <Badge appearance="outline" color={badgeColorForCategory(command.category)}>
+                  <V3Badge color={badgeColorForCategory(command.category)}>
                     {command.category}
-                  </Badge>
-                  <Badge appearance={command.isAsync ? "filled" : "outline"} color={command.isAsync ? "warning" : "informative"}>
+                  </V3Badge>
+                  <V3Badge color={command.isAsync ? "warn" : "info"}>
                     {command.isAsync ? "polling" : "instant"}
-                  </Badge>
+                  </V3Badge>
                 </div>
                 <div className={s.commandTitle}>{command.title}</div>
                 <div className={s.commandDescription}>{command.description}</div>
@@ -631,13 +629,13 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
           {panelError && <div className={s.errorBox}>{panelError}</div>}
 
           <div className={s.actionRow}>
-            <Text className={mergeClasses(s.helperText, readOnly && s.helperWarning)}>
+            <span className={mergeClasses(s.helperText, readOnly && s.helperWarning)}>
               {readOnly
                 ? "Limited mode is active. You can inspect the command deck, but new executions are disabled until Copilot returns to operational."
                 : definition.isAsync
                   ? "This command returns immediately, then polls for a final result."
                   : "This command returns a result directly in the panel."}
-            </Text>
+            </span>
             <Button
               appearance="primary"
               icon={submitting ? <Spinner size="tiny" /> : <PlayRegular />}
@@ -659,9 +657,9 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
             </div>
           </div>
           <div className={s.badgeRow}>
-            <Badge appearance="outline" color="informative">latest first</Badge>
-            <Badge appearance="outline" color="warning">{pendingCount} pending</Badge>
-            <Badge appearance="outline" color="success">audited</Badge>
+            <V3Badge color="info">latest first</V3Badge>
+            <V3Badge color="warn">{pendingCount} pending</V3Badge>
+            <V3Badge color="ok">audited</V3Badge>
           </div>
           {latestResult ? (
             <CommandResultCard item={latestResult} />
@@ -713,21 +711,21 @@ function CommandResultCard({ item, compact = false }: { item: CommandHistoryItem
           </div>
         </div>
         <div className={s.badgeRow}>
-          <Badge appearance="outline" color={badgeColorForStatus(item.response.status)}>
+          <V3Badge color={badgeColorForStatus(item.response.status)}>
             {item.response.status}
-          </Badge>
-          <Badge appearance="outline" color={item.definition.isAsync ? "warning" : "informative"}>
+          </V3Badge>
+          <V3Badge color={item.definition.isAsync ? "warn" : "info"}>
             {item.response.command}
-          </Badge>
+          </V3Badge>
         </div>
       </div>
 
       {item.response.error && (
         <div className={s.errorBox}>
           {item.response.errorCode && (
-            <Badge appearance="filled" color="danger" style={{ marginRight: 8 }}>
+            <V3Badge color="err" style={{ marginRight: 8 }}>
               {item.response.errorCode}
-            </Badge>
+            </V3Badge>
           )}
           {item.response.error}
         </div>

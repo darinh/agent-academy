@@ -1,5 +1,4 @@
 import {
-  Badge,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
@@ -8,14 +7,13 @@ import {
   ChatRegular,
   TaskListLtrRegular,
   ArrowSyncRegular,
-  WarningRegular,
-  ErrorCircleRegular,
-  CheckmarkCircleRegular,
   InfoRegular,
   PlayRegular,
 } from "@fluentui/react-icons";
 import type { ActivityEvent, ActivityEventType } from "./api";
-import { relativeTime, severityColor, eventCategory } from "./timelinePanelUtils";
+import { relativeTime, eventCategory } from "./timelinePanelUtils";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import EmptyState from "./EmptyState";
 import SkeletonLoader from "./SkeletonLoader";
 
@@ -44,7 +42,7 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("7px", "20px"),
-    borderBottom: "1px solid rgba(48, 54, 61, 0.4)",
+    borderBottom: "1px solid var(--aa-hairline)",
     fontFamily: "var(--mono)",
     fontSize: "11px",
     transitionProperty: "background",
@@ -111,13 +109,9 @@ function eventIcon(type: ActivityEventType) {
   }
 }
 
-function severityBadge(severity: "Info" | "Warning" | "Error") {
-  const iconMap = {
-    Info: <CheckmarkCircleRegular />,
-    Warning: <WarningRegular />,
-    Error: <ErrorCircleRegular />,
-  };
-  return { color: severityColor(severity), icon: iconMap[severity] };
+function severityToBadgeColor(severity: "Info" | "Warning" | "Error"): BadgeColor {
+  const map: Record<string, BadgeColor> = { Info: "info", Warning: "warn", Error: "err" };
+  return map[severity] ?? "info";
 }
 
 // ── Component ──
@@ -140,9 +134,7 @@ export default function TimelinePanel({ activity, loading }: TimelinePanelProps)
     <div className={s.root}>
       <div className={s.header}>
         <span className={s.headerTitle}>Activity Timeline</span>
-        <Badge appearance="filled" color="informative" size="small">
-          {sorted.length}
-        </Badge>
+        <V3Badge color="muted">{sorted.length}</V3Badge>
       </div>
 
       {loading && sorted.length === 0 ? (
@@ -155,28 +147,18 @@ export default function TimelinePanel({ activity, loading }: TimelinePanelProps)
         />
       ) : (
         <ul className={s.list}>
-          {sorted.map((ev) => {
-            const badge = severityBadge(ev.severity);
-            return (
+          {sorted.map((ev) => (
               <li key={ev.id} className={s.item}>
                 <span className={s.iconCol}>{eventIcon(ev.type)}</span>
                 <div className={s.body}>
                   <div className={s.message}>{ev.message}</div>
                   <div className={s.meta}>
-                    <Badge
-                      appearance="outline"
-                      color={badge.color}
-                      icon={badge.icon}
-                      size="small"
-                    >
-                      {ev.type}
-                    </Badge>
+                    <V3Badge color={severityToBadgeColor(ev.severity)}>{ev.type}</V3Badge>
                     <span>{relativeTime(ev.occurredAt)}</span>
                   </div>
                 </div>
               </li>
-            );
-          })}
+            ))}
         </ul>
       )}
     </div>

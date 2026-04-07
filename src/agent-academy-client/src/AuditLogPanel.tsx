@@ -135,7 +135,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -389,7 +389,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
             <span className={s.statLabel}>Success</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>
               {errorCount}
             </span>
             <span className={s.statLabel}>Errors</span>

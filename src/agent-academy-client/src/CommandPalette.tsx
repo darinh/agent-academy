@@ -58,7 +58,7 @@ const useLocalStyles = makeStyles({
     maxHeight: "min(520px, 70vh)",
     display: "flex",
     flexDirection: "column",
-    backgroundColor: "#1a1d24",
+    backgroundColor: "var(--aa-panel)",
     border: "1px solid var(--aa-border)",
     boxShadow: "0 24px 80px rgba(0,0,0,0.6), 0 0 1px rgba(91,141,239,0.08)",
     ...shorthands.borderRadius("16px"),
@@ -208,14 +208,13 @@ const useLocalStyles = makeStyles({
     wordBreak: "break-word",
   },
   resultSuccess: {
-    ...shorthands.borderColor("rgba(72, 214, 122, 0.3)"),
+    ...shorthands.borderColor("rgba(76, 175, 80, 0.3)"),
   },
   resultError: {
-    ...shorthands.borderColor("rgba(255, 113, 135, 0.3)"),
+    ...shorthands.borderColor("rgba(232, 93, 93, 0.3)"),
   },
   validationError: {
-    color: "#ff7187",
-    fontSize: "12px",
+    color: "var(--aa-copper)",
   },
 });
 

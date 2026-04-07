@@ -15,7 +15,7 @@ const useLocalStyles = makeStyles({
   },
   icon: {
     fontSize: "48px",
-    color: "#ff7187",
+    color: "var(--aa-copper)",
     opacity: 0.7,
   },
   message: {

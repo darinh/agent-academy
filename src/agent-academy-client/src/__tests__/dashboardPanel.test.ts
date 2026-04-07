@@ -78,12 +78,12 @@ function makeOverview(overrides: Partial<WorkspaceOverview> = {}): WorkspaceOver
 describe("DashboardPanel", () => {
   describe("phaseColor mapping", () => {
     it("maps every CollaborationPhase to a badge color", () => {
-      expect(phaseColor("Intake")).toBe("informative");
-      expect(phaseColor("Planning")).toBe("warning");
-      expect(phaseColor("Discussion")).toBe("important");
-      expect(phaseColor("Validation")).toBe("severe");
-      expect(phaseColor("Implementation")).toBe("success");
-      expect(phaseColor("FinalSynthesis")).toBe("subtle");
+      expect(phaseColor("Intake")).toBe("info");
+      expect(phaseColor("Planning")).toBe("warn");
+      expect(phaseColor("Discussion")).toBe("active");
+      expect(phaseColor("Validation")).toBe("review");
+      expect(phaseColor("Implementation")).toBe("ok");
+      expect(phaseColor("FinalSynthesis")).toBe("muted");
     });
 
     it("returns distinct colors for each phase", () => {

@@ -136,7 +136,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -250,7 +250,7 @@ export function circuitBreakerDisplay(state: CircuitBreakerState): {
   switch (state) {
     case "Open":
       return {
-        color: "#f85149",
+        color: "var(--aa-copper)",
         label: "Circuit Open",
         detail: "Agent requests are blocked. Waiting for cooldown before probing.",
       };
@@ -404,7 +404,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
       {summary && summary.totalErrors > 0 && (
         <div className={s.statsRow}>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>
               {summary.totalErrors}
             </span>
             <span className={s.statLabel}>Total Errors</span>
@@ -416,7 +416,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
             <span className={s.statLabel}>Recoverable</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>
               {summary.unrecoverableErrors}
             </span>
             <span className={s.statLabel}>Unrecoverable</span>
@@ -428,7 +428,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
       {records.length >= 2 && (
         <div className={s.sparklineRow} data-testid="errors-sparkline">
           <span className={s.sparklineLabel}>Error Rate</span>
-          <Sparkline data={errorTrend} color="#f85149" width={180} height={28} />
+          <Sparkline data={errorTrend} color="var(--aa-copper)" width={180} height={28} />
         </div>
       )}
 

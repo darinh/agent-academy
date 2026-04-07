@@ -33,7 +33,7 @@ const useLocalStyles = makeStyles({
   card: {
     ...shorthands.padding("16px"),
     ...shorthands.borderRadius("12px"),
-    border: "1px solid rgba(155, 176, 210, 0.16)",
+    border: "1px solid var(--aa-hairline)",
     backgroundColor: "rgba(255, 255, 255, 0.03)",
     marginBottom: "12px",
   },
@@ -53,19 +53,18 @@ const useLocalStyles = makeStyles({
   templateName: {
     fontSize: "14px",
     fontWeight: 600,
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
   },
   templateDesc: {
     fontSize: "12px",
-    color: "#7c90b2",
-    whiteSpace: "nowrap" as const,
+    color: "var(--aa-muted)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     maxWidth: "400px",
   },
   formContainer: {
     marginTop: "16px",
-    ...shorthands.borderTop("1px", "solid", "rgba(155, 176, 210, 0.12)"),
+    ...shorthands.borderTop("1px", "solid", "var(--aa-hairline)"),
     paddingTop: "16px",
     display: "flex",
     flexDirection: "column",
@@ -79,7 +78,7 @@ const useLocalStyles = makeStyles({
   fieldLabel: {
     fontSize: "12px",
     fontWeight: 600,
-    color: "#9bb0d2",
+    color: "var(--aa-soft)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.5px",
   },
@@ -92,7 +91,7 @@ const useLocalStyles = makeStyles({
   },
   error: {
     fontSize: "13px",
-    color: "#ff6b6b",
+    color: "var(--aa-copper)",
   },
   createButton: {
     marginBottom: "12px",

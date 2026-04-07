@@ -29,7 +29,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.borderRadius("6px"),
   },
   shimmer: {
-    background: "rgba(196, 173, 141, 0.08)",
+    background: "rgba(91, 141, 239, 0.06)",
     animationName: {
       "0%": { opacity: 0.4 },
       "50%": { opacity: 0.7 },

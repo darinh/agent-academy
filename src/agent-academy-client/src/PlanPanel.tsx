@@ -82,10 +82,10 @@ const useLocalStyles = makeStyles({
       textAlign: "left",
       fontSize: "13px",
     },
-    "& th": { color: "#7c90b2", fontWeight: 650 },
+    "& th": { color: "var(--aa-muted)", fontWeight: 600 },
     "& ul, & ol": { paddingLeft: "20px" },
     "& blockquote": {
-      borderLeft: "3px solid rgba(108, 182, 255, 0.4)",
+      borderLeft: "3px solid rgba(91, 141, 239, 0.4)",
       marginLeft: 0,
       ...shorthands.padding("4px", "16px"),
       color: "var(--aa-soft)",

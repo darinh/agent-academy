@@ -1,8 +1,5 @@
 import { useState } from "react";
 import {
-  Card,
-  CardHeader,
-  Badge,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
@@ -18,6 +15,7 @@ import {
   ClipboardTaskListLtrRegular,
   ChatHistoryRegular,
 } from "@fluentui/react-icons";
+import V3Badge from "./V3Badge";
 import type { WorkspaceOverview } from "./api";
 import type { CollaborationPhase } from "./api";
 import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
@@ -55,6 +53,9 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("12px", "14px"),
   },
   cardHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
     color: "var(--aa-soft)",
     fontFamily: "var(--mono)",
     fontSize: "10px",
@@ -184,41 +185,41 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
   return (
     <div className={s.root}>
       <div className={s.grid}>
-        <Card className={s.card}>
-          <CardHeader
-            image={<ChatMultipleRegular style={{ fontSize: 24, color: "#6cb6ff" }} />}
-            header={<span className={s.cardHeader}>Rooms</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <ChatMultipleRegular style={{ fontSize: 24, color: "var(--aa-cyan)" }} />
+            <span>Rooms</span>
+          </div>
           <div className={s.bigNumber}>{roomCount}</div>
           <div className={s.label}>Shared collaboration rooms currently available.</div>
-        </Card>
+        </div>
 
-        <Card className={s.card}>
-          <CardHeader
-            image={<PeopleRegular style={{ fontSize: 24, color: "#b794ff" }} />}
-            header={<span className={s.cardHeader}>Agents</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <PeopleRegular style={{ fontSize: 24, color: "var(--aa-plum)" }} />
+            <span>Agents</span>
+          </div>
           <div className={s.bigNumber}>{agentCount}</div>
           <div className={s.label}>Configured contributors ready for planning, coding, and review.</div>
-        </Card>
+        </div>
 
-        <Card className={s.card}>
-          <CardHeader
-            image={<TaskListLtrRegular style={{ fontSize: 24, color: "#48d67a" }} />}
-            header={<span className={s.cardHeader}>Active Tasks</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <TaskListLtrRegular style={{ fontSize: 24, color: "var(--aa-lime)" }} />
+            <span>Active Tasks</span>
+          </div>
           <div className={s.bigNumber}>{activeTasks}</div>
           <div className={s.label}>Rooms with in-flight work needing active coordination.</div>
-        </Card>
+        </div>
 
-        <Card className={s.card}>
-          <CardHeader
-            image={<ArrowSyncRegular style={{ fontSize: 24, color: "#ffbe70" }} />}
-            header={<span className={s.cardHeader}>Recent Events</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <ArrowSyncRegular style={{ fontSize: 24, color: "var(--aa-gold)" }} />
+            <span>Recent Events</span>
+          </div>
           <div className={s.bigNumber}>{eventCount}</div>
           <div className={s.label}>Latest workflow activity across the workspace.</div>
-        </Card>
+        </div>
       </div>
 
       {phaseCounts.size > 0 && (
@@ -226,9 +227,9 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
           <div className={s.sectionTitle}>Phase Distribution</div>
           {[...phaseCounts.entries()].map(([phase, count]) => (
             <div key={phase} className={s.phaseRow}>
-              <Badge appearance="filled" color={phaseColor(phase)}>
+              <V3Badge color={phaseColor(phase)}>
                 {phase}
-              </Badge>
+              </V3Badge>
               <span>
                 {count} room{count !== 1 ? "s" : ""}
               </span>

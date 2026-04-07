@@ -101,7 +101,7 @@ const useStyles = makeStyles({
     position: "absolute",
     inset: 0,
     background:
-      "radial-gradient(circle at 12% 16%, rgba(131, 207, 255, 0.16), transparent 24%), radial-gradient(circle at 86% 14%, rgba(127, 107, 255, 0.12), transparent 20%), radial-gradient(circle at 66% 84%, rgba(217, 166, 103, 0.12), transparent 26%)",
+      "radial-gradient(circle at 12% 16%, rgba(91, 141, 239, 0.16), transparent 24%), radial-gradient(circle at 86% 14%, rgba(156, 39, 176, 0.12), transparent 20%), radial-gradient(circle at 66% 84%, rgba(0, 150, 136, 0.12), transparent 26%)",
     pointerEvents: "none",
   },
   container: {
@@ -121,7 +121,7 @@ const useStyles = makeStyles({
     display: "grid",
     alignContent: "space-between",
     gap: "24px",
-    border: "1px solid rgba(163, 180, 208, 0.16)",
+    border: "1px solid var(--aa-border)",
     background:
       "linear-gradient(180deg, rgba(13, 22, 37, 0.88), rgba(8, 14, 24, 0.96))",
     boxShadow: "0 32px 90px rgba(0, 0, 0, 0.34)",
@@ -136,9 +136,9 @@ const useStyles = makeStyles({
     display: "inline-flex",
     alignItems: "center",
     width: "fit-content",
-    color: "#f3d4a8",
-    backgroundColor: "rgba(217, 166, 103, 0.12)",
-    border: "1px solid rgba(217, 166, 103, 0.22)",
+    color: "var(--aa-cyan)",
+    backgroundColor: "rgba(91, 141, 239, 0.12)",
+    border: "1px solid rgba(91, 141, 239, 0.22)",
     ...shorthands.borderRadius("999px"),
     ...shorthands.padding("8px", "14px"),
     fontSize: "11px",
@@ -148,7 +148,7 @@ const useStyles = makeStyles({
   },
   railTitle: {
     margin: 0,
-    color: "#f8fbff",
+    color: "var(--aa-text-strong)",
     fontFamily: "var(--heading)",
     fontSize: "clamp(2.8rem, 5.5vw, 4.5rem)",
     lineHeight: 0.95,
@@ -156,7 +156,7 @@ const useStyles = makeStyles({
   },
   railBody: {
     margin: 0,
-    color: "#aec0de",
+    color: "var(--aa-muted)",
     fontSize: "16px",
     lineHeight: 1.8,
     maxWidth: "38rem",
@@ -168,30 +168,30 @@ const useStyles = makeStyles({
   railCard: {
     display: "grid",
     gap: "10px",
-    border: "1px solid rgba(163, 180, 208, 0.12)",
+    border: "1px solid var(--aa-hairline)",
     background: "linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02))",
     ...shorthands.borderRadius("24px"),
     ...shorthands.padding("18px"),
   },
   railCardLabel: {
-    color: "#f3d4a8",
+    color: "var(--aa-cyan)",
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.12em",
     textTransform: "uppercase",
   },
   railCardValue: {
-    color: "#eef4ff",
+    color: "var(--aa-text-strong)",
     fontSize: "18px",
     fontWeight: 700,
   },
   railCardBody: {
-    color: "#8da3c4",
+    color: "var(--aa-soft)",
     fontSize: "13px",
     lineHeight: 1.7,
   },
   railFootnote: {
-    color: "#7f94b6",
+    color: "var(--aa-soft)",
     fontSize: "12px",
     lineHeight: 1.8,
   },
@@ -199,7 +199,7 @@ const useStyles = makeStyles({
     display: "grid",
     gridTemplateRows: "auto auto minmax(0, 1fr)",
     gap: "18px",
-    border: "1px solid rgba(163, 180, 208, 0.16)",
+    border: "1px solid var(--aa-border)",
     background:
       "linear-gradient(180deg, rgba(18, 30, 48, 0.92), rgba(9, 15, 25, 0.98))",
     boxShadow: "0 32px 90px rgba(0, 0, 0, 0.38)",
@@ -225,21 +225,21 @@ const useStyles = makeStyles({
     maxWidth: "44rem",
   },
   deckKicker: {
-    color: "#f3d4a8",
+    color: "var(--aa-cyan)",
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.14em",
     textTransform: "uppercase",
   },
   deckTitle: {
-    color: "#f8fbff",
+    color: "var(--aa-text-strong)",
     fontFamily: "var(--heading)",
     fontSize: "clamp(2.1rem, 4vw, 3.1rem)",
     lineHeight: 1,
     letterSpacing: "-0.05em",
   },
   deckDescription: {
-    color: "#aec0de",
+    color: "var(--aa-muted)",
     fontSize: "15px",
     lineHeight: 1.8,
   },
@@ -250,7 +250,7 @@ const useStyles = makeStyles({
   },
   panel: {
     minHeight: 0,
-    border: "1px solid rgba(163, 180, 208, 0.14)",
+    border: "1px solid var(--aa-border)",
     background: "linear-gradient(180deg, rgba(8, 13, 23, 0.78), rgba(10, 18, 30, 0.92))",
     ...shorthands.borderRadius("28px"),
     ...shorthands.padding("24px"),
@@ -259,7 +259,7 @@ const useStyles = makeStyles({
     display: "grid",
     placeItems: "center",
     minHeight: "180px",
-    color: "#8da3c4",
+    color: "var(--aa-soft)",
     fontSize: "14px",
   },
   loadingWrap: {
@@ -275,7 +275,7 @@ const useStyles = makeStyles({
     gridTemplateColumns: "52px 1fr auto",
     gap: "16px",
     alignItems: "center",
-    border: "1px solid rgba(163, 180, 208, 0.12)",
+    border: "1px solid var(--aa-hairline)",
     background: "linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02))",
     color: "inherit",
     cursor: "pointer",
@@ -287,8 +287,8 @@ const useStyles = makeStyles({
     ...shorthands.padding("16px"),
     ":hover": {
       transform: "translateY(-1px)",
-      border: "1px solid rgba(131, 207, 255, 0.22)",
-      background: "linear-gradient(180deg, rgba(131, 207, 255, 0.06), rgba(255, 255, 255, 0.03))",
+      border: "1px solid rgba(91, 141, 239, 0.22)",
+      background: "linear-gradient(180deg, rgba(91, 141, 239, 0.06), rgba(255, 255, 255, 0.03))",
     },
   },
   workspaceIcon: {
@@ -296,23 +296,23 @@ const useStyles = makeStyles({
     height: "52px",
     display: "grid",
     placeItems: "center",
-    color: "#0a1019",
+    color: "var(--aa-bg)",
     fontSize: "18px",
     fontWeight: 800,
-    background: "linear-gradient(145deg, #f3d4a8, #83cfff)",
+    background: "linear-gradient(145deg, var(--aa-gold), var(--aa-cyan))",
     boxShadow: "0 12px 32px rgba(0, 0, 0, 0.22)",
     ...shorthands.borderRadius("18px"),
   },
-  workspaceName: { color: "#f4f8ff", fontSize: "15px", fontWeight: 700 },
+  workspaceName: { color: "var(--aa-text-strong)", fontSize: "15px", fontWeight: 700 },
   workspacePath: {
     marginTop: "4px",
-    color: "#8da3c4",
+    color: "var(--aa-soft)",
     fontSize: "12px",
     lineHeight: 1.6,
     overflowWrap: "anywhere",
   },
   workspaceMeta: {
-    color: "#7f94b6",
+    color: "var(--aa-soft)",
     fontSize: "12px",
     whiteSpace: "nowrap",
   },
@@ -323,15 +323,15 @@ const useStyles = makeStyles({
     fontWeight: 700,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
-    color: "#d9e7fb",
-    backgroundColor: "rgba(131, 207, 255, 0.1)",
-    border: "1px solid rgba(131, 207, 255, 0.22)",
+    color: "var(--aa-text)",
+    backgroundColor: "rgba(91, 141, 239, 0.1)",
+    border: "1px solid rgba(91, 141, 239, 0.22)",
     ...shorthands.borderRadius("999px"),
     ...shorthands.padding("4px", "10px"),
   },
   form: { display: "grid", gap: "18px" },
   fieldLabel: {
-    color: "#7f94b6",
+    color: "var(--aa-soft)",
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.12em",
@@ -356,8 +356,8 @@ const useStyles = makeStyles({
   scanResults: {
     display: "grid",
     gap: "12px",
-    border: "1px solid rgba(163, 180, 208, 0.14)",
-    background: "linear-gradient(180deg, rgba(131, 207, 255, 0.06), rgba(255, 255, 255, 0.03))",
+    border: "1px solid var(--aa-hairline)",
+    background: "linear-gradient(180deg, rgba(91, 141, 239, 0.06), rgba(255, 255, 255, 0.03))",
     boxShadow: "0 18px 40px rgba(0, 0, 0, 0.16)",
     ...shorthands.borderRadius("22px"),
     ...shorthands.padding("18px"),
@@ -368,19 +368,19 @@ const useStyles = makeStyles({
     gap: "10px",
     flexWrap: "wrap",
     fontSize: "13px",
-    color: "#dce7f7",
+    color: "var(--aa-text)",
   },
   scanLabel: {
-    color: "#7f94b6",
+    color: "var(--aa-soft)",
     minWidth: "88px",
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.1em",
     textTransform: "uppercase",
   },
-  errorText: { color: "#ff9b97", fontSize: "13px", lineHeight: 1.6 },
+  errorText: { color: "var(--aa-copper)", fontSize: "13px", lineHeight: 1.6 },
   browserWrap: {
-    border: "1px solid rgba(163, 180, 208, 0.14)",
+    border: "1px solid var(--aa-hairline)",
     background: "linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02))",
     ...shorthands.borderRadius("22px"),
     ...shorthands.padding("14px"),
@@ -391,7 +391,7 @@ const useStyles = makeStyles({
     gap: "10px",
     marginBottom: "10px",
     fontSize: "12px",
-    color: "#aec0de",
+    color: "var(--aa-muted)",
     overflowWrap: "anywhere",
   },
   browserList: { display: "grid", gap: "6px", maxHeight: "280px", overflowY: "auto" },
@@ -402,7 +402,7 @@ const useStyles = makeStyles({
     width: "100%",
     background: "transparent",
     border: "1px solid transparent",
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
     cursor: "pointer",
     textAlign: "left",
     fontSize: "13px",
@@ -417,25 +417,25 @@ const useStyles = makeStyles({
   },
   browserActions: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" },
   dialogSurface: {
-    backgroundColor: "#0c1523",
-    border: "1px solid rgba(163, 180, 208, 0.16)",
-    color: "#eff5ff",
+    backgroundColor: "var(--aa-bg)",
+    border: "1px solid var(--aa-border)",
+    color: "var(--aa-text-strong)",
     maxWidth: "520px",
   },
-  dialogTitle: { color: "#eff5ff", fontFamily: "var(--heading)" },
+  dialogTitle: { color: "var(--aa-text-strong)", fontFamily: "var(--heading)" },
   dialogSpecNote: {
     display: "flex",
     gap: "10px",
     fontSize: "13px",
     lineHeight: "1.7",
-    color: "#dce7f7",
-    backgroundColor: "rgba(131, 207, 255, 0.06)",
-    border: "1px solid rgba(131, 207, 255, 0.18)",
+    color: "var(--aa-text)",
+    backgroundColor: "rgba(91, 141, 239, 0.06)",
+    border: "1px solid rgba(91, 141, 239, 0.18)",
     ...shorthands.borderRadius("14px"),
     ...shorthands.padding("14px"),
   },
   dialogSpecIcon: { fontSize: "16px", flexShrink: 0, lineHeight: "1.6" },
-  dialogError: { color: "#ff9b97", fontSize: "13px", marginTop: "8px" },
+  dialogError: { color: "var(--aa-copper)", fontSize: "13px", marginTop: "8px" },
 });
 
 function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: string) => void }) {
@@ -645,7 +645,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
       {browsing && browseResult && (
         <div className={classes.browserWrap}>
           <div className={classes.browserHeader}>
-            <span style={{ color: "#83cfff", fontWeight: 700 }}>Path</span>
+            <span style={{ color: "var(--aa-cyan)", fontWeight: 700 }}>Path</span>
             <span style={{ flex: 1 }}>{browseResult.current}</span>
           </div>
           <div className={classes.browserList}>
@@ -741,7 +741,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                   <div style={{ display: "grid", gap: "12px" }}>
                     <div>
                       <Body1Strong>{scanResult.projectName ?? scannedPath.split("/").pop()}</Body1Strong>
-                      <Caption1 style={{ display: "block", color: "#aec0de", marginTop: "4px" }}>
+                      <Caption1 style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
                         {scannedPath}
                       </Caption1>
                     </div>
@@ -758,14 +758,14 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                         {scanResult.hasSpecs ? (
                           <>
                             <Body1Strong>Existing specification found.</Body1Strong>
-                            <Body1 style={{ display: "block", color: "#aec0de", marginTop: "4px" }}>
+                            <Body1 style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
                               The agent team will anchor on the current specs/ directory during onboarding.
                             </Body1>
                           </>
                         ) : (
                           <>
                             <Body1Strong>No specification found — one will be generated automatically.</Body1Strong>
-                            <Body1 style={{ display: "block", color: "#aec0de", marginTop: "4px" }}>
+                            <Body1 style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
                               Agent Academy will inspect the codebase and create an initial spec set for review.
                             </Body1>
                           </>

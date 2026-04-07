@@ -125,7 +125,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("16px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "12px",
     ...shorthands.padding("10px"),
     ...shorthands.borderRadius("8px"),
