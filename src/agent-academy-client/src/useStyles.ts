@@ -1040,9 +1040,15 @@ export const useStyles = makeStyles({
     fontSize: "12px",
   },
   statusIndicator: {
-    width: "10px",
-    height: "10px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "18px",
+    height: "18px",
     ...shorthands.borderRadius("999px"),
+    color: "rgba(0, 0, 0, 0.8)",
+    fontSize: "12px",
+    flexShrink: 0,
   },
   composerShell: {
     border: "1px solid rgba(214, 188, 149, 0.12)",

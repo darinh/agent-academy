@@ -587,6 +587,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
           <Input
             className={classes.fieldInput}
             placeholder="/home/user/projects/my-project"
+            aria-label="Directory path"
             value={dirPath}
             onChange={(_, data) => {
               setDirPath(data.value);
@@ -810,6 +811,7 @@ function CreateSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboard
         <Input
           className={classes.fieldInput}
           placeholder="/home/user/projects/my-awesome-project"
+          aria-label="Directory path"
           value={dirPath}
           onChange={(_, data) => setDirPath(data.value)}
           onKeyDown={(e) => {

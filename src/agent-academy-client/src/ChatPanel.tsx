@@ -17,6 +17,12 @@ import {
   Textarea,
 } from "@fluentui/react-components";
 import type { MenuCheckedValueChangeData } from "@fluentui/react-components";
+import {
+  CheckmarkCircleRegular,
+  ArrowSyncRegular,
+  PlugDisconnectedRegular,
+  WifiSettingsRegular,
+} from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
@@ -201,7 +207,7 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
             {formatRole(props.agent.role)}
           </span>
         </div>
-        <div className={s.thinkingDots}>thinking ● ● ●</div>
+        <div className={s.thinkingDots} role="status" aria-label={`${props.agent.name} is thinking`}>thinking ● ● ●</div>
       </div>
     </article>
   );
@@ -248,6 +254,13 @@ const STATUS_COLORS: Record<ConnectionStatus, string> = {
   connecting: "#fbbf24",
   reconnecting: "#fbbf24",
   disconnected: "#f87171",
+};
+
+const STATUS_ICONS: Record<ConnectionStatus, React.ReactNode> = {
+  connected: <CheckmarkCircleRegular fontSize={14} />,
+  connecting: <WifiSettingsRegular fontSize={14} />,
+  reconnecting: <ArrowSyncRegular fontSize={14} />,
+  disconnected: <PlugDisconnectedRegular fontSize={14} />,
 };
 
 const ChatPanel = memo(function ChatPanel(props: {
@@ -427,8 +440,10 @@ const ChatPanel = memo(function ChatPanel(props: {
         ))}
       </div>
 
-      <div className={s.statusBar}>
-        <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[connectionStatus] }} />
+      <div className={s.statusBar} role="status" aria-label={STATUS_LABELS[connectionStatus]}>
+        <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[connectionStatus] }}>
+          {STATUS_ICONS[connectionStatus]}
+        </span>
         {STATUS_LABELS[connectionStatus]}
       </div>
 

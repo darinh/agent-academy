@@ -153,3 +153,14 @@ code {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Focus indicators — WCAG 2.4.7 Focus Visible (AA) */
+:focus-visible {
+  outline: 2px solid var(--aa-cyan);
+  outline-offset: 2px;
+}
+
+/* Suppress focus ring on mouse interaction for elements that handle it */
+:focus:not(:focus-visible) {
+  outline: none;
+}
