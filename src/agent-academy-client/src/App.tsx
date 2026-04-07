@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Button,
   FluentProvider,
   webDarkTheme,
   mergeClasses,
@@ -60,6 +61,7 @@ import {
   getAuthTransitionEffect,
   markAutoReauthAttempt,
   markManualLogout,
+  shouldAttemptAutoReauth,
 } from "./authMonitor";
 
 const CONNECTION_STATUS_COPY = {
@@ -220,10 +222,21 @@ function AppShell() {
     if (transitionEffect.redirectToLogin) {
       markAutoReauthAttempt();
       window.location.assign(loginUrl);
+    } else if (
+      shouldAttemptAutoReauth(previousAuthRef.current, auth)
+      && !transitionEffect.redirectToLogin
+    ) {
+      // Auto-reauth was suppressed (already attempted or manual logout) — warn the user
+      dispatchToast(
+        <Toast>
+          <ToastTitle>Session needs reconnection</ToastTitle>
+        </Toast>,
+        { intent: "warning", timeout: 5000 },
+      );
     }
 
     previousAuthRef.current = auth;
-  }, [auth, loginUrl]);
+  }, [auth, dispatchToast, loginUrl]);
 
   // Fetch tasks when workspace is active and tab is "tasks"
   useEffect(() => {
@@ -613,6 +626,14 @@ function AppShell() {
                   <div className={s.limitedModeDescription}>
                     {degradedCopy.description}
                   </div>
+                  <Button
+                    appearance="primary"
+                    size="small"
+                    onClick={() => window.location.assign(loginUrl)}
+                    style={{ marginTop: "8px", alignSelf: "flex-start" }}
+                  >
+                    {degradedCopy.actionLabel}
+                  </Button>
                 </div>
               )}
 
