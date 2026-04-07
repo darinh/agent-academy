@@ -30,6 +30,7 @@ import {
 import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
 import SkeletonLoader from "./SkeletonLoader";
+import { formatElapsed } from "./panelUtils";
 import type {
   TaskSnapshot,
   TaskStatus,
@@ -333,16 +334,6 @@ function commentTypeBadgeColor(type: TaskCommentType): BadgeColor {
     case "Evidence": return "success";
     case "Comment": default: return "subtle";
   }
-}
-
-function formatDuration(start: string, end?: string | null): string {
-  const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ${mins % 60}m`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
 }
 
 function formatTime(iso: string): string {
@@ -735,7 +726,7 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh }: Task
                   {task.startedAt && (
                     <span className={s.metaItem}>
                       <ClockRegular fontSize={14} />
-                      {formatDuration(task.startedAt, task.completedAt)}
+                      {formatElapsed(task.startedAt, task.completedAt, { maxUnit: "days" })}
                     </span>
                   )}
                   {task.commentCount != null && task.commentCount > 0 && (

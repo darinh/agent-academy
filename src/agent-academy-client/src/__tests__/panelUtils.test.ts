@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   formatTimestamp,
   formatTokenCount,
   formatCost,
   errorTypeBadge,
+  formatElapsed,
 } from "../panelUtils";
 
 describe("panelUtils", () => {
@@ -181,6 +182,118 @@ describe("panelUtils", () => {
       const badge = errorTypeBadge("Authentication");
       expect(badge.color).toBe("informative");
       expect(badge.label).toBe("Authentication");
+    });
+  });
+
+  // ── formatElapsed ──
+
+  describe("formatElapsed", () => {
+    const base = "2026-04-05T10:00:00Z";
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Default options: granularity=minutes, maxUnit=hours (AgentSessionPanel behavior)
+
+    it("returns 0m for zero duration", () => {
+      expect(formatElapsed(base, base)).toBe("0m");
+    });
+
+    it("returns minutes for durations under an hour", () => {
+      const end = "2026-04-05T10:35:00Z";
+      expect(formatElapsed(base, end)).toBe("35m");
+    });
+
+    it("returns hours and minutes for durations over an hour", () => {
+      const end = "2026-04-05T12:15:00Z";
+      expect(formatElapsed(base, end)).toBe("2h 15m");
+    });
+
+    it("stops at hours by default (no days)", () => {
+      const end = "2026-04-07T10:00:00Z"; // 48 hours
+      expect(formatElapsed(base, end)).toBe("48h 0m");
+    });
+
+    // maxUnit: "days" (TaskListPanel behavior)
+
+    it("returns days and hours when maxUnit is days", () => {
+      const end = "2026-04-07T14:00:00Z"; // 52 hours
+      expect(formatElapsed(base, end, { maxUnit: "days" })).toBe("2d 4h");
+    });
+
+    it("returns hours when under 24h even with maxUnit days", () => {
+      const end = "2026-04-05T22:30:00Z"; // 12.5 hours
+      expect(formatElapsed(base, end, { maxUnit: "days" })).toBe("12h 30m");
+    });
+
+    it("returns minutes when under 1h with maxUnit days", () => {
+      const end = "2026-04-05T10:45:00Z";
+      expect(formatElapsed(base, end, { maxUnit: "days" })).toBe("45m");
+    });
+
+    // granularity: "seconds" (RestartHistoryPanel behavior)
+
+    it("returns seconds for short durations with seconds granularity", () => {
+      const end = "2026-04-05T10:00:30Z";
+      expect(formatElapsed(base, end, { granularity: "seconds" })).toBe("30s");
+    });
+
+    it("returns minutes and seconds for sub-hour with seconds granularity", () => {
+      const end = "2026-04-05T10:05:30Z";
+      expect(formatElapsed(base, end, { granularity: "seconds" })).toBe("5m 30s");
+    });
+
+    it("returns hours and minutes for longer durations with seconds granularity", () => {
+      const end = "2026-04-05T12:15:30Z";
+      expect(formatElapsed(base, end, { granularity: "seconds" })).toBe("2h 15m");
+    });
+
+    it("returns 0s for zero duration with seconds granularity", () => {
+      expect(formatElapsed(base, base, { granularity: "seconds" })).toBe("0s");
+    });
+
+    // null end + runningLabel (RestartHistoryPanel "running" behavior)
+
+    it("uses Date.now() when end is null", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-05T10:10:00Z"));
+      expect(formatElapsed(base, null)).toBe("10m");
+      vi.useRealTimers();
+    });
+
+    it("appends runningLabel when end is null", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-05T10:00:45Z"));
+      expect(formatElapsed(base, null, { granularity: "seconds", runningLabel: "(running)" })).toBe("45s (running)");
+      vi.useRealTimers();
+    });
+
+    it("does not append runningLabel when end is provided", () => {
+      const end = "2026-04-05T10:00:45Z";
+      expect(formatElapsed(base, end, { granularity: "seconds", runningLabel: "(running)" })).toBe("45s");
+    });
+
+    it("uses Date.now() when end is undefined", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-05T10:30:00Z"));
+      expect(formatElapsed(base, undefined, { runningLabel: "(running)" })).toBe("30m (running)");
+      vi.useRealTimers();
+    });
+
+    // Combined options
+
+    it("supports seconds granularity with days maxUnit", () => {
+      const end = "2026-04-07T14:05:30Z"; // 52h 5m 30s
+      expect(formatElapsed(base, end, { granularity: "seconds", maxUnit: "days" })).toBe("52h 5m");
+    });
+
+    // Edge cases
+
+    it("handles sub-second durations as 0", () => {
+      const end = "2026-04-05T10:00:00.500Z";
+      expect(formatElapsed(base, end)).toBe("0m");
+      expect(formatElapsed(base, end, { granularity: "seconds" })).toBe("0s");
     });
   });
 });

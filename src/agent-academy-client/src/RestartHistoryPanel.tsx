@@ -1,4 +1,4 @@
-import { formatTimestamp } from "./panelUtils";
+import { formatTimestamp, formatElapsed } from "./panelUtils";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -163,24 +163,6 @@ function reasonBadge(reason: string): { color: "informative" | "success" | "warn
   }
 }
 
-function formatDuration(startIso: string, endIso: string | null): string {
-  if (!endIso) {
-    const ms = Date.now() - new Date(startIso).getTime();
-    return fmtMs(ms) + " (running)";
-  }
-  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
-  return fmtMs(ms);
-}
-
-function fmtMs(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
-}
-
 const PAGE_SIZE = 10;
 
 // ── Component ──
@@ -343,7 +325,7 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
                       )}
                     </td>
                     <td className={s.td}>{formatTimestamp(inst.startedAt)}</td>
-                    <td className={s.td}>{formatDuration(inst.startedAt, inst.shutdownAt)}</td>
+                    <td className={s.td}>{formatElapsed(inst.startedAt, inst.shutdownAt, { granularity: "seconds", runningLabel: "(running)" })}</td>
                     <td className={s.td}>
                       <span className={s.mono}>{inst.version}</span>
                     </td>

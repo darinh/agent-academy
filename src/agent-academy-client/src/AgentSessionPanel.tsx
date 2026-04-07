@@ -10,6 +10,7 @@ import { getAgentSessions } from "./api";
 import ChatPanel from "./ChatPanel";
 import type { ThinkingAgent } from "./useWorkspace";
 import type { ConnectionStatus } from "./useActivityHub";
+import { formatElapsed } from "./panelUtils";
 
 interface AgentSessionPanelProps {
   agent: AgentDefinition;
@@ -17,14 +18,6 @@ interface AgentSessionPanelProps {
   thinkingAgents: ThinkingAgent[];
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, message: string) => Promise<boolean>;
-}
-
-function formatDuration(start: string, end: string): string {
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  const mins = Math.floor(ms / 60_000);
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ${mins % 60}m`;
 }
 
 function formatTime(iso: string): string {
@@ -152,7 +145,7 @@ const AgentSessionPanel = memo(function AgentSessionPanel({
                 <span style={{ fontSize: "11px", color: "#7c90b2", marginLeft: "auto" }}>
                   {displaySession.recentMessages.length} messages
                   {" · "}
-                  {formatDuration(displaySession.createdAt, displaySession.updatedAt)}
+                  {formatElapsed(displaySession.createdAt, displaySession.updatedAt)}
                 </span>
               </div>
               <div style={{ flex: 1, overflow: "hidden" }}>
