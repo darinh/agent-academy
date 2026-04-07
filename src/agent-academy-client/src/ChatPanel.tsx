@@ -32,64 +32,17 @@ import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
 import EmptyState from "./EmptyState";
 import SkeletonLoader from "./SkeletonLoader";
 import type { ThinkingAgent } from "./useWorkspace";
-import type { ConnectionStatus } from "./useActivityHub";
-
-/* ── Command Result Helpers ─────────────────────────────────────── */
-
-interface ParsedCommandResult {
-  status: "Success" | "Error" | "Denied";
-  command: string;
-  correlationId: string;
-  error?: string;
-  detail?: string;
-}
-
-function isCommandResultMessage(content: string): boolean {
-  return content.startsWith("=== COMMAND RESULTS ===");
-}
-
-function parseCommandResults(content: string): ParsedCommandResult[] {
-  const results: ParsedCommandResult[] = [];
-  const lines = content.split("\n");
-
-  let current: ParsedCommandResult | null = null;
-  const detailLines: string[] = [];
-
-  const flushCurrent = () => {
-    if (current) {
-      if (detailLines.length > 0) current.detail = detailLines.join("\n").trim();
-      results.push(current);
-      detailLines.length = 0;
-    }
-  };
-
-  for (const line of lines) {
-    if (line.startsWith("=== ")) continue;
-
-    const statusMatch = line.match(/^\[(Success|Error|Denied)\]\s+(\S+)\s+\(([^)]+)\)/);
-    if (statusMatch) {
-      flushCurrent();
-      current = {
-        status: statusMatch[1] as ParsedCommandResult["status"],
-        command: statusMatch[2],
-        correlationId: statusMatch[3],
-      };
-      continue;
-    }
-
-    if (!current) continue;
-
-    if (line.startsWith("  Error: ")) {
-      current.error = line.replace("  Error: ", "");
-    } else {
-      // Capture all remaining lines as detail (strip leading 2-space indent if present)
-      detailLines.push(line.startsWith("  ") ? line.slice(2) : line);
-    }
-  }
-  flushCurrent();
-
-  return results;
-}
+import {
+  isCommandResultMessage,
+  parseCommandResults,
+  loadFilters,
+  saveFilters,
+  shouldHideMessage,
+  STATUS_LABELS,
+  STATUS_COLORS,
+  MESSAGE_LENGTH_THRESHOLD,
+} from "./chatUtils";
+import type { MessageFilter, ConnectionStatus } from "./chatUtils";
 
 /* ── Command Result Bubble ──────────────────────────────────────── */
 
@@ -142,7 +95,7 @@ const MessageBubble = memo(function MessageBubble(props: {
   const colors = roleColor(
     props.message.senderRole ?? (props.message.senderKind === "User" ? "Human" : undefined),
   );
-  const isLong = props.message.content.length > 300;
+  const isLong = props.message.content.length > MESSAGE_LENGTH_THRESHOLD;
 
   return (
     <article className={s.bubble}>
@@ -169,7 +122,7 @@ const MessageBubble = memo(function MessageBubble(props: {
         </div>
         <div className={mergeClasses(s.bubbleText, isLong && !props.expanded ? s.bubbleCollapsed : undefined)}>
           <Markdown remarkPlugins={[remarkGfm]}>
-            {props.expanded || !isLong ? props.message.content : props.message.content.substring(0, 300) + "…"}
+            {props.expanded || !isLong ? props.message.content : props.message.content.substring(0, MESSAGE_LENGTH_THRESHOLD) + "…"}
           </Markdown>
         </div>
         {isLong && (
@@ -213,48 +166,7 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
   );
 });
 
-/* ── Filter Helpers ──────────────────────────────────────────────── */
-
-type MessageFilter = "system" | "commands";
-const FILTER_STORAGE_KEY = "agent-academy-chat-filters";
-
-function loadFilters(): Set<MessageFilter> {
-  try {
-    const raw = localStorage.getItem(FILTER_STORAGE_KEY);
-    if (raw) return new Set(JSON.parse(raw) as MessageFilter[]);
-  } catch { /* ignore */ }
-  return new Set();
-}
-
-function saveFilters(filters: Set<MessageFilter>) {
-  try {
-    localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify([...filters]));
-  } catch { /* storage unavailable — filter state lives in memory only */ }
-}
-
-function shouldHideMessage(msg: ChatEnvelope, hidden: Set<MessageFilter>): boolean {
-  if (msg.senderKind !== "System") return false;
-  const isCmdResult = isCommandResultMessage(msg.content);
-  if (isCmdResult && hidden.has("commands")) return true;
-  if (!isCmdResult && hidden.has("system")) return true;
-  return false;
-}
-
-/* ── Chat Panel ─────────────────────────────────────────────────── */
-
-const STATUS_LABELS: Record<ConnectionStatus, string> = {
-  connected: "Live — real-time updates active",
-  connecting: "Connecting to live updates…",
-  reconnecting: "Reconnecting…",
-  disconnected: "Disconnected — falling back to polling",
-};
-
-const STATUS_COLORS: Record<ConnectionStatus, string> = {
-  connected: "#34d399",
-  connecting: "#fbbf24",
-  reconnecting: "#fbbf24",
-  disconnected: "#f87171",
-};
+/* ── Status Icons (React components, not extractable) ──────────── */
 
 const STATUS_ICONS: Record<ConnectionStatus, React.ReactNode> = {
   connected: <CheckmarkCircleRegular fontSize={14} />,
