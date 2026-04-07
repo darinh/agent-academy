@@ -491,6 +491,18 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 Streaming = true,
                 Tools = [.. tools],
                 OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger),
+                // Suppress built-in CLI tools that agents cannot use.
+                // Without this, agents see bash/edit/etc. in their tool list,
+                // attempt to call them, get permission-denied, and retry —
+                // wasting LLM tokens on every round.
+                ExcludedTools =
+                [
+                    "bash", "edit", "create", "view", "grep", "glob",
+                    "web_fetch", "web_search", "task", "sql",
+                    "read_bash", "write_bash", "stop_bash", "list_bash",
+                    "read_agent", "write_agent", "list_agents",
+                    "ide-get_diagnostics", "ide-get_selection",
+                ],
             };
 
             if (tools.Count > 0)
@@ -733,6 +745,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     {
         try
         {
+            AgentPermissionHandler.ClearSession(entry.Session.SessionId);
             await entry.Session.DisposeAsync();
         }
         catch (Exception ex)
