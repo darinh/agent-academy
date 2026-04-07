@@ -32,6 +32,13 @@ public sealed class CommandParser
         "REVIEW"
     };
 
+    // Commands whose inline value is always raw text, never key=value pairs.
+    // Prevents ParseInlineArgs from splitting commit messages like "fix: set timeout=30s".
+    private static readonly HashSet<string> RawValueCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "COMMIT_CHANGES"
+    };
+
     // Known command names — prevents false positives from random UPPERCASE: text
     private static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -45,7 +52,8 @@ public sealed class CommandParser
         "ADD_TASK_COMMENT", "RECALL_AGENT", "CLOSE_ROOM", "CLEANUP_ROOMS", "MERGE_TASK",
         "RESTART_SERVER", "SHELL", "CREATE_ROOM", "REOPEN_ROOM",
         "CREATE_PR", "POST_PR_REVIEW", "GET_PR_REVIEWS", "MERGE_PR",
-        "RECORD_EVIDENCE", "QUERY_EVIDENCE", "CHECK_GATES"
+        "RECORD_EVIDENCE", "QUERY_EVIDENCE", "CHECK_GATES",
+        "COMMIT_CHANGES"
     };
 
     /// <summary>
@@ -139,13 +147,21 @@ public sealed class CommandParser
                 // treat it as a single positional arg
                 if (args.Count == 0 && !string.IsNullOrEmpty(firstLineValue))
                 {
-                    // Parse key=value pairs from inline args
-                    var inlineArgs = ParseInlineArgs(firstLineValue);
-                    if (inlineArgs.Count > 0)
-                        foreach (var kv in inlineArgs)
-                            args[kv.Key] = kv.Value;
-                    else
+                    if (RawValueCommands.Contains(commandName))
+                    {
+                        // Always treat as raw text — don't split on key=value
                         args["value"] = firstLineValue;
+                    }
+                    else
+                    {
+                        // Parse key=value pairs from inline args
+                        var inlineArgs = ParseInlineArgs(firstLineValue);
+                        if (inlineArgs.Count > 0)
+                            foreach (var kv in inlineArgs)
+                                args[kv.Key] = kv.Value;
+                        else
+                            args["value"] = firstLineValue;
+                    }
                 }
 
                 commands.Add(new ParsedCommand(commandName, args));

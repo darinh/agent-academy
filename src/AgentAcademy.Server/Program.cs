@@ -302,6 +302,7 @@ builder.Services.AddSingleton<ICommandHandler, ShowUnlinkedChangesHandler>();
 builder.Services.AddSingleton<ICommandHandler, RecordEvidenceHandler>();
 builder.Services.AddSingleton<ICommandHandler, QueryEvidenceHandler>();
 builder.Services.AddSingleton<ICommandHandler, CheckGatesHandler>();
+builder.Services.AddSingleton<ICommandHandler, CommitChangesHandler>();
 
 // Notification system
 builder.Services.AddSingleton<ConfigEncryptionService>();
