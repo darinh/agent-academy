@@ -18,8 +18,10 @@ import {
   ClipboardTaskListLtrRegular,
   ChatHistoryRegular,
 } from "@fluentui/react-icons";
-import type { CollaborationPhase, WorkspaceOverview } from "./api";
+import type { WorkspaceOverview } from "./api";
 import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
+import { phaseColor, loadTimeRange, saveTimeRange, TIME_RANGES, TIME_RANGE_KEY } from "./dashboardUtils";
+import type { TimeRange } from "./dashboardUtils";
 import RestartHistoryPanel from "./RestartHistoryPanel";
 import UsagePanel from "./UsagePanel";
 import ErrorsPanel from "./ErrorsPanel";
@@ -161,48 +163,6 @@ const useLocalStyles = makeStyles({
     fontWeight: 700,
   },
 });
-
-// ── Helpers ──
-
-function phaseColor(
-  phase: CollaborationPhase,
-): "informative" | "success" | "warning" | "important" | "severe" | "subtle" {
-  const map: Record<CollaborationPhase, "informative" | "success" | "warning" | "important" | "severe" | "subtle"> = {
-    Intake: "informative",
-    Planning: "warning",
-    Discussion: "important",
-    Validation: "severe",
-    Implementation: "success",
-    FinalSynthesis: "subtle",
-  };
-  return map[phase];
-}
-
-type TimeRange = 24 | 168 | 720 | undefined; // 24h, 7d, 30d, All
-const TIME_RANGES: { label: string; value: TimeRange }[] = [
-  { label: "24h", value: 24 },
-  { label: "7d", value: 168 },
-  { label: "30d", value: 720 },
-  { label: "All", value: undefined },
-];
-
-const TIME_RANGE_KEY = "agent-academy-dashboard-timerange";
-
-function loadTimeRange(): TimeRange {
-  try {
-    const raw = localStorage.getItem(TIME_RANGE_KEY);
-    if (raw === "all") return undefined;
-    const n = Number(raw);
-    if (n === 24 || n === 168 || n === 720) return n;
-  } catch { /* ignore */ }
-  return undefined;
-}
-
-function saveTimeRange(v: TimeRange) {
-  try {
-    localStorage.setItem(TIME_RANGE_KEY, v == null ? "all" : String(v));
-  } catch { /* ignore */ }
-}
 
 // ── Component ──
 
