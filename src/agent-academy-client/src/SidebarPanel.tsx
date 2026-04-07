@@ -12,9 +12,6 @@ import type { AgentDefinition, AgentLocation, BreakoutRoom, RoomSnapshot } from 
 import { renameRoom } from "./api";
 import {
   phaseDotColor,
-  countActiveRooms,
-  countWorkingAgents,
-  countActiveBreakouts,
   buildAgentsByRoom,
   compactRoomTooltip,
   getActiveBreakout,
@@ -42,9 +39,6 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   workspace?: { name: string; path: string } | null;
 }) {
   const s = useStyles();
-  const activeRoomCount = countActiveRooms(props.rooms);
-  const workingAgentCount = countWorkingAgents(props.agentLocations);
-  const activeBreakoutCount = countActiveBreakouts(props.breakoutRooms);
   const agentsByRoom = buildAgentsByRoom(props.agentLocations, props.configuredAgents);
 
   return (
@@ -87,12 +81,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
 
         {props.sidebarOpen && props.workspace && (
           <div className={s.sidebarProjectCard}>
-            <div className={s.sidebarProjectLabel}>Active project</div>
             <div className={s.sidebarProjectRow}>
-              <span className={s.sidebarProjectIcon}>↗</span>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div className={s.sidebarProjectName} title={props.workspace.name}>{props.workspace.name}</div>
-                <div className={s.sidebarProjectPath} title={props.workspace.path}>{props.workspace.path}</div>
               </div>
               {props.onSwitchProject && (
                 <Button
@@ -105,20 +96,6 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                   ⇄
                 </Button>
               )}
-            </div>
-            <div className={s.sidebarSnapshotGrid}>
-              <div className={s.sidebarSnapshotCard}>
-                <div className={s.sidebarSnapshotValue}>{activeRoomCount}</div>
-                <div className={s.sidebarSnapshotLabel}>Live rooms</div>
-              </div>
-              <div className={s.sidebarSnapshotCard}>
-                <div className={s.sidebarSnapshotValue}>{workingAgentCount}</div>
-                <div className={s.sidebarSnapshotLabel}>Working</div>
-              </div>
-              <div className={s.sidebarSnapshotCard}>
-                <div className={s.sidebarSnapshotValue}>{activeBreakoutCount}</div>
-                <div className={s.sidebarSnapshotLabel}>Breakouts</div>
-              </div>
             </div>
           </div>
         )}

@@ -419,12 +419,14 @@ const ChatPanel = memo(function ChatPanel(props: {
         </button>
       )}
 
-      <div className={s.statusBar} role="status" aria-label={STATUS_LABELS[connectionStatus]}>
-        <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[connectionStatus] }}>
-          {STATUS_ICONS[connectionStatus]}
-        </span>
-        {STATUS_LABELS[connectionStatus]}
-      </div>
+      {connectionStatus !== "connected" && (
+        <div className={s.statusBar} role="status" aria-label={STATUS_LABELS[connectionStatus]}>
+          <span className={s.statusIndicator} style={{ backgroundColor: STATUS_COLORS[connectionStatus] }}>
+            {STATUS_ICONS[connectionStatus]}
+          </span>
+          {STATUS_LABELS[connectionStatus]}
+        </div>
+      )}
 
       {room && !readOnly && (
         <div className={s.composerShell}>

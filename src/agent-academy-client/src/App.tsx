@@ -50,7 +50,6 @@ import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
-import AgentActivityBar from "./AgentActivityBar";
 import CommandsPanel from "./CommandsPanel";
 import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
@@ -73,13 +72,6 @@ import {
   shouldAttemptAutoReauth,
 } from "./authMonitor";
 
-const CONNECTION_STATUS_COPY = {
-  connected: "Live sync",
-  connecting: "Connecting",
-  reconnecting: "Reconnecting",
-  disconnected: "Offline",
-} as const;
-
 const TAB_ITEMS = [
   { value: "chat", label: "Conversation", detail: "Live room stream", Icon: ChatRegular },
   { value: "tasks", label: "Tasks", detail: "Delivery queue", Icon: TaskListLtrRegular },
@@ -95,17 +87,6 @@ const TAB_ITEMS = [
 const PRIMARY_TAB_VALUES = new Set(["chat", "tasks", "commands"]);
 const PRIMARY_TABS = TAB_ITEMS.filter((t) => PRIMARY_TAB_VALUES.has(t.value));
 const OVERFLOW_TABS = TAB_ITEMS.filter((t) => !PRIMARY_TAB_VALUES.has(t.value));
-
-const TAB_DESCRIPTIONS: Record<string, string> = {
-  chat: "Follow the live room thread, watch thinking agents surface, and keep the operator in flow.",
-  tasks: "Track active assignments, approvals, and branch movement without dropping out of the workspace.",
-  plan: "Keep the room plan visible so implementation decisions stay tied to the shared approach.",
-  commands: "Run the human command surface from one curated control deck.",
-  timeline: "Scan system activity as a narrative, not a pile of logs.",
-  dashboard: "Monitor the wider fleet posture, room load, and orchestration health.",
-  overview: "Adjust room state with a clearer sense of progress, pacing, and participation.",
-  directMessages: "Read private threads without losing the main-room context around them.",
-};
 
 const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
   "AgentErrorOccurred",
@@ -174,7 +155,6 @@ function AppShell() {
     thinkingByRoom,
     recoveryBanner,
     connectionStatus,
-    activityTransport,
     breakoutRooms,
     err,
     busy,
@@ -204,15 +184,6 @@ function AppShell() {
       result.set(rid, new Set(agentMap.keys()));
     }
     return result;
-  }, [thinkingByRoom]);
-
-  // Flat set of all currently-thinking agent IDs (for the activity bar)
-  const allThinkingAgentIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const agentMap of thinkingByRoom.values()) {
-      for (const agentId of agentMap.keys()) ids.add(agentId);
-    }
-    return ids;
   }, [thinkingByRoom]);
 
   const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
@@ -478,19 +449,11 @@ function AppShell() {
 
   const workspaceLimited = isWorkspaceLimited(auth);
   const degradedCopy = workspaceLimited ? getCopilotStatusCopy("degraded", auth.user ?? null) : null;
-  const baseConnectionLabel = CONNECTION_STATUS_COPY[connectionStatus];
-  const connectionLabel = connectionStatus === "connected" && activityTransport === "sse"
-    ? "Live sync (polling)"
-    : baseConnectionLabel;
   const connectionDetail = connectionStatus === "disconnected"
-    ? "Live updates paused. Previously loaded data is still visible. Check your connection and refresh to reconnect."
+    ? "Live updates paused. Previously loaded data is still visible."
     : null;
   const currentTab = TAB_ITEMS.find((item) => item.value === tab) ?? TAB_ITEMS[0];
   const isOverflowActive = !PRIMARY_TAB_VALUES.has(tab);
-  const activeRoomCount = ov.rooms.filter((candidate) => candidate.status === "Active" || candidate.status === "AttentionRequired").length;
-  const workingAgentCount = (ov.agentLocations ?? []).filter((location) => location.state === "Working").length;
-  const activeBreakoutCount = breakoutRooms.filter((breakout) => breakout.status === "Active").length;
-  const activeTaskCount = ov.rooms.filter((candidate) => candidate.activeTask).length;
   const isAgentView = selectedWorkspaceId?.startsWith("agent:") ?? false;
   const selectedAgentId = isAgentView ? selectedWorkspaceId!.slice("agent:".length) : null;
   const sessionAgent = selectedAgentId
@@ -515,22 +478,6 @@ function AppShell() {
     : selectedBreakout
       ? selectedBreakout.name
       : roomSummary;
-  const spotlightTitle = sessionAgent
-    ? "Agent workbench"
-    : selectedBreakout
-      ? "Breakout review"
-      : currentTab.label;
-  const spotlightBody = sessionAgent
-    ? `${sessionAgent.name} is currently ${sessionAgentLocation?.state?.toLowerCase() ?? "idle"}. Review room placement, current workload, and session context from a single pane.`
-    : selectedBreakout
-      ? `Inspect ${selectedBreakout.name} in read-only mode while keeping the parent room context visible in the shell.`
-      : TAB_DESCRIPTIONS[currentTab.value] ?? currentTab.detail;
-  const spotlightMetrics = [
-    { label: "Live rooms", value: activeRoomCount.toString() },
-    { label: "Working agents", value: workingAgentCount.toString() },
-    { label: "Breakouts", value: activeBreakoutCount.toString() },
-    { label: "Active tasks", value: activeTaskCount.toString() },
-  ];
 
   return (
     <div className={s.root}>
@@ -600,98 +547,46 @@ function AppShell() {
               <div className={s.workspaceHeader}>
                 <div className={s.workspaceHeaderBody}>
                   <div className={s.workspaceHeaderTopRow}>
-                    <div className={s.workspaceEyebrow}>
-                      {sessionAgent ? "Agent session" : selectedBreakout ? "Breakout review" : "Workspace shell"}
-                    </div>
+                    <div className={s.workspaceTitle}>{workspaceTitle}</div>
                     <div className={s.workspaceHeaderSignals}>
-                      <div className={mergeClasses(s.workspaceSignal, workspaceLimited && s.workspaceSignalWarning)}>
-                        {workspaceLimited ? degradedCopy?.eyebrow ?? "Limited mode" : "Copilot ready"}
-                      </div>
+                      {workspaceLimited && (
+                        <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
+                          {degradedCopy?.eyebrow ?? "Limited mode"}
+                        </div>
+                      )}
                       {circuitBreakerState && circuitBreakerState !== "Closed" && (
                         <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
                           Circuit {circuitBreakerState === "Open" ? "open" : "probing"}
                         </div>
                       )}
-                      <div className={s.workspaceSignal}>{connectionLabel}</div>
-                    </div>
-                  </div>
-                  <div className={s.workspaceTitle}>{workspaceTitle}</div>
-                  <div className={s.workspaceSubtitle}>{workspaceSubtitle}</div>
-                  <div className={s.workspaceLead}>
-                    {workspaceLimited
-                      ? "The shell stays readable while Copilot reconnects, so you can keep context and avoid losing the thread."
-                      : "A calmer control surface for rooms, tasks, and agent movement — tuned to keep the current decision in focus."}
-                  </div>
-                  <div className={s.workspaceMetaGrid}>
-                    <div className={s.workspaceMetaCard}>
-                      <div className={s.workspaceMetaLabel}>
-                        {sessionAgent ? "Agent role" : selectedBreakout ? "Breakout status" : "Current phase"}
-                      </div>
-                      <div className={s.workspaceMetaValue}>
-                        {sessionAgent
-                          ? sessionAgent.role
-                          : selectedBreakout
-                            ? selectedBreakout.status
-                            : room?.currentPhase ?? "No phase"}
-                      </div>
-                      <div className={s.workspaceMetaDetail}>
-                        {sessionAgentLocation?.state ?? (selectedBreakout ? "Workspace review" : "Awaiting room activity")}
-                      </div>
-                    </div>
-                    <div className={s.workspaceMetaCard}>
-                      <div className={s.workspaceMetaLabel}>
-                        {sessionAgent ? "Assigned room" : selectedBreakout ? "Assigned agent" : "Active task"}
-                      </div>
-                      <div className={s.workspaceMetaValue}>
-                        {sessionAgent
-                          ? (sessionAgentLocation
-                            ? ov.rooms.find((candidate) => candidate.id === sessionAgentLocation.roomId)?.name ?? "Unassigned"
-                            : "Unassigned")
-                          : selectedBreakout
-                            ? (selectedAgent?.name ?? "Unknown")
-                            : room?.activeTask?.title ?? "No active task"}
-                      </div>
-                      <div className={s.workspaceMetaDetail}>
-                        {sessionAgent
-                          ? (sessionAgentLocation?.state ?? "Idle")
-                          : selectedBreakout
-                            ? selectedBreakout.name
-                            : `${room?.participants.length ?? 0} active participants`}
-                      </div>
-                    </div>
-                    <div className={s.workspaceMetaCard}>
-                      <div className={s.workspaceMetaLabel}>Runtime</div>
-                      <div className={s.workspaceMetaValue}>{connectionLabel}</div>
-                      <div className={s.workspaceMetaDetail}>
-                        {workspaceLimited ? "Read-only while Copilot reconnects" : "Workspace actions available"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className={s.workspaceHeaderActions}>
-                  <div className={s.workspaceHeaderUtilityRow}>
-                    {room && !sessionAgent && (
-                      <div className={s.phasePill}>
-                        <span className={s.phasePillDot} />
-                        {room.currentPhase}
-                      </div>
-                    )}
-                    {hasDisplayUser(auth.user) && auth.user && (
-                      <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
-                    )}
-                  </div>
-                  <div className={s.workspaceSpotlightCard}>
-                    <div className={s.workspaceSpotlightLabel}>Current view</div>
-                    <div className={s.workspaceSpotlightTitle}>{spotlightTitle}</div>
-                    <div className={s.workspaceSpotlightBody}>{spotlightBody}</div>
-                    <div className={s.workspaceSpotlightGrid}>
-                      {spotlightMetrics.map((metric) => (
-                        <div key={metric.label} className={s.workspaceSpotlightMetric}>
-                          <div className={s.workspaceSpotlightMetricValue}>{metric.value}</div>
-                          <div className={s.workspaceSpotlightMetricLabel}>{metric.label}</div>
+                      {room && !sessionAgent && (
+                        <div className={s.phasePill}>
+                          <span className={s.phasePillDot} />
+                          {room.currentPhase}
                         </div>
-                      ))}
+                      )}
+                      {hasDisplayUser(auth.user) && auth.user && (
+                        <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
+                      )}
                     </div>
+                  </div>
+                  <div className={s.workspaceSubtitle}>{workspaceSubtitle}</div>
+                  <div className={s.workspaceMetaRow}>
+                    <span className={s.workspaceMetaChip}>
+                      {sessionAgent ? sessionAgent.role : selectedBreakout ? selectedBreakout.status : room?.currentPhase ?? "—"}
+                    </span>
+                    <span className={s.workspaceMetaSep}>·</span>
+                    <span className={s.workspaceMetaText}>
+                      {sessionAgent
+                        ? (sessionAgentLocation
+                          ? ov.rooms.find((candidate) => candidate.id === sessionAgentLocation.roomId)?.name ?? "Unassigned"
+                          : "Unassigned")
+                        : selectedBreakout
+                          ? (selectedAgent?.name ?? "Unknown")
+                          : room?.activeTask?.title ?? "No active task"}
+                    </span>
+                    <span className={s.workspaceMetaSep}>·</span>
+                    <span className={s.workspaceMetaText}>{room?.participants.length ?? 0} participants</span>
                   </div>
                 </div>
               </div>
@@ -713,12 +608,6 @@ function AppShell() {
                   </Button>
                 </div>
               )}
-
-              <AgentActivityBar
-                agents={ov.configuredAgents}
-                locations={ov.agentLocations ?? []}
-                thinkingAgentIds={allThinkingAgentIds}
-              />
 
               {sessionAgent ? (
                 <section className={s.tabContent}>
@@ -752,13 +641,6 @@ function AppShell() {
                 </section>
               ) : (<>
                 <div className={s.tabBar}>
-                  <div className={s.tabBarHeader}>
-                    <div className={s.tabBarCopy}>
-                      <div className={s.tabBarEyebrow}>Workspace deck</div>
-                      <div className={s.tabBarTitle}>{currentTab.label}</div>
-                    </div>
-                    <div className={s.tabBarDescription}>{currentTab.detail}</div>
-                  </div>
                   <div className={s.tabStrip}>
                     <TabList
                       className={s.tabList}
