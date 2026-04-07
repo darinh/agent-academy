@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Academy — UI Mockup v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══ TOKENS ═══ */
+:root {
+  --bg-primary:#0d1117;--bg-secondary:#161b22;--bg-tertiary:#21262d;--bg-overlay:#2d333b;--bg-input:#0d1117;
+  --text-primary:#e6edf3;--text-secondary:#8b949e;--text-muted:#6e7681;
+  --border:#30363d;--border-active:#484f58;
+  --primary:rgb(91,141,239);--error:rgb(232,93,93);--success:rgb(76,175,80);
+  --warning:rgb(255,152,0);--special:rgb(156,39,176);--tool:rgb(0,150,136);--secondary:rgb(96,125,139);
+  --font-ui:'Outfit','Segoe UI',-apple-system,sans-serif;
+  --font-mono:'JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace;
+  --sidebar-width:200px;--topbar-height:40px;--toolbar-height:34px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;width:100%;overflow:hidden;background:var(--bg-primary);
+  color:var(--text-primary);font-family:var(--font-ui);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::selection{background:rgba(91,141,239,.3)}
+button{font-family:inherit;cursor:pointer}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--font-mono)}
+th{color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10px;position:sticky;top:0;background:var(--bg-secondary);z-index:1}
+td{color:var(--text-secondary)}
+
+/* ═══ SHELL ═══ */
+.shell{display:flex;height:100vh;width:100vw;overflow:hidden}
+
+/* ═══ SIDEBAR ═══ */
+.sidebar{width:var(--sidebar-width);min-width:var(--sidebar-width);height:100%;
+  background:var(--bg-secondary);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.brand{padding:10px 14px 12px;border-bottom:1px solid var(--border)}
+.brand-name{font-size:14px;font-weight:700;color:var(--text-primary);letter-spacing:-.02em}
+.brand-tag{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:10px;color:var(--success);margin-top:2px}
+.brand-tag::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--success);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.nav-section{padding:4px 8px}.nav-label{padding:10px 10px 3px;font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;border-radius:6px;color:var(--text-muted);font-size:12px;font-weight:500;border:none;background:transparent;text-align:left;border-left:2px solid transparent;transition:all .12s}
+.nav-item:hover{color:var(--text-secondary);background:rgba(91,141,239,.06)}
+.nav-item.active{color:var(--primary);background:rgba(91,141,239,.12);border-left-color:var(--primary)}
+.nav-icon{width:16px;text-align:center;font-size:13px;flex-shrink:0}
+.sidebar-item{display:flex;align-items:center;gap:7px;width:100%;padding:4px 10px;border-radius:5px;color:var(--text-secondary);font-size:11px;cursor:pointer;transition:all .12s;border:none;background:transparent;text-align:left}
+.sidebar-item:hover{background:rgba(91,141,239,.06);color:var(--text-primary)}
+.sidebar-item.active{background:rgba(91,141,239,.12);color:var(--text-primary)}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.bsm{margin-left:auto;font-family:var(--font-mono);font-size:9px;padding:1px 5px;border-radius:3px;text-transform:uppercase;font-weight:500;letter-spacing:.03em}
+.sidebar-body{flex:1;overflow-y:auto;padding-bottom:8px}
+.spacer{flex:1}
+.user-area{border-top:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted)}
+.user-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--special));display:grid;place-items:center;font-size:9px;font-weight:700;color:white;flex-shrink:0}
+
+/* ═══ MAIN ═══ */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* ─ Header (page title row) ─ */
+.header{height:var(--topbar-height);min-height:var(--topbar-height);background:var(--bg-secondary);
+  border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px}
+.h-title{font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:-.01em;white-space:nowrap}
+.h-div{width:1px;height:16px;background:var(--border);flex-shrink:0}
+.h-meta{font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+.h-spacer{flex:1}
+.h-badge{font-family:var(--font-mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px}
+
+/* ─ Contextual Toolbar (BELOW header, left-aligned) ─ */
+.ctx-toolbar{height:var(--toolbar-height);min-height:var(--toolbar-height);
+  background:var(--bg-primary);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 16px;gap:8px;font-size:11px}
+.tb{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:500;
+  background:transparent;border:1px solid var(--border);color:var(--text-secondary);transition:all .12s}
+.tb:hover{border-color:var(--border-active);color:var(--text-primary);background:rgba(91,141,239,.04)}
+.tb.active{background:rgba(91,141,239,.12);color:var(--primary);border-color:rgba(91,141,239,.3)}
+.tb.primary{background:rgba(91,141,239,.15);color:var(--primary);border-color:rgba(91,141,239,.3)}
+.tb.primary:hover{background:rgba(91,141,239,.22)}
+.tb.danger{color:var(--error);border-color:rgba(232,93,93,.3)}
+.tb-sel{padding:3px 8px;border-radius:4px;font-size:11px;font-family:var(--font-mono);background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-secondary);outline:none;cursor:pointer}
+.tb-sel:focus{border-color:var(--primary)}
+.tb-spacer{flex:1}
+.tb-meta{font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+
+/* ─ Filter Dropdown ─ */
+.filter-wrap{position:relative}
+.filter-menu{display:none;position:absolute;top:100%;left:0;margin-top:4px;min-width:160px;
+  background:var(--bg-overlay);border:1px solid var(--border);border-radius:6px;
+  padding:6px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.filter-wrap.open .filter-menu{display:block}
+.filter-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:4px;font-size:11px;color:var(--text-secondary);cursor:pointer;transition:background .1s}
+.filter-item:hover{background:rgba(91,141,239,.06)}
+.filter-item input{accent-color:var(--primary)}
+
+/* ─ Content ─ */
+.content{flex:1;overflow:auto}
+.screen{display:none;height:100%;flex-direction:column}
+.screen.visible{display:flex}
+
+/* ═══ CHAT ═══ */
+.messages{flex:1;overflow-y:auto;padding:14px 20px;display:flex;flex-direction:column;gap:12px}
+.msg-user{font-family:var(--font-mono);font-size:13px;padding:4px 0}
+.msg-pfx{color:var(--success);margin-right:8px}
+.msg-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.msg-hdr{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.msg-name{font-weight:600;font-size:12px}.msg-role{font-family:var(--font-mono);font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px;text-transform:uppercase}
+.msg-time{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+.msg-body{font-family:var(--font-mono);font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.msg-sys{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);font-style:italic;padding:5px 12px;border-radius:6px;background:var(--bg-tertiary);text-align:center;max-width:80%;align-self:center}
+.msg-cmd{background:rgba(0,150,136,.08);border-left:3px solid var(--tool);border-radius:0 6px 6px 0;padding:6px 12px;font-family:var(--font-mono);font-size:11px}
+.cmd-ok{color:var(--success)}.cmd-nm{color:var(--tool);font-weight:600}
+.msg-think{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--bg-secondary);border:1px solid var(--border);border-left:2px solid var(--primary);font-size:12px;color:var(--text-muted)}
+.think-dots{display:flex;gap:3px}.think-dots span{width:4px;height:4px;border-radius:50%;background:var(--primary);animation:think 1.4s infinite}
+.think-dots span:nth-child(2){animation-delay:.2s}.think-dots span:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,80%,100%{opacity:.3}40%{opacity:1}}
+.composer{border-top:1px solid var(--border);background:var(--bg-secondary);padding:10px 16px}
+.composer-wrap{display:flex;gap:8px;align-items:flex-end;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:8px 12px;transition:border-color .15s}
+.composer-wrap:focus-within{border-color:var(--primary)}
+.composer-input{flex:1;background:transparent;border:none;outline:none;color:var(--text-primary);font-family:var(--font-mono);font-size:13px;line-height:1.5;resize:none;min-height:22px;max-height:200px}
+.composer-send{background:transparent;border:none;color:var(--text-muted);padding:4px;border-radius:4px;font-size:15px;transition:all .12s}
+.composer-send:hover{background:rgba(91,141,239,.12);color:var(--primary)}
+.composer-hint{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-top:4px}
+
+/* ═══ TASKS ═══ */
+.tasks-view{padding:14px 20px;overflow-y:auto;flex:1}
+.task-list{display:flex;flex-direction:column;gap:5px}
+.task-card{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color .15s}
+.task-card:hover{border-color:var(--border-active)}
+.task-hdr{display:flex;align-items:center;gap:8px}.task-title{font-size:13px;font-weight:600;flex:1}
+.badge{font-family:var(--font-mono);font-size:9px;font-weight:500;padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em}
+.b-active{background:rgba(91,141,239,.15);color:var(--primary)}.b-review{background:rgba(255,152,0,.15);color:var(--warning)}
+.b-done{background:rgba(76,175,80,.15);color:var(--success)}.b-cancel{background:rgba(139,148,158,.1);color:var(--text-muted)}
+.b-feat{background:rgba(156,39,176,.12);color:var(--special)}.b-bug{background:rgba(232,93,93,.12);color:var(--error)}
+.b-info{background:rgba(91,141,239,.1);color:var(--primary)}.b-warn{background:rgba(255,152,0,.1);color:var(--warning)}
+.b-err{background:rgba(232,93,93,.1);color:var(--error)}.b-ok{background:rgba(76,175,80,.1);color:var(--success)}
+.b-muted{background:rgba(139,148,158,.08);color:var(--text-muted)}.b-tool{background:rgba(0,150,136,.1);color:var(--tool)}
+.task-meta{display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+
+/* ═══ COMMANDS ═══ */
+.cmd-view{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px 20px;overflow-y:auto;flex:1}
+@media(max-width:1100px){.cmd-view{grid-template-columns:1fr}}
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.cmd-card-btn{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;text-align:left;color:inherit}
+.cmd-card-btn:hover{border-color:var(--border-active);transform:translateY(-1px)}
+.cmd-card-btn.selected{border-color:rgba(91,141,239,.4);background:rgba(91,141,239,.06)}
+.cmd-card-title{font-size:12px;font-weight:600}.cmd-card-desc{font-size:11px;color:var(--text-muted);line-height:1.4}
+.cmd-form{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:14px;align-self:start}
+.cmd-form-title{font-size:13px;font-weight:600;margin-bottom:10px}
+.cmd-field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.cmd-field label{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);text-transform:uppercase}
+.cmd-field input{background:var(--bg-input);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text-primary);font-family:var(--font-mono);font-size:12px;outline:none;width:100%}
+.cmd-field input:focus{border-color:var(--primary)}
+
+/* ═══ TIMELINE ═══ */
+.timeline-view{overflow-y:auto;flex:1}
+.tl-row{display:flex;align-items:center;gap:12px;padding:7px 20px;border-bottom:1px solid rgba(48,54,61,.4);font-size:11px;font-family:var(--font-mono);transition:background .1s}
+.tl-row:hover{background:rgba(91,141,239,.04)}
+.tl-icon{width:20px;text-align:center;font-size:13px;flex-shrink:0}
+.tl-msg{flex:1;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-type{font-size:9px;font-weight:500;padding:1px 6px;border-radius:3px;white-space:nowrap}
+.tl-time{color:var(--text-muted);font-size:10px;white-space:nowrap;min-width:50px;text-align:right}
+
+/* ═══ PLAN ═══ */
+.plan-view{padding:20px 24px;overflow-y:auto;flex:1;max-width:800px}
+.plan-content{font-family:var(--font-mono);font-size:13px;line-height:1.7;white-space:pre-wrap}
+.plan-content h2{font-family:var(--font-ui);font-size:16px;font-weight:700;margin:16px 0 8px;color:var(--text-primary)}
+.plan-content h3{font-family:var(--font-ui);font-size:14px;font-weight:600;margin:12px 0 6px;color:var(--text-primary)}
+
+/* ═══ DASHBOARD ═══ */
+.dash{padding:14px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px}
+.dash-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:900px){.dash-metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.metric-label{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px}
+.metric-value{font-size:26px;font-weight:700;letter-spacing:-.03em;color:var(--text-primary)}
+.metric-note{font-size:11px;color:var(--text-muted);margin-top:2px}
+.dash-section{background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:14px}
+.dash-section-title{font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-primary);display:flex;align-items:center;gap:8px}
+.sparkline-row{display:flex;gap:12px;margin-bottom:12px}
+.sparkline-card{flex:1;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+.sparkline-label{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-bottom:4px}
+.sparkline{height:32px;width:100%}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:12px}
+.summary-card{background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+.summary-val{font-size:18px;font-weight:700;color:var(--text-primary)}
+.summary-lbl{font-family:var(--font-mono);font-size:10px;color:var(--text-muted)}
+.table-wrap{overflow-x:auto;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:6px}
+.model-badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.phase-row{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ═══ DM ═══ */
+.dm-view{display:flex;height:100%}
+.dm-threads{width:220px;min-width:220px;border-right:1px solid var(--border);overflow-y:auto;background:var(--bg-secondary)}
+.dm-thread{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;transition:background .1s;border:none;background:transparent;width:100%;text-align:left;color:inherit}
+.dm-thread:hover{background:rgba(91,141,239,.06)}.dm-thread.active{background:rgba(91,141,239,.12)}
+.dm-avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;color:white;flex-shrink:0}
+.dm-info{min-width:0;flex:1}.dm-name{font-size:12px;font-weight:600;color:var(--text-primary)}
+.dm-preview{font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-chat{flex:1;display:flex;flex-direction:column}
+</style>
+</head>
+<body>
+<div class="shell">
+<!-- ═══ SIDEBAR ═══ -->
+<nav class="sidebar">
+  <div class="brand"><div class="brand-name">Agent Academy</div><div class="brand-tag">● Live</div></div>
+  <div class="sidebar-body">
+    <div class="nav-section">
+      <button class="nav-item active" onclick="go('chat')"><span class="nav-icon">💬</span>Conversation</button>
+      <button class="nav-item" onclick="go('tasks')"><span class="nav-icon">📋</span>Tasks</button>
+      <button class="nav-item" onclick="go('plan')"><span class="nav-icon">📄</span>Plan</button>
+      <button class="nav-item" onclick="go('commands')"><span class="nav-icon">⌨️</span>Commands</button>
+      <button class="nav-item" onclick="go('timeline')"><span class="nav-icon">⏱️</span>Timeline</button>
+      <button class="nav-item" onclick="go('dashboard')"><span class="nav-icon">📊</span>Dashboard</button>
+      <button class="nav-item" onclick="go('dm')"><span class="nav-icon">✉️</span>Messages</button>
+    </div>
+    <div class="nav-label">Rooms</div>
+    <div class="nav-section">
+      <button class="sidebar-item active"><span class="dot" style="background:var(--primary)"></span>Main Room<span class="bsm" style="background:rgba(91,141,239,.12);color:var(--primary)">6</span></button>
+    </div>
+    <div class="nav-label">Agents</div>
+    <div class="nav-section">
+      <button class="sidebar-item"><span class="dot" style="background:var(--text-muted)"></span>Aristotle<span class="bsm" style="background:rgba(96,125,139,.15);color:var(--secondary)">idle</span></button>
+      <button class="sidebar-item"><span class="dot" style="background:var(--primary)"></span>Hephaestus<span class="bsm" style="background:rgba(91,141,239,.15);color:var(--primary)">working</span></button>
+      <button class="sidebar-item"><span class="dot" style="background:var(--text-muted)"></span>Athena<span class="bsm" style="background:rgba(96,125,139,.15);color:var(--secondary)">idle</span></button>
+      <button class="sidebar-item"><span class="dot" style="background:var(--text-muted)"></span>Socrates<span class="bsm" style="background:rgba(96,125,139,.15);color:var(--secondary)">idle</span></button>
+      <button class="sidebar-item"><span class="dot" style="background:var(--text-muted)"></span>Archimedes<span class="bsm" style="background:rgba(96,125,139,.15);color:var(--secondary)">idle</span></button>
+      <button class="sidebar-item"><span class="dot" style="background:var(--text-muted)"></span>Thucydides<span class="bsm" style="background:rgba(96,125,139,.15);color:var(--secondary)">idle</span></button>
+    </div>
+  </div>
+  <div class="user-area"><div class="user-avatar">D</div>darinh</div>
+</nav>
+
+<!-- ═══ MAIN ═══ -->
+<div class="main">
+
+  <!-- ═══ HEADERS (page title — same structure, content changes per view) ═══ -->
+  <div class="header" id="hd-chat"><span class="h-title">Main Collaboration Room</span><span class="h-div"></span><span class="h-meta">6 agents · Planning</span><span class="h-spacer"></span><span class="h-badge" style="background:rgba(76,175,80,.12);color:var(--success)">● Connected</span></div>
+  <div class="header" id="hd-tasks" style="display:none"><span class="h-title">Tasks</span><span class="h-div"></span><span class="h-meta">48 total · 1 in review</span><span class="h-spacer"></span></div>
+  <div class="header" id="hd-plan" style="display:none"><span class="h-title">Room Plan</span><span class="h-div"></span><span class="h-meta">Main Collaboration Room</span><span class="h-spacer"></span></div>
+  <div class="header" id="hd-commands" style="display:none"><span class="h-title">Command Deck</span><span class="h-div"></span><span class="h-meta">12 commands</span><span class="h-spacer"></span></div>
+  <div class="header" id="hd-timeline" style="display:none"><span class="h-title">Activity Timeline</span><span class="h-div"></span><span class="h-meta">247 events</span><span class="h-spacer"></span></div>
+  <div class="header" id="hd-dashboard" style="display:none"><span class="h-title">Dashboard</span><span class="h-div"></span><span class="h-meta">System telemetry</span><span class="h-spacer"></span></div>
+  <div class="header" id="hd-dm" style="display:none"><span class="h-title">Direct Messages</span><span class="h-div"></span><span class="h-meta">Aristotle · Planner</span><span class="h-spacer"></span><button class="tb primary" style="font-size:11px">+ New</button></div>
+
+  <!-- ═══ CONTEXTUAL TOOLBARS (below header, left-aligned) ═══ -->
+  <div class="ctx-toolbar" id="tb-chat">
+    <select class="tb-sel" title="Change room phase"><option>Intake</option><option selected>Planning</option><option>Discussion</option><option>Implementation</option><option>Validation</option><option>Final Synthesis</option></select>
+    <div class="filter-wrap" id="fw-chat">
+      <button class="tb" onclick="this.parentElement.classList.toggle('open')">▾ Filter</button>
+      <div class="filter-menu">
+        <label class="filter-item"><input type="checkbox" checked> System messages</label>
+        <label class="filter-item"><input type="checkbox" checked> Command results</label>
+      </div>
+    </div>
+    <span class="tb-spacer"></span>
+  </div>
+  <div class="ctx-toolbar" id="tb-tasks" style="display:none">
+    <button class="tb active">All <span style="opacity:.5">48</span></button>
+    <button class="tb">Review <span style="opacity:.5">1</span></button>
+    <button class="tb">Active <span style="opacity:.5">1</span></button>
+    <button class="tb">Completed <span style="opacity:.5">4</span></button>
+    <span class="tb-spacer"></span><span class="tb-meta">Sorted by newest</span>
+  </div>
+  <div class="ctx-toolbar" id="tb-plan" style="display:none">
+    <button class="tb primary">Edit</button><button class="tb danger">Delete</button><span class="tb-spacer"></span>
+  </div>
+  <div class="ctx-toolbar" id="tb-commands" style="display:none">
+    <button class="tb active">All</button><button class="tb">workspace</button><button class="tb">code</button><button class="tb">git</button><button class="tb">operations</button>
+    <span class="tb-spacer"></span><span class="tb-meta">8 instant · 4 polling</span>
+  </div>
+  <div class="ctx-toolbar" id="tb-timeline" style="display:none">
+    <select class="tb-sel"><option>All types</option><option>Agent</option><option>Task</option><option>Message</option><option>Phase</option><option>Room</option></select>
+    <select class="tb-sel"><option>All severity</option><option>Info</option><option>Warning</option><option>Error</option></select>
+    <span class="tb-spacer"></span><input type="text" class="tb-sel" placeholder="Search events…" style="min-width:160px">
+  </div>
+  <div class="ctx-toolbar" id="tb-dashboard" style="display:none">
+    <button class="tb active">24h</button><button class="tb">7d</button><button class="tb">30d</button><button class="tb">All</button>
+    <span class="tb-spacer"></span><button class="tb">Refresh</button>
+  </div>
+  <div class="ctx-toolbar" id="tb-dm" style="display:none"><span class="tb-meta">Private conversation with Aristotle</span><span class="tb-spacer"></span></div>
+
+  <!-- ═══ CONTENT ═══ -->
+  <div class="content">
+
+<!-- ── CHAT ── -->
+<div class="screen visible" id="s-chat">
+  <div class="messages">
+    <div class="msg-sys">Session started · 6 agents joined Main Collaboration Room</div>
+    <div class="msg-user"><span class="msg-pfx">&gt;</span>Team: I deployed the commit_changes SDK tool. Aristotle — assign a fresh task to Hephaestus.</div>
+    <div class="msg-card"><div class="msg-hdr"><span class="msg-name">Aristotle</span><span class="msg-role" style="background:rgba(183,148,255,.15);color:#b794ff">Planner</span><span class="msg-time">2m ago</span></div><div class="msg-body">Good news — the tooling gap is fixed.
+
+TASK ASSIGNMENT:
+Agent: @Hephaestus
+Title: Create ITimeProvider abstraction (commit_changes test)</div></div>
+    <div class="msg-sys">📋 Hephaestus assigned → breakout room</div>
+    <div class="msg-cmd"><span class="cmd-ok">✓</span> <span class="cmd-nm">WRITE_FILE</span> — src/AgentAcademy.Server/Services/ITimeProvider.cs (489 chars, new)</div>
+    <div class="msg-cmd"><span class="cmd-ok">✓</span> <span class="cmd-nm">COMMIT_CHANGES</span> — 8aeea50 "feat(services): add ITimeProvider abstraction"</div>
+    <div class="msg-card"><div class="msg-hdr"><span class="msg-name">Hephaestus</span><span class="msg-role" style="background:rgba(72,214,122,.15);color:#48d67a">Engineer</span><span class="msg-time">1m ago</span></div><div class="msg-body">WORK REPORT:
+Status: COMPLETE
+Files: src/AgentAcademy.Server/Services/ITimeProvider.cs
+Commit SHA: 8aeea50</div></div>
+    <div class="msg-card"><div class="msg-hdr"><span class="msg-name">Socrates</span><span class="msg-role" style="background:rgba(255,113,135,.15);color:#ff7187">Reviewer</span><span class="msg-time">30s ago</span></div><div class="msg-body">Hephaestus reports complete with SHA 8aeea50. Time to verify.</div></div>
+    <div class="msg-think"><span style="font-weight:600">Socrates</span> is reviewing <div class="think-dots"><span></span><span></span><span></span></div></div>
+  </div>
+  <div class="composer"><div class="composer-wrap"><textarea class="composer-input" rows="1" placeholder="Message the team…"></textarea><button class="composer-send">➤</button></div><div class="composer-hint">Enter to send · Shift+Enter for new line</div></div>
+</div>
+
+<!-- ── TASKS ── -->
+<div class="screen" id="s-tasks"><div class="tasks-view"><div class="task-list">
+  <div class="task-card"><div class="task-hdr"><span class="task-title">Create ITimeProvider abstraction</span><span class="badge b-review">In Review</span><span class="badge b-feat">Feature</span></div><div class="task-meta"><span>👤 Hephaestus</span><span>🌿 task/create-itimeprovider-*</span><span>1 commit</span><span>2m ago</span></div></div>
+  <div class="task-card"><div class="task-hdr"><span class="task-title">Add task ID validation to UPDATE_TASK</span><span class="badge b-cancel">Cancelled</span><span class="badge b-feat">Feature</span></div><div class="task-meta"><span>👤 Hephaestus</span><span>Blocked</span><span>1h ago</span></div></div>
+  <div class="task-card"><div class="task-hdr"><span class="task-title">Add CLOSE_ROOM command</span><span class="badge b-done">Completed</span><span class="badge b-feat">Feature</span></div><div class="task-meta"><span>👤 Hephaestus</span><span>🌿 merged</span><span>3 commits</span><span>2d ago</span></div></div>
+  <div class="task-card"><div class="task-hdr"><span class="task-title">Fix orphaned TaskId on git failure</span><span class="badge b-cancel">Cancelled</span><span class="badge b-bug">Bug</span></div><div class="task-meta"><span>👤 Hephaestus</span><span>Non-reproducible</span><span>3h ago</span></div></div>
+</div></div></div>
+
+<!-- ── PLAN ── -->
+<div class="screen" id="s-plan"><div class="plan-view"><div class="plan-content"><h2>Sprint Plan — Week 2</h2>
+<h3>Objective</h3>
+Validate agent autonomy: write_file → commit_changes → review → merge.
+
+<h3>Deliverables</h3>
+1. ✅ commit_changes SDK tool (shipped 40a4ed9)
+2. ✅ ITimeProvider e2e test (Hephaestus, commit 8aeea50)
+3. ◻ UI redesign for demo (in progress)
+
+<h3>Architecture Decisions</h3>
+- SE agents get write_file + commit_changes in code-write tool group
+- Task branches auto-created, auto-stashed on breakout exit</div></div></div>
+
+<!-- ── COMMANDS ── -->
+<div class="screen" id="s-commands"><div class="cmd-view">
+  <div><div class="cmd-grid">
+    <button class="cmd-card-btn selected"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="badge b-info">code</span><span class="badge b-muted">instant</span></div><div class="cmd-card-title">READ_FILE</div><div class="cmd-card-desc">Read a file from the project</div></button>
+    <button class="cmd-card-btn"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="badge b-info">code</span><span class="badge b-muted">instant</span></div><div class="cmd-card-title">SEARCH_CODE</div><div class="cmd-card-desc">Search codebase with git grep</div></button>
+    <button class="cmd-card-btn"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="badge b-tool">git</span><span class="badge b-muted">instant</span></div><div class="cmd-card-title">GIT_LOG</div><div class="cmd-card-desc">Show commit history</div></button>
+    <button class="cmd-card-btn"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="badge b-tool">git</span><span class="badge b-muted">instant</span></div><div class="cmd-card-title">SHOW_DIFF</div><div class="cmd-card-desc">Show working tree changes</div></button>
+    <button class="cmd-card-btn"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="badge b-warn">workspace</span><span class="badge b-muted">instant</span></div><div class="cmd-card-title">LIST_TASKS</div><div class="cmd-card-desc">List all tasks with status</div></button>
+    <button class="cmd-card-btn"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="badge b-warn">workspace</span><span class="badge b-err">polling</span></div><div class="cmd-card-title">RUN_TESTS</div><div class="cmd-card-desc">Run the test suite</div></button>
+  </div></div>
+  <div class="cmd-form"><div class="cmd-form-title">READ_FILE</div>
+    <div class="cmd-field"><label>Path *</label><input type="text" placeholder="src/AgentAcademy.Server/Program.cs"></div>
+    <div class="cmd-field"><label>Start Line</label><input type="number" placeholder="Optional"></div>
+    <div class="cmd-field"><label>End Line</label><input type="number" placeholder="Optional"></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="tb primary" style="padding:6px 16px">▶ Execute</button><span style="font-size:10px;color:var(--text-muted);align-self:center;font-family:var(--font-mono)">instant · audited</span></div>
+  </div>
+</div></div>
+
+<!-- ── TIMELINE ── -->
+<div class="screen" id="s-timeline"><div class="timeline-view">
+  <div class="tl-row"><span class="tl-icon">🤖</span><span class="tl-msg">Hephaestus completed work in "BR: Create ITimeProvider abstraction"</span><span class="tl-type badge b-info">agent</span><span class="tl-time">1m</span></div>
+  <div class="tl-row"><span class="tl-icon">📋</span><span class="tl-msg">Task "Create ITimeProvider abstraction" is now InReview</span><span class="tl-type badge b-warn">task</span><span class="tl-time">1m</span></div>
+  <div class="tl-row"><span class="tl-icon">💬</span><span class="tl-msg">Hephaestus posted WORK REPORT in agent-academy-main</span><span class="tl-type badge b-ok">message</span><span class="tl-time">1m</span></div>
+  <div class="tl-row"><span class="tl-icon">🔧</span><span class="tl-msg">COMMIT_CHANGES executed: 8aeea50</span><span class="tl-type badge b-tool">tool</span><span class="tl-time">2m</span></div>
+  <div class="tl-row"><span class="tl-icon">🔧</span><span class="tl-msg">WRITE_FILE executed: ITimeProvider.cs (489 chars)</span><span class="tl-type badge b-tool">tool</span><span class="tl-time">2m</span></div>
+  <div class="tl-row"><span class="tl-icon">🤖</span><span class="tl-msg">Hephaestus entered breakout</span><span class="tl-type badge b-info">agent</span><span class="tl-time">3m</span></div>
+  <div class="tl-row"><span class="tl-icon">📋</span><span class="tl-msg">Task assigned to Hephaestus by Aristotle</span><span class="tl-type badge b-warn">task</span><span class="tl-time">3m</span></div>
+  <div class="tl-row"><span class="tl-icon">💬</span><span class="tl-msg">Human message sent in agent-academy-main</span><span class="tl-type badge b-ok">message</span><span class="tl-time">4m</span></div>
+  <div class="tl-row"><span class="tl-icon">🔄</span><span class="tl-msg">Room phase changed: Intake → Planning</span><span class="tl-type" style="background:rgba(156,39,176,.12);color:var(--special)">phase</span><span class="tl-time">12m</span></div>
+</div></div>
+
+<!-- ── DASHBOARD (fully featured) ── -->
+<div class="screen" id="s-dashboard"><div class="dash">
+
+  <!-- Top metrics -->
+  <div class="dash-metrics">
+    <div class="metric"><div class="metric-label">Rooms</div><div class="metric-value">2</div><div class="metric-note">1 active, 1 idle</div></div>
+    <div class="metric"><div class="metric-label">Agents</div><div class="metric-value">6</div><div class="metric-note">1 working, 5 idle</div></div>
+    <div class="metric"><div class="metric-label">Active Tasks</div><div class="metric-value">1</div><div class="metric-note">In review</div></div>
+    <div class="metric"><div class="metric-label">Events (24h)</div><div class="metric-value">247</div><div class="metric-note">Last: 30s ago</div></div>
+  </div>
+
+  <!-- Phase Distribution -->
+  <div class="dash-section">
+    <div class="dash-section-title">Phase Distribution</div>
+    <div class="phase-row">
+      <span class="tb" style="cursor:default;border-color:rgba(255,152,0,.3);color:var(--warning)">Planning <strong>1</strong></span>
+      <span class="tb" style="cursor:default;border-color:rgba(91,141,239,.3);color:var(--primary)">Intake <strong>1</strong></span>
+    </div>
+  </div>
+
+  <!-- LLM Usage -->
+  <div class="dash-section">
+    <div class="dash-section-title">LLM Usage</div>
+    <div class="summary-grid">
+      <div class="summary-card"><div class="summary-val">847K</div><div class="summary-lbl">Input Tokens</div></div>
+      <div class="summary-card"><div class="summary-val">392K</div><div class="summary-lbl">Output Tokens</div></div>
+      <div class="summary-card"><div class="summary-val">$3.80</div><div class="summary-lbl">Total Cost</div></div>
+      <div class="summary-card"><div class="summary-val">148</div><div class="summary-lbl">LLM Calls</div></div>
+    </div>
+    <div class="sparkline-row">
+      <div class="sparkline-card"><div class="sparkline-label">Requests</div><svg class="sparkline" viewBox="0 0 200 32"><polyline fill="none" stroke="var(--primary)" stroke-width="1.5" points="0,28 15,24 30,26 45,18 60,22 75,12 90,16 105,8 120,14 135,10 150,6 165,12 180,4 200,8"/><polygon fill="rgba(91,141,239,.1)" points="0,32 0,28 15,24 30,26 45,18 60,22 75,12 90,16 105,8 120,14 135,10 150,6 165,12 180,4 200,8 200,32"/></svg></div>
+      <div class="sparkline-card"><div class="sparkline-label">Tokens</div><svg class="sparkline" viewBox="0 0 200 32"><polyline fill="none" stroke="var(--warning)" stroke-width="1.5" points="0,26 20,22 40,28 60,16 80,20 100,10 120,18 140,6 160,14 180,8 200,12"/><polygon fill="rgba(255,152,0,.1)" points="0,32 0,26 20,22 40,28 60,16 80,20 100,10 120,18 140,6 160,14 180,8 200,12 200,32"/></svg></div>
+    </div>
+    <div class="model-badges"><span class="badge b-info">gpt-5</span><span class="badge b-muted">gpt-5-mini</span></div>
+    <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text-primary)">Per-Agent Breakdown</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Agent</th><th>Input</th><th>Output</th><th>Cost</th><th>Calls</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge b-info">software-engineer-1</span></td><td>312K</td><td>148K</td><td>$1.42</td><td>52</td></tr>
+        <tr><td><span class="badge b-info">planner-1</span></td><td>198K</td><td>89K</td><td>$0.86</td><td>34</td></tr>
+        <tr><td><span class="badge b-info">reviewer-1</span></td><td>156K</td><td>72K</td><td>$0.68</td><td>28</td></tr>
+        <tr><td><span class="badge b-info">architect-1</span></td><td>98K</td><td>45K</td><td>$0.43</td><td>18</td></tr>
+        <tr><td><span class="badge b-info">tech-writer-1</span></td><td>52K</td><td>24K</td><td>$0.23</td><td>10</td></tr>
+        <tr><td><span class="badge b-info">software-engineer-2</span></td><td>31K</td><td>14K</td><td>$0.18</td><td>6</td></tr>
+      </tbody>
+    </table></div>
+    <div style="font-size:11px;font-weight:600;margin:12px 0 6px;color:var(--text-primary)">Recent LLM Calls</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Agent</th><th>Model</th><th>In</th><th>Out</th><th>Cost</th><th>Duration</th><th>Time</th></tr></thead>
+      <tbody>
+        <tr><td>software-engineer-1</td><td>gpt-5</td><td>8.2K</td><td>3.1K</td><td>$0.034</td><td>2.4s</td><td>1m ago</td></tr>
+        <tr><td>reviewer-1</td><td>gpt-5</td><td>6.8K</td><td>2.4K</td><td>$0.028</td><td>1.8s</td><td>2m ago</td></tr>
+        <tr><td>planner-1</td><td>gpt-5</td><td>5.4K</td><td>1.9K</td><td>$0.022</td><td>1.5s</td><td>3m ago</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- Agent Errors -->
+  <div class="dash-section">
+    <div class="dash-section-title">Agent Errors</div>
+    <div class="summary-grid">
+      <div class="summary-card"><div class="summary-val">3</div><div class="summary-lbl">Total Errors</div></div>
+      <div class="summary-card"><div class="summary-val">2</div><div class="summary-lbl">Recoverable</div></div>
+      <div class="summary-card"><div class="summary-val">1</div><div class="summary-lbl">Unrecoverable</div></div>
+    </div>
+    <div class="sparkline-row">
+      <div class="sparkline-card"><div class="sparkline-label">Error Rate</div><svg class="sparkline" viewBox="0 0 200 32"><polyline fill="none" stroke="var(--error)" stroke-width="1.5" points="0,30 30,30 60,30 90,28 100,14 110,28 140,30 160,30 170,20 180,30 200,30"/><polygon fill="rgba(232,93,93,.08)" points="0,32 0,30 30,30 60,30 90,28 100,14 110,28 140,30 160,30 170,20 180,30 200,30 200,32"/></svg></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><div style="font-size:11px;font-weight:600;margin-bottom:6px">By Type</div>
+        <div class="table-wrap"><table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>
+          <tr><td><span class="badge b-err">Auth</span></td><td>2</td></tr>
+          <tr><td><span class="badge b-warn">Transient</span></td><td>1</td></tr>
+        </tbody></table></div>
+      </div>
+      <div><div style="font-size:11px;font-weight:600;margin-bottom:6px">By Agent</div>
+        <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Count</th></tr></thead><tbody>
+          <tr><td>software-engineer-1</td><td>2</td></tr>
+          <tr><td>software-engineer-2</td><td>1</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:600;margin-bottom:6px">Recent Errors</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Agent</th><th>Type</th><th>Message</th><th>Recovery</th><th>Time</th></tr></thead>
+      <tbody>
+        <tr><td>software-engineer-1</td><td><span class="badge b-err">Auth</span></td><td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Session was not created with authentication info</td><td style="color:var(--success)">Yes</td><td>14m ago</td></tr>
+        <tr><td>software-engineer-2</td><td><span class="badge b-err">Auth</span></td><td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Session was not created with authentication info</td><td style="color:var(--success)">Yes</td><td>15m ago</td></tr>
+        <tr><td>software-engineer-1</td><td><span class="badge b-warn">Transient</span></td><td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Token refresh failed with HTTP 502</td><td style="color:var(--error)">No</td><td>18m ago</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- Command Audit Log -->
+  <div class="dash-section">
+    <div class="dash-section-title">Command Audit Log</div>
+    <div class="summary-grid">
+      <div class="summary-card"><div class="summary-val">86</div><div class="summary-lbl">Total</div></div>
+      <div class="summary-card"><div class="summary-val" style="color:var(--success)">71</div><div class="summary-lbl">Success</div></div>
+      <div class="summary-card"><div class="summary-val" style="color:var(--error)">9</div><div class="summary-lbl">Errors</div></div>
+      <div class="summary-card"><div class="summary-val" style="color:var(--warning)">6</div><div class="summary-lbl">Denied</div></div>
+    </div>
+    <div class="sparkline-row">
+      <div class="sparkline-card"><div class="sparkline-label">Commands</div><svg class="sparkline" viewBox="0 0 200 32"><polyline fill="none" stroke="var(--tool)" stroke-width="1.5" points="0,28 20,24 40,20 60,18 80,22 100,14 120,10 140,16 160,8 180,12 200,6"/><polygon fill="rgba(0,150,136,.08)" points="0,32 0,28 20,24 40,20 60,18 80,22 100,14 120,10 140,16 160,8 180,12 200,6 200,32"/></svg></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><div style="font-size:11px;font-weight:600;margin-bottom:6px">By Agent</div>
+        <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Count</th></tr></thead><tbody>
+          <tr><td>planner-1</td><td>28</td></tr><tr><td>software-engineer-1</td><td>24</td></tr><tr><td>reviewer-1</td><td>18</td></tr><tr><td>architect-1</td><td>10</td></tr>
+        </tbody></table></div>
+      </div>
+      <div><div style="font-size:11px;font-weight:600;margin-bottom:6px">Top Commands</div>
+        <div class="table-wrap"><table><thead><tr><th>Command</th><th>Count</th></tr></thead><tbody>
+          <tr><td>REMEMBER</td><td>22</td></tr><tr><td>LIST_TASKS</td><td>16</td></tr><tr><td>READ_FILE</td><td>14</td></tr><tr><td>GIT_LOG</td><td>12</td></tr>
+        </tbody></table></div>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:600;margin-bottom:6px">Recent Commands</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Agent</th><th>Command</th><th>Status</th><th>Error</th><th>Time</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge b-info">software-engineer-1</span></td><td>COMMIT_CHANGES</td><td><span class="badge b-ok">Success</span></td><td>—</td><td>1m ago</td></tr>
+        <tr><td><span class="badge b-info">software-engineer-1</span></td><td>WRITE_FILE</td><td><span class="badge b-ok">Success</span></td><td>—</td><td>2m ago</td></tr>
+        <tr><td><span class="badge b-warn">human-ui</span></td><td>READ_FILE</td><td><span class="badge b-ok">Success</span></td><td>—</td><td>5m ago</td></tr>
+        <tr><td><span class="badge b-info">reviewer-1</span></td><td>SHOW_DIFF</td><td><span class="badge b-ok">Success</span></td><td>—</td><td>6m ago</td></tr>
+        <tr><td><span class="badge b-info">software-engineer-1</span></td><td>READ_FILE</td><td><span class="badge b-err">Denied</span></td><td style="color:var(--error);font-size:10px">[PERMISSION] Path traversal denied</td><td>8m ago</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- Conversation Sessions -->
+  <div class="dash-section">
+    <div class="dash-section-title">Conversation Sessions</div>
+    <div class="summary-grid">
+      <div class="summary-card"><div class="summary-val">12</div><div class="summary-lbl">Total Sessions</div></div>
+      <div class="summary-card"><div class="summary-val">2</div><div class="summary-lbl">Active</div></div>
+      <div class="summary-card"><div class="summary-val">10</div><div class="summary-lbl">Archived</div></div>
+      <div class="summary-card"><div class="summary-val">486</div><div class="summary-lbl">Total Messages</div></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Status</th><th>Room</th><th>Epoch</th><th>Messages</th><th>Created</th><th>Summary</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge b-ok">Active</span></td><td>agent-academy-main</td><td>#12</td><td>54</td><td>15m ago</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">ITimeProvider task assigned and completed</td></tr>
+        <tr><td><span class="badge b-ok">Active</span></td><td>main</td><td>#1</td><td>0</td><td>15m ago</td><td style="color:var(--text-muted);font-style:italic">In progress</td></tr>
+        <tr><td><span class="badge b-muted">Archived</span></td><td>agent-academy-main</td><td>#11</td><td>128</td><td>2h ago</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Evidence ledger shipped, spec docs updated</td></tr>
+        <tr><td><span class="badge b-muted">Archived</span></td><td>agent-academy-main</td><td>#10</td><td>96</td><td>6h ago</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">UI redesign slices 2-3, write_file tool</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- Server Instance History -->
+  <div class="dash-section">
+    <div class="dash-section-title">Server Instance History</div>
+    <div class="summary-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="summary-card"><div class="summary-val">8</div><div class="summary-lbl">Instances (24h)</div></div>
+      <div class="summary-card"><div class="summary-val" style="color:var(--error)">1</div><div class="summary-lbl">Crashes</div></div>
+      <div class="summary-card"><div class="summary-val">4</div><div class="summary-lbl">Restarts</div></div>
+      <div class="summary-card"><div class="summary-val">2</div><div class="summary-lbl">Clean Stops</div></div>
+      <div class="summary-card"><div class="summary-val" style="color:var(--success)">1</div><div class="summary-lbl">Running</div></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Status</th><th>Started</th><th>Duration</th><th>Version</th><th>Exit</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge b-ok">Running</span></td><td>15m ago</td><td style="color:var(--success)">(running)</td><td>1.0.0</td><td>—</td></tr>
+        <tr><td><span class="badge b-info">Restart</span></td><td>32m ago</td><td>17m</td><td>1.0.0</td><td>0</td></tr>
+        <tr><td><span class="badge b-err">Crash</span> <span class="badge" style="background:rgba(232,93,93,.1);color:var(--error)">⚡ crash recovery</span></td><td>1h ago</td><td>28m</td><td>1.0.0</td><td>1</td></tr>
+        <tr><td><span class="badge b-muted">Clean</span></td><td>2h ago</td><td>45m</td><td>1.0.0</td><td>0</td></tr>
+        <tr><td><span class="badge b-info">Restart</span></td><td>3h ago</td><td>1h 12m</td><td>1.0.0</td><td>0</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+</div></div>
+
+<!-- ── DM ── -->
+<div class="screen" id="s-dm"><div class="dm-view">
+  <div class="dm-threads">
+    <button class="dm-thread active"><div class="dm-avatar" style="background:linear-gradient(135deg,#b794ff,#8e81da)">A</div><div class="dm-info"><div class="dm-name">Aristotle</div><div class="dm-preview">Task assigned to Hephaestus</div></div></button>
+    <button class="dm-thread"><div class="dm-avatar" style="background:linear-gradient(135deg,#48d67a,#2d9a4e)">H</div><div class="dm-info"><div class="dm-name">Hephaestus</div><div class="dm-preview">WORK REPORT: COMPLETE</div></div></button>
+    <button class="dm-thread"><div class="dm-avatar" style="background:linear-gradient(135deg,#ff7187,#c94058)">S</div><div class="dm-info"><div class="dm-name">Socrates</div><div class="dm-preview">Verifying commit 8aeea50...</div></div></button>
+  </div>
+  <div class="dm-chat">
+    <div class="messages" style="flex:1">
+      <div class="msg-card"><div class="msg-hdr"><span class="msg-name">Aristotle</span><span class="msg-role" style="background:rgba(183,148,255,.15);color:#b794ff">Planner</span><span class="msg-time">5m ago</span></div><div class="msg-body">Task assigned to Hephaestus. Standing by for completion report.</div></div>
+      <div class="msg-user"><span class="msg-pfx">&gt;</span>Thanks. Let me know when it's ready for review.</div>
+    </div>
+    <div class="composer"><div class="composer-wrap"><textarea class="composer-input" rows="1" placeholder="Message Aristotle…"></textarea><button class="composer-send">➤</button></div></div>
+  </div>
+</div></div>
+
+  </div>
+</div>
+</div>
+
+<script>
+function go(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('visible'));
+  document.getElementById('s-'+name)?.classList.add('visible');
+  document.querySelectorAll('[id^="tb-"]').forEach(t=>t.style.display='none');
+  document.querySelectorAll('[id^="hd-"]').forEach(h=>h.style.display='none');
+  document.getElementById('tb-'+name).style.display='flex';
+  document.getElementById('hd-'+name).style.display='flex';
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  var map={chat:'conversation',tasks:'tasks',plan:'plan',commands:'commands',timeline:'timeline',dashboard:'dashboard',dm:'messages'};
+  document.querySelectorAll('.nav-item').forEach(n=>{if(n.textContent.toLowerCase().includes(map[name]||name))n.classList.add('active')});
+  // close any open filter menus
+  document.querySelectorAll('.filter-wrap').forEach(f=>f.classList.remove('open'));
+}
+// Close filter dropdown when clicking outside
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.filter-wrap'))document.querySelectorAll('.filter-wrap').forEach(f=>f.classList.remove('open'));
+});
+</script>
+</body>
+</html>
