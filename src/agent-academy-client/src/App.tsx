@@ -7,32 +7,13 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Tab,
-  TabList,
   Toaster,
   useToastController,
   useId,
   Toast,
   ToastTitle,
   ToastBody,
-  Badge,
-  Menu,
-  MenuTrigger,
-  MenuPopover,
-  MenuList,
-  MenuItem,
 } from "@fluentui/react-components";
-import {
-  ChatRegular,
-  CodeRegular,
-  DocumentRegular,
-  TimelineRegular,
-  GridRegular,
-  BoardRegular,
-  TaskListLtrRegular,
-  MailRegular,
-  MoreHorizontalRegular,
-} from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
@@ -72,21 +53,17 @@ import {
   shouldAttemptAutoReauth,
 } from "./authMonitor";
 
-const TAB_ITEMS = [
-  { value: "chat", label: "Conversation", detail: "Live room stream", Icon: ChatRegular },
-  { value: "tasks", label: "Tasks", detail: "Delivery queue", Icon: TaskListLtrRegular },
-  { value: "plan", label: "Plan", detail: "Shared approach", Icon: DocumentRegular },
-  { value: "commands", label: "Commands", detail: "Human tools", Icon: CodeRegular },
-  { value: "timeline", label: "Timeline", detail: "Activity trace", Icon: TimelineRegular },
-  { value: "dashboard", label: "Dashboard", detail: "System telemetry", Icon: GridRegular },
-  { value: "overview", label: "Overview", detail: "Room state", Icon: BoardRegular },
-  { value: "directMessages", label: "Messages", detail: "Private threads", Icon: MailRegular },
-] as const;
-
-/** Always-visible tabs — the primary workflow surface. */
-const PRIMARY_TAB_VALUES = new Set(["chat", "tasks", "commands"]);
-const PRIMARY_TABS = TAB_ITEMS.filter((t) => PRIMARY_TAB_VALUES.has(t.value));
-const OVERFLOW_TABS = TAB_ITEMS.filter((t) => !PRIMARY_TAB_VALUES.has(t.value));
+/** View title lookup for header bar. */
+const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
+  chat: { title: "Conversation", meta: "Live room stream" },
+  tasks: { title: "Tasks", meta: "Delivery queue" },
+  plan: { title: "Room Plan", meta: "" },
+  commands: { title: "Command Deck", meta: "" },
+  timeline: { title: "Activity Timeline", meta: "" },
+  dashboard: { title: "Dashboard", meta: "System telemetry" },
+  overview: { title: "Overview", meta: "Room state" },
+  directMessages: { title: "Direct Messages", meta: "" },
+};
 
 const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
   "AgentErrorOccurred",
@@ -96,14 +73,6 @@ const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
   "TaskCreated",
   "PhaseChanged",
   "SubagentCompleted",
-]);
-
-/** Events that trigger a timeline refresh in useWorkspace — badge counter stays aligned. */
-const BADGE_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
-  "MessagePosted", "RoomCreated", "TaskCreated", "PhaseChanged",
-  "PresenceUpdated", "DirectMessageSent", "AgentFinished",
-  "AgentErrorOccurred", "AgentWarningOccurred",
-  "SubagentFailed", "SubagentCompleted",
 ]);
 
 function toastIntent(evt: ActivityEvent): "error" | "warning" | "info" {
@@ -126,14 +95,8 @@ function AppShell() {
   const toasterId = useId("workspace-toaster");
   const { dispatchToast } = useToastController(toasterId);
   const tabRef = useRef("chat");
-  const [unseenActivity, setUnseenActivity] = useState(0);
 
   const handleActivityToast = useCallback((evt: ActivityEvent) => {
-    // Increment unseen counter only for events that appear in the timeline
-    if (tabRef.current !== "timeline" && BADGE_EVENT_TYPES.has(evt.type)) {
-      setUnseenActivity((n) => n + 1);
-    }
-
     if (!TOAST_EVENT_TYPES.has(evt.type)) return;
 
     const intent = toastIntent(evt);
@@ -161,7 +124,6 @@ function AppShell() {
     tab,
     setTab,
     sidebarOpen,
-    roomSummary,
     handleRoomSelect,
     handleManualRefresh,
     handleToggleSidebar,
@@ -172,7 +134,6 @@ function AppShell() {
   // Keep tabRef in sync and clear unseen counter when switching to timeline
   useEffect(() => {
     tabRef.current = tab;
-    if (tab === "timeline") setUnseenActivity(0);
   }, [tab]);
 
   const { circuitBreakerState } = useCircuitBreakerPolling();
@@ -452,8 +413,7 @@ function AppShell() {
   const connectionDetail = connectionStatus === "disconnected"
     ? "Live updates paused. Previously loaded data is still visible."
     : null;
-  const currentTab = TAB_ITEMS.find((item) => item.value === tab) ?? TAB_ITEMS[0];
-  const isOverflowActive = !PRIMARY_TAB_VALUES.has(tab);
+  const viewInfo = VIEW_TITLES[tab] ?? { title: tab, meta: "" };
   const isAgentView = selectedWorkspaceId?.startsWith("agent:") ?? false;
   const selectedAgentId = isAgentView ? selectedWorkspaceId!.slice("agent:".length) : null;
   const sessionAgent = selectedAgentId
@@ -468,16 +428,6 @@ function AppShell() {
   const selectedAgent = selectedBreakout
     ? ov.configuredAgents.find((agent) => agent.id === selectedBreakout.assignedAgentId)
     : null;
-  const workspaceTitle = sessionAgent
-    ? `${sessionAgent.name}'s Sessions`
-    : selectedBreakout
-      ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
-      : room?.name ?? "No active room";
-  const workspaceSubtitle = sessionAgent
-    ? sessionAgent.role
-    : selectedBreakout
-      ? selectedBreakout.name
-      : roomSummary;
 
   return (
     <div className={s.root}>
@@ -534,6 +484,8 @@ function AppShell() {
             onToggleSidebar={handleToggleSidebar}
             onSelectRoom={wrappedRoomSelect}
             onSelectWorkspace={handleWorkspaceSelect}
+            activeView={tab}
+            onViewChange={setTab}
             workspace={
               workspace
                 ? { name: workspace.projectName ?? workspace.path, path: workspace.path }
@@ -544,11 +496,25 @@ function AppShell() {
 
           <main className={s.workspace} aria-label="Workspace content">
             <>
+              {/* ─ Header bar (40px) ─ */}
               <div className={s.workspaceHeader}>
                 <div className={s.workspaceHeaderBody}>
                   <div className={s.workspaceHeaderTopRow}>
-                    <div className={s.workspaceTitle}>{workspaceTitle}</div>
+                    <div className={s.workspaceTitle}>
+                      {sessionAgent
+                        ? `${sessionAgent.name}'s Sessions`
+                        : selectedBreakout
+                          ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
+                          : tab === "chat"
+                            ? room?.name ?? "No active room"
+                            : viewInfo.title}
+                    </div>
                     <div className={s.workspaceHeaderSignals}>
+                      {tab === "chat" && room && !sessionAgent && !selectedBreakout && (
+                        <span className={s.workspaceMetaText}>
+                          {room.participants.length} agents · {room.currentPhase}
+                        </span>
+                      )}
                       {workspaceLimited && (
                         <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
                           {degradedCopy?.eyebrow ?? "Limited mode"}
@@ -559,34 +525,16 @@ function AppShell() {
                           Circuit {circuitBreakerState === "Open" ? "open" : "probing"}
                         </div>
                       )}
-                      {room && !sessionAgent && (
+                      {room && !sessionAgent && !selectedBreakout && (
                         <div className={s.phasePill}>
                           <span className={s.phasePillDot} />
-                          {room.currentPhase}
+                          Connected
                         </div>
                       )}
                       {hasDisplayUser(auth.user) && auth.user && (
                         <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
                       )}
                     </div>
-                  </div>
-                  <div className={s.workspaceSubtitle}>{workspaceSubtitle}</div>
-                  <div className={s.workspaceMetaRow}>
-                    <span className={s.workspaceMetaChip}>
-                      {sessionAgent ? sessionAgent.role : selectedBreakout ? selectedBreakout.status : room?.currentPhase ?? "—"}
-                    </span>
-                    <span className={s.workspaceMetaSep}>·</span>
-                    <span className={s.workspaceMetaText}>
-                      {sessionAgent
-                        ? (sessionAgentLocation
-                          ? ov.rooms.find((candidate) => candidate.id === sessionAgentLocation.roomId)?.name ?? "Unassigned"
-                          : "Unassigned")
-                        : selectedBreakout
-                          ? (selectedAgent?.name ?? "Unknown")
-                          : room?.activeTask?.title ?? "No active task"}
-                    </span>
-                    <span className={s.workspaceMetaSep}>·</span>
-                    <span className={s.workspaceMetaText}>{room?.participants.length ?? 0} participants</span>
                   </div>
                 </div>
               </div>
@@ -609,6 +557,7 @@ function AppShell() {
                 </div>
               )}
 
+              {/* ─ Content ─ */}
               {sessionAgent ? (
                 <section className={s.tabContent}>
                   <AgentSessionPanel
@@ -639,85 +588,7 @@ function AppShell() {
                     readOnly
                   />
                 </section>
-              ) : (<>
-                <div className={s.tabBar}>
-                  <div className={s.tabStrip}>
-                    <TabList
-                      className={s.tabList}
-                      selectedValue={PRIMARY_TAB_VALUES.has(tab) ? tab : undefined}
-                      onTabSelect={(_, data) => setTab(data.value as string)}
-                      size="small"
-                    >
-                      {PRIMARY_TABS.map((item) => {
-                        const Icon = item.Icon;
-                        return (
-                          <Tab key={item.value} value={item.value} icon={<Icon />}>
-                            <span className={s.tabLabelStack}>
-                              <span className={s.tabLabelTitle}>{item.label}</span>
-                              <span className={s.tabLabelDetail}>{item.detail}</span>
-                            </span>
-                          </Tab>
-                        );
-                      })}
-                    </TabList>
-                    <Menu>
-                      <MenuTrigger disableButtonEnhancement>
-                        <button
-                          className={mergeClasses(s.overflowTrigger, isOverflowActive && s.overflowTriggerActive)}
-                          aria-label="More tabs"
-                        >
-                          <MoreHorizontalRegular />
-                          <span className={s.tabLabelStack}>
-                            <span className={s.tabLabelTitle}>
-                              {isOverflowActive ? currentTab.label : "More"}
-                              {unseenActivity > 0 && tab !== "timeline" && (
-                                <Badge
-                                  size="small"
-                                  color="danger"
-                                  style={{ marginLeft: 6, verticalAlign: "middle" }}
-                                >
-                                  {unseenActivity > 99 ? "99+" : unseenActivity}
-                                </Badge>
-                              )}
-                            </span>
-                            <span className={s.tabLabelDetail}>
-                              {isOverflowActive ? currentTab.detail : "Additional panels"}
-                            </span>
-                          </span>
-                        </button>
-                      </MenuTrigger>
-                      <MenuPopover>
-                        <MenuList>
-                          {OVERFLOW_TABS.map((item) => {
-                            const Icon = item.Icon;
-                            const isCurrent = tab === item.value;
-                            const showBadge = item.value === "timeline" && unseenActivity > 0;
-                            return (
-                              <MenuItem
-                                key={item.value}
-                                icon={<Icon />}
-                                onClick={() => setTab(item.value)}
-                                className={isCurrent ? s.overflowItemActive : undefined}
-                              >
-                                {item.label}
-                                {showBadge && (
-                                  <Badge
-                                    size="small"
-                                    color="danger"
-                                    style={{ marginLeft: 6, verticalAlign: "middle" }}
-                                  >
-                                    {unseenActivity > 99 ? "99+" : unseenActivity}
-                                  </Badge>
-                                )}
-                              </MenuItem>
-                            );
-                          })}
-                        </MenuList>
-                      </MenuPopover>
-                    </Menu>
-                  </div>
-                </div>
-
+              ) : (
                 <section className={s.tabContent}>
                   {tab === "chat" && (
                     <ChatPanel
@@ -769,7 +640,7 @@ function AppShell() {
                     />
                   )}
                 </section>
-              </>)}
+              )}
             </>
           </main>
         </div>
