@@ -506,6 +506,51 @@ public static class HumanCommandRegistry
                 new("reason", "Reason", "text", "Why the server is being restarted.",
                     Placeholder: "Applied configuration changes", Required: true),
             ]),
+
+        // ── Evidence ledger ──
+
+        new("RECORD_EVIDENCE", "Record evidence", "workspace",
+            "Record a structured verification check against a task.",
+            "Captures a verification result (build, tests, code review, etc.) with phase, tool, exit code, and output. Evidence is queryable and used for gate checks before phase transitions.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to record evidence for.",
+                    Required: true),
+                new("checkName", "Check name", "text", "Name of the check (e.g. 'build', 'tests', 'type-check', 'code-review').",
+                    Required: true),
+                new("passed", "Passed", "text", "Whether the check passed ('true' or 'false').",
+                    Required: true),
+                new("phase", "Phase", "text", "Evidence phase: Baseline, After, or Review.",
+                    Placeholder: "After"),
+                new("tool", "Tool", "text", "Tool used (e.g. 'bash', 'manual').",
+                    Placeholder: "manual"),
+                new("command", "Command", "text", "Command that was run."),
+                new("exitCode", "Exit code", "text", "Exit code of the command."),
+                new("output", "Output", "text", "Truncated output or summary (max 500 chars)."),
+            ]),
+
+        new("QUERY_EVIDENCE", "Query evidence", "workspace",
+            "Query the evidence ledger for a task.",
+            "Returns all recorded evidence for a task, optionally filtered by phase (Baseline, After, Review). Shows check names, pass/fail status, tools, and output.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to query evidence for.",
+                    Required: true),
+                new("phase", "Phase", "text", "Filter by phase: Baseline, After, or Review.",
+                    Placeholder: "all"),
+            ]),
+
+        new("CHECK_GATES", "Check gates", "workspace",
+            "Check if a task meets evidence requirements for phase transition.",
+            "Evaluates minimum evidence gates: Implementation→AwaitingValidation (≥1 After check), AwaitingValidation→InReview (≥2 After checks), InReview→Approved (≥1 Review check). Shows what's missing.",
+            IsAsync: false,
+            Fields:
+            [
+                new("taskId", "Task ID", "text", "The task to check gates for.",
+                    Required: true),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

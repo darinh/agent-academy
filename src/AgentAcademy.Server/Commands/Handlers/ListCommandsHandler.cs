@@ -64,6 +64,9 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["REJECT_TASK"] = "Reject an approved or completed task back to ChangesRequested",
         ["LINK_TASK_TO_SPEC"] = "Link a task to a spec section for traceability",
         ["SHOW_UNLINKED_CHANGES"] = "Show active tasks with no spec links",
+        ["RECORD_EVIDENCE"] = "Record a structured verification check (build, tests, review) against a task",
+        ["QUERY_EVIDENCE"] = "Query the evidence ledger for a task, optionally filtered by phase",
+        ["CHECK_GATES"] = "Check if a task meets evidence requirements for the next phase transition",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)

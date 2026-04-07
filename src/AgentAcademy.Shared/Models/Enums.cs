@@ -210,7 +210,9 @@ public enum ActivityEventType
     AgentRecalled,
     RoomRenamed,
     DirectMessageSent,
-    SpecTaskLinked
+    SpecTaskLinked,
+    EvidenceRecorded,
+    GateChecked
 }
 
 /// <summary>
@@ -269,4 +271,15 @@ public enum SpecLinkType
     Modifies,
     Fixes,
     References
+}
+
+/// <summary>
+/// Phase of a verification check in the evidence ledger.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EvidencePhase
+{
+    Baseline,
+    After,
+    Review
 }

@@ -44,7 +44,8 @@ public sealed class CommandParser
         "DM", "ROOM_HISTORY", "MOVE_TO_ROOM", "SET_PLAN",
         "ADD_TASK_COMMENT", "RECALL_AGENT", "CLOSE_ROOM", "CLEANUP_ROOMS", "MERGE_TASK",
         "RESTART_SERVER", "SHELL", "CREATE_ROOM", "REOPEN_ROOM",
-        "CREATE_PR", "POST_PR_REVIEW", "GET_PR_REVIEWS", "MERGE_PR"
+        "CREATE_PR", "POST_PR_REVIEW", "GET_PR_REVIEWS", "MERGE_PR",
+        "RECORD_EVIDENCE", "QUERY_EVIDENCE", "CHECK_GATES"
     };
 
     /// <summary>
