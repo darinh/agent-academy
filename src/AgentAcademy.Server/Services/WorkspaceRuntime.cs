@@ -274,7 +274,8 @@ public sealed class WorkspaceRuntime
         IQueryable<RoomEntity> query = _db.Rooms;
         if (activeWorkspace is not null)
         {
-            query = query.Where(r => r.WorkspacePath == activeWorkspace);
+            // Include workspace-scoped rooms AND legacy rooms with no workspace assignment
+            query = query.Where(r => r.WorkspacePath == activeWorkspace || r.WorkspacePath == null);
         }
         else
         {
@@ -845,9 +846,10 @@ public sealed class WorkspaceRuntime
         if (legacyRoom is not null && legacyRoom.WorkspacePath == workspacePath)
         {
             legacyRoom.WorkspacePath = null;
+            legacyRoom.Status = nameof(RoomStatus.Archived);
             await _db.SaveChangesAsync();
             _logger.LogInformation(
-                "Retired legacy default room '{RoomId}' — cleared WorkspacePath (was '{Workspace}')",
+                "Retired legacy default room '{RoomId}' — archived and cleared WorkspacePath (was '{Workspace}')",
                 legacyRoomId, workspacePath);
         }
     }
@@ -2394,7 +2396,7 @@ public sealed class WorkspaceRuntime
 
         // Apply workspace scoping — same pattern as GetRoomsAsync
         if (activeWorkspace is not null)
-            query = query.Where(r => r.WorkspacePath == activeWorkspace);
+            query = query.Where(r => r.WorkspacePath == activeWorkspace || r.WorkspacePath == null);
         else
             query = query.Where(r => r.WorkspacePath == null);
 

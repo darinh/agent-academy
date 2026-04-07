@@ -237,9 +237,13 @@ public class WorkspaceRuntimeTests : IDisposable
         await _db.SaveChangesAsync();
 
         var rooms = await _runtime.GetRoomsAsync();
-        // Should only see Project A's room, not Project B's or the legacy main (which has null workspace)
-        Assert.All(rooms, r => Assert.Equal("/home/test/project-a",
-            _db.Rooms.Find(r.Id)?.WorkspacePath));
+        // Should see Project A's room AND legacy rooms (null workspace), but not Project B's
+        Assert.All(rooms, r =>
+        {
+            var wp = _db.Rooms.Find(r.Id)?.WorkspacePath;
+            Assert.True(wp == "/home/test/project-a" || wp == null,
+                $"Room {r.Id} has unexpected WorkspacePath: {wp}");
+        });
         Assert.DoesNotContain(rooms, r => r.Id == "other-project-room");
     }
 
