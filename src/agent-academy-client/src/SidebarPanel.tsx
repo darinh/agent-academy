@@ -168,7 +168,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                           <span
                             className={s.workspaceStateBadge}
                             style={{
-                              backgroundColor: isWorking ? `${rc.accent}22` : "rgba(110, 118, 129, 0.15)",
+                              backgroundColor: isWorking ? `${rc.accent}22` : "rgba(139, 148, 158, 0.08)",
                               color: isWorking ? rc.accent : "var(--aa-soft)",
                             }}
                           >

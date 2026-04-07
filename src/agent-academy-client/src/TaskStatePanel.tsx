@@ -1,14 +1,10 @@
 import { useState } from "react";
 import {
-  Badge,
-  Card,
-  CardHeader,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
 import {
   TaskListLtrRegular,
-  PersonRegular,
   ArrowSyncRegular,
   CheckmarkCircleRegular,
   CircleRegular,
@@ -22,10 +18,11 @@ import type {
 } from "./api";
 import {
   PHASES,
-  phaseColor,
-  taskStatusColor,
-  workstreamColor,
+  phaseBadge,
+  taskStatusBadge,
+  workstreamBadge,
 } from "./taskStatePanelUtils";
+import V3Badge from "./V3Badge";
 
 // -- Styles --
 
@@ -44,10 +41,13 @@ const useLocalStyles = makeStyles({
     marginBottom: "10px",
   },
   card: {
-    ...shorthands.padding("16px"),
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    ...shorthands.padding("12px"),
     border: "1px solid var(--aa-border)",
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    ...shorthands.borderRadius("6px"),
+    backgroundColor: "var(--aa-panel)",
+    ...shorthands.borderRadius("8px"),
   },
   roomLabel: {
     display: "flex",
@@ -62,7 +62,7 @@ const useLocalStyles = makeStyles({
   },
   taskDesc: {
     fontSize: "13px",
-    color: "#9bb0d2",
+    color: "var(--aa-muted)",
     marginBottom: "8px",
     lineHeight: 1.5,
     whiteSpace: "pre-wrap",
@@ -75,7 +75,7 @@ const useLocalStyles = makeStyles({
   },
   taskDescToggle: {
     fontSize: "12px",
-    color: "#5b8def",
+    color: "var(--aa-cyan)",
     cursor: "pointer",
     marginBottom: "12px",
     ":hover": { textDecoration: "underline" },
@@ -91,17 +91,17 @@ const useLocalStyles = makeStyles({
     justifyContent: "space-between",
     alignItems: "center",
     ...shorthands.padding("8px", "0"),
-    borderBottom: "1px solid rgba(155, 176, 210, 0.08)",
-    fontSize: "14px",
+    borderBottom: "1px solid var(--aa-hairline)",
+    fontSize: "13px",
     color: "var(--aa-text)",
   },
   rowLabel: {
-    color: "#7c90b2",
+    color: "var(--aa-soft)",
     fontSize: "13px",
   },
   rowSummary: {
     fontSize: "12px",
-    color: "#7c90b2",
+    color: "var(--aa-soft)",
     ...shorthands.padding("4px", "0"),
   },
   agentList: {
@@ -168,24 +168,22 @@ export default function TaskStatePanel({ rooms, room }: TaskStatePanelProps) {
         return (
           <div key={r.id}>
             <div className={s.roomLabel}>
-              <Badge appearance="outline" color={r.id === room?.id ? "brand" : "informative"} size="small">
+              <V3Badge color={r.id === room?.id ? "active" : "info"}>
                 {r.name}
-              </Badge>
-              <Badge appearance="outline" color="subtle" size="small">
+              </V3Badge>
+              <V3Badge color="muted">
                 {r.participants.length} agent{r.participants.length !== 1 ? "s" : ""}
-              </Badge>
+              </V3Badge>
             </div>
 
-            <Card className={s.card}>
-              <CardHeader
-                image={taskStatusIcon(task.status)}
-                header={<span className={s.taskTitle}>{task.title}</span>}
-                description={
-                  <Badge appearance="filled" color={taskStatusColor(task.status)} size="small">
-                    {task.status}
-                  </Badge>
-                }
-              />
+            <div className={s.card}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {taskStatusIcon(task.status)}
+                <span className={s.taskTitle}>{task.title}</span>
+                <V3Badge color={taskStatusBadge(task.status)}>
+                  {task.status}
+                </V3Badge>
+              </div>
 
               {task.description && (
                 <>
@@ -212,26 +210,26 @@ export default function TaskStatePanel({ rooms, room }: TaskStatePanelProps) {
               {/* Phase indicator */}
               <div className={s.phaseTrack}>
                 {PHASES.map((p) => (
-                  <Badge key={p} appearance="filled" color={phaseColor(p, task.currentPhase)} size="small">
+                  <V3Badge key={p} color={phaseBadge(p, task.currentPhase)}>
                     {p}
-                  </Badge>
+                  </V3Badge>
                 ))}
               </div>
 
               {/* Workstreams */}
               <div className={s.row}>
                 <span className={s.rowLabel}>Validation</span>
-                <Badge appearance="outline" color={workstreamColor(task.validationStatus)}>
+                <V3Badge color={workstreamBadge(task.validationStatus)}>
                   {task.validationStatus}
-                </Badge>
+                </V3Badge>
               </div>
               {task.validationSummary && <div className={s.rowSummary}>{task.validationSummary}</div>}
 
               <div className={s.row}>
                 <span className={s.rowLabel}>Implementation</span>
-                <Badge appearance="outline" color={workstreamColor(task.implementationStatus)}>
+                <V3Badge color={workstreamBadge(task.implementationStatus)}>
                   {task.implementationStatus}
-                </Badge>
+                </V3Badge>
               </div>
               {task.implementationSummary && <div className={s.rowSummary}>{task.implementationSummary}</div>}
 
@@ -241,14 +239,12 @@ export default function TaskStatePanel({ rooms, room }: TaskStatePanelProps) {
                   <div className={s.sectionTitle}>Preferred Roles</div>
                   <div className={s.agentList}>
                     {task.preferredRoles.map((role) => (
-                      <Badge key={role} appearance="outline" color="informative" icon={<PersonRegular />}>
-                        {role}
-                      </Badge>
+                      <V3Badge key={role} color="info">👤 {role}</V3Badge>
                     ))}
                   </div>
                 </div>
               )}
-            </Card>
+            </div>
 
             {/* Assigned agents */}
             {r.participants.length > 0 && (
@@ -256,14 +252,12 @@ export default function TaskStatePanel({ rooms, room }: TaskStatePanelProps) {
                 <div className={s.sectionTitle}>Assigned Agents</div>
                 <div className={s.agentList}>
                   {r.participants.map((agent) => (
-                    <Badge
+                    <V3Badge
                       key={agent.agentId}
-                      appearance="filled"
-                      color={agent.availability === "Active" ? "success" : "subtle"}
-                      icon={<PersonRegular />}
+                      color={agent.availability === "Active" ? "ok" : "muted"}
                     >
-                      {agent.name} ({agent.role})
-                    </Badge>
+                      👤 {agent.name} ({agent.role})
+                    </V3Badge>
                   ))}
                 </div>
               </div>

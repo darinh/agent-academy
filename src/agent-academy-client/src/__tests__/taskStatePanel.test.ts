@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { CollaborationPhase, TaskStatus } from "../api";
 import {
   PHASES,
-  phaseColor,
-  taskStatusColor,
-  workstreamColor,
+  phaseBadge,
+  taskStatusBadge,
+  workstreamBadge,
 } from "../taskStatePanelUtils";
 
 /* ------------------------------------------------------------------ */
@@ -29,34 +29,34 @@ describe("PHASES", () => {
 /*  taskStatusColor                                                    */
 /* ------------------------------------------------------------------ */
 
-describe("taskStatusColor", () => {
+describe("taskStatusBadge", () => {
   const cases: Array<[TaskStatus, string]> = [
-    ["Active", "success"],
-    ["Blocked", "danger"],
-    ["AwaitingValidation", "warning"],
-    ["Completed", "informative"],
-    ["Cancelled", "subtle"],
-    ["Queued", "important"],
+    ["Active", "active"],
+    ["Blocked", "err"],
+    ["AwaitingValidation", "warn"],
+    ["Completed", "done"],
+    ["Cancelled", "cancel"],
+    ["Queued", "info"],
   ];
 
   it.each(cases)("returns '%s' → '%s'", (status, expected) => {
-    expect(taskStatusColor(status)).toBe(expected);
+    expect(taskStatusBadge(status)).toBe(expected);
   });
 
-  it("returns 'important' for InReview (default branch)", () => {
-    expect(taskStatusColor("InReview")).toBe("important");
+  it("returns 'info' for InReview (default branch)", () => {
+    expect(taskStatusBadge("InReview")).toBe("info");
   });
 
-  it("returns 'important' for ChangesRequested (default branch)", () => {
-    expect(taskStatusColor("ChangesRequested")).toBe("important");
+  it("returns 'info' for ChangesRequested (default branch)", () => {
+    expect(taskStatusBadge("ChangesRequested")).toBe("info");
   });
 
-  it("returns 'important' for Approved (default branch)", () => {
-    expect(taskStatusColor("Approved")).toBe("important");
+  it("returns 'info' for Approved (default branch)", () => {
+    expect(taskStatusBadge("Approved")).toBe("info");
   });
 
-  it("returns 'important' for Merging (default branch)", () => {
-    expect(taskStatusColor("Merging")).toBe("important");
+  it("returns 'info' for Merging (default branch)", () => {
+    expect(taskStatusBadge("Merging")).toBe("info");
   });
 });
 
@@ -64,22 +64,22 @@ describe("taskStatusColor", () => {
 /*  workstreamColor                                                    */
 /* ------------------------------------------------------------------ */
 
-describe("workstreamColor", () => {
+describe("workstreamBadge", () => {
   const cases: Array<[string, string]> = [
-    ["Completed", "success"],
-    ["InProgress", "informative"],
-    ["Blocked", "warning"],
-    ["Ready", "important"],
+    ["Completed", "done"],
+    ["InProgress", "active"],
+    ["Blocked", "warn"],
+    ["Ready", "info"],
   ];
 
   it.each(cases)("returns '%s' → '%s'", (status, expected) => {
-    expect(workstreamColor(status)).toBe(expected);
+    expect(workstreamBadge(status)).toBe(expected);
   });
 
-  it("returns 'subtle' for unknown statuses", () => {
-    expect(workstreamColor("")).toBe("subtle");
-    expect(workstreamColor("Pending")).toBe("subtle");
-    expect(workstreamColor("Unknown")).toBe("subtle");
+  it("returns 'muted' for unknown statuses", () => {
+    expect(workstreamBadge("")).toBe("muted");
+    expect(workstreamBadge("Pending")).toBe("muted");
+    expect(workstreamBadge("Unknown")).toBe("muted");
   });
 });
 
@@ -87,56 +87,53 @@ describe("workstreamColor", () => {
 /*  phaseColor                                                         */
 /* ------------------------------------------------------------------ */
 
-describe("phaseColor", () => {
-  it("returns 'success' for phases before the current phase", () => {
-    expect(phaseColor("Intake", "Discussion")).toBe("success");
-    expect(phaseColor("Planning", "Discussion")).toBe("success");
+describe("phaseBadge", () => {
+  it("returns 'done' for phases before the current phase", () => {
+    expect(phaseBadge("Intake", "Discussion")).toBe("done");
+    expect(phaseBadge("Planning", "Discussion")).toBe("done");
   });
 
-  it("returns 'informative' for the current phase", () => {
-    expect(phaseColor("Discussion", "Discussion")).toBe("informative");
-    expect(phaseColor("Intake", "Intake")).toBe("informative");
-    expect(phaseColor("FinalSynthesis", "FinalSynthesis")).toBe("informative");
+  it("returns 'active' for the current phase", () => {
+    expect(phaseBadge("Discussion", "Discussion")).toBe("active");
+    expect(phaseBadge("Intake", "Intake")).toBe("active");
+    expect(phaseBadge("FinalSynthesis", "FinalSynthesis")).toBe("active");
   });
 
-  it("returns 'subtle' for phases after the current phase", () => {
-    expect(phaseColor("Validation", "Discussion")).toBe("subtle");
-    expect(phaseColor("Implementation", "Discussion")).toBe("subtle");
-    expect(phaseColor("FinalSynthesis", "Discussion")).toBe("subtle");
+  it("returns 'muted' for phases after the current phase", () => {
+    expect(phaseBadge("Validation", "Discussion")).toBe("muted");
+    expect(phaseBadge("Implementation", "Discussion")).toBe("muted");
+    expect(phaseBadge("FinalSynthesis", "Discussion")).toBe("muted");
   });
 
   it("handles first phase as current", () => {
-    expect(phaseColor("Intake", "Intake")).toBe("informative");
-    expect(phaseColor("Planning", "Intake")).toBe("subtle");
-    expect(phaseColor("FinalSynthesis", "Intake")).toBe("subtle");
+    expect(phaseBadge("Intake", "Intake")).toBe("active");
+    expect(phaseBadge("Planning", "Intake")).toBe("muted");
+    expect(phaseBadge("FinalSynthesis", "Intake")).toBe("muted");
   });
 
   it("handles last phase as current", () => {
-    expect(phaseColor("Intake", "FinalSynthesis")).toBe("success");
-    expect(phaseColor("Implementation", "FinalSynthesis")).toBe("success");
-    expect(phaseColor("FinalSynthesis", "FinalSynthesis")).toBe("informative");
+    expect(phaseBadge("Intake", "FinalSynthesis")).toBe("done");
+    expect(phaseBadge("Implementation", "FinalSynthesis")).toBe("done");
+    expect(phaseBadge("FinalSynthesis", "FinalSynthesis")).toBe("active");
   });
 
-  it("maps every phase to 'success' or 'informative' when current is FinalSynthesis", () => {
-    const results = PHASES.map((p) => phaseColor(p, "FinalSynthesis"));
-    expect(results.filter((c) => c === "subtle")).toHaveLength(0);
+  it("maps every phase to 'done' or 'active' when current is FinalSynthesis", () => {
+    const results = PHASES.map((p) => phaseBadge(p, "FinalSynthesis"));
+    expect(results.filter((c) => c === "muted")).toHaveLength(0);
   });
 
-  it("maps every phase to 'subtle' or 'informative' when current is Intake", () => {
-    const results = PHASES.map((p) => phaseColor(p, "Intake"));
-    expect(results.filter((c) => c === "success")).toHaveLength(0);
+  it("maps every phase to 'muted' or 'active' when current is Intake", () => {
+    const results = PHASES.map((p) => phaseBadge(p, "Intake"));
+    expect(results.filter((c) => c === "done")).toHaveLength(0);
   });
 
   it("returns correct gradient across all phases for midpoint current", () => {
-    // With current = "Validation" (index 3):
-    // Intake(0)=success, Planning(1)=success, Discussion(2)=success,
-    // Validation(3)=informative, Implementation(4)=subtle, FinalSynthesis(5)=subtle
     const current: CollaborationPhase = "Validation";
-    expect(phaseColor("Intake", current)).toBe("success");
-    expect(phaseColor("Planning", current)).toBe("success");
-    expect(phaseColor("Discussion", current)).toBe("success");
-    expect(phaseColor("Validation", current)).toBe("informative");
-    expect(phaseColor("Implementation", current)).toBe("subtle");
-    expect(phaseColor("FinalSynthesis", current)).toBe("subtle");
+    expect(phaseBadge("Intake", current)).toBe("done");
+    expect(phaseBadge("Planning", current)).toBe("done");
+    expect(phaseBadge("Discussion", current)).toBe("done");
+    expect(phaseBadge("Validation", current)).toBe("active");
+    expect(phaseBadge("Implementation", current)).toBe("muted");
+    expect(phaseBadge("FinalSynthesis", current)).toBe("muted");
   });
 });
