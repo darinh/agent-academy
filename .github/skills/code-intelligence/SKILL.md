@@ -1,7 +1,7 @@
 ---
 name: code-intelligence
 description: Use when exploring codebase structure, finding callers/callees, understanding relationships between files or classes, checking what code depends on what, or assessing the blast radius of a change. Prefer this over grep, glob, or file reads for structural questions. Use before planning or implementing any Medium or Large task.
-allowed-tools: mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__trace_call_path, mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__detect_changes, mcp__codebase-memory-mcp__query_graph, mcp__codebase-memory-mcp__search_code, mcp__codebase-memory-mcp__get_code_snippet, mcp__roslyn__find_references, mcp__roslyn__find_implementations, mcp__roslyn__find_callers, mcp__roslyn__get_symbol_info, mcp__roslyn__search_symbols
+allowed-tools: mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__trace_call_path, mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__detect_changes, mcp__codebase-memory-mcp__query_graph, mcp__roslyn__find_references, mcp__roslyn__find_implementations, mcp__roslyn__find_callers, mcp__roslyn__get_symbol_info, mcp__roslyn__search_symbols
 ---
 
 # Code Intelligence Tools
@@ -20,7 +20,7 @@ answer it — graph and Roslyn queries return precise results in a single tool c
 ## Decision Rules
 
 **Use `roslyn` (dotnet-roslyn-mcp) when:**
-- The question involves C# code in `src/AgentAcademy.Server/` or `tests/`
+- The question involves C# code
 - You need to find callers or callees of a C# method
 - You need to find all implementations of a C# interface
 - You need to find all references to a C# symbol
@@ -28,8 +28,8 @@ answer it — graph and Roslyn queries return precise results in a single tool c
 - You're assessing blast radius of a C# change
 
 **Use `codebase-memory-mcp` when:**
-- You need TypeScript/frontend structural queries in `src/agent-academy-client/` —
-  callers, callees, and cross-file resolution work correctly via tree-sitter
+- You need TypeScript/JavaScript/frontend structural queries — callers,
+  callees, and cross-file resolution work correctly via tree-sitter
 - You need git coupling history (`FILE_CHANGES_WITH` edges — files that change together)
 - You need to map a git diff to affected symbols (`detect_changes`)
 - You need file/folder structure overview (`get_architecture`)
@@ -43,11 +43,11 @@ answer it — graph and Roslyn queries return precise results in a single tool c
 
 ## Common Workflows
 
-**Before planning a Medium/Large task (Anvil integration):**
+**Before planning a Medium/Large task:**
 1. `detect_changes` (codebase-memory-mcp) — what's already in flight in the git diff
 2. `roslyn:find_references` on the C# symbol(s) you plan to change — blast radius
 3. `roslyn:find_implementations` if changing a C# interface
-4. Include results in the evidence bundle before the Plan step
+4. Include results in the plan before implementing
 
 **"What calls X?" (C#)**
 → `roslyn:find_callers` or `roslyn:find_references`
@@ -61,6 +61,9 @@ answer it — graph and Roslyn queries return precise results in a single tool c
 **"Where is X implemented?" (C# interface)**
 → `roslyn:find_implementations`
 
+**"Which files tend to change together?"**
+→ `codebase-memory-mcp: query_graph` with `FILE_CHANGES_WITH` edges
+
 **"Find all classes/functions matching a pattern"**
 → `roslyn:search_symbols` (C# backend)
 → `codebase-memory-mcp: search_graph` (frontend or cross-repo)
@@ -68,6 +71,12 @@ answer it — graph and Roslyn queries return precise results in a single tool c
 **"What's the overall architecture?"**
 → `codebase-memory-mcp: get_architecture`
 
-## Key Constraint
+## Setup
 
-All `codebase-memory-mcp` calls require `project: "home-darin-projects-agent-academy"`.
+1. Install both MCP servers (see `setup.sh` in the copilot-tools repo)
+2. Copy this skill into your project:
+   ```
+   cp -r copilot-tools/skills/code-intelligence your-project/.github/skills/
+   ```
+3. Ensure your `~/.copilot/mcp-config.json` has entries for both servers
+   (see `templates/mcp-config.json`)
