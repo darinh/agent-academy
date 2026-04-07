@@ -17,46 +17,62 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  React 19 + Vite                     │
-│              (Fluent UI v9 components)               │
-│                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
-│  │ Room View │  │ Task Board│  │ Agent Dashboard  │  │
-│  └─────┬────┘  └─────┬────┘  └────────┬─────────┘  │
-│        │              │                │             │
-│        └──────────────┼────────────────┘             │
-│                       │ SignalR + REST               │
-└───────────────────────┼──────────────────────────────┘
-                        │
-┌───────────────────────┼──────────────────────────────┐
-│              ASP.NET Core 8 Web API                   │
-│                                                       │
-│  ┌────────────┐  ┌─────────────┐  ┌───────────────┐ │
-│  │ Controllers │  │  Services    │  │  SignalR Hub  │ │
-│  └─────┬──────┘  └──────┬──────┘  └───────┬───────┘ │
-│        │                │                  │          │
-│        └────────────────┼──────────────────┘          │
-│                         │                             │
-│  ┌──────────────────────┼─────────────────────────┐  │
-│  │              EF Core + SQLite                   │  │
-│  └─────────────────────────────────────────────────┘  │
-│                                                       │
-│  ┌─────────────────┐  ┌───────────────────────────┐  │
-│  │  Copilot SDK    │  │  Notification Providers    │  │
-│  │  (Agent Runner) │  │  (Discord.Net, etc.)       │  │
-│  └─────────────────┘  └───────────────────────────┘  │
-└───────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   React 19 + Vite                        │
+│              (Fluent UI v9 components)                   │
+│                                                          │
+│  ┌───────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │   Chat    │ │  Tasks   │ │ Commands │ │ Settings │  │
+│  │  Panel    │ │  Panel   │ │  Panel   │ │  Panel   │  │
+│  └─────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │
+│        │             │            │             │        │
+│  ┌─────┴─────────────┴────────────┴─────────────┴────┐  │
+│  │    useWorkspace (state) + api.ts (REST client)    │  │
+│  └───────────────────────┬───────────────────────────┘  │
+│                          │ SignalR / SSE + REST          │
+└──────────────────────────┼──────────────────────────────┘
+                           │
+┌──────────────────────────┼──────────────────────────────┐
+│               ASP.NET Core 8 Web API                     │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Controllers (REST) + SignalR Hub + SSE Stream      │  │
+│  └─────────────────────────┬──────────────────────────┘  │
+│                            │                             │
+│  ┌─────────────────────────┼──────────────────────────┐  │
+│  │              WorkspaceRuntime                      │  │
+│  │  (rooms, agents, tasks, messages, activity)        │  │
+│  └──────┬──────────┬──────────┬──────────┬────────────┘  │
+│         │          │          │          │                │
+│  ┌──────┴───┐ ┌────┴────┐ ┌──┴───────┐ ┌┴────────────┐  │
+│  │ Orchestr │ │ Command │ │ Copilot  │ │ Notification │  │
+│  │ -ator    │ │ Pipeline│ │ Executor │ │ Manager      │  │
+│  │          │ │ Parse → │ │ SDK +    │ │ Discord,     │  │
+│  │ Convers. │ │ Auth →  │ │ Tools +  │ │ Slack,       │  │
+│  │ Breakout │ │ Rate →  │ │ Circuit  │ │ Console      │  │
+│  │ DMs      │ │ Handle  │ │ Breaker  │ │              │  │
+│  └──────────┘ └─────────┘ └──────────┘ └──────────────┘  │
+│                            │                             │
+│  ┌─────────────────────────┼──────────────────────────┐  │
+│  │   EF Core + SQLite (rooms, tasks, messages,        │  │
+│  │   sessions, usage, memories, config, audit)        │  │
+│  └────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
 | Component | Project | Responsibility |
 |-----------|---------|---------------|
-| Web API | `AgentAcademy.Server` | REST endpoints, SignalR hub, DI composition root |
+| Web API | `AgentAcademy.Server` | REST endpoints, SignalR hub, SSE stream, DI composition root |
 | Shared Models | `AgentAcademy.Shared` | Domain types, enums, DTOs shared between server and tests |
-| Frontend | `agent-academy-client` | React SPA with Fluent UI, SignalR client |
+| Frontend | `agent-academy-client` | React SPA with Fluent UI, SignalR/SSE client, workspace state management |
 | Tests | `AgentAcademy.Server.Tests` | xUnit integration and unit tests |
+| WorkspaceRuntime | `AgentAcademy.Server` | Central state manager: rooms, agents, tasks, messages, activity, plans |
+| AgentOrchestrator | `AgentAcademy.Server` | Conversation rounds, breakout loops, DM routing, prompt construction |
+| CopilotExecutor | `AgentAcademy.Server` | Copilot SDK sessions, tool registration, circuit breaker, retry logic |
+| CommandPipeline | `AgentAcademy.Server` | Parse → authorize → rate-limit → dispatch → audit for agent commands |
+| NotificationManager | `AgentAcademy.Server` | Multi-provider notification routing (Discord, Slack, Console) |
 
 ## Design Principles
 
@@ -92,7 +108,7 @@ The server exposes a SignalR hub at `/hubs/activity` for real-time event streami
 
 ## Known Gaps
 
-- Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted). — *Tracked in #5*
+- ~~Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted).~~ — **Resolved**: Updated to show WorkspaceRuntime, Orchestrator, Command Pipeline, CopilotExecutor, and Notification Manager subsystems.
 - No multi-user auth model — single-user token via `CopilotTokenProvider`. — *Tracked in #2, accepted design constraint for single-user product*
 - No session persistence across server restarts — in-memory Copilot SDK sessions are lost. — *Tracked in #3, mitigated by LLM-generated session summaries on workspace switch*
 
