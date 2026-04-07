@@ -33,10 +33,10 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "8px",
     ...shorthands.padding("12px", "0"),
-    borderBottom: "1px solid rgba(155, 176, 210, 0.16)",
+    borderBottom: "1px solid var(--aa-border)",
     flexShrink: 0,
   },
-  headerTitle: { fontWeight: 680, fontSize: "14px", color: "#eff5ff" },
+  headerTitle: { fontWeight: 680, fontSize: "14px", color: "var(--aa-text-strong)" },
   list: {
     flex: 1,
     overflow: "auto",
@@ -54,15 +54,15 @@ const useLocalStyles = makeStyles({
   iconCol: {
     flexShrink: 0,
     paddingTop: "2px",
-    color: "#6cb6ff",
-    fontSize: "16px",
+    color: "var(--aa-cyan)",
+    fontSize: "13px",
   },
   body: {
     flex: 1,
     minWidth: 0,
   },
   message: {
-    color: "#dbe7fb",
+    color: "var(--aa-text)",
     fontSize: "14px",
     wordBreak: "break-word",
     lineHeight: 1.5,
@@ -82,7 +82,7 @@ const useLocalStyles = makeStyles({
     justifyContent: "center",
     height: "100%",
     gap: "12px",
-    color: "#a1b3d2",
+    color: "var(--aa-soft)",
   },
 });
 

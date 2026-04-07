@@ -39,13 +39,13 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     alignItems: "center",
     ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.025)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
     fontWeight: 780,
     color: "var(--aa-text-strong)",
     lineHeight: 1,
@@ -87,13 +87,13 @@ const useLocalStyles = makeStyles({
   },
   td: {
     ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
   },
   tdRight: {
     ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
@@ -139,12 +139,12 @@ const useLocalStyles = makeStyles({
   modelTag: {
     display: "inline-block",
     ...shorthands.padding("2px", "8px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     fontSize: "11px",
     fontWeight: 600,
     letterSpacing: "0.02em",
     backgroundColor: "rgba(108, 182, 255, 0.10)",
-    color: "#6cb6ff",
+    color: "var(--aa-cyan)",
     marginRight: "6px",
     marginBottom: "4px",
   },
@@ -166,7 +166,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -185,9 +185,9 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     backgroundColor: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(214, 188, 149, 0.06)",
+    border: "1px solid var(--aa-border)",
   },
   sparklineLabel: {
     color: "var(--aa-muted)",
@@ -332,13 +332,13 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
             <span className={s.statLabel}>Output Tokens</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
               {formatCost(summary.totalCost)}
             </span>
             <span className={s.statLabel}>Total Cost</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
               {summary.requestCount}
             </span>
             <span className={s.statLabel}>LLM Calls</span>
@@ -351,11 +351,11 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           <div className={s.sparklineRow} data-testid="usage-sparkline-requests">
             <span className={s.sparklineLabel}>Requests</span>
-            <Sparkline data={requestTrend} color="#ffbe70" width={140} height={28} />
+            <Sparkline data={requestTrend} color="var(--aa-gold)" width={140} height={28} />
           </div>
           <div className={s.sparklineRow} data-testid="usage-sparkline-tokens">
             <span className={s.sparklineLabel}>Tokens</span>
-            <Sparkline data={tokenTrend} color="#6cb6ff" width={140} height={28} />
+            <Sparkline data={tokenTrend} color="var(--aa-cyan)" width={140} height={28} />
           </div>
         </div>
       )}

@@ -40,14 +40,14 @@ const useLocalStyles = makeStyles({
   sectionTitle: {
     fontSize: "14px",
     fontWeight: 680,
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
     marginBottom: "10px",
   },
   card: {
     ...shorthands.padding("16px"),
-    border: "1px solid rgba(155, 176, 210, 0.16)",
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.03)",
-    ...shorthands.borderRadius("18px"),
+    ...shorthands.borderRadius("6px"),
   },
   roomLabel: {
     display: "flex",
@@ -56,9 +56,9 @@ const useLocalStyles = makeStyles({
     marginBottom: "10px",
   },
   taskTitle: {
-    fontSize: "16px",
+    fontSize: "13px",
     fontWeight: 680,
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
     letterSpacing: "-0.02em",
   },
   taskDesc: {
@@ -94,7 +94,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("8px", "0"),
     borderBottom: "1px solid rgba(155, 176, 210, 0.08)",
     fontSize: "14px",
-    color: "#dbe7fb",
+    color: "var(--aa-text)",
   },
   rowLabel: {
     color: "#7c90b2",
@@ -118,9 +118,9 @@ const useLocalStyles = makeStyles({
     justifyContent: "center",
     height: "100%",
     gap: "12px",
-    color: "#a1b3d2",
+    color: "var(--aa-soft)",
   },
-  emptyIcon: { fontSize: "48px" },
+  emptyIcon: { fontSize: "26px" },
 });
 
 // -- Helpers --

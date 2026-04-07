@@ -96,17 +96,17 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "5px",
     ...shorthands.padding("6px", "12px"),
-    ...shorthands.borderRadius("20px"),
+    ...shorthands.borderRadius("6px"),
     fontSize: "12px",
     fontWeight: 600,
     letterSpacing: "0.02em",
     color: "var(--aa-soft)",
-    border: "1px solid rgba(214, 188, 149, 0.12)",
+    border: "1px solid var(--aa-border)",
     background: "transparent",
     transitionProperty: "background, border-color, color",
     transitionDuration: "0.15s",
     ":hover": {
-      background: "rgba(214, 188, 149, 0.06)",
+      background: "var(--aa-border)",
     },
   },
   filterChipActive: {
@@ -121,17 +121,17 @@ const useLocalStyles = makeStyles({
     marginLeft: "2px",
   },
   card: {
-    border: "1px solid rgba(214, 188, 149, 0.14)",
+    border: "1px solid var(--aa-border)",
     background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.018) 42%, rgba(12, 15, 22, 0.72))",
-    boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05)",
-    ...shorthands.borderRadius("20px"),
+      "var(--aa-panel)",
+    boxShadow: "none",
+    ...shorthands.borderRadius("6px"),
     ...shorthands.padding("16px", "18px"),
     cursor: "pointer",
     transitionProperty: "border-color, box-shadow",
     transitionDuration: "0.15s",
     ":hover": {
-      ...shorthands.borderColor("rgba(214, 188, 149, 0.28)"),
+      ...shorthands.borderColor("var(--aa-border)"),
     },
   },
   cardExpanded: {
@@ -158,10 +158,10 @@ const useLocalStyles = makeStyles({
     flexWrap: "wrap",
   },
   cardTitle: {
-    fontSize: "15px",
+    fontSize: "13px",
     fontWeight: 650,
     color: "var(--aa-text-strong)",
-    letterSpacing: "-0.03em",
+    letterSpacing: "-0.02em",
   },
   meta: {
     display: "flex",
@@ -200,7 +200,7 @@ const useLocalStyles = makeStyles({
     fontWeight: 680,
     color: "var(--aa-muted)",
     textTransform: "uppercase",
-    letterSpacing: "0.12em",
+    letterSpacing: "0.04em",
     marginBottom: "6px",
     marginTop: "12px",
   },
@@ -210,7 +210,7 @@ const useLocalStyles = makeStyles({
     flexWrap: "wrap",
     marginTop: "14px",
     ...shorthands.padding("10px", "0", "0"),
-    borderTop: "1px solid rgba(214, 188, 149, 0.08)",
+    borderTop: "1px solid var(--aa-border)",
   },
   actionFeedback: {
     display: "flex",
@@ -221,10 +221,10 @@ const useLocalStyles = makeStyles({
     marginTop: "8px",
   },
   actionError: {
-    color: "#ff7187",
+    color: "var(--error)",
   },
   actionSuccess: {
-    color: "#48d67a",
+    color: "var(--aa-lime)",
   },
   reasonArea: {
     marginTop: "10px",
@@ -240,7 +240,7 @@ const useLocalStyles = makeStyles({
   commentsSection: {
     marginTop: "14px",
     ...shorthands.padding("10px", "0", "0"),
-    borderTop: "1px solid rgba(214, 188, 149, 0.08)",
+    borderTop: "1px solid var(--aa-border)",
   },
   commentCard: {
     ...shorthands.padding("8px", "10px"),
@@ -287,7 +287,7 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     color: "var(--aa-soft)",
   },
-  emptyIcon: { fontSize: "48px" },
+  emptyIcon: { fontSize: "26px" },
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -509,7 +509,7 @@ function TaskDetail({ task, onRefresh }: TaskDetailProps) {
         </div>
         {commentsLoading && <Spinner size="tiny" label="Loading comments…" />}
         {!commentsLoading && commentsError && (
-          <div style={{ fontSize: "12px", color: "#ff7187", marginTop: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
             <ErrorCircleRegular fontSize={13} />
             Failed to load comments
             <Button size="small" appearance="subtle" onClick={fetchComments}>Retry</Button>

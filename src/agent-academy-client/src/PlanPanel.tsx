@@ -38,10 +38,10 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "8px",
     ...shorthands.padding("12px", "0"),
-    borderBottom: "1px solid rgba(155, 176, 210, 0.16)",
+    borderBottom: "1px solid var(--aa-border)",
     flexShrink: 0,
   },
-  toolbarTitle: { fontWeight: 680, fontSize: "14px", color: "#eff5ff" },
+  toolbarTitle: { fontWeight: 680, fontSize: "14px", color: "var(--aa-text-strong)" },
   spacer: { flex: 1 },
   errorText: { color: tokens.colorPaletteRedForeground1, fontSize: "13px" },
   content: {
@@ -51,11 +51,11 @@ const useLocalStyles = makeStyles({
   },
   markdown: {
     textAlign: "left",
-    "& h1, & h2, & h3": { color: "#eff5ff", fontWeight: 680 },
-    "& h1": { fontSize: "24px", letterSpacing: "-0.02em" },
-    "& h2": { fontSize: "18px" },
-    "& h3": { fontSize: "15px" },
-    "& p, & li": { color: "#dbe7fb", fontSize: "14px", lineHeight: 1.7 },
+    "& h1, & h2, & h3": { color: "var(--aa-text-strong)", fontWeight: 680 },
+    "& h1": { fontSize: "13px", letterSpacing: "-0.02em" },
+    "& h2": { fontSize: "13px" },
+    "& h3": { fontSize: "13px" },
+    "& p, & li": { color: "var(--aa-text)", fontSize: "14px", lineHeight: 1.7 },
     "& code": {
       backgroundColor: "rgba(255,255,255,0.06)",
       ...shorthands.padding("2px", "6px"),
@@ -66,7 +66,7 @@ const useLocalStyles = makeStyles({
     "& pre": {
       backgroundColor: "rgba(255,255,255,0.04)",
       ...shorthands.padding("12px"),
-      ...shorthands.borderRadius("12px"),
+      ...shorthands.borderRadius("6px"),
       overflow: "auto",
       border: "1px solid rgba(255,255,255,0.06)",
     },
@@ -74,10 +74,10 @@ const useLocalStyles = makeStyles({
       backgroundColor: "transparent",
       ...shorthands.padding("0"),
     },
-    "& a": { color: "#6cb6ff" },
+    "& a": { color: "var(--aa-cyan)" },
     "& table": { borderCollapse: "collapse", width: "100%" },
     "& th, & td": {
-      border: "1px solid rgba(155, 176, 210, 0.16)",
+      border: "1px solid var(--aa-border)",
       ...shorthands.padding("6px", "10px"),
       textAlign: "left",
       fontSize: "13px",
@@ -88,7 +88,7 @@ const useLocalStyles = makeStyles({
       borderLeft: "3px solid rgba(108, 182, 255, 0.4)",
       marginLeft: 0,
       ...shorthands.padding("4px", "16px"),
-      color: "#a1b3d2",
+      color: "var(--aa-soft)",
     },
   },
   textarea: { width: "100%", minHeight: "400px" },
@@ -99,9 +99,9 @@ const useLocalStyles = makeStyles({
     justifyContent: "center",
     height: "100%",
     gap: "12px",
-    color: "#a1b3d2",
+    color: "var(--aa-soft)",
   },
-  emptyIcon: { fontSize: "48px" },
+  emptyIcon: { fontSize: "26px" },
 });
 
 // ── Component ──

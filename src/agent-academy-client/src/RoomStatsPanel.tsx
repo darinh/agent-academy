@@ -38,13 +38,13 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     alignItems: "center",
     ...shorthands.padding("12px", "6px"),
-    ...shorthands.borderRadius("14px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.025)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "22px",
+    fontFamily: "var(--mono)",
+    fontSize: "14px",
     fontWeight: 780,
     color: "var(--aa-text-strong)",
     lineHeight: 1,
@@ -86,13 +86,13 @@ const useLocalStyles = makeStyles({
   },
   td: {
     ...shorthands.padding("8px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
   },
   tdRight: {
     ...shorthands.padding("8px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
@@ -254,7 +254,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
     return (
       <div className={s.root}>
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 16, color: "#48d67a", marginRight: 4 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 16, color: "var(--aa-lime)", marginRight: 4 }} />
           No activity recorded for this room yet.
         </div>
       </div>
@@ -285,13 +285,13 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               <span className={s.statLabel}>Output</span>
             </div>
             <div className={s.statCard}>
-              <span className={s.statValue} style={{ color: "#48d67a" }}>
+              <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
                 {formatCost(usage.totalCost)}
               </span>
               <span className={s.statLabel}>Cost</span>
             </div>
             <div className={s.statCard}>
-              <span className={s.statValue} style={{ color: "#ffbe70" }}>
+              <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
                 {usage.requestCount}
               </span>
               <span className={s.statLabel}>Calls</span>
@@ -387,7 +387,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
 
       {!hasErrors && !errorsError && hasUsage && (
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 14, color: "#48d67a", marginRight: 4 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 14, color: "var(--aa-lime)", marginRight: 4 }} />
           No errors in this room.
         </div>
       )}

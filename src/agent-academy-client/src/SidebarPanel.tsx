@@ -8,7 +8,8 @@ import {
 import { useStyles } from "./useStyles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
-import type { AgentDefinition, AgentLocation, BreakoutRoom, RoomSnapshot } from "./api";
+import type { AgentDefinition, AgentLocation, AuthUser, BreakoutRoom, RoomSnapshot } from "./api";
+import UserBadge from "./UserBadge";
 import {
   phaseDotColor,
   compactRoomTooltip,
@@ -48,6 +49,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onSelectWorkspace: (breakoutId: string) => void;
   onSwitchProject?: () => void;
   workspace?: { name: string; path: string } | null;
+  user?: AuthUser | null;
+  onLogout?: () => void;
+  onOpenSettings?: () => void;
 }) {
   const s = useStyles();
 
@@ -223,6 +227,15 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             );
           })}
         </div>
+      )}
+
+      {/* User area at bottom */}
+      {props.sidebarOpen && props.user && (
+        <UserBadge
+          user={props.user}
+          onLogout={props.onLogout ?? (() => {})}
+          onOpenSettings={props.onOpenSettings}
+        />
       )}
     </aside>
   );

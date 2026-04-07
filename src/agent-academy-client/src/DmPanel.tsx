@@ -191,7 +191,7 @@ const useLocalStyles = makeStyles({
     textAlign: "center",
   },
   emptyIcon: {
-    fontSize: "48px",
+    fontSize: "26px",
     opacity: 0.5,
   },
   rolePill: {

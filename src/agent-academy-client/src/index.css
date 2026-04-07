@@ -46,6 +46,13 @@
   box-sizing: border-box;
 }
 
+/* Override FluentProvider's pixel line-height with a ratio so it scales
+   with each element's font-size (matches v3 mockup behavior). */
+.fui-FluentProvider {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
 html,
 body,
 #root {

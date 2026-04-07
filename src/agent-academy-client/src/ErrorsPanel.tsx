@@ -40,13 +40,13 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     alignItems: "center",
     ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.025)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
     fontWeight: 780,
     color: "var(--aa-text-strong)",
     lineHeight: 1,
@@ -88,13 +88,13 @@ const useLocalStyles = makeStyles({
   },
   td: {
     ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
   },
   tdRight: {
     ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
@@ -164,7 +164,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -188,8 +188,8 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("12px", "16px"),
-    ...shorthands.borderRadius("14px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.025)",
   },
   cbDot: {
@@ -213,9 +213,9 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     backgroundColor: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(214, 188, 149, 0.06)",
+    border: "1px solid var(--aa-border)",
   },
   sparklineLabel: {
     color: "var(--aa-muted)",
@@ -243,13 +243,13 @@ export function circuitBreakerDisplay(state: CircuitBreakerState): {
       };
     case "HalfOpen":
       return {
-        color: "#ffbe70",
+        color: "var(--aa-gold)",
         label: "Circuit Half-Open",
         detail: "Probing with a single request to test if the backend has recovered.",
       };
     case "Closed":
       return {
-        color: "#48d67a",
+        color: "var(--aa-lime)",
         label: "Circuit Closed",
         detail: "All systems normal.",
       };
@@ -361,7 +361,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
           </div>
         )}
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 20, color: "#48d67a", marginRight: 6 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 20, color: "var(--aa-lime)", marginRight: 6 }} />
           No errors recorded. All agents operating normally.
         </div>
       </div>
@@ -397,7 +397,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
             <span className={s.statLabel}>Total Errors</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
               {summary.recoverableErrors}
             </span>
             <span className={s.statLabel}>Recoverable</span>

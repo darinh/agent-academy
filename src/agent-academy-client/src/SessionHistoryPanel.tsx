@@ -43,13 +43,13 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     alignItems: "center",
     ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.025)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
     fontWeight: 780,
     color: "var(--aa-text-strong)",
     lineHeight: 1,
@@ -81,7 +81,7 @@ const useLocalStyles = makeStyles({
   },
   td: {
     ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "top" as const,
   },
@@ -133,7 +133,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -172,7 +172,7 @@ const useLocalStyles = makeStyles({
   },
   filterBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.15)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-soft)",
@@ -303,19 +303,19 @@ export default function SessionHistoryPanel({
             <span className={s.statLabel}>Total Sessions</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
               {stats.activeSessions}
             </span>
             <span className={s.statLabel}>Active</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#b794ff" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-plum)" }}>
               {stats.archivedSessions}
             </span>
             <span className={s.statLabel}>Archived</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#6cb6ff" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-cyan)" }}>
               {stats.totalMessages}
             </span>
             <span className={s.statLabel}>Total Messages</span>

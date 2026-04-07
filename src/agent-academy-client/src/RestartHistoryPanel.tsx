@@ -40,13 +40,13 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     alignItems: "center",
     ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
     backgroundColor: "rgba(255, 255, 255, 0.025)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
     fontWeight: 780,
     color: "var(--aa-text-strong)",
     lineHeight: 1,
@@ -78,7 +78,7 @@ const useLocalStyles = makeStyles({
   },
   td: {
     ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
+    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
     color: "var(--aa-text)",
     verticalAlign: "middle" as const,
   },
@@ -112,7 +112,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -258,15 +258,15 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
             <span className={s.statLabel}>Crashes</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>{stats.intentionalRestarts}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>{stats.intentionalRestarts}</span>
             <span className={s.statLabel}>Restarts</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>{stats.cleanShutdowns}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>{stats.cleanShutdowns}</span>
             <span className={s.statLabel}>Clean Stops</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#6cb6ff" }}>{stats.stillRunning}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-cyan)" }}>{stats.stillRunning}</span>
             <span className={s.statLabel}>Running</span>
           </div>
         </div>

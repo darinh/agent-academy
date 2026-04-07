@@ -14,6 +14,7 @@ import {
   ToastTitle,
   ToastBody,
 } from "@fluentui/react-components";
+import type { Theme } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
@@ -27,7 +28,6 @@ import DashboardPanel from "./DashboardPanel";
 import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
 import TaskListPanel from "./TaskListPanel";
 import LoginPage from "./LoginPage";
-import UserBadge from "./UserBadge";
 import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
@@ -81,9 +81,22 @@ function toastIntent(evt: ActivityEvent): "error" | "warning" | "info" {
   return "info";
 }
 
+/** Override Fluent UI's 14px/20px defaults to match v3 mockup's 13px/1.5 base. */
+const matrixTheme: Theme = {
+  ...webDarkTheme,
+  fontSizeBase200: "11px",
+  fontSizeBase300: "13px",
+  fontSizeBase400: "14px",
+  fontSizeBase500: "16px",
+  lineHeightBase200: "16px",
+  lineHeightBase300: "18px",
+  lineHeightBase400: "20px",
+  lineHeightBase500: "22px",
+};
+
 export default function App() {
   return (
-    <FluentProvider theme={webDarkTheme}>
+    <FluentProvider theme={matrixTheme}>
       <AppShell />
     </FluentProvider>
   );
@@ -492,6 +505,9 @@ function AppShell() {
                 : null
             }
             onSwitchProject={() => setShowProjectSelector(true)}
+            user={hasDisplayUser(auth.user) && auth.user ? auth.user : null}
+            onLogout={handleLogout}
+            onOpenSettings={() => setShowSettings(true)}
           />
 
           <main className={s.workspace} aria-label="Workspace content">
@@ -537,9 +553,6 @@ function AppShell() {
                           Connected
                         </div>
                       )}
-                      {hasDisplayUser(auth.user) && auth.user && (
-                        <UserBadge user={auth.user} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />
-                      )}
                     </div>
                   </div>
                 </div>
@@ -560,6 +573,31 @@ function AppShell() {
                   >
                     {degradedCopy.actionLabel}
                   </Button>
+                </div>
+              )}
+
+              {/* ─ Contextual Toolbar (34px) ─ */}
+              {!sessionAgent && !selectedBreakout && (
+                <div className={s.tabBar}>
+                  <div className={s.tabStrip}>
+                    {tab === "chat" && room && (
+                      <span className={s.workspaceMetaText}>
+                        {room.currentPhase}
+                      </span>
+                    )}
+                    {tab === "tasks" && (
+                      <span className={s.workspaceMetaText}>Sorted by newest</span>
+                    )}
+                    {tab === "commands" && (
+                      <span className={s.workspaceMetaText}>Command Deck</span>
+                    )}
+                    {tab === "timeline" && (
+                      <span className={s.workspaceMetaText}>All events</span>
+                    )}
+                    {tab === "dashboard" && (
+                      <span className={s.workspaceMetaText}>System telemetry</span>
+                    )}
+                  </div>
                 </div>
               )}
 
