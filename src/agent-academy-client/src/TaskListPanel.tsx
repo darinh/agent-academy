@@ -81,8 +81,8 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     height: "100%",
     overflow: "auto",
-    gap: "16px",
-    ...shorthands.padding("2px"),
+    gap: "5px",
+    ...shorthands.padding("14px", "20px"),
   },
   filterBar: {
     display: "flex",
@@ -110,8 +110,8 @@ const useLocalStyles = makeStyles({
     },
   },
   filterChipActive: {
-    background: "rgba(214, 188, 149, 0.1)",
-    ...shorthands.borderColor("rgba(214, 188, 149, 0.35)"),
+    background: "rgba(91, 141, 239, 0.15)",
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.4)"),
     color: "var(--aa-text-strong)",
   },
   filterCount: {
@@ -126,7 +126,7 @@ const useLocalStyles = makeStyles({
       "var(--aa-panel)",
     boxShadow: "none",
     ...shorthands.borderRadius("6px"),
-    ...shorthands.padding("16px", "18px"),
+    ...shorthands.padding("10px", "12px"),
     cursor: "pointer",
     transitionProperty: "border-color, box-shadow",
     transitionDuration: "0.15s",
@@ -135,7 +135,7 @@ const useLocalStyles = makeStyles({
     },
   },
   cardExpanded: {
-    ...shorthands.borderColor("rgba(214, 188, 149, 0.3)"),
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.3)"),
     cursor: "default",
   },
   cardHeader: {
@@ -186,7 +186,7 @@ const useLocalStyles = makeStyles({
   expandedSection: {
     marginTop: "14px",
     ...shorthands.padding("12px", "0", "0"),
-    borderTop: "1px solid rgba(214, 188, 149, 0.1)",
+    borderTop: "1px solid rgba(91, 141, 239, 0.15)",
   },
   descriptionText: {
     fontSize: "13px",

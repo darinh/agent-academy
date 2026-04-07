@@ -41,10 +41,11 @@ const useLocalStyles = makeStyles({
   root: {
     minHeight: 0,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
-    gap: "16px",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "14px",
     overflowY: "auto",
-    "@media (max-width: 1200px)": {
+    ...shorthands.padding("14px", "20px"),
+    "@media (max-width: 1100px)": {
       gridTemplateColumns: "1fr",
     },
   },
@@ -354,7 +355,7 @@ const useLocalStyles = makeStyles({
     margin: 0,
     color: "var(--aa-text)",
     backgroundColor: "rgba(9, 12, 18, 0.86)",
-    border: "1px solid rgba(214, 188, 149, 0.1)",
+    border: "1px solid rgba(91, 141, 239, 0.08)",
     fontFamily: "var(--mono)",
     fontSize: "12px",
     lineHeight: 1.7,
