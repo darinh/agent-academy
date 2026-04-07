@@ -48,6 +48,14 @@ const useLocalStyles = makeStyles({
     boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05)",
     ...shorthands.borderRadius("26px"),
     ...shorthands.padding("20px"),
+    transitionProperty: "transform, box-shadow, border-color",
+    transitionDuration: "0.25s",
+    transitionTimingFunction: "ease",
+    ":hover": {
+      transform: "translateY(-2px)",
+      boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05), 0 8px 24px rgba(0, 0, 0, 0.25)",
+      borderColor: "rgba(214, 188, 149, 0.24)",
+    },
   },
   cardHeader: {
     color: "var(--aa-soft)",
@@ -79,6 +87,12 @@ const useLocalStyles = makeStyles({
       "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.02) 42%, rgba(12, 15, 22, 0.72))",
     ...shorthands.borderRadius("26px"),
     ...shorthands.padding("22px"),
+    transitionProperty: "border-color",
+    transitionDuration: "0.25s",
+    transitionTimingFunction: "ease",
+    ":hover": {
+      borderColor: "rgba(214, 188, 149, 0.22)",
+    },
   },
   sectionTitle: {
     display: "flex",

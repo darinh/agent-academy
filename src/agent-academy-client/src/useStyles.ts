@@ -836,6 +836,13 @@ export const useStyles = makeStyles({
     background:
       "linear-gradient(180deg, rgba(255, 244, 227, 0.025), rgba(255, 255, 255, 0) 14%)",
     ...shorthands.padding("16px", "24px", "24px"),
+    animationName: {
+      from: { opacity: 0, transform: "translateY(4px)" },
+      to: { opacity: 1, transform: "translateY(0)" },
+    },
+    animationDuration: "0.2s",
+    animationTimingFunction: "ease-out",
+    animationFillMode: "both",
     "@media (max-width: 900px)": {
       ...shorthands.padding("12px", "18px", "20px"),
     },
