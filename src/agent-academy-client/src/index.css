@@ -15,6 +15,8 @@
   --aa-copper: rgb(232, 93, 93);
   --aa-plum: rgb(156, 39, 176);
   --aa-lime: rgb(76, 175, 80);
+  --aa-tool: rgb(0, 150, 136);
+  --aa-secondary: rgb(96, 125, 139);
   --aa-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   --sans: "Outfit", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
   --heading: "Outfit", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -149,6 +151,37 @@ code {
 :focus-visible {
   outline: 2px solid var(--aa-cyan);
   outline-offset: 2px;
+}
+
+/* Global table styles (v3 mockup) */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--aa-border);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+th {
+  color: var(--aa-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  position: sticky;
+  top: 0;
+  background: var(--aa-panel);
+  z-index: 1;
+}
+
+td {
+  color: var(--aa-muted);
 }
 
 /* Suppress focus ring on mouse interaction for elements that handle it */
