@@ -10,15 +10,17 @@ import { initials } from "./utils";
 import { roleColor } from "./theme";
 import type { AgentDefinition, AgentLocation, BreakoutRoom, RoomSnapshot } from "./api";
 import { renameRoom } from "./api";
-
-const PHASE_DOT_COLORS: Record<string, string> = {
-  Intake: "#94a3b8",
-  Planning: "#6cb6ff",
-  Discussion: "#a78bfa",
-  Implementation: "#34d399",
-  Validation: "#fbbf24",
-  FinalSynthesis: "#f472b6",
-};
+import {
+  phaseDotColor,
+  countActiveRooms,
+  countWorkingAgents,
+  countActiveBreakouts,
+  buildAgentsByRoom,
+  compactRoomTooltip,
+  getActiveBreakout,
+  getBreakoutTaskName,
+  isAgentThinking,
+} from "./sidebarUtils";
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */
 
@@ -40,19 +42,10 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   workspace?: { name: string; path: string } | null;
 }) {
   const s = useStyles();
-  const activeRoomCount = props.rooms.filter((room) => room.status === "Active" || room.status === "AttentionRequired").length;
-  const workingAgentCount = props.agentLocations.filter((location) => location.state === "Working").length;
-  const activeBreakoutCount = props.breakoutRooms.filter((room) => room.status === "Active").length;
-
-  // Build a map of roomId → agents in that room
-  const agentsByRoom = new Map<string, AgentDefinition[]>();
-  for (const loc of props.agentLocations) {
-    const agent = props.configuredAgents.find((a) => a.id === loc.agentId);
-    if (!agent) continue;
-    const list = agentsByRoom.get(loc.roomId) ?? [];
-    list.push(agent);
-    agentsByRoom.set(loc.roomId, list);
-  }
+  const activeRoomCount = countActiveRooms(props.rooms);
+  const workingAgentCount = countWorkingAgents(props.agentLocations);
+  const activeBreakoutCount = countActiveBreakouts(props.breakoutRooms);
+  const agentsByRoom = buildAgentsByRoom(props.agentLocations, props.configuredAgents);
 
   return (
     <aside className={mergeClasses(s.sidebar, !props.sidebarOpen && s.sidebarCollapsed)}>
@@ -141,7 +134,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             </div>
             <div className={s.roomList}>
               {props.rooms.map((candidate) => {
-                const dotColor = PHASE_DOT_COLORS[candidate.currentPhase] ?? "#94a3b8";
+                const dotColor = phaseDotColor(candidate.currentPhase);
                 const roomAgents = agentsByRoom.get(candidate.id) ?? [];
                 return (
                   <RoomButton
@@ -170,14 +163,13 @@ const SidebarPanel = memo(function SidebarPanel(props: {
               <div className={s.roomList}>
                 {props.configuredAgents.map((agent) => {
                   const loc = props.agentLocations.find((l) => l.agentId === agent.id);
-                  const agentBreakouts = props.breakoutRooms.filter((br) => br.assignedAgentId === agent.id);
-                  const activeBreakout = agentBreakouts.find((br) => br.status === "Active");
+                  const activeBreakout = getActiveBreakout(props.breakoutRooms, agent.id);
                   const state = loc?.state ?? "Idle";
                   const isWorking = state === "Working";
-                  const isThinking = Array.from(props.thinkingByRoomIds.values()).some((s) => s.has(agent.id));
+                  const thinking = isAgentThinking(props.thinkingByRoomIds, agent.id);
                   const rc = roleColor(agent.role);
                   const isSelected = props.selectedWorkspaceId === `agent:${agent.id}`;
-                  const taskName = activeBreakout?.name?.replace(/^BR:\s*/, "") ?? null;
+                  const taskName = getBreakoutTaskName(activeBreakout);
 
                   return (
                     <button
@@ -191,7 +183,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                           <div className={s.workspaceIcon} style={{ background: `linear-gradient(135deg, ${rc.accent}, ${rc.accent}88)` }}>
                             {agent.name.charAt(0)}
                         </div>
-                        {isThinking && (
+                        {thinking && (
                           <span style={{
                             position: "absolute", inset: "-2px", borderRadius: "999px",
                             border: "2px solid transparent", borderTopColor: rc.accent,
@@ -248,8 +240,8 @@ const SidebarPanel = memo(function SidebarPanel(props: {
             </Tooltip>
           )}
           {props.rooms.map((candidate) => {
-            const dotColor = PHASE_DOT_COLORS[candidate.currentPhase] ?? "#94a3b8";
-            const tooltipText = `${candidate.name} · ${candidate.currentPhase} · ${candidate.participants.length} agents`;
+            const dotColor = phaseDotColor(candidate.currentPhase);
+            const tooltipText = compactRoomTooltip(candidate);
             return (
               <Tooltip key={candidate.id} content={tooltipText} relationship="label" positioning="after">
                 <button
