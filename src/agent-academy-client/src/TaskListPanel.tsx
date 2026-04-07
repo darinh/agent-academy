@@ -161,7 +161,6 @@ const useLocalStyles = makeStyles({
     fontSize: "13px",
     fontWeight: 650,
     color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
   },
   meta: {
     display: "flex",
@@ -197,7 +196,7 @@ const useLocalStyles = makeStyles({
   },
   sectionLabel: {
     fontSize: "11px",
-    fontWeight: 680,
+    fontWeight: 600,
     color: "var(--aa-muted)",
     textTransform: "uppercase",
     letterSpacing: "0.04em",

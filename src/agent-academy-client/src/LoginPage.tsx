@@ -111,7 +111,6 @@ const useLocalStyles = makeStyles({
     color: "#eef4ff",
     fontSize: "18px",
     fontWeight: 700,
-    letterSpacing: "-0.02em",
   },
   storyCardBody: {
     color: "#8da3c4",
@@ -233,7 +232,7 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     alignItems: "center",
     border: "1px solid rgba(163, 180, 208, 0.12)",
-    background: "rgba(255, 255, 255, 0.025)",
+    background: "var(--aa-bg)",
     ...shorthands.borderRadius("18px"),
     ...shorthands.padding("12px", "14px"),
   },

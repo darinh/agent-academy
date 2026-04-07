@@ -38,9 +38,9 @@ const useLocalStyles = makeStyles({
     gap: "20px",
   },
   sectionTitle: {
-    fontSize: "14px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
     marginBottom: "10px",
   },
   card: {
@@ -57,9 +57,8 @@ const useLocalStyles = makeStyles({
   },
   taskTitle: {
     fontSize: "13px",
-    fontWeight: 680,
+    fontWeight: 600,
     color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
   },
   taskDesc: {
     fontSize: "13px",

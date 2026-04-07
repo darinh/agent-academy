@@ -184,7 +184,6 @@ const useStyles = makeStyles({
     color: "#eef4ff",
     fontSize: "18px",
     fontWeight: 700,
-    letterSpacing: "-0.02em",
   },
   railCardBody: {
     color: "#8da3c4",

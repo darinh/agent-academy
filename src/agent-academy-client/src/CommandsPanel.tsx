@@ -91,7 +91,6 @@ const useLocalStyles = makeStyles({
     fontFamily: "var(--mono)",
     fontSize: "14px",
     lineHeight: 1.1,
-    letterSpacing: "-0.02em",
     color: "var(--aa-text-strong)",
   },
   heroDescription: {
@@ -112,7 +111,7 @@ const useLocalStyles = makeStyles({
     display: "grid",
     gap: "8px",
     border: "1px solid var(--aa-border)",
-    background: "rgba(110, 118, 129, 0.1)",
+    background: "var(--aa-bg)",
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px"),
   },
@@ -128,7 +127,6 @@ const useLocalStyles = makeStyles({
     fontFamily: "var(--mono)",
     fontSize: "14px",
     fontWeight: 760,
-    letterSpacing: "-0.02em",
   },
   metricNote: {
     color: "var(--aa-muted)",
@@ -178,7 +176,6 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-text-strong)",
     fontSize: "13px",
     fontWeight: 700,
-    letterSpacing: "-0.02em",
   },
   commandDescription: {
     color: "var(--aa-muted)",
@@ -199,7 +196,6 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-text-strong)",
     fontSize: "13px",
     fontWeight: 720,
-    letterSpacing: "-0.02em",
   },
   sectionText: {
     color: "var(--aa-muted)",
@@ -296,7 +292,6 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-text-strong)",
     fontSize: "13px",
     fontWeight: 700,
-    letterSpacing: "-0.02em",
   },
   historyMeta: {
     color: "var(--aa-soft)",
@@ -310,14 +305,14 @@ const useLocalStyles = makeStyles({
   },
   summaryGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
     gap: "10px",
   },
   summaryCard: {
     display: "grid",
     gap: "4px",
     border: "1px solid var(--aa-border)",
-    backgroundColor: "rgba(110, 118, 129, 0.1)",
+    backgroundColor: "var(--aa-bg)",
     ...shorthands.borderRadius("6px"),
     ...shorthands.padding("10px", "12px"),
   },
@@ -340,7 +335,7 @@ const useLocalStyles = makeStyles({
   recordListItem: {
     display: "grid",
     gap: "4px",
-    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
+    borderBottom: "1px solid var(--aa-border)",
     ...shorthands.padding("0", "0", "8px"),
   },
   recordPrimary: {
