@@ -3,7 +3,6 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Avatar,
   Body1Strong,
   Badge,
   Button,
@@ -99,22 +98,12 @@ const MessageBubble = memo(function MessageBubble(props: {
 
   return (
     <article className={s.bubble}>
-      <Avatar
-        name={props.message.senderName}
-        color={colors.avatar}
-        size={40}
-        style={{
-          backgroundColor: colors.accent,
-          color: colors.foreground,
-          boxShadow: "0 14px 30px rgba(0, 0, 0, 0.24)",
-        }}
-      />
       <div className={s.bubbleCard}>
         <div className={s.bubbleHeader}>
-          <Body1Strong>{props.message.senderName}</Body1Strong>
+          <Body1Strong style={{ fontSize: "12px" }}>{props.message.senderName}</Body1Strong>
           <span
             className={s.rolePill}
-            style={{ backgroundColor: colors.accent, color: colors.foreground }}
+            style={{ backgroundColor: colors.accent + "26", color: colors.accent }}
           >
             {formatRole(props.message.senderRole ?? (props.message.senderKind === "User" ? "Human" : "Agent"))}
           </span>
@@ -147,16 +136,10 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
 
   return (
     <article className={s.bubble}>
-      <Avatar
-        name={props.agent.name}
-        color={colors.avatar}
-        size={40}
-        style={{ backgroundColor: colors.accent, color: colors.foreground }}
-      />
       <div className={mergeClasses(s.bubbleCard, s.thinkingCard)} style={{ borderLeftColor: colors.accent }}>
         <div className={s.bubbleHeader}>
-          <Body1Strong>{props.agent.name}</Body1Strong>
-          <span className={s.rolePill} style={{ backgroundColor: colors.accent, color: colors.foreground }}>
+          <Body1Strong style={{ fontSize: "12px" }}>{props.agent.name}</Body1Strong>
+          <span className={s.rolePill} style={{ backgroundColor: colors.accent + "26", color: colors.accent }}>
             {formatRole(props.agent.role)}
           </span>
         </div>

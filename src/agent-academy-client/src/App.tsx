@@ -509,12 +509,18 @@ function AppShell() {
                             ? room?.name ?? "No active room"
                             : viewInfo.title}
                     </div>
+                    {tab === "chat" && room && !sessionAgent && !selectedBreakout && (<>
+                      <span className={s.headerDivider} />
+                      <span className={s.workspaceMetaText}>
+                        {room.participants.length} agents · {room.currentPhase}
+                      </span>
+                    </>)}
+                    {tab !== "chat" && viewInfo.meta && (<>
+                      <span className={s.headerDivider} />
+                      <span className={s.workspaceMetaText}>{viewInfo.meta}</span>
+                    </>)}
+                    <div style={{ flex: 1 }} />
                     <div className={s.workspaceHeaderSignals}>
-                      {tab === "chat" && room && !sessionAgent && !selectedBreakout && (
-                        <span className={s.workspaceMetaText}>
-                          {room.participants.length} agents · {room.currentPhase}
-                        </span>
-                      )}
                       {workspaceLimited && (
                         <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
                           {degradedCopy?.eyebrow ?? "Limited mode"}
