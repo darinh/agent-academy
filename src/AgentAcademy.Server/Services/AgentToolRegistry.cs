@@ -1,3 +1,4 @@
+using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentToolRegistry : IAgentToolRegistry
 {
     private readonly AgentToolFunctions _toolFunctions;
+    private readonly AgentCatalogOptions _catalog;
     private readonly Dictionary<string, IReadOnlyList<AIFunction>> _staticGroups;
     private readonly IReadOnlyList<string> _allToolNames;
     private readonly ILogger<AgentToolRegistry> _logger;
@@ -31,9 +33,11 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
 
     public AgentToolRegistry(
         AgentToolFunctions toolFunctions,
+        AgentCatalogOptions catalog,
         ILogger<AgentToolRegistry> logger)
     {
         _toolFunctions = toolFunctions;
+        _catalog = catalog;
         _logger = logger;
 
         var taskStateTools = toolFunctions.CreateTaskStateTools();
@@ -50,7 +54,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         {
             "create_task", "update_task_status", "add_task_comment",
             "remember", "recall",
-            "write_file"
+            "write_file", "commit_changes"
         };
 
         _allToolNames = _staticGroups.Values
@@ -131,7 +135,8 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         {
             "task-write" => _toolFunctions.CreateTaskWriteTools(agentId, agentName),
             "memory" => _toolFunctions.CreateMemoryTools(agentId),
-            "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName),
+            "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName,
+                _catalog.Agents.Find(a => a.Id == agentId)?.GitIdentity),
             _ => []
         };
     }

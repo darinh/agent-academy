@@ -763,14 +763,17 @@ public sealed class AgentToolFunctions
     /// calling agent. Only agents with <c>code-write</c> in their
     /// <c>EnabledTools</c> (typically SoftwareEngineer role) receive these tools.
     /// </summary>
-    public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName)
+    public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null)
     {
-        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName);
+        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName, gitIdentity);
         return
         [
             AIFunctionFactory.Create(wrapper.WriteFileAsync, "write_file",
                 "Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
                 "The file is automatically staged for commit. Paths must be within src/ and relative to the project root."),
+            AIFunctionFactory.Create(wrapper.CommitChangesAsync, "commit_changes",
+                "Commit all staged changes with a conventional commit message. Use after write_file to persist your changes. " +
+                "Returns the commit SHA on success."),
         ];
     }
 
@@ -785,6 +788,7 @@ public sealed class AgentToolFunctions
         private readonly ILogger _logger;
         private readonly string _agentId;
         private readonly string _agentName;
+        private readonly AgentGitIdentity? _gitIdentity;
 
         // Files that agents must never modify (core infrastructure).
         private static readonly string[] ProtectedPaths =
@@ -803,12 +807,13 @@ public sealed class AgentToolFunctions
 
         internal CodeWriteToolWrapper(
             IServiceScopeFactory scopeFactory, ILogger logger,
-            string agentId, string agentName)
+            string agentId, string agentName, AgentGitIdentity? gitIdentity = null)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
             _agentId = agentId;
             _agentName = agentName;
+            _gitIdentity = gitIdentity;
         }
 
         [Description("Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
@@ -925,6 +930,53 @@ public sealed class AgentToolFunctions
             {
                 _logger.LogWarning(ex, "Failed to stage file {Path} — file was written but not staged", relativePath);
                 return false;
+            }
+        }
+
+        [Description("Commit all staged changes with a conventional commit message. " +
+                     "Use after write_file to persist your changes. Returns the commit SHA on success.")]
+        internal async Task<string> CommitChangesAsync(
+            [Description("Conventional commit message (e.g., 'feat: add user endpoint with validation'). " +
+                         "Use prefixes: feat:, fix:, refactor:, test:, docs:")]
+            string message)
+        {
+            _logger.LogInformation("Tool call: commit_changes by {AgentId} (message={Message})",
+                _agentId, message);
+
+            if (string.IsNullOrWhiteSpace(message))
+                return "Error: message is required. Provide a conventional commit message (e.g., 'feat: add ITimeProvider abstraction').";
+
+            if (message.Length > 5000)
+                return "Error: Commit message exceeds 5000 characters.";
+
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var gitService = scope.ServiceProvider.GetRequiredService<GitService>();
+
+                var commitSha = await gitService.CommitAsync(message, _gitIdentity);
+
+                _logger.LogInformation(
+                    "commit_changes by {AgentId} ({AgentName}): {CommitSha} — {Message}",
+                    _agentId, _agentName, commitSha, message);
+
+                return $"Committed: {commitSha.Trim()}\nMessage: {message}";
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.Contains("nothing to commit", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("no changes", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Error: Nothing to commit. Stage files first (write_file auto-stages, or use other file operations).";
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "commit_changes failed for {AgentId}", _agentId);
+                return $"Error: Commit failed — {ex.Message}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in commit_changes for {AgentId}", _agentId);
+                return $"Error: Unexpected failure — {ex.Message}";
             }
         }
     }

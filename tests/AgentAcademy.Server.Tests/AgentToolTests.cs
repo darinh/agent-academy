@@ -98,8 +98,8 @@ public class AgentToolRegistryTests
         var registry = CreateRegistry();
         var names = registry.GetAllToolNames();
 
-        // 5 static + 6 contextual = 11 total
-        Assert.Equal(11, names.Count);
+        // 5 static + 7 contextual = 12 total
+        Assert.Equal(12, names.Count);
         Assert.Contains("list_tasks", names);
         Assert.Contains("list_rooms", names);
         Assert.Contains("show_agents", names);
@@ -111,6 +111,7 @@ public class AgentToolRegistryTests
         Assert.Contains("remember", names);
         Assert.Contains("recall", names);
         Assert.Contains("write_file", names);
+        Assert.Contains("commit_changes", names);
     }
 
     [Fact]
@@ -135,8 +136,8 @@ public class AgentToolRegistryTests
             ["chat", "task-state", "code", "code-write", "task-write", "memory"],
             "eng-1", "Engineer");
 
-        // 5 static + 1 code-write + 3 task-write + 2 memory = 11
-        Assert.Equal(11, tools.Count);
+        // 5 static + 2 code-write + 3 task-write + 2 memory = 12
+        Assert.Equal(12, tools.Count);
     }
 
     [Fact]
@@ -178,13 +179,14 @@ public class AgentToolRegistryTests
     }
 
     [Fact]
-    public void GetToolsForAgent_CodeWriteGroup_ReturnsWriteFileTool()
+    public void GetToolsForAgent_CodeWriteGroup_ReturnsWriteAndCommitTools()
     {
         var registry = CreateRegistry();
         var tools = registry.GetToolsForAgent(["code-write"], "agent-1", "Alpha");
 
-        Assert.Single(tools);
+        Assert.Equal(2, tools.Count);
         Assert.Contains(tools, t => t.Name == "write_file");
+        Assert.Contains(tools, t => t.Name == "commit_changes");
     }
 
     [Fact]
@@ -207,7 +209,7 @@ public class AgentToolRegistryTests
 
         var names = tools.Select(t => t.Name).ToList();
         Assert.Equal(names.Count, names.Distinct().Count());
-        Assert.Equal(11, tools.Count);
+        Assert.Equal(12, tools.Count);
     }
 
     private static AgentToolRegistry CreateRegistry()
@@ -216,8 +218,10 @@ public class AgentToolRegistryTests
         var toolFunctions = new AgentToolFunctions(
             scopeFactory,
             NullLogger<AgentToolFunctions>.Instance);
+        var catalog = new AgentCatalogOptions("main", "Main", []);
         return new AgentToolRegistry(
             toolFunctions,
+            catalog,
             NullLogger<AgentToolRegistry>.Instance);
     }
 }
