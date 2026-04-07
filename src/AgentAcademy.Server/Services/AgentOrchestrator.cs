@@ -599,16 +599,21 @@ public sealed class AgentOrchestrator
         var brName = $"BR: {assignment.Title}";
         var br = await runtime.CreateBreakoutRoomAsync(roomId, agent.Id, brName);
 
-        await runtime.CreateTaskItemAsync(
-            assignment.Title, descriptionWithCriteria,
-            agent.Id, roomId, br.Id);
-
         string? taskBranch = null;
         string? taskId = null;
+        TaskItem? taskItem = null;
         try
         {
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
+
+            if (!await _gitService.BranchExistsAsync(taskBranch))
+                throw new InvalidOperationException($"Branch '{taskBranch}' was not created");
+
             await _gitService.ReturnToDevelopAsync(taskBranch);
+
+            taskItem = await runtime.CreateTaskItemAsync(
+                assignment.Title, descriptionWithCriteria,
+                agent.Id, roomId, br.Id);
 
             taskId = await runtime.EnsureTaskForBreakoutAsync(
                 br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
@@ -622,8 +627,17 @@ public sealed class AgentOrchestrator
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create task branch for {Title} — closing breakout", assignment.Title);
-            await runtime.CloseBreakoutRoomAsync(br.Id, BreakoutRoomCloseReason.Cancelled);
+            _logger.LogError(ex, "Failed to create task branch for {Title} — cleaning up", assignment.Title);
+
+            // Each cleanup step is independent — one failure must not prevent the others
+            try
+            {
+                await runtime.CloseBreakoutRoomAsync(br.Id, BreakoutRoomCloseReason.Cancelled);
+            }
+            catch (Exception closeEx)
+            {
+                _logger.LogWarning(closeEx, "Failed to close breakout room {BreakoutId}", br.Id);
+            }
 
             // Clean up the orphaned task if it was created before the failure
             if (taskId is not null)
@@ -635,6 +649,19 @@ public sealed class AgentOrchestrator
                 catch (Exception cancelEx)
                 {
                     _logger.LogWarning(cancelEx, "Failed to cancel orphaned task {TaskId}", taskId);
+                }
+            }
+
+            // Clean up the orphaned task item if it was created before the failure
+            if (taskItem is not null)
+            {
+                try
+                {
+                    await runtime.UpdateTaskItemStatusAsync(taskItem.Id, Shared.Models.TaskItemStatus.Rejected);
+                }
+                catch (Exception itemEx)
+                {
+                    _logger.LogWarning(itemEx, "Failed to cancel orphaned task item {TaskItemId}", taskItem.Id);
                 }
             }
 
@@ -659,8 +686,12 @@ public sealed class AgentOrchestrator
                 }
             }
 
-            await runtime.PostSystemStatusAsync(roomId,
-                $"⚠️ Failed to set up branch for \"{assignment.Title}\". Breakout cancelled.");
+            try
+            {
+                await runtime.PostSystemStatusAsync(roomId,
+                    $"⚠️ Failed to set up branch for \"{assignment.Title}\". Breakout cancelled.");
+            }
+            catch { /* best-effort notification */ }
             return;
         }
 

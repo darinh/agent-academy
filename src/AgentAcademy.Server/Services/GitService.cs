@@ -262,6 +262,27 @@ public class GitService
     }
 
     /// <summary>
+    /// Checks whether a local branch exists.
+    /// </summary>
+    public async Task<bool> BranchExistsAsync(string branch)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            await RunGitAsync("rev-parse", "--verify", branch);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            _gitLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Deletes a branch. Refuses to delete develop or main.
     /// </summary>
     public async Task DeleteBranchAsync(string branch)
