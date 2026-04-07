@@ -16,6 +16,11 @@ import {
   ToastTitle,
   ToastBody,
   Badge,
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItem,
 } from "@fluentui/react-components";
 import {
   ChatRegular,
@@ -26,6 +31,7 @@ import {
   BoardRegular,
   TaskListLtrRegular,
   MailRegular,
+  MoreHorizontalRegular,
 } from "@fluentui/react-icons";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
@@ -83,6 +89,11 @@ const TAB_ITEMS = [
   { value: "overview", label: "Overview", detail: "Room state", Icon: BoardRegular },
   { value: "directMessages", label: "Messages", detail: "Private threads", Icon: MailRegular },
 ] as const;
+
+/** Always-visible tabs — the primary workflow surface. */
+const PRIMARY_TAB_VALUES = new Set(["chat", "tasks", "commands"]);
+const PRIMARY_TABS = TAB_ITEMS.filter((t) => PRIMARY_TAB_VALUES.has(t.value));
+const OVERFLOW_TABS = TAB_ITEMS.filter((t) => !PRIMARY_TAB_VALUES.has(t.value));
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
   chat: "Follow the live room thread, watch thinking agents surface, and keep the operator in flow.",
@@ -465,6 +476,7 @@ function AppShell() {
     ? "Live updates paused. Previously loaded data is still visible. Check your connection and refresh to reconnect."
     : null;
   const currentTab = TAB_ITEMS.find((item) => item.value === tab) ?? TAB_ITEMS[0];
+  const isOverflowActive = !PRIMARY_TAB_VALUES.has(tab);
   const activeRoomCount = ov.rooms.filter((candidate) => candidate.status === "Active" || candidate.status === "AttentionRequired").length;
   const workingAgentCount = (ov.agentLocations ?? []).filter((location) => location.state === "Working").length;
   const activeBreakoutCount = breakoutRooms.filter((breakout) => breakout.status === "Active").length;
@@ -731,21 +743,36 @@ function AppShell() {
                     </div>
                     <div className={s.tabBarDescription}>{currentTab.detail}</div>
                   </div>
-                  <TabList
-                    className={s.tabList}
-                    selectedValue={tab}
-                    onTabSelect={(_, data) => setTab(data.value as string)}
-                    size="small"
-                  >
-                    {TAB_ITEMS.map((item) => {
-                      const Icon = item.Icon;
-                      const showBadge = item.value === "timeline" && unseenActivity > 0;
-                      return (
-                        <Tab key={item.value} value={item.value} icon={<Icon />}>
+                  <div className={s.tabStrip}>
+                    <TabList
+                      className={s.tabList}
+                      selectedValue={PRIMARY_TAB_VALUES.has(tab) ? tab : undefined}
+                      onTabSelect={(_, data) => setTab(data.value as string)}
+                      size="small"
+                    >
+                      {PRIMARY_TABS.map((item) => {
+                        const Icon = item.Icon;
+                        return (
+                          <Tab key={item.value} value={item.value} icon={<Icon />}>
+                            <span className={s.tabLabelStack}>
+                              <span className={s.tabLabelTitle}>{item.label}</span>
+                              <span className={s.tabLabelDetail}>{item.detail}</span>
+                            </span>
+                          </Tab>
+                        );
+                      })}
+                    </TabList>
+                    <Menu>
+                      <MenuTrigger disableButtonEnhancement>
+                        <button
+                          className={mergeClasses(s.overflowTrigger, isOverflowActive && s.overflowTriggerActive)}
+                          aria-label="More tabs"
+                        >
+                          <MoreHorizontalRegular />
                           <span className={s.tabLabelStack}>
                             <span className={s.tabLabelTitle}>
-                              {item.label}
-                              {showBadge && (
+                              {isOverflowActive ? currentTab.label : "More"}
+                              {unseenActivity > 0 && tab !== "timeline" && (
                                 <Badge
                                   size="small"
                                   color="danger"
@@ -755,12 +782,42 @@ function AppShell() {
                                 </Badge>
                               )}
                             </span>
-                            <span className={s.tabLabelDetail}>{item.detail}</span>
+                            <span className={s.tabLabelDetail}>
+                              {isOverflowActive ? currentTab.detail : "Additional panels"}
+                            </span>
                           </span>
-                        </Tab>
-                      );
-                    })}
-                  </TabList>
+                        </button>
+                      </MenuTrigger>
+                      <MenuPopover>
+                        <MenuList>
+                          {OVERFLOW_TABS.map((item) => {
+                            const Icon = item.Icon;
+                            const isCurrent = tab === item.value;
+                            const showBadge = item.value === "timeline" && unseenActivity > 0;
+                            return (
+                              <MenuItem
+                                key={item.value}
+                                icon={<Icon />}
+                                onClick={() => setTab(item.value)}
+                                className={isCurrent ? s.overflowItemActive : undefined}
+                              >
+                                {item.label}
+                                {showBadge && (
+                                  <Badge
+                                    size="small"
+                                    color="danger"
+                                    style={{ marginLeft: 6, verticalAlign: "middle" }}
+                                  >
+                                    {unseenActivity > 99 ? "99+" : unseenActivity}
+                                  </Badge>
+                                )}
+                              </MenuItem>
+                            );
+                          })}
+                        </MenuList>
+                      </MenuPopover>
+                    </Menu>
+                  </div>
                 </div>
 
                 <section className={s.tabContent}>

@@ -777,6 +777,12 @@ export const useStyles = makeStyles({
       boxShadow: "0 14px 32px rgba(4, 8, 15, 0.24)",
     },
   },
+  tabStrip: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+  },
   tabLabelStack: {
     display: "grid",
     gap: "2px",
@@ -793,6 +799,35 @@ export const useStyles = makeStyles({
     color: "var(--aa-soft)",
     fontSize: "11px",
     lineHeight: 1.2,
+  },
+  overflowTrigger: {
+    display: "inline-flex",
+    gap: "8px",
+    alignItems: "flex-start",
+    minHeight: "58px",
+    color: "var(--aa-muted)",
+    backgroundColor: "rgba(255, 244, 227, 0.025)",
+    border: "1px solid rgba(255, 244, 227, 0.05)",
+    boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.03)",
+    ...shorthands.borderRadius("18px"),
+    ...shorthands.padding("12px", "15px"),
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: "inherit",
+    "&:hover": {
+      color: "var(--aa-text-strong)",
+      backgroundColor: "rgba(255, 244, 227, 0.06)",
+    },
+  },
+  overflowTriggerActive: {
+    color: "var(--aa-text-strong)",
+    background:
+      "linear-gradient(135deg, rgba(124, 176, 248, 0.12), rgba(209, 160, 106, 0.13) 52%, rgba(255, 244, 227, 0.02))",
+    border: "1px solid rgba(214, 188, 149, 0.22)",
+    boxShadow: "0 14px 32px rgba(4, 8, 15, 0.24)",
+  },
+  overflowItemActive: {
+    fontWeight: 700,
   },
   tabContent: {
     minHeight: 0,
