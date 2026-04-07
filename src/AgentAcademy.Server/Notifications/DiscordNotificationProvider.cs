@@ -43,6 +43,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private string? _botToken;
     private ulong _channelId;
     private ulong _guildId;
+    private ulong? _ownerId;
     private bool _isConfigured;
     private TaskCompletionSource<bool>? _readyTcs;
 
@@ -85,9 +86,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         _botToken = token;
         _channelId = channelId;
         _guildId = guildId;
+
+        if (configuration.TryGetValue("OwnerId", out var ownerIdStr) && ulong.TryParse(ownerIdStr, out var ownerId))
+            _ownerId = ownerId;
+
         _isConfigured = true;
 
-        _logger.LogInformation("Discord provider configured for guild {GuildId}, channel {ChannelId}", _guildId, _channelId);
+        _logger.LogInformation("Discord provider configured for guild {GuildId}, channel {ChannelId}, owner {OwnerId}",
+            _guildId, _channelId, _ownerId?.ToString() ?? "(any user)");
         return Task.CompletedTask;
     }
 
@@ -410,7 +416,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             new("GuildId", "Server ID", "string", true,
                 "Right-click your Discord server → Copy Server ID"),
             new("ChannelId", "Channel ID", "string", true,
-                "Right-click the notification channel → Copy Channel ID")
+                "Right-click the notification channel → Copy Channel ID"),
+            new("OwnerId", "Owner User ID", "string", false,
+                "Your Discord user ID — scopes freeform input to you only (right-click yourself → Copy User ID)")
         }
     );
 
@@ -1317,6 +1325,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                     return Task.CompletedTask;
 
                 if (msg.Author.IsBot)
+                    return Task.CompletedTask;
+
+                // Scope to owner if configured, otherwise accept any non-bot user
+                if (_ownerId.HasValue && msg.Author.Id != _ownerId.Value)
                     return Task.CompletedTask;
 
                 tcs.TrySetResult(new UserResponse(msg.Content, ProviderId: ProviderId));

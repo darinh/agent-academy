@@ -220,12 +220,13 @@ public class DiscordNotificationProviderTests
     }
 
     [Fact]
-    public void GetConfigSchema_HasThreeRequiredFields()
+    public void GetConfigSchema_HasExpectedFields()
     {
         var schema = _provider.GetConfigSchema();
 
-        Assert.Equal(3, schema.Fields.Count);
-        Assert.All(schema.Fields, f => Assert.True(f.Required));
+        Assert.Equal(4, schema.Fields.Count);
+        Assert.Equal(3, schema.Fields.Count(f => f.Required));
+        Assert.Single(schema.Fields, f => f.Key == "OwnerId" && !f.Required);
     }
 
     [Fact]
