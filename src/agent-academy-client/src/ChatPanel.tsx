@@ -3,7 +3,6 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Body1Strong,
   Badge,
   Button,
   Menu,
@@ -100,7 +99,7 @@ const MessageBubble = memo(function MessageBubble(props: {
     <article className={s.bubble}>
       <div className={s.bubbleCard}>
         <div className={s.bubbleHeader}>
-          <Body1Strong style={{ fontSize: "12px" }}>{props.message.senderName}</Body1Strong>
+          <span style={{ fontSize: "12px", fontWeight: 600 }}>{props.message.senderName}</span>
           <span
             className={s.rolePill}
             style={{ backgroundColor: colors.accent + "26", color: colors.accent }}
@@ -138,7 +137,7 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
     <article className={s.bubble}>
       <div className={mergeClasses(s.bubbleCard, s.thinkingCard)} style={{ borderLeftColor: colors.accent }}>
         <div className={s.bubbleHeader}>
-          <Body1Strong style={{ fontSize: "12px" }}>{props.agent.name}</Body1Strong>
+          <span style={{ fontSize: "12px", fontWeight: 600 }}>{props.agent.name}</span>
           <span className={s.rolePill} style={{ backgroundColor: colors.accent + "26", color: colors.accent }}>
             {formatRole(props.agent.role)}
           </span>
