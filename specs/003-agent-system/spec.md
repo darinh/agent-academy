@@ -215,10 +215,32 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
 ## Known Gaps
 
-- **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy.
+- **Single-user token model**: `CopilotTokenProvider` stores one global token (last authenticated user). In a multi-user deployment, User B's login overwrites User A's token. Acceptable for the current single-user / small-team use case. A per-user `ConcurrentDictionary<userId, token>` model would be needed for true multi-tenancy. — *Tracked in #2*
 - ~~**No token/usage tracking**~~ — **Resolved**: `LlmUsageTracker` captures `AssistantUsageEvent` from the Copilot SDK on every LLM call (including session priming). Persists per-request metrics (model, input/output/cache tokens, cost, duration, reasoning effort) to `llm_usage` table. Room-level aggregation via `GET /api/rooms/{id}/usage`, per-agent breakdown via `/usage/agents`, individual records via `/usage/records`. Global usage via `GET /api/usage` with optional `hoursBack` filter.
 - ~~**No tool calling**~~ — **Resolved**: SDK tool calling is wired up via `AgentToolRegistry` and `AgentToolFunctions`. See "SDK Tool Calling" section below.
 - ~~**No per-project session resume**~~ — **Resolved**: On workspace switch, `ConversationSessionService.ArchiveAllActiveSessionsAsync()` summarizes all active conversation sessions via LLM before clearing SDK sessions. When the user returns, `GetSessionContextAsync()` retrieves the archived summary and the orchestrator injects it into agent prompts for continuity. Empty sessions (no messages) are archived without summaries. Fallback summaries are generated when the executor is offline.
+
+### Tool Constraint Gaps (Accepted Design Constraints)
+
+These are intentional safety constraints, not missing features:
+
+- ~~**`read_file` restricts paths to project directory**~~ — **Accepted**: Path traversal prevention is a security feature. Agents cannot read files outside the workspace.
+- ~~**`read_file` truncates content at 12KB**~~ — **Accepted**: Prevents agents from loading huge files into LLM context. Agents can use `startLine`/`endLine` parameters for targeted reads.
+- ~~**`search_code` caps results at 50 matches**~~ — **Accepted**: Prevents unbounded search results from flooding LLM context. Agents can refine queries with `path` and `glob` filters.
+- ~~**`update_task_status` restricts to safe statuses**~~ — **Accepted**: Agents can set Active, Blocked, AwaitingValidation, InReview, Queued but not Completed/Cancelled. Prevents agents from unilaterally closing tasks without human validation.
+
+### Architectural Gaps (Accepted for Single-User Product)
+
+- ~~**No agent-to-agent direct communication**~~ — **Accepted**: Agents communicate via rooms and DMs, mediated by `AgentOrchestrator`. This is intentional — room-based communication provides auditable, observable message flow. Direct peer-to-peer would bypass logging and rate limiting.
+- ~~**No streaming of agent responses to UI**~~ — **Accepted**: `CopilotExecutor` enables SDK streaming internally (`Streaming = true`) but collects deltas into a single response before returning to the orchestrator. True streaming to the frontend would require significant SignalR/SSE changes for marginal UX benefit given typical response times.
+- ~~**No agent hot-reload**~~ — **Accepted**: `AgentCatalogLoader` reads `agents.json` once at startup (singleton). Catalog changes require server restart. Agent *configuration* overrides (model, prompt, templates) are hot-reloadable via DB — only structural changes (adding/removing agents) need restart.
+- ~~**No agent versioning**~~ — **Accepted**: `AgentDefinition` has no version field. Agent behavior changes are tracked via `agent_configs.UpdatedAt` for overrides and git history for catalog changes. Formal versioning would add complexity with little benefit for a single-user product.
+
+### Genuine Gaps (Low Priority)
+
+- **No per-agent resource quotas**: `LlmUsageTracker` records token/cost metrics but has no enforcement logic. Agents can make unlimited LLM calls. Adding budget caps per agent would require a quota check in `CopilotExecutor` before each call.
+- **No prompt injection mitigation**: User-supplied text (room messages, DMs, task descriptions) is interpolated verbatim into agent prompts in `AgentOrchestrator.BuildConversationPrompt` and `BuildBreakoutPrompt`. No input sanitization or prompt boundary markers exist. Low risk in single-user context (the user *is* the operator), but would need attention for any multi-user deployment.
+- **No agent-level rate limiting**: `CommandRateLimiter` throttles human command execution, and `CopilotExecutor` has a circuit breaker for quota/transient errors, but there's no per-agent call-rate limiter. An agent in a tight loop could make many LLM calls in quick succession.
 
 ### SDK Tool Calling
 
