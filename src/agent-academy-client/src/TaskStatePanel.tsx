@@ -16,16 +16,16 @@ import {
   ClockRegular,
 } from "@fluentui/react-icons";
 import type {
-  CollaborationPhase,
   RoomSnapshot,
   TaskSnapshot,
   TaskStatus,
 } from "./api";
-
-const PHASES: readonly CollaborationPhase[] = [
-  "Intake", "Planning", "Discussion",
-  "Validation", "Implementation", "FinalSynthesis",
-] as const;
+import {
+  PHASES,
+  phaseColor,
+  taskStatusColor,
+  workstreamColor,
+} from "./taskStatePanelUtils";
 
 // -- Styles --
 
@@ -125,19 +125,6 @@ const useLocalStyles = makeStyles({
 
 // -- Helpers --
 
-type BadgeColor = "informative" | "success" | "warning" | "important" | "danger" | "subtle";
-
-function taskStatusColor(status: TaskStatus): BadgeColor {
-  switch (status) {
-    case "Active":             return "success";
-    case "Blocked":            return "danger";
-    case "AwaitingValidation": return "warning";
-    case "Completed":          return "informative";
-    case "Cancelled":          return "subtle";
-    case "Queued": default:    return "important";
-  }
-}
-
 function taskStatusIcon(status: TaskStatus) {
   switch (status) {
     case "Active":             return <ArrowSyncRegular />;
@@ -146,27 +133,6 @@ function taskStatusIcon(status: TaskStatus) {
     case "AwaitingValidation": return <ClockRegular />;
     default:                   return <CircleRegular />;
   }
-}
-
-function workstreamColor(status: string): BadgeColor {
-  switch (status) {
-    case "Completed":  return "success";
-    case "InProgress": return "informative";
-    case "Blocked":    return "warning";
-    case "Ready":      return "important";
-    default:           return "subtle";
-  }
-}
-
-function phaseColor(
-  phase: CollaborationPhase,
-  currentPhase: CollaborationPhase,
-): "informative" | "success" | "subtle" {
-  const currentIdx = PHASES.indexOf(currentPhase);
-  const phaseIdx = PHASES.indexOf(phase);
-  if (phaseIdx < currentIdx) return "success";
-  if (phaseIdx === currentIdx) return "informative";
-  return "subtle";
 }
 
 // -- Main Component --
