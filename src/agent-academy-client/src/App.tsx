@@ -8,6 +8,11 @@ import {
   MessageBarTitle,
   Tab,
   TabList,
+  Toaster,
+  useToastController,
+  useId,
+  Toast,
+  ToastTitle,
 } from "@fluentui/react-components";
 import {
   ChatRegular,
@@ -144,6 +149,8 @@ function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const toasterId = useId("workspace-toaster");
+  const { dispatchToast } = useToastController(toasterId);
   const previousAuthRef = useRef<AuthStatus | null>(null);
   const authRefreshInFlight = useRef(false);
   const loginUrl = `${apiBaseUrl}/api/auth/login`;
@@ -287,13 +294,19 @@ function AppShell() {
         setWorkspace(ws);
         setShowProjectSelector(false);
         handleManualRefresh();
+        dispatchToast(
+          <Toast>
+            <ToastTitle>Switched to {ws.name}</ToastTitle>
+          </Toast>,
+          { intent: "success", timeout: 2000 },
+        );
       } catch (e) {
         setSwitchError(e instanceof Error ? e.message : "Failed to switch workspace");
       } finally {
         setSwitching(false);
       }
     },
-    [handleManualRefresh, switching],
+    [dispatchToast, handleManualRefresh, switching],
   );
 
   const handleProjectOnboarded = useCallback(
@@ -717,6 +730,7 @@ function AppShell() {
         message="You'll lose live updates and need to sign in again to resume. Any unsaved draft messages are preserved locally."
         confirmLabel="Sign out"
       />
+      <Toaster toasterId={toasterId} position="bottom-end" />
     </div>
   );
 }
