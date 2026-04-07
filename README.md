@@ -20,13 +20,8 @@ Built with ASP.NET Core 8, React 19, and the GitHub Copilot SDK.
 git clone https://github.com/darinh/agent-academy.git
 cd agent-academy
 
-# Build backend
-dotnet build
-
-# Install frontend dependencies
-cd src/agent-academy-client
-npm install
-cd ../..
+# One-time setup (git hooks, dependencies)
+./scripts/setup.sh
 
 # Run backend
 dotnet run --project src/AgentAcademy.Server
