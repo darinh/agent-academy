@@ -30,74 +30,88 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-    gap: "10px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("12px", "6px"),
+    ...shorthands.padding("8px", "10px"),
     ...shorthands.borderRadius("6px"),
     border: "1px solid var(--aa-border)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--mono)",
-    fontSize: "14px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
     fontSize: "10px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "5px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "12px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
     fontSize: "10px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("6px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   thRight: {
     textAlign: "right" as const,
     color: "var(--aa-soft)",
     fontSize: "10px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("6px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("8px", "10px"),
-    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   tdRight: {
-    ...shorthands.padding("8px", "10px"),
-    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "11px",
   },
   mono: {
     fontFamily: "var(--mono, monospace)",
@@ -140,9 +154,8 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "6px",
     fontSize: "13px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   columns: {
     display: "grid",
@@ -307,6 +320,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
       {agents.length > 0 && (
         <div>
           <div className={s.sectionLabel} style={{ marginBottom: "6px" }}>Per-Agent</div>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -333,6 +347,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -346,6 +361,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
             <ErrorCircleRegular style={{ fontSize: 14 }} />
             Errors ({errors.length})
           </div>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -377,6 +393,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               })}
             </tbody>
           </table>
+          </div>
           {errors.length > 5 && (
             <div className={s.emptyNote}>
               Showing 5 of {errors.length} errors. See Dashboard for full details.

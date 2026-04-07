@@ -39,13 +39,12 @@ const useLocalStyles = makeStyles({
     background:
       "var(--aa-panel)",
     ...shorthands.borderRadius("8px"),
-    ...shorthands.padding("22px"),
+    ...shorthands.padding("14px"),
   },
   sectionTitle: {
     fontSize: "13px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   phaseBar: {
     display: "flex",
@@ -68,14 +67,14 @@ const useLocalStyles = makeStyles({
   },
   phaseButton: {
     border: "1px solid var(--aa-border)",
-    backgroundColor: "rgba(110, 118, 129, 0.1)",
+    backgroundColor: "var(--aa-bg)",
   },
   phaseButtonActive: {
     boxShadow: "0 12px 28px rgba(0, 0, 0, 0.22)",
   },
   card: {
     border: "1px solid var(--aa-border)",
-    background: "rgba(110, 118, 129, 0.1)",
+    background: "var(--aa-bg)",
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px", "18px"),
   },
@@ -84,7 +83,7 @@ const useLocalStyles = makeStyles({
     justifyContent: "space-between",
     alignItems: "center",
     ...shorthands.padding("12px", "0"),
-    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
+    borderBottom: "1px solid var(--aa-border)",
     flexWrap: "wrap",
     gap: "8px",
   },

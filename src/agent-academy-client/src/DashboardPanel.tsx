@@ -52,7 +52,7 @@ const useLocalStyles = makeStyles({
     border: "1px solid var(--aa-border)",
     background: "var(--aa-panel)",
     ...shorthands.borderRadius("8px"),
-    ...shorthands.padding("14px"),
+    ...shorthands.padding("12px", "14px"),
   },
   cardHeader: {
     color: "var(--aa-soft)",
@@ -63,13 +63,13 @@ const useLocalStyles = makeStyles({
     textTransform: "uppercase",
   },
   bigNumber: {
-    fontFamily: "var(--mono)",
-    fontSize: "28px",
+    fontSize: "26px",
     fontWeight: 700,
-    color: "var(--aa-text-strong)",
+    color: "var(--aa-text)",
     lineHeight: 1,
     marginTop: "8px",
     marginBottom: "4px",
+    letterSpacing: "-0.03em",
   },
   label: {
     color: "var(--aa-soft)",
@@ -90,7 +90,7 @@ const useLocalStyles = makeStyles({
     gap: "8px",
     fontSize: "13px",
     fontWeight: 600,
-    color: "var(--aa-text-strong)",
+    color: "var(--aa-text)",
   },
   phaseRow: {
     display: "flex",

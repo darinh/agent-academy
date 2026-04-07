@@ -32,74 +32,88 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("14px", "8px"),
+    ...shorthands.padding("8px", "10px"),
     ...shorthands.borderRadius("6px"),
     border: "1px solid var(--aa-border)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--mono)",
-    fontSize: "13px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "6px",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "13px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   thRight: {
     textAlign: "right" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   tdRight: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(110, 118, 129, 0.1)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "12px",
   },
   mono: {
     fontFamily: "var(--mono, monospace)",
@@ -150,10 +164,9 @@ const useLocalStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    fontSize: "14px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   pagerRow: {
     display: "flex",
@@ -190,7 +203,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("12px", "16px"),
     ...shorthands.borderRadius("6px"),
     border: "1px solid var(--aa-border)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    backgroundColor: "var(--aa-bg)",
   },
   cbDot: {
     width: "10px",
@@ -425,6 +438,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
           {summary.byType.length > 0 && (
             <div>
               <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>By Type</div>
+              <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
@@ -446,11 +460,13 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
           {summary.byAgent.length > 0 && (
             <div>
               <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>By Agent</div>
+              <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
@@ -469,6 +485,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -490,6 +507,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
           <div className={s.emptyNote}>No error records found.</div>
         ) : (
           <>
+            <div className={s.tableWrap}>
             <table className={s.table}>
               <thead>
                 <tr>
@@ -532,6 +550,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                 })}
               </tbody>
             </table>
+            </div>
 
             {totalPages > 1 && (
               <div className={s.pagerRow}>
