@@ -3,6 +3,7 @@ import {
   Button,
   mergeClasses,
   Spinner,
+  Tooltip,
 } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { initials } from "./utils";
@@ -239,22 +240,29 @@ const SidebarPanel = memo(function SidebarPanel(props: {
       ) : (
         <div className={s.compactSidebar}>
           {props.workspace && (
-            <div className={s.compactSidebarMarker} title={props.workspace.name}>
-              {initials(props.workspace.name)}
-            </div>
+            <Tooltip content={props.workspace.name} relationship="label" positioning="after">
+              <div className={s.compactSidebarMarker}>
+                {initials(props.workspace.name)}
+              </div>
+            </Tooltip>
           )}
-          {props.rooms.map((candidate) => (
-            <button
-              key={candidate.id}
-              className={mergeClasses(s.compactButton, props.room?.id === candidate.id ? s.compactButtonActive : undefined)}
-              onClick={() => props.onSelectRoom(candidate.id)}
-              title={candidate.name}
-              aria-label={candidate.name}
-              type="button"
-            >
-              {initials(candidate.name)}
-            </button>
-          ))}
+          {props.rooms.map((candidate) => {
+            const dotColor = PHASE_DOT_COLORS[candidate.currentPhase] ?? "#94a3b8";
+            const tooltipText = `${candidate.name} · ${candidate.currentPhase} · ${candidate.participants.length} agents`;
+            return (
+              <Tooltip key={candidate.id} content={tooltipText} relationship="label" positioning="after">
+                <button
+                  className={mergeClasses(s.compactButton, props.room?.id === candidate.id ? s.compactButtonActive : undefined)}
+                  onClick={() => props.onSelectRoom(candidate.id)}
+                  aria-label={candidate.name}
+                  type="button"
+                >
+                  <span className={s.compactRoomDot} style={{ backgroundColor: dotColor }} />
+                  {initials(candidate.name)}
+                </button>
+              </Tooltip>
+            );
+          })}
         </div>
       )}
     </aside>

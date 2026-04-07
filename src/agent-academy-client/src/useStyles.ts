@@ -326,6 +326,7 @@ export const useStyles = makeStyles({
     letterSpacing: "0.08em",
   },
   compactButton: {
+    position: "relative" as const,
     width: "100%",
     height: "52px",
     border: "1px solid transparent",
@@ -338,6 +339,14 @@ export const useStyles = makeStyles({
   compactButtonActive: {
     border: "1px solid rgba(214, 188, 149, 0.3)",
     background: "linear-gradient(180deg, rgba(209, 160, 106, 0.18), rgba(124, 176, 248, 0.08))",
+  },
+  compactRoomDot: {
+    position: "absolute" as const,
+    top: "6px",
+    right: "6px",
+    width: "6px",
+    height: "6px",
+    ...shorthands.borderRadius("50%"),
   },
   sidebarRoomHeader: {
     display: "flex",
