@@ -981,6 +981,16 @@ public sealed class WorkspaceRuntime
             CreatedAt = now,
             UpdatedAt = now
         };
+
+        // Associate task with active sprint if one exists
+        if (roomEntity.WorkspacePath is not null)
+        {
+            var activeSprint = await _db.Sprints
+                .FirstOrDefaultAsync(s => s.WorkspacePath == roomEntity.WorkspacePath && s.Status == "Active");
+            if (activeSprint is not null)
+                taskEntity.SprintId = activeSprint.Id;
+        }
+
         _db.Tasks.Add(taskEntity);
 
         // Add system messages for the task
@@ -1047,7 +1057,7 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns all tasks.
     /// </summary>
-    public async Task<List<TaskSnapshot>> GetTasksAsync()
+    public async Task<List<TaskSnapshot>> GetTasksAsync(string? sprintId = null)
     {
         var activeWorkspace = await GetActiveWorkspacePathAsync();
         var query = _db.Tasks.AsQueryable();
@@ -1061,6 +1071,11 @@ public sealed class WorkspaceRuntime
             query = query.Where(t => t.WorkspacePath == activeWorkspace
                 || (t.WorkspacePath == null && t.RoomId != null
                     && _db.Rooms.Any(r => r.Id == t.RoomId && r.WorkspacePath == activeWorkspace)));
+        }
+
+        if (sprintId is not null)
+        {
+            query = query.Where(t => t.SprintId == sprintId);
         }
 
         var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
@@ -2992,7 +3007,8 @@ public sealed class WorkspaceRuntime
             CommitCount: entity.CommitCount,
             MergeCommitSha: entity.MergeCommitSha,
             CommentCount: commentCount,
-            WorkspacePath: entity.WorkspacePath
+            WorkspacePath: entity.WorkspacePath,
+            SprintId: entity.SprintId
         );
     }
 

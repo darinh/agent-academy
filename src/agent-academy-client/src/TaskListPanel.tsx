@@ -572,14 +572,20 @@ interface TaskListPanelProps {
   loading?: boolean;
   error?: boolean;
   onRefresh?: () => void;
+  activeSprintId?: string | null;
 }
 
-export default function TaskListPanel({ tasks, loading, error, onRefresh }: TaskListPanelProps) {
+export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId }: TaskListPanelProps) {
   const s = useLocalStyles();
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sprintOnly, setSprintOnly] = useState(false);
 
-  const sortedTasks = [...filterTasks(tasks, filter)].sort(
+  const baseTasks = sprintOnly && activeSprintId
+    ? tasks.filter((t) => t.sprintId === activeSprintId)
+    : tasks;
+
+  const sortedTasks = [...filterTasks(baseTasks, filter)].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
 
@@ -616,7 +622,7 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh }: Task
       {/* Filter bar */}
       <div className={s.filterBar}>
         {FILTER_ITEMS.map((f) => {
-          const count = filterCount(tasks, f.value);
+          const count = filterCount(baseTasks, f.value);
           return (
             <button
               key={f.value}
@@ -629,6 +635,17 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh }: Task
             </button>
           );
         })}
+        {activeSprintId && (
+          <>
+            <span style={{ borderLeft: "1px solid #333", height: "16px", margin: "0 4px" }} />
+            <button
+              className={mergeClasses(s.filterChip, sprintOnly && s.filterChipActive)}
+              onClick={() => setSprintOnly((v) => !v)}
+            >
+              🏃 Sprint
+            </button>
+          </>
+        )}
       </div>
 
       {/* Task list */}

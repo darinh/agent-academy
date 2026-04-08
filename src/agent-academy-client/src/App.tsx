@@ -23,7 +23,7 @@ import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
+import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
@@ -198,6 +198,7 @@ function AppShell() {
   const [tasksError, setTasksError] = useState(false);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksFetchKey, setTasksFetchKey] = useState(0);
+  const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -297,6 +298,9 @@ function AppShell() {
       .then((tasks) => { if (!cancelled) setAllTasks(tasks); })
       .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } })
       .finally(() => { if (!cancelled) setTasksLoading(false); });
+    getActiveSprint()
+      .then((detail) => { if (!cancelled) setActiveSprintId(detail?.sprint.id ?? null); })
+      .catch(() => { if (!cancelled) setActiveSprintId(null); });
     return () => { cancelled = true; };
   }, [showProjectSelector, tab, tasksFetchKey]);
 
@@ -712,6 +716,7 @@ function AppShell() {
                       loading={tasksLoading}
                       error={tasksError}
                       onRefresh={() => setTasksFetchKey((k) => k + 1)}
+                      activeSprintId={activeSprintId}
                     />
                   )}
                   {tab === "plan" && (

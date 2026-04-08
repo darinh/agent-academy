@@ -37,7 +37,8 @@ public record TaskSnapshot(
     int CommitCount = 0,
     string? MergeCommitSha = null,
     int CommentCount = 0,
-    string? WorkspacePath = null
+    string? WorkspacePath = null,
+    string? SprintId = null
 );
 
 /// <summary>

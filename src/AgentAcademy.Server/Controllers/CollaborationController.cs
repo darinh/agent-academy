@@ -252,12 +252,12 @@ public class CollaborationController : ControllerBase
         }
     }
     /// <summary>
-    /// GET /api/tasks — list all tasks.
+    /// GET /api/tasks — list all tasks. Optionally filter by sprint.
     /// </summary>
     [HttpGet("api/tasks")]
-    public async Task<ActionResult<List<TaskSnapshot>>> ListTasks()
+    public async Task<ActionResult<List<TaskSnapshot>>> ListTasks([FromQuery] string? sprintId = null)
     {
-        var tasks = await _runtime.GetTasksAsync();
+        var tasks = await _runtime.GetTasksAsync(sprintId);
         return Ok(tasks);
     }
 

@@ -177,6 +177,7 @@ export interface TaskSnapshot {
   mergeCommitSha?: string | null;
   commentCount?: number;
   type?: "Feature" | "Bug" | "Chore" | "Spike";
+  sprintId?: string | null;
 }
 
 export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker";
@@ -530,8 +531,9 @@ export function submitTask(req: TaskAssignmentRequest): Promise<TaskAssignmentRe
   });
 }
 
-export function getTasks(): Promise<TaskSnapshot[]> {
-  return request<TaskSnapshot[]>(apiUrl("/api/tasks"));
+export function getTasks(sprintId?: string): Promise<TaskSnapshot[]> {
+  const params = sprintId ? `?sprintId=${encodeURIComponent(sprintId)}` : "";
+  return request<TaskSnapshot[]>(apiUrl(`/api/tasks${params}`));
 }
 
 export function getTask(taskId: string): Promise<TaskSnapshot> {
