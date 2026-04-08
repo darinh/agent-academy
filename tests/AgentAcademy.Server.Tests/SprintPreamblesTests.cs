@@ -195,4 +195,35 @@ public class SprintPreamblesTests
 
         Assert.Empty(filtered);
     }
+
+    // ── Overflow preamble ────────────────────────────────────────
+
+    [Fact]
+    public void BuildPreamble_IncludesOverflowContent_AtIntake()
+    {
+        var overflow = """{"items": ["unfinished feature"]}""";
+
+        var preamble = SprintPreambles.BuildPreamble(2, "Intake", null, overflow);
+
+        Assert.Contains("OVERFLOW FROM PREVIOUS SPRINT", preamble);
+        Assert.Contains("unfinished feature", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_IgnoresOverflow_AtOtherStages()
+    {
+        var overflow = """{"items": ["unfinished feature"]}""";
+
+        var preamble = SprintPreambles.BuildPreamble(2, "Planning", null, overflow);
+
+        Assert.DoesNotContain("OVERFLOW FROM PREVIOUS SPRINT", preamble);
+    }
+
+    [Fact]
+    public void BuildPreamble_NoOverflowSection_WhenNull()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Intake", null, null);
+
+        Assert.DoesNotContain("OVERFLOW FROM PREVIOUS SPRINT", preamble);
+    }
 }

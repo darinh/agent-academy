@@ -262,8 +262,18 @@ public sealed class AgentOrchestrator
                     {
                         activeSprintStage = sprint.CurrentStage;
                         var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
+
+                        // Load overflow content when entering Intake with overflow from previous sprint
+                        string? overflowContent = null;
+                        if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
+                        {
+                            var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
+                            var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
+                            overflowContent = overflow?.Content;
+                        }
+
                         sprintPreamble = SprintPreambles.BuildPreamble(
-                            sprint.Number, sprint.CurrentStage, priorContext);
+                            sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
                     }
                 }
             }
@@ -511,8 +521,17 @@ public sealed class AgentOrchestrator
                 if (sprint is not null)
                 {
                     var priorContext = await dmSessionService.GetSprintContextAsync(sprint.Id);
+
+                    string? overflowContent = null;
+                    if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
+                    {
+                        var overflowArtifacts = await dmSprintService.GetSprintArtifactsAsync(sprint.Id);
+                        var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
+                        overflowContent = overflow?.Content;
+                    }
+
                     dmSprintPreamble = SprintPreambles.BuildPreamble(
-                        sprint.Number, sprint.CurrentStage, priorContext);
+                        sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
                 }
             }
         }

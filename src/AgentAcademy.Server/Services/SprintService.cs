@@ -81,11 +81,12 @@ public sealed class SprintService
 
         // Check for overflow artifacts from the previous sprint
         string? overflowFrom = null;
+        SprintArtifactEntity? overflowArtifact = null;
         if (lastSprint is not null)
         {
-            var hasOverflow = await _db.SprintArtifacts
-                .AnyAsync(a => a.SprintId == lastSprint.Id && a.Type == "OverflowRequirements");
-            if (hasOverflow)
+            overflowArtifact = await _db.SprintArtifacts
+                .FirstOrDefaultAsync(a => a.SprintId == lastSprint.Id && a.Type == "OverflowRequirements");
+            if (overflowArtifact is not null)
                 overflowFrom = lastSprint.Id;
         }
 
@@ -101,6 +102,20 @@ public sealed class SprintService
         };
 
         _db.Sprints.Add(sprint);
+
+        // Auto-inject overflow requirements into the new sprint's Intake stage
+        if (overflowArtifact is not null)
+        {
+            _db.SprintArtifacts.Add(new SprintArtifactEntity
+            {
+                SprintId = sprint.Id,
+                Stage = "Intake",
+                Type = "OverflowRequirements",
+                Content = overflowArtifact.Content,
+                CreatedByAgentId = null, // system-injected
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
 
         Publish(ActivityEventType.SprintStarted, null, null, null,
             $"Sprint #{sprint.Number} started for workspace {workspacePath}");

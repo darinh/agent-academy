@@ -90,10 +90,18 @@ public class SprintServiceTests : IDisposable
         var second = await _service.CreateSprintAsync(TestWorkspace);
 
         Assert.Equal(first.Id, second.OverflowFromSprintId);
+
+        // Verify overflow content was auto-injected into the new sprint's Intake
+        var artifacts = await _service.GetSprintArtifactsAsync(second.Id);
+        var injected = artifacts.SingleOrDefault(a => a.Type == "OverflowRequirements");
+        Assert.NotNull(injected);
+        Assert.Equal("Intake", injected!.Stage);
+        Assert.Equal("""{"items": ["leftover task"]}""", injected.Content);
+        Assert.Null(injected.CreatedByAgentId); // system-injected
     }
 
     [Fact]
-    public async Task CreateSprint_NoOverflowLinkWhenNone()
+    public async Task CreateSprint_NoOverflowArtifactWhenNone()
     {
         var first = await _service.CreateSprintAsync(TestWorkspace);
         await _service.CompleteSprintAsync(first.Id, force: true);
@@ -101,6 +109,9 @@ public class SprintServiceTests : IDisposable
         var second = await _service.CreateSprintAsync(TestWorkspace);
 
         Assert.Null(second.OverflowFromSprintId);
+
+        var artifacts = await _service.GetSprintArtifactsAsync(second.Id);
+        Assert.Empty(artifacts);
     }
 
     [Fact]

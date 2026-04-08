@@ -89,7 +89,8 @@ public static class SprintPreambles
     public static string BuildPreamble(
         int sprintNumber,
         string stage,
-        IReadOnlyList<(string Stage, string Summary)>? priorStageContext = null)
+        IReadOnlyList<(string Stage, string Summary)>? priorStageContext = null,
+        string? overflowContent = null)
     {
         var lines = new List<string>
         {
@@ -98,6 +99,15 @@ public static class SprintPreambles
 
         if (StagePreambles.TryGetValue(stage, out var preamble))
             lines.Add(preamble.Trim());
+
+        if (overflowContent is not null && stage == "Intake")
+        {
+            lines.Add("");
+            lines.Add("=== OVERFLOW FROM PREVIOUS SPRINT ===");
+            lines.Add("The following requirements were not completed in the previous sprint");
+            lines.Add("and must be addressed in this sprint's intake:");
+            lines.Add(overflowContent);
+        }
 
         if (priorStageContext is { Count: > 0 })
         {
