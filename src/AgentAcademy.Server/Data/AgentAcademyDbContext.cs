@@ -38,6 +38,8 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<AgentErrorEntity> AgentErrors => Set<AgentErrorEntity>();
     public DbSet<SpecTaskLinkEntity> SpecTaskLinks => Set<SpecTaskLinkEntity>();
     public DbSet<TaskEvidenceEntity> TaskEvidence => Set<TaskEvidenceEntity>();
+    public DbSet<SprintEntity> Sprints => Set<SprintEntity>();
+    public DbSet<SprintArtifactEntity> SprintArtifacts => Set<SprintArtifactEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -446,6 +448,46 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => new { e.TaskId, e.SpecSectionId })
                 .IsUnique()
                 .HasDatabaseName("idx_spec_task_links_unique");
+        });
+
+        // ── Sprints ────────────────────────────────────────────
+        modelBuilder.Entity<SprintEntity>(entity =>
+        {
+            entity.ToTable("sprints");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Number).IsRequired();
+            entity.Property(e => e.WorkspacePath).IsRequired();
+            entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
+            entity.Property(e => e.CurrentStage).IsRequired().HasDefaultValue("Intake");
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_sprints_workspace");
+            entity.HasIndex(e => new { e.WorkspacePath, e.Status })
+                .HasDatabaseName("idx_sprints_workspace_status");
+        });
+
+        // ── Sprint Artifacts ───────────────────────────────────
+        modelBuilder.Entity<SprintArtifactEntity>(entity =>
+        {
+            entity.ToTable("sprint_artifacts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.SprintId).IsRequired();
+            entity.Property(e => e.Stage).IsRequired();
+            entity.Property(e => e.Type).IsRequired();
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.SprintId).HasDatabaseName("idx_sprint_artifacts_sprint");
+            entity.HasIndex(e => new { e.SprintId, e.Stage })
+                .HasDatabaseName("idx_sprint_artifacts_sprint_stage");
+            entity.HasIndex(e => new { e.SprintId, e.Type })
+                .HasDatabaseName("idx_sprint_artifacts_sprint_type");
         });
     }
 }

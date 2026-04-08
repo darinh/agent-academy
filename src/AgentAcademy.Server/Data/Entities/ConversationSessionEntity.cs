@@ -17,4 +17,8 @@ public class ConversationSessionEntity
     public int MessageCount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ArchivedAt { get; set; }
+
+    // Sprint scoping
+    public string? SprintId { get; set; }
+    public string? SprintStage { get; set; }
 }

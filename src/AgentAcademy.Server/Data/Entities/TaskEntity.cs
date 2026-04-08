@@ -41,6 +41,9 @@ public class TaskEntity
     public int CommitCount { get; set; }
     public string? MergeCommitSha { get; set; }
 
+    // Sprint association
+    public string? SprintId { get; set; }
+
     // Navigation properties
     public RoomEntity? Room { get; set; }
 }
