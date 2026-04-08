@@ -121,6 +121,7 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-muted)",
   },
   msgCell: {
+    display: "block",
     maxWidth: "300px",
     overflow: "hidden",
     textOverflow: "ellipsis",

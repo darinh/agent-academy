@@ -486,7 +486,6 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
             />
           ) : (
             threads.map((thread) => {
-              const colors = roleColor(thread.agentRole);
               return (
                 <button
                   key={thread.agentId}
@@ -497,22 +496,10 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
                   onClick={() => selectThread(thread.agentId)}
                   type="button"
                 >
-                  <span
-                    className={mergeClasses(s.avatar, s.avatarLg)}
-                    style={{ backgroundColor: colors.accent }}
-                  >
-                    {initials(thread.agentName)}
-                  </span>
                   <div className={s.threadInfo}>
                     <div className={s.threadNameRow}>
                       <span style={{ fontWeight: 600, fontSize: "13px" }}>
                         {thread.agentName}
-                      </span>
-                      <span
-                        className={s.rolePill}
-                        style={{ backgroundColor: colors.accent, color: colors.foreground }}
-                      >
-                        {formatRole(thread.agentRole)}
                       </span>
                     </div>
                     <div className={s.threadPreview}>{thread.lastMessage}</div>
@@ -532,18 +519,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
         {selectedAgent ? (
           <>
             <div className={s.chatHeader}>
-              <span
-                className={mergeClasses(s.avatar, s.avatarMd)}
-                style={{ backgroundColor: roleColor(selectedAgent.role).accent }}
-              >
-                {initials(selectedAgent.name)}
-              </span>
-              <div>
-                <span style={{ fontWeight: 600 }}>{selectedAgent.name}</span>
-                <div style={{ fontSize: "12px", color: "var(--aa-soft)" }}>
-                  {formatRole(selectedAgent.role)}
-                </div>
-              </div>
+              <span style={{ fontWeight: 600 }}>{selectedAgent.name}</span>
             </div>
 
             <div ref={scrollRef} className={s.messageList} role="log" aria-label="Direct messages">
@@ -613,14 +589,6 @@ const DmMessageBubble = memo(function DmMessageBubble({
 
   return (
     <div className={mergeClasses(s.msgRow, isHuman && s.msgRowHuman)}>
-      {!isHuman && (
-        <span
-          className={mergeClasses(s.avatar, s.avatarMd)}
-          style={{ backgroundColor: roleColor("Agent").accent }}
-        >
-          {initials(message.senderName)}
-        </span>
-      )}
       <div>
         <div className={mergeClasses(s.msgBubble, isHuman && s.msgBubbleHuman)}>
           {!isHuman && (
