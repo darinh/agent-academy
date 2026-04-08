@@ -976,6 +976,7 @@ public sealed class WorkspaceRuntime
             ImplementationSummary = task.ImplementationSummary,
             PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
             RoomId = roomEntity.Id,
+            WorkspacePath = roomEntity.WorkspacePath,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now
@@ -1038,7 +1039,7 @@ public sealed class WorkspaceRuntime
         return new TaskAssignmentResult(
             CorrelationId: correlationId,
             Room: roomSnapshot,
-            Task: task,
+            Task: task with { WorkspacePath = roomEntity.WorkspacePath },
             Activity: activity
         );
     }
@@ -1053,18 +1054,13 @@ public sealed class WorkspaceRuntime
 
         if (activeWorkspace is not null)
         {
-            // Keep historical tasks visible after workspace-scoped rooms were introduced:
-            // legacy "main" tasks may retain a detached room row, and older task rooms may
-            // no longer exist even though the task record is still valid.
-            var workspaceRoomIds = await _db.Rooms
-                .Where(r => r.WorkspacePath == activeWorkspace ||
-                            (r.Id == _catalog.DefaultRoomId && r.WorkspacePath == null))
-                .Select(r => r.Id)
-                .ToListAsync();
-
-            query = query.Where(t => t.RoomId != null &&
-                                     (workspaceRoomIds.Contains(t.RoomId) ||
-                                      !_db.Rooms.Any(r => r.Id == t.RoomId)));
+            // Direct workspace filter — tasks are now stamped with WorkspacePath.
+            // Also include legacy tasks whose workspace was backfilled from their room,
+            // and tasks with null WorkspacePath (pre-migration orphans) that belong to
+            // workspace rooms.
+            query = query.Where(t => t.WorkspacePath == activeWorkspace
+                || (t.WorkspacePath == null && t.RoomId != null
+                    && _db.Rooms.Any(r => r.Id == t.RoomId && r.WorkspacePath == activeWorkspace)));
         }
 
         var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
@@ -2706,6 +2702,10 @@ public sealed class WorkspaceRuntime
         var now = DateTime.UtcNow;
         var taskId = Guid.NewGuid().ToString("N");
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+        var parentWorkspace = await _db.Rooms
+            .Where(r => r.Id == roomId)
+            .Select(r => r.WorkspacePath)
+            .FirstOrDefaultAsync();
 
         var entity = new TaskEntity
         {
@@ -2723,6 +2723,7 @@ public sealed class WorkspaceRuntime
             ImplementationSummary = "",
             PreferredRoles = "[]",
             RoomId = roomId,
+            WorkspacePath = parentWorkspace,
             AssignedAgentId = agentId,
             AssignedAgentName = agent?.Name,
             BranchName = branchName,
@@ -2990,7 +2991,8 @@ public sealed class WorkspaceRuntime
             TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
             CommitCount: entity.CommitCount,
             MergeCommitSha: entity.MergeCommitSha,
-            CommentCount: commentCount
+            CommentCount: commentCount,
+            WorkspacePath: entity.WorkspacePath
         );
     }
 

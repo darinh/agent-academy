@@ -10,6 +10,7 @@ public class ConversationSessionEntity
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string RoomId { get; set; } = string.Empty;
+    public string? WorkspacePath { get; set; }
     public string RoomType { get; set; } = "Main"; // "Main" | "Breakout"
     public int SequenceNumber { get; set; } = 1;
     public string Status { get; set; } = "Active"; // "Active" | "Archived"

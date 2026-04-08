@@ -118,6 +118,8 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_tasks_room");
             entity.HasIndex(e => e.AssignedAgentId).HasDatabaseName("idx_tasks_agent");
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_tasks_status");
+            entity.Property(e => e.WorkspacePath).IsRequired(false);
+            entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_tasks_workspace");
         });
 
         // ── Task Items ────────────────────────────────────────
@@ -370,6 +372,9 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => new { e.RoomId, e.Status })
                 .HasDatabaseName("idx_conversation_sessions_room_status");
+            entity.Property(e => e.WorkspacePath).IsRequired(false);
+            entity.HasIndex(e => e.WorkspacePath)
+                .HasDatabaseName("idx_conversation_sessions_workspace");
         });
 
         // ── System Settings ─────────────────────────────────────

@@ -36,7 +36,8 @@ public record TaskSnapshot(
     List<string>? TestsCreated = null,
     int CommitCount = 0,
     string? MergeCommitSha = null,
-    int CommentCount = 0
+    int CommentCount = 0,
+    string? WorkspacePath = null
 );
 
 /// <summary>

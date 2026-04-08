@@ -1109,4 +1109,141 @@ public class ConversationSessionServiceTests : IDisposable
 
         Assert.Empty(context);
     }
+
+    // ── WorkspacePath scoping tests ─────────────────────────────
+
+    [Fact]
+    public async Task GetOrCreate_StampsWorkspacePathFromRoom()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "ws-room",
+            Name = "Workspace Room",
+            Status = "Active",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/project",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        var session = await _service.GetOrCreateActiveSessionAsync("ws-room");
+
+        Assert.Equal("/home/test/project", session.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task GetOrCreate_NullWorkspaceWhenRoomHasNone()
+    {
+        await SeedRoomAsync("plain-room");
+
+        var session = await _service.GetOrCreateActiveSessionAsync("plain-room");
+
+        Assert.Null(session.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task Rotation_InheritsWorkspacePathFromArchivedSession()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "rotate-room",
+            Name = "Rotate Room",
+            Status = "Active",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/project",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        // Set threshold low so rotation triggers
+        await _settings.SetAsync(SystemSettingsService.MainRoomEpochSizeKey, "2");
+
+        _executor.IsFullyOperational.Returns(false);
+
+        var session = await _service.GetOrCreateActiveSessionAsync("rotate-room");
+        await _service.IncrementMessageCountAsync(session.Id);
+        await _service.IncrementMessageCountAsync(session.Id);
+        var rotated = await _service.CheckAndRotateAsync("rotate-room");
+
+        Assert.True(rotated);
+
+        var newSession = await _db.ConversationSessions
+            .Where(s => s.RoomId == "rotate-room" && s.Status == "Active")
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(newSession);
+        Assert.Equal("/home/test/project", newSession!.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task GetAllSessions_FiltersByWorkspace()
+    {
+        _db.Rooms.AddRange(
+            new RoomEntity { Id = "ws-a-room", Name = "A", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/project-a", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "ws-b-room", Name = "B", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/project-b", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        await _service.GetOrCreateActiveSessionAsync("ws-a-room");
+        await _service.GetOrCreateActiveSessionAsync("ws-b-room");
+
+        var (allSessions, allCount) = await _service.GetAllSessionsAsync();
+        Assert.Equal(2, allCount);
+
+        var (filteredSessions, filteredCount) = await _service.GetAllSessionsAsync(
+            workspacePath: "/project-a");
+        Assert.Equal(1, filteredCount);
+        Assert.All(filteredSessions, s => Assert.Equal("/project-a", s.WorkspacePath));
+    }
+
+    [Fact]
+    public async Task GetSessionStats_FiltersByWorkspace()
+    {
+        _db.Rooms.AddRange(
+            new RoomEntity { Id = "stats-a-room", Name = "A", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/stats-project-a", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "stats-b-room", Name = "B", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/stats-project-b", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        var s1 = await _service.GetOrCreateActiveSessionAsync("stats-a-room");
+        await _service.IncrementMessageCountAsync(s1.Id);
+        await _service.IncrementMessageCountAsync(s1.Id);
+        await _service.GetOrCreateActiveSessionAsync("stats-b-room");
+
+        var globalStats = await _service.GetSessionStatsAsync();
+        Assert.Equal(2, globalStats.TotalSessions);
+
+        var scopedStats = await _service.GetSessionStatsAsync(workspacePath: "/stats-project-a");
+        Assert.Equal(1, scopedStats.TotalSessions);
+        Assert.Equal(2, scopedStats.TotalMessages);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_StampsWorkspacePath()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "sprint-ws-room",
+            Name = "Sprint Room",
+            Status = "Active",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/sprint-project",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        _executor.IsFullyOperational.Returns(false);
+
+        var session = await _service.CreateSessionForStageAsync(
+            "sprint-ws-room", "sprint-1", "Planning");
+
+        Assert.Equal("/sprint-project", session.WorkspacePath);
+        Assert.Equal("sprint-1", session.SprintId);
+        Assert.Equal("Planning", session.SprintStage);
+    }
 }

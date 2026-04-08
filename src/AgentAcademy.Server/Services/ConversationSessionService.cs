@@ -64,6 +64,7 @@ public sealed class ConversationSessionService
         session = new ConversationSessionEntity
         {
             RoomId = roomId,
+            WorkspacePath = await GetWorkspacePathForRoomAsync(roomId),
             RoomType = roomType,
             SequenceNumber = await GetNextSequenceNumberAsync(roomId),
             Status = "Active",
@@ -170,6 +171,7 @@ public sealed class ConversationSessionService
         var session = new ConversationSessionEntity
         {
             RoomId = roomId,
+            WorkspacePath = await GetWorkspacePathForRoomAsync(roomId),
             RoomType = roomType,
             SequenceNumber = await GetNextSequenceNumberAsync(roomId),
             Status = "Active",
@@ -272,7 +274,8 @@ public sealed class ConversationSessionService
             .Take(Math.Clamp(limit, 1, 100))
             .Select(s => new ConversationSessionSnapshot(
                 s.Id, s.RoomId, s.RoomType, s.SequenceNumber,
-                s.Status, s.Summary, s.MessageCount, s.CreatedAt, s.ArchivedAt))
+                s.Status, s.Summary, s.MessageCount, s.CreatedAt, s.ArchivedAt,
+                s.WorkspacePath))
             .ToListAsync();
 
         return (sessions, totalCount);
@@ -280,9 +283,11 @@ public sealed class ConversationSessionService
 
     /// <summary>
     /// Lists conversation sessions across all rooms, ordered by creation date descending.
+    /// Optionally filtered by workspace path for project-scoped queries.
     /// </summary>
     public async Task<(List<ConversationSessionSnapshot> Sessions, int TotalCount)> GetAllSessionsAsync(
-        string? status = null, int limit = 20, int offset = 0, int? hoursBack = null)
+        string? status = null, int limit = 20, int offset = 0, int? hoursBack = null,
+        string? workspacePath = null)
     {
         var query = _db.ConversationSessions.AsQueryable();
 
@@ -295,6 +300,9 @@ public sealed class ConversationSessionService
             query = query.Where(s => s.CreatedAt >= since);
         }
 
+        if (!string.IsNullOrEmpty(workspacePath))
+            query = query.Where(s => s.WorkspacePath == workspacePath);
+
         var totalCount = await query.CountAsync();
         var safeOffset = Math.Max(offset, 0);
 
@@ -304,7 +312,8 @@ public sealed class ConversationSessionService
             .Take(Math.Clamp(limit, 1, 100))
             .Select(s => new ConversationSessionSnapshot(
                 s.Id, s.RoomId, s.RoomType, s.SequenceNumber,
-                s.Status, s.Summary, s.MessageCount, s.CreatedAt, s.ArchivedAt))
+                s.Status, s.Summary, s.MessageCount, s.CreatedAt, s.ArchivedAt,
+                s.WorkspacePath))
             .ToListAsync();
 
         return (sessions, totalCount);
@@ -312,9 +321,10 @@ public sealed class ConversationSessionService
 
     /// <summary>
     /// Returns a summary of session stats: total sessions, active/archived counts,
-    /// total messages across all sessions.
+    /// total messages across all sessions. Optionally scoped to a workspace.
     /// </summary>
-    public async Task<SessionStats> GetSessionStatsAsync(int? hoursBack = null)
+    public async Task<SessionStats> GetSessionStatsAsync(int? hoursBack = null,
+        string? workspacePath = null)
     {
         var query = _db.ConversationSessions.AsQueryable();
 
@@ -323,6 +333,9 @@ public sealed class ConversationSessionService
             var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
             query = query.Where(s => s.CreatedAt >= since);
         }
+
+        if (!string.IsNullOrEmpty(workspacePath))
+            query = query.Where(s => s.WorkspacePath == workspacePath);
 
         var stats = await query
             .GroupBy(_ => 1)
@@ -403,10 +416,11 @@ public sealed class ConversationSessionService
         currentSession.Summary = summary;
         currentSession.ArchivedAt = DateTime.UtcNow;
 
-        // Step 3: Create new active session
+        // Step 3: Create new active session — inherit WorkspacePath from archived session
         var newSession = new ConversationSessionEntity
         {
             RoomId = roomId,
+            WorkspacePath = currentSession.WorkspacePath,
             RoomType = roomType,
             SequenceNumber = currentSession.SequenceNumber + 1,
             Status = "Active",
@@ -525,5 +539,13 @@ public sealed class ConversationSessionService
             .Where(s => s.RoomId == roomId)
             .MaxAsync(s => (int?)s.SequenceNumber);
         return (maxSeq ?? 0) + 1;
+    }
+
+    private async Task<string?> GetWorkspacePathForRoomAsync(string roomId)
+    {
+        return await _db.Rooms
+            .Where(r => r.Id == roomId)
+            .Select(r => r.WorkspacePath)
+            .FirstOrDefaultAsync();
     }
 }

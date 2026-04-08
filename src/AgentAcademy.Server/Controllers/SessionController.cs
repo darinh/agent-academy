@@ -22,17 +22,20 @@ public class SessionController : ControllerBase
 
     /// <summary>
     /// GET /api/sessions — list all conversation sessions across rooms.
+    /// Optionally filter by workspace for project-scoped queries.
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<SessionListResponse>> GetSessions(
         [FromQuery] string? status = null,
         [FromQuery] int limit = 20,
         [FromQuery] int offset = 0,
-        [FromQuery] int? hoursBack = null)
+        [FromQuery] int? hoursBack = null,
+        [FromQuery] string? workspace = null)
     {
         try
         {
-            var (sessions, totalCount) = await _sessionService.GetAllSessionsAsync(status, limit, offset, hoursBack);
+            var (sessions, totalCount) = await _sessionService.GetAllSessionsAsync(
+                status, limit, offset, hoursBack, workspace);
             return Ok(new SessionListResponse(sessions, totalCount));
         }
         catch (Exception ex)
@@ -44,14 +47,16 @@ public class SessionController : ControllerBase
 
     /// <summary>
     /// GET /api/sessions/stats — aggregate session statistics.
+    /// Optionally scoped to a workspace.
     /// </summary>
     [HttpGet("stats")]
     public async Task<ActionResult<SessionStats>> GetStats(
-        [FromQuery] int? hoursBack = null)
+        [FromQuery] int? hoursBack = null,
+        [FromQuery] string? workspace = null)
     {
         try
         {
-            var stats = await _sessionService.GetSessionStatsAsync(hoursBack);
+            var stats = await _sessionService.GetSessionStatsAsync(hoursBack, workspace);
             return Ok(stats);
         }
         catch (Exception ex)

@@ -544,25 +544,40 @@ public class WorkspaceRuntimeTests : IDisposable
             });
 
         _db.Tasks.AddRange(
+            // Task with direct WorkspacePath (post-backfill or newly created)
             new TaskEntity
             {
                 Id = "current-workspace-task",
                 Title = "Current workspace task",
-                Description = "Visible via workspace room",
+                Description = "Visible via direct WorkspacePath",
                 SuccessCriteria = "Show up",
                 RoomId = "agent-academy-main",
+                WorkspacePath = activeWorkspace,
                 CreatedAt = now.AddMinutes(-3),
                 UpdatedAt = now.AddMinutes(-3)
             },
+            // Legacy task: null WorkspacePath but room belongs to active workspace (fallback)
+            new TaskEntity
+            {
+                Id = "unbackfilled-workspace-task",
+                Title = "Unbackfilled workspace task",
+                Description = "Visible via room fallback — room has matching workspace",
+                SuccessCriteria = "Show up",
+                RoomId = "agent-academy-main",
+                WorkspacePath = null,
+                CreatedAt = now.AddMinutes(-2),
+                UpdatedAt = now.AddMinutes(-2)
+            },
+            // Legacy task in unscoped room — excluded from workspace view
             new TaskEntity
             {
                 Id = "legacy-main-task",
                 Title = "Legacy main task",
-                Description = "Visible via detached legacy main room",
-                SuccessCriteria = "Show up",
+                Description = "Not in any workspace",
+                SuccessCriteria = "Stay hidden",
                 RoomId = "main",
-                CreatedAt = now.AddMinutes(-2),
-                UpdatedAt = now.AddMinutes(-2)
+                CreatedAt = now.AddMinutes(-1),
+                UpdatedAt = now.AddMinutes(-1)
             },
             new TaskEntity
             {
@@ -571,23 +586,16 @@ public class WorkspaceRuntimeTests : IDisposable
                 Description = "Must stay hidden",
                 SuccessCriteria = "Stay hidden",
                 RoomId = "other-project-main",
+                WorkspacePath = inactiveWorkspace,
                 CreatedAt = now,
                 UpdatedAt = now
             });
         await _db.SaveChangesAsync();
 
-        await _db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;");
-        await _db.Database.ExecuteSqlInterpolatedAsync($"""
-            INSERT INTO tasks ("Id", "Title", "Description", "SuccessCriteria", "RoomId", "CreatedAt", "UpdatedAt")
-            VALUES ({"orphaned-task"}, {"Orphaned task"}, {"Visible even if its room row is gone"}, {"Show up"}, {"missing-room"}, {now.AddMinutes(-1)}, {now.AddMinutes(-1)})
-            """);
-        await _db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
-
         var tasks = await _runtime.GetTasksAsync();
 
         Assert.Collection(tasks,
-            task => Assert.Equal("orphaned-task", task.Id),
-            task => Assert.Equal("legacy-main-task", task.Id),
+            task => Assert.Equal("unbackfilled-workspace-task", task.Id),
             task => Assert.Equal("current-workspace-task", task.Id));
     }
 

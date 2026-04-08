@@ -20,6 +20,7 @@ public class TaskEntity
     public string ImplementationSummary { get; set; } = string.Empty;
     public string PreferredRoles { get; set; } = "[]";
     public string? RoomId { get; set; }
+    public string? WorkspacePath { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
