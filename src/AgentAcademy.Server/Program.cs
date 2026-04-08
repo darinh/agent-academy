@@ -306,6 +306,10 @@ builder.Services.AddSingleton<ICommandHandler, RecordEvidenceHandler>();
 builder.Services.AddSingleton<ICommandHandler, QueryEvidenceHandler>();
 builder.Services.AddSingleton<ICommandHandler, CheckGatesHandler>();
 builder.Services.AddSingleton<ICommandHandler, CommitChangesHandler>();
+builder.Services.AddSingleton<ICommandHandler, StartSprintHandler>();
+builder.Services.AddSingleton<ICommandHandler, AdvanceStageHandler>();
+builder.Services.AddSingleton<ICommandHandler, StoreArtifactHandler>();
+builder.Services.AddSingleton<ICommandHandler, CompleteSprintHandler>();
 
 // Notification system
 builder.Services.AddSingleton<ConfigEncryptionService>();

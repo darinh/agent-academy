@@ -245,4 +245,15 @@ public class CommandParserTests
         Assert.Equal("task-abc123", result.Commands[0].Args["taskId"]);
         Assert.Equal("true", result.Commands[0].Args["deleteBranch"]);
     }
+
+    [Theory]
+    [InlineData("START_SPRINT:")]
+    [InlineData("ADVANCE_STAGE:")]
+    [InlineData("STORE_ARTIFACT:\n  type: RequirementsDocument\n  content: doc")]
+    [InlineData("COMPLETE_SPRINT:")]
+    public void Parse_SprintCommands_Recognized(string text)
+    {
+        var result = _parser.Parse(text);
+        Assert.Single(result.Commands);
+    }
 }

@@ -53,7 +53,8 @@ public sealed class CommandParser
         "RESTART_SERVER", "SHELL", "CREATE_ROOM", "REOPEN_ROOM",
         "CREATE_PR", "POST_PR_REVIEW", "GET_PR_REVIEWS", "MERGE_PR",
         "RECORD_EVIDENCE", "QUERY_EVIDENCE", "CHECK_GATES",
-        "COMMIT_CHANGES"
+        "COMMIT_CHANGES",
+        "START_SPRINT", "ADVANCE_STAGE", "STORE_ARTIFACT", "COMPLETE_SPRINT"
     };
 
     /// <summary>
