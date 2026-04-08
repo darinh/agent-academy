@@ -27,7 +27,7 @@ App.tsx (FluentProvider + AppShell)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview, directMessages)
+        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview, directMessages, sprint)
         └── Tab content panels
             ├── ChatPanel.tsx (with SignalR connection status bar)
             ├── TaskListPanel.tsx
@@ -37,6 +37,7 @@ App.tsx (FluentProvider + AppShell)
             ├── DashboardPanel.tsx
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
+            ├── SprintPanel.tsx (sprint lifecycle viewer)
             ├── SettingsPanel.tsx (notification provider setup)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
@@ -131,6 +132,10 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/rooms/{id}/human` | POST | Send human message |
 | `/api/rooms/{id}/phase` | POST | Transition phase |
 | `/api/tasks` | POST | Create task |
+| `/api/sprints` | GET | List sprints (supports `limit` and `offset` query params) |
+| `/api/sprints/active` | GET | Get active sprint with artifacts (returns 204 if none) |
+| `/api/sprints/{id}` | GET | Get sprint detail with artifacts |
+| `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
 
 ### Browse response shape (from server):
 ```json
@@ -263,9 +268,78 @@ Mini SVG trend charts in the dashboard panels showing activity over time.
 - **ErrorsPanel**: Error rate trend (red)
 - **AuditLogPanel**: Command count trend (purple), using a separate 200-record fetch for accurate trend data (not the paged table slice)
 
+## Sprint Panel (`SprintPanel.tsx`)
+
+The Sprint tab provides a lifecycle viewer for agent sprints — structured iterations that progress through defined stages.
+
+### Stage Pipeline
+
+A 6-column grid (responsive: 3-col at 900px, 1-col at 600px) visualizes the sprint lifecycle:
+
+| Stage | Icon | Description |
+|-------|------|-------------|
+| Intake | 📥 | Requirements gathering and scope definition |
+| Planning | 📋 | Sprint plan creation and phase breakdown |
+| Discussion | 💬 | Team discussion and design decisions |
+| Validation | ✅ | Plan validation and readiness check |
+| Implementation | 🔨 | Active development and task execution |
+| FinalSynthesis | 📊 | Sprint report and deliverable summary |
+
+Each stage card shows:
+- Visual state: **active** (cyan border + gradient), **completed** (green border + gradient), or **pending** (muted)
+- Artifact count for that stage (or description text if no artifacts)
+- Clickable — selecting a stage filters the artifact detail view below
+
+### Artifact Viewer
+
+When a stage is selected, artifacts for that stage are listed as expandable cards:
+- Header: artifact type (PascalCase split to words), stage badge, agent badge, relative timestamp
+- Content: monospace pre-wrapped text, truncated at 200 chars with "Show full content" toggle
+- Types include: `DesignDoc`, `SprintPlan`, `CodeReview`, `SprintReport`, and others defined by the backend
+
+### Sprint History
+
+When multiple sprints exist, a history list appears below the artifacts:
+- Each row shows sprint number, status badge (Active/Completed/Cancelled → active/done/cancel colors), current stage, and timestamp
+- Clicking a sprint loads its detail via `GET /api/sprints/{id}`
+- Active sprint data is cached to avoid redundant fetches
+
+### Data Flow
+
+- On mount: fetches active sprint + sprint list in parallel
+- Defaults to showing the active sprint (if one exists)
+- Manual refresh via header sync button
+- No SignalR integration yet — updates require manual refresh or re-mounting
+
+### API Types
+
+```typescript
+type SprintStage = "Intake" | "Planning" | "Discussion" | "Validation" | "Implementation" | "FinalSynthesis";
+type SprintStatus = "Active" | "Completed" | "Cancelled";
+type SprintArtifactType = "DesignDoc" | "SprintPlan" | "CodeReview" | "SprintReport";
+
+interface SprintSnapshot {
+  id: string; number: number; status: SprintStatus;
+  currentStage: SprintStage; overflowFromSprintId: string | null;
+  createdAt: string; completedAt: string | null;
+}
+
+interface SprintArtifact {
+  id: number; sprintId: string; stage: SprintStage;
+  type: string; content: string;
+  createdByAgentId: string | null; createdAt: string;
+}
+
+interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; }
+interface SprintListResponse { sprints: SprintSnapshot[]; total: number; }
+```
+
 ## Future Work
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
+- Sprint panel: SignalR integration for real-time stage/artifact updates
+- Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)
+- Sprint panel: Sprint metrics (time per stage, artifact word counts)
 - SSE activity stream integration
 - ~~Notification setup wizard (component exists, not yet wired)~~ **RESOLVED** — `NotificationSetupWizard` refactored to multi-provider. Accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and generic fallback. Settings tab routes all providers to the wizard.
 - ~~TaskStatePanel integration~~ **RESOLVED** — `TaskListPanel.tsx` now includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons (Approve/Request Changes/Reject/Merge) wired through `executeCommand` API.

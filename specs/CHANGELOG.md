@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **300-frontend-ui**: Added Sprint Panel documentation. Component tree updated to include `SprintPanel.tsx` and `sprint` tab. API contract table expanded with 4 sprint endpoints (`/api/sprints`, `/api/sprints/active`, `/api/sprints/{id}`, `/api/sprints/{id}/artifacts`). New section documents stage pipeline (6 stages), artifact viewer, sprint history, data flow, and API types. Future Work updated with sprint-specific items (SignalR, markdown rendering, metrics).
 - **001-domain-model**: Added `WorkspacePath` to `TaskSnapshot` and `ConversationSessionSnapshot`. Added project-scoping pattern section documenting entity-workspace associations. Added `idx_tasks_workspace` and `idx_conversation_sessions_workspace` indexes.
 - **005-workspace-runtime**: Documented project-scoping phase 1 — `TaskEntity` and `ConversationSessionEntity` now have direct `WorkspacePath`. `GetTasksAsync()` filters by workspace directly. `GetAllSessionsAsync`/`GetSessionStatsAsync` accept optional workspace filter. API endpoints accept `?workspace=` parameter.
 - **005-workspace-runtime**: Documented `RecoverFromCrashAsync` crash recovery behavior. Covers breakout closure, stuck agent reset, orphaned task unassignment, and correlation-deduped notification. Resolves spec gap flagged by agent team.
