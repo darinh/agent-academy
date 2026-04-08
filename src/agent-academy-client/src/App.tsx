@@ -70,7 +70,7 @@ const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   commands: { title: "Command Deck", meta: "" },
   sprint: { title: "Sprint", meta: "Active iteration" },
   timeline: { title: "Activity Timeline", meta: "" },
-  dashboard: { title: "Dashboard", meta: "System telemetry" },
+  dashboard: { title: "Metrics", meta: "System telemetry" },
   overview: { title: "Overview", meta: "Room state" },
   directMessages: { title: "Direct Messages", meta: "" },
 };
@@ -536,6 +536,7 @@ function AppShell() {
             user={hasDisplayUser(auth.user) && auth.user ? auth.user : null}
             onLogout={handleLogout}
             onOpenSettings={() => setShowSettings(true)}
+            sprintVersion={sprintVersion}
           />
 
           <main className={s.workspace} aria-label="Workspace content">

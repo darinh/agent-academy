@@ -193,6 +193,16 @@ export const useStyles = makeStyles({
     textTransform: "uppercase",
   },
 
+  /* ─ Sprint indicator above nav ─ */
+  sprintIndicator: {
+    ...shorthands.padding("6px", "12px"),
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    color: "var(--aa-lime, #a3e635)",
+    textTransform: "uppercase",
+  },
+
   /* ─ Nav Items (view switching in sidebar) ─ */
   navSection: {
     ...shorthands.padding("4px", "8px"),

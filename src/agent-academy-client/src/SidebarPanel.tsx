@@ -19,15 +19,15 @@ import {
 /* ── View navigation items ─────────────────────────────────────── */
 
 const NAV_ITEMS = [
-  { value: "chat", icon: "💬", label: "Conversation" },
-  { value: "tasks", icon: "📋", label: "Tasks" },
-  { value: "plan", icon: "📄", label: "Plan" },
-  { value: "commands", icon: "⌨️", label: "Commands" },
-  { value: "sprint", icon: "🏃", label: "Sprint" },
-  { value: "timeline", icon: "⏱️", label: "Timeline" },
-  { value: "dashboard", icon: "📊", label: "Dashboard" },
   { value: "overview", icon: "🔲", label: "Overview" },
+  { value: "chat", icon: "💬", label: "Conversation" },
   { value: "directMessages", icon: "✉️", label: "Messages" },
+  { value: "plan", icon: "📄", label: "Plan" },
+  { value: "tasks", icon: "📋", label: "Tasks" },
+  { value: "timeline", icon: "⏱️", label: "Timeline" },
+  { value: "sprint", icon: "🏃", label: "Sprint" },
+  { value: "dashboard", icon: "📊", label: "Metrics" },
+  { value: "commands", icon: "⌨️", label: "Commands" },
 ] as const;
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */
@@ -53,6 +53,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   user?: AuthUser | null;
   onLogout?: () => void;
   onOpenSettings?: () => void;
+  sprintVersion?: number;
 }) {
   const s = useStyles();
 
@@ -64,7 +65,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           {props.sidebarOpen ? (
             <div className={s.brandBlock}>
               <div className={s.appTitle}>Agent Academy</div>
-              <div className={s.appSubtitle}>● Live</div>
+              <div className={s.appSubtitle}>
+                {props.workspace ? props.workspace.name : "● Live"}
+              </div>
             </div>
           ) : (
             <div className={s.eyebrow}>AA</div>
@@ -89,6 +92,11 @@ const SidebarPanel = memo(function SidebarPanel(props: {
       {/* Body */}
       {props.sidebarOpen ? (
         <div className={s.sidebarBody}>
+          {/* Sprint indicator */}
+          {(props.sprintVersion ?? 0) > 0 && (
+            <div className={s.sprintIndicator}>🏃 Sprint {props.sprintVersion}</div>
+          )}
+
           {/* View Navigation */}
           <div className={s.navSection}>
             {NAV_ITEMS.map((item) => (
