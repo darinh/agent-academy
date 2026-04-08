@@ -12,4 +12,7 @@ public class PlanEntity
 
     // Sprint association
     public string? SprintId { get; set; }
+
+    // Navigation
+    public SprintEntity? Sprint { get; set; }
 }

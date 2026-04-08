@@ -82,6 +82,23 @@ public class ConversationSessionServiceTests : IDisposable
         }
     }
 
+    private async Task SeedSprintAsync(string sprintId, string workspacePath = "/test")
+    {
+        if (!await _db.Sprints.AnyAsync(s => s.Id == sprintId))
+        {
+            _db.Sprints.Add(new Data.Entities.SprintEntity
+            {
+                Id = sprintId,
+                Number = 1,
+                WorkspacePath = workspacePath,
+                Status = "Active",
+                CurrentStage = "Intake",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync();
+        }
+    }
+
     [Fact]
     public async Task GetOrCreate_CreatesFirstSession()
     {
@@ -845,6 +862,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task CreateSessionForStage_CreatesTaggedSession()
     {
         await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
 
         var session = await _service.CreateSessionForStageAsync(
             "room-sprint", "sprint-1", "Intake");
@@ -859,6 +877,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task CreateSessionForStage_ArchivesPreviousActiveSession()
     {
         await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
 
         var first = await _service.GetOrCreateActiveSessionAsync("room-sprint");
         Assert.Equal("Active", first.Status);
@@ -877,6 +896,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task CreateSessionForStage_InvalidatesSdkSessions()
     {
         await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
 
         await _service.CreateSessionForStageAsync(
             "room-sprint", "sprint-1", "Intake");
@@ -888,6 +908,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task CreateSessionForStage_SurvivesSdkInvalidationFailure()
     {
         await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
         _executor.InvalidateRoomSessionsAsync(Arg.Any<string>())
             .Returns(Task.FromException(new Exception("SDK down")));
 
@@ -902,6 +923,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task CreateSessionForStage_IncrementsSequenceNumber()
     {
         await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
 
         var first = await _service.GetOrCreateActiveSessionAsync("room-sprint");
         var second = await _service.CreateSessionForStageAsync(
@@ -914,6 +936,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task CreateSessionForStage_WorksWithNoExistingSession()
     {
         await SeedRoomAsync("room-empty");
+        await SeedSprintAsync("sprint-1");
 
         var session = await _service.CreateSessionForStageAsync(
             "room-empty", "sprint-1", "Planning");
@@ -954,6 +977,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task GetStageContext_ReturnsSummaryFromArchivedSession()
     {
         await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
 
         // Create a session for Intake, add a summary, archive it
         _db.ConversationSessions.Add(new ConversationSessionEntity
@@ -978,6 +1002,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task GetStageContext_ReturnsLatestBySequence()
     {
         await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
 
         _db.ConversationSessions.Add(new ConversationSessionEntity
         {
@@ -1012,6 +1037,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task GetStageContext_DoesNotReturnActiveSession()
     {
         await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
 
         _db.ConversationSessions.Add(new ConversationSessionEntity
         {
@@ -1034,6 +1060,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task GetSprintContext_ReturnsLatestPerStageInCanonicalOrder()
     {
         await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
 
         // Two sessions for Intake (should only get latest), one for Planning
         _db.ConversationSessions.Add(new ConversationSessionEntity
@@ -1084,6 +1111,7 @@ public class ConversationSessionServiceTests : IDisposable
     [Fact]
     public async Task GetSprintContext_IgnoresNullSummaries()
     {
+        await SeedSprintAsync("sprint-1");
         _db.ConversationSessions.Add(new ConversationSessionEntity
         {
             Id = "sess-nosummary",
@@ -1225,6 +1253,7 @@ public class ConversationSessionServiceTests : IDisposable
     [Fact]
     public async Task CreateSessionForStage_StampsWorkspacePath()
     {
+        await SeedSprintAsync("sprint-1");
         _db.Rooms.Add(new RoomEntity
         {
             Id = "sprint-ws-room",

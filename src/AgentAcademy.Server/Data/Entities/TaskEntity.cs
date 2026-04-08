@@ -47,4 +47,5 @@ public class TaskEntity
 
     // Navigation properties
     public RoomEntity? Room { get; set; }
+    public SprintEntity? Sprint { get; set; }
 }

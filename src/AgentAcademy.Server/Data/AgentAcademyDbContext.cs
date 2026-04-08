@@ -115,9 +115,15 @@ public class AgentAcademyDbContext : DbContext
                 .HasForeignKey(e => e.RoomId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_tasks_room");
             entity.HasIndex(e => e.AssignedAgentId).HasDatabaseName("idx_tasks_agent");
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_tasks_status");
+            entity.HasIndex(e => e.SprintId).HasDatabaseName("idx_tasks_sprint");
             entity.Property(e => e.WorkspacePath).IsRequired(false);
             entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_tasks_workspace");
         });
@@ -243,6 +249,11 @@ public class AgentAcademyDbContext : DbContext
             entity.HasKey(e => e.RoomId);
             entity.Property(e => e.Content).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
+
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Activity Events ───────────────────────────────────
@@ -375,6 +386,14 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.WorkspacePath).IsRequired(false);
             entity.HasIndex(e => e.WorkspacePath)
                 .HasDatabaseName("idx_conversation_sessions_workspace");
+
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.SprintId)
+                .HasDatabaseName("idx_conversation_sessions_sprint");
         });
 
         // ── System Settings ─────────────────────────────────────
@@ -472,6 +491,11 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => new { e.WorkspacePath, e.Number })
                 .IsUnique()
                 .HasDatabaseName("idx_sprints_workspace_number_unique");
+
+            entity.HasOne(e => e.OverflowFromSprint)
+                .WithMany()
+                .HasForeignKey(e => e.OverflowFromSprintId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Sprint Artifacts ───────────────────────────────────

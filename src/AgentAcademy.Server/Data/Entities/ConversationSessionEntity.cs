@@ -22,4 +22,7 @@ public class ConversationSessionEntity
     // Sprint scoping
     public string? SprintId { get; set; }
     public string? SprintStage { get; set; }
+
+    // Navigation
+    public SprintEntity? Sprint { get; set; }
 }
