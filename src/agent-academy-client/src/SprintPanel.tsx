@@ -280,7 +280,7 @@ const useLocalStyles = makeStyles({
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function SprintPanel() {
+export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: number }) {
   const s = useLocalStyles();
 
   const [loading, setLoading] = useState(true);
@@ -289,6 +289,7 @@ export default function SprintPanel() {
     useState<SprintDetailResponse | null>(null);
   const [history, setHistory] = useState<SprintSnapshot[]>([]);
   const [selectedSprintId, setSelectedSprintId] = useState<string | null>(null);
+  const selectedSprintIdRef = useRef<string | null>(null);
   const [selectedDetail, setSelectedDetail] =
     useState<SprintDetailResponse | null>(null);
   const [selectedStage, setSelectedStage] = useState<SprintStage | null>(null);
@@ -315,11 +316,15 @@ export default function SprintPanel() {
       if (!mountedRef.current) return;
       setActiveSprint(active);
       setHistory(list.sprints);
-      // Default to active sprint
-      if (active && !selectedSprintId) {
+      // Default to active sprint only on first load (no selection yet)
+      if (active && !selectedSprintIdRef.current) {
+        selectedSprintIdRef.current = active.sprint.id;
         setSelectedSprintId(active.sprint.id);
         setSelectedDetail(active);
         setSelectedStage(active.sprint.currentStage);
+      } else if (active && selectedSprintIdRef.current === active.sprint.id) {
+        // Refresh the active sprint detail in-place
+        setSelectedDetail(active);
       }
     } catch (err) {
       if (!mountedRef.current) return;
@@ -334,8 +339,25 @@ export default function SprintPanel() {
     fetchData();
   }, [fetchData]);
 
+  // Re-fetch when SignalR sprint events arrive
+  const prevVersionRef = useRef(sprintVersion);
+  useEffect(() => {
+    if (sprintVersion !== prevVersionRef.current) {
+      prevVersionRef.current = sprintVersion;
+      fetchData();
+      // Also refresh detail for a non-active selected sprint
+      const sel = selectedSprintIdRef.current;
+      if (sel && (!activeSprint || activeSprint.sprint.id !== sel)) {
+        getSprintDetail(sel).then((detail) => {
+          if (mountedRef.current && detail) setSelectedDetail(detail);
+        }).catch(() => { /* ignore */ });
+      }
+    }
+  }, [sprintVersion, fetchData, activeSprint]);
+
   const handleSelectSprint = useCallback(
     async (id: string) => {
+      selectedSprintIdRef.current = id;
       setSelectedSprintId(id);
       setExpandedArtifacts(new Set());
       // If it's the active sprint, reuse cached data

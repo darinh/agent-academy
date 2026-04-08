@@ -88,6 +88,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
   // Thinking state keyed by roomId → Map<agentId, info>
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
+  const [sprintVersion, setSprintVersion] = useState(0);
 
   const setTab = useCallback((value: string) => {
     setTabRaw(value);
@@ -177,6 +178,12 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "SubagentFailed":
       case "SubagentCompleted":
         void refreshRef.current?.({ showBusy: false });
+        break;
+      case "SprintStarted":
+      case "SprintStageAdvanced":
+      case "SprintArtifactStored":
+      case "SprintCompleted":
+        setSprintVersion((v) => v + 1);
         break;
     }
   }, []);
@@ -445,6 +452,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     activityTransport: transport,
     agentLocations: ov.agentLocations ?? [],
     breakoutRooms: ov.breakoutRooms ?? [],
+    sprintVersion,
     err,
     busy,
     tab,

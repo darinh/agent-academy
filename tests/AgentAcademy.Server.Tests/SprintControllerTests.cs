@@ -32,7 +32,7 @@ public class SprintControllerTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _sprintService = new SprintService(_db, NullLogger<SprintService>.Instance);
+        _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
 
         var catalog = new AgentCatalogOptions("main", "Main Room", []);
         var activityBus = new ActivityBroadcaster();

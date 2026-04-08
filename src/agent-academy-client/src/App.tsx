@@ -159,6 +159,7 @@ function AppShell() {
     recoveryBanner,
     connectionStatus,
     breakoutRooms,
+    sprintVersion,
     err,
     busy,
     tab,
@@ -718,7 +719,7 @@ function AppShell() {
                   {tab === "commands" && (
                     <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
                   )}
-                  {tab === "sprint" && <SprintPanel />}
+                  {tab === "sprint" && <SprintPanel sprintVersion={sprintVersion} />}
                   {tab === "timeline" && (
                     <TimelinePanel activity={activity} loading={busy} />
                   )}

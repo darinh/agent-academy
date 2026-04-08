@@ -29,7 +29,7 @@ public class SprintServiceTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _service = new SprintService(_db, NullLogger<SprintService>.Instance);
+        _service = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
     }
 
     public void Dispose()

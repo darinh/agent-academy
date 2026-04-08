@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -44,11 +45,13 @@ public sealed class SprintService
         };
 
     private readonly AgentAcademyDbContext _db;
+    private readonly ActivityBroadcaster _activityBus;
     private readonly ILogger<SprintService> _logger;
 
-    public SprintService(AgentAcademyDbContext db, ILogger<SprintService> logger)
+    public SprintService(AgentAcademyDbContext db, ActivityBroadcaster activityBus, ILogger<SprintService> logger)
     {
         _db = db;
+        _activityBus = activityBus;
         _logger = logger;
     }
 
@@ -98,6 +101,10 @@ public sealed class SprintService
         };
 
         _db.Sprints.Add(sprint);
+
+        Publish(ActivityEventType.SprintStarted, null, null, null,
+            $"Sprint #{sprint.Number} started for workspace {workspacePath}");
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -175,11 +182,15 @@ public sealed class SprintService
             existing.CreatedByAgentId = agentId;
             existing.UpdatedAt = DateTime.UtcNow;
 
+            Publish(ActivityEventType.SprintArtifactStored, null, agentId, null,
+                $"Artifact '{type}' updated for sprint stage {stage}");
+
+            await _db.SaveChangesAsync();
+
             _logger.LogInformation(
                 "Updated artifact {Type} for sprint {SprintId} stage {Stage}",
                 type, sprintId, stage);
 
-            await _db.SaveChangesAsync();
             return existing;
         }
 
@@ -194,6 +205,10 @@ public sealed class SprintService
         };
 
         _db.SprintArtifacts.Add(artifact);
+
+        Publish(ActivityEventType.SprintArtifactStored, null, agentId, null,
+            $"Artifact '{type}' stored for sprint stage {stage}");
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -265,6 +280,10 @@ public sealed class SprintService
 
         var previousStage = sprint.CurrentStage;
         sprint.CurrentStage = Stages[currentIndex + 1];
+
+        Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}");
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -311,6 +330,10 @@ public sealed class SprintService
 
         sprint.Status = "Completed";
         sprint.CompletedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.SprintCompleted, null, null, null,
+            $"Sprint #{sprint.Number} completed for workspace {sprint.WorkspacePath}");
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -334,6 +357,10 @@ public sealed class SprintService
 
         sprint.Status = "Cancelled";
         sprint.CompletedAt = DateTime.UtcNow;
+
+        Publish(ActivityEventType.SprintCompleted, null, null, null,
+            $"Sprint #{sprint.Number} cancelled for workspace {sprint.WorkspacePath}");
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
@@ -365,5 +392,36 @@ public sealed class SprintService
     {
         var idx = Stages.IndexOf(stage);
         return idx >= 0 && idx < Stages.Count - 1 ? Stages[idx + 1] : null;
+    }
+
+    private void Publish(
+        ActivityEventType type, string? roomId, string? actorId, string? taskId, string message)
+    {
+        var evt = new ActivityEvent(
+            Id: Guid.NewGuid().ToString("N"),
+            Type: type,
+            Severity: ActivitySeverity.Info,
+            RoomId: roomId,
+            ActorId: actorId,
+            TaskId: taskId,
+            Message: message,
+            CorrelationId: null,
+            OccurredAt: DateTime.UtcNow
+        );
+
+        _db.ActivityEvents.Add(new ActivityEventEntity
+        {
+            Id = evt.Id,
+            Type = evt.Type.ToString(),
+            Severity = evt.Severity.ToString(),
+            RoomId = evt.RoomId,
+            ActorId = evt.ActorId,
+            TaskId = evt.TaskId,
+            Message = evt.Message,
+            CorrelationId = evt.CorrelationId,
+            OccurredAt = evt.OccurredAt,
+        });
+
+        _activityBus.Broadcast(evt);
     }
 }

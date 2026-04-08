@@ -212,7 +212,11 @@ public enum ActivityEventType
     DirectMessageSent,
     SpecTaskLinked,
     EvidenceRecorded,
-    GateChecked
+    GateChecked,
+    SprintStarted,
+    SprintStageAdvanced,
+    SprintArtifactStored,
+    SprintCompleted
 }
 
 /// <summary>
