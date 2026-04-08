@@ -5,6 +5,8 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **001-domain-model**: Added `WorkspacePath` to `TaskSnapshot` and `ConversationSessionSnapshot`. Added project-scoping pattern section documenting entity-workspace associations. Added `idx_tasks_workspace` and `idx_conversation_sessions_workspace` indexes.
+- **005-workspace-runtime**: Documented project-scoping phase 1 — `TaskEntity` and `ConversationSessionEntity` now have direct `WorkspacePath`. `GetTasksAsync()` filters by workspace directly. `GetAllSessionsAsync`/`GetSessionStatsAsync` accept optional workspace filter. API endpoints accept `?workspace=` parameter.
 - **005-workspace-runtime**: Documented `RecoverFromCrashAsync` crash recovery behavior. Covers breakout closure, stuck agent reset, orphaned task unassignment, and correlation-deduped notification. Resolves spec gap flagged by agent team.
 - **007-agent-commands**: Added RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES to Phase 1C (Verification). Records structured verification checks against tasks with phase (Baseline/After/Review), check names, tool info, exit codes, and output. CHECK_GATES evaluates minimum evidence for status transitions. All 6 agents permitted. Human API allowlist updated. Permission model table updated with evidence command access. 23 new tests (1375 total). Committed in `42d4124`.
 - **010-task-management**: Added §6.6 Evidence Ledger documenting the task evidence system. Covers TaskEvidenceEntity data model, EvidencePhase enum, gate definitions for status transitions, authorization rules, and invariants #10 (immutable evidence) and #11 (advisory gates).

@@ -65,16 +65,19 @@ Each `RoomSnapshot` includes:
 ### Task Management
 
 - `CreateTaskAsync(TaskAssignmentRequest)` → creates task, optionally creates new room
-- `GetTasksAsync()` → all tasks ordered by creation date descending
+- `GetTasksAsync()` → tasks for the active workspace, filtered by `WorkspacePath`
 - `GetTaskAsync(taskId)` → single task or null
 
 Task creation:
 - If `RoomId` is provided and room exists: updates existing room to Active/Planning
 - If `RoomId` is null: creates new room with normalized title as ID, stamped with active workspace's `WorkspacePath`
+- Task entity is stamped with `WorkspacePath` from the room
 - Adds system messages (TaskAssignment + Coordination)
 - Publishes TaskCreated and PhaseChanged events
 - Seeds `TaskSnapshot.CurrentPlan` from `TaskAssignmentRequest.CurrentPlan` when provided; otherwise uses the default planning checklist markdown
 - **Auto-join**: When a new room is created, all agents with `AutoJoinDefaultRoom = true` are moved into the room via `MoveAgentAsync`. Agents currently in `Working` state are skipped to avoid disrupting in-flight breakout work. Failures are caught and logged per-agent (best-effort) so task creation always succeeds.
+
+**Task query scoping**: `GetTasksAsync()` filters directly on `TaskEntity.WorkspacePath`. For pre-migration rows where `WorkspacePath` is null, a fallback checks the task's room to determine workspace membership.
 
 ### Message Management
 
@@ -196,6 +199,7 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 ## Revision History
 
+- **2026-04-08**: Project scoping phase 1 — added `WorkspacePath` to `TaskEntity` and `ConversationSessionEntity`. Tasks and conversation sessions now have direct project association. `GetTasksAsync()` filters by `WorkspacePath` directly (with room fallback for pre-migration rows). `GetAllSessionsAsync` and `GetSessionStatsAsync` accept optional workspace filter. Migration includes data backfill from rooms table. API: `GET /api/sessions` and `GET /api/sessions/stats` accept `?workspace=` query parameter.
 - **2026-04-07**: Documented `RecoverFromCrashAsync` crash recovery behavior — closes active breakouts, resets stuck agents to Idle, unassigns orphaned in-progress tasks, posts correlation-deduped recovery notification. Called by `AgentOrchestrator.HandleStartupRecoveryAsync` on crash detection.
 - **2026-04-04**: Task item commands — `CREATE_TASK_ITEM`, `UPDATE_TASK_ITEM`, `LIST_TASK_ITEMS` commands added. Resolves the task item management known gap. Added `GetTaskItemAsync` and `GetTaskItemsAsync` to WorkspaceRuntime. `UpdateTaskItemStatusAsync` now throws on missing items (was silent no-op). Agent catalog validation on assignee, room existence validation on create.
 - **2026-04-04**: Marked "No agent knowledge persistence" as resolved — memory system (spec 008) provides persistent storage with categories, FTS5, shared memories, import/export, and TTL decay. Clarified task item gap: internal methods exist but no agent commands expose them.
