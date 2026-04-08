@@ -6,7 +6,6 @@ import {
   makeStyles,
   mergeClasses,
   shorthands,
-  Spinner,
 } from "@fluentui/react-components";
 import { ArrowSyncRegular } from "@fluentui/react-icons";
 import EmptyState from "./EmptyState";
@@ -16,12 +15,19 @@ import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import type {
   SprintSnapshot,
-  SprintArtifact,
   SprintDetailResponse,
   SprintStage,
   SprintStatus,
 } from "./api";
-import { getActiveSprint, getSprints, getSprintDetail } from "./api";
+import {
+  getActiveSprint,
+  getSprints,
+  getSprintDetail,
+  startSprint,
+  advanceSprint,
+  completeSprint,
+  cancelSprint,
+} from "./api";
 import { formatElapsed } from "./panelUtils";
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -138,17 +144,17 @@ const useLocalStyles = makeStyles({
     cursor: "pointer",
     transitionProperty: "border-color, background",
     transitionDuration: "0.15s",
-    ":hover": {
-      borderColor: "var(--aa-border-hover, rgba(139,148,158,0.3))",
+    "&:hover": {
+      ...shorthands.borderColor("var(--aa-border-hover, rgba(139,148,158,0.3))"),
     },
   },
   stageCardActive: {
-    borderColor: "var(--aa-cyan, #5b8def)",
+    ...shorthands.borderColor("var(--aa-cyan, #5b8def)"),
     background:
       "linear-gradient(135deg, rgba(91,141,239,0.06), transparent 60%)",
   },
   stageCardCompleted: {
-    borderColor: "var(--aa-lime, #4caf50)",
+    ...shorthands.borderColor("var(--aa-lime, #4caf50)"),
     background:
       "linear-gradient(135deg, rgba(76,175,80,0.04), transparent 60%)",
   },
@@ -241,12 +247,12 @@ const useLocalStyles = makeStyles({
     fontSize: "13px",
     transitionProperty: "border-color",
     transitionDuration: "0.15s",
-    ":hover": {
-      borderColor: "var(--aa-border-hover, rgba(139,148,158,0.3))",
+    "&:hover": {
+      ...shorthands.borderColor("var(--aa-border-hover, rgba(139,148,158,0.3))"),
     },
   },
   historyItemActive: {
-    borderColor: "var(--aa-cyan, #5b8def)",
+    ...shorthands.borderColor("var(--aa-cyan, #5b8def)"),
   },
   sprintNumber: {
     fontFamily: "var(--mono)",
@@ -327,6 +333,33 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
       } else if (active && selectedSprintIdRef.current === active.sprint.id) {
         // Refresh the active sprint detail in-place
         setSelectedDetail(active);
+      } else if (selectedSprintIdRef.current) {
+        // Selected sprint is not the active one (or active is null after complete/cancel).
+        // Re-fetch its detail so UI reflects current server state.
+        const sel = selectedSprintIdRef.current;
+        const updated = list.sprints.find((s) => s.id === sel);
+        if (updated) {
+          try {
+            const detail = await getSprintDetail(sel);
+            if (mountedRef.current && detail) setSelectedDetail(detail);
+          } catch { /* ignore */ }
+        } else {
+          // Selected sprint no longer in history — reset to active or first
+          const fallback = active ?? (list.sprints.length > 0 ? null : null);
+          if (fallback) {
+            selectedSprintIdRef.current = fallback.sprint.id;
+            setSelectedSprintId(fallback.sprint.id);
+            setSelectedDetail(fallback);
+          } else if (list.sprints.length > 0) {
+            const first = list.sprints[0];
+            selectedSprintIdRef.current = first.id;
+            setSelectedSprintId(first.id);
+            try {
+              const detail = await getSprintDetail(first.id);
+              if (mountedRef.current && detail) setSelectedDetail(detail);
+            } catch { /* ignore */ }
+          }
+        }
       }
     } catch (err) {
       if (!mountedRef.current) return;
@@ -389,11 +422,66 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
     });
   }, []);
 
-  // Derive current view data
   const detail = selectedDetail;
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const handleStartSprint = useCallback(async () => {
+    setActionBusy(true);
+    try {
+      await startSprint();
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start sprint");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [fetchData]);
+
+  const handleAdvanceSprint = useCallback(async () => {
+    if (!detail) return;
+    setActionBusy(true);
+    try {
+      await advanceSprint(detail.sprint.id);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to advance sprint");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [detail, fetchData]);
+
+  const handleCompleteSprint = useCallback(async () => {
+    if (!detail) return;
+    setActionBusy(true);
+    try {
+      await completeSprint(detail.sprint.id);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to complete sprint");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [detail, fetchData]);
+
+  const handleCancelSprint = useCallback(async () => {
+    if (!detail) return;
+    setActionBusy(true);
+    try {
+      await cancelSprint(detail.sprint.id);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel sprint");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [detail, fetchData]);
+
+  // Derive current view data
   const currentStageIndex = detail
     ? ALL_STAGES.indexOf(detail.sprint.currentStage)
     : -1;
+  const isActive = detail?.sprint.status === "Active";
+  const isFinalStage = detail?.sprint.currentStage === "FinalSynthesis";
   const stageArtifacts = detail
     ? detail.artifacts.filter(
         (a) => selectedStage && a.stage === selectedStage,
@@ -403,7 +491,7 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
   if (loading) {
     return (
       <div className={s.root}>
-        <SkeletonLoader lines={6} />
+        <SkeletonLoader rows={6} />
       </div>
     );
   }
@@ -412,8 +500,7 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
     return (
       <div className={s.root}>
         <ErrorState
-          error={error}
-          icon={<span style={{ fontSize: "24px" }}>⚠️</span>}
+          message={error}
         />
       </div>
     );
@@ -425,7 +512,8 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
         <EmptyState
           icon={<span style={{ fontSize: "32px" }}>🏃</span>}
           title="No sprints yet"
-          description="Sprints are created by agents during the planning phase. Start a planning session to kick off your first sprint."
+          detail="Start a sprint to begin the intake process."
+          action={{ label: "Start Sprint", onClick: handleStartSprint }}
         />
       </div>
     );
@@ -459,6 +547,27 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
           onClick={fetchData}
           style={{ marginLeft: "auto" }}
         />
+        {/* Sprint lifecycle controls */}
+        {!activeSprint && (
+          <Button appearance="primary" size="small" onClick={handleStartSprint} disabled={actionBusy}>
+            Start Sprint
+          </Button>
+        )}
+        {isActive && !isFinalStage && (
+          <Button appearance="primary" size="small" onClick={handleAdvanceSprint} disabled={actionBusy}>
+            Advance Stage
+          </Button>
+        )}
+        {isActive && isFinalStage && (
+          <Button appearance="primary" size="small" onClick={handleCompleteSprint} disabled={actionBusy}>
+            Complete Sprint
+          </Button>
+        )}
+        {isActive && (
+          <Button appearance="subtle" size="small" onClick={handleCancelSprint} disabled={actionBusy}>
+            Cancel
+          </Button>
+        )}
       </div>
 
       {/* Stage Pipeline */}
@@ -466,7 +575,7 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
         <div className={s.pipeline}>
           {ALL_STAGES.map((stage, idx) => {
             const meta = STAGE_META[stage];
-            const isActive = stage === detail.sprint.currentStage;
+            const isCurrent = stage === detail.sprint.currentStage;
             const isCompleted =
               detail.sprint.status === "Completed" ||
               idx < currentStageIndex;
@@ -479,8 +588,8 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
                 key={stage}
                 className={mergeClasses(
                   s.stageCard,
-                  isActive && s.stageCardActive,
-                  isCompleted && !isActive && s.stageCardCompleted,
+                  isCurrent && s.stageCardActive,
+                  isCompleted && !isCurrent && s.stageCardCompleted,
                   isSelected && s.stageCardSelected,
                 )}
                 onClick={() => setSelectedStage(stage)}
@@ -495,11 +604,11 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
                 <span
                   className={mergeClasses(
                     s.stageLabel,
-                    !isActive && !isCompleted && s.stageLabelMuted,
+                    !isCurrent && !isCompleted && s.stageLabelMuted,
                   )}
                 >
                   {meta.label}
-                  {isActive && " ●"}
+                  {isCurrent && " ●"}
                 </span>
                 <span className={s.stageDesc}>
                   {artifactCount > 0

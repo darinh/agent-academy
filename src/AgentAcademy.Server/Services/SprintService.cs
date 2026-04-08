@@ -138,15 +138,17 @@ public sealed class SprintService
     /// <summary>
     /// Returns all sprints for a workspace, ordered by number descending.
     /// </summary>
-    public async Task<List<SprintEntity>> GetSprintsForWorkspaceAsync(
+    public async Task<(List<SprintEntity> Items, int TotalCount)> GetSprintsForWorkspaceAsync(
         string workspacePath, int limit = 20, int offset = 0)
     {
-        return await _db.Sprints
-            .Where(s => s.WorkspacePath == workspacePath)
+        var query = _db.Sprints.Where(s => s.WorkspacePath == workspacePath);
+        var totalCount = await query.CountAsync();
+        var items = await query
             .OrderByDescending(s => s.Number)
             .Skip(Math.Max(offset, 0))
             .Take(Math.Clamp(limit, 1, 100))
             .ToListAsync();
+        return (items, totalCount);
     }
 
     // ── Artifacts ────────────────────────────────────────────────

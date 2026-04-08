@@ -205,4 +205,119 @@ public class SprintControllerTests : IDisposable
         Assert.Single(filteredBody);
         Assert.Equal(ArtifactType.RequirementsDocument, filteredBody[0].Type);
     }
+
+    // ── StartSprint ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task StartSprint_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.StartSprint();
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task StartSprint_Success_ReturnsDetail()
+    {
+        await ActivateWorkspace();
+
+        var result = await _controller.StartSprint();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(1, body.Sprint.Number);
+        Assert.Equal(SprintStatus.Active, body.Sprint.Status);
+        Assert.Equal(SprintStage.Intake, body.Sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task StartSprint_AlreadyActive_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.StartSprint();
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    // ── AdvanceSprint ───────────────────────────────────────────
+
+    [Fact]
+    public async Task AdvanceSprint_Success_ReturnsNextStage()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", "{}", "a1");
+
+        var result = await _controller.AdvanceSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(SprintStage.Planning, body.Sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceSprint_MissingArtifact_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.AdvanceSprint(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    // ── CompleteSprint ──────────────────────────────────────────
+
+    [Fact]
+    public async Task CompleteSprint_Force_Succeeds()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.CompleteSprint(sprint.Id, force: true);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintSnapshot>(ok.Value);
+        Assert.Equal(SprintStatus.Completed, body.Status);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_WrongStage_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.CompleteSprint(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    // ── CancelSprint ────────────────────────────────────────────
+
+    [Fact]
+    public async Task CancelSprint_Success()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.CancelSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintSnapshot>(ok.Value);
+        Assert.Equal(SprintStatus.Cancelled, body.Status);
+    }
+
+    [Fact]
+    public async Task CancelSprint_NotActive_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CancelSprintAsync(sprint.Id);
+
+        var result = await _controller.CancelSprint(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
 }

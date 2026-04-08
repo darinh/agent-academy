@@ -1167,3 +1167,52 @@ export function getSprintArtifacts(
     apiUrl(`/api/sprints/${encodeURIComponent(id)}/artifacts${qs ? `?${qs}` : ""}`),
   );
 }
+
+export async function startSprint(): Promise<SprintDetailResponse> {
+  const res = await fetch(apiUrl("/api/sprints"), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to start sprint");
+  }
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export async function advanceSprint(id: string): Promise<SprintDetailResponse> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/advance`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to advance sprint");
+  }
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export async function completeSprint(id: string, force = false): Promise<SprintSnapshot> {
+  const qs = force ? "?force=true" : "";
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/complete${qs}`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to complete sprint");
+  }
+  return res.json() as Promise<SprintSnapshot>;
+}
+
+export async function cancelSprint(id: string): Promise<SprintSnapshot> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/cancel`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to cancel sprint");
+  }
+  return res.json() as Promise<SprintSnapshot>;
+}

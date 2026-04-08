@@ -27,7 +27,7 @@ App.tsx (FluentProvider + AppShell)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview, directMessages, sprint)
+        ├── Tab bar (overview, chat, directMessages, plan, tasks, timeline, sprint, dashboard [Metrics], commands)
         └── Tab content panels
             ├── ChatPanel.tsx (with SignalR connection status bar)
             ├── TaskListPanel.tsx
@@ -133,8 +133,12 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/rooms/{id}/phase` | POST | Transition phase |
 | `/api/tasks` | POST | Create task |
 | `/api/sprints` | GET | List sprints (supports `limit` and `offset` query params) |
+| `/api/sprints` | POST | Start a new sprint for the active workspace |
 | `/api/sprints/active` | GET | Get active sprint with artifacts (returns 204 if none) |
 | `/api/sprints/{id}` | GET | Get sprint detail with artifacts |
+| `/api/sprints/{id}/advance` | POST | Advance sprint to next stage |
+| `/api/sprints/{id}/complete` | POST | Complete sprint (optional `force` query param) |
+| `/api/sprints/{id}/cancel` | POST | Cancel an active sprint |
 | `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
 
 ### Browse response shape (from server):
@@ -304,12 +308,25 @@ When multiple sprints exist, a history list appears below the artifacts:
 - Clicking a sprint loads its detail via `GET /api/sprints/{id}`
 - Active sprint data is cached to avoid redundant fetches
 
+### Sprint Lifecycle Controls
+
+The Sprint panel header includes context-aware action buttons:
+
+| State | Available Actions |
+|-------|-------------------|
+| No active sprint | **Start Sprint** button (header + empty state) |
+| Active, not final stage | **Advance Stage** + **Cancel** |
+| Active, final stage (FinalSynthesis) | **Complete Sprint** + **Cancel** |
+| Completed/Cancelled | No actions |
+
+Actions call write endpoints (`POST /api/sprints`, `/advance`, `/complete`, `/cancel`) and refresh data on success. Error messages display in the error state. A busy flag disables buttons during async operations.
+
 ### Data Flow
 
 - On mount: fetches active sprint + sprint list in parallel
 - Defaults to showing the active sprint (if one exists)
 - Manual refresh via header sync button
-- No SignalR integration yet — updates require manual refresh or re-mounting
+- SignalR `sprintVersion` prop triggers automatic refresh on sprint events
 
 ### API Types
 

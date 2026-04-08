@@ -5,6 +5,17 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **300-frontend-ui**: Reordered sidebar navigation: Overview, Conversation, Messages, Plan, Tasks, Timeline, Sprint, Metrics, Commands. Renamed Dashboard → Metrics. Added project name display in sidebar brand block. Added sprint version indicator above nav items.
+- **300-frontend-ui**: Fixed SprintPanel TypeScript errors (unused imports, Griffel pseudo-selector syntax, component prop mismatches). Added sprint lifecycle controls (Start Sprint, Advance Stage, Complete Sprint, Cancel) to SprintPanel header and empty state.
+- **300-frontend-ui**: Added sprint write API client functions (`startSprint`, `advanceSprint`, `completeSprint`, `cancelSprint`) to `api.ts`.
+
+### Fixed
+- **SprintController**: `ListSprints` TotalCount returned page count instead of actual total row count. `GetSprintsForWorkspaceAsync` now returns `(List<SprintEntity>, int)` tuple.
+
+### Added
+- **SprintController**: Write endpoints: `POST /api/sprints` (start), `POST /api/sprints/{id}/advance`, `POST /api/sprints/{id}/complete`, `POST /api/sprints/{id}/cancel`.
+
+### Changed
 - **300-frontend-ui**: Added Sprint Panel documentation. Component tree updated to include `SprintPanel.tsx` and `sprint` tab. API contract table expanded with 4 sprint endpoints (`/api/sprints`, `/api/sprints/active`, `/api/sprints/{id}`, `/api/sprints/{id}/artifacts`). New section documents stage pipeline (6 stages), artifact viewer, sprint history, data flow, and API types. Future Work updated with sprint-specific items (SignalR, markdown rendering, metrics).
 - **001-domain-model**: Added `WorkspacePath` to `TaskSnapshot` and `ConversationSessionSnapshot`. Added project-scoping pattern section documenting entity-workspace associations. Added `idx_tasks_workspace` and `idx_conversation_sessions_workspace` indexes.
 - **005-workspace-runtime**: Documented project-scoping phase 1 — `TaskEntity` and `ConversationSessionEntity` now have direct `WorkspacePath`. `GetTasksAsync()` filters by workspace directly. `GetAllSessionsAsync`/`GetSessionStatsAsync` accept optional workspace filter. API endpoints accept `?workspace=` parameter.

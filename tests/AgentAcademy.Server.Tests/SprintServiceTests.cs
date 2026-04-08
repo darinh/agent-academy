@@ -202,9 +202,10 @@ public class SprintServiceTests : IDisposable
         await _service.CompleteSprintAsync(s1.Id, force: true);
         var s2 = await _service.CreateSprintAsync(TestWorkspace);
 
-        var list = await _service.GetSprintsForWorkspaceAsync(TestWorkspace);
+        var (list, totalCount) = await _service.GetSprintsForWorkspaceAsync(TestWorkspace);
 
         Assert.Equal(2, list.Count);
+        Assert.Equal(2, totalCount);
         Assert.Equal(s2.Id, list[0].Id);
         Assert.Equal(s1.Id, list[1].Id);
     }
@@ -216,9 +217,10 @@ public class SprintServiceTests : IDisposable
         await _service.CompleteSprintAsync(s1.Id, force: true);
         await _service.CreateSprintAsync(TestWorkspace);
 
-        var list = await _service.GetSprintsForWorkspaceAsync(TestWorkspace, limit: 1);
+        var (list, totalCount) = await _service.GetSprintsForWorkspaceAsync(TestWorkspace, limit: 1);
 
         Assert.Single(list);
+        Assert.Equal(2, totalCount);
     }
 
     // ── StoreArtifactAsync ───────────────────────────────────────
