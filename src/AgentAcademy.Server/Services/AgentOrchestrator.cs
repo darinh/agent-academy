@@ -248,9 +248,48 @@ public sealed class AgentOrchestrator
                 _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId);
             }
 
+            // Load active sprint context (if any) for stage-aware prompts and roster filtering
+            string? sprintPreamble = null;
+            string? activeSprintStage = null;
+            try
+            {
+                var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+                var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+                if (workspacePath is not null)
+                {
+                    var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
+                    if (sprint is not null)
+                    {
+                        activeSprintStage = sprint.CurrentStage;
+                        var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
+                        sprintPreamble = SprintPreambles.BuildPreamble(
+                            sprint.Number, sprint.CurrentStage, priorContext);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load sprint context for room {RoomId}", roomId);
+            }
+
             var planner = FindPlanner(runtime);
             if (planner is not null)
                 planner = await configService.GetEffectiveAgentAsync(planner);
+
+            // Capture planner ID before potential exclusion so the idle-agent
+            // fallback can still exclude the planner from its pool
+            var plannerId = planner?.Id;
+
+            // Skip planner if not allowed in current sprint stage
+            if (planner is not null && activeSprintStage is not null
+                && !SprintPreambles.IsRoleAllowedInStage(planner.Role, activeSprintStage))
+            {
+                _logger.LogInformation(
+                    "Planner {PlannerName} excluded from sprint stage {Stage}",
+                    planner.Name, activeSprintStage);
+                planner = null;
+            }
+
             var agentsToRun = new List<AgentDefinition>();
 
             // Step 1 — Run the planner first
@@ -266,7 +305,7 @@ public sealed class AgentOrchestrator
                     var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
                     if (plannerDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary)
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary, sprintPreamble)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -309,8 +348,15 @@ public sealed class AgentOrchestrator
             {
                 agentsToRun.AddRange(
                     (await GetIdleAgentsInRoomAsync(runtime, roomId))
-                        .Where(a => a.Id != planner?.Id)
+                        .Where(a => a.Id != plannerId)
                         .Take(3));
+            }
+
+            // Filter agents by sprint stage roster (if active sprint)
+            if (activeSprintStage is not null)
+            {
+                agentsToRun = SprintPreambles.FilterByStageRoster(
+                    agentsToRun, activeSprintStage, a => a.Role);
             }
 
             // Step 3 — Run agents sequentially so each sees the previous response
@@ -335,7 +381,7 @@ public sealed class AgentOrchestrator
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                     if (agentDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
-                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary);
+                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
                     response = await RunAgentAsync(agent, prompt, roomId);
                 }
                 catch (Exception ex)
@@ -450,10 +496,25 @@ public sealed class AgentOrchestrator
         if (directMessages.Count > 0)
             await runtime.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
         string? dmSessionSummary = null;
+        string? dmSprintPreamble = null;
         try
         {
             var dmSessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
             dmSessionSummary = await dmSessionService.GetSessionContextAsync(roomId);
+
+            // Inject sprint context into DMs so the agent has stage awareness
+            var dmSprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            if (workspacePath is not null)
+            {
+                var sprint = await dmSprintService.GetActiveSprintAsync(workspacePath);
+                if (sprint is not null)
+                {
+                    var priorContext = await dmSessionService.GetSprintContextAsync(sprint.Id);
+                    dmSprintPreamble = SprintPreambles.BuildPreamble(
+                        sprint.Number, sprint.CurrentStage, priorContext);
+                }
+            }
         }
         catch { /* non-critical */ }
 
@@ -462,7 +523,8 @@ public sealed class AgentOrchestrator
         try
         {
             var prompt = BuildConversationPrompt(agent, room, specContext,
-                memories: agentMemories, directMessages: directMessages, sessionSummary: dmSessionSummary);
+                memories: agentMemories, directMessages: directMessages,
+                sessionSummary: dmSessionSummary, sprintPreamble: dmSprintPreamble);
             response = await RunAgentAsync(agent, prompt, roomId);
         }
         catch (Exception ex)
@@ -1352,12 +1414,19 @@ public sealed class AgentOrchestrator
         List<TaskItem>? activeTaskItems = null,
         List<AgentMemory>? memories = null,
         List<Data.Entities.MessageEntity>? directMessages = null,
-        string? sessionSummary = null)
+        string? sessionSummary = null,
+        string? sprintPreamble = null)
     {
         // Note: agent.StartupPrompt is NOT included here — it's already sent
         // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
         // Including it again would duplicate it in the SDK session context.
         var lines = new List<string>();
+
+        // Inject sprint preamble before everything else (sets stage context)
+        if (!string.IsNullOrEmpty(sprintPreamble))
+        {
+            lines.Add(sprintPreamble);
+        }
 
         // Inject session summary from previous epoch if available
         if (!string.IsNullOrEmpty(sessionSummary))
