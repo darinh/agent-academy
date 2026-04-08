@@ -45,6 +45,16 @@ public sealed class CommitChangesHandler : ICommandHandler
             };
         }
 
+        if (!ConventionalCommitMessage.TryValidate(message, out var validationError))
+        {
+            return command with
+            {
+                Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
+                Error = validationError
+            };
+        }
+
         try
         {
             var commitSha = await _gitService.CommitAsync(message, context.GitIdentity);
