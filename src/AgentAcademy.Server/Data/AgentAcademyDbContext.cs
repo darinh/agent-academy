@@ -464,6 +464,9 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_sprints_workspace");
             entity.HasIndex(e => new { e.WorkspacePath, e.Status })
                 .HasDatabaseName("idx_sprints_workspace_status");
+            entity.HasIndex(e => new { e.WorkspacePath, e.Number })
+                .IsUnique()
+                .HasDatabaseName("idx_sprints_workspace_number_unique");
         });
 
         // ── Sprint Artifacts ───────────────────────────────────
@@ -488,6 +491,9 @@ public class AgentAcademyDbContext : DbContext
                 .HasDatabaseName("idx_sprint_artifacts_sprint_stage");
             entity.HasIndex(e => new { e.SprintId, e.Type })
                 .HasDatabaseName("idx_sprint_artifacts_sprint_type");
+            entity.HasIndex(e => new { e.SprintId, e.Stage, e.Type })
+                .IsUnique()
+                .HasDatabaseName("idx_sprint_artifacts_sprint_stage_type_unique");
         });
     }
 }
