@@ -1,27 +1,40 @@
 :root {
-  --aa-text: #dfe6f2;
-  --aa-text-strong: #fbf7ef;
-  --aa-muted: #b6c0d1;
-  --aa-soft: #7f8ca4;
-  --aa-bg: #080b10;
-  --aa-panel: rgba(16, 21, 31, 0.9);
-  --aa-panel-alt: rgba(26, 33, 47, 0.78);
-  --aa-panel-strong: rgba(11, 15, 23, 0.96);
-  --aa-border: rgba(196, 173, 141, 0.18);
-  --aa-border-strong: rgba(214, 188, 149, 0.28);
-  --aa-hairline: rgba(255, 244, 227, 0.07);
-  --aa-cyan: #7cb0f8;
-  --aa-gold: #d1a06a;
-  --aa-copper: #b56e4f;
-  --aa-plum: #8e81da;
-  --aa-lime: #87c28f;
-  --aa-shadow: 0 40px 90px rgba(0, 0, 0, 0.5);
-  --sans: "Avenir Next", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", sans-serif;
-  --heading: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+  --aa-text: #e6edf3;
+  --aa-text-strong: #f0f6fc;
+  --aa-muted: #8b949e;
+  --aa-soft: #6e7681;
+  --aa-bg: #0d1117;
+  --aa-panel: #161b22;
+  --aa-panel-alt: #21262d;
+  --aa-panel-strong: #0d1117;
+  --aa-border: #30363d;
+  --aa-border-strong: #484f58;
+  --aa-hairline: rgba(48, 54, 61, 0.6);
+  --aa-cyan: rgb(91, 141, 239);
+  --aa-gold: rgb(255, 152, 0);
+  --aa-copper: rgb(232, 93, 93);
+  --aa-plum: rgb(156, 39, 176);
+  --aa-lime: rgb(76, 175, 80);
+  --aa-tool: rgb(0, 150, 136);
+  --aa-secondary: rgb(96, 125, 139);
+  --aa-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --sans: "Outfit", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --heading: "Outfit", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, ui-monospace, monospace;
 
-  font: 16px/1.5 var(--sans);
-  letter-spacing: 0.01em;
+  --sidebar-width: 200px;
+  --topbar-height: 40px;
+  --toolbar-height: 34px;
+  --primary: rgb(91, 141, 239);
+  --error: rgb(232, 93, 93);
+  --success: rgb(76, 175, 80);
+  --warning: rgb(255, 152, 0);
+  --special: rgb(156, 39, 176);
+  --tool: rgb(0, 150, 136);
+  --secondary: rgb(96, 125, 139);
+
+  font: 13px/1.5 var(--sans);
+  letter-spacing: 0;
   color-scheme: dark;
   color: var(--aa-text);
   background: var(--aa-bg);
@@ -35,6 +48,13 @@
   box-sizing: border-box;
 }
 
+/* Override FluentProvider's pixel line-height with a ratio so it scales
+   with each element's font-size (matches v3 mockup behavior). */
+.fui-FluentProvider {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
 html,
 body,
 #root {
@@ -46,37 +66,7 @@ body {
   min-height: 100vh;
   color: var(--aa-text);
   font-family: var(--sans);
-  background:
-    radial-gradient(circle at 12% 14%, rgba(124, 176, 248, 0.18), transparent 24%),
-    radial-gradient(circle at 84% 12%, rgba(209, 160, 106, 0.18), transparent 21%),
-    radial-gradient(circle at 72% 76%, rgba(181, 110, 79, 0.14), transparent 24%),
-    linear-gradient(180deg, #07090d 0%, #0c1017 44%, #090c12 100%);
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0, rgba(255, 255, 255, 0) 1px),
-    linear-gradient(rgba(255, 255, 255, 0.015) 0, rgba(255, 255, 255, 0) 1px),
-    linear-gradient(135deg, rgba(255, 246, 230, 0.02), transparent 42%),
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.015), transparent 54%);
-  background-size: 120px 120px, 120px 120px, auto, auto;
-  mix-blend-mode: screen;
-  opacity: 0.5;
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at top, rgba(255, 244, 227, 0.03), transparent 42%),
-    linear-gradient(180deg, rgba(255, 244, 227, 0.03), transparent 16%, transparent 84%, rgba(255, 244, 227, 0.02));
-  opacity: 0.7;
+  background: var(--aa-bg);
 }
 
 #root {
@@ -98,7 +88,7 @@ select {
 }
 
 ::selection {
-  background: rgba(209, 160, 106, 0.3);
+  background: rgba(91, 141, 239, 0.3);
   color: #ffffff;
 }
 
@@ -132,27 +122,25 @@ code,
 .counter {
   font-family: var(--mono);
   display: inline-flex;
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--aa-text-strong);
 }
 
 code {
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.4;
-  padding: 4px 8px;
-  background: rgba(255, 244, 227, 0.08);
+  padding: 2px 6px;
+  background: rgba(110, 118, 129, 0.15);
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(209, 160, 106, 0.28);
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background-clip: padding-box;
+  background: var(--aa-border);
+  border-radius: 3px;
 }
 
 *::-webkit-scrollbar-track {
@@ -163,6 +151,37 @@ code {
 :focus-visible {
   outline: 2px solid var(--aa-cyan);
   outline-offset: 2px;
+}
+
+/* Global table styles (v3 mockup) */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--aa-border);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+th {
+  color: var(--aa-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  position: sticky;
+  top: 0;
+  background: var(--aa-panel);
+  z-index: 1;
+}
+
+td {
+  color: var(--aa-muted);
 }
 
 /* Suppress focus ring on mouse interaction for elements that handle it */

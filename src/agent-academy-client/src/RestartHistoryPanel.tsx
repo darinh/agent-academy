@@ -2,12 +2,13 @@ import { formatTimestamp, formatElapsed } from "./panelUtils";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
   Tooltip,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
@@ -32,54 +33,63 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "6px",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "13px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   currentRow: {
@@ -97,7 +107,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -112,7 +122,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -148,18 +158,18 @@ const useLocalStyles = makeStyles({
 
 // ── Helpers ──
 
-function reasonBadge(reason: string): { color: "informative" | "success" | "warning" | "danger" | "important"; icon: ReactElement } {
+function reasonBadge(reason: string): { color: BadgeColor; icon: ReactElement } {
   switch (reason) {
     case "Running":
-      return { color: "informative", icon: <PlayRegular style={{ fontSize: 14 }} /> };
+      return { color: "info", icon: <PlayRegular style={{ fontSize: 14 }} /> };
     case "CleanShutdown":
-      return { color: "success", icon: <CheckmarkCircleRegular style={{ fontSize: 14 }} /> };
+      return { color: "ok", icon: <CheckmarkCircleRegular style={{ fontSize: 14 }} /> };
     case "IntentionalRestart":
-      return { color: "warning", icon: <ArrowSyncRegular style={{ fontSize: 14 }} /> };
+      return { color: "warn", icon: <ArrowSyncRegular style={{ fontSize: 14 }} /> };
     case "Crash":
-      return { color: "danger", icon: <ErrorCircleRegular style={{ fontSize: 14 }} /> };
+      return { color: "err", icon: <ErrorCircleRegular style={{ fontSize: 14 }} /> };
     default:
-      return { color: "important", icon: <WarningRegular style={{ fontSize: 14 }} /> };
+      return { color: "bug", icon: <WarningRegular style={{ fontSize: 14 }} /> };
   }
 }
 
@@ -254,19 +264,19 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
             <span className={s.statLabel}>Instances ({stats.windowHours}h)</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>{stats.crashRestarts}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>{stats.crashRestarts}</span>
             <span className={s.statLabel}>Crashes</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>{stats.intentionalRestarts}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>{stats.intentionalRestarts}</span>
             <span className={s.statLabel}>Restarts</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>{stats.cleanShutdowns}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>{stats.cleanShutdowns}</span>
             <span className={s.statLabel}>Clean Stops</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#6cb6ff" }}>{stats.stillRunning}</span>
+            <span className={s.statValue} style={{ color: "var(--aa-cyan)" }}>{stats.stillRunning}</span>
             <span className={s.statLabel}>Running</span>
           </div>
         </div>
@@ -286,6 +296,7 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
         <div className={s.emptyNote}>No server instances recorded yet.</div>
       ) : (
         <>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -304,23 +315,18 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
                   <tr key={inst.id} className={isRunning ? s.currentRow : undefined}>
                     <td className={s.td}>
                       <Tooltip content={inst.shutdownReason} relationship="label">
-                        <Badge
-                          appearance="filled"
-                          color={badge.color}
-                          icon={badge.icon}
-                        >
-                          {inst.shutdownReason}
-                        </Badge>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          {badge.icon}
+                          <V3Badge color={badge.color}>
+                            {inst.shutdownReason}
+                          </V3Badge>
+                        </span>
                       </Tooltip>
                       {inst.crashDetected && (
                         <Tooltip content="Crash detected on startup" relationship="label">
-                          <Badge
-                            appearance="outline"
-                            color="danger"
-                            style={{ marginLeft: 6 }}
-                          >
-                            ⚡ crash recovery
-                          </Badge>
+                          <span style={{ marginLeft: 6 }}>
+                            <V3Badge color="err">⚡ crash recovery</V3Badge>
+                          </span>
                         </Tooltip>
                       )}
                     </td>
@@ -339,6 +345,7 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
               })}
             </tbody>
           </table>
+          </div>
 
           <div className={s.pagerRow}>
             <button

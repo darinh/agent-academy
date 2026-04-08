@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
   Tooltip,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   ChatRegular,
@@ -35,54 +35,63 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "6px",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "13px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "top" as const,
   },
   activeRow: {
@@ -118,7 +127,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -133,7 +142,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -172,7 +181,7 @@ const useLocalStyles = makeStyles({
   },
   filterBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.15)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-soft)",
@@ -303,19 +312,19 @@ export default function SessionHistoryPanel({
             <span className={s.statLabel}>Total Sessions</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
               {stats.activeSessions}
             </span>
             <span className={s.statLabel}>Active</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#b794ff" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-plum)" }}>
               {stats.archivedSessions}
             </span>
             <span className={s.statLabel}>Archived</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#6cb6ff" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-cyan)" }}>
               {stats.totalMessages}
             </span>
             <span className={s.statLabel}>Total Messages</span>
@@ -353,6 +362,7 @@ export default function SessionHistoryPanel({
         <div className={s.emptyNote}>No conversation sessions recorded yet.</div>
       ) : (
         <>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -377,19 +387,14 @@ export default function SessionHistoryPanel({
                     className={isActive ? s.activeRow : undefined}
                   >
                     <td className={s.td}>
-                      <Badge
-                        appearance="filled"
-                        color={isActive ? "success" : "informative"}
-                        icon={
-                          isActive ? (
-                            <PlayRegular style={{ fontSize: 14 }} />
-                          ) : (
-                            <ArchiveRegular style={{ fontSize: 14 }} />
-                          )
-                        }
-                      >
-                        {session.status}
-                      </Badge>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        {isActive
+                          ? <PlayRegular style={{ fontSize: 14 }} />
+                          : <ArchiveRegular style={{ fontSize: 14 }} />}
+                        <V3Badge color={isActive ? "ok" : "info"}>
+                          {session.status}
+                        </V3Badge>
+                      </span>
                     </td>
                     <td className={s.td}>
                       <Tooltip
@@ -456,6 +461,7 @@ export default function SessionHistoryPanel({
               })}
             </tbody>
           </table>
+          </div>
 
           <div className={s.pagerRow}>
             <button

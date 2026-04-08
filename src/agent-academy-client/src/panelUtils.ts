@@ -30,18 +30,18 @@ export function formatCost(cost: number): string {
 
 export function errorTypeBadge(
   errorType: string,
-): { color: "danger" | "warning" | "important" | "informative"; label: string } {
+): { color: import("./V3Badge").BadgeColor; label: string } {
   switch (errorType) {
     case "authentication":
-      return { color: "danger", label: "Auth" };
+      return { color: "err", label: "Auth" };
     case "authorization":
-      return { color: "danger", label: "Authz" };
+      return { color: "err", label: "Authz" };
     case "quota":
-      return { color: "warning", label: "Quota" };
+      return { color: "warn", label: "Quota" };
     case "transient":
-      return { color: "important", label: "Transient" };
+      return { color: "bug", label: "Transient" };
     default:
-      return { color: "informative", label: errorType };
+      return { color: "info", label: errorType };
   }
 }
 

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
@@ -31,74 +32,88 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "6px",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "13px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   thRight: {
     textAlign: "right" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   tdRight: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "12px",
   },
   mono: {
     fontFamily: "var(--mono, monospace)",
@@ -106,6 +121,7 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-muted)",
   },
   msgCell: {
+    display: "block",
     maxWidth: "260px",
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -121,7 +137,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -149,10 +165,9 @@ const useLocalStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    fontSize: "14px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   pagerRow: {
     display: "flex",
@@ -163,7 +178,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -187,9 +202,9 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     backgroundColor: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(214, 188, 149, 0.06)",
+    border: "1px solid var(--aa-border)",
   },
   sparklineLabel: {
     color: "var(--aa-muted)",
@@ -205,18 +220,18 @@ const useLocalStyles = makeStyles({
 
 function statusBadge(
   status: string,
-): { color: "success" | "danger" | "warning" | "important" | "informative"; label: string } {
+): { color: BadgeColor; label: string } {
   switch (status) {
     case "Success":
-      return { color: "success", label: "Success" };
+      return { color: "ok", label: "Success" };
     case "Error":
-      return { color: "danger", label: "Error" };
+      return { color: "err", label: "Error" };
     case "Denied":
-      return { color: "warning", label: "Denied" };
+      return { color: "warn", label: "Denied" };
     case "Pending":
-      return { color: "informative", label: "Pending" };
+      return { color: "info", label: "Pending" };
     default:
-      return { color: "important", label: status };
+      return { color: "bug", label: status };
   }
 }
 
@@ -346,7 +361,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
     return (
       <div className={s.root}>
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 20, color: "#48d67a", marginRight: 6 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 20, color: "var(--aa-lime)", marginRight: 6 }} />
           No commands recorded yet.
         </div>
       </div>
@@ -370,19 +385,19 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
             <span className={s.statLabel}>Total</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
               {successCount}
             </span>
             <span className={s.statLabel}>Success</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>
               {errorCount}
             </span>
             <span className={s.statLabel}>Errors</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
               {deniedCount}
             </span>
             <span className={s.statLabel}>Denied</span>
@@ -394,7 +409,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
       {allRecordsForTrend.length >= 2 && (
         <div className={s.sparklineRow} data-testid="audit-sparkline">
           <span className={s.sparklineLabel}>Commands</span>
-          <Sparkline data={commandTrend} color="#b794ff" width={180} height={28} />
+          <Sparkline data={commandTrend} color="var(--aa-plum)" width={180} height={28} />
         </div>
       )}
 
@@ -404,6 +419,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
           {Object.keys(stats.byAgent).length > 0 && (
             <div>
               <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>By Agent</div>
+              <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
@@ -415,18 +431,20 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
                   {Object.entries(stats.byAgent).map(([agentId, count]) => (
                     <tr key={agentId}>
                       <td className={s.td}>
-                        <Badge appearance="outline" color="informative">{agentId}</Badge>
+                        <V3Badge color="info">{agentId}</V3Badge>
                       </td>
                       <td className={s.tdRight}>{count}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
           {Object.keys(stats.byCommand).length > 0 && (
             <div>
               <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>Top Commands</div>
+              <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
@@ -445,6 +463,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -457,7 +476,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
             <ClipboardTaskListLtrRegular style={{ fontSize: 18 }} />
             Recent Commands
             {total > 0 && (
-              <Badge appearance="outline" color="informative" size="small">{total}</Badge>
+              <V3Badge color="info">{total}</V3Badge>
             )}
           </div>
           <button className={s.refreshBtn} onClick={fetchAll}>
@@ -469,6 +488,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
           <div className={s.emptyNote}>No command records found.</div>
         ) : (
           <>
+            <div className={s.tableWrap}>
             <table className={s.table}>
               <thead>
                 <tr>
@@ -485,18 +505,15 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
                   return (
                     <tr key={rec.id}>
                       <td className={s.td}>
-                        <Badge
-                          appearance="outline"
-                          color={rec.source === "human-ui" ? "warning" : "informative"}
-                        >
+                        <V3Badge color={rec.source === "human-ui" ? "warn" : "info"}>
                           {rec.agentId}
-                        </Badge>
+                        </V3Badge>
                       </td>
                       <td className={s.td}>
                         <span className={s.mono}>{rec.command}</span>
                       </td>
                       <td className={s.td}>
-                        <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                        <V3Badge color={badge.color}>{badge.label}</V3Badge>
                       </td>
                       <td className={s.td}>
                         {rec.errorMessage ? (
@@ -518,6 +535,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
                 })}
               </tbody>
             </table>
+            </div>
 
             {totalPages > 1 && (
               <div className={s.pagerRow}>

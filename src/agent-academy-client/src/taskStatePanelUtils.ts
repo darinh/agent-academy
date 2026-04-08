@@ -1,40 +1,39 @@
 import type { CollaborationPhase, TaskStatus } from "./api";
-
-export type BadgeColor = "informative" | "success" | "warning" | "important" | "danger" | "subtle";
+import type { BadgeColor } from "./V3Badge";
 
 export const PHASES: readonly CollaborationPhase[] = [
   "Intake", "Planning", "Discussion",
   "Validation", "Implementation", "FinalSynthesis",
 ] as const;
 
-export function taskStatusColor(status: TaskStatus): BadgeColor {
+export function taskStatusBadge(status: TaskStatus): BadgeColor {
   switch (status) {
-    case "Active":             return "success";
-    case "Blocked":            return "danger";
-    case "AwaitingValidation": return "warning";
-    case "Completed":          return "informative";
-    case "Cancelled":          return "subtle";
-    case "Queued": default:    return "important";
+    case "Active":             return "active";
+    case "Blocked":            return "err";
+    case "AwaitingValidation": return "warn";
+    case "Completed":          return "done";
+    case "Cancelled":          return "cancel";
+    case "Queued": default:    return "info";
   }
 }
 
-export function workstreamColor(status: string): BadgeColor {
+export function workstreamBadge(status: string): BadgeColor {
   switch (status) {
-    case "Completed":  return "success";
-    case "InProgress": return "informative";
-    case "Blocked":    return "warning";
-    case "Ready":      return "important";
-    default:           return "subtle";
+    case "Completed":  return "done";
+    case "InProgress": return "active";
+    case "Blocked":    return "warn";
+    case "Ready":      return "info";
+    default:           return "muted";
   }
 }
 
-export function phaseColor(
+export function phaseBadge(
   phase: CollaborationPhase,
   currentPhase: CollaborationPhase,
-): "informative" | "success" | "subtle" {
+): BadgeColor {
   const currentIdx = PHASES.indexOf(currentPhase);
   const phaseIdx = PHASES.indexOf(phase);
-  if (phaseIdx < currentIdx) return "success";
-  if (phaseIdx === currentIdx) return "informative";
-  return "subtle";
+  if (phaseIdx < currentIdx) return "done";
+  if (phaseIdx === currentIdx) return "active";
+  return "muted";
 }

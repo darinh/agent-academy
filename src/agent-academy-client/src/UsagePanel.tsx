@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   MoneyRegular,
@@ -31,74 +31,88 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "6px",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "13px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   thRight: {
     textAlign: "right" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   tdRight: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "12px",
   },
   mono: {
     fontFamily: "var(--mono, monospace)",
@@ -112,7 +126,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -139,12 +153,12 @@ const useLocalStyles = makeStyles({
   modelTag: {
     display: "inline-block",
     ...shorthands.padding("2px", "8px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     fontSize: "11px",
     fontWeight: 600,
     letterSpacing: "0.02em",
     backgroundColor: "rgba(108, 182, 255, 0.10)",
-    color: "#6cb6ff",
+    color: "var(--aa-cyan)",
     marginRight: "6px",
     marginBottom: "4px",
   },
@@ -152,10 +166,9 @@ const useLocalStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    fontSize: "14px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   pagerRow: {
     display: "flex",
@@ -166,7 +179,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -185,9 +198,9 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     backgroundColor: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(214, 188, 149, 0.06)",
+    border: "1px solid var(--aa-border)",
   },
   sparklineLabel: {
     color: "var(--aa-muted)",
@@ -332,13 +345,13 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
             <span className={s.statLabel}>Output Tokens</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#48d67a" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
               {formatCost(summary.totalCost)}
             </span>
             <span className={s.statLabel}>Total Cost</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
               {summary.requestCount}
             </span>
             <span className={s.statLabel}>LLM Calls</span>
@@ -351,11 +364,11 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           <div className={s.sparklineRow} data-testid="usage-sparkline-requests">
             <span className={s.sparklineLabel}>Requests</span>
-            <Sparkline data={requestTrend} color="#ffbe70" width={140} height={28} />
+            <Sparkline data={requestTrend} color="var(--aa-gold)" width={140} height={28} />
           </div>
           <div className={s.sparklineRow} data-testid="usage-sparkline-tokens">
             <span className={s.sparklineLabel}>Tokens</span>
-            <Sparkline data={tokenTrend} color="#6cb6ff" width={140} height={28} />
+            <Sparkline data={tokenTrend} color="var(--aa-cyan)" width={140} height={28} />
           </div>
         </div>
       )}
@@ -384,6 +397,7 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
               </span>
             </div>
           </div>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -398,9 +412,9 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
               {agentBreakdown.map((agent) => (
                 <tr key={agent.agentId}>
                   <td className={s.td}>
-                    <Badge appearance="outline" color="informative">
+                    <V3Badge color="info">
                       {agent.agentId}
-                    </Badge>
+                    </V3Badge>
                   </td>
                   <td className={s.tdRight}>{formatTokenCount(agent.input)}</td>
                   <td className={s.tdRight}>{formatTokenCount(agent.output)}</td>
@@ -410,6 +424,7 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -429,6 +444,7 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
           <div className={s.emptyNote}>No LLM usage recorded yet.</div>
         ) : (
           <>
+            <div className={s.tableWrap}>
             <table className={s.table}>
               <thead>
                 <tr>
@@ -469,6 +485,7 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
                 ))}
               </tbody>
             </table>
+            </div>
 
             {totalPages > 1 && (
               <div className={s.pagerRow}>

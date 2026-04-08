@@ -146,21 +146,21 @@ describe("ErrorsPanel", () => {
 
   describe("error type badge mapping", () => {
     it("maps auth errors to danger", () => {
-      expect(errorTypeBadge("authentication").color).toBe("danger");
-      expect(errorTypeBadge("authorization").color).toBe("danger");
+      expect(errorTypeBadge("authentication").color).toBe("err");
+      expect(errorTypeBadge("authorization").color).toBe("err");
     });
 
     it("maps quota to warning", () => {
-      expect(errorTypeBadge("quota").color).toBe("warning");
+      expect(errorTypeBadge("quota").color).toBe("warn");
     });
 
     it("maps transient to important", () => {
-      expect(errorTypeBadge("transient").color).toBe("important");
+      expect(errorTypeBadge("transient").color).toBe("bug");
     });
 
     it("maps unknown types to informative with raw label", () => {
       const badge = errorTypeBadge("custom_error");
-      expect(badge.color).toBe("informative");
+      expect(badge.color).toBe("info");
       expect(badge.label).toBe("custom_error");
     });
   });

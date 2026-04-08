@@ -1,8 +1,5 @@
 import { useState } from "react";
 import {
-  Card,
-  CardHeader,
-  Badge,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
@@ -18,6 +15,7 @@ import {
   ClipboardTaskListLtrRegular,
   ChatHistoryRegular,
 } from "@fluentui/react-icons";
+import V3Badge from "./V3Badge";
 import type { WorkspaceOverview } from "./api";
 import type { CollaborationPhase } from "./api";
 import type { CircuitBreakerState } from "./useCircuitBreakerPolling";
@@ -36,83 +34,73 @@ const useLocalStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     height: "100%",
-    overflow: "auto",
-    gap: "20px",
+    overflowY: "auto",
+    overflowX: "hidden",
+    gap: "10px",
+    ...shorthands.padding("14px", "20px"),
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "16px",
-  },
-  card: {
-    border: "1px solid rgba(214, 188, 149, 0.14)",
-    background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.055), rgba(255, 255, 255, 0.018) 42%, rgba(12, 15, 22, 0.72))",
-    boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05)",
-    ...shorthands.borderRadius("26px"),
-    ...shorthands.padding("20px"),
-    transitionProperty: "transform, box-shadow, border-color",
-    transitionDuration: "0.25s",
-    transitionTimingFunction: "ease",
-    ":hover": {
-      transform: "translateY(-2px)",
-      boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05), 0 8px 24px rgba(0, 0, 0, 0.25)",
-      ...shorthands.borderColor("rgba(214, 188, 149, 0.24)"),
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "10px",
+    "@media (max-width: 900px)": {
+      gridTemplateColumns: "repeat(2, 1fr)",
     },
   },
+  card: {
+    border: "1px solid var(--aa-border)",
+    background: "var(--aa-panel)",
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("12px", "14px"),
+  },
   cardHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.14em",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
   },
   bigNumber: {
-    fontFamily: "var(--heading)",
-    fontSize: "44px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "26px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    marginTop: "14px",
-    marginBottom: "8px",
-    letterSpacing: "-0.05em",
+    marginTop: "8px",
+    marginBottom: "4px",
+    letterSpacing: "-0.03em",
   },
   label: {
-    color: "var(--aa-muted)",
-    fontSize: "13px",
-    lineHeight: 1.7,
+    color: "var(--aa-soft)",
+    fontSize: "11px",
+    lineHeight: 1.4,
   },
   section: {
     display: "grid",
-    gap: "12px",
-    border: "1px solid rgba(214, 188, 149, 0.14)",
-    background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.02) 42%, rgba(12, 15, 22, 0.72))",
-    ...shorthands.borderRadius("26px"),
-    ...shorthands.padding("22px"),
-    transitionProperty: "border-color",
-    transitionDuration: "0.25s",
-    transitionTimingFunction: "ease",
-    ":hover": {
-      ...shorthands.borderColor("rgba(214, 188, 149, 0.22)"),
-    },
+    gap: "10px",
+    border: "1px solid var(--aa-border)",
+    background: "var(--aa-panel)",
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("14px"),
   },
   sectionTitle: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    fontSize: "18px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.03em",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   phaseRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    ...shorthands.padding("12px", "0"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.07)",
-    fontSize: "14px",
+    ...shorthands.padding("8px", "0"),
+    borderBottom: "1px solid var(--aa-border)",
+    fontSize: "12px",
     color: "var(--aa-text)",
   },
   empty: {
@@ -127,41 +115,44 @@ const useLocalStyles = makeStyles({
   timeRangeRow: {
     display: "flex",
     alignItems: "center",
-    gap: "8px",
+    gap: "6px",
     flexWrap: "wrap",
   },
   timeRangeLabel: {
     display: "flex",
     alignItems: "center",
-    gap: "6px",
+    gap: "4px",
     color: "var(--aa-soft)",
-    fontSize: "12px",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
     fontWeight: 600,
-    letterSpacing: "0.06em",
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
   },
   timeRangeBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.18)"),
-    ...shorthands.borderRadius("10px"),
-    ...shorthands.padding("4px", "14px"),
-    color: "var(--aa-text)",
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
+    ...shorthands.borderRadius("4px"),
+    ...shorthands.padding("3px", "9px"),
+    color: "var(--aa-muted)",
     cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 600,
+    fontSize: "11px",
+    fontWeight: 500,
     ":hover": {
-      backgroundColor: "rgba(255, 255, 255, 0.06)",
+      ...shorthands.borderColor("var(--aa-border-strong)"),
+      color: "var(--aa-text)",
+      background: "rgba(91, 141, 239, 0.04)",
     },
   },
   timeRangeBtnActive: {
-    background: "rgba(108, 182, 255, 0.14)",
-    ...shorthands.border("1px", "solid", "rgba(108, 182, 255, 0.35)"),
-    ...shorthands.borderRadius("10px"),
-    ...shorthands.padding("4px", "14px"),
-    color: "#6cb6ff",
+    background: "rgba(91, 141, 239, 0.12)",
+    ...shorthands.border("1px", "solid", "rgba(91, 141, 239, 0.3)"),
+    ...shorthands.borderRadius("4px"),
+    ...shorthands.padding("3px", "9px"),
+    color: "var(--aa-cyan)",
     cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 700,
+    fontSize: "11px",
+    fontWeight: 600,
   },
 });
 
@@ -195,41 +186,41 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
   return (
     <div className={s.root}>
       <div className={s.grid}>
-        <Card className={s.card}>
-          <CardHeader
-            image={<ChatMultipleRegular style={{ fontSize: 24, color: "#6cb6ff" }} />}
-            header={<span className={s.cardHeader}>Rooms</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <ChatMultipleRegular style={{ fontSize: 24, color: "var(--aa-cyan)" }} />
+            <span>Rooms</span>
+          </div>
           <div className={s.bigNumber}>{roomCount}</div>
           <div className={s.label}>Shared collaboration rooms currently available.</div>
-        </Card>
+        </div>
 
-        <Card className={s.card}>
-          <CardHeader
-            image={<PeopleRegular style={{ fontSize: 24, color: "#b794ff" }} />}
-            header={<span className={s.cardHeader}>Agents</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <PeopleRegular style={{ fontSize: 24, color: "var(--aa-plum)" }} />
+            <span>Agents</span>
+          </div>
           <div className={s.bigNumber}>{agentCount}</div>
           <div className={s.label}>Configured contributors ready for planning, coding, and review.</div>
-        </Card>
+        </div>
 
-        <Card className={s.card}>
-          <CardHeader
-            image={<TaskListLtrRegular style={{ fontSize: 24, color: "#48d67a" }} />}
-            header={<span className={s.cardHeader}>Active Tasks</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <TaskListLtrRegular style={{ fontSize: 24, color: "var(--aa-lime)" }} />
+            <span>Active Tasks</span>
+          </div>
           <div className={s.bigNumber}>{activeTasks}</div>
           <div className={s.label}>Rooms with in-flight work needing active coordination.</div>
-        </Card>
+        </div>
 
-        <Card className={s.card}>
-          <CardHeader
-            image={<ArrowSyncRegular style={{ fontSize: 24, color: "#ffbe70" }} />}
-            header={<span className={s.cardHeader}>Recent Events</span>}
-          />
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <ArrowSyncRegular style={{ fontSize: 24, color: "var(--aa-gold)" }} />
+            <span>Recent Events</span>
+          </div>
           <div className={s.bigNumber}>{eventCount}</div>
           <div className={s.label}>Latest workflow activity across the workspace.</div>
-        </Card>
+        </div>
       </div>
 
       {phaseCounts.size > 0 && (
@@ -237,9 +228,9 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
           <div className={s.sectionTitle}>Phase Distribution</div>
           {[...phaseCounts.entries()].map(([phase, count]) => (
             <div key={phase} className={s.phaseRow}>
-              <Badge appearance="filled" color={phaseColor(phase)}>
+              <V3Badge color={phaseColor(phase)}>
                 {phase}
-              </Badge>
+              </V3Badge>
               <span>
                 {count} room{count !== 1 ? "s" : ""}
               </span>

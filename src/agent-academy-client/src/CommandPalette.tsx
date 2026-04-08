@@ -6,10 +6,10 @@ import {
   shorthands,
   Spinner,
   Text,
-  Badge,
   Button,
   useModalAttributes,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   SearchRegular,
   DismissRegular,
@@ -58,9 +58,9 @@ const useLocalStyles = makeStyles({
     maxHeight: "min(520px, 70vh)",
     display: "flex",
     flexDirection: "column",
-    backgroundColor: "#1a1d24",
-    border: "1px solid rgba(214, 188, 149, 0.18)",
-    boxShadow: "0 24px 80px rgba(0,0,0,0.6), 0 0 1px rgba(255,244,227,0.08)",
+    backgroundColor: "var(--aa-panel)",
+    border: "1px solid var(--aa-border)",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6), 0 0 1px rgba(91,141,239,0.08)",
     ...shorthands.borderRadius("16px"),
     ...shorthands.overflow("hidden"),
   },
@@ -69,10 +69,10 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "10px",
     ...shorthands.padding("14px", "16px"),
-    borderBottom: "1px solid rgba(214, 188, 149, 0.1)",
+    borderBottom: "1px solid var(--aa-border)",
   },
   searchIcon: {
-    color: "rgba(255, 244, 227, 0.45)",
+    color: "var(--aa-soft)",
     fontSize: "18px",
     flexShrink: 0,
   },
@@ -83,12 +83,12 @@ const useLocalStyles = makeStyles({
       border: "none",
       color: "#fff",
       fontSize: "15px",
-      "&::placeholder": { color: "rgba(255, 244, 227, 0.35)" },
+      "&::placeholder": { color: "var(--aa-soft)" },
     },
   },
   hint: {
     flexShrink: 0,
-    color: "rgba(255, 244, 227, 0.3)",
+    color: "var(--aa-soft)",
     fontSize: "12px",
   },
   list: {
@@ -102,7 +102,7 @@ const useLocalStyles = makeStyles({
     fontWeight: 600,
     textTransform: "uppercase" as const,
     letterSpacing: "0.08em",
-    color: "rgba(255, 244, 227, 0.35)",
+    color: "var(--aa-soft)",
   },
   item: {
     display: "flex",
@@ -111,10 +111,10 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("8px", "12px"),
     ...shorthands.borderRadius("8px"),
     cursor: "pointer",
-    "&:hover": { backgroundColor: "rgba(255, 244, 227, 0.06)" },
+    "&:hover": { backgroundColor: "rgba(91, 141, 239, 0.06)" },
   },
   itemSelected: {
-    backgroundColor: "rgba(255, 244, 227, 0.08)",
+    backgroundColor: "rgba(91, 141, 239, 0.08)",
   },
   itemBody: {
     flexGrow: 1,
@@ -133,7 +133,7 @@ const useLocalStyles = makeStyles({
   },
   itemDesc: {
     fontSize: "12px",
-    color: "rgba(255, 244, 227, 0.45)",
+    color: "var(--aa-soft)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -144,7 +144,7 @@ const useLocalStyles = makeStyles({
   empty: {
     ...shorthands.padding("24px"),
     textAlign: "center",
-    color: "rgba(255, 244, 227, 0.35)",
+    color: "var(--aa-soft)",
     fontSize: "13px",
   },
   // ── detail view ──
@@ -169,7 +169,7 @@ const useLocalStyles = makeStyles({
   },
   detailDesc: {
     fontSize: "13px",
-    color: "rgba(255, 244, 227, 0.55)",
+    color: "var(--aa-muted)",
     lineHeight: "1.4",
   },
   fieldGroup: {
@@ -182,11 +182,11 @@ const useLocalStyles = makeStyles({
     justifyContent: "space-between",
     fontSize: "12px",
     fontWeight: 500,
-    color: "rgba(255, 244, 227, 0.65)",
+    color: "var(--aa-muted)",
   },
   fieldHint: {
     fontWeight: 400,
-    color: "rgba(255, 244, 227, 0.3)",
+    color: "var(--aa-soft)",
   },
   actionRow: {
     display: "flex",
@@ -197,25 +197,24 @@ const useLocalStyles = makeStyles({
   resultBox: {
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
-    backgroundColor: "rgba(255, 244, 227, 0.04)",
-    border: "1px solid rgba(214, 188, 149, 0.1)",
+    backgroundColor: "rgba(139, 148, 158, 0.04)",
+    border: "1px solid var(--aa-border)",
     fontSize: "12px",
     fontFamily: "monospace",
-    color: "rgba(255, 244, 227, 0.75)",
+    color: "var(--aa-text)",
     whiteSpace: "pre-wrap",
     maxHeight: "200px",
     overflowY: "auto",
     wordBreak: "break-word",
   },
   resultSuccess: {
-    ...shorthands.borderColor("rgba(72, 214, 122, 0.3)"),
+    ...shorthands.borderColor("rgba(76, 175, 80, 0.3)"),
   },
   resultError: {
-    ...shorthands.borderColor("rgba(255, 113, 135, 0.3)"),
+    ...shorthands.borderColor("rgba(232, 93, 93, 0.3)"),
   },
   validationError: {
-    color: "#ff7187",
-    fontSize: "12px",
+    color: "var(--aa-copper)",
   },
 });
 
@@ -537,9 +536,9 @@ export default function CommandPalette({ open, onDismiss, roomId, readOnly }: Co
                             <Text className={styles.itemDesc}>{cmd.description}</Text>
                           </div>
                           {cmd.isAsync && (
-                            <Badge className={styles.asyncBadge} size="small" appearance="outline" color="informative">
+                            <V3Badge className={styles.asyncBadge} color="info">
                               async
-                            </Badge>
+                            </V3Badge>
                           )}
                         </div>
                       );

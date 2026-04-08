@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Badge,
   Button,
-  Card,
   makeStyles,
   mergeClasses,
   shorthands,
@@ -11,13 +9,10 @@ import {
 } from "@fluentui/react-components";
 import {
   TaskListLtrRegular,
-  PersonRegular,
   ArrowSyncRegular,
   CheckmarkCircleRegular,
-  CircleRegular,
   ErrorCircleRegular,
   ClockRegular,
-  BranchRegular,
   ChevronDownRegular,
   ChevronRightRegular,
   CheckmarkRegular,
@@ -40,6 +35,8 @@ import type {
   CommandExecutionResponse,
 } from "./api";
 import { executeCommand, getTaskComments } from "./api";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 
 // ── Filter definitions ──────────────────────────────────────────────────
 
@@ -81,8 +78,8 @@ const useLocalStyles = makeStyles({
     flexDirection: "column",
     height: "100%",
     overflow: "auto",
-    gap: "16px",
-    ...shorthands.padding("2px"),
+    gap: "5px",
+    ...shorthands.padding("14px", "20px"),
   },
   filterBar: {
     display: "flex",
@@ -96,22 +93,22 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "5px",
     ...shorthands.padding("6px", "12px"),
-    ...shorthands.borderRadius("20px"),
+    ...shorthands.borderRadius("6px"),
     fontSize: "12px",
     fontWeight: 600,
     letterSpacing: "0.02em",
     color: "var(--aa-soft)",
-    border: "1px solid rgba(214, 188, 149, 0.12)",
+    border: "1px solid var(--aa-border)",
     background: "transparent",
     transitionProperty: "background, border-color, color",
     transitionDuration: "0.15s",
     ":hover": {
-      background: "rgba(214, 188, 149, 0.06)",
+      background: "var(--aa-border)",
     },
   },
   filterChipActive: {
-    background: "rgba(214, 188, 149, 0.1)",
-    ...shorthands.borderColor("rgba(214, 188, 149, 0.35)"),
+    background: "rgba(91, 141, 239, 0.15)",
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.4)"),
     color: "var(--aa-text-strong)",
   },
   filterCount: {
@@ -121,72 +118,52 @@ const useLocalStyles = makeStyles({
     marginLeft: "2px",
   },
   card: {
-    border: "1px solid rgba(214, 188, 149, 0.14)",
-    background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.018) 42%, rgba(12, 15, 22, 0.72))",
-    boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05)",
-    ...shorthands.borderRadius("20px"),
-    ...shorthands.padding("16px", "18px"),
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    border: "1px solid var(--aa-border)",
+    background: "var(--aa-panel)",
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("10px", "12px"),
     cursor: "pointer",
-    transitionProperty: "border-color, box-shadow",
+    transitionProperty: "border-color",
     transitionDuration: "0.15s",
     ":hover": {
-      ...shorthands.borderColor("rgba(214, 188, 149, 0.28)"),
+      ...shorthands.borderColor("var(--aa-border-strong)"),
     },
   },
   cardExpanded: {
-    ...shorthands.borderColor("rgba(214, 188, 149, 0.3)"),
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.3)"),
     cursor: "default",
   },
   cardHeader: {
     display: "flex",
-    alignItems: "flex-start",
-    gap: "10px",
-  },
-  cardIcon: {
-    flexShrink: 0,
-    marginTop: "2px",
-  },
-  cardBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  cardTitleRow: {
-    display: "flex",
     alignItems: "center",
     gap: "8px",
-    flexWrap: "wrap",
   },
   cardTitle: {
-    fontSize: "15px",
-    fontWeight: 650,
+    fontSize: "13px",
+    fontWeight: 600,
     color: "var(--aa-text-strong)",
-    letterSpacing: "-0.03em",
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    cursor: "pointer",
   },
   meta: {
     display: "flex",
     flexWrap: "wrap",
     alignItems: "center",
-    gap: "8px",
-    marginTop: "6px",
-    fontSize: "12px",
-    color: "var(--aa-muted)",
-  },
-  metaItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-  },
-  sizeBadge: {
-    fontWeight: 700,
-    fontSize: "11px",
-    minWidth: "28px",
-    textAlign: "center" as const,
+    gap: "10px",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
+    color: "var(--aa-soft)",
   },
   expandedSection: {
     marginTop: "14px",
     ...shorthands.padding("12px", "0", "0"),
-    borderTop: "1px solid rgba(214, 188, 149, 0.1)",
+    borderTop: "1px solid var(--aa-border)",
   },
   descriptionText: {
     fontSize: "13px",
@@ -197,10 +174,10 @@ const useLocalStyles = makeStyles({
   },
   sectionLabel: {
     fontSize: "11px",
-    fontWeight: 680,
+    fontWeight: 600,
     color: "var(--aa-muted)",
     textTransform: "uppercase",
-    letterSpacing: "0.12em",
+    letterSpacing: "0.04em",
     marginBottom: "6px",
     marginTop: "12px",
   },
@@ -210,7 +187,7 @@ const useLocalStyles = makeStyles({
     flexWrap: "wrap",
     marginTop: "14px",
     ...shorthands.padding("10px", "0", "0"),
-    borderTop: "1px solid rgba(214, 188, 149, 0.08)",
+    borderTop: "1px solid var(--aa-border)",
   },
   actionFeedback: {
     display: "flex",
@@ -221,10 +198,10 @@ const useLocalStyles = makeStyles({
     marginTop: "8px",
   },
   actionError: {
-    color: "#ff7187",
+    color: "var(--error)",
   },
   actionSuccess: {
-    color: "#48d67a",
+    color: "var(--aa-lime)",
   },
   reasonArea: {
     marginTop: "10px",
@@ -240,14 +217,14 @@ const useLocalStyles = makeStyles({
   commentsSection: {
     marginTop: "14px",
     ...shorthands.padding("10px", "0", "0"),
-    borderTop: "1px solid rgba(214, 188, 149, 0.08)",
+    borderTop: "1px solid var(--aa-border)",
   },
   commentCard: {
     ...shorthands.padding("8px", "10px"),
     marginBottom: "6px",
-    ...shorthands.borderRadius("10px"),
+    ...shorthands.borderRadius("6px"),
     background: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(155, 176, 210, 0.08)",
+    border: "1px solid var(--aa-border)",
   },
   commentHeader: {
     display: "flex",
@@ -262,7 +239,8 @@ const useLocalStyles = makeStyles({
   },
   commentTime: {
     color: "var(--aa-muted)",
-    fontSize: "11px",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
   },
   commentContent: {
     fontSize: "13px",
@@ -275,7 +253,8 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     flexWrap: "wrap",
     marginTop: "8px",
-    fontSize: "12px",
+    fontFamily: "var(--mono)",
+    fontSize: "10px",
     color: "var(--aa-muted)",
   },
   empty: {
@@ -287,52 +266,47 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     color: "var(--aa-soft)",
   },
-  emptyIcon: { fontSize: "48px" },
+  emptyIcon: { fontSize: "26px" },
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-type BadgeColor = "informative" | "success" | "warning" | "important" | "danger" | "subtle";
-
-function statusColor(status: TaskStatus): BadgeColor {
+function statusBadgeColor(status: TaskStatus): BadgeColor {
   switch (status) {
-    case "Active": case "Merging":       return "success";
-    case "InReview": case "Approved":    return "informative";
-    case "AwaitingValidation":           return "warning";
-    case "ChangesRequested":             return "warning";
-    case "Blocked":                      return "danger";
-    case "Completed":                    return "success";
-    case "Cancelled":                    return "subtle";
-    case "Queued": default:              return "important";
+    case "Active": case "Merging":       return "active";
+    case "InReview":                     return "review";
+    case "AwaitingValidation":           return "warn";
+    case "Approved":                     return "ok";
+    case "ChangesRequested":             return "warn";
+    case "Blocked":                      return "err";
+    case "Completed":                    return "done";
+    case "Cancelled":                    return "cancel";
+    case "Queued": default:              return "info";
   }
 }
 
-function statusIcon(status: TaskStatus) {
-  switch (status) {
-    case "Active": case "Merging":       return <ArrowSyncRegular />;
-    case "InReview": case "Approved":    return <ClockRegular />;
-    case "AwaitingValidation":           return <ClockRegular />;
-    case "ChangesRequested":             return <ErrorCircleRegular />;
-    case "Completed":                    return <CheckmarkCircleRegular />;
-    case "Blocked":                      return <ErrorCircleRegular />;
-    default:                             return <CircleRegular />;
-  }
-}
-
-function sizeColor(size: TaskSize): BadgeColor {
-  switch (size) {
-    case "XS": case "S": return "subtle";
-    case "M":            return "informative";
-    case "L": case "XL": return "warning";
-  }
-}
-
-function commentTypeBadgeColor(type: TaskCommentType): BadgeColor {
+function typeBadgeColor(type: string): BadgeColor {
   switch (type) {
-    case "Finding":  return "warning";
-    case "Blocker":  return "danger";
-    case "Evidence": return "success";
-    case "Comment": default: return "subtle";
+    case "Bug":     return "bug";
+    case "Feature": return "feat";
+    default:        return "muted";
+  }
+}
+
+function sizeBadgeColor(size: TaskSize): BadgeColor {
+  switch (size) {
+    case "XS": case "S": return "muted";
+    case "M":            return "info";
+    case "L": case "XL": return "warn";
+  }
+}
+
+function commentTypeBadge(type: TaskCommentType): BadgeColor {
+  switch (type) {
+    case "Finding":  return "warn";
+    case "Blocker":  return "err";
+    case "Evidence": return "ok";
+    case "Comment": default: return "muted";
   }
 }
 
@@ -509,7 +483,7 @@ function TaskDetail({ task, onRefresh }: TaskDetailProps) {
         </div>
         {commentsLoading && <Spinner size="tiny" label="Loading comments…" />}
         {!commentsLoading && commentsError && (
-          <div style={{ fontSize: "12px", color: "#ff7187", marginTop: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
             <ErrorCircleRegular fontSize={13} />
             Failed to load comments
             <Button size="small" appearance="subtle" onClick={fetchComments}>Retry</Button>
@@ -522,9 +496,9 @@ function TaskDetail({ task, onRefresh }: TaskDetailProps) {
           <div key={c.id} className={s.commentCard}>
             <div className={s.commentHeader}>
               <span className={s.commentAuthor}>{c.agentName}</span>
-              <Badge appearance="outline" color={commentTypeBadgeColor(c.commentType)} size="small">
+              <V3Badge color={commentTypeBadge(c.commentType)}>
                 {c.commentType}
-              </Badge>
+              </V3Badge>
               <span className={s.commentTime}>{formatTime(c.createdAt)}</span>
             </div>
             <div className={s.commentContent}>{c.content}</div>
@@ -667,84 +641,57 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh }: Task
       {sortedTasks.map((task) => {
         const isExpanded = expandedId === task.id;
         return (
-          <Card
+          <div
             key={task.id}
             className={mergeClasses(s.card, isExpanded && s.cardExpanded)}
             onClick={() => !isExpanded && setExpandedId(task.id)}
           >
             <div className={s.cardHeader}>
-              <span className={s.cardIcon}>{statusIcon(task.status)}</span>
-              <div className={s.cardBody}>
-                <div className={s.cardTitleRow}>
-                  <span
-                    className={s.cardTitle}
-                    style={{ cursor: "pointer" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpandedId(isExpanded ? null : task.id);
-                    }}
-                  >
-                    {isExpanded ? <ChevronDownRegular fontSize={12} /> : <ChevronRightRegular fontSize={12} />}
-                    {" "}
-                    {task.title}
-                  </span>
-                  {task.size && (
-                    <Badge className={s.sizeBadge} appearance="filled" color={sizeColor(task.size)} size="small">
-                      {task.size}
-                    </Badge>
-                  )}
-                  <Badge appearance="filled" color={statusColor(task.status)} size="small">
-                    {task.status}
-                  </Badge>
-                  {task.type && task.type !== "Feature" && (
-                    <Badge appearance="outline" color="subtle" size="small">{task.type}</Badge>
-                  )}
-                </div>
-                <div className={s.meta}>
-                  {task.assignedAgentName && (
-                    <span className={s.metaItem}>
-                      <PersonRegular fontSize={14} />
-                      {task.assignedAgentName}
-                    </span>
-                  )}
-                  {task.branchName && (
-                    <span className={s.metaItem}>
-                      <BranchRegular fontSize={14} />
-                      {task.branchName}
-                    </span>
-                  )}
-                  {(task.commitCount ?? 0) > 0 && (
-                    <span className={s.metaItem}>
-                      {task.commitCount} commit{task.commitCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {task.reviewRounds != null && task.reviewRounds > 0 && (
-                    <span className={s.metaItem}>
-                      Round {task.reviewRounds}
-                    </span>
-                  )}
-                  {task.startedAt && (
-                    <span className={s.metaItem}>
-                      <ClockRegular fontSize={14} />
-                      {formatElapsed(task.startedAt, task.completedAt, { maxUnit: "days" })}
-                    </span>
-                  )}
-                  {task.commentCount != null && task.commentCount > 0 && (
-                    <span className={s.metaItem}>
-                      <CommentRegular fontSize={14} />
-                      {task.commentCount}
-                    </span>
-                  )}
-                  {task.usedFleet && (
-                    <Badge appearance="outline" color="informative" size="small">Fleet</Badge>
-                  )}
-                </div>
-
-                {/* Expanded detail */}
-                {isExpanded && <TaskDetail task={task} onRefresh={handleRefresh} />}
-              </div>
+              <span
+                className={s.cardTitle}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpandedId(isExpanded ? null : task.id);
+                }}
+              >
+                {isExpanded ? <ChevronDownRegular fontSize={12} /> : <ChevronRightRegular fontSize={12} />}
+                {task.title}
+              </span>
+              {task.size && (
+                <V3Badge color={sizeBadgeColor(task.size)}>{task.size}</V3Badge>
+              )}
+              <V3Badge color={statusBadgeColor(task.status)}>{task.status}</V3Badge>
+              {task.type && task.type !== "Feature" && (
+                <V3Badge color={typeBadgeColor(task.type)}>{task.type}</V3Badge>
+              )}
             </div>
-          </Card>
+            <div className={s.meta}>
+              {task.assignedAgentName && (
+                <span>👤 {task.assignedAgentName}</span>
+              )}
+              {task.branchName && (
+                <span>🌿 {task.branchName}</span>
+              )}
+              {(task.commitCount ?? 0) > 0 && (
+                <span>{task.commitCount} commit{task.commitCount !== 1 ? "s" : ""}</span>
+              )}
+              {task.reviewRounds != null && task.reviewRounds > 0 && (
+                <span>Round {task.reviewRounds}</span>
+              )}
+              {task.startedAt && (
+                <span>{formatElapsed(task.startedAt, task.completedAt, { maxUnit: "days" })}</span>
+              )}
+              {task.commentCount != null && task.commentCount > 0 && (
+                <span>💬 {task.commentCount}</span>
+              )}
+              {task.usedFleet && (
+                <V3Badge color="info">Fleet</V3Badge>
+              )}
+            </div>
+
+            {/* Expanded detail */}
+            {isExpanded && <TaskDetail task={task} onRefresh={handleRefresh} />}
+          </div>
         );
       })}
     </div>

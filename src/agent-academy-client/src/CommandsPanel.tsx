@@ -1,16 +1,15 @@
 import { useEffect, useRef, useMemo, useState } from "react";
 import {
-  Badge,
   Button,
   Input,
   makeStyles,
   mergeClasses,
   shorthands,
   Spinner,
-  Text,
   Textarea,
 } from "@fluentui/react-components";
 import { PlayRegular } from "@fluentui/react-icons";
+import V3Badge from "./V3Badge";
 import {
   executeCommand,
   getCommandExecution,
@@ -41,10 +40,11 @@ const useLocalStyles = makeStyles({
   root: {
     minHeight: 0,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
-    gap: "16px",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "14px",
     overflowY: "auto",
-    "@media (max-width: 1200px)": {
+    ...shorthands.padding("14px", "20px"),
+    "@media (max-width: 1100px)": {
       gridTemplateColumns: "1fr",
     },
   },
@@ -58,45 +58,44 @@ const useLocalStyles = makeStyles({
   section: {
     display: "grid",
     gap: "18px",
-    border: "1px solid rgba(214, 188, 149, 0.14)",
+    border: "1px solid var(--aa-border)",
     background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.055), rgba(255, 255, 255, 0.018) 42%, rgba(12, 15, 22, 0.72))",
-    boxShadow: "inset 0 1px 0 rgba(255, 244, 227, 0.05)",
-    ...shorthands.borderRadius("22px"),
+      "var(--aa-panel)",
+    boxShadow: "none",
+    ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px"),
   },
   hero: {
     position: "relative",
     overflow: "hidden",
     background:
-      "radial-gradient(circle at top right, rgba(124, 176, 248, 0.14), transparent 28%), radial-gradient(circle at left bottom, rgba(209, 160, 106, 0.12), transparent 24%), linear-gradient(135deg, rgba(255, 244, 227, 0.055), rgba(255, 255, 255, 0.015) 44%, rgba(10, 15, 24, 0.92))",
+      "var(--aa-panel)",
   },
   eyebrow: {
     display: "inline-flex",
     alignItems: "center",
     width: "fit-content",
-    color: "#f2d7b0",
-    backgroundColor: "rgba(209, 160, 106, 0.14)",
-    border: "1px solid rgba(214, 188, 149, 0.24)",
+    color: "var(--aa-soft)",
+    backgroundColor: "rgba(91, 141, 239, 0.08)",
+    border: "1px solid var(--aa-border)",
     ...shorthands.borderRadius("999px"),
     ...shorthands.padding("7px", "12px"),
     fontSize: "11px",
     fontWeight: 700,
-    letterSpacing: "0.12em",
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
   },
   heroTitle: {
     margin: 0,
-    fontFamily: "var(--heading)",
-    fontSize: "20px",
+    fontFamily: "var(--mono)",
+    fontSize: "14px",
     lineHeight: 1.1,
-    letterSpacing: "-0.03em",
     color: "var(--aa-text-strong)",
   },
   heroDescription: {
     maxWidth: "64ch",
     color: "var(--aa-muted)",
-    fontSize: "15px",
+    fontSize: "13px",
     lineHeight: 1.8,
   },
   metricRow: {
@@ -110,24 +109,23 @@ const useLocalStyles = makeStyles({
   metricCard: {
     display: "grid",
     gap: "8px",
-    border: "1px solid rgba(214, 188, 149, 0.14)",
-    background: "rgba(255, 244, 227, 0.04)",
-    ...shorthands.borderRadius("22px"),
+    border: "1px solid var(--aa-border)",
+    background: "var(--aa-bg)",
+    ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px"),
   },
   metricLabel: {
     color: "var(--aa-soft)",
     fontSize: "11px",
     fontWeight: 700,
-    letterSpacing: "0.12em",
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
   },
   metricValue: {
     color: "var(--aa-text-strong)",
-    fontFamily: "var(--heading)",
-    fontSize: "30px",
-    fontWeight: 760,
-    letterSpacing: "-0.05em",
+    fontFamily: "var(--mono)",
+    fontSize: "14px",
+    fontWeight: 600,
   },
   metricNote: {
     color: "var(--aa-muted)",
@@ -144,26 +142,26 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     textAlign: "left",
     color: "inherit",
-    border: "1px solid rgba(214, 188, 149, 0.14)",
+    border: "1px solid var(--aa-border)",
     background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.015) 44%, rgba(12, 15, 22, 0.7))",
+      "var(--aa-panel)",
     cursor: "pointer",
     transitionDuration: "180ms",
     transitionProperty: "transform, border-color, background-color, box-shadow",
     transitionTimingFunction: "ease",
-    ...shorthands.borderRadius("22px"),
+    ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px"),
     ":hover": {
       transform: "translateY(-1px)",
-      border: "1px solid rgba(214, 188, 149, 0.22)",
-      background: "linear-gradient(180deg, rgba(255, 244, 227, 0.065), rgba(255, 255, 255, 0.02))",
+      border: "1px solid var(--aa-border)",
+      background: "var(--aa-panel)",
       boxShadow: "0 14px 36px rgba(0, 0, 0, 0.22)",
     },
   },
   commandCardActive: {
-    border: "1px solid rgba(214, 188, 149, 0.28)",
+    border: "1px solid var(--aa-border)",
     background:
-      "linear-gradient(135deg, rgba(124, 176, 248, 0.12), rgba(209, 160, 106, 0.12) 48%, rgba(255, 244, 227, 0.02))",
+      "rgba(91, 141, 239, 0.12)",
     boxShadow: "0 18px 40px rgba(5, 10, 18, 0.32)",
   },
   commandMetaRow: {
@@ -175,9 +173,8 @@ const useLocalStyles = makeStyles({
   },
   commandTitle: {
     color: "var(--aa-text-strong)",
-    fontSize: "16px",
+    fontSize: "13px",
     fontWeight: 700,
-    letterSpacing: "-0.02em",
   },
   commandDescription: {
     color: "var(--aa-muted)",
@@ -196,9 +193,8 @@ const useLocalStyles = makeStyles({
   sectionTitle: {
     margin: 0,
     color: "var(--aa-text-strong)",
-    fontSize: "18px",
-    fontWeight: 720,
-    letterSpacing: "-0.03em",
+    fontSize: "13px",
+    fontWeight: 700,
   },
   sectionText: {
     color: "var(--aa-muted)",
@@ -220,8 +216,7 @@ const useLocalStyles = makeStyles({
   fieldLabel: {
     color: "var(--aa-text-strong)",
     fontSize: "12px",
-    fontWeight: 650,
-    letterSpacing: "0.02em",
+    fontWeight: 600,
   },
   fieldDescription: {
     color: "var(--aa-soft)",
@@ -230,7 +225,7 @@ const useLocalStyles = makeStyles({
   },
   input: {
     "& input, & textarea": {
-      color: "#eff5ff",
+      color: "var(--aa-text-strong)",
       backgroundColor: "rgba(7, 12, 20, 0.72)",
     },
   },
@@ -247,13 +242,13 @@ const useLocalStyles = makeStyles({
     lineHeight: 1.6,
   },
   helperWarning: {
-    color: "#f2d7b0",
+    color: "var(--aa-soft)",
   },
   errorBox: {
-    color: "#ffd6dc",
-    border: "1px solid rgba(181, 110, 79, 0.22)",
-    backgroundColor: "rgba(74, 22, 20, 0.3)",
-    ...shorthands.borderRadius("18px"),
+    color: "var(--aa-copper)",
+    border: "1px solid rgba(232, 93, 93, 0.22)",
+    backgroundColor: "rgba(232, 93, 93, 0.08)",
+    ...shorthands.borderRadius("6px"),
     ...shorthands.padding("12px", "14px"),
     fontSize: "13px",
     lineHeight: 1.65,
@@ -274,10 +269,10 @@ const useLocalStyles = makeStyles({
   historyItem: {
     display: "grid",
     gap: "12px",
-    border: "1px solid rgba(214, 188, 149, 0.14)",
+    border: "1px solid var(--aa-border)",
     background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.015) 44%, rgba(12, 15, 22, 0.7))",
-    ...shorthands.borderRadius("24px"),
+      "var(--aa-panel)",
+    ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px"),
   },
   historyHeader: {
@@ -293,9 +288,8 @@ const useLocalStyles = makeStyles({
   },
   historyTitle: {
     color: "var(--aa-text-strong)",
-    fontSize: "15px",
+    fontSize: "13px",
     fontWeight: 700,
-    letterSpacing: "-0.02em",
   },
   historyMeta: {
     color: "var(--aa-soft)",
@@ -309,15 +303,15 @@ const useLocalStyles = makeStyles({
   },
   summaryGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
     gap: "10px",
   },
   summaryCard: {
     display: "grid",
     gap: "4px",
-    border: "1px solid rgba(214, 188, 149, 0.12)",
-    backgroundColor: "rgba(255, 244, 227, 0.03)",
-    ...shorthands.borderRadius("16px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
+    ...shorthands.borderRadius("6px"),
     ...shorthands.padding("10px", "12px"),
   },
   summaryLabel: {
@@ -339,7 +333,7 @@ const useLocalStyles = makeStyles({
   recordListItem: {
     display: "grid",
     gap: "4px",
-    borderBottom: "1px solid rgba(255, 244, 227, 0.07)",
+    borderBottom: "1px solid var(--aa-border)",
     ...shorthands.padding("0", "0", "8px"),
   },
   recordPrimary: {
@@ -354,7 +348,7 @@ const useLocalStyles = makeStyles({
     margin: 0,
     color: "var(--aa-text)",
     backgroundColor: "rgba(9, 12, 18, 0.86)",
-    border: "1px solid rgba(214, 188, 149, 0.1)",
+    border: "1px solid rgba(91, 141, 239, 0.08)",
     fontFamily: "var(--mono)",
     fontSize: "12px",
     lineHeight: 1.7,
@@ -362,7 +356,7 @@ const useLocalStyles = makeStyles({
     maxHeight: "320px",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
-    ...shorthands.borderRadius("18px"),
+    ...shorthands.borderRadius("6px"),
     ...shorthands.padding("14px"),
   },
   emptyState: {
@@ -372,8 +366,8 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-soft)",
     textAlign: "center",
     lineHeight: 1.8,
-    border: "1px dashed rgba(214, 188, 149, 0.16)",
-    ...shorthands.borderRadius("24px"),
+    border: "1px dashed var(--aa-border)",
+    ...shorthands.borderRadius("8px"),
     ...shorthands.padding("24px"),
   },
 });
@@ -567,12 +561,12 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
                 }}
               >
                 <div className={s.commandMetaRow}>
-                  <Badge appearance="outline" color={badgeColorForCategory(command.category)}>
+                  <V3Badge color={badgeColorForCategory(command.category)}>
                     {command.category}
-                  </Badge>
-                  <Badge appearance={command.isAsync ? "filled" : "outline"} color={command.isAsync ? "warning" : "informative"}>
+                  </V3Badge>
+                  <V3Badge color={command.isAsync ? "warn" : "info"}>
                     {command.isAsync ? "polling" : "instant"}
-                  </Badge>
+                  </V3Badge>
                 </div>
                 <div className={s.commandTitle}>{command.title}</div>
                 <div className={s.commandDescription}>{command.description}</div>
@@ -635,13 +629,13 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
           {panelError && <div className={s.errorBox}>{panelError}</div>}
 
           <div className={s.actionRow}>
-            <Text className={mergeClasses(s.helperText, readOnly && s.helperWarning)}>
+            <span className={mergeClasses(s.helperText, readOnly && s.helperWarning)}>
               {readOnly
                 ? "Limited mode is active. You can inspect the command deck, but new executions are disabled until Copilot returns to operational."
                 : definition.isAsync
                   ? "This command returns immediately, then polls for a final result."
                   : "This command returns a result directly in the panel."}
-            </Text>
+            </span>
             <Button
               appearance="primary"
               icon={submitting ? <Spinner size="tiny" /> : <PlayRegular />}
@@ -663,9 +657,9 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
             </div>
           </div>
           <div className={s.badgeRow}>
-            <Badge appearance="outline" color="informative">latest first</Badge>
-            <Badge appearance="outline" color="warning">{pendingCount} pending</Badge>
-            <Badge appearance="outline" color="success">audited</Badge>
+            <V3Badge color="info">latest first</V3Badge>
+            <V3Badge color="warn">{pendingCount} pending</V3Badge>
+            <V3Badge color="ok">audited</V3Badge>
           </div>
           {latestResult ? (
             <CommandResultCard item={latestResult} />
@@ -717,21 +711,21 @@ function CommandResultCard({ item, compact = false }: { item: CommandHistoryItem
           </div>
         </div>
         <div className={s.badgeRow}>
-          <Badge appearance="outline" color={badgeColorForStatus(item.response.status)}>
+          <V3Badge color={badgeColorForStatus(item.response.status)}>
             {item.response.status}
-          </Badge>
-          <Badge appearance="outline" color={item.definition.isAsync ? "warning" : "informative"}>
+          </V3Badge>
+          <V3Badge color={item.definition.isAsync ? "warn" : "info"}>
             {item.response.command}
-          </Badge>
+          </V3Badge>
         </div>
       </div>
 
       {item.response.error && (
         <div className={s.errorBox}>
           {item.response.errorCode && (
-            <Badge appearance="filled" color="danger" style={{ marginRight: 8 }}>
+            <V3Badge color="err" style={{ marginRight: 8 }}>
               {item.response.errorCode}
-            </Badge>
+            </V3Badge>
           )}
           {item.response.error}
         </div>

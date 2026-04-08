@@ -1,11 +1,12 @@
 import {
-  Badge,
   Button,
   Card,
   ProgressBar,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import {
   ArrowRightRegular,
   ChartMultipleRegular,
@@ -35,17 +36,16 @@ const useLocalStyles = makeStyles({
   section: {
     display: "grid",
     gap: "16px",
-    border: "1px solid rgba(214, 188, 149, 0.14)",
+    border: "1px solid var(--aa-border)",
     background:
-      "linear-gradient(180deg, rgba(255, 244, 227, 0.05), rgba(255, 255, 255, 0.018) 42%, rgba(12, 15, 22, 0.72))",
-    ...shorthands.borderRadius("26px"),
-    ...shorthands.padding("22px"),
+      "var(--aa-panel)",
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("14px"),
   },
   sectionTitle: {
-    fontSize: "18px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.03em",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   phaseBar: {
     display: "flex",
@@ -67,16 +67,16 @@ const useLocalStyles = makeStyles({
     flexWrap: "wrap",
   },
   phaseButton: {
-    border: "1px solid rgba(214, 188, 149, 0.18)",
-    backgroundColor: "rgba(255, 244, 227, 0.03)",
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   phaseButtonActive: {
     boxShadow: "0 12px 28px rgba(0, 0, 0, 0.22)",
   },
   card: {
-    border: "1px solid rgba(214, 188, 149, 0.12)",
-    background: "rgba(255, 244, 227, 0.03)",
-    ...shorthands.borderRadius("22px"),
+    border: "1px solid var(--aa-border)",
+    background: "var(--aa-bg)",
+    ...shorthands.borderRadius("8px"),
     ...shorthands.padding("16px", "18px"),
   },
   roomRow: {
@@ -84,7 +84,7 @@ const useLocalStyles = makeStyles({
     justifyContent: "space-between",
     alignItems: "center",
     ...shorthands.padding("12px", "0"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.07)",
+    borderBottom: "1px solid var(--aa-border)",
     flexWrap: "wrap",
     gap: "8px",
   },
@@ -111,7 +111,7 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-soft)",
   },
   limitedModeNote: {
-    color: "#f2d7b0",
+    color: "var(--aa-soft)",
     fontSize: "12px",
     lineHeight: 1.7,
   },
@@ -119,15 +119,13 @@ const useLocalStyles = makeStyles({
 
 // ── Helpers ──
 
-function statusColor(
-  status: string,
-): "informative" | "success" | "warning" | "important" | "danger" | "subtle" {
+function statusColor(status: string): BadgeColor {
   switch (status) {
-    case "Active":      return "success";
-    case "AttentionRequired": return "warning";
-    case "Completed":   return "informative";
-    case "Archived":    return "subtle";
-    default:            return "important";
+    case "Active":      return "ok";
+    case "AttentionRequired": return "warn";
+    case "Completed":   return "info";
+    case "Archived":    return "muted";
+    default:            return "bug";
   }
 }
 
@@ -218,15 +216,15 @@ export default function WorkspaceOverviewPanel({
               <div key={r.id} className={s.roomRow}>
                 <span className={s.roomName}>{r.name}</span>
                 <div className={s.badges}>
-                  <Badge appearance="outline" color={statusColor(r.status)}>
+                  <V3Badge color={statusColor(r.status)}>
                     {r.status}
-                  </Badge>
-                  <Badge appearance="filled" color="informative">
+                  </V3Badge>
+                  <V3Badge color="info">
                     {r.currentPhase}
-                  </Badge>
-                  <Badge appearance="outline" color="subtle">
+                  </V3Badge>
+                  <V3Badge color="muted">
                     {r.participants.length} agent{r.participants.length !== 1 ? "s" : ""}
-                  </Badge>
+                  </V3Badge>
                 </div>
               </div>
             ))

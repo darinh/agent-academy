@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   DismissRegular,
   PlugConnectedRegular,
@@ -41,7 +41,7 @@ const useLocalStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     background:
-      "radial-gradient(circle at top left, rgba(65, 135, 255, 0.18), transparent 26%), radial-gradient(circle at top right, rgba(183, 148, 255, 0.14), transparent 24%), linear-gradient(180deg, #09111f 0%, #0b1425 100%)",
+      "radial-gradient(circle at top left, rgba(91, 141, 239, 0.18), transparent 26%), radial-gradient(circle at top right, rgba(156, 39, 176, 0.14), transparent 24%), linear-gradient(180deg, #09111f 0%, #0b1425 100%)",
     overflowY: "auto",
   },
   header: {
@@ -53,7 +53,7 @@ const useLocalStyles = makeStyles({
   title: {
     fontSize: "22px",
     fontWeight: 700,
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
     margin: "0",
   },
   body: {
@@ -70,13 +70,13 @@ const useLocalStyles = makeStyles({
     gap: "8px",
     fontSize: "15px",
     fontWeight: 600,
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
     marginBottom: "16px",
   },
   providerCard: {
     ...shorthands.padding("16px"),
     ...shorthands.borderRadius("12px"),
-    border: "1px solid rgba(155, 176, 210, 0.16)",
+    border: "1px solid var(--aa-hairline)",
     backgroundColor: "rgba(255, 255, 255, 0.03)",
     marginBottom: "12px",
   },
@@ -94,7 +94,7 @@ const useLocalStyles = makeStyles({
   providerName: {
     fontSize: "14px",
     fontWeight: 600,
-    color: "#eff5ff",
+    color: "var(--aa-text-strong)",
   },
   providerActions: {
     display: "flex",
@@ -103,12 +103,12 @@ const useLocalStyles = makeStyles({
   },
   wizardContainer: {
     marginTop: "16px",
-    ...shorthands.borderTop("1px", "solid", "rgba(155, 176, 210, 0.12)"),
+    ...shorthands.borderTop("1px", "solid", "var(--aa-hairline)"),
     paddingTop: "16px",
   },
   emptyState: {
     fontSize: "13px",
-    color: "#7c90b2",
+    color: "var(--aa-muted)",
     ...shorthands.padding("12px"),
   },
 });
@@ -341,25 +341,17 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   <div className={s.providerInfo}>
                     <span className={s.providerName}>{p.displayName}</span>
                     {p.isConnected ? (
-                      <Badge
-                        appearance="filled"
-                        color="success"
-                        icon={<PlugConnectedRegular />}
-                      >
-                        Connected
-                      </Badge>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <PlugConnectedRegular style={{ fontSize: 14 }} />
+                        <V3Badge color="ok">Connected</V3Badge>
+                      </span>
                     ) : p.isConfigured ? (
-                      <Badge appearance="filled" color="warning">
-                        Configured
-                      </Badge>
+                      <V3Badge color="warn">Configured</V3Badge>
                     ) : (
-                      <Badge
-                        appearance="filled"
-                        color="informative"
-                        icon={<PlugDisconnectedRegular />}
-                      >
-                        Not set up
-                      </Badge>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <PlugDisconnectedRegular style={{ fontSize: 14 }} />
+                        <V3Badge color="info">Not set up</V3Badge>
+                      </span>
                     )}
                   </div>
 
@@ -419,10 +411,10 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           <div className={s.providerCard}>
             <div style={{ padding: "8px 0" }}>
-              <div style={{ fontWeight: 600, marginBottom: 12, color: "#c8d6e5" }}>
+              <div style={{ fontWeight: 600, marginBottom: 12, color: "var(--aa-text)" }}>
                 Conversation Management
               </div>
-              <div style={{ marginBottom: 12, color: "#8899aa", fontSize: 13 }}>
+              <div style={{ marginBottom: 12, color: "var(--aa-soft)", fontSize: 13 }}>
                 When a room's message count exceeds the epoch size, the conversation is
                 summarized and a new session begins with clean context. This prevents
                 performance degradation from accumulated conversation history.
@@ -430,7 +422,7 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
 
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, color: "#8899aa" }}>Main room epoch size</span>
+                  <span style={{ fontSize: 13, color: "var(--aa-soft)" }}>Main room epoch size</span>
                   <input
                     type="number"
                     min="10"
@@ -441,16 +433,16 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                       width: 80,
                       padding: "6px 10px",
                       borderRadius: 6,
-                      border: "1px solid #2a3a4a",
-                      background: "#0d1929",
-                      color: "#e0e8f0",
+                      border: "1px solid var(--aa-border)",
+                      background: "var(--aa-bg)",
+                      color: "var(--aa-text)",
                       fontSize: 14,
                     }}
                   />
                 </label>
 
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, color: "#8899aa" }}>Breakout room epoch size</span>
+                  <span style={{ fontSize: 13, color: "var(--aa-soft)" }}>Breakout room epoch size</span>
                   <input
                     type="number"
                     min="10"
@@ -461,9 +453,9 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                       width: 80,
                       padding: "6px 10px",
                       borderRadius: 6,
-                      border: "1px solid #2a3a4a",
-                      background: "#0d1929",
-                      color: "#e0e8f0",
+                      border: "1px solid var(--aa-border)",
+                      background: "var(--aa-bg)",
+                      color: "var(--aa-text)",
                       fontSize: 14,
                     }}
                   />
@@ -480,7 +472,7 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   {settingsSaving ? <Spinner size="tiny" /> : "Save"}
                 </Button>
                 {settingsSaved && (
-                  <span style={{ color: "#4caf50", fontSize: 13 }}>✓ Saved</span>
+                  <span style={{ color: "var(--aa-lime)", fontSize: 13 }}>✓ Saved</span>
                 )}
               </div>
             </div>

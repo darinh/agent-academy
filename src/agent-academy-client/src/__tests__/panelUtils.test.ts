@@ -144,43 +144,43 @@ describe("panelUtils", () => {
   describe("errorTypeBadge", () => {
     it("maps authentication to danger/Auth", () => {
       const badge = errorTypeBadge("authentication");
-      expect(badge.color).toBe("danger");
+      expect(badge.color).toBe("err");
       expect(badge.label).toBe("Auth");
     });
 
     it("maps authorization to danger/Authz", () => {
       const badge = errorTypeBadge("authorization");
-      expect(badge.color).toBe("danger");
+      expect(badge.color).toBe("err");
       expect(badge.label).toBe("Authz");
     });
 
     it("maps quota to warning/Quota", () => {
       const badge = errorTypeBadge("quota");
-      expect(badge.color).toBe("warning");
+      expect(badge.color).toBe("warn");
       expect(badge.label).toBe("Quota");
     });
 
     it("maps transient to important/Transient", () => {
       const badge = errorTypeBadge("transient");
-      expect(badge.color).toBe("important");
+      expect(badge.color).toBe("bug");
       expect(badge.label).toBe("Transient");
     });
 
     it("maps unknown types to informative with raw label", () => {
       const badge = errorTypeBadge("custom_error");
-      expect(badge.color).toBe("informative");
+      expect(badge.color).toBe("info");
       expect(badge.label).toBe("custom_error");
     });
 
     it("maps empty string to informative", () => {
       const badge = errorTypeBadge("");
-      expect(badge.color).toBe("informative");
+      expect(badge.color).toBe("info");
       expect(badge.label).toBe("");
     });
 
     it("is case-sensitive", () => {
       const badge = errorTypeBadge("Authentication");
-      expect(badge.color).toBe("informative");
+      expect(badge.color).toBe("info");
       expect(badge.label).toBe("Authentication");
     });
   });

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   ErrorCircleRegular,
@@ -32,74 +32,88 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-    gap: "12px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("14px", "8px"),
-    ...shorthands.borderRadius("16px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "28px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "6px",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "13px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   thRight: {
     textAlign: "right" as const,
     color: "var(--aa-soft)",
-    fontSize: "11px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   tdRight: {
-    ...shorthands.padding("10px", "12px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "12px",
   },
   mono: {
     fontFamily: "var(--mono, monospace)",
@@ -107,6 +121,7 @@ const useLocalStyles = makeStyles({
     color: "var(--aa-muted)",
   },
   msgCell: {
+    display: "block",
     maxWidth: "300px",
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -122,7 +137,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("24px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "13px",
     ...shorthands.padding("12px"),
     ...shorthands.borderRadius("8px"),
@@ -150,10 +165,9 @@ const useLocalStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    fontSize: "14px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   pagerRow: {
     display: "flex",
@@ -164,7 +178,7 @@ const useLocalStyles = makeStyles({
   },
   pagerBtn: {
     background: "none",
-    ...shorthands.border("1px", "solid", "rgba(155, 176, 210, 0.20)"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
     ...shorthands.borderRadius("8px"),
     ...shorthands.padding("4px", "12px"),
     color: "var(--aa-text)",
@@ -188,9 +202,9 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("12px", "16px"),
-    ...shorthands.borderRadius("14px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   cbDot: {
     width: "10px",
@@ -213,9 +227,9 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("12px"),
+    ...shorthands.borderRadius("6px"),
     backgroundColor: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid rgba(214, 188, 149, 0.06)",
+    border: "1px solid var(--aa-border)",
   },
   sparklineLabel: {
     color: "var(--aa-muted)",
@@ -237,19 +251,19 @@ export function circuitBreakerDisplay(state: CircuitBreakerState): {
   switch (state) {
     case "Open":
       return {
-        color: "#f85149",
+        color: "var(--aa-copper)",
         label: "Circuit Open",
         detail: "Agent requests are blocked. Waiting for cooldown before probing.",
       };
     case "HalfOpen":
       return {
-        color: "#ffbe70",
+        color: "var(--aa-gold)",
         label: "Circuit Half-Open",
         detail: "Probing with a single request to test if the backend has recovered.",
       };
     case "Closed":
       return {
-        color: "#48d67a",
+        color: "var(--aa-lime)",
         label: "Circuit Closed",
         detail: "All systems normal.",
       };
@@ -361,7 +375,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
           </div>
         )}
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 20, color: "#48d67a", marginRight: 6 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 20, color: "var(--aa-lime)", marginRight: 6 }} />
           No errors recorded. All agents operating normally.
         </div>
       </div>
@@ -391,19 +405,19 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
       {summary && summary.totalErrors > 0 && (
         <div className={s.statsRow}>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>
               {summary.totalErrors}
             </span>
             <span className={s.statLabel}>Total Errors</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#ffbe70" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
               {summary.recoverableErrors}
             </span>
             <span className={s.statLabel}>Recoverable</span>
           </div>
           <div className={s.statCard}>
-            <span className={s.statValue} style={{ color: "#f85149" }}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>
               {summary.unrecoverableErrors}
             </span>
             <span className={s.statLabel}>Unrecoverable</span>
@@ -415,7 +429,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
       {records.length >= 2 && (
         <div className={s.sparklineRow} data-testid="errors-sparkline">
           <span className={s.sparklineLabel}>Error Rate</span>
-          <Sparkline data={errorTrend} color="#f85149" width={180} height={28} />
+          <Sparkline data={errorTrend} color="var(--aa-copper)" width={180} height={28} />
         </div>
       )}
 
@@ -425,6 +439,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
           {summary.byType.length > 0 && (
             <div>
               <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>By Type</div>
+              <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
@@ -438,7 +453,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                     return (
                       <tr key={t.errorType}>
                         <td className={s.td}>
-                          <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                          <V3Badge color={badge.color}>{badge.label}</V3Badge>
                         </td>
                         <td className={s.tdRight}>{t.count}</td>
                       </tr>
@@ -446,11 +461,13 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
           {summary.byAgent.length > 0 && (
             <div>
               <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>By Agent</div>
+              <div className={s.tableWrap}>
               <table className={s.table}>
                 <thead>
                   <tr>
@@ -462,13 +479,14 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                   {summary.byAgent.map((a) => (
                     <tr key={a.agentId}>
                       <td className={s.td}>
-                        <Badge appearance="outline" color="informative">{a.agentId}</Badge>
+                        <V3Badge color="info">{a.agentId}</V3Badge>
                       </td>
                       <td className={s.tdRight}>{a.count}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>
@@ -490,6 +508,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
           <div className={s.emptyNote}>No error records found.</div>
         ) : (
           <>
+            <div className={s.tableWrap}>
             <table className={s.table}>
               <thead>
                 <tr>
@@ -509,7 +528,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                         <span className={s.mono}>{rec.agentId}</span>
                       </td>
                       <td className={s.td}>
-                        <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                        <V3Badge color={badge.color}>{badge.label}</V3Badge>
                       </td>
                       <td className={s.td}>
                         <Tooltip content={rec.message} relationship="label">
@@ -517,12 +536,9 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                         </Tooltip>
                       </td>
                       <td className={s.td}>
-                        <Badge
-                          appearance="outline"
-                          color={rec.recoverable ? "success" : "danger"}
-                        >
+                        <V3Badge color={rec.recoverable ? "ok" : "err"}>
                           {rec.recoverable ? "Yes" : "No"}
-                        </Badge>
+                        </V3Badge>
                       </td>
                       <td className={s.td}>
                         <span className={s.mono}>{formatTimestamp(rec.timestamp)}</span>
@@ -532,6 +548,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                 })}
               </tbody>
             </table>
+            </div>
 
             {totalPages > 1 && (
               <div className={s.pagerRow}>

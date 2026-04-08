@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
@@ -30,74 +30,88 @@ const useLocalStyles = makeStyles({
   },
   statsRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-    gap: "10px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
   },
   statCard: {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    ...shorthands.padding("12px", "6px"),
-    ...shorthands.borderRadius("14px"),
-    border: "1px solid rgba(214, 188, 149, 0.10)",
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
   },
   statValue: {
-    fontFamily: "var(--heading)",
-    fontSize: "22px",
-    fontWeight: 780,
-    color: "var(--aa-text-strong)",
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
     lineHeight: 1,
-    letterSpacing: "-0.04em",
   },
   statLabel: {
-    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
     fontSize: "10px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    marginTop: "5px",
     textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
   },
   table: {
     width: "100%",
     borderCollapse: "collapse" as const,
-    fontSize: "12px",
   },
   th: {
     textAlign: "left" as const,
     color: "var(--aa-soft)",
     fontSize: "10px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("6px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   thRight: {
     textAlign: "right" as const,
     color: "var(--aa-soft)",
     fontSize: "10px",
-    fontWeight: 700,
-    letterSpacing: "0.10em",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase" as const,
-    ...shorthands.padding("6px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.10)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
   },
   td: {
-    ...shorthands.padding("8px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
   },
   tdRight: {
-    ...shorthands.padding("8px", "10px"),
-    borderBottom: "1px solid rgba(255, 244, 227, 0.05)",
-    color: "var(--aa-text)",
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
     verticalAlign: "middle" as const,
     textAlign: "right" as const,
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "11px",
   },
   mono: {
     fontFamily: "var(--mono, monospace)",
@@ -111,7 +125,7 @@ const useLocalStyles = makeStyles({
     ...shorthands.padding("16px"),
   },
   error: {
-    color: "#f85149",
+    color: "var(--aa-copper)",
     fontSize: "12px",
     ...shorthands.padding("10px"),
     ...shorthands.borderRadius("8px"),
@@ -140,9 +154,8 @@ const useLocalStyles = makeStyles({
     alignItems: "center",
     gap: "6px",
     fontSize: "13px",
-    fontWeight: 680,
-    color: "var(--aa-text-strong)",
-    letterSpacing: "-0.02em",
+    fontWeight: 600,
+    color: "var(--aa-text)",
   },
   columns: {
     display: "grid",
@@ -254,7 +267,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
     return (
       <div className={s.root}>
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 16, color: "#48d67a", marginRight: 4 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 16, color: "var(--aa-lime)", marginRight: 4 }} />
           No activity recorded for this room yet.
         </div>
       </div>
@@ -285,13 +298,13 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               <span className={s.statLabel}>Output</span>
             </div>
             <div className={s.statCard}>
-              <span className={s.statValue} style={{ color: "#48d67a" }}>
+              <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
                 {formatCost(usage.totalCost)}
               </span>
               <span className={s.statLabel}>Cost</span>
             </div>
             <div className={s.statCard}>
-              <span className={s.statValue} style={{ color: "#ffbe70" }}>
+              <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
                 {usage.requestCount}
               </span>
               <span className={s.statLabel}>Calls</span>
@@ -307,6 +320,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
       {agents.length > 0 && (
         <div>
           <div className={s.sectionLabel} style={{ marginBottom: "6px" }}>Per-Agent</div>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -321,9 +335,9 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               {agents.map((a) => (
                 <tr key={a.agentId}>
                   <td className={s.td}>
-                    <Badge appearance="outline" color="informative">
+                    <V3Badge color="info">
                       {a.agentId}
-                    </Badge>
+                    </V3Badge>
                   </td>
                   <td className={s.tdRight}>{formatTokenCount(a.totalInputTokens)}</td>
                   <td className={s.tdRight}>{formatTokenCount(a.totalOutputTokens)}</td>
@@ -333,6 +347,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -346,6 +361,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
             <ErrorCircleRegular style={{ fontSize: 14 }} />
             Errors ({errors.length})
           </div>
+          <div className={s.tableWrap}>
           <table className={s.table}>
             <thead>
               <tr>
@@ -364,7 +380,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
                       <span className={s.mono}>{rec.agentId}</span>
                     </td>
                     <td className={s.td}>
-                      <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                      <V3Badge color={badge.color}>{badge.label}</V3Badge>
                     </td>
                     <td className={s.td}>
                       <span className={s.msgCell}>{rec.message}</span>
@@ -377,6 +393,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               })}
             </tbody>
           </table>
+          </div>
           {errors.length > 5 && (
             <div className={s.emptyNote}>
               Showing 5 of {errors.length} errors. See Dashboard for full details.
@@ -387,7 +404,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
 
       {!hasErrors && !errorsError && hasUsage && (
         <div className={s.emptyNote}>
-          <CheckmarkCircleRegular style={{ fontSize: 14, color: "#48d67a", marginRight: 4 }} />
+          <CheckmarkCircleRegular style={{ fontSize: 14, color: "var(--aa-lime)", marginRight: 4 }} />
           No errors in this room.
         </div>
       )}

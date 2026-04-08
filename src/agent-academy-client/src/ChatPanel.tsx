@@ -3,20 +3,11 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Avatar,
-  Body1Strong,
-  Badge,
   Button,
-  Menu,
-  MenuItemCheckbox,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
   mergeClasses,
   Spinner,
   Textarea,
 } from "@fluentui/react-components";
-import type { MenuCheckedValueChangeData } from "@fluentui/react-components";
 import {
   CheckmarkCircleRegular,
   ArrowSyncRegular,
@@ -36,7 +27,6 @@ import {
   isCommandResultMessage,
   parseCommandResults,
   loadFilters,
-  saveFilters,
   shouldHideMessage,
   STATUS_LABELS,
   STATUS_COLORS,
@@ -99,22 +89,12 @@ const MessageBubble = memo(function MessageBubble(props: {
 
   return (
     <article className={s.bubble}>
-      <Avatar
-        name={props.message.senderName}
-        color={colors.avatar}
-        size={40}
-        style={{
-          backgroundColor: colors.accent,
-          color: colors.foreground,
-          boxShadow: "0 14px 30px rgba(0, 0, 0, 0.24)",
-        }}
-      />
       <div className={s.bubbleCard}>
         <div className={s.bubbleHeader}>
-          <Body1Strong>{props.message.senderName}</Body1Strong>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600, lineHeight: 1 }}>{props.message.senderName}</span>
           <span
             className={s.rolePill}
-            style={{ backgroundColor: colors.accent, color: colors.foreground }}
+            style={{ backgroundColor: colors.accent + "26", color: colors.accent }}
           >
             {formatRole(props.message.senderRole ?? (props.message.senderKind === "User" ? "Human" : "Agent"))}
           </span>
@@ -147,16 +127,10 @@ const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgen
 
   return (
     <article className={s.bubble}>
-      <Avatar
-        name={props.agent.name}
-        color={colors.avatar}
-        size={40}
-        style={{ backgroundColor: colors.accent, color: colors.foreground }}
-      />
       <div className={mergeClasses(s.bubbleCard, s.thinkingCard)} style={{ borderLeftColor: colors.accent }}>
         <div className={s.bubbleHeader}>
-          <Body1Strong>{props.agent.name}</Body1Strong>
-          <span className={s.rolePill} style={{ backgroundColor: colors.accent, color: colors.foreground }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: "12px", fontWeight: 600, lineHeight: 1 }}>{props.agent.name}</span>
+          <span className={s.rolePill} style={{ backgroundColor: colors.accent + "26", color: colors.accent }}>
             {formatRole(props.agent.role)}
           </span>
         </div>
@@ -182,13 +156,15 @@ const ChatPanel = memo(function ChatPanel(props: {
   connectionStatus: ConnectionStatus;
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
   readOnly?: boolean;
+  hiddenFilters?: Set<MessageFilter>;
 }) {
   const s = useStyles();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [humanMsg, setHumanMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
-  const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const [localHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
+  const hiddenFilters = props.hiddenFilters ?? localHiddenFilters;
   const [hasArchivedContext, setHasArchivedContext] = useState(false);
   const [showNewMsgIndicator, setShowNewMsgIndicator] = useState(false);
   const isNearBottomRef = useRef(true);
@@ -198,26 +174,6 @@ const ChatPanel = memo(function ChatPanel(props: {
   const onSendMessage = props.onSendMessage;
   const thinkingAgents = props.thinkingAgents;
   const connectionStatus = props.connectionStatus;
-
-  // Filters use checkedValues where checked = visible (not hidden)
-  const checkedValues = useMemo(() => {
-    const visible: string[] = [];
-    if (!hiddenFilters.has("system")) visible.push("system");
-    if (!hiddenFilters.has("commands")) visible.push("commands");
-    return { show: visible };
-  }, [hiddenFilters]);
-
-  const onFilterChange = useCallback(
-    (_: unknown, data: MenuCheckedValueChangeData) => {
-      const nowVisible = new Set(data.checkedItems);
-      const next = new Set<MessageFilter>();
-      if (!nowVisible.has("system")) next.add("system");
-      if (!nowVisible.has("commands")) next.add("commands");
-      setHiddenFilters(next);
-      saveFilters(next);
-    },
-    [],
-  );
 
   const filteredMessages = useMemo(
     () => room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
@@ -333,30 +289,9 @@ const ChatPanel = memo(function ChatPanel(props: {
     }
   }, [doSend]);
 
-  const hiddenCount = (room?.recentMessages.length ?? 0) - filteredMessages.length;
 
   return (
     <div className={s.conversationLayout}>
-      <div className={s.chatHeader}>
-        <Menu checkedValues={checkedValues} onCheckedValueChange={onFilterChange}>
-          <MenuTrigger disableButtonEnhancement>
-            <Button size="small" appearance="subtle" className={s.filterMenuButton}>
-              Filter{hiddenCount > 0 && <Badge size="small" appearance="filled" color="informative" className={s.filterBadge}>{hiddenCount}</Badge>}
-            </Button>
-          </MenuTrigger>
-          <MenuPopover>
-            <MenuList>
-              <MenuItemCheckbox name="show" value="system">
-                System messages
-              </MenuItemCheckbox>
-              <MenuItemCheckbox name="show" value="commands">
-                Command results
-              </MenuItemCheckbox>
-            </MenuList>
-          </MenuPopover>
-        </Menu>
-      </div>
-
        <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
         {hasArchivedContext && (
           <div style={{
@@ -365,8 +300,8 @@ const ChatPanel = memo(function ChatPanel(props: {
             gap: "8px",
             padding: "8px 14px",
             borderRadius: "12px",
-            backgroundColor: "rgba(183, 148, 255, 0.08)",
-            border: "1px solid rgba(183, 148, 255, 0.18)",
+            backgroundColor: "rgba(156, 39, 176, 0.08)",
+            border: "1px solid rgba(156, 39, 176, 0.18)",
             fontSize: "12px",
             color: "var(--aa-soft)",
             marginBottom: "8px",
@@ -405,8 +340,8 @@ const ChatPanel = memo(function ChatPanel(props: {
             margin: "0 auto",
             padding: "6px 16px",
             borderRadius: "999px",
-            border: "1px solid rgba(124, 176, 248, 0.3)",
-            background: "rgba(124, 176, 248, 0.12)",
+            border: "1px solid rgba(91, 141, 239, 0.3)",
+            background: "rgba(91, 141, 239, 0.12)",
             color: "var(--aa-cyan)",
             fontSize: "12px",
             fontWeight: 600,

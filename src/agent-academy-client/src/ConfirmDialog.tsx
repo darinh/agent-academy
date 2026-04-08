@@ -15,7 +15,7 @@ const useLocalStyles = makeStyles({
   surface: {
     background:
       "linear-gradient(180deg, rgba(18, 23, 33, 0.98), rgba(9, 12, 18, 0.98))",
-    border: "1px solid rgba(214, 188, 149, 0.18)",
+    border: "1px solid var(--aa-border)",
     borderRadius: "20px",
     color: "var(--aa-text)",
     maxWidth: "420px",

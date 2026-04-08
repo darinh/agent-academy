@@ -96,10 +96,10 @@ export const STATUS_LABELS: Record<ConnectionStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<ConnectionStatus, string> = {
-  connected: "#34d399",
-  connecting: "#fbbf24",
-  reconnecting: "#fbbf24",
-  disconnected: "#f87171",
+  connected: "var(--aa-lime)",
+  connecting: "var(--aa-gold)",
+  reconnecting: "var(--aa-gold)",
+  disconnected: "var(--aa-copper)",
 };
 
 /* ── Message Length Threshold ──────────────────────────────────── */

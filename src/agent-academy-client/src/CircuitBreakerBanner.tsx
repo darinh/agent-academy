@@ -19,7 +19,7 @@ const useLocalStyles = makeStyles({
     gap: "8px",
     ...shorthands.borderRadius("20px"),
     ...shorthands.padding("14px", "18px"),
-    border: "1px solid rgba(255, 244, 227, 0.08)",
+    border: "1px solid rgba(91, 141, 239, 0.08)",
     boxShadow: "0 18px 40px rgba(0, 0, 0, 0.3)",
     animationName: {
       from: { opacity: 0, transform: "translateX(-50%) translateY(-10px)" },
@@ -43,8 +43,8 @@ const useLocalStyles = makeStyles({
     gap: "8px",
     width: "fit-content",
     color: "var(--aa-text-strong)",
-    backgroundColor: "rgba(255, 244, 227, 0.08)",
-    border: "1px solid rgba(255, 244, 227, 0.12)",
+    backgroundColor: "rgba(91, 141, 239, 0.08)",
+    border: "1px solid rgba(91, 141, 239, 0.12)",
     ...shorthands.borderRadius("999px"),
     ...shorthands.padding("6px", "10px"),
     fontSize: "11px",
@@ -53,10 +53,9 @@ const useLocalStyles = makeStyles({
     textTransform: "uppercase" as const,
   },
   message: {
-    color: "#f4f8ff",
+    color: "var(--aa-text-strong)",
     fontSize: "15px",
-    fontWeight: 680,
-    letterSpacing: "-0.02em",
+    fontWeight: 600,
   },
   detail: {
     color: "var(--aa-muted)",

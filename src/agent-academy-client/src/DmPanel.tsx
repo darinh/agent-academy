@@ -3,15 +3,12 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Avatar,
-  Body1Strong,
   Button,
   makeStyles,
   mergeClasses,
+  shorthands,
   Spinner,
-  Subtitle2,
   Textarea,
-  tokens,
 } from "@fluentui/react-components";
 import {
   ChatRegular,
@@ -39,42 +36,45 @@ const useLocalStyles = makeStyles({
     overflow: "hidden",
   },
   sidebar: {
-    width: "280px",
-    minWidth: "280px",
-    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    width: "220px",
+    minWidth: "220px",
+    borderRight: "1px solid var(--aa-border)",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
+    background: "var(--aa-panel)",
   },
   sidebarHeader: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "12px 16px",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    ...shorthands.padding("8px", "12px"),
+    borderBottom: "1px solid var(--aa-border)",
   },
   threadList: {
     flex: 1,
     overflowY: "auto",
-    padding: "4px 0",
+    ...shorthands.padding("4px", "0"),
   },
   threadItem: {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
-    padding: "10px 16px",
+    gap: "8px",
+    ...shorthands.padding("8px", "12px"),
     cursor: "pointer",
     border: "none",
     background: "transparent",
     width: "100%",
     textAlign: "left",
     color: "inherit",
+    transitionProperty: "background",
+    transitionDuration: "0.1s",
     "&:hover": {
-      backgroundColor: tokens.colorNeutralBackground1Hover,
+      background: "rgba(91, 141, 239, 0.06)",
     },
   },
   threadItemSelected: {
-    backgroundColor: tokens.colorNeutralBackground1Selected,
+    background: "rgba(91, 141, 239, 0.12)",
   },
   threadInfo: {
     flex: 1,
@@ -92,13 +92,14 @@ const useLocalStyles = makeStyles({
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-    color: tokens.colorNeutralForeground3,
-    fontSize: "12px",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
   },
   threadTime: {
-    fontSize: "11px",
-    color: tokens.colorNeutralForeground3,
+    fontSize: "10px",
+    color: "var(--aa-soft)",
     whiteSpace: "nowrap",
+    fontFamily: "var(--mono)",
   },
   chatArea: {
     flex: 1,
@@ -109,14 +110,14 @@ const useLocalStyles = makeStyles({
   chatHeader: {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
-    padding: "12px 16px",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    gap: "10px",
+    ...shorthands.padding("8px", "16px"),
+    borderBottom: "1px solid var(--aa-border)",
   },
   messageList: {
     flex: 1,
     overflowY: "auto",
-    padding: "16px",
+    ...shorthands.padding("14px", "20px"),
     display: "flex",
     flexDirection: "column",
     gap: "12px",
@@ -131,14 +132,16 @@ const useLocalStyles = makeStyles({
     flexDirection: "row-reverse",
   },
   msgBubble: {
-    padding: "8px 12px",
-    borderRadius: "8px",
-    backgroundColor: tokens.colorNeutralBackground3,
+    ...shorthands.padding("8px", "12px"),
+    ...shorthands.borderRadius("8px"),
+    backgroundColor: "var(--aa-panel)",
+    border: "1px solid var(--aa-border)",
     maxWidth: "100%",
   },
   msgBubbleHuman: {
-    backgroundColor: tokens.colorBrandBackground,
-    color: tokens.colorNeutralForegroundOnBrand,
+    backgroundColor: "rgba(91, 141, 239, 0.15)",
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.3)"),
+    color: "var(--aa-text)",
   },
   msgMeta: {
     display: "flex",
@@ -147,31 +150,35 @@ const useLocalStyles = makeStyles({
     marginBottom: "2px",
   },
   msgTime: {
-    fontSize: "11px",
-    color: tokens.colorNeutralForeground3,
+    fontSize: "10px",
+    color: "var(--aa-soft)",
+    fontFamily: "var(--mono)",
     marginTop: "4px",
   },
   msgTimeHuman: {
     textAlign: "right",
-    color: tokens.colorNeutralForegroundOnBrand,
-    opacity: 0.7,
+    color: "var(--aa-soft)",
   },
   msgContent: {
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
+    lineHeight: 1.6,
     "& p": { margin: 0 },
     "& pre": {
-      backgroundColor: tokens.colorNeutralBackground1,
-      padding: "8px",
-      borderRadius: "4px",
+      backgroundColor: "var(--aa-bg)",
+      ...shorthands.padding("8px"),
+      ...shorthands.borderRadius("4px"),
       overflowX: "auto",
-      fontSize: "13px",
+      fontSize: "12px",
     },
     "& code": {
-      fontSize: "13px",
+      fontSize: "12px",
     },
   },
   composer: {
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    padding: "12px 16px",
+    borderTop: "1px solid var(--aa-border)",
+    background: "var(--aa-panel)",
+    ...shorthands.padding("10px", "16px"),
     display: "flex",
     gap: "8px",
     alignItems: "flex-end",
@@ -186,40 +193,41 @@ const useLocalStyles = makeStyles({
     justifyContent: "center",
     height: "100%",
     gap: "12px",
-    color: tokens.colorNeutralForeground3,
-    padding: "24px",
+    color: "var(--aa-soft)",
+    ...shorthands.padding("24px"),
     textAlign: "center",
   },
   emptyIcon: {
-    fontSize: "48px",
+    fontSize: "26px",
     opacity: 0.5,
   },
   rolePill: {
-    fontSize: "10px",
+    fontFamily: "var(--mono)",
+    fontSize: "9px",
     fontWeight: 600,
-    borderRadius: "4px",
-    padding: "1px 6px",
+    ...shorthands.borderRadius("3px"),
+    ...shorthands.padding("3px", "6px", "2px"),
     textTransform: "uppercase",
-    letterSpacing: "0.5px",
+    lineHeight: "1",
   },
   agentDropdown: {
     position: "absolute",
     top: "100%",
     right: 0,
     zIndex: 100,
-    backgroundColor: tokens.colorNeutralBackground1,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
-    boxShadow: tokens.shadow16,
+    backgroundColor: "var(--aa-panel-alt)",
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
+    boxShadow: "var(--aa-shadow)",
     minWidth: "200px",
-    padding: "4px 0",
+    ...shorthands.padding("4px", "0"),
     marginTop: "4px",
   },
   agentOption: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    padding: "8px 12px",
+    ...shorthands.padding("8px", "12px"),
     cursor: "pointer",
     border: "none",
     background: "transparent",
@@ -227,20 +235,32 @@ const useLocalStyles = makeStyles({
     textAlign: "left",
     color: "inherit",
     "&:hover": {
-      backgroundColor: tokens.colorNeutralBackground1Hover,
+      background: "rgba(91, 141, 239, 0.06)",
     },
   },
   newMsgWrapper: {
     position: "relative",
   },
   limitedModeNotice: {
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    padding: "12px 16px",
-    color: tokens.colorPaletteDarkOrangeForeground2,
-    backgroundColor: tokens.colorPaletteDarkOrangeBackground2,
+    borderTop: "1px solid var(--aa-border)",
+    ...shorthands.padding("12px", "16px"),
+    color: "var(--aa-gold)",
+    backgroundColor: "rgba(255, 152, 0, 0.06)",
     fontSize: "12px",
     lineHeight: 1.6,
   },
+  avatar: {
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "50%",
+    fontFamily: "var(--mono)",
+    fontWeight: 700,
+    color: "white",
+    flexShrink: 0,
+  },
+  avatarSm: { width: "28px", height: "28px", fontSize: "9px" },
+  avatarMd: { width: "32px", height: "32px", fontSize: "10px" },
+  avatarLg: { width: "36px", height: "36px", fontSize: "11px" },
 });
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -254,6 +274,10 @@ interface AgentInfo {
 interface DmPanelProps {
   agents: AgentInfo[];
   readOnly?: boolean;
+}
+
+function initials(name: string): string {
+  return name.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
 // ── Component ────────────────────────────────────────────────────────────
@@ -406,7 +430,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       {/* ── Conversation list ──────────────── */}
       <div className={s.sidebar}>
         <div className={s.sidebarHeader}>
-          <Subtitle2>Messages</Subtitle2>
+          <span style={{ fontWeight: 600, fontSize: "14px" }}>Messages</span>
           <div className={s.newMsgWrapper} ref={pickerRef}>
             <Button
               appearance="subtle"
@@ -419,7 +443,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
             {showAgentPicker && (
               <div className={s.agentDropdown}>
                 {agentsWithoutThread.length === 0 ? (
-                  <div style={{ padding: "8px 12px", color: tokens.colorNeutralForeground3, fontSize: "13px" }}>
+                  <div style={{ padding: "8px 12px", color: "var(--aa-soft)", fontSize: "13px" }}>
                     All agents have threads
                   </div>
                 ) : (
@@ -432,14 +456,15 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
                         onClick={() => startNewThread(agent.id)}
                         type="button"
                       >
-                        <Avatar
-                          name={agent.name}
-                          size={28}
-                          style={{ backgroundColor: colors.accent, color: colors.foreground }}
-                        />
+                        <span
+                          className={mergeClasses(s.avatar, s.avatarSm)}
+                          style={{ backgroundColor: colors.accent }}
+                        >
+                          {initials(agent.name)}
+                        </span>
                         <div>
-                          <Body1Strong style={{ fontSize: "13px" }}>{agent.name}</Body1Strong>
-                          <div style={{ fontSize: "11px", color: tokens.colorNeutralForeground3 }}>
+                          <span style={{ fontWeight: 600, fontSize: "13px" }}>{agent.name}</span>
+                          <div style={{ fontSize: "11px", color: "var(--aa-soft)" }}>
                             {formatRole(agent.role)}
                           </div>
                         </div>
@@ -461,7 +486,6 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
             />
           ) : (
             threads.map((thread) => {
-              const colors = roleColor(thread.agentRole);
               return (
                 <button
                   key={thread.agentId}
@@ -472,21 +496,10 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
                   onClick={() => selectThread(thread.agentId)}
                   type="button"
                 >
-                  <Avatar
-                    name={thread.agentName}
-                    size={36}
-                    style={{ backgroundColor: colors.accent, color: colors.foreground }}
-                  />
                   <div className={s.threadInfo}>
                     <div className={s.threadNameRow}>
-                      <Body1Strong style={{ fontSize: "13px" }}>
+                      <span style={{ fontWeight: 600, fontSize: "13px" }}>
                         {thread.agentName}
-                      </Body1Strong>
-                      <span
-                        className={s.rolePill}
-                        style={{ backgroundColor: colors.accent, color: colors.foreground }}
-                      >
-                        {formatRole(thread.agentRole)}
                       </span>
                     </div>
                     <div className={s.threadPreview}>{thread.lastMessage}</div>
@@ -506,20 +519,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
         {selectedAgent ? (
           <>
             <div className={s.chatHeader}>
-              <Avatar
-                name={selectedAgent.name}
-                size={32}
-                style={{
-                  backgroundColor: roleColor(selectedAgent.role).accent,
-                  color: roleColor(selectedAgent.role).foreground,
-                }}
-              />
-              <div>
-                <Body1Strong>{selectedAgent.name}</Body1Strong>
-                <div style={{ fontSize: "12px", color: tokens.colorNeutralForeground3 }}>
-                  {formatRole(selectedAgent.role)}
-                </div>
-              </div>
+              <span style={{ fontWeight: 600 }}>{selectedAgent.name}</span>
             </div>
 
             <div ref={scrollRef} className={s.messageList} role="log" aria-label="Direct messages">
@@ -589,23 +589,13 @@ const DmMessageBubble = memo(function DmMessageBubble({
 
   return (
     <div className={mergeClasses(s.msgRow, isHuman && s.msgRowHuman)}>
-      {!isHuman && (
-        <Avatar
-          name={message.senderName}
-          size={32}
-          style={{
-            backgroundColor: roleColor("Agent").accent,
-            color: roleColor("Agent").foreground,
-          }}
-        />
-      )}
       <div>
         <div className={mergeClasses(s.msgBubble, isHuman && s.msgBubbleHuman)}>
           {!isHuman && (
             <div className={s.msgMeta}>
-              <Body1Strong style={{ fontSize: "13px" }}>
+              <span style={{ fontWeight: 600, fontSize: "13px" }}>
                 {message.senderName}
-              </Body1Strong>
+              </span>
             </div>
           )}
           <div className={s.msgContent}>
