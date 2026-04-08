@@ -44,6 +44,14 @@ public sealed class SprintService
             ["FinalSynthesis"] = "SprintReport",
         };
 
+    /// <summary>
+    /// Stages that require user sign-off before advancing.
+    /// When an agent triggers ADVANCE_STAGE from one of these stages,
+    /// the sprint enters AwaitingSignOff state until a human approves.
+    /// </summary>
+    private static readonly IReadOnlySet<string> SignOffRequiredStages =
+        new HashSet<string>(StringComparer.Ordinal) { "Intake", "Planning" };
+
     private readonly AgentAcademyDbContext _db;
     private readonly ActivityBroadcaster _activityBus;
     private readonly ILogger<SprintService> _logger;
@@ -259,6 +267,8 @@ public sealed class SprintService
     /// <summary>
     /// Advances the sprint to the next stage. Validates that any required
     /// artifact for the current stage exists before allowing advancement.
+    /// If the current stage requires user sign-off, enters AwaitingSignOff
+    /// state instead of advancing immediately.
     /// Returns the updated sprint.
     /// </summary>
     public async Task<SprintEntity> AdvanceStageAsync(string sprintId)
@@ -269,6 +279,11 @@ public sealed class SprintService
         if (sprint.Status != "Active")
             throw new InvalidOperationException(
                 $"Cannot advance sprint {sprintId} — status is {sprint.Status}.");
+
+        if (sprint.AwaitingSignOff)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is awaiting user sign-off to advance from {sprint.CurrentStage}. " +
+                "A human must approve before the stage can change.");
 
         var currentIndex = Stages.IndexOf(sprint.CurrentStage);
         if (currentIndex < 0)
@@ -294,6 +309,24 @@ public sealed class SprintService
                     $"required artifact '{requiredType}' has not been stored.");
         }
 
+        // Check if user sign-off is required for this stage
+        if (SignOffRequiredStages.Contains(sprint.CurrentStage))
+        {
+            sprint.AwaitingSignOff = true;
+            sprint.PendingStage = Stages[currentIndex + 1];
+
+            Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
+                $"Sprint #{sprint.Number} awaiting user sign-off to advance from {sprint.CurrentStage} → {sprint.PendingStage}");
+
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Sprint #{Number} ({Id}) awaiting sign-off: {Current} → {Pending}",
+                sprint.Number, sprint.Id, sprint.CurrentStage, sprint.PendingStage);
+
+            return sprint;
+        }
+
         var previousStage = sprint.CurrentStage;
         sprint.CurrentStage = Stages[currentIndex + 1];
 
@@ -305,6 +338,65 @@ public sealed class SprintService
         _logger.LogInformation(
             "Advanced sprint #{Number} ({Id}) from {Previous} → {Current}",
             sprint.Number, sprint.Id, previousStage, sprint.CurrentStage);
+
+        return sprint;
+    }
+
+    /// <summary>
+    /// Approves a pending stage advancement (user sign-off).
+    /// Only valid when the sprint is AwaitingSignOff.
+    /// </summary>
+    public async Task<SprintEntity> ApproveAdvanceAsync(string sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (!sprint.AwaitingSignOff || sprint.PendingStage is null)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is not awaiting sign-off.");
+
+        var previousStage = sprint.CurrentStage;
+        sprint.CurrentStage = sprint.PendingStage;
+        sprint.AwaitingSignOff = false;
+        sprint.PendingStage = null;
+
+        Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "User approved sprint #{Number} ({Id}) advance: {Previous} → {Current}",
+            sprint.Number, sprint.Id, previousStage, sprint.CurrentStage);
+
+        return sprint;
+    }
+
+    /// <summary>
+    /// Rejects a pending stage advancement. Clears AwaitingSignOff so
+    /// agents can revise their work and request advancement again.
+    /// </summary>
+    public async Task<SprintEntity> RejectAdvanceAsync(string sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (!sprint.AwaitingSignOff)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is not awaiting sign-off.");
+
+        var pendingStage = sprint.PendingStage;
+        sprint.AwaitingSignOff = false;
+        sprint.PendingStage = null;
+
+        Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advance rejected by user — staying at {sprint.CurrentStage}");
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "User rejected sprint #{Number} ({Id}) advance from {Current} → {Pending}",
+            sprint.Number, sprint.Id, sprint.CurrentStage, pendingStage);
 
         return sprint;
     }

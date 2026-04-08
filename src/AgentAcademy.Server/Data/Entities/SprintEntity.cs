@@ -12,6 +12,8 @@ public class SprintEntity
     public string Status { get; set; } = "Active"; // Active | Completed | Cancelled
     public string CurrentStage { get; set; } = "Intake"; // Intake | Planning | Discussion | Validation | Implementation | FinalSynthesis
     public string? OverflowFromSprintId { get; set; }
+    public bool AwaitingSignOff { get; set; }
+    public string? PendingStage { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
 

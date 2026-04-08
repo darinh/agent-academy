@@ -59,6 +59,26 @@ public sealed class AdvanceStageHandler : ICommandHandler
             var previousStage = (await sprintService.GetSprintByIdAsync(sprintId))?.CurrentStage;
             var sprint = await sprintService.AdvanceStageAsync(sprintId);
 
+            // If awaiting sign-off, return a specific message — don't create a new session
+            if (sprint.AwaitingSignOff)
+            {
+                return command with
+                {
+                    Status = CommandStatus.Success,
+                    Result = new Dictionary<string, object?>
+                    {
+                        ["sprintId"] = sprint.Id,
+                        ["number"] = sprint.Number,
+                        ["previousStage"] = previousStage,
+                        ["currentStage"] = sprint.CurrentStage,
+                        ["pendingStage"] = sprint.PendingStage,
+                        ["awaitingSignOff"] = true,
+                        ["message"] = $"Sprint #{sprint.Number} awaiting user sign-off to advance from {sprint.CurrentStage} → {sprint.PendingStage}. "
+                            + "A human must approve before the stage changes."
+                    }
+                };
+            }
+
             // Create a new conversation session for the new stage.
             // Non-fatal: stage advancement succeeds even if session creation fails
             // (matches graceful degradation pattern used throughout sprint context loading).

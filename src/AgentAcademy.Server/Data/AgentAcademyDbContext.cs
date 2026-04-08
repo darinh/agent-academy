@@ -483,6 +483,7 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.WorkspacePath).IsRequired();
             entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
             entity.Property(e => e.CurrentStage).IsRequired().HasDefaultValue("Intake");
+            entity.Property(e => e.AwaitingSignOff).HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).IsRequired();
 
             entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_sprints_workspace");

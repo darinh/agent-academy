@@ -239,12 +239,69 @@ public class SprintController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// POST /api/sprints/{id}/approve-advance — user approves pending stage advancement.
+    /// </summary>
+    [HttpPost("{id}/approve-advance")]
+    public async Task<IActionResult> ApproveAdvance(string id)
+    {
+        try
+        {
+            var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+            if (ownerError is not null) return ownerError;
+
+            var sprint = await _sprintService.ApproveAdvanceAsync(id);
+            return Ok(new SprintDetailResponse(
+                ToSnapshot(sprint),
+                (await _sprintService.GetSprintArtifactsAsync(sprint.Id))
+                    .Select(ToArtifactSnapshot).ToList(),
+                SprintService.Stages.ToList()));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to approve sprint advance {Id}", id);
+            return Problem("Failed to approve sprint advance.");
+        }
+    }
+
+    /// <summary>
+    /// POST /api/sprints/{id}/reject-advance — user rejects pending stage advancement.
+    /// </summary>
+    [HttpPost("{id}/reject-advance")]
+    public async Task<IActionResult> RejectAdvance(string id)
+    {
+        try
+        {
+            var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+            if (ownerError is not null) return ownerError;
+
+            var sprint = await _sprintService.RejectAdvanceAsync(id);
+            return Ok(ToSnapshot(sprint));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to reject sprint advance {Id}", id);
+            return Problem("Failed to reject sprint advance.");
+        }
+    }
+
     private static SprintSnapshot ToSnapshot(Data.Entities.SprintEntity e)
     {
         _ = Enum.TryParse<SprintStatus>(e.Status, out var status);
         _ = Enum.TryParse<SprintStage>(e.CurrentStage, out var stage);
+        _ = Enum.TryParse<SprintStage>(e.PendingStage ?? "", out var pendingStage);
         return new(e.Id, e.Number, status, stage,
-            e.OverflowFromSprintId, e.CreatedAt, e.CompletedAt);
+            e.OverflowFromSprintId, e.AwaitingSignOff,
+            e.PendingStage is not null ? pendingStage : null,
+            e.CreatedAt, e.CompletedAt);
     }
 
     /// <summary>

@@ -154,7 +154,9 @@ public class SprintCommandHandlerTests : IDisposable
         Assert.Equal(CommandStatus.Success, result.Status);
         var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
         Assert.Equal("Intake", dict["previousStage"]);
-        Assert.Equal("Planning", dict["currentStage"]);
+        Assert.Equal("Intake", dict["currentStage"]); // still at Intake until approved
+        Assert.Equal("Planning", dict["pendingStage"]);
+        Assert.Equal(true, dict["awaitingSignOff"]);
     }
 
     [Fact]
@@ -186,6 +188,9 @@ public class SprintCommandHandlerTests : IDisposable
             CreateContext(scope.ServiceProvider));
 
         Assert.Equal(CommandStatus.Success, result.Status);
+        // Sign-off required for Intake, so awaitingSignOff should be true
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["awaitingSignOff"]);
     }
 
     [Fact]
@@ -394,11 +399,16 @@ public class SprintCommandHandlerTests : IDisposable
             }), ctx);
         Assert.Equal(CommandStatus.Success, storeResult.Status);
 
-        // Advance to Planning
+        // Advance from Intake — enters AwaitingSignOff
         var advResult = await new AdvanceStageHandler().ExecuteAsync(
             MakeCommand("ADVANCE_STAGE"), ctx);
         Assert.Equal(CommandStatus.Success, advResult.Status);
-        Assert.Equal("Planning", ((Dictionary<string, object?>)advResult.Result!)["currentStage"]);
+        var advDict = (Dictionary<string, object?>)advResult.Result!;
+        Assert.Equal(true, advDict["awaitingSignOff"]);
+        Assert.Equal("Intake", advDict["currentStage"]);
+
+        // Approve the advance
+        await sprintService.ApproveAdvanceAsync(sprintId);
 
         // Force-complete
         var completeResult = await new CompleteSprintHandler().ExecuteAsync(

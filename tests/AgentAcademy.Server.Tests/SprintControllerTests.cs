@@ -254,7 +254,10 @@ public class SprintControllerTests : IDisposable
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsType<SprintDetailResponse>(ok.Value);
-        Assert.Equal(SprintStage.Planning, body.Sprint.CurrentStage);
+        // Intake requires sign-off, so stays at Intake
+        Assert.Equal(SprintStage.Intake, body.Sprint.CurrentStage);
+        Assert.True(body.Sprint.AwaitingSignOff);
+        Assert.Equal(SprintStage.Planning, body.Sprint.PendingStage);
     }
 
     [Fact]

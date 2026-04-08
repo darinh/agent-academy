@@ -37,6 +37,8 @@ public record SprintSnapshot(
     SprintStatus Status,
     SprintStage CurrentStage,
     string? OverflowFromSprintId,
+    bool AwaitingSignOff,
+    SprintStage? PendingStage,
     DateTime CreatedAt,
     DateTime? CompletedAt);
 

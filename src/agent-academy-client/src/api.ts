@@ -1108,6 +1108,8 @@ export interface SprintSnapshot {
   status: SprintStatus;
   currentStage: SprintStage;
   overflowFromSprintId: string | null;
+  awaitingSignOff: boolean;
+  pendingStage: SprintStage | null;
   createdAt: string;
   completedAt: string | null;
 }
@@ -1215,6 +1217,30 @@ export async function cancelSprint(id: string): Promise<SprintSnapshot> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error ?? "Failed to cancel sprint");
+  }
+  return res.json() as Promise<SprintSnapshot>;
+}
+
+export async function approveSprintAdvance(id: string): Promise<SprintDetailResponse> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/approve-advance`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to approve sprint advance");
+  }
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/reject-advance`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to reject sprint advance");
   }
   return res.json() as Promise<SprintSnapshot>;
 }

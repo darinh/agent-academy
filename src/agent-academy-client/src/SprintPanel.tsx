@@ -27,6 +27,8 @@ import {
   advanceSprint,
   completeSprint,
   cancelSprint,
+  approveSprintAdvance,
+  rejectSprintAdvance,
 } from "./api";
 import { formatElapsed } from "./panelUtils";
 
@@ -476,6 +478,32 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
     }
   }, [detail, fetchData]);
 
+  const handleApproveAdvance = useCallback(async () => {
+    if (!detail) return;
+    setActionBusy(true);
+    try {
+      await approveSprintAdvance(detail.sprint.id);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve advance");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [detail, fetchData]);
+
+  const handleRejectAdvance = useCallback(async () => {
+    if (!detail) return;
+    setActionBusy(true);
+    try {
+      await rejectSprintAdvance(detail.sprint.id);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject advance");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [detail, fetchData]);
+
   // Derive current view data
   const currentStageIndex = detail
     ? ALL_STAGES.indexOf(detail.sprint.currentStage)
@@ -553,10 +581,20 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
             Start Sprint
           </Button>
         )}
-        {isActive && !isFinalStage && (
+        {isActive && !isFinalStage && !detail?.sprint.awaitingSignOff && (
           <Button appearance="primary" size="small" onClick={handleAdvanceSprint} disabled={actionBusy}>
             Advance Stage
           </Button>
+        )}
+        {isActive && detail?.sprint.awaitingSignOff && (
+          <>
+            <Button appearance="primary" size="small" onClick={handleApproveAdvance} disabled={actionBusy}>
+              ✅ Approve → {detail.sprint.pendingStage}
+            </Button>
+            <Button appearance="subtle" size="small" onClick={handleRejectAdvance} disabled={actionBusy}>
+              ✗ Reject
+            </Button>
+          </>
         )}
         {isActive && isFinalStage && (
           <Button appearance="primary" size="small" onClick={handleCompleteSprint} disabled={actionBusy}>
@@ -569,6 +607,27 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
           </Button>
         )}
       </div>
+
+      {/* Sign-off gate banner */}
+      {detail?.sprint.awaitingSignOff && (
+        <div style={{
+          padding: "8px 16px",
+          background: "rgba(255, 193, 7, 0.12)",
+          borderBottom: "1px solid rgba(255, 193, 7, 0.3)",
+          fontSize: "13px",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+        }}>
+          <span>⏳</span>
+          <span>
+            <strong>User sign-off required</strong> — agents want to advance from{" "}
+            <strong>{detail.sprint.currentStage}</strong> to{" "}
+            <strong>{detail.sprint.pendingStage}</strong>.
+            Review the {detail.sprint.currentStage} artifacts and approve or reject.
+          </span>
+        </div>
+      )}
 
       {/* Stage Pipeline */}
       {detail && (
