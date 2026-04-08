@@ -114,6 +114,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             _gitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");
@@ -200,6 +201,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             mockGitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");

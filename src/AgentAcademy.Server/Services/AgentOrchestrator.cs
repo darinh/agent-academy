@@ -38,6 +38,7 @@ public sealed class AgentOrchestrator
     private readonly SpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
     private readonly GitService _gitService;
+    private readonly WorktreeService _worktreeService;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
@@ -57,6 +58,7 @@ public sealed class AgentOrchestrator
         SpecManager specManager,
         CommandPipeline commandPipeline,
         GitService gitService,
+        WorktreeService worktreeService,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
@@ -65,6 +67,7 @@ public sealed class AgentOrchestrator
         _specManager = specManager;
         _commandPipeline = commandPipeline;
         _gitService = gitService;
+        _worktreeService = worktreeService;
         _logger = logger;
     }
 
@@ -691,6 +694,31 @@ public sealed class AgentOrchestrator
                 throw new InvalidOperationException($"Branch '{taskBranch}' was not created");
 
             await _gitService.ReturnToDevelopAsync(taskBranch);
+
+            // During sprint Implementation stage, create a worktree for isolated work
+            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            if (workspacePath is not null && taskBranch is not null)
+            {
+                try
+                {
+                    using var sprintScope = _scopeFactory.CreateScope();
+                    var sprintSvc = sprintScope.ServiceProvider.GetRequiredService<SprintService>();
+                    var activeSprint = await sprintSvc.GetActiveSprintAsync(workspacePath);
+                    if (activeSprint?.CurrentStage == "Implementation")
+                    {
+                        var worktree = await _worktreeService.CreateWorktreeAsync(taskBranch);
+                        _logger.LogInformation(
+                            "Created worktree for task branch {Branch} at {Path}",
+                            taskBranch, worktree.Path);
+                    }
+                }
+                catch (Exception wtEx)
+                {
+                    _logger.LogWarning(wtEx,
+                        "Failed to create worktree for {Branch} — agent will work on shared checkout",
+                        taskBranch);
+                }
+            }
 
             taskItem = await runtime.CreateTaskItemAsync(
                 assignment.Title, descriptionWithCriteria,

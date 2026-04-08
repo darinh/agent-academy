@@ -23,7 +23,7 @@ public static class SprintPreambles
             {
                 "Planner", "Architect", "SoftwareEngineer", "TechnicalWriter"
             },
-            // Validation through FinalSynthesis: all roles
+            // Validation, Implementation, FinalSynthesis: all roles (permissive default)
         };
 
     /// <summary>
@@ -67,9 +67,24 @@ public static class SprintPreambles
             ["Implementation"] = """
                 === SPRINT STAGE: IMPLEMENTATION ===
                 You are implementing the sprint plan. Work through tasks systematically.
-                The planner coordinates, software engineers write code in their worktrees,
-                and the reviewer performs code review on completed work. Follow the plan —
-                deviations should be discussed before acting on them.
+
+                **Workflow:**
+                1. The Planner creates tasks using CREATE_TASK for each planned work item.
+                2. SoftwareEngineers work in task branches (created automatically).
+                3. When a task is code-complete, the SWE runs CREATE_PR to push and open a PR.
+                4. The Reviewer uses POST_PR_REVIEW (APPROVE / REQUEST_CHANGES) to review PRs.
+                5. On approval, use MERGE_PR to merge, then mark the task complete.
+
+                **PR review cycle:**
+                - If REQUEST_CHANGES, the SWE addresses feedback and requests re-review.
+                - Maximum 5 review rounds per task before escalation.
+                - The Reviewer should use GET_PR_REVIEWS to track review history.
+
+                **Rules:**
+                - Follow the validated SprintPlan — deviations must be discussed first.
+                - Each task should have tests. Use CHECK_GATES to verify evidence.
+                - The Planner coordinates priorities and unblocks dependencies.
+                - All code goes through PR review before merging.
                 """,
 
             ["FinalSynthesis"] = """

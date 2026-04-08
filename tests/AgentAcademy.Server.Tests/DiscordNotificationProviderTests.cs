@@ -382,8 +382,9 @@ public class DiscordNotificationProviderTests
             Array.Empty<Commands.ICommandHandler>(),
             Substitute.For<ILogger<Commands.CommandPipeline>>());
         var gitService = new GitService(Substitute.For<ILogger<GitService>>());
+        var worktreeService = new WorktreeService(Substitute.For<ILogger<WorktreeService>>(), repositoryRoot: "/tmp/test-repo");
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
-        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, gitService, logger);
+        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, gitService, worktreeService, logger);
     }
 
     #endregion
