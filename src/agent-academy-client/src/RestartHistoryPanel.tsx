@@ -1,0 +1,373 @@
+import { formatTimestamp, formatElapsed } from "./panelUtils";
+import type { ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Spinner,
+  makeStyles,
+  shorthands,
+  Tooltip,
+} from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
+import {
+  ArrowSyncRegular,
+  CheckmarkCircleRegular,
+  ErrorCircleRegular,
+  WarningRegular,
+  PlayRegular,
+} from "@fluentui/react-icons";
+import {
+  getRestartHistory,
+  getRestartStats,
+  type ServerInstanceDto,
+  type RestartStatsDto,
+} from "./api";
+
+// ── Styles ──
+
+const useLocalStyles = makeStyles({
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
+  },
+  statsRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
+  },
+  statCard: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
+  },
+  statValue: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
+    lineHeight: 1,
+  },
+  statLabel: {
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
+    textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse" as const,
+  },
+  th: {
+    textAlign: "left" as const,
+    color: "var(--aa-soft)",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase" as const,
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
+  },
+  td: {
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+    verticalAlign: "middle" as const,
+  },
+  currentRow: {
+    backgroundColor: "rgba(108, 182, 255, 0.06)",
+  },
+  mono: {
+    fontFamily: "var(--mono, monospace)",
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+  },
+  emptyNote: {
+    color: "var(--aa-muted)",
+    fontSize: "13px",
+    textAlign: "center" as const,
+    ...shorthands.padding("24px"),
+  },
+  error: {
+    color: "var(--aa-copper)",
+    fontSize: "13px",
+    ...shorthands.padding("12px"),
+    ...shorthands.borderRadius("8px"),
+    backgroundColor: "rgba(248, 81, 73, 0.08)",
+  },
+  pagerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+  },
+  pagerBtn: {
+    background: "none",
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("4px", "12px"),
+    color: "var(--aa-text)",
+    cursor: "pointer",
+    fontSize: "12px",
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+    },
+    ":disabled": {
+      opacity: 0.4,
+      cursor: "default",
+    },
+  },
+  refreshBtn: {
+    background: "none",
+    ...shorthands.border("none"),
+    color: "var(--aa-soft)",
+    cursor: "pointer",
+    fontSize: "12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    ":hover": {
+      color: "var(--aa-text)",
+    },
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+});
+
+// ── Helpers ──
+
+function reasonBadge(reason: string): { color: BadgeColor; icon: ReactElement } {
+  switch (reason) {
+    case "Running":
+      return { color: "info", icon: <PlayRegular style={{ fontSize: 14 }} /> };
+    case "CleanShutdown":
+      return { color: "ok", icon: <CheckmarkCircleRegular style={{ fontSize: 14 }} /> };
+    case "IntentionalRestart":
+      return { color: "warn", icon: <ArrowSyncRegular style={{ fontSize: 14 }} /> };
+    case "Crash":
+      return { color: "err", icon: <ErrorCircleRegular style={{ fontSize: 14 }} /> };
+    default:
+      return { color: "bug", icon: <WarningRegular style={{ fontSize: 14 }} /> };
+  }
+}
+
+const PAGE_SIZE = 10;
+
+// ── Component ──
+
+interface RestartHistoryPanelProps {
+  hoursBack?: number;
+}
+
+export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelProps) {
+  const s = useLocalStyles();
+  const [instances, setInstances] = useState<ServerInstanceDto[]>([]);
+  const [stats, setStats] = useState<RestartStatsDto | null>(null);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const fetchIdRef = useRef(0);
+
+  const fetchData = useCallback(async (pageOffset: number) => {
+    const id = ++fetchIdRef.current;
+    setLoading(true);
+    setError(null);
+
+    const [historyResult, statsResult] = await Promise.allSettled([
+      getRestartHistory(PAGE_SIZE, pageOffset),
+      getRestartStats(hoursBack ?? 24),
+    ]);
+
+    // Discard stale responses from superseded requests
+    if (id !== fetchIdRef.current) return;
+
+    if (historyResult.status === "fulfilled") {
+      const { instances: newInstances, total: newTotal } = historyResult.value;
+      setInstances(newInstances);
+      setTotal(newTotal);
+      // Clamp offset if total shrank below current page
+      if (pageOffset > 0 && pageOffset >= newTotal) {
+        const clamped = Math.max(0, Math.floor((newTotal - 1) / PAGE_SIZE) * PAGE_SIZE);
+        setOffset(clamped);
+        // Will trigger a re-fetch via the useEffect dependency
+      }
+    } else {
+      setError(historyResult.reason instanceof Error ? historyResult.reason.message : "Failed to load restart history");
+    }
+
+    if (statsResult.status === "fulfilled") {
+      setStats(statsResult.value);
+    }
+    // Stats failure is non-critical — keep stale stats if available
+
+    setLoading(false);
+  }, [hoursBack]);
+
+  useEffect(() => {
+    fetchData(offset);
+  }, [fetchData, offset]);
+
+  if (loading && instances.length === 0) {
+    return (
+      <div className={s.root}>
+        <Spinner size="small" label="Loading restart history…" />
+      </div>
+    );
+  }
+
+  if (error && instances.length === 0) {
+    return (
+      <div className={s.root}>
+        <div className={s.error}>{error}</div>
+      </div>
+    );
+  }
+
+  const hasNext = offset + PAGE_SIZE < total;
+  const hasPrev = offset > 0;
+
+  return (
+    <div className={s.root}>
+      {/* Inline error for failed refresh when stale data is visible */}
+      {error && instances.length > 0 && (
+        <div className={s.error}>{error} — showing cached data.</div>
+      )}
+
+      {/* Stats summary */}
+      {stats && (
+        <div className={s.statsRow}>
+          <div className={s.statCard}>
+            <span className={s.statValue}>{stats.totalInstances}</span>
+            <span className={s.statLabel}>Instances ({stats.windowHours}h)</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "var(--aa-copper)" }}>{stats.crashRestarts}</span>
+            <span className={s.statLabel}>Crashes</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>{stats.intentionalRestarts}</span>
+            <span className={s.statLabel}>Restarts</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>{stats.cleanShutdowns}</span>
+            <span className={s.statLabel}>Clean Stops</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "var(--aa-cyan)" }}>{stats.stillRunning}</span>
+            <span className={s.statLabel}>Running</span>
+          </div>
+        </div>
+      )}
+
+      {/* Instance table */}
+      <div className={s.headerRow}>
+        <span style={{ fontSize: "13px", color: "var(--aa-muted)" }}>
+          {total} instance{total !== 1 ? "s" : ""} recorded
+        </span>
+        <button className={s.refreshBtn} onClick={() => fetchData(offset)}>
+          <ArrowSyncRegular style={{ fontSize: 14 }} /> Refresh
+        </button>
+      </div>
+
+      {instances.length === 0 ? (
+        <div className={s.emptyNote}>No server instances recorded yet.</div>
+      ) : (
+        <>
+          <div className={s.tableWrap}>
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th className={s.th}>Status</th>
+                <th className={s.th}>Started</th>
+                <th className={s.th}>Duration</th>
+                <th className={s.th}>Version</th>
+                <th className={s.th}>Exit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {instances.map((inst) => {
+                const badge = reasonBadge(inst.shutdownReason);
+                const isRunning = inst.shutdownReason === "Running";
+                return (
+                  <tr key={inst.id} className={isRunning ? s.currentRow : undefined}>
+                    <td className={s.td}>
+                      <Tooltip content={inst.shutdownReason} relationship="label">
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          {badge.icon}
+                          <V3Badge color={badge.color}>
+                            {inst.shutdownReason}
+                          </V3Badge>
+                        </span>
+                      </Tooltip>
+                      {inst.crashDetected && (
+                        <Tooltip content="Crash detected on startup" relationship="label">
+                          <span style={{ marginLeft: 6 }}>
+                            <V3Badge color="err">⚡ crash recovery</V3Badge>
+                          </span>
+                        </Tooltip>
+                      )}
+                    </td>
+                    <td className={s.td}>{formatTimestamp(inst.startedAt)}</td>
+                    <td className={s.td}>{formatElapsed(inst.startedAt, inst.shutdownAt, { granularity: "seconds", runningLabel: "(running)" })}</td>
+                    <td className={s.td}>
+                      <span className={s.mono}>{inst.version}</span>
+                    </td>
+                    <td className={s.td}>
+                      <span className={s.mono}>
+                        {inst.exitCode != null ? inst.exitCode : "—"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+
+          <div className={s.pagerRow}>
+            <button
+              className={s.pagerBtn}
+              disabled={!hasPrev}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            >
+              ← Newer
+            </button>
+            <span>
+              {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+            </span>
+            <button
+              className={s.pagerBtn}
+              disabled={!hasNext}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
+            >
+              Older →
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,518 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Spinner,
+  Tooltip,
+  makeStyles,
+  shorthands,
+} from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import {
+  ArrowSyncRegular,
+  MoneyRegular,
+  TextBulletListSquareRegular,
+} from "@fluentui/react-icons";
+import { formatCost, formatTimestamp, formatTokenCount } from "./panelUtils";
+import {
+  getGlobalUsage,
+  getGlobalUsageRecords,
+  type UsageSummary,
+  type LlmUsageRecord,
+} from "./api";
+import Sparkline from "./Sparkline";
+import { bucketByTime, bucketByTimeSum } from "./sparklineUtils";
+
+// ── Styles ──
+
+const useLocalStyles = makeStyles({
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
+  },
+  statsRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+    gap: "8px",
+    marginBottom: "12px",
+  },
+  statCard: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    ...shorthands.padding("8px", "10px"),
+    ...shorthands.borderRadius("6px"),
+    border: "1px solid var(--aa-border)",
+    backgroundColor: "var(--aa-bg)",
+  },
+  statValue: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "var(--aa-text)",
+    lineHeight: 1,
+  },
+  statLabel: {
+    fontFamily: "var(--mono)",
+    color: "var(--aa-soft)",
+    fontSize: "10px",
+    textAlign: "center" as const,
+  },
+  tableWrap: {
+    overflowX: "auto" as const,
+    maxHeight: "240px",
+    overflowY: "auto" as const,
+    border: "1px solid var(--aa-border)",
+    ...shorthands.borderRadius("6px"),
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse" as const,
+  },
+  th: {
+    textAlign: "left" as const,
+    color: "var(--aa-soft)",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase" as const,
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
+  },
+  thRight: {
+    textAlign: "right" as const,
+    color: "var(--aa-soft)",
+    fontSize: "10px",
+    fontWeight: 600,
+    fontFamily: "var(--mono)",
+    letterSpacing: "0.04em",
+    textTransform: "uppercase" as const,
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    position: "sticky" as const,
+    top: 0,
+    background: "var(--aa-panel)",
+    zIndex: 1,
+  },
+  td: {
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+    verticalAlign: "middle" as const,
+  },
+  tdRight: {
+    ...shorthands.padding("5px", "10px"),
+    borderBottom: "1px solid var(--aa-border)",
+    color: "var(--aa-muted)",
+    fontFamily: "var(--mono)",
+    fontSize: "11px",
+    verticalAlign: "middle" as const,
+    textAlign: "right" as const,
+  },
+  mono: {
+    fontFamily: "var(--mono, monospace)",
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+  },
+  emptyNote: {
+    color: "var(--aa-muted)",
+    fontSize: "13px",
+    textAlign: "center" as const,
+    ...shorthands.padding("24px"),
+  },
+  error: {
+    color: "var(--aa-copper)",
+    fontSize: "13px",
+    ...shorthands.padding("12px"),
+    ...shorthands.borderRadius("8px"),
+    backgroundColor: "rgba(248, 81, 73, 0.08)",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  refreshBtn: {
+    background: "none",
+    ...shorthands.border("none"),
+    color: "var(--aa-soft)",
+    cursor: "pointer",
+    fontSize: "12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    ":hover": {
+      color: "var(--aa-text)",
+    },
+  },
+  modelTag: {
+    display: "inline-block",
+    ...shorthands.padding("2px", "8px"),
+    ...shorthands.borderRadius("6px"),
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.02em",
+    backgroundColor: "rgba(108, 182, 255, 0.10)",
+    color: "var(--aa-cyan)",
+    marginRight: "6px",
+    marginBottom: "4px",
+  },
+  sectionTitle: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
+  },
+  pagerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "12px",
+    color: "var(--aa-muted)",
+  },
+  pagerBtn: {
+    background: "none",
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
+    ...shorthands.borderRadius("8px"),
+    ...shorthands.padding("4px", "12px"),
+    color: "var(--aa-text)",
+    cursor: "pointer",
+    fontSize: "12px",
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.06)",
+    },
+    ":disabled": {
+      opacity: 0.4,
+      cursor: "default",
+    },
+  },
+  sparklineRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    ...shorthands.padding("8px", "12px"),
+    ...shorthands.borderRadius("6px"),
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    border: "1px solid var(--aa-border)",
+  },
+  sparklineLabel: {
+    color: "var(--aa-muted)",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    whiteSpace: "nowrap" as const,
+  },
+});// ── Helpers ──
+
+function formatLatency(ms: number | null): string {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+const RECORDS_PAGE = 15;
+
+// ── Component ──
+
+interface UsagePanelProps {
+  hoursBack?: number;
+}
+
+export default function UsagePanel({ hoursBack }: UsagePanelProps) {
+  const s = useLocalStyles();
+  const [summary, setSummary] = useState<UsageSummary | null>(null);
+  const [records, setRecords] = useState<LlmUsageRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const fetchIdRef = useRef(0);
+
+  const fetchData = useCallback(async () => {
+    const id = ++fetchIdRef.current;
+    setLoading(true);
+    setSummaryError(null);
+    setRecordsError(null);
+
+    const [summaryResult, recordsResult] = await Promise.allSettled([
+      getGlobalUsage(hoursBack),
+      getGlobalUsageRecords(undefined, 100),
+    ]);
+
+    if (id !== fetchIdRef.current) return;
+
+    if (summaryResult.status === "fulfilled") {
+      setSummary(summaryResult.value);
+    } else {
+      setSummaryError(
+        summaryResult.reason instanceof Error
+          ? summaryResult.reason.message
+          : "Failed to load usage summary",
+      );
+    }
+
+    if (recordsResult.status === "fulfilled") {
+      setRecords(recordsResult.value);
+      setPage(0);
+    } else {
+      setRecordsError(
+        recordsResult.reason instanceof Error
+          ? recordsResult.reason.message
+          : "Failed to load usage records",
+      );
+    }
+
+    setLoading(false);
+  }, [hoursBack]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Derive per-agent breakdown from records
+  const agentBreakdown = (() => {
+    const map = new Map<string, { input: number; output: number; cost: number; count: number }>();
+    for (const r of records) {
+      const entry = map.get(r.agentId) ?? { input: 0, output: 0, cost: 0, count: 0 };
+      entry.input += r.inputTokens;
+      entry.output += r.outputTokens;
+      entry.cost += r.cost ?? 0;
+      entry.count += 1;
+      map.set(r.agentId, entry);
+    }
+    return [...map.entries()]
+      .map(([agentId, stats]) => ({ agentId, ...stats }))
+      .sort((a, b) => b.cost - a.cost || b.count - a.count);
+  })();
+
+  const SPARKLINE_BUCKETS = 24;
+  const requestTrend = useMemo(
+    () => bucketByTime(records, (r) => r.recordedAt, SPARKLINE_BUCKETS, hoursBack),
+    [records, hoursBack],
+  );
+  const tokenTrend = useMemo(
+    () => bucketByTimeSum(records, (r) => r.recordedAt, (r) => r.inputTokens + r.outputTokens, SPARKLINE_BUCKETS, hoursBack),
+    [records, hoursBack],
+  );
+
+  // Pagination for records
+  const pagedRecords = records.slice(page * RECORDS_PAGE, (page + 1) * RECORDS_PAGE);
+  const totalPages = Math.ceil(records.length / RECORDS_PAGE);
+
+  if (loading && !summary && records.length === 0) {
+    return (
+      <div className={s.root}>
+        <Spinner size="small" label="Loading usage data…" />
+      </div>
+    );
+  }
+
+  const bothFailed = summaryError && recordsError;
+  if (bothFailed && !summary && records.length === 0) {
+    return (
+      <div className={s.root}>
+        <div className={s.error}>{summaryError}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={s.root}>
+      {summaryError && (
+        <div className={s.error}>{summaryError}</div>
+      )}
+      {recordsError && (
+        <div className={s.error}>{recordsError}</div>
+      )}
+
+      {/* Summary stat cards */}
+      {summary && (
+        <div className={s.statsRow}>
+          <div className={s.statCard}>
+            <span className={s.statValue}>{formatTokenCount(summary.totalInputTokens)}</span>
+            <span className={s.statLabel}>Input Tokens</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue}>{formatTokenCount(summary.totalOutputTokens)}</span>
+            <span className={s.statLabel}>Output Tokens</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "var(--aa-lime)" }}>
+              {formatCost(summary.totalCost)}
+            </span>
+            <span className={s.statLabel}>Total Cost</span>
+          </div>
+          <div className={s.statCard}>
+            <span className={s.statValue} style={{ color: "var(--aa-gold)" }}>
+              {summary.requestCount}
+            </span>
+            <span className={s.statLabel}>LLM Calls</span>
+          </div>
+        </div>
+      )}
+
+      {/* Sparklines */}
+      {records.length >= 2 && (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <div className={s.sparklineRow} data-testid="usage-sparkline-requests">
+            <span className={s.sparklineLabel}>Requests</span>
+            <Sparkline data={requestTrend} color="var(--aa-gold)" width={140} height={28} />
+          </div>
+          <div className={s.sparklineRow} data-testid="usage-sparkline-tokens">
+            <span className={s.sparklineLabel}>Tokens</span>
+            <Sparkline data={tokenTrend} color="var(--aa-cyan)" width={140} height={28} />
+          </div>
+        </div>
+      )}
+
+      {/* Models used */}
+      {summary && summary.models.length > 0 && (
+        <div>
+          <div className={s.sectionTitle} style={{ marginBottom: "8px" }}>Models</div>
+          <div>
+            {summary.models.map((model) => (
+              <span key={model} className={s.modelTag}>{model}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Per-agent breakdown */}
+      {agentBreakdown.length > 0 && (
+        <div>
+          <div className={s.headerRow}>
+            <div className={s.sectionTitle}>
+              <TextBulletListSquareRegular style={{ fontSize: 18 }} />
+              Per-Agent Breakdown
+              <span style={{ fontSize: "11px", color: "var(--aa-muted)", fontWeight: 400 }}>
+                (last {records.length} calls)
+              </span>
+            </div>
+          </div>
+          <div className={s.tableWrap}>
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th className={s.th}>Agent</th>
+                <th className={s.thRight}>Input</th>
+                <th className={s.thRight}>Output</th>
+                <th className={s.thRight}>Cost</th>
+                <th className={s.thRight}>Calls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {agentBreakdown.map((agent) => (
+                <tr key={agent.agentId}>
+                  <td className={s.td}>
+                    <V3Badge color="info">
+                      {agent.agentId}
+                    </V3Badge>
+                  </td>
+                  <td className={s.tdRight}>{formatTokenCount(agent.input)}</td>
+                  <td className={s.tdRight}>{formatTokenCount(agent.output)}</td>
+                  <td className={s.tdRight}>{formatCost(agent.cost)}</td>
+                  <td className={s.tdRight}>{agent.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      )}
+
+      {/* Recent records */}
+      <div>
+        <div className={s.headerRow}>
+          <div className={s.sectionTitle}>
+            <MoneyRegular style={{ fontSize: 18 }} />
+            Recent LLM Calls
+          </div>
+          <button className={s.refreshBtn} onClick={fetchData}>
+            <ArrowSyncRegular style={{ fontSize: 14 }} /> Refresh
+          </button>
+        </div>
+
+        {records.length === 0 ? (
+          <div className={s.emptyNote}>No LLM usage recorded yet.</div>
+        ) : (
+          <>
+            <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead>
+                <tr>
+                  <th className={s.th}>Agent</th>
+                  <th className={s.th}>Model</th>
+                  <th className={s.thRight}>In</th>
+                  <th className={s.thRight}>Out</th>
+                  <th className={s.thRight}>Cost</th>
+                  <th className={s.thRight}>Duration</th>
+                  <th className={s.th}>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRecords.map((rec) => (
+                  <tr key={rec.id}>
+                    <td className={s.td}>
+                      <Tooltip content={rec.agentId} relationship="label">
+                        <span className={s.mono}>
+                          {rec.agentId.length > 16
+                            ? `${rec.agentId.slice(0, 14)}…`
+                            : rec.agentId}
+                        </span>
+                      </Tooltip>
+                    </td>
+                    <td className={s.td}>
+                      <span className={s.mono}>{rec.model ?? "—"}</span>
+                    </td>
+                    <td className={s.tdRight}>{formatTokenCount(rec.inputTokens)}</td>
+                    <td className={s.tdRight}>{formatTokenCount(rec.outputTokens)}</td>
+                    <td className={s.tdRight}>
+                      {rec.cost != null ? formatCost(rec.cost) : "—"}
+                    </td>
+                    <td className={s.tdRight}>{formatLatency(rec.durationMs)}</td>
+                    <td className={s.td}>
+                      <span className={s.mono}>{formatTimestamp(rec.recordedAt)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+
+            {totalPages > 1 && (
+              <div className={s.pagerRow}>
+                <button
+                  className={s.pagerBtn}
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  ← Newer
+                </button>
+                <span>
+                  {page * RECORDS_PAGE + 1}–
+                  {Math.min((page + 1) * RECORDS_PAGE, records.length)} of{" "}
+                  {records.length}
+                </span>
+                <button
+                  className={s.pagerBtn}
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Older →
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

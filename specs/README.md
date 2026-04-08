@@ -6,8 +6,20 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 
 | Section | Title | Status |
 |---------|-------|--------|
-| [000](./000-system-overview/spec.md) | System Overview | Planned |
-| [001](./001-domain-model/spec.md) | Domain Model | Planned |
+| [000](./000-system-overview/spec.md) | System Overview | Implemented |
+| [001](./001-domain-model/spec.md) | Domain Model | Implemented |
+| [002](./002-development-workflow/spec.md) | Development Workflow | Implemented |
+| [003](./003-agent-system/spec.md) | Agent Execution System | Implemented |
+| [004](./004-notification-system/spec.md) | Notification System | Implemented |
+| [005](./005-workspace-runtime/spec.md) | Workspace Runtime | Implemented |
+| [006](./006-orchestrator/spec.md) | Agent Orchestrator | Implemented |
+| [007](./007-agent-commands/spec.md) | Agent Command System | Implemented |
+| [008](./008-agent-memory/spec.md) | Agent Memory System | Implemented |
+| [009](./009-spec-management/spec.md) | Spec Management | Implemented |
+| [010](./010-task-management/spec.md) | Task Management & Git Workflow | Implemented |
+| [011](./011-state-recovery/spec.md) | State Recovery and Supervised Restart | Implemented |
+| [012](./012-consultant-api/spec.md) | Consultant API | Implemented |
+| [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
 
 ## Conventions
 

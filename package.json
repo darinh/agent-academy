@@ -1,0 +1,20 @@
+{
+  "name": "agent-academy",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "bash src/AgentAcademy.Server/wrapper.sh --dev",
+    "dev:server:bare": "dotnet run --project src/AgentAcademy.Server",
+    "dev:client": "npm run dev --prefix src/agent-academy-client",
+    "build": "dotnet build && npm run build --prefix src/agent-academy-client",
+    "build:server": "dotnet build",
+    "build:client": "npm run build --prefix src/agent-academy-client",
+    "test": "dotnet test && npm test --prefix src/agent-academy-client",
+    "test:server": "dotnet test",
+    "test:client": "npm test --prefix src/agent-academy-client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

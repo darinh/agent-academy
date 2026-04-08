@@ -1,96 +1,119 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --aa-text: #e6edf3;
+  --aa-text-strong: #f0f6fc;
+  --aa-muted: #8b949e;
+  --aa-soft: #6e7681;
+  --aa-bg: #0d1117;
+  --aa-panel: #161b22;
+  --aa-panel-alt: #21262d;
+  --aa-panel-strong: #0d1117;
+  --aa-border: #30363d;
+  --aa-border-strong: #484f58;
+  --aa-hairline: rgba(48, 54, 61, 0.6);
+  --aa-cyan: rgb(91, 141, 239);
+  --aa-gold: rgb(255, 152, 0);
+  --aa-copper: rgb(232, 93, 93);
+  --aa-plum: rgb(156, 39, 176);
+  --aa-lime: rgb(76, 175, 80);
+  --aa-tool: rgb(0, 150, 136);
+  --aa-secondary: rgb(96, 125, 139);
+  --aa-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --sans: "Outfit", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --heading: "Outfit", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, ui-monospace, monospace;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --sidebar-width: 200px;
+  --topbar-height: 40px;
+  --toolbar-height: 34px;
+  --primary: rgb(91, 141, 239);
+  --error: rgb(232, 93, 93);
+  --success: rgb(76, 175, 80);
+  --warning: rgb(255, 152, 0);
+  --special: rgb(156, 39, 176);
+  --tool: rgb(0, 150, 136);
+  --secondary: rgb(96, 125, 139);
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  font: 13px/1.5 var(--sans);
+  letter-spacing: 0;
+  color-scheme: dark;
+  color: var(--aa-text);
+  background: var(--aa-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
+}
+
+/* Override FluentProvider's pixel line-height with a ratio so it scales
+   with each element's font-size (matches v3 mockup behavior). */
+.fui-FluentProvider {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100vh;
+  color: var(--aa-text);
+  font-family: var(--sans);
+  background: var(--aa-bg);
+}
+
+#root {
+  width: 100%;
+  margin: 0;
+  min-height: 100vh;
+  isolation: isolate;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(91, 141, 239, 0.3);
+  color: #ffffff;
+}
+
+@keyframes aa-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes aa-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 h1,
-h2 {
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+  color: var(--aa-text-strong);
+  font-weight: 600;
+  margin: 0;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
 p {
   margin: 0;
 }
@@ -100,12 +123,68 @@ code,
   font-family: var(--mono);
   display: inline-flex;
   border-radius: 4px;
-  color: var(--text-h);
+  color: var(--aa-text-strong);
 }
 
 code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 2px 6px;
+  background: rgba(110, 118, 129, 0.15);
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--aa-border);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Focus indicators — WCAG 2.4.7 Focus Visible (AA) */
+:focus-visible {
+  outline: 2px solid var(--aa-cyan);
+  outline-offset: 2px;
+}
+
+/* Global table styles (v3 mockup) */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--aa-border);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+th {
+  color: var(--aa-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  position: sticky;
+  top: 0;
+  background: var(--aa-panel);
+  z-index: 1;
+}
+
+td {
+  color: var(--aa-muted);
+}
+
+/* Suppress focus ring on mouse interaction for elements that handle it */
+:focus:not(:focus-visible) {
+  outline: none;
 }

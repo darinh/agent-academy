@@ -1,5 +1,7 @@
 # Agent Academy
 
+[![CI](https://github.com/darinh/agent-academy/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/darinh/agent-academy/actions/workflows/ci.yml)
+
 A multi-agent collaboration platform that orchestrates AI agents to work together on software engineering tasks.
 
 Built with ASP.NET Core 8, React 19, and the GitHub Copilot SDK.
@@ -18,13 +20,8 @@ Built with ASP.NET Core 8, React 19, and the GitHub Copilot SDK.
 git clone https://github.com/darinh/agent-academy.git
 cd agent-academy
 
-# Build backend
-dotnet build
-
-# Install frontend dependencies
-cd src/agent-academy-client
-npm install
-cd ../..
+# One-time setup (git hooks, dependencies)
+./scripts/setup.sh
 
 # Run backend
 dotnet run --project src/AgentAcademy.Server
@@ -53,6 +50,7 @@ React 19 + Fluent UI ←→ ASP.NET Core 8 Web API ←→ EF Core + SQLite
 ```
 
 - **Backend** (`src/AgentAcademy.Server`): ASP.NET Core Web API with SignalR for real-time communication
+  - `AgentOrchestrator`: Drives multi-agent conversation lifecycle (queue processing, breakout rooms, review cycles)
 - **Shared Models** (`src/AgentAcademy.Shared`): Domain types shared between server and tests
 - **Frontend** (`src/agent-academy-client`): React 19 SPA with Vite and Fluent UI v9
 - **Tests** (`tests/AgentAcademy.Server.Tests`): xUnit integration and unit tests

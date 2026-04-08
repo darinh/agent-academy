@@ -1,0 +1,123 @@
+using AgentAcademy.Server.Services;
+using AgentAcademy.Shared.Models;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace AgentAcademy.Server.Commands.Handlers;
+
+/// <summary>
+/// Handles LIST_COMMANDS — returns all available commands with their names,
+/// indicating which ones the requesting agent is authorized to use.
+/// Resolves handlers at execution time to avoid circular DI dependency.
+/// </summary>
+public sealed class ListCommandsHandler : ICommandHandler
+{
+    public string CommandName => "LIST_COMMANDS";
+
+    private static readonly Dictionary<string, string> CommandDescriptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["LIST_COMMANDS"] = "List all available commands with authorization status",
+        ["LIST_ROOMS"] = "Show all rooms with status, phase, and participants",
+        ["LIST_AGENTS"] = "Show all agents with location and state",
+        ["LIST_TASKS"] = "Show tasks with optional status/assignee filters",
+        ["READ_FILE"] = "Read file content (auto-truncates large files with continuation hints) or list directory entries",
+        ["SEARCH_CODE"] = "Search codebase using git grep with optional path/glob/ignoreCase filters",
+        ["REMEMBER"] = "Store a persistent memory (key/value with category)",
+        ["RECALL"] = "Search stored memories by category or query",
+        ["LIST_MEMORIES"] = "List all stored memories, optionally filtered by category",
+        ["FORGET"] = "Delete a stored memory by key",
+        ["SHOW_DIFF"] = "Show git diff (optionally against a branch)",
+        ["GIT_LOG"] = "Show commit history with optional file/count/since filters",
+        ["RUN_BUILD"] = "Run the project build and return output",
+        ["RUN_TESTS"] = "Run the test suite (optional scope filter)",
+        ["SHOW_REVIEW_QUEUE"] = "Show tasks awaiting review",
+        ["ROOM_HISTORY"] = "Read messages from any room without moving",
+        ["MOVE_TO_ROOM"] = "Move yourself to a different room",
+        ["DM"] = "Send a private direct message to another agent or human",
+        ["ASK_HUMAN"] = "Send a question to the human via notification provider",
+        ["SHELL"] = "Execute an allowlisted shell operation",
+        ["SET_PLAN"] = "Create or update the plan for a room",
+        ["MERGE_TASK"] = "Squash-merge a completed task branch into develop",
+        ["CANCEL_TASK"] = "Cancel a task and optionally delete its branch",
+        ["APPROVE_TASK"] = "Approve a task after review",
+        ["REQUEST_CHANGES"] = "Request changes on a task under review",
+        ["CLAIM_TASK"] = "Claim an unassigned task",
+        ["RELEASE_TASK"] = "Release a claimed task back to unassigned",
+        ["UPDATE_TASK"] = "Update task fields (status, phase, plan, etc.)",
+        ["ADD_TASK_COMMENT"] = "Attach a comment or finding to a task",
+        ["CREATE_TASK_ITEM"] = "Create a work item in a room, assigned to yourself or another agent",
+        ["UPDATE_TASK_ITEM"] = "Update a task item's status (Pending/Active/Done/Rejected) with optional evidence",
+        ["LIST_TASK_ITEMS"] = "List task items, optionally filtered by room or status",
+        ["CLOSE_ROOM"] = "Archive a non-main room",
+        ["CLEANUP_ROOMS"] = "Archive all stale rooms where every task is complete",
+        ["CREATE_ROOM"] = "Create a new persistent collaboration room",
+        ["REOPEN_ROOM"] = "Reopen an archived room for continued work",
+        ["INVITE_TO_ROOM"] = "Move another agent to a specified room",
+        ["RETURN_TO_MAIN"] = "Return to the main collaboration room",
+        ["ROOM_TOPIC"] = "Set or clear the topic description for a room",
+        ["RESTART_SERVER"] = "Request a server restart via exit code 75",
+        ["CREATE_PR"] = "Push a task branch to GitHub and open a pull request",
+        ["POST_PR_REVIEW"] = "Post a review (approve, request changes, or comment) on a task's PR",
+        ["GET_PR_REVIEWS"] = "Retrieve all reviews on a task's pull request",
+        ["EXPORT_MEMORIES"] = "Export an agent's stored memories as structured JSON",
+        ["IMPORT_MEMORIES"] = "Import memories from a structured JSON array",
+        ["REBASE_TASK"] = "Rebase a task's feature branch onto develop",
+        ["REJECT_TASK"] = "Reject an approved or completed task back to ChangesRequested",
+        ["LINK_TASK_TO_SPEC"] = "Link a task to a spec section for traceability",
+        ["SHOW_UNLINKED_CHANGES"] = "Show active tasks with no spec links",
+        ["RECORD_EVIDENCE"] = "Record a structured verification check (build, tests, review) against a task",
+        ["QUERY_EVIDENCE"] = "Query the evidence ledger for a task, optionally filtered by phase",
+        ["CHECK_GATES"] = "Check if a task meets evidence requirements for the next phase transition",
+    };
+
+    public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
+    {
+        // Resolve handlers at execution time to avoid circular DI dependency
+        var allHandlers = context.Services.GetServices<ICommandHandler>();
+        var authorizer = new CommandAuthorizer();
+        var agentDef = context.Services.GetRequiredService<WorkspaceRuntime>()
+            .GetConfiguredAgents()
+            .FirstOrDefault(a => a.Id == context.AgentId);
+
+        var commands = allHandlers
+            .Select(h =>
+            {
+                var authorized = true;
+                if (agentDef is not null)
+                {
+                    var probe = new CommandEnvelope(
+                        Command: h.CommandName,
+                        Args: new Dictionary<string, object?>(),
+                        Status: CommandStatus.Success,
+                        Result: null,
+                        Error: null,
+                        CorrelationId: string.Empty,
+                        Timestamp: DateTime.UtcNow,
+                        ExecutedBy: context.AgentId ?? string.Empty
+                    );
+                    authorized = authorizer.Authorize(probe, agentDef) is null;
+                }
+
+                CommandDescriptions.TryGetValue(h.CommandName, out var description);
+
+                return new Dictionary<string, object?>
+                {
+                    ["command"] = h.CommandName,
+                    ["description"] = description ?? "(no description)",
+                    ["authorized"] = authorized
+                };
+            })
+            .OrderBy(c => c["command"]?.ToString())
+            .ToList();
+
+        return Task.FromResult(command with
+        {
+            Status = CommandStatus.Success,
+            Result = new Dictionary<string, object?>
+            {
+                ["commands"] = commands,
+                ["count"] = commands.Count,
+                ["authorizedCount"] = commands.Count(c => c["authorized"] is true)
+            }
+        });
+    }
+}

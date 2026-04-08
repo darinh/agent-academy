@@ -1,0 +1,94 @@
+name: Version Bump
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Determine bump type
+        id: bump
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --format="%B")
+          else
+            COMMITS=$(git log "$LAST_TAG"..HEAD --format="%B")
+          fi
+
+          # Check for breaking changes (subject + body)
+          # Matches: BREAKING CHANGE in body, type!: or type(scope)!: in subject
+          if echo "$COMMITS" | grep -qiE "BREAKING CHANGE|^[a-z]+(\(.+\))?\!:"; then
+            echo "bump=major" >> "$GITHUB_OUTPUT"
+          elif echo "$COMMITS" | grep -qE "^feat"; then
+            echo "bump=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "bump=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "Bump type: $(grep bump "$GITHUB_OUTPUT")"
+
+      - name: Get current version
+        id: version
+        run: |
+          # Read version from Directory.Build.props or default to 0.1.0
+          if [ -f "Directory.Build.props" ]; then
+            CURRENT=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props || echo "0.1.0")
+          else
+            CURRENT="0.1.0"
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate new version
+        id: new
+        run: |
+          IFS='.' read -r major minor patch <<< "${{ steps.version.outputs.current }}"
+          case "${{ steps.bump.outputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          echo "version=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+
+      - name: Update version
+        run: |
+          # Update Directory.Build.props in-place (preserves other properties)
+          sed -i "s|<Version>[^<]*</Version>|<Version>${{ steps.new.outputs.version }}</Version>|" Directory.Build.props
+
+          # Update client package.json
+          cd src/agent-academy-client
+          npm version ${{ steps.new.outputs.version }} --no-git-tag-version --allow-same-version
+
+      - name: Generate changelog
+        run: ./scripts/generate-changelog.sh
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Directory.Build.props src/agent-academy-client/package.json CHANGELOG.md
+          git diff --staged --quiet || {
+            git commit -m "chore: bump version to v${{ steps.new.outputs.version }}"
+            git tag "v${{ steps.new.outputs.version }}"
+            git push --follow-tags
+          }

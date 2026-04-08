@@ -41,35 +41,14 @@ agent-academy/
 └── AgentAcademy.sln
 ```
 
-## Specification Workflow (MANDATORY)
+## Specification Workflow
 
-The `specs/` directory is the single source of truth for what this system does. Every claim in the spec must be verifiable against actual code.
+This project uses spec-driven development. The `specs/` directory is in-repo and is the single source of truth. See user-level instructions (`~/.copilot/copilot-instructions.md`) for the full spec workflow, plan format, and validation checklist.
 
-### Before Every Change
-Produce a Spec Change Proposal:
-- Which spec sections are affected
-- Change type: NEW_CAPABILITY | MODIFICATION | BUG_FIX_CODE | BUG_FIX_SPEC
-- What the proposed changes are
-- How to verify accuracy after implementation
-
-### After Every Change
-- Update the affected spec sections to match the delivered code
-- Verify every spec claim against actual code (file paths, function names)
-- Update `specs/CHANGELOG.md`
-
-### If Spec and Code Diverge
-1. Investigate WHY they diverged
-2. Fix whichever is wrong (code or spec)
-3. Update THIS FILE with a new convention or pitfall to prevent recurrence
-
-### Spec Document Template
-Each spec section follows:
-- **Purpose**: What this section covers
-- **Current Behavior**: Verified description (or "Planned" for unimplemented features)
-- **Interfaces & Contracts**: Types, APIs, data shapes
-- **Invariants**: Rules that must always hold
-- **Known Gaps**: Where implementation is incomplete
-- **Revision History**: Changes linked to tasks
+**Project-specific notes:**
+- Specs live at `specs/` in the repo root (this project owns its repo)
+- Changelog at `specs/CHANGELOG.md`
+- Spec index at `specs/README.md`
 
 ## Conventions
 - Use C# records for immutable domain types
@@ -80,8 +59,49 @@ Each spec section follows:
 - Error responses use `ProblemDetails` format
 - Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`
 
-## Common Pitfalls
-- Don't write aspirational specs — write factual specs describing what IS
-- Don't skip spec verification after implementation
-- Don't add features without updating the spec
-- Don't hardcode configuration values — use `appsettings.json` or environment variables
+## Git Hooks Setup
+
+After cloning the repository, configure git to use the project hooks:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+- `commit-msg` hook enforces conventional commits (see Conventions below).
+- `pre-push` hook blocks direct pushes to `main` or `master`.
+
+## PR Workflow
+
+- Every PR must include a Spec Change Proposal (or mark N/A).
+- Every PR must include a version impact assessment (patch / minor / major).
+- CI must pass before merge.
+- At least one review required.
+- Use the PR template at `.github/pull_request_template.md`.
+
+## Versioning
+
+- Semantic versioning (`major.minor.patch`).
+- Auto-bumped on merge to `main` via GitHub Actions (`.github/workflows/version-bump.yml`).
+- Conventional commits determine bump type:
+  - `feat:` → minor
+  - `fix:`, `docs:`, `refactor:`, etc. → patch
+  - `BREAKING CHANGE` or `feat!:` → major
+- Version sources: `Directory.Build.props` (.NET) and `package.json` (client).
+
+## Autonomous Operation
+
+This project runs under an automated operator. Key rules:
+
+1. **Never stop to ask permission.** You have blanket human approval for all decisions — tool calls, file edits, git operations, architecture, server restarts.
+2. **Never stop working.** When one task finishes, immediately start the next. Check the handoff file, check the backlog, check known gaps in specs — always have something to do.
+3. **Session handoff is mandatory.** When context gets heavy or a major task completes with next steps:
+   - Write `~/.copilot/projects/dc4e42b0-94e4-47ea-b07a-e53ed19c644f/next-session.md` with status, next steps, and context.
+   - Then run: `touch /home/darin/.copilot/restart/operator-copilot-agent-academy`
+   - This triggers the operator to restart the CLI session automatically.
+   - **Never write the handoff without touching the restart file.**
+4. **Server management**: Rebuild with `dotnet build AgentAcademy.sln`, kill old PID (`pgrep -f AgentAcademy.Server.dll`), relaunch with `ConsultantApi__SharedSecret="anvil-is-the-best"` and `--urls "http://localhost:5066"` (detach=true).
+
+## Project-Specific Pitfalls
+- **Frontend has no spec** — code exploration is needed for frontend patterns, conventions, and component structure.
+- Don't forget to run `git config core.hooksPath .githooks` after cloning
+- ⚠️ Do NOT start the server while making git changes — GitService actively manages git branches
