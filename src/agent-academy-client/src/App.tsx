@@ -12,7 +12,6 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Badge,
   Toaster,
   useToastController,
   useId,
@@ -20,6 +19,7 @@ import {
   ToastTitle,
   ToastBody,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
@@ -625,9 +625,9 @@ function AppShell() {
                           <Button size="small" appearance="subtle" className={s.filterMenuButton}>
                             ▾ Filter
                             {hiddenFilters.size > 0 && (
-                              <Badge size="small" appearance="filled" color="informative" className={s.filterBadge}>
+                              <V3Badge color="info" className={s.filterBadge}>
                                 {hiddenFilters.size}
-                              </Badge>
+                              </V3Badge>
                             )}
                           </Button>
                         </MenuTrigger>

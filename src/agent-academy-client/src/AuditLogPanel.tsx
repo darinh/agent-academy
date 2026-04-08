@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
@@ -218,18 +219,18 @@ const useLocalStyles = makeStyles({
 
 function statusBadge(
   status: string,
-): { color: "success" | "danger" | "warning" | "important" | "informative"; label: string } {
+): { color: BadgeColor; label: string } {
   switch (status) {
     case "Success":
-      return { color: "success", label: "Success" };
+      return { color: "ok", label: "Success" };
     case "Error":
-      return { color: "danger", label: "Error" };
+      return { color: "err", label: "Error" };
     case "Denied":
-      return { color: "warning", label: "Denied" };
+      return { color: "warn", label: "Denied" };
     case "Pending":
-      return { color: "informative", label: "Pending" };
+      return { color: "info", label: "Pending" };
     default:
-      return { color: "important", label: status };
+      return { color: "bug", label: status };
   }
 }
 
@@ -429,7 +430,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
                   {Object.entries(stats.byAgent).map(([agentId, count]) => (
                     <tr key={agentId}>
                       <td className={s.td}>
-                        <Badge appearance="outline" color="informative">{agentId}</Badge>
+                        <V3Badge color="info">{agentId}</V3Badge>
                       </td>
                       <td className={s.tdRight}>{count}</td>
                     </tr>
@@ -474,7 +475,7 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
             <ClipboardTaskListLtrRegular style={{ fontSize: 18 }} />
             Recent Commands
             {total > 0 && (
-              <Badge appearance="outline" color="informative" size="small">{total}</Badge>
+              <V3Badge color="info">{total}</V3Badge>
             )}
           </div>
           <button className={s.refreshBtn} onClick={fetchAll}>
@@ -503,18 +504,15 @@ export default function AuditLogPanel({ hoursBack }: AuditLogPanelProps) {
                   return (
                     <tr key={rec.id}>
                       <td className={s.td}>
-                        <Badge
-                          appearance="outline"
-                          color={rec.source === "human-ui" ? "warning" : "informative"}
-                        >
+                        <V3Badge color={rec.source === "human-ui" ? "warn" : "info"}>
                           {rec.agentId}
-                        </Badge>
+                        </V3Badge>
                       </td>
                       <td className={s.td}>
                         <span className={s.mono}>{rec.command}</span>
                       </td>
                       <td className={s.td}>
-                        <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                        <V3Badge color={badge.color}>{badge.label}</V3Badge>
                       </td>
                       <td className={s.td}>
                         {rec.errorMessage ? (

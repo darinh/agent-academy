@@ -97,20 +97,20 @@ describe("sidebarUtils", () => {
 
   describe("phaseDotColor", () => {
     it("returns correct color for each known phase", () => {
-      expect(phaseDotColor("Intake")).toBe("#94a3b8");
-      expect(phaseDotColor("Planning")).toBe("#6cb6ff");
-      expect(phaseDotColor("Discussion")).toBe("#a78bfa");
-      expect(phaseDotColor("Implementation")).toBe("#34d399");
-      expect(phaseDotColor("Validation")).toBe("#fbbf24");
-      expect(phaseDotColor("FinalSynthesis")).toBe("#f472b6");
+      expect(phaseDotColor("Intake")).toBe("var(--aa-soft)");
+      expect(phaseDotColor("Planning")).toBe("var(--aa-cyan)");
+      expect(phaseDotColor("Discussion")).toBe("var(--aa-plum)");
+      expect(phaseDotColor("Implementation")).toBe("var(--aa-lime)");
+      expect(phaseDotColor("Validation")).toBe("var(--aa-gold)");
+      expect(phaseDotColor("FinalSynthesis")).toBe("var(--aa-copper)");
     });
 
     it("returns default gray for unknown phase", () => {
-      expect(phaseDotColor("SomeNewPhase")).toBe("#94a3b8");
+      expect(phaseDotColor("SomeNewPhase")).toBe("var(--aa-soft)");
     });
 
     it("returns default gray for empty string", () => {
-      expect(phaseDotColor("")).toBe("#94a3b8");
+      expect(phaseDotColor("")).toBe("var(--aa-soft)");
     });
 
     it("PHASE_DOT_COLORS has exactly 6 entries", () => {

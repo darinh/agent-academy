@@ -3,15 +3,15 @@ import type { AgentDefinition, AgentLocation, BreakoutRoom, CollaborationPhase, 
 /* ── Phase dot colors ─────────────────────────────────────────── */
 
 export const PHASE_DOT_COLORS: Record<CollaborationPhase, string> = {
-  Intake: "#94a3b8",
-  Planning: "#6cb6ff",
-  Discussion: "#a78bfa",
-  Implementation: "#34d399",
-  Validation: "#fbbf24",
-  FinalSynthesis: "#f472b6",
+  Intake: "var(--aa-soft)",
+  Planning: "var(--aa-cyan)",
+  Discussion: "var(--aa-plum)",
+  Implementation: "var(--aa-lime)",
+  Validation: "var(--aa-gold)",
+  FinalSynthesis: "var(--aa-copper)",
 };
 
-const DEFAULT_DOT_COLOR = "#94a3b8";
+const DEFAULT_DOT_COLOR = "var(--aa-soft)";
 
 export function phaseDotColor(phase: CollaborationPhase | string): string {
   return (PHASE_DOT_COLORS as Record<string, string>)[phase] ?? DEFAULT_DOT_COLOR;

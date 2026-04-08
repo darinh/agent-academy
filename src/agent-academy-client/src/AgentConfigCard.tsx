@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
-  Badge,
   Spinner,
   Textarea,
   Input,
@@ -15,6 +14,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ChevronDownRegular,
   ChevronUpRegular,
@@ -225,13 +225,13 @@ export default function AgentConfigCard({
           <span className={s.agentRole}>{roleLabel(agent.role)}</span>
         </div>
         <div className={s.badges}>
-          <Badge appearance="outline" color="informative" size="small">
+          <V3Badge color="info">
             {agent.model ?? "default"}
-          </Badge>
+          </V3Badge>
           {config?.hasOverride && (
-            <Badge appearance="filled" color="warning" size="small">
+            <V3Badge color="warn">
               Customized
-            </Badge>
+            </V3Badge>
           )}
           {expanded ? <ChevronUpRegular /> : <ChevronDownRegular />}
         </div>

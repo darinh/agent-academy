@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
   Tooltip,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   ChatRegular,
@@ -387,19 +387,14 @@ export default function SessionHistoryPanel({
                     className={isActive ? s.activeRow : undefined}
                   >
                     <td className={s.td}>
-                      <Badge
-                        appearance="filled"
-                        color={isActive ? "success" : "informative"}
-                        icon={
-                          isActive ? (
-                            <PlayRegular style={{ fontSize: 14 }} />
-                          ) : (
-                            <ArchiveRegular style={{ fontSize: 14 }} />
-                          )
-                        }
-                      >
-                        {session.status}
-                      </Badge>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        {isActive
+                          ? <PlayRegular style={{ fontSize: 14 }} />
+                          : <ArchiveRegular style={{ fontSize: 14 }} />}
+                        <V3Badge color={isActive ? "ok" : "info"}>
+                          {session.status}
+                        </V3Badge>
+                      </span>
                     </td>
                     <td className={s.td}>
                       <Tooltip

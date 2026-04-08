@@ -1,11 +1,12 @@
 import {
-  Badge,
   Button,
   Card,
   ProgressBar,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import {
   ArrowRightRegular,
   ChartMultipleRegular,
@@ -118,15 +119,13 @@ const useLocalStyles = makeStyles({
 
 // ── Helpers ──
 
-function statusColor(
-  status: string,
-): "informative" | "success" | "warning" | "important" | "danger" | "subtle" {
+function statusColor(status: string): BadgeColor {
   switch (status) {
-    case "Active":      return "success";
-    case "AttentionRequired": return "warning";
-    case "Completed":   return "informative";
-    case "Archived":    return "subtle";
-    default:            return "important";
+    case "Active":      return "ok";
+    case "AttentionRequired": return "warn";
+    case "Completed":   return "info";
+    case "Archived":    return "muted";
+    default:            return "bug";
   }
 }
 
@@ -217,15 +216,15 @@ export default function WorkspaceOverviewPanel({
               <div key={r.id} className={s.roomRow}>
                 <span className={s.roomName}>{r.name}</span>
                 <div className={s.badges}>
-                  <Badge appearance="outline" color={statusColor(r.status)}>
+                  <V3Badge color={statusColor(r.status)}>
                     {r.status}
-                  </Badge>
-                  <Badge appearance="filled" color="informative">
+                  </V3Badge>
+                  <V3Badge color="info">
                     {r.currentPhase}
-                  </Badge>
-                  <Badge appearance="outline" color="subtle">
+                  </V3Badge>
+                  <V3Badge color="muted">
                     {r.participants.length} agent{r.participants.length !== 1 ? "s" : ""}
-                  </Badge>
+                  </V3Badge>
                 </div>
               </div>
             ))

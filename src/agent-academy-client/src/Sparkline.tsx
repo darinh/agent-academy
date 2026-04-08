@@ -18,7 +18,7 @@ const Sparkline = memo(function Sparkline({
   data,
   width = 120,
   height = 32,
-  color = "#6cb6ff",
+  color = "var(--aa-cyan)",
   fillOpacity = 0.15,
   strokeWidth = 1.5,
   className,

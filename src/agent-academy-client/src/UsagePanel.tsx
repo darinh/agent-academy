@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   MoneyRegular,
@@ -412,9 +412,9 @@ export default function UsagePanel({ hoursBack }: UsagePanelProps) {
               {agentBreakdown.map((agent) => (
                 <tr key={agent.agentId}>
                   <td className={s.td}>
-                    <Badge appearance="outline" color="informative">
+                    <V3Badge color="info">
                       {agent.agentId}
-                    </Badge>
+                    </V3Badge>
                   </td>
                   <td className={s.tdRight}>{formatTokenCount(agent.input)}</td>
                   <td className={s.tdRight}>{formatTokenCount(agent.output)}</td>

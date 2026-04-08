@@ -6,10 +6,10 @@ import {
   shorthands,
   Spinner,
   Text,
-  Badge,
   Button,
   useModalAttributes,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   SearchRegular,
   DismissRegular,
@@ -536,9 +536,9 @@ export default function CommandPalette({ open, onDismiss, roomId, readOnly }: Co
                             <Text className={styles.itemDesc}>{cmd.description}</Text>
                           </div>
                           {cmd.isAsync && (
-                            <Badge className={styles.asyncBadge} size="small" appearance="outline" color="informative">
+                            <V3Badge className={styles.asyncBadge} color="info">
                               async
-                            </Badge>
+                            </V3Badge>
                           )}
                         </div>
                       );

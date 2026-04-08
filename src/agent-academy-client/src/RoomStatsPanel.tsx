@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
@@ -335,9 +335,9 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
               {agents.map((a) => (
                 <tr key={a.agentId}>
                   <td className={s.td}>
-                    <Badge appearance="outline" color="informative">
+                    <V3Badge color="info">
                       {a.agentId}
-                    </Badge>
+                    </V3Badge>
                   </td>
                   <td className={s.tdRight}>{formatTokenCount(a.totalInputTokens)}</td>
                   <td className={s.tdRight}>{formatTokenCount(a.totalOutputTokens)}</td>
@@ -380,7 +380,7 @@ export default function RoomStatsPanel({ roomId }: RoomStatsPanelProps) {
                       <span className={s.mono}>{rec.agentId}</span>
                     </td>
                     <td className={s.td}>
-                      <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                      <V3Badge color={badge.color}>{badge.label}</V3Badge>
                     </td>
                     <td className={s.td}>
                       <span className={s.msgCell}>{rec.message}</span>

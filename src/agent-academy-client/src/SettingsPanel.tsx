@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   DismissRegular,
   PlugConnectedRegular,
@@ -341,25 +341,17 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   <div className={s.providerInfo}>
                     <span className={s.providerName}>{p.displayName}</span>
                     {p.isConnected ? (
-                      <Badge
-                        appearance="filled"
-                        color="success"
-                        icon={<PlugConnectedRegular />}
-                      >
-                        Connected
-                      </Badge>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <PlugConnectedRegular style={{ fontSize: 14 }} />
+                        <V3Badge color="ok">Connected</V3Badge>
+                      </span>
                     ) : p.isConfigured ? (
-                      <Badge appearance="filled" color="warning">
-                        Configured
-                      </Badge>
+                      <V3Badge color="warn">Configured</V3Badge>
                     ) : (
-                      <Badge
-                        appearance="filled"
-                        color="informative"
-                        icon={<PlugDisconnectedRegular />}
-                      >
-                        Not set up
-                      </Badge>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        <PlugDisconnectedRegular style={{ fontSize: 14 }} />
+                        <V3Badge color="info">Not set up</V3Badge>
+                      </span>
                     )}
                   </div>
 

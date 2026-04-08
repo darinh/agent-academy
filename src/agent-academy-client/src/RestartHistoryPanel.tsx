@@ -2,12 +2,13 @@ import { formatTimestamp, formatElapsed } from "./panelUtils";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   makeStyles,
   shorthands,
   Tooltip,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
+import type { BadgeColor } from "./V3Badge";
 import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
@@ -157,18 +158,18 @@ const useLocalStyles = makeStyles({
 
 // ── Helpers ──
 
-function reasonBadge(reason: string): { color: "informative" | "success" | "warning" | "danger" | "important"; icon: ReactElement } {
+function reasonBadge(reason: string): { color: BadgeColor; icon: ReactElement } {
   switch (reason) {
     case "Running":
-      return { color: "informative", icon: <PlayRegular style={{ fontSize: 14 }} /> };
+      return { color: "info", icon: <PlayRegular style={{ fontSize: 14 }} /> };
     case "CleanShutdown":
-      return { color: "success", icon: <CheckmarkCircleRegular style={{ fontSize: 14 }} /> };
+      return { color: "ok", icon: <CheckmarkCircleRegular style={{ fontSize: 14 }} /> };
     case "IntentionalRestart":
-      return { color: "warning", icon: <ArrowSyncRegular style={{ fontSize: 14 }} /> };
+      return { color: "warn", icon: <ArrowSyncRegular style={{ fontSize: 14 }} /> };
     case "Crash":
-      return { color: "danger", icon: <ErrorCircleRegular style={{ fontSize: 14 }} /> };
+      return { color: "err", icon: <ErrorCircleRegular style={{ fontSize: 14 }} /> };
     default:
-      return { color: "important", icon: <WarningRegular style={{ fontSize: 14 }} /> };
+      return { color: "bug", icon: <WarningRegular style={{ fontSize: 14 }} /> };
   }
 }
 
@@ -314,23 +315,18 @@ export default function RestartHistoryPanel({ hoursBack }: RestartHistoryPanelPr
                   <tr key={inst.id} className={isRunning ? s.currentRow : undefined}>
                     <td className={s.td}>
                       <Tooltip content={inst.shutdownReason} relationship="label">
-                        <Badge
-                          appearance="filled"
-                          color={badge.color}
-                          icon={badge.icon}
-                        >
-                          {inst.shutdownReason}
-                        </Badge>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          {badge.icon}
+                          <V3Badge color={badge.color}>
+                            {inst.shutdownReason}
+                          </V3Badge>
+                        </span>
                       </Tooltip>
                       {inst.crashDetected && (
                         <Tooltip content="Crash detected on startup" relationship="label">
-                          <Badge
-                            appearance="outline"
-                            color="danger"
-                            style={{ marginLeft: 6 }}
-                          >
-                            ⚡ crash recovery
-                          </Badge>
+                          <span style={{ marginLeft: 6 }}>
+                            <V3Badge color="err">⚡ crash recovery</V3Badge>
+                          </span>
                         </Tooltip>
                       )}
                     </td>

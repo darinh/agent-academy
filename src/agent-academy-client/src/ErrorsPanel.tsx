@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Badge,
   Spinner,
   Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
+import V3Badge from "./V3Badge";
 import {
   ArrowSyncRegular,
   ErrorCircleRegular,
@@ -452,7 +452,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                     return (
                       <tr key={t.errorType}>
                         <td className={s.td}>
-                          <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                          <V3Badge color={badge.color}>{badge.label}</V3Badge>
                         </td>
                         <td className={s.tdRight}>{t.count}</td>
                       </tr>
@@ -478,7 +478,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                   {summary.byAgent.map((a) => (
                     <tr key={a.agentId}>
                       <td className={s.td}>
-                        <Badge appearance="outline" color="informative">{a.agentId}</Badge>
+                        <V3Badge color="info">{a.agentId}</V3Badge>
                       </td>
                       <td className={s.tdRight}>{a.count}</td>
                     </tr>
@@ -527,7 +527,7 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                         <span className={s.mono}>{rec.agentId}</span>
                       </td>
                       <td className={s.td}>
-                        <Badge appearance="filled" color={badge.color}>{badge.label}</Badge>
+                        <V3Badge color={badge.color}>{badge.label}</V3Badge>
                       </td>
                       <td className={s.td}>
                         <Tooltip content={rec.message} relationship="label">
@@ -535,12 +535,9 @@ export default function ErrorsPanel({ hoursBack, circuitBreakerState }: ErrorsPa
                         </Tooltip>
                       </td>
                       <td className={s.td}>
-                        <Badge
-                          appearance="outline"
-                          color={rec.recoverable ? "success" : "danger"}
-                        >
+                        <V3Badge color={rec.recoverable ? "ok" : "err"}>
                           {rec.recoverable ? "Yes" : "No"}
-                        </Badge>
+                        </V3Badge>
                       </td>
                       <td className={s.td}>
                         <span className={s.mono}>{formatTimestamp(rec.timestamp)}</span>
