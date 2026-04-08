@@ -1,0 +1,208 @@
+using AgentAcademy.Server.Controllers;
+using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services;
+using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace AgentAcademy.Server.Tests;
+
+public class SprintControllerTests : IDisposable
+{
+    private const string TestWorkspace = "/tmp/test-workspace";
+    private readonly SqliteConnection _connection;
+    private readonly AgentAcademyDbContext _db;
+    private readonly SprintService _sprintService;
+    private readonly WorkspaceRuntime _runtime;
+    private readonly SprintController _controller;
+
+    public SprintControllerTests()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        var options = new DbContextOptionsBuilder<AgentAcademyDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        _db = new AgentAcademyDbContext(options);
+        _db.Database.EnsureCreated();
+
+        _sprintService = new SprintService(_db, NullLogger<SprintService>.Instance);
+
+        var catalog = new AgentCatalogOptions("main", "Main Room", []);
+        var activityBus = new ActivityBroadcaster();
+        var executor = Substitute.For<IAgentExecutor>();
+        var sessionService = new ConversationSessionService(
+            _db, new SystemSettingsService(_db), executor,
+            NullLogger<ConversationSessionService>.Instance);
+
+        _runtime = new WorkspaceRuntime(
+            _db,
+            NullLogger<WorkspaceRuntime>.Instance,
+            catalog, activityBus, sessionService);
+
+        _controller = new SprintController(
+            _sprintService, _runtime,
+            NullLogger<SprintController>.Instance);
+    }
+
+    public void Dispose()
+    {
+        _db.Dispose();
+        _connection.Dispose();
+    }
+
+    private async Task ActivateWorkspace()
+    {
+        _db.Workspaces.Add(new WorkspaceEntity
+        {
+            Path = TestWorkspace,
+            ProjectName = "test",
+            IsActive = true,
+        });
+        await _db.SaveChangesAsync();
+    }
+
+    // ── ListSprints ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListSprints_NoWorkspace_ReturnsEmptyList()
+    {
+        var result = await _controller.ListSprints();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintListResponse>(ok.Value);
+        Assert.Empty(body.Sprints);
+        Assert.Equal(0, body.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListSprints_WithSprints_ReturnsAll()
+    {
+        await ActivateWorkspace();
+        await _sprintService.CreateSprintAsync(TestWorkspace);
+        var s2 = await _sprintService.CreateSprintAsync("/other");
+
+        var result = await _controller.ListSprints();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintListResponse>(ok.Value);
+        Assert.Single(body.Sprints);
+        Assert.Equal(1, body.Sprints[0].Number);
+    }
+
+    // ── GetActiveSprint ──────────────────────────────────────────
+
+    [Fact]
+    public async Task GetActiveSprint_NoWorkspace_ReturnsNoContent()
+    {
+        var result = await _controller.GetActiveSprint();
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task GetActiveSprint_NoActiveSprint_ReturnsNoContent()
+    {
+        await ActivateWorkspace();
+
+        var result = await _controller.GetActiveSprint();
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task GetActiveSprint_WithActiveSprint_ReturnsDetail()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.GetActiveSprint();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(sprint.Id, body.Sprint.Id);
+        Assert.Equal(1, body.Sprint.Number);
+        Assert.Equal(SprintStatus.Active, body.Sprint.Status);
+        Assert.Equal(SprintStage.Intake, body.Sprint.CurrentStage);
+        Assert.Equal(6, body.Stages.Count);
+        Assert.Empty(body.Artifacts);
+    }
+
+    [Fact]
+    public async Task GetActiveSprint_WithArtifacts_IncludesArtifacts()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument",
+            "{\"title\":\"Test\"}", "agent-1");
+
+        var result = await _controller.GetActiveSprint();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Single(body.Artifacts);
+        Assert.Equal(ArtifactType.RequirementsDocument, body.Artifacts[0].Type);
+        Assert.Equal("agent-1", body.Artifacts[0].CreatedByAgentId);
+    }
+
+    // ── GetSprint ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSprint_NotFound_Returns404()
+    {
+        var result = await _controller.GetSprint("nonexistent");
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprint_Found_ReturnsDetail()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.GetSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(sprint.Id, body.Sprint.Id);
+    }
+
+    // ── GetArtifacts ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetArtifacts_NotFound_Returns404()
+    {
+        var result = await _controller.GetArtifacts("nonexistent");
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetArtifacts_FiltersByStage()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", "{}", "a1");
+        await _sprintService.AdvanceStageAsync(sprint.Id);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Planning", "SprintPlan", "{}", "a1");
+
+        // All artifacts
+        var allResult = await _controller.GetArtifacts(sprint.Id);
+        var allOk = Assert.IsType<OkObjectResult>(allResult);
+        var allBody = Assert.IsType<List<SprintArtifact>>(allOk.Value);
+        Assert.Equal(2, allBody.Count);
+
+        // Filtered by stage
+        var filteredResult = await _controller.GetArtifacts(sprint.Id, stage: "Intake");
+        var filteredOk = Assert.IsType<OkObjectResult>(filteredResult);
+        var filteredBody = Assert.IsType<List<SprintArtifact>>(filteredOk.Value);
+        Assert.Single(filteredBody);
+        Assert.Equal(ArtifactType.RequirementsDocument, filteredBody[0].Type);
+    }
+}

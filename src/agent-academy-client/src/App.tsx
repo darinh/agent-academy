@@ -40,6 +40,7 @@ import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
 import CommandsPanel from "./CommandsPanel";
+import SprintPanel from "./SprintPanel";
 import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
 import CircuitBreakerBanner from "./CircuitBreakerBanner";
@@ -67,6 +68,7 @@ const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   tasks: { title: "Tasks", meta: "Delivery queue" },
   plan: { title: "Room Plan", meta: "" },
   commands: { title: "Command Deck", meta: "" },
+  sprint: { title: "Sprint", meta: "Active iteration" },
   timeline: { title: "Activity Timeline", meta: "" },
   dashboard: { title: "Dashboard", meta: "System telemetry" },
   overview: { title: "Overview", meta: "Room state" },
@@ -645,6 +647,9 @@ function AppShell() {
                     {tab === "commands" && (
                       <span className={s.workspaceMetaText}>Command Deck</span>
                     )}
+                    {tab === "sprint" && (
+                      <span className={s.workspaceMetaText}>Active iteration</span>
+                    )}
                     {tab === "timeline" && (
                       <span className={s.workspaceMetaText}>All events</span>
                     )}
@@ -713,6 +718,7 @@ function AppShell() {
                   {tab === "commands" && (
                     <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
                   )}
+                  {tab === "sprint" && <SprintPanel />}
                   {tab === "timeline" && (
                     <TimelinePanel activity={activity} loading={busy} />
                   )}

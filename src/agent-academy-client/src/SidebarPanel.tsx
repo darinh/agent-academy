@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { value: "tasks", icon: "📋", label: "Tasks" },
   { value: "plan", icon: "📄", label: "Plan" },
   { value: "commands", icon: "⌨️", label: "Commands" },
+  { value: "sprint", icon: "🏃", label: "Sprint" },
   { value: "timeline", icon: "⏱️", label: "Timeline" },
   { value: "dashboard", icon: "📊", label: "Dashboard" },
   { value: "overview", icon: "🔲", label: "Overview" },

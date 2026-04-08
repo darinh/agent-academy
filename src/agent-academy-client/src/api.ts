@@ -1079,3 +1079,90 @@ export function getRoomSessions(
     ),
   );
 }
+
+// ── Sprints ─────────────────────────────────────────────────────
+
+export type SprintStage =
+  | "Intake"
+  | "Planning"
+  | "Discussion"
+  | "Validation"
+  | "Implementation"
+  | "FinalSynthesis";
+
+export type SprintStatus = "Active" | "Completed" | "Cancelled";
+
+export type ArtifactType =
+  | "RequirementsDocument"
+  | "SprintPlan"
+  | "ValidationReport"
+  | "SprintReport"
+  | "OverflowRequirements";
+
+export interface SprintSnapshot {
+  id: string;
+  number: number;
+  status: SprintStatus;
+  currentStage: SprintStage;
+  overflowFromSprintId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SprintArtifact {
+  id: number;
+  sprintId: string;
+  stage: SprintStage;
+  type: ArtifactType;
+  content: string;
+  createdByAgentId: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface SprintDetailResponse {
+  sprint: SprintSnapshot;
+  artifacts: SprintArtifact[];
+  stages: string[];
+}
+
+export interface SprintListResponse {
+  sprints: SprintSnapshot[];
+  totalCount: number;
+}
+
+export async function getActiveSprint(): Promise<SprintDetailResponse | null> {
+  const res = await fetch(apiUrl("/api/sprints/active"), { credentials: "include" });
+  if (res.status === 204) return null;
+  if (!res.ok) throw new Error("Failed to fetch active sprint");
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export function getSprints(limit = 20, offset = 0): Promise<SprintListResponse> {
+  const params = new URLSearchParams();
+  if (limit !== 20) params.set("limit", String(limit));
+  if (offset > 0) params.set("offset", String(offset));
+  const qs = params.toString();
+  return request<SprintListResponse>(apiUrl(`/api/sprints${qs ? `?${qs}` : ""}`));
+}
+
+export async function getSprintDetail(id: string): Promise<SprintDetailResponse | null> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}`), {
+    credentials: "include",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch sprint");
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export function getSprintArtifacts(
+  id: string,
+  stage?: SprintStage,
+): Promise<SprintArtifact[]> {
+  const params = new URLSearchParams();
+  if (stage) params.set("stage", stage);
+  const qs = params.toString();
+  return request<SprintArtifact[]>(
+    apiUrl(`/api/sprints/${encodeURIComponent(id)}/artifacts${qs ? `?${qs}` : ""}`),
+  );
+}
