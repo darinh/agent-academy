@@ -487,7 +487,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
             var config = new SessionConfig
             {
-                Model = agent.Model ?? "gpt-5",
+                Model = agent.Model ?? "claude-opus-4.6",
                 Streaming = true,
                 Tools = [.. tools],
                 OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger),
