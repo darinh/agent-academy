@@ -134,6 +134,123 @@ public sealed class ConversationSessionService
             .FirstOrDefaultAsync();
     }
 
+    // ── Sprint-scoped sessions ──────────────────────────────────
+
+    /// <summary>
+    /// Creates a new conversation session tagged with a sprint ID and stage.
+    /// Archives the current active session for the room (if any) before
+    /// creating the new one. Used when the sprint advances to a new stage
+    /// so each stage gets a clean session boundary.
+    /// </summary>
+    public async Task<ConversationSessionEntity> CreateSessionForStageAsync(
+        string roomId, string sprintId, string stage, string roomType = "Main")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(roomId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sprintId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+
+        // Archive any existing active session for this room
+        var current = await _db.ConversationSessions
+            .Where(s => s.RoomId == roomId && s.Status == "Active")
+            .FirstOrDefaultAsync();
+
+        if (current is not null)
+        {
+            if (current.MessageCount > 0)
+            {
+                // Use the existing session's RoomType for summary generation
+                // so messages are read from the correct table
+                var summary = await GenerateSummaryAsync(current, current.RoomType);
+                current.Summary = summary;
+            }
+            current.Status = "Archived";
+            current.ArchivedAt = DateTime.UtcNow;
+        }
+
+        var session = new ConversationSessionEntity
+        {
+            RoomId = roomId,
+            RoomType = roomType,
+            SequenceNumber = await GetNextSequenceNumberAsync(roomId),
+            Status = "Active",
+            MessageCount = 0,
+            SprintId = sprintId,
+            SprintStage = stage,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        _db.ConversationSessions.Add(session);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Created sprint-scoped session {SessionId} (seq #{Seq}) for room {RoomId}, " +
+            "sprint {SprintId} stage {Stage}{Archived}",
+            session.Id, session.SequenceNumber, roomId, sprintId, stage,
+            current is not null ? $" (archived previous session {current.Id})" : "");
+
+        // Invalidate SDK sessions so agents start with clean context for the new stage
+        try
+        {
+            await _executor.InvalidateRoomSessionsAsync(roomId);
+            _logger.LogInformation(
+                "Invalidated SDK sessions for room {RoomId} after stage transition to {Stage}",
+                roomId, stage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to invalidate SDK sessions for room {RoomId} during stage transition",
+                roomId);
+        }
+
+        return session;
+    }
+
+    /// <summary>
+    /// Returns the summary from the most recently archived session for a
+    /// given sprint and stage. Used to inject previous-stage context into
+    /// the next stage's conversation.
+    /// </summary>
+    public async Task<string?> GetStageContextAsync(string sprintId, string stage)
+    {
+        return await _db.ConversationSessions
+            .Where(s => s.SprintId == sprintId
+                && s.SprintStage == stage
+                && s.Status == "Archived"
+                && s.Summary != null)
+            .OrderByDescending(s => s.SequenceNumber)
+            .Select(s => s.Summary)
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Returns one summary per stage for a sprint, deduplicated to the latest
+    /// archived session per stage, ordered by canonical sprint stage sequence.
+    /// Used to build a complete sprint context for agents.
+    /// </summary>
+    public async Task<List<(string Stage, string Summary)>> GetSprintContextAsync(string sprintId)
+    {
+        var sessions = await _db.ConversationSessions
+            .Where(s => s.SprintId == sprintId
+                && s.Status == "Archived"
+                && s.Summary != null
+                && s.SprintStage != null)
+            .OrderByDescending(s => s.SequenceNumber)
+            .Select(s => new { s.SprintStage, s.Summary })
+            .ToListAsync();
+
+        // Deduplicate: keep only the latest (highest sequence) per stage
+        var latestPerStage = sessions
+            .GroupBy(s => s.SprintStage!)
+            .ToDictionary(g => g.Key, g => g.First().Summary!);
+
+        // Order by canonical stage sequence
+        return SprintService.Stages
+            .Where(stage => latestPerStage.ContainsKey(stage))
+            .Select(stage => (Stage: stage, Summary: latestPerStage[stage]))
+            .ToList();
+    }
+
     /// <summary>
     /// Lists conversation sessions for a specific room, ordered by sequence number descending.
     /// </summary>
