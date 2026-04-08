@@ -241,6 +241,7 @@ builder.Services.AddSingleton<ProjectScanner>();
 
 // Git service (singleton — branch management for breakout rooms)
 builder.Services.AddSingleton<GitService>();
+builder.Services.AddSingleton<WorktreeService>();
 
 // GitHub integration (singleton — PR creation via gh CLI)
 builder.Services.AddSingleton<GitHubService>();
