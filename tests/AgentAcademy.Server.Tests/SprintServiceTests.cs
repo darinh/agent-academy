@@ -254,7 +254,7 @@ public class SprintServiceTests : IDisposable
 
         Assert.Equal(first.Id, updated.Id);
         Assert.Equal("v2", updated.Content);
-        Assert.Equal("archimedes", updated.CreatedByAgentId);
+        Assert.Equal("aristotle", updated.CreatedByAgentId); // original creator preserved
         Assert.NotNull(updated.UpdatedAt);
     }
 

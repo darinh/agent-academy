@@ -181,7 +181,6 @@ public sealed class SprintService
         if (existing is not null)
         {
             existing.Content = content;
-            existing.CreatedByAgentId = agentId;
             existing.UpdatedAt = DateTime.UtcNow;
 
             Publish(ActivityEventType.SprintArtifactStored, null, agentId, null,
