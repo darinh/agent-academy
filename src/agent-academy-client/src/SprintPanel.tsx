@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Button,
   makeStyles,
@@ -543,7 +545,9 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
                   {artifact.content.length > 200 && !expanded ? (
                     <>
                       <div className={s.artifactContent}>
-                        {artifact.content.slice(0, 200)}…
+                        <Markdown remarkPlugins={[remarkGfm]}>
+                          {artifact.content.slice(0, 200) + "…"}
+                        </Markdown>
                       </div>
                       <button
                         className={s.expandToggle}
@@ -555,7 +559,9 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
                   ) : (
                     <>
                       <div className={s.artifactContent}>
-                        {artifact.content}
+                        <Markdown remarkPlugins={[remarkGfm]}>
+                          {artifact.content}
+                        </Markdown>
                       </div>
                       {artifact.content.length > 200 && (
                         <button
