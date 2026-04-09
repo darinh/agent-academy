@@ -57,7 +57,11 @@ public sealed class CommitChangesHandler : ICommandHandler
 
         try
         {
-            var commitSha = await _gitService.CommitAsync(message, context.GitIdentity);
+            string commitSha;
+            if (context.WorkingDirectory is not null)
+                commitSha = await _gitService.CommitInDirAsync(context.WorkingDirectory, message, context.GitIdentity);
+            else
+                commitSha = await _gitService.CommitAsync(message, context.GitIdentity);
 
             _logger.LogInformation(
                 "COMMIT_CHANGES by {AgentId} ({Role}): {CommitSha} — {Message}",

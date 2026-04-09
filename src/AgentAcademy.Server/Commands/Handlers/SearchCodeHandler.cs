@@ -26,7 +26,7 @@ public sealed class SearchCodeHandler : ICommandHandler
             };
         }
 
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
 
         // Build git grep command — respects .gitignore, skips binary files,
         // only searches tracked files

@@ -23,7 +23,7 @@ public sealed class ReadFileHandler : ICommandHandler
         }
 
         // Resolve relative to project root
-        var projectRoot = FindProjectRoot();
+        var projectRoot = context.WorkingDirectory ?? FindProjectRoot();
         var fullPath = Path.GetFullPath(Path.Combine(projectRoot, path));
 
         // Security: ensure the path is within the project directory

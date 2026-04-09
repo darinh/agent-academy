@@ -686,6 +686,7 @@ public sealed class AgentOrchestrator
         string? taskBranch = null;
         string? taskId = null;
         TaskItem? taskItem = null;
+        string? worktreePath = null;
         try
         {
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
@@ -695,22 +696,17 @@ public sealed class AgentOrchestrator
 
             await _gitService.ReturnToDevelopAsync(taskBranch);
 
-            // During sprint Implementation stage, create a worktree for isolated work
+            // Create a worktree for isolated work when a workspace is available
             var workspacePath = await runtime.GetActiveWorkspacePathAsync();
             if (workspacePath is not null && taskBranch is not null)
             {
                 try
                 {
-                    using var sprintScope = _scopeFactory.CreateScope();
-                    var sprintSvc = sprintScope.ServiceProvider.GetRequiredService<SprintService>();
-                    var activeSprint = await sprintSvc.GetActiveSprintAsync(workspacePath);
-                    if (activeSprint?.CurrentStage == "Implementation")
-                    {
-                        var worktree = await _worktreeService.CreateWorktreeAsync(taskBranch);
-                        _logger.LogInformation(
-                            "Created worktree for task branch {Branch} at {Path}",
-                            taskBranch, worktree.Path);
-                    }
+                    var worktree = await _worktreeService.CreateWorktreeAsync(taskBranch);
+                    worktreePath = worktree.Path;
+                    _logger.LogInformation(
+                        "Created worktree for task branch {Branch} at {Path}",
+                        taskBranch, worktree.Path);
                 }
                 catch (Exception wtEx)
                 {
@@ -779,6 +775,19 @@ public sealed class AgentOrchestrator
             // must checkout develop first since git can't delete the checked-out branch.
             if (taskBranch is not null)
             {
+                // Remove worktree first — git can't delete a branch checked out in a worktree
+                if (worktreePath is not null)
+                {
+                    try
+                    {
+                        await _worktreeService.RemoveWorktreeAsync(taskBranch);
+                    }
+                    catch (Exception wtEx)
+                    {
+                        _logger.LogWarning(wtEx, "Failed to remove worktree for orphaned branch {Branch}", taskBranch);
+                    }
+                }
+
                 try
                 {
                     await _gitService.ReturnToDevelopAsync(taskBranch);
@@ -809,7 +818,7 @@ public sealed class AgentOrchestrator
 
         _ = Task.Run(async () =>
         {
-            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch); }
+            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch, worktreePath); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Breakout loop failed for {AgentName} in {BreakoutId}", agent.Name, br.Id);
@@ -820,7 +829,7 @@ public sealed class AgentOrchestrator
 
     // ── BREAKOUT ROOM ───────────────────────────────────────────
 
-    private async Task RunBreakoutLoopAsync(string breakoutRoomId, string agentId, string? taskBranch = null)
+    private async Task RunBreakoutLoopAsync(string breakoutRoomId, string agentId, string? taskBranch = null, string? worktreePath = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
@@ -836,6 +845,8 @@ public sealed class AgentOrchestrator
 
         _logger.LogInformation("Starting breakout loop for {AgentName} in {BreakoutName}", agent.Name, br.Name);
 
+        try
+        {
         var tasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
         await runtime.PostBreakoutMessageAsync(
             breakoutRoomId, "system", "LocalAgentHost", "System",
@@ -881,11 +892,15 @@ public sealed class AgentOrchestrator
             var isStubOffline = false;
             var commandCount = 0;
             var commandProcessingFailed = false;
-            if (taskBranch != null)
+
+            // When a worktree is available, skip the round lock and branch switching —
+            // the worktree is already checked out on the task branch in its own directory.
+            var useWorktree = worktreePath != null;
+            if (!useWorktree && taskBranch != null)
                 await _gitService.AcquireRoundLockAsync();
             try
             {
-                if (taskBranch != null)
+                if (!useWorktree && taskBranch != null)
                     await _gitService.EnsureBranchInternalAsync(taskBranch);
 
                 try
@@ -920,14 +935,13 @@ public sealed class AgentOrchestrator
                     continue;
                 }
 
-                // Process commands while still on the task branch so git
-                // operations (SHELL git-commit, etc.) target the correct branch.
+                // Process commands targeting the worktree directory (or main checkout if no worktree)
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     isStubOffline = IsStubOfflineResponse(response);
                     if (!isStubOffline)
                     {
-                        var cmdResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                        var cmdResult = await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
                         commandCount = cmdResult.Results.Count;
                         commandProcessingFailed = cmdResult.ProcessingFailed;
                     }
@@ -935,7 +949,7 @@ public sealed class AgentOrchestrator
             }
             finally
             {
-                if (taskBranch != null)
+                if (!useWorktree && taskBranch != null)
                 {
                     await _gitService.ReturnToDevelopInternalAsync(taskBranch);
                     _gitService.ReleaseRoundLock();
@@ -969,7 +983,7 @@ public sealed class AgentOrchestrator
                     try { await runtime.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
                     catch { /* ok */ }
                 }
-                await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
+                await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
                 return;
             }
 
@@ -1007,7 +1021,24 @@ public sealed class AgentOrchestrator
             return;
         }
 
-        await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
+        await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
+        }
+        finally
+        {
+            // Clean up worktree on ALL exit paths (stuck, failure, recalled, offline, normal)
+            if (worktreePath is not null && taskBranch is not null)
+            {
+                try
+                {
+                    await _worktreeService.RemoveWorktreeAsync(taskBranch);
+                    _logger.LogInformation("Cleaned up worktree for {Branch} on breakout exit", taskBranch);
+                }
+                catch (Exception wtEx)
+                {
+                    _logger.LogWarning(wtEx, "Failed to clean up worktree for {Branch} on breakout exit", taskBranch);
+                }
+            }
+        }
     }
 
     // ── STUCK DETECTION ────────────────────────────────────────
@@ -1065,9 +1096,24 @@ public sealed class AgentOrchestrator
 
             var breakoutName = (await runtime.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
 
+            // Clean up worktree for the failed breakout's task branch
             var taskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
             if (taskId is not null)
             {
+                try
+                {
+                    var task = await runtime.GetTaskAsync(taskId);
+                    if (task?.BranchName is not null)
+                    {
+                        await _worktreeService.RemoveWorktreeAsync(task.BranchName);
+                        _logger.LogInformation("Removed worktree for failed breakout branch {Branch}", task.BranchName);
+                    }
+                }
+                catch (Exception wtEx)
+                {
+                    _logger.LogWarning(wtEx, "Failed to clean up worktree during breakout failure for {BreakoutId}", breakoutRoomId);
+                }
+
                 try
                 {
                     await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
@@ -1097,7 +1143,7 @@ public sealed class AgentOrchestrator
 
     private async Task HandleBreakoutCompleteAsync(
         WorkspaceRuntime runtime, AgentConfigService configService,
-        string breakoutRoomId, string parentRoomId)
+        string breakoutRoomId, string parentRoomId, string? worktreePath = null)
     {
         var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
         if (br is null) return;
@@ -1153,7 +1199,7 @@ public sealed class AgentOrchestrator
 
             if (!isApproved)
             {
-                await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br);
+                await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br, worktreePath);
             }
             else
             {
@@ -1218,7 +1264,7 @@ public sealed class AgentOrchestrator
 
     private async Task HandleReviewRejectionAsync(
         WorkspaceRuntime runtime, string breakoutRoomId, string parentRoomId,
-        AgentDefinition agent, BreakoutRoom br)
+        AgentDefinition agent, BreakoutRoom br, string? worktreePath = null)
     {
         // Resolve session service for epoch context
         using var fixScope = _scopeFactory.CreateScope();
@@ -1294,7 +1340,7 @@ public sealed class AgentOrchestrator
                     breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
 
                 // Process commands from fix-round response
-                await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
             }
 
             var report = ParseWorkReport(response);
@@ -1775,13 +1821,13 @@ public sealed class AgentOrchestrator
     /// Runs agent response text through the command pipeline within a new scope.
     /// </summary>
     private async Task<CommandPipelineResult> ProcessCommandsAsync(
-        AgentDefinition agent, string responseText, string roomId)
+        AgentDefinition agent, string responseText, string roomId, string? workingDirectory = null)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             return await _commandPipeline.ProcessResponseAsync(
-                agent.Id, responseText, roomId, agent, scope.ServiceProvider);
+                agent.Id, responseText, roomId, agent, scope.ServiceProvider, workingDirectory);
         }
         catch (Exception ex)
         {
