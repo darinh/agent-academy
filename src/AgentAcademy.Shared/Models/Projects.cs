@@ -12,7 +12,10 @@ public record ProjectScanResult(
     bool HasReadme,
     bool IsGitRepo,
     string? GitBranch,
-    List<string> DetectedFiles
+    List<string> DetectedFiles,
+    string? RepositoryUrl = null,
+    string? DefaultBranch = null,
+    string? HostProvider = null
 );
 
 /// <summary>
@@ -21,5 +24,8 @@ public record ProjectScanResult(
 public record WorkspaceMeta(
     string Path,
     string? ProjectName,
-    DateTime? LastAccessedAt = null
+    DateTime? LastAccessedAt = null,
+    string? RepositoryUrl = null,
+    string? DefaultBranch = null,
+    string? HostProvider = null
 );

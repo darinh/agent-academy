@@ -79,7 +79,7 @@ public class WorkspaceController : ControllerBase
         {
             var previousWorkspace = await _runtime.GetActiveWorkspacePathAsync();
             var scan = _scanner.ScanProject(resolved);
-            var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
+            var meta = await UpsertWorkspaceAsync(scan);
 
             // On workspace switch: archive sessions with summaries, then clear SDK state
             if (previousWorkspace != scan.Path)
@@ -164,7 +164,7 @@ public class WorkspaceController : ControllerBase
         try
         {
             var scan = _scanner.ScanProject(resolved);
-            var meta = await UpsertWorkspaceAsync(scan.Path, scan.ProjectName);
+            var meta = await UpsertWorkspaceAsync(scan);
 
             // Ensure the workspace has a default room with agents
             await _runtime.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
@@ -226,7 +226,7 @@ public class WorkspaceController : ControllerBase
     /// <summary>
     /// Upserts a workspace in the DB and marks it as active.
     /// </summary>
-    private async Task<WorkspaceMeta> UpsertWorkspaceAsync(string path, string? projectName)
+    private async Task<WorkspaceMeta> UpsertWorkspaceAsync(ProjectScanResult scan)
     {
         var now = DateTime.UtcNow;
 
@@ -237,24 +237,30 @@ public class WorkspaceController : ControllerBase
             .Where(w => w.IsActive)
             .ExecuteUpdateAsync(s => s.SetProperty(w => w.IsActive, false));
 
-        var entity = await _db.Workspaces.FindAsync(path);
+        var entity = await _db.Workspaces.FindAsync(scan.Path);
         if (entity is null)
         {
             entity = new WorkspaceEntity
             {
-                Path = path,
-                ProjectName = projectName,
+                Path = scan.Path,
+                ProjectName = scan.ProjectName,
                 IsActive = true,
                 LastAccessedAt = now,
-                CreatedAt = now
+                CreatedAt = now,
+                RepositoryUrl = scan.RepositoryUrl,
+                DefaultBranch = scan.DefaultBranch,
+                HostProvider = scan.HostProvider
             };
             _db.Workspaces.Add(entity);
         }
         else
         {
-            entity.ProjectName = projectName;
+            entity.ProjectName = scan.ProjectName;
             entity.IsActive = true;
             entity.LastAccessedAt = now;
+            if (scan.RepositoryUrl is not null) entity.RepositoryUrl = scan.RepositoryUrl;
+            if (scan.DefaultBranch is not null) entity.DefaultBranch = scan.DefaultBranch;
+            if (scan.HostProvider is not null) entity.HostProvider = scan.HostProvider;
         }
 
         await _db.SaveChangesAsync();
@@ -277,7 +283,12 @@ public class WorkspaceController : ControllerBase
     }
 
     private static WorkspaceMeta ToMeta(WorkspaceEntity entity) =>
-        new(Path: entity.Path, ProjectName: entity.ProjectName, LastAccessedAt: entity.LastAccessedAt);
+        new(Path: entity.Path,
+            ProjectName: entity.ProjectName,
+            LastAccessedAt: entity.LastAccessedAt,
+            RepositoryUrl: entity.RepositoryUrl,
+            DefaultBranch: entity.DefaultBranch,
+            HostProvider: entity.HostProvider);
 
     /// <summary>
     /// Validates that the resolved path is within the user's home directory.

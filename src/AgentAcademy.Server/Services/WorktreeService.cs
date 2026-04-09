@@ -218,6 +218,89 @@ public class WorktreeService : IDisposable
         }
     }
 
+    // ── Agent Worktree Isolation ───────────────────────────────
+
+    public async Task<string> EnsureAgentWorktreeAsync(string workspacePath, string projectName, string agentId, string branch)
+    {
+        if (string.IsNullOrWhiteSpace(workspacePath)) throw new ArgumentException("Workspace path is required.", nameof(workspacePath));
+        if (string.IsNullOrWhiteSpace(agentId)) throw new ArgumentException("Agent ID is required.", nameof(agentId));
+        if (string.IsNullOrWhiteSpace(branch)) throw new ArgumentException("Branch name is required.", nameof(branch));
+
+        var agentWorktreePath = BuildAgentWorktreePath(projectName, agentId, workspacePath);
+        var trackingKey = $"agent:{agentId}:{workspacePath}";
+
+        if (_activeWorktrees.TryGetValue(trackingKey, out var existing) && Directory.Exists(existing.Path))
+        {
+            _logger.LogDebug("Agent worktree already exists for {AgentId} at {Path}", agentId, existing.Path);
+            return existing.Path;
+        }
+
+        await _lock.WaitAsync();
+        try
+        {
+            if (_activeWorktrees.TryGetValue(trackingKey, out existing) && Directory.Exists(existing.Path))
+                return existing.Path;
+
+            var parentDir = Path.GetDirectoryName(agentWorktreePath);
+            if (parentDir is not null) Directory.CreateDirectory(parentDir);
+
+            if (Directory.Exists(agentWorktreePath))
+            {
+                _logger.LogWarning("Stale agent worktree at {Path}, cleaning up", agentWorktreePath);
+                await TryRemoveWorktreeGitAsync(agentWorktreePath);
+            }
+
+            await RunGitAsync("worktree", "add", agentWorktreePath, branch);
+            _logger.LogInformation("Created agent worktree for {AgentId} on branch {Branch} at {Path}", agentId, branch, agentWorktreePath);
+
+            var info = new WorktreeInfo(branch, agentWorktreePath, DateTimeOffset.UtcNow);
+            _activeWorktrees[trackingKey] = info;
+            return agentWorktreePath;
+        }
+        finally { _lock.Release(); }
+    }
+
+    public string? GetAgentWorktreePath(string projectName, string agentId, string? workspacePath = null)
+    {
+        var path = BuildAgentWorktreePath(projectName, agentId, workspacePath);
+        return Directory.Exists(path) ? path : null;
+    }
+
+    public async Task RemoveAgentWorktreeAsync(string workspacePath, string projectName, string agentId)
+    {
+        if (string.IsNullOrWhiteSpace(agentId)) return;
+        var trackingKey = $"agent:{agentId}:{workspacePath}";
+        var agentWorktreePath = BuildAgentWorktreePath(projectName, agentId, workspacePath);
+
+        await _lock.WaitAsync();
+        try
+        {
+            _activeWorktrees.TryRemove(trackingKey, out _);
+            await TryRemoveWorktreeGitAsync(agentWorktreePath);
+            await PruneWorktreesAsync();
+            _logger.LogInformation("Removed agent worktree for {AgentId} at {Path}", agentId, agentWorktreePath);
+        }
+        finally { _lock.Release(); }
+    }
+
+    internal static string BuildAgentWorktreePath(string projectName, string agentId, string? workspacePath = null)
+    {
+        var safeName = Regex.Replace(projectName.ToLowerInvariant(), @"[^a-z0-9\-]", "-").Trim('-');
+        var safeAgent = Regex.Replace(agentId.ToLowerInvariant(), @"[^a-z0-9\-]", "-").Trim('-');
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        // Include a short hash of workspacePath to avoid collisions between
+        // workspaces with the same project name (e.g. forks, multiple clones)
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+        {
+            var pathHash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(workspacePath)))[..8].ToLowerInvariant();
+            return Path.Combine(home, "projects", $"{safeName}-worktrees-{pathHash}", safeAgent);
+        }
+
+        return Path.Combine(home, "projects", $"{safeName}-worktrees", safeAgent);
+    }
+
     // ── Internal Helpers ────────────────────────────────────────
 
     /// <summary>

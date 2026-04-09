@@ -345,6 +345,110 @@ public class WorktreeServiceTests : IDisposable
         Assert.Empty(entries);
     }
 
+    // ── BuildAgentWorktreePath (static) ─────────────────────────
+
+    [Fact]
+    public void BuildAgentWorktreePath_ProducesExpectedLayout()
+    {
+        var path = WorktreeService.BuildAgentWorktreePath("Agent Academy", "software-engineer-1");
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        // Without workspacePath, uses simple format
+        var expected = Path.Combine(home, "projects", "agent-academy-worktrees", "software-engineer-1");
+        Assert.Equal(expected, path);
+    }
+
+    [Fact]
+    public void BuildAgentWorktreePath_IncludesWorkspaceHashWhenProvided()
+    {
+        var path1 = WorktreeService.BuildAgentWorktreePath("My App", "agent-1", "/path/to/workspace-a");
+        var path2 = WorktreeService.BuildAgentWorktreePath("My App", "agent-1", "/path/to/workspace-b");
+        // Different workspaces with same project name must produce different paths
+        Assert.NotEqual(path1, path2);
+        Assert.Contains("my-app-worktrees-", path1);
+    }
+
+    [Fact]
+    public void BuildAgentWorktreePath_SanitizesSpecialCharacters()
+    {
+        var path = WorktreeService.BuildAgentWorktreePath("My Project!@#", "agent/test.1");
+        Assert.DoesNotContain("!", path);
+        Assert.DoesNotContain("@", path);
+        Assert.Contains("my-project", path);
+        Assert.Contains("agent-test-1", path);
+    }
+
+    // ── EnsureAgentWorktreeAsync ────────────────────────────────
+
+    [Fact]
+    public async Task EnsureAgentWorktreeAsync_ThrowsForNullWorkspace()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _service.EnsureAgentWorktreeAsync(null!, "proj", "agent-1", "develop"));
+    }
+
+    [Fact]
+    public async Task EnsureAgentWorktreeAsync_ThrowsForNullAgentId()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _service.EnsureAgentWorktreeAsync("/workspace", "proj", null!, "develop"));
+    }
+
+    [Fact]
+    public async Task EnsureAgentWorktreeAsync_ThrowsForNullBranch()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _service.EnsureAgentWorktreeAsync("/workspace", "proj", "agent-1", null!));
+    }
+
+    [Fact]
+    public async Task EnsureAgentWorktreeAsync_CreatesWorktreeAndReturnsPath()
+    {
+        var branch = CreateFeatureBranch("agent-wt-test", "agent.txt", "content");
+        var path = await _service.EnsureAgentWorktreeAsync(_repoRoot, "test-project", "agent-1", branch);
+        Assert.True(Directory.Exists(path), "Agent worktree directory should exist");
+        Assert.True(File.Exists(Path.Combine(path, "agent.txt")), "Worktree should contain the branch's file");
+        _tempDirs.Add(path);
+        var parentDir = Path.GetDirectoryName(path);
+        if (parentDir is not null) _tempDirs.Add(parentDir);
+        var grandparentDir = Path.GetDirectoryName(parentDir!);
+        if (grandparentDir is not null) _tempDirs.Add(grandparentDir);
+    }
+
+    [Fact]
+    public async Task EnsureAgentWorktreeAsync_IsIdempotent()
+    {
+        var branch = CreateFeatureBranch("agent-wt-idem", "f.txt", "data");
+        var path1 = await _service.EnsureAgentWorktreeAsync(_repoRoot, "test-project", "agent-2", branch);
+        var path2 = await _service.EnsureAgentWorktreeAsync(_repoRoot, "test-project", "agent-2", branch);
+        Assert.Equal(path1, path2);
+        _tempDirs.Add(path1);
+        var parentDir = Path.GetDirectoryName(path1);
+        if (parentDir is not null) _tempDirs.Add(parentDir);
+        var grandparentDir = Path.GetDirectoryName(parentDir!);
+        if (grandparentDir is not null) _tempDirs.Add(grandparentDir);
+    }
+
+    [Fact]
+    public async Task RemoveAgentWorktreeAsync_CleansUp()
+    {
+        var branch = CreateFeatureBranch("agent-wt-rm", "r.txt", "data");
+        var path = await _service.EnsureAgentWorktreeAsync(_repoRoot, "test-project", "agent-3", branch);
+        Assert.True(Directory.Exists(path));
+        await _service.RemoveAgentWorktreeAsync(_repoRoot, "test-project", "agent-3");
+        Assert.False(Directory.Exists(path));
+        var parentDir = Path.GetDirectoryName(path);
+        if (parentDir is not null) _tempDirs.Add(parentDir);
+        var grandparentDir = Path.GetDirectoryName(parentDir!);
+        if (grandparentDir is not null) _tempDirs.Add(grandparentDir);
+    }
+
+    [Fact]
+    public void GetAgentWorktreePath_ReturnsNullWhenNoneExists()
+    {
+        var result = _service.GetAgentWorktreePath("nonexistent", "agent-99");
+        Assert.Null(result);
+    }
+
     // ── Test Helpers ────────────────────────────────────────────
 
     private string CreateTempDir(string prefix)

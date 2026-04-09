@@ -24,6 +24,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<PlanEntity> Plans => Set<PlanEntity>();
     public DbSet<ActivityEventEntity> ActivityEvents => Set<ActivityEventEntity>();
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
+    public DbSet<AgentWorkspaceEntity> AgentWorkspaces => Set<AgentWorkspaceEntity>();
     public DbSet<CommandAuditEntity> CommandAudits => Set<CommandAuditEntity>();
     public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
     public DbSet<NotificationConfigEntity> NotificationConfigs => Set<NotificationConfigEntity>();
@@ -281,6 +282,21 @@ public class AgentAcademyDbContext : DbContext
             entity.ToTable("workspaces");
             entity.HasKey(e => e.Path);
             entity.Property(e => e.CreatedAt).IsRequired();
+        });
+
+        // ── Agent Workspaces ─────────────────────────────────
+        modelBuilder.Entity<AgentWorkspaceEntity>(entity =>
+        {
+            entity.ToTable("agent_workspaces");
+            entity.HasKey(e => new { e.WorkspacePath, e.AgentId });
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Workspace)
+                .WithMany(w => w.AgentWorktrees)
+                .HasForeignKey(e => e.WorkspacePath)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_agent_workspaces_agent");
         });
 
         // ── Command Audits ───────────────────────────────────

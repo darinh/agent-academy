@@ -521,55 +521,82 @@ public class GitService
 
     // ── Git Process Runner ──────────────────────────────────────
 
-    /// <summary>
-    /// Runs a git command using <see cref="ProcessStartInfo.ArgumentList"/>
-    /// for safe argument passing (no string concatenation / shell injection).
-    /// </summary>
     private async Task<string> RunGitAsync(params string[] args)
+        => await RunGitInDirInternalAsync(_repositoryRoot, args);
+
+    public async Task<string> RunGitInDirAsync(string workingDir, params string[] args)
+    {
+        await _gitLock.WaitAsync();
+        try { return await RunGitInDirInternalAsync(workingDir, args); }
+        finally { _gitLock.Release(); }
+    }
+
+    public async Task<string> CommitInDirAsync(string workingDir, string message, AgentGitIdentity? author = null)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            await RunGitInDirInternalAsync(workingDir, "add", "-A");
+            if (author is not null && !string.IsNullOrWhiteSpace(author.AuthorName) && !string.IsNullOrWhiteSpace(author.AuthorEmail))
+            {
+                var authorArg = $"{author.AuthorName} <{author.AuthorEmail}>";
+                await RunGitInDirInternalAsync(workingDir, "commit", "-m", message, "--author", authorArg);
+            }
+            else
+            {
+                await RunGitInDirInternalAsync(workingDir, "commit", "-m", message);
+            }
+            var sha = await RunGitInDirInternalAsync(workingDir, "rev-parse", "HEAD");
+            _logger.LogInformation("Created commit {Sha} in {Dir} (author: {Author})", sha, workingDir, author?.AuthorName ?? "default");
+            return sha;
+        }
+        finally { _gitLock.Release(); }
+    }
+
+    public async Task<string?> GetCurrentBranchInDirAsync(string workingDir)
+    {
+        await _gitLock.WaitAsync();
+        try
+        {
+            var branch = await RunGitInDirInternalAsync(workingDir, "rev-parse", "--abbrev-ref", "HEAD");
+            return string.IsNullOrWhiteSpace(branch) ? null : branch;
+        }
+        catch { return null; }
+        finally { _gitLock.Release(); }
+    }
+
+    private async Task<string> RunGitInDirInternalAsync(string workingDir, params string[] args)
     {
         var psi = new ProcessStartInfo
         {
             FileName = _gitExecutable,
-            WorkingDirectory = _repositoryRoot,
+            WorkingDirectory = workingDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
-
-        foreach (var arg in args)
-            psi.ArgumentList.Add(arg);
-
-        _logger.LogDebug("Running: {GitExecutable} {Args}", _gitExecutable, string.Join(" ", args));
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start git process");
-
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+        _logger.LogDebug("Running in {Dir}: {Git} {Args}", workingDir, _gitExecutable, string.Join(" ", args));
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start git process");
         var stdout = await process.StandardOutput.ReadToEndAsync();
         var stderr = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
-
         if (process.ExitCode != 0)
         {
-            var message = $"git {string.Join(" ", args)} failed (exit {process.ExitCode}): {stderr.Trim()}";
+            var message = $"git {string.Join(" ", args)} failed in {workingDir} (exit {process.ExitCode}): {stderr.Trim()}";
             _logger.LogWarning("{Message}", message);
             throw new InvalidOperationException(message);
         }
-
         return stdout.Trim();
     }
 
-    /// <summary>
-    /// Walks up from the current directory looking for <c>AgentAcademy.sln</c>
-    /// to find the project root.
-    /// </summary>
     private static string FindProjectRoot()
     {
         var dir = Directory.GetCurrentDirectory();
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir, "AgentAcademy.sln")))
-                return dir;
+            if (File.Exists(Path.Combine(dir, "AgentAcademy.sln"))) return dir;
             dir = Directory.GetParent(dir)?.FullName;
         }
         return Directory.GetCurrentDirectory();

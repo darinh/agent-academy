@@ -58,7 +58,7 @@ public sealed class ProjectScanner
         var detectedFiles = new List<string>();
         var techStack = DetectTechStack(resolved, detectedFiles);
         var projectName = DetectProjectName(resolved);
-        var (isGitRepo, gitBranch) = DetectGit(resolved);
+        var (isGitRepo, gitBranch, repoUrl, defaultBranch, hostProvider) = DetectGit(resolved);
         var hasSpecs = Directory.Exists(Path.Combine(resolved, "specs"));
         var hasReadme = File.Exists(Path.Combine(resolved, "README.md"))
                      || File.Exists(Path.Combine(resolved, "README"));
@@ -71,7 +71,10 @@ public sealed class ProjectScanner
             HasReadme: hasReadme,
             IsGitRepo: isGitRepo,
             GitBranch: gitBranch,
-            DetectedFiles: detectedFiles.Distinct().OrderBy(f => f).ToList()
+            DetectedFiles: detectedFiles.Distinct().OrderBy(f => f).ToList(),
+            RepositoryUrl: repoUrl,
+            DefaultBranch: defaultBranch,
+            HostProvider: hostProvider
         );
     }
 
@@ -224,42 +227,74 @@ public sealed class ProjectScanner
 
     // ── Git Detection ───────────────────────────────────────────
 
-    private static (bool IsGitRepo, string? GitBranch) DetectGit(string dirPath)
+    private static (bool IsGitRepo, string? GitBranch, string? RemoteUrl, string? DefaultBranch, string? HostProvider) DetectGit(string dirPath)
     {
         if (!Directory.Exists(Path.Combine(dirPath, ".git")))
-            return (false, null);
+            return (false, null, null, null, null);
+
+        string? branch = null;
+        string? remoteUrl = null;
+        string? defaultBranch = null;
+
+        try { branch = RunGitQuiet(dirPath, "rev-parse", "--abbrev-ref", "HEAD"); }
+        catch { }
+
+        try { remoteUrl = RunGitQuiet(dirPath, "remote", "get-url", "origin"); }
+        catch { }
 
         try
         {
-            using var process = new Process();
-            process.StartInfo = new ProcessStartInfo
+            var refs = RunGitQuiet(dirPath, "branch", "--list", "develop", "main", "master");
+            if (refs is not null)
             {
-                FileName = "git",
-                Arguments = "rev-parse --abbrev-ref HEAD",
-                WorkingDirectory = dirPath,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            process.Start();
-
-            // Wait with timeout BEFORE reading to avoid deadlock on full buffers.
-            // If the process doesn't exit in time, kill it.
-            if (!process.WaitForExit(5000))
-            {
-                try { process.Kill(); } catch { /* best effort */ }
-                return (true, null);
+                var branches = refs.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(b => b.Trim().TrimStart('*').Trim())
+                    .ToList();
+                if (branches.Contains("develop")) defaultBranch = "develop";
+                else if (branches.Contains("main")) defaultBranch = "main";
+                else if (branches.Contains("master")) defaultBranch = "master";
             }
+        }
+        catch { }
 
-            var branch = process.StandardOutput.ReadToEnd().Trim();
-            return (true, string.IsNullOrEmpty(branch) ? null : branch);
-        }
-        catch
+        var hostProvider = ParseHostProvider(remoteUrl);
+        return (true, branch, remoteUrl, defaultBranch, hostProvider);
+    }
+
+    internal static string? ParseHostProvider(string? remoteUrl)
+    {
+        if (string.IsNullOrWhiteSpace(remoteUrl)) return null;
+        var url = remoteUrl.ToLowerInvariant();
+        if (url.Contains("github.com")) return "github";
+        if (url.Contains("dev.azure.com") || url.Contains("visualstudio.com")) return "azure-devops";
+        if (url.Contains("gitlab.com") || url.Contains("gitlab")) return "gitlab";
+        if (url.Contains("bitbucket.org") || url.Contains("bitbucket")) return "bitbucket";
+        return null;
+    }
+
+    private static string? RunGitQuiet(string workingDir, params string[] args)
+    {
+        using var process = new Process();
+        process.StartInfo = new ProcessStartInfo
         {
-            // .git exists but git command failed — still a repo, branch unknown
-            return (true, null);
+            FileName = "git",
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var arg in args)
+            process.StartInfo.ArgumentList.Add(arg);
+        process.Start();
+        if (!process.WaitForExit(5000))
+        {
+            try { process.Kill(); } catch { }
+            return null;
         }
+        if (process.ExitCode != 0) return null;
+        var output = process.StandardOutput.ReadToEnd().Trim();
+        return string.IsNullOrEmpty(output) ? null : output;
     }
 
     // ── Helpers ──────────────────────────────────────────────────
