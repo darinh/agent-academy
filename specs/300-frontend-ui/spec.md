@@ -23,13 +23,14 @@ App.tsx (FluentProvider + AppShell)
 └── Shell (when workspace is active)
     ├── SidebarPanel.tsx
     │   ├── Room list (each card shows agents in that room via agentLocations)
+    │   ├── Inline room creation (+ button → name input → Enter to create)
     │   ├── Per-agent thinking spinner (spinning ring around status dot)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (overview, chat, directMessages, plan, tasks, timeline, sprint, dashboard [Metrics], commands)
+        ├── Tab bar (overview, directMessages, plan, tasks, timeline, sprint, dashboard [Metrics], commands)
         └── Tab content panels
-            ├── ChatPanel.tsx (with SignalR connection status bar)
+            ├── ChatPanel.tsx (room-centric conversation with session management)
             ├── TaskListPanel.tsx
             ├── PlanPanel.tsx
             ├── CommandsPanel.tsx
@@ -38,7 +39,7 @@ App.tsx (FluentProvider + AppShell)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
-            ├── SettingsPanel.tsx (notification provider setup)
+            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, advanced)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
             ├── RecoveryBanner.tsx (crash recovery notification)
@@ -130,8 +131,16 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/commands/{correlationId}` | GET | Poll async human command status/results |
 | `/api/filesystem/browse` | GET | Browse filesystem |
 | `/api/rooms/{id}/human` | POST | Send human message |
+| `/api/rooms/{id}/messages` | GET | Get room messages (supports `after`, `limit`, `sessionId` query params) |
+| `/api/rooms/{id}/sessions` | POST | Create/rotate to a new conversation session |
+| `/api/rooms/{id}/agents/{agentId}` | POST | Add agent to room |
+| `/api/rooms/{id}/agents/{agentId}` | DELETE | Remove agent from room |
 | `/api/rooms/{id}/phase` | POST | Transition phase |
+| `/api/rooms` | POST | Create a new room |
 | `/api/tasks` | POST | Create task |
+| `/api/agents/custom` | POST | Create custom agent from prompt |
+| `/api/agents/custom/{agentId}` | DELETE | Delete custom agent |
+| `/api/agents/configured` | GET | List all agents (catalog + custom) |
 | `/api/sprints` | GET | List sprints (supports `limit` and `offset` query params) |
 | `/api/sprints` | POST | Start a new sprint for the active workspace |
 | `/api/sprints/active` | GET | Get active sprint with artifacts (returns 204 if none) |
@@ -271,6 +280,68 @@ Mini SVG trend charts in the dashboard panels showing activity over time.
 - **UsagePanel**: Two sparklines — request count trend (amber) and token volume trend (blue)
 - **ErrorsPanel**: Error rate trend (red)
 - **AuditLogPanel**: Command count trend (purple), using a separate 200-record fetch for accurate trend data (not the paged table slice)
+
+## Room-Centric Conversation (`ChatPanel.tsx`)
+
+The Conversation panel provides the primary chat interface, centered on the selected room. Rather than being a standalone tab, it renders as the main content area when a room is selected in the sidebar.
+
+### Session Management
+
+Each room contains conversation sessions (epochs). The ChatPanel toolbar includes:
+
+- **Sessions dropdown**: Always visible. Lists all sessions (active + archived) for the current room. Selecting an archived session loads its historical messages in read-only mode.
+- **New Session button**: Creates a new conversation session via `POST /api/rooms/{roomId}/sessions`, archiving the current active session.
+- **Agent management dropdown**: Shows agents currently in the room with remove buttons, plus a list of available agents with add buttons. Uses `POST /api/rooms/{roomId}/agents/{agentId}` and `DELETE /api/rooms/{roomId}/agents/{agentId}`.
+
+### Message Display
+
+- `displayMessages` switches between live room messages (from SignalR/polling) and session-scoped historical messages based on the selected session.
+- When viewing an archived session, a banner reads: "Viewing archived session. Messages are read-only."
+- Messages are loaded via `GET /api/rooms/{roomId}/messages?sessionId={id}&limit=200`.
+
+### Connection Status Bar
+
+The status bar shows live SignalR connection state with color indicators (connected/connecting/reconnecting/disconnected).
+
+## Sidebar Room Creation (`SidebarPanel.tsx`)
+
+The sidebar Rooms section includes inline room creation:
+
+- A `+` button in the Rooms header opens a text input field.
+- Pressing Enter creates a room via `POST /api/rooms` with the entered name.
+- Pressing Escape cancels the input.
+- The "Conversation" nav item has been removed from the sidebar navigation — room selection in the sidebar directly loads the ChatPanel.
+
+## Settings Panel (`SettingsPanel.tsx`)
+
+The Settings panel is a full tabbed configuration page with five tabs:
+
+### Custom Agents Tab
+
+Lists user-created custom agents with delete capability. Includes an "Add Custom Agent" form:
+
+- **Agent Name**: Free-text input. A kebab-case ID preview is shown below (e.g., "My Agent" → `my-agent`).
+- **Agent Prompt** (`agent.md`): Textarea for the agent's system prompt / instruction document.
+- **Model** (optional): Text input for model override.
+- Submit calls `POST /api/agents/custom`, which validates uniqueness against both built-in catalog agents and existing custom agents.
+- Delete calls `DELETE /api/agents/custom/{agentId}`.
+
+### Built-in Agents Tab
+
+Displays agent configuration cards for catalog agents. Each card shows the agent's name, role, and current model/config overrides. Uses the existing `AgentConfigOverride` system.
+
+### Templates Tab
+
+Instruction template CRUD interface. Templates are reusable prompt fragments that can be referenced in agent configurations.
+
+### Notifications Tab
+
+Provider setup UI for notification integrations (Discord, Slack, etc.). Connect/disconnect controls per provider, with the `NotificationSetupWizard` handling provider-specific configuration.
+
+### Advanced Tab
+
+System-level settings:
+- **Main Room Epoch** and **Breakout Room Epoch**: Configure conversation session rotation thresholds (message count before automatic session archival).
 
 ## Sprint Panel (`SprintPanel.tsx`)
 

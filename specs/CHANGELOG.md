@@ -5,6 +5,12 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **300-frontend-ui**: Documented room-centric conversation UI. ChatPanel now centers on selected room with session management toolbar (session dropdown, new session, agent add/remove). Removed standalone "Conversation" nav item — room selection in sidebar loads ChatPanel directly. Updated component tree descriptions.
+- **300-frontend-ui**: Documented tabbed SettingsPanel with 5 tabs: Custom Agents (create/delete with kebab-case ID preview), Built-in Agents (config cards), Templates (instruction template CRUD), Notifications (provider setup), Advanced (epoch settings).
+- **300-frontend-ui**: Documented inline room creation in SidebarPanel (+ button → name input → Enter to create).
+- **300-frontend-ui**: Added 8 new API endpoints to contract table: room messages with session filter, room session creation, agent-room management, room creation, custom agent CRUD, configured agents list.
+
+### Changed
 - **300-frontend-ui**: Reordered sidebar navigation: Overview, Conversation, Messages, Plan, Tasks, Timeline, Sprint, Metrics, Commands. Renamed Dashboard → Metrics. Added project name display in sidebar brand block. Added sprint version indicator above nav items.
 - **300-frontend-ui**: Fixed SprintPanel TypeScript errors (unused imports, Griffel pseudo-selector syntax, component prop mismatches). Added sprint lifecycle controls (Start Sprint, Advance Stage, Complete Sprint, Cancel) to SprintPanel header and empty state.
 - **300-frontend-ui**: Added sprint write API client functions (`startSprint`, `advanceSprint`, `completeSprint`, `cancelSprint`) to `api.ts`.
