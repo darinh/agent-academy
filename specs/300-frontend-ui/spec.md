@@ -426,7 +426,7 @@ interface SprintListResponse { sprints: SprintSnapshot[]; total: number; }
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
 - Sprint panel: SignalR integration for real-time stage/artifact updates
-- Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)
+- ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **RESOLVED** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown. Committed in `08a7447`.
 - Sprint panel: Sprint metrics (time per stage, artifact word counts)
 - SSE activity stream integration
 - ~~Notification setup wizard (component exists, not yet wired)~~ **RESOLVED** — `NotificationSetupWizard` refactored to multi-provider. Accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and generic fallback. Settings tab routes all providers to the wizard.
