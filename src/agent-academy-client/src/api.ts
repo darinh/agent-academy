@@ -1091,6 +1091,11 @@ export interface SessionListResponse {
   totalCount: number;
 }
 
+export interface RoomMessagesResponse {
+  messages: ChatEnvelope[];
+  hasMore: boolean;
+}
+
 export interface SessionStats {
   totalSessions: number;
   activeSessions: number;

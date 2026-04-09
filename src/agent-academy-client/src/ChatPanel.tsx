@@ -18,7 +18,7 @@ import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot, AgentLocation, AgentDefinition, ConversationSessionSnapshot } from "./api";
-import { getRoomSessions, createRoomSession, getRoomMessages } from "./api";
+import { getRoomSessions, getRoomMessages } from "./api";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
 import EmptyState from "./EmptyState";
 import SkeletonLoader from "./SkeletonLoader";
