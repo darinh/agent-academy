@@ -1,4 +1,5 @@
-import { memo } from "react";
+import { memo, useState, useCallback } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Button,
   mergeClasses,
@@ -20,7 +21,6 @@ import {
 
 const NAV_ITEMS = [
   { value: "overview", icon: "🔲", label: "Overview" },
-  { value: "chat", icon: "💬", label: "Conversation" },
   { value: "directMessages", icon: "✉️", label: "Messages" },
   { value: "plan", icon: "📄", label: "Plan" },
   { value: "tasks", icon: "📋", label: "Tasks" },
@@ -48,6 +48,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onToggleSidebar: () => void;
   onSelectRoom: (roomId: string) => void;
   onSelectWorkspace: (breakoutId: string) => void;
+  onCreateRoom?: (name: string) => void;
   onSwitchProject?: () => void;
   workspace?: { name: string; path: string } | null;
   user?: AuthUser | null;
@@ -56,6 +57,22 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   sprintVersion?: number;
 }) {
   const s = useStyles();
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [newRoomName, setNewRoomName] = useState("");
+
+  const handleCreateRoom = useCallback(() => {
+    const name = newRoomName.trim();
+    if (name && props.onCreateRoom) {
+      props.onCreateRoom(name);
+      setNewRoomName("");
+      setCreatingRoom(false);
+    }
+  }, [newRoomName, props.onCreateRoom]);
+
+  const handleCreateRoomKeyDown = useCallback((e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") handleCreateRoom();
+    else if (e.key === "Escape") { setCreatingRoom(false); setNewRoomName(""); }
+  }, [handleCreateRoom]);
 
   return (
     <aside className={mergeClasses(s.sidebar, !props.sidebarOpen && s.sidebarCollapsed)}>
@@ -116,8 +133,41 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           <section className={s.section}>
             <div className={s.sectionHeader}>
               <div className={s.sectionLabel}>Rooms</div>
-              <div className={s.sectionCount}>{props.rooms.length}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <div className={s.sectionCount}>{props.rooms.length}</div>
+                {props.onCreateRoom && (
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    className={s.sidebarIconButton}
+                    onClick={() => setCreatingRoom(true)}
+                    aria-label="Create room"
+                    style={{ minWidth: 0, padding: "0 4px", fontSize: "13px" }}
+                  >
+                    +
+                  </Button>
+                )}
+              </div>
             </div>
+            {creatingRoom && (
+              <div style={{ padding: "2px 8px 6px" }}>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Room name…"
+                  value={newRoomName}
+                  onChange={(e) => setNewRoomName(e.target.value)}
+                  onKeyDown={handleCreateRoomKeyDown}
+                  onBlur={() => { if (!newRoomName.trim()) setCreatingRoom(false); }}
+                  style={{
+                    width: "100%", background: "var(--aa-surface, #1e1e2e)",
+                    border: "1px solid var(--aa-border, #333)", borderRadius: "4px",
+                    padding: "4px 8px", color: "inherit", fontSize: "12px",
+                    outline: "none",
+                  }}
+                />
+              </div>
+            )}
             <div className={s.roomList}>
               {props.rooms.map((candidate) => {
                 const dotColor = phaseDotColor(candidate.currentPhase);

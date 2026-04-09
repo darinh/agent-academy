@@ -609,7 +609,7 @@ public sealed class WorkspaceRuntime
     /// Only returns non-DM messages from the active conversation session.
     /// </summary>
     public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
-        string roomId, string? afterMessageId = null, int limit = 50)
+        string roomId, string? afterMessageId = null, int limit = 50, string? sessionId = null)
     {
         limit = Math.Clamp(limit, 1, 200);
 
@@ -617,16 +617,21 @@ public sealed class WorkspaceRuntime
         if (room is null)
             throw new InvalidOperationException($"Room '{roomId}' not found.");
 
-        var activeSession = await _db.ConversationSessions
-            .Where(s => s.RoomId == roomId && s.Status == "Active")
-            .FirstOrDefaultAsync();
-        var activeSessionId = activeSession?.Id;
+        // If a specific sessionId was requested, use that; otherwise use the active session
+        string? targetSessionId = sessionId;
+        if (targetSessionId is null)
+        {
+            var activeSession = await _db.ConversationSessions
+                .Where(s => s.RoomId == roomId && s.Status == "Active")
+                .FirstOrDefaultAsync();
+            targetSessionId = activeSession?.Id;
+        }
 
         // Human/User messages persist across session boundaries so external
         // inputs (consultant, human) remain visible after epoch transitions.
         IQueryable<Data.Entities.MessageEntity> query = _db.Messages
             .Where(m => m.RoomId == roomId && m.RecipientId == null
-                && (activeSessionId == null || m.SessionId == activeSessionId
+                && (targetSessionId == null || m.SessionId == targetSessionId
                     || m.SessionId == null || m.SenderKind == nameof(MessageSenderKind.User)));
 
         if (!string.IsNullOrEmpty(afterMessageId))
@@ -2098,6 +2103,36 @@ public sealed class WorkspaceRuntime
         return envelope;
     }
 
+    /// <summary>
+    /// Posts a system message to a room (e.g. "Agent X joined the room.").
+    /// </summary>
+    public async Task PostSystemMessageAsync(string roomId, string content)
+    {
+        var room = await _db.Rooms.FindAsync(roomId)
+            ?? throw new InvalidOperationException($"Room '{roomId}' not found");
+
+        var now = DateTime.UtcNow;
+        var session = await _sessionService.GetOrCreateActiveSessionAsync(roomId);
+
+        var msgEntity = new MessageEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomId = roomId,
+            SenderId = "system",
+            SenderName = "System",
+            SenderKind = nameof(MessageSenderKind.System),
+            Kind = nameof(MessageKind.System),
+            Content = content,
+            SentAt = now,
+            SessionId = session.Id
+        };
+        _db.Messages.Add(msgEntity);
+        await _sessionService.IncrementMessageCountAsync(session.Id);
+
+        room.UpdatedAt = now;
+        await _db.SaveChangesAsync();
+    }
+
     // ── Direct Messaging ────────────────────────────────────────
 
     /// <summary>
@@ -2351,8 +2386,14 @@ public sealed class WorkspaceRuntime
     public async Task<AgentLocation> MoveAgentAsync(
         string agentId, string roomId, AgentState state, string? breakoutRoomId = null)
     {
-        if (_catalog.Agents.All(a => a.Id != agentId))
-            throw new InvalidOperationException($"Agent '{agentId}' not found in catalog");
+        // Allow both catalog agents and custom agents (stored in agent_configs)
+        var inCatalog = _catalog.Agents.Any(a => a.Id == agentId);
+        if (!inCatalog)
+        {
+            var customConfig = await _db.AgentConfigs.FindAsync(agentId);
+            if (customConfig is null)
+                throw new InvalidOperationException($"Agent '{agentId}' not found in catalog or custom agents");
+        }
 
         var now = DateTime.UtcNow;
         var entity = await _db.AgentLocations.FindAsync(agentId);

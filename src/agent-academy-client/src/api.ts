@@ -506,6 +506,24 @@ export function getConfiguredAgents(): Promise<AgentDefinition[]> {
   return request<AgentDefinition[]>(apiUrl("/api/agents/configured"));
 }
 
+export function createCustomAgent(req: {
+  name: string;
+  prompt: string;
+  model?: string;
+}): Promise<AgentDefinition> {
+  return request<AgentDefinition>(apiUrl("/api/agents/custom"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function deleteCustomAgent(agentId: string): Promise<{ status: string; agentId: string }> {
+  return request<{ status: string; agentId: string }>(
+    apiUrl(`/api/agents/custom/${encodeURIComponent(agentId)}`),
+    { method: "DELETE" },
+  );
+}
+
 // ── Activity ───────────────────────────────────────────────────────────
 
 export function getRecentActivity(): Promise<ActivityEvent[]> {
@@ -520,6 +538,43 @@ export function getRooms(): Promise<RoomSnapshot[]> {
 
 export function getRoom(roomId: string): Promise<RoomSnapshot> {
   return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}`));
+}
+
+export function createRoom(name: string, description?: string): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl("/api/rooms"), {
+    method: "POST",
+    body: JSON.stringify({ name, description }),
+  });
+}
+
+export function createRoomSession(roomId: string): Promise<ConversationSessionSnapshot> {
+  return request<ConversationSessionSnapshot>(apiUrl(`/api/rooms/${roomId}/sessions`), {
+    method: "POST",
+  });
+}
+
+export function getRoomMessages(
+  roomId: string,
+  opts?: { after?: string; limit?: number; sessionId?: string },
+): Promise<RoomMessagesResponse> {
+  const params = new URLSearchParams();
+  if (opts?.after) params.set("after", opts.after);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.sessionId) params.set("sessionId", opts.sessionId);
+  const qs = params.toString();
+  return request<RoomMessagesResponse>(apiUrl(`/api/rooms/${roomId}/messages${qs ? `?${qs}` : ""}`));
+}
+
+export function addAgentToRoom(roomId: string, agentId: string): Promise<AgentLocation> {
+  return request<AgentLocation>(apiUrl(`/api/rooms/${roomId}/agents/${agentId}`), {
+    method: "POST",
+  });
+}
+
+export function removeAgentFromRoom(roomId: string, agentId: string): Promise<AgentLocation> {
+  return request<AgentLocation>(apiUrl(`/api/rooms/${roomId}/agents/${agentId}`), {
+    method: "DELETE",
+  });
 }
 
 // ── Collaboration ──────────────────────────────────────────────────────
@@ -1034,6 +1089,11 @@ export interface ConversationSessionSnapshot {
 export interface SessionListResponse {
   sessions: ConversationSessionSnapshot[];
   totalCount: number;
+}
+
+export interface RoomMessagesResponse {
+  messages: ChatEnvelope[];
+  hasMore: boolean;
 }
 
 export interface SessionStats {

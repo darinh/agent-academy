@@ -349,7 +349,7 @@ public class ErrorApiEndpointTests : IDisposable
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<LlmUsageTracker>.Instance);
         return new RoomController(
-            _runtime, usageTracker, _errorTracker,
+            _runtime, _catalog, usageTracker, _errorTracker,
             NullLogger<RoomController>.Instance);
     }
 

@@ -25,10 +25,17 @@ public class WorktreeServiceTests : IDisposable
     public void Dispose()
     {
         _service.Dispose();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         foreach (var dir in _tempDirs)
         {
             try
             {
+                // Safety: never delete home-level directories like ~/projects/
+                if (string.Equals(dir, home, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(dir, Path.Combine(home, "projects"), StringComparison.OrdinalIgnoreCase) ||
+                    dir.Split(Path.DirectorySeparatorChar).Length <= 3)
+                    continue;
+
                 // git worktree directories have read-only .git files — force-delete
                 ForceDeleteDirectory(dir);
             }
@@ -410,8 +417,6 @@ public class WorktreeServiceTests : IDisposable
         _tempDirs.Add(path);
         var parentDir = Path.GetDirectoryName(path);
         if (parentDir is not null) _tempDirs.Add(parentDir);
-        var grandparentDir = Path.GetDirectoryName(parentDir!);
-        if (grandparentDir is not null) _tempDirs.Add(grandparentDir);
     }
 
     [Fact]
@@ -424,8 +429,6 @@ public class WorktreeServiceTests : IDisposable
         _tempDirs.Add(path1);
         var parentDir = Path.GetDirectoryName(path1);
         if (parentDir is not null) _tempDirs.Add(parentDir);
-        var grandparentDir = Path.GetDirectoryName(parentDir!);
-        if (grandparentDir is not null) _tempDirs.Add(grandparentDir);
     }
 
     [Fact]
@@ -438,8 +441,6 @@ public class WorktreeServiceTests : IDisposable
         Assert.False(Directory.Exists(path));
         var parentDir = Path.GetDirectoryName(path);
         if (parentDir is not null) _tempDirs.Add(parentDir);
-        var grandparentDir = Path.GetDirectoryName(parentDir!);
-        if (grandparentDir is not null) _tempDirs.Add(grandparentDir);
     }
 
     [Fact]
