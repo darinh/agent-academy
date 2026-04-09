@@ -390,7 +390,7 @@ const ChatPanel = memo(function ChatPanel(props: {
               + New Session
             </button>
           )}
-          {sessions.length > 0 && (
+          {sessions.length >= 0 && (
             <select
               value={selectedSessionId ?? ""}
               onChange={handleSessionChange}
@@ -411,7 +411,7 @@ const ChatPanel = memo(function ChatPanel(props: {
             </select>
           )}
           {configuredAgents.length > 0 && props.onToggleAgent && (
-            <div ref={agentsRef} style={{ position: "relative", marginLeft: "auto" }}>
+            <div ref={agentsRef} style={{ position: "relative" }}>
               <button
                 onClick={() => setAgentsOpen(!agentsOpen)}
                 style={{
