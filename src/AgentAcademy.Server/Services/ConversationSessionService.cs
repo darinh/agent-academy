@@ -135,6 +135,32 @@ public sealed class ConversationSessionService
             .FirstOrDefaultAsync();
     }
 
+    /// <summary>
+    /// Creates a new conversation session for a room, archiving the current active session.
+    /// Returns a snapshot of the newly created session.
+    /// </summary>
+    public async Task<ConversationSessionSnapshot> CreateNewSessionAsync(string roomId, string roomType = "Main")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(roomId);
+
+        var current = await _db.ConversationSessions
+            .Where(s => s.RoomId == roomId && s.Status == "Active")
+            .FirstOrDefaultAsync();
+
+        if (current is not null)
+        {
+            await RotateSessionAsync(current, roomId, roomType);
+        }
+
+        var session = await GetOrCreateActiveSessionAsync(roomId, roomType);
+
+        return new ConversationSessionSnapshot(
+            session.Id, session.RoomId, session.RoomType,
+            session.SequenceNumber, session.Status,
+            session.Summary, session.MessageCount,
+            session.CreatedAt, session.ArchivedAt);
+    }
+
     // ── Sprint-scoped sessions ──────────────────────────────────
 
     /// <summary>

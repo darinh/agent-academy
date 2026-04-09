@@ -23,7 +23,7 @@ import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout } from "./api";
+import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
@@ -398,8 +398,24 @@ function AppShell() {
     (id: string) => {
       setSelectedWorkspaceId(null);
       handleRoomSelect(id);
+      setTab("chat");
     },
     [handleRoomSelect],
+  );
+
+  const handleCreateRoom = useCallback(
+    async (name: string) => {
+      try {
+        const room = await createRoom(name);
+        handleRoomSelect(room.id);
+        setSelectedWorkspaceId(null);
+        setTab("chat");
+        handleManualRefresh();
+      } catch (err) {
+        console.error("Failed to create room:", err);
+      }
+    },
+    [handleRoomSelect, handleManualRefresh, setTab],
   );
 
   const handleWorkspaceSelect = useCallback(
@@ -407,6 +423,34 @@ function AppShell() {
       setSelectedWorkspaceId(breakoutId);
     },
     [],
+  );
+
+  const handleCreateSession = useCallback(
+    async (roomId: string) => {
+      try {
+        await createRoomSession(roomId);
+        handleManualRefresh();
+      } catch (err) {
+        console.error("Failed to create session:", err);
+      }
+    },
+    [handleManualRefresh],
+  );
+
+  const handleToggleAgent = useCallback(
+    async (roomId: string, agentId: string, currentlyInRoom: boolean) => {
+      try {
+        if (currentlyInRoom) {
+          await removeAgentFromRoom(roomId, agentId);
+        } else {
+          await addAgentToRoom(roomId, agentId);
+        }
+        handleManualRefresh();
+      } catch (err) {
+        console.error("Failed to toggle agent:", err);
+      }
+    },
+    [handleManualRefresh],
   );
 
   const doLogout = useCallback(async () => {
@@ -529,6 +573,7 @@ function AppShell() {
             onToggleSidebar={handleToggleSidebar}
             onSelectRoom={wrappedRoomSelect}
             onSelectWorkspace={handleWorkspaceSelect}
+            onCreateRoom={handleCreateRoom}
             activeView={tab}
             onViewChange={setTab}
             workspace={
@@ -708,6 +753,10 @@ function AppShell() {
                       onSendMessage={handleSendMessage}
                       readOnly={workspaceLimited}
                       hiddenFilters={hiddenFilters}
+                      agentLocations={ov.agentLocations ?? []}
+                      configuredAgents={ov.configuredAgents}
+                      onCreateSession={handleCreateSession}
+                      onToggleAgent={handleToggleAgent}
                     />
                   )}
                   {tab === "tasks" && (

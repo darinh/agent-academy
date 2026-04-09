@@ -329,7 +329,7 @@ public class UsageApiEndpointTests : IDisposable
         await SeedUsage("agent-2", "room-1", "claude-4", 200, 100, 0.02);
 
         var controller = new RoomController(
-            _runtime, _tracker,
+            _runtime, _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
 
@@ -349,7 +349,7 @@ public class UsageApiEndpointTests : IDisposable
         await SeedUsage("agent-2", "room-1", "gpt-5", 200, 100, 0.02);
 
         var controller = new RoomController(
-            _runtime, _tracker,
+            _runtime, _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageByAgent("room-1");
@@ -365,7 +365,7 @@ public class UsageApiEndpointTests : IDisposable
         await SeedUsage("agent-1", "room-1", "gpt-5", 100, 50, 0.01);
 
         var controller = new RoomController(
-            _runtime, _tracker,
+            _runtime, _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageRecords("room-1");
@@ -383,7 +383,7 @@ public class UsageApiEndpointTests : IDisposable
             await SeedUsage("agent-1", "room-1", "gpt-5", i * 100, i * 50, 0.01);
 
         var controller = new RoomController(
-            _runtime, _tracker,
+            _runtime, _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageRecords("room-1", limit: 2);
