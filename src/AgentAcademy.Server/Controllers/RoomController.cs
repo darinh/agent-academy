@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -309,7 +310,8 @@ public class RoomController : ControllerBase
     /// POST /api/rooms/{roomId}/agents/{agentId} — add an agent to this room.
     /// </summary>
     [HttpPost("{roomId}/agents/{agentId}")]
-    public async Task<ActionResult<AgentLocation>> AddAgentToRoom(string roomId, string agentId)
+    public async Task<ActionResult<AgentLocation>> AddAgentToRoom(string roomId, string agentId,
+        [FromServices] AgentAcademyDbContext db)
     {
         try
         {
@@ -317,12 +319,27 @@ public class RoomController : ControllerBase
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
-            var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
-            if (agent is null)
-                return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
+            if (agentName is null)
+            {
+                // Check custom agents
+                var config = await db.AgentConfigs.FindAsync(agentId);
+                if (config is null)
+                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                agentName = agentId;
+                if (!string.IsNullOrEmpty(config.CustomInstructions))
+                {
+                    try
+                    {
+                        var meta = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(config.CustomInstructions);
+                        if (meta.TryGetProperty("displayName", out var dn)) agentName = dn.GetString() ?? agentId;
+                    }
+                    catch { /* use agentId */ }
+                }
+            }
 
             var location = await _runtime.MoveAgentAsync(agentId, roomId, AgentState.Idle);
-            await _runtime.PostSystemMessageAsync(roomId, $"{agent.Name} joined the room.");
+            await _runtime.PostSystemMessageAsync(roomId, $"{agentName} joined the room.");
             return Ok(location);
         }
         catch (Exception ex)
@@ -336,7 +353,8 @@ public class RoomController : ControllerBase
     /// DELETE /api/rooms/{roomId}/agents/{agentId} — remove an agent from this room (back to main).
     /// </summary>
     [HttpDelete("{roomId}/agents/{agentId}")]
-    public async Task<ActionResult<AgentLocation>> RemoveAgentFromRoom(string roomId, string agentId)
+    public async Task<ActionResult<AgentLocation>> RemoveAgentFromRoom(string roomId, string agentId,
+        [FromServices] AgentAcademyDbContext db)
     {
         try
         {
@@ -344,12 +362,26 @@ public class RoomController : ControllerBase
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
-            var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
-            if (agent is null)
-                return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
+            if (agentName is null)
+            {
+                var config = await db.AgentConfigs.FindAsync(agentId);
+                if (config is null)
+                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                agentName = agentId;
+                if (!string.IsNullOrEmpty(config.CustomInstructions))
+                {
+                    try
+                    {
+                        var meta = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(config.CustomInstructions);
+                        if (meta.TryGetProperty("displayName", out var dn)) agentName = dn.GetString() ?? agentId;
+                    }
+                    catch { /* use agentId */ }
+                }
+            }
 
             var location = await _runtime.MoveAgentAsync(agentId, _catalog.DefaultRoomId, AgentState.Idle);
-            await _runtime.PostSystemMessageAsync(roomId, $"{agent.Name} left the room.");
+            await _runtime.PostSystemMessageAsync(roomId, $"{agentName} left the room.");
             return Ok(location);
         }
         catch (Exception ex)

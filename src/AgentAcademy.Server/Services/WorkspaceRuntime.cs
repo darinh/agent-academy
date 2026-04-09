@@ -2386,8 +2386,14 @@ public sealed class WorkspaceRuntime
     public async Task<AgentLocation> MoveAgentAsync(
         string agentId, string roomId, AgentState state, string? breakoutRoomId = null)
     {
-        if (_catalog.Agents.All(a => a.Id != agentId))
-            throw new InvalidOperationException($"Agent '{agentId}' not found in catalog");
+        // Allow both catalog agents and custom agents (stored in agent_configs)
+        var inCatalog = _catalog.Agents.Any(a => a.Id == agentId);
+        if (!inCatalog)
+        {
+            var customConfig = await _db.AgentConfigs.FindAsync(agentId);
+            if (customConfig is null)
+                throw new InvalidOperationException($"Agent '{agentId}' not found in catalog or custom agents");
+        }
 
         var now = DateTime.UtcNow;
         var entity = await _db.AgentLocations.FindAsync(agentId);

@@ -506,6 +506,24 @@ export function getConfiguredAgents(): Promise<AgentDefinition[]> {
   return request<AgentDefinition[]>(apiUrl("/api/agents/configured"));
 }
 
+export function createCustomAgent(req: {
+  name: string;
+  prompt: string;
+  model?: string;
+}): Promise<AgentDefinition> {
+  return request<AgentDefinition>(apiUrl("/api/agents/custom"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function deleteCustomAgent(agentId: string): Promise<{ status: string; agentId: string }> {
+  return request<{ status: string; agentId: string }>(
+    apiUrl(`/api/agents/custom/${encodeURIComponent(agentId)}`),
+    { method: "DELETE" },
+  );
+}
+
 // ── Activity ───────────────────────────────────────────────────────────
 
 export function getRecentActivity(): Promise<ActivityEvent[]> {
