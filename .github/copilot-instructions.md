@@ -5,7 +5,7 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 
 ## Tech Stack
 - **Backend**: ASP.NET Core 8 (C#), GitHub Copilot SDK (NuGet: GitHub.Copilot.SDK)
-- **Frontend**: React 19, Vite 6, Fluent UI v9
+- **Frontend**: React 19, Vite 8, Fluent UI v9
 - **Real-time**: SignalR
 - **Database**: EF Core + SQLite
 - **Notifications**: Pluggable provider interface (Discord first via Discord.Net)
