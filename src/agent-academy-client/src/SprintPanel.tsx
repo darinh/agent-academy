@@ -16,6 +16,7 @@ import type { BadgeColor } from "./V3Badge";
 import type {
   SprintSnapshot,
   SprintDetailResponse,
+  SprintArtifact,
   SprintStage,
   SprintStatus,
 } from "./api";
@@ -92,6 +93,102 @@ function statusBadgeColor(status: SprintStatus): BadgeColor {
 
 function artifactTypeLabel(type: string): string {
   return type.replace(/([A-Z])/g, " $1").trim();
+}
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+interface StageMetrics {
+  stage: SprintStage;
+  durationMs: number | null;
+  artifactCount: number;
+  totalWords: number;
+}
+
+function computeSprintMetrics(
+  detail: SprintDetailResponse,
+): { stages: StageMetrics[]; totalWords: number; totalDurationMs: number } {
+  const now = Date.now();
+  const sprintStart = new Date(detail.sprint.createdAt).getTime();
+  const sprintEnd = detail.sprint.completedAt
+    ? new Date(detail.sprint.completedAt).getTime()
+    : now;
+  const currentStageIdx = ALL_STAGES.indexOf(detail.sprint.currentStage);
+
+  // Group artifacts by stage and find the earliest artifact timestamp per stage
+  const stageFirstArtifact = new Map<SprintStage, number>();
+  const stageArtifacts = new Map<SprintStage, SprintArtifact[]>();
+  for (const a of detail.artifacts) {
+    const ts = new Date(a.createdAt).getTime();
+    const prev = stageFirstArtifact.get(a.stage);
+    if (prev === undefined || ts < prev) stageFirstArtifact.set(a.stage, ts);
+    const list = stageArtifacts.get(a.stage) ?? [];
+    list.push(a);
+    stageArtifacts.set(a.stage, list);
+  }
+
+  let totalWords = 0;
+  const stages: StageMetrics[] = ALL_STAGES.map((stage, idx) => {
+    const arts = stageArtifacts.get(stage) ?? [];
+    const words = arts.reduce((sum, a) => sum + wordCount(a.content), 0);
+    totalWords += words;
+
+    let durationMs: number | null = null;
+    const stageIdx = idx;
+
+    if (detail.sprint.status === "Completed" || stageIdx < currentStageIdx) {
+      // Completed stage: estimate duration from artifact boundaries
+      const stageStart =
+        stageIdx === 0
+          ? sprintStart
+          : stageFirstArtifact.get(stage) ?? null;
+      // Stage end = first artifact of next completed stage, or sprint end
+      let stageEnd: number | null = null;
+      for (let j = stageIdx + 1; j < ALL_STAGES.length; j++) {
+        const nextTs = stageFirstArtifact.get(ALL_STAGES[j]);
+        if (nextTs !== undefined) {
+          stageEnd = nextTs;
+          break;
+        }
+      }
+      if (stageStart !== null) {
+        durationMs = (stageEnd ?? sprintEnd) - stageStart;
+      }
+    } else if (stageIdx === currentStageIdx && detail.sprint.status === "Active") {
+      // Current active stage: time since last transition (or sprint start)
+      const stageStart =
+        stageIdx === 0
+          ? sprintStart
+          : stageFirstArtifact.get(stage) ??
+            // Fallback: latest artifact from previous stage
+            (() => {
+              for (let j = stageIdx - 1; j >= 0; j--) {
+                const arts = stageArtifacts.get(ALL_STAGES[j]);
+                if (arts?.length) {
+                  return Math.max(...arts.map((a) => new Date(a.createdAt).getTime()));
+                }
+              }
+              return sprintStart;
+            })();
+      durationMs = now - stageStart;
+    }
+
+    return { stage, durationMs, artifactCount: arts.length, totalWords: words };
+  });
+
+  return { stages, totalWords, totalDurationMs: sprintEnd - sprintStart };
+}
+
+function formatDurationCompact(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
 }
 
 // ── Styles ──────────────────────────────────────────────────────────────
@@ -182,6 +279,36 @@ const useLocalStyles = makeStyles({
     fontSize: "11px",
     color: "var(--aa-soft)",
     lineHeight: 1.4,
+  },
+  // Metrics bar
+  metricsBar: {
+    display: "flex",
+    gap: "16px",
+    flexWrap: "wrap",
+    ...shorthands.padding("10px", "14px"),
+    background: "var(--aa-surface)",
+    ...shorthands.borderRadius("6px"),
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
+  },
+  metricItem: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "6px",
+  },
+  metricValue: {
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "var(--aa-text)",
+  },
+  metricLabel: {
+    fontSize: "11px",
+    color: "var(--aa-muted)",
+  },
+  metricDivider: {
+    width: "1px",
+    alignSelf: "stretch",
+    background: "var(--aa-border)",
   },
   // Detail section
   detailSection: {
@@ -369,7 +496,6 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -516,6 +642,11 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
       )
     : [];
 
+  const metrics = detail ? computeSprintMetrics(detail) : null;
+  const activeStageMetrics = metrics && selectedStage
+    ? metrics.stages.find((m) => m.stage === selectedStage)
+    : null;
+
   if (loading) {
     return (
       <div className={s.root}>
@@ -642,6 +773,7 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
             const artifactCount = detail.artifacts.filter(
               (a) => a.stage === stage,
             ).length;
+            const stageMetric = metrics?.stages.find((m) => m.stage === stage);
             return (
               <div
                 key={stage}
@@ -674,9 +806,68 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
                     ? `${artifactCount} artifact${artifactCount !== 1 ? "s" : ""}`
                     : meta.description}
                 </span>
+                {stageMetric?.durationMs != null && (
+                  <span className={s.stageDesc}>
+                    ⏱ {formatDurationCompact(stageMetric.durationMs)}
+                    {stageMetric.totalWords > 0 &&
+                      ` · ${stageMetric.totalWords.toLocaleString()}w`}
+                  </span>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Metrics bar */}
+      {metrics && detail && (
+        <div className={s.metricsBar}>
+          <div className={s.metricItem}>
+            <span className={s.metricValue}>
+              {formatDurationCompact(metrics.totalDurationMs)}
+            </span>
+            <span className={s.metricLabel}>total</span>
+          </div>
+          <div className={s.metricDivider} />
+          {activeStageMetrics?.durationMs != null && (
+            <>
+              <div className={s.metricItem}>
+                <span className={s.metricValue}>
+                  {formatDurationCompact(activeStageMetrics.durationMs)}
+                </span>
+                <span className={s.metricLabel}>
+                  {STAGE_META[activeStageMetrics.stage].label.toLowerCase()}
+                </span>
+              </div>
+              <div className={s.metricDivider} />
+            </>
+          )}
+          <div className={s.metricItem}>
+            <span className={s.metricValue}>
+              {metrics.totalWords.toLocaleString()}
+            </span>
+            <span className={s.metricLabel}>words</span>
+          </div>
+          {activeStageMetrics && activeStageMetrics.totalWords > 0 && (
+            <>
+              <div className={s.metricDivider} />
+              <div className={s.metricItem}>
+                <span className={s.metricValue}>
+                  {activeStageMetrics.totalWords.toLocaleString()}
+                </span>
+                <span className={s.metricLabel}>
+                  in {STAGE_META[activeStageMetrics.stage].label.toLowerCase()}
+                </span>
+              </div>
+            </>
+          )}
+          <div className={s.metricDivider} />
+          <div className={s.metricItem}>
+            <span className={s.metricValue}>{detail.artifacts.length}</span>
+            <span className={s.metricLabel}>
+              artifact{detail.artifacts.length !== 1 ? "s" : ""}
+            </span>
+          </div>
         </div>
       )}
 

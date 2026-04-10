@@ -94,11 +94,14 @@ This project runs under an automated operator. Key rules:
 
 1. **Never stop to ask permission.** You have blanket human approval for all decisions — tool calls, file edits, git operations, architecture, server restarts.
 2. **Never stop working.** When one task finishes, immediately start the next. Check the handoff file, check the backlog, check known gaps in specs — always have something to do.
-3. **Session handoff is mandatory.** When context gets heavy or a major task completes with next steps:
-   - Write `~/.copilot/projects/dc4e42b0-94e4-47ea-b07a-e53ed19c644f/next-session.md` with status, next steps, and context.
-   - Then run: `touch /home/darin/.copilot/restart/operator-copilot-agent-academy`
-   - This triggers the operator to restart the CLI session automatically.
-   - **Never write the handoff without touching the restart file.**
+3. **Session handoff is mandatory.** When context gets heavy or a major task completes with next steps, use the `handoff` command:
+   ```bash
+   handoff --instance agent-academy \
+     --status "What was completed" \
+     --next "Prioritized next steps" \
+     --context "Key decisions, gotchas"
+   ```
+   This atomically writes the handoff file and triggers the operator restart.
 4. **Server management**: Rebuild with `dotnet build AgentAcademy.sln`, kill old PID (`pgrep -f AgentAcademy.Server.dll`), relaunch with `ConsultantApi__SharedSecret="anvil-is-the-best"` and `--urls "http://localhost:5066"` (detach=true).
 
 ## Project-Specific Pitfalls
