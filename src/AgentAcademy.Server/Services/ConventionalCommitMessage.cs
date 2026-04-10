@@ -5,15 +5,25 @@ namespace AgentAcademy.Server.Services;
 internal static class ConventionalCommitMessage
 {
     private const string AllowedTypes =
-        "feat, fix, docs, refactor, test, ci, style, perf, build, chore";
+        "feat, fix, docs, refactor, test, ci, style, perf, build, chore, revert";
 
     private static readonly Regex SubjectPattern = new(
-        @"^(feat|fix|docs|refactor|test|ci|style|perf|build|chore)(\([^)]+\))?\!?: .+",
+        @"^(feat|fix|docs|refactor|test|ci|style|perf|build|chore|revert)(\([^)]+\))?\!?: .+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static bool TryValidate(string? message, out string? error)
     {
         var subject = GetSubject(message);
+
+        // Allow git-generated Revert commits (e.g., 'Revert "feat: something"')
+        if (subject.Length > 9
+            && subject.StartsWith("Revert \"", StringComparison.Ordinal)
+            && subject.EndsWith('"'))
+        {
+            error = null;
+            return true;
+        }
+
         if (!SubjectPattern.IsMatch(subject))
         {
             error =

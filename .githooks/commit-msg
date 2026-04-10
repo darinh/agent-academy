@@ -6,15 +6,15 @@
 commit_msg_file="$1"
 commit_msg=$(head -1 "$commit_msg_file")
 
-# Allow merge commits and fixup/squash commits
-if echo "$commit_msg" | grep -qE "^Merge |^fixup! |^squash! "; then
+# Allow merge commits, fixup/squash commits, and git-generated Revert commits
+if echo "$commit_msg" | grep -qE "^Merge |^fixup! |^squash! |^Revert \".+\"$"; then
   exit 0
 fi
 
 # Validate conventional commit prefix
-# Allowed: feat, fix, docs, refactor, test, ci, style, perf, build, chore
+# Allowed: feat, fix, docs, refactor, test, ci, style, perf, build, chore, revert
 # Optionally followed by a scope in parentheses, optionally with ! for breaking change
-if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|refactor|test|ci|style|perf|build|chore)(\(.+\))?\!?: .+"; then
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|refactor|test|ci|style|perf|build|chore|revert)(\(.+\))?\!?: .+"; then
   echo ""
   echo "ERROR: Commit message does not follow Conventional Commits format."
   echo ""
@@ -33,6 +33,7 @@ if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|refactor|test|ci|style|perf|
   echo "    perf:      Performance improvements"
   echo "    build:     Changes to build system or external dependencies"
   echo "    chore:     Other changes that don't modify src or test files"
+  echo "    revert:    Reverts a previous commit"
   echo ""
   echo "  Examples:"
   echo "    feat: add user authentication"

@@ -17,6 +17,7 @@ public class ConventionalCommitMessageTests
     [InlineData("perf: optimize database query")]
     [InlineData("build: upgrade to .NET 9")]
     [InlineData("chore: update dependencies")]
+    [InlineData("revert: undo broken migration")]
     public void TryValidate_ValidType_ReturnsTrue(string message)
     {
         var result = ConventionalCommitMessage.TryValidate(message, out var error);
@@ -41,6 +42,7 @@ public class ConventionalCommitMessageTests
     [Theory]
     [InlineData("feat!: remove deprecated API")]
     [InlineData("fix(auth)!: change token format")]
+    [InlineData("revert!: undo API redesign")]
     public void TryValidate_BreakingChange_ReturnsTrue(string message)
     {
         var result = ConventionalCommitMessage.TryValidate(message, out var error);
@@ -71,7 +73,31 @@ public class ConventionalCommitMessageTests
         Assert.Null(error);
     }
 
+    [Theory]
+    [InlineData("Revert \"feat: add login page\"")]
+    [InlineData("Revert \"fix(auth): resolve token issue\"")]
+    [InlineData("Revert \"feat!: redesign public API\"")]
+    public void TryValidate_GitGeneratedRevert_ReturnsTrue(string message)
+    {
+        var result = ConventionalCommitMessage.TryValidate(message, out var error);
+
+        Assert.True(result);
+        Assert.Null(error);
+    }
+
     // ── Invalid messages ────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Revert totally custom message")]
+    [InlineData("Revert without quotes")]
+    [InlineData("Revert \"unclosed quote")]
+    public void TryValidate_LooseRevertFormat_ReturnsFalse(string message)
+    {
+        var result = ConventionalCommitMessage.TryValidate(message, out var error);
+
+        Assert.False(result);
+        Assert.NotNull(error);
+    }
 
     [Theory]
     [InlineData(null)]
@@ -151,5 +177,6 @@ public class ConventionalCommitMessageTests
         Assert.Contains("docs", error);
         Assert.Contains("refactor", error);
         Assert.Contains("test", error);
+        Assert.Contains("revert", error);
     }
 }
