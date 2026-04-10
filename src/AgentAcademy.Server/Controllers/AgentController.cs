@@ -147,7 +147,7 @@ public class AgentController : ControllerBase
 
         try
         {
-            var response = await _executor.RunAsync(agent, body, roomId: null, ct);
+            var response = await _executor.RunAsync(agent, body, roomId: null, workspacePath: null, ct);
             return Ok(new { agentId = agent.Id, response });
         }
         catch (Exception ex)

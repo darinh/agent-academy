@@ -69,7 +69,7 @@ public class StubExecutorTests
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => _sut.RunAsync(agent, "Hello", "room-1", cts.Token));
+            () => _sut.RunAsync(agent, "Hello", "room-1", workspacePath: null, cts.Token));
     }
 
     [Fact]

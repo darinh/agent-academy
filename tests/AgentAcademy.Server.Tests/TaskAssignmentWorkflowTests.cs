@@ -86,6 +86,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Is<AgentDefinition>(a => a.Role == "Planner"),
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(assignmentResponse),
@@ -95,6 +96,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         _executor.RunAsync(
                 Arg.Is<AgentDefinition>(a => a.Role == "SoftwareEngineer"),
                 Arg.Any<string>(),
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(
@@ -167,6 +169,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Is<AgentDefinition>(a => a.Role == "Planner"),
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(assignmentResponse),
@@ -175,6 +178,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         _executor.RunAsync(
                 Arg.Is<AgentDefinition>(a => a.Role == "SoftwareEngineer"),
                 Arg.Any<string>(),
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult("Acknowledged"));

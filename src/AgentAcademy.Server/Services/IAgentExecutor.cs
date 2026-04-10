@@ -40,14 +40,16 @@ public interface IAgentExecutor
     Task MarkAuthOperationalAsync(CancellationToken ct = default);
 
     /// <summary>
-     /// Sends <paramref name="prompt"/> to the agent and returns the
-    /// complete response. The implementation may stream internally but
-    /// this method returns only after the full response is assembled.
+    /// Sends <paramref name="prompt"/> to the agent and returns the
+    /// complete response. When <paramref name="workspacePath"/> is provided,
+    /// the agent's CLI process operates in that directory (used for git
+    /// worktree isolation so agents don't stomp on each other's files).
     /// </summary>
     Task<string> RunAsync(
         AgentDefinition agent,
         string prompt,
         string? roomId,
+        string? workspacePath = null,
         CancellationToken ct = default);
 
     /// <summary>

@@ -73,6 +73,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     private CopilotClient? _client;
+    private readonly ConcurrentDictionary<string, CopilotClient> _worktreeClients = new();
     private string? _activeToken;
     private bool _clientFailed;
     private volatile bool _authFailed;
@@ -137,6 +138,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         AgentDefinition agent,
         string prompt,
         string? roomId,
+        string? workspacePath,
         CancellationToken ct = default)
     {
         // Circuit breaker: if the API has been consistently failing,
@@ -152,17 +154,21 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 $"Circuit breaker open ({_circuitBreaker.ConsecutiveFailures} consecutive failures). " +
                 $"Will probe again after cooldown.",
                 recoverable: true);
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
 
-        var client = await EnsureClientAsync(ct);
+        var client = workspacePath is not null
+            ? await EnsureWorktreeClientAsync(workspacePath, ct)
+            : await EnsureClientAsync(ct);
         if (client is null)
         {
             _logger.LogDebug("Copilot client unavailable — delegating to StubExecutor");
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
 
-        var sessionKey = BuildKey(agent.Id, roomId);
+        var sessionKey = workspacePath is not null
+            ? $"wt:{Path.GetFullPath(workspacePath)}:{agent.Id}:{roomId ?? "default"}"
+            : BuildKey(agent.Id, roomId);
 
         try
         {
@@ -192,7 +198,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 agent.Id);
             await _errorTracker.RecordAsync(agent.Id, roomId, "authentication", ex.Message, recoverable: false);
             await HandleAuthFailureAsync(agent.Id, roomId);
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
         catch (CopilotAuthorizationException ex)
         {
@@ -202,7 +208,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 agent.Id);
             await _errorTracker.RecordAsync(agent.Id, roomId, "authorization", ex.Message, recoverable: false);
             await InvalidateSessionAsync(agent.Id, roomId);
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
         catch (CopilotQuotaException ex)
         {
@@ -214,7 +220,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             // Already recorded per-attempt in SendAndCollectWithRetryAsync; no duplicate here.
             await InvalidateSessionAsync(agent.Id, roomId);
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
         catch (CopilotTransientException ex)
         {
@@ -226,7 +232,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             // Already recorded per-attempt in SendAndCollectWithRetryAsync; no duplicate here.
             await InvalidateSessionAsync(agent.Id, roomId);
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -240,7 +246,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
             // Invalidate the broken session so the next attempt gets a fresh one.
             await InvalidateSessionAsync(agent.Id, roomId);
-            return await GetFallback().RunAsync(agent, prompt, roomId, ct);
+            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
     }
 
@@ -252,6 +258,22 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             _sessionLocks.TryRemove(key, out _);
             _logger.LogDebug("Invalidating session {Key}", key);
             await DisposeSessionSafe(entry);
+        }
+
+        // Also invalidate any worktree-scoped sessions for this agent+room
+        var wtSuffix = $":{agentId}:{roomId ?? "default"}";
+        var wtKeys = _sessions.Keys
+            .Where(k => k.StartsWith("wt:", StringComparison.Ordinal)
+                     && k.EndsWith(wtSuffix, StringComparison.Ordinal))
+            .ToList();
+        foreach (var wtKey in wtKeys)
+        {
+            if (_sessions.TryRemove(wtKey, out var wtEntry))
+            {
+                _sessionLocks.TryRemove(wtKey, out _);
+                _logger.LogDebug("Invalidating worktree session {Key}", wtKey);
+                await DisposeSessionSafe(wtEntry);
+            }
         }
     }
 
@@ -321,6 +343,19 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 _logger.LogWarning(ex, "Error disposing CopilotClient");
             }
             _client = null;
+        }
+
+        // Dispose all worktree-scoped clients
+        foreach (var kvp in _worktreeClients)
+        {
+            if (_worktreeClients.TryRemove(kvp.Key, out var wtClient))
+            {
+                try { await wtClient.DisposeAsync(); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error disposing worktree CopilotClient for {Path}", kvp.Key);
+                }
+            }
         }
     }
 
@@ -395,6 +430,93 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     }
 
     /// <summary>
+    /// Returns a CopilotClient whose CLI process runs in the given
+    /// worktree directory. Clients are cached by path and share the
+    /// same auth token as the default client.
+    /// </summary>
+    private async Task<CopilotClient?> EnsureWorktreeClientAsync(string workspacePath, CancellationToken ct)
+    {
+        var normalizedPath = Path.GetFullPath(workspacePath);
+
+        // Fast path — cached client.
+        if (_worktreeClients.TryGetValue(normalizedPath, out var existing))
+            return existing;
+
+        await _clientLock.WaitAsync(ct);
+        try
+        {
+            // Re-check after lock
+            if (_worktreeClients.TryGetValue(normalizedPath, out existing))
+                return existing;
+
+            var token = ResolveToken();
+            var hasToken = !string.IsNullOrWhiteSpace(token);
+            var hasCliPath = !string.IsNullOrWhiteSpace(_cliPath);
+
+            _logger.LogInformation(
+                "Starting worktree CopilotClient for {WorkspacePath} (token source: {Source})",
+                normalizedPath, DescribeTokenSource(token));
+
+            var options = new CopilotClientOptions { Cwd = normalizedPath };
+            if (hasToken) options.GitHubToken = token;
+            if (hasCliPath) options.CliPath = _cliPath;
+
+            var client = new CopilotClient(options);
+            await client.StartAsync();
+            _worktreeClients[normalizedPath] = client;
+
+            _logger.LogInformation(
+                "Worktree CopilotClient started for {WorkspacePath}", normalizedPath);
+            return client;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to start worktree CopilotClient for {WorkspacePath} — falling back to default client",
+                normalizedPath);
+            // Return null — caller (RunAsync) will fall back to stub.
+            // We do NOT call EnsureClientAsync here to avoid deadlock
+            // (it also acquires _clientLock).
+            return null;
+        }
+        finally
+        {
+            _clientLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Disposes a worktree-scoped client and all sessions that belong to it.
+    /// Called when a worktree is removed (task complete/cancelled).
+    /// </summary>
+    public async Task DisposeWorktreeClientAsync(string workspacePath)
+    {
+        var normalizedPath = Path.GetFullPath(workspacePath);
+        if (!_worktreeClients.TryRemove(normalizedPath, out var client))
+            return;
+
+        // Remove sessions that were created on this client
+        var prefix = $"wt:{normalizedPath}:";
+        var keys = _sessions.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        foreach (var key in keys)
+        {
+            if (_sessions.TryRemove(key, out var entry))
+            {
+                _sessionLocks.TryRemove(key, out _);
+                await DisposeSessionSafe(entry);
+            }
+        }
+
+        try { await client.DisposeAsync(); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error disposing worktree CopilotClient for {Path}", normalizedPath);
+        }
+
+        _logger.LogInformation("Disposed worktree CopilotClient for {WorkspacePath}", normalizedPath);
+    }
+
+    /// <summary>
     /// Resolves the best available GitHub token.
     /// Priority: user OAuth token → config token → null (env/CLI fallback).
     /// </summary>
@@ -437,6 +559,19 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             {
                 _sessionLocks.TryRemove(key, out _);
                 await DisposeSessionSafe(entry);
+            }
+        }
+
+        // Also dispose all worktree clients — they used the old token.
+        foreach (var kvp in _worktreeClients.ToArray())
+        {
+            if (_worktreeClients.TryRemove(kvp.Key, out var wtClient))
+            {
+                try { await wtClient.DisposeAsync(); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error disposing worktree CopilotClient for {Path} during token rotation", kvp.Key);
+                }
             }
         }
     }

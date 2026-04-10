@@ -205,6 +205,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("Summary of 5 messages.");
 
@@ -260,6 +261,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("Breakout summary.");
 
@@ -445,6 +447,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("LLM summary of workspace.");
 
@@ -511,6 +514,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("Resume context: important decisions were made.");
 

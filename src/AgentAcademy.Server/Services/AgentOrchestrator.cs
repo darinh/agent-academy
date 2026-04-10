@@ -927,7 +927,7 @@ public sealed class AgentOrchestrator
                     breakoutSpecContext ??= await _specManager.LoadSpecContextAsync();
 
                     var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext);
-                    response = await RunAgentAsync(agent, prompt, breakoutRoomId);
+                    response = await RunAgentAsync(agent, prompt, breakoutRoomId, worktreePath);
                 }
                 catch (Exception ex)
                 {
@@ -1028,6 +1028,16 @@ public sealed class AgentOrchestrator
             // Clean up worktree on ALL exit paths (stuck, failure, recalled, offline, normal)
             if (worktreePath is not null && taskBranch is not null)
             {
+                // Dispose the worktree-scoped CopilotClient first (closes sessions)
+                if (_executor is CopilotExecutor copilotExecutor)
+                {
+                    try { await copilotExecutor.DisposeWorktreeClientAsync(worktreePath); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to dispose worktree CopilotClient for {Path}", worktreePath);
+                    }
+                }
+
                 try
                 {
                     await _worktreeService.RemoveWorktreeAsync(taskBranch);
@@ -1487,11 +1497,11 @@ public sealed class AgentOrchestrator
     }
 
     private async Task<string> RunAgentAsync(
-        AgentDefinition agent, string prompt, string roomId)
+        AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)
     {
         try
         {
-            return await _executor.RunAsync(agent, prompt, roomId);
+            return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
         }
         catch (OperationCanceledException)
         {
