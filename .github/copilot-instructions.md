@@ -93,7 +93,11 @@ git config core.hooksPath .githooks
 This project runs under an automated operator. Key rules:
 
 1. **Never stop to ask permission.** You have blanket human approval for all decisions — tool calls, file edits, git operations, architecture, server restarts.
-2. **Never stop working.** When one task finishes, immediately start the next. Check the handoff file, check the backlog, check known gaps in specs — always have something to do.
+2. **Work in a sustainable rhythm.** After completing a task, check the health gates before starting the next feature:
+   a. **Test gate**: If the last 3 `feat:` commits have no corresponding `test:` commit, the next task MUST be writing tests for the untested features. Do not start new features until this clears.
+   b. **Fix ratio gate**: Count the last 10 conventional commits. If 4+ are `fix:` commits, run the Stabilization Protocol (see below) before starting new feature work.
+   c. **Refactor gate**: If any single file has been touched by 3+ `fix:` commits in the last 30 days (`git log --since="30 days ago" --format="%H" -- {file} | ...`), add a refactoring task for that file to the top of the backlog.
+   d. **Otherwise**: Continue to the next task from the handoff/backlog/spec gaps.
 3. **Session handoff is mandatory.** When context gets heavy or a major task completes with next steps, use the `handoff` command:
    ```bash
    handoff --instance agent-academy \
@@ -103,6 +107,47 @@ This project runs under an automated operator. Key rules:
    ```
    This atomically writes the handoff file and triggers the operator restart.
 4. **Server management**: Rebuild with `dotnet build AgentAcademy.sln`, kill old PID (`pgrep -f AgentAcademy.Server.dll`), relaunch with `ConsultantApi__SharedSecret="anvil-is-the-best"` and `--urls "http://localhost:5066"` (detach=true).
+
+### Stabilization Protocol
+
+Triggered by: fix ratio gate, explicit handoff request, or every 10th session. A stabilization session does the following — in order — before any new feature work:
+
+1. **Branch cleanup**: Delete branches merged into develop: `git branch --merged develop | grep -vE '^\*|develop|main' | xargs -r git branch -d`
+2. **Full build + test**: Run `dotnet build AgentAcademy.sln && dotnet test AgentAcademy.sln` and `cd src/agent-academy-client && npm run build && npm test`. Fix any failures before proceeding.
+3. **Test backfill**: Identify the 3 most recent `feat:` commits that lack test coverage. Write tests for them. Commit each as `test: add tests for {feature}`.
+4. **Refactor candidates**: Query `git log --since="30 days ago" --pretty=format:"%s" -- {file}` for files with 3+ fix commits. Refactor the worst offender. Commit as `refactor: {description}`.
+5. **Spec sync**: For every `feat:` commit since the last stabilization, verify the corresponding spec section exists and accurately describes the implementation. Fix any gaps.
+6. **Health report**: Include the following in the handoff context: fix:feat ratio (last 30 commits), number of untested features, number of refactor candidates, build status.
+
+## Pre-Commit Checklist
+
+Before committing any feature, verify every applicable item. This is not optional — the agent MUST run these checks, not just read the list.
+
+### Backend (C#)
+- [ ] New services/handlers registered in DI (`Program.cs` or relevant extension method) — search for the class name in the DI registration code
+- [ ] New commands added to agent permission lists (`Config/agents.json`) if agent-executable
+- [ ] New event handlers wired to the event bus or SignalR hub
+- [ ] Error paths return `ProblemDetails`, not raw exceptions
+- [ ] New async methods accept `CancellationToken` where appropriate
+
+### Frontend (React/TypeScript)
+- [ ] `cd src/agent-academy-client && npm run build` passes with zero errors
+- [ ] `cd src/agent-academy-client && npx tsc --noEmit` passes
+- [ ] New components exported from their module (if using barrel exports)
+- [ ] New API calls use the existing API client pattern in `api.ts`
+- [ ] No `console.log` statements left in committed code
+
+### Integration
+- [ ] New endpoints are callable end-to-end: controller → service → DI → route
+- [ ] Changed SignalR hub methods have matching client-side handlers
+- [ ] New database columns have corresponding EF Core migration
+- [ ] New entity properties included in relevant DTO mappings
+
+### Safety (check if ANY of these apply)
+- [ ] File/directory operations use validated, scoped paths — no user-controlled path traversal
+- [ ] Data deletion is soft-delete or has confirmation/undo mechanism
+- [ ] New external process execution uses argument lists, not string interpolation
+- [ ] Concurrent access to shared state uses appropriate synchronization
 
 ## Project-Specific Pitfalls
 - **Frontend has no spec** — code exploration is needed for frontend patterns, conventions, and component structure.
