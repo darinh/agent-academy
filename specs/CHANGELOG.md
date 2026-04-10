@@ -4,7 +4,13 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **005-workspace-runtime**: Documented workspace isolation via `WorktreeService` — agent-level git worktree management, per-agent checkout provisioning, orchestrator integration, and database fields.
+- **300-frontend-ui**: Documented user sign-off gates — `awaitingSignOff`/`pendingStage` fields, approval/rejection UI, and API endpoints.
+- **300-frontend-ui**: Documented sprint metrics bar — stage timing, word counts, and duration estimation from artifact timestamps.
+
 ### Changed
+- **300-frontend-ui**: Updated `SprintSnapshot` type to include `awaitingSignOff`, `pendingStage` fields. Updated `SprintArtifact` to include `updatedAt`. Fixed `ArtifactType` enum values to match actual backend types. Updated `SprintDetailResponse` and `SprintListResponse` field names to match implementation.
 - **300-frontend-ui**: Marked sprint panel metrics future work item as resolved (commit `9fe6d1f`).
 
 ### Changed

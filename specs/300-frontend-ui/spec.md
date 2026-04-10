@@ -363,7 +363,19 @@ A 6-column grid (responsive: 3-col at 900px, 1-col at 600px) visualizes the spri
 Each stage card shows:
 - Visual state: **active** (cyan border + gradient), **completed** (green border + gradient), or **pending** (muted)
 - Artifact count for that stage (or description text if no artifacts)
+- Stage timing: `⏱ {duration}` and word count `· {N}w` for stages with artifacts
 - Clickable — selecting a stage filters the artifact detail view below
+
+### Sprint Metrics
+
+A summary metrics bar displays below the pipeline:
+- **Total duration** — elapsed time from sprint creation to completion (or now for active)
+- **Selected stage duration** — time in the currently selected stage
+- **Total words** — cumulative word count across all artifacts
+- **Selected stage words** — word count for the selected stage's artifacts
+- **Artifact count** — total number of artifacts
+
+Stage durations are estimated from artifact timestamps: each stage starts at its first artifact (or sprint start for Intake) and ends at the first artifact of the next stage.
 
 ### Artifact Viewer
 
@@ -392,6 +404,16 @@ The Sprint panel header includes context-aware action buttons:
 
 Actions call write endpoints (`POST /api/sprints`, `/advance`, `/complete`, `/cancel`) and refresh data on success. Error messages display in the error state. A busy flag disables buttons during async operations.
 
+### User Sign-Off Gates
+
+Certain stage transitions require human approval before advancing:
+
+- When agents request advancement from **Intake** or **Planning**, the sprint enters an `awaitingSignOff` state
+- A yellow banner appears: "User sign-off required — agents want to advance from {current} to {pending}"
+- Two action buttons replace the normal Advance Stage button: **Approve → {pendingStage}** and **Reject**
+- Approve calls `POST /api/sprints/{id}/approve`, Reject calls `POST /api/sprints/{id}/reject`
+- On reject, the sprint stays at the current stage; on approve, it advances to the pending stage
+
 ### Data Flow
 
 - On mount: fetches active sprint + sprint list in parallel
@@ -404,11 +426,12 @@ Actions call write endpoints (`POST /api/sprints`, `/advance`, `/complete`, `/ca
 ```typescript
 type SprintStage = "Intake" | "Planning" | "Discussion" | "Validation" | "Implementation" | "FinalSynthesis";
 type SprintStatus = "Active" | "Completed" | "Cancelled";
-type SprintArtifactType = "DesignDoc" | "SprintPlan" | "CodeReview" | "SprintReport";
+type ArtifactType = "RequirementsDocument" | "SprintPlan" | "ValidationReport" | "SprintReport" | "OverflowRequirements";
 
 interface SprintSnapshot {
   id: string; number: number; status: SprintStatus;
   currentStage: SprintStage; overflowFromSprintId: string | null;
+  awaitingSignOff: boolean; pendingStage: SprintStage | null;
   createdAt: string; completedAt: string | null;
 }
 
@@ -416,10 +439,11 @@ interface SprintArtifact {
   id: number; sprintId: string; stage: SprintStage;
   type: string; content: string;
   createdByAgentId: string | null; createdAt: string;
+  updatedAt: string | null;
 }
 
-interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; }
-interface SprintListResponse { sprints: SprintSnapshot[]; total: number; }
+interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; stages: string[]; }
+interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
 ```
 
 ## Future Work

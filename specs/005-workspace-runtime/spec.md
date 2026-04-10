@@ -156,23 +156,71 @@ On startup, `AgentOrchestrator.HandleStartupRecoveryAsync` checks `WorkspaceRunt
 
 **Note**: Recovery does not re-enqueue pending human messages. That is handled separately by `AgentOrchestrator.ReconstructQueueAsync` which calls `GetRoomsWithPendingHumanMessagesAsync`.
 
+### Workspace Isolation — Git Worktrees
+
+Each agent gets its own filesystem checkout via `git worktree` to enable concurrent development without conflicts.
+
+#### WorktreeService (`Services/WorktreeService.cs`)
+
+Singleton service managing git worktrees for agent-level workspace isolation.
+
+**Core API:**
+- `CreateWorktreeAsync(branch)` — creates a linked worktree at `{repoRoot}/.worktrees/{branch}`
+- `RemoveWorktreeAsync(branch)` — removes the worktree and prunes git metadata
+- `GetWorktreePath(branch)` — returns the filesystem path for a branch's worktree, or null
+- `GetActiveWorktrees()` — returns all tracked worktree entries
+- `ListGitWorktreesAsync()` — parses `git worktree list --porcelain` for ground truth
+- `CleanupAllWorktreesAsync()` — removes all managed worktrees (used on shutdown/recovery)
+- `SyncWithGitAsync()` — reconciles internal tracking with actual git worktree state
+
+**Agent worktree management:**
+- `EnsureAgentWorktreeAsync(workspacePath, projectName, agentId, branch)` — creates or reuses an agent-specific worktree. Naming convention: `.worktrees/{projectName}-{agentId}`
+- `GetAgentWorktreePath(projectName, agentId, workspacePath?)` — resolves an agent's worktree path
+- `RemoveAgentWorktreeAsync(workspacePath, projectName, agentId)` — removes an agent's worktree
+
+**Key types:**
+- `WorktreeInfo(Branch, Path, CreatedAt)` — tracked worktree metadata
+- `GitWorktreeEntry(Path, Head, Branch, Bare)` — parsed git worktree state
+
+**Invariants:**
+- Worktrees are stored under `{repoRoot}/.worktrees/` (gitignored)
+- Each agent gets at most one worktree per project
+- `SyncWithGitAsync()` is called on startup to reconcile stale state
+- Worktree cleanup is idempotent and handles already-removed paths gracefully
+
+#### Orchestrator Integration
+
+The `AgentOrchestrator` uses `WorktreeService` to provide each agent with an isolated working directory:
+- When an agent starts a task, `EnsureAgentWorktreeAsync()` provisions a worktree
+- The agent's `CommandContext.WorkingDirectory` is set to the worktree path
+- All git and file operations (build, test, diff, commit) execute within the worktree
+- On task completion/cancellation, the worktree persists for merge operations
+
+#### Database Fields
+
+- `TaskEntity.WorkspacePath` — associates tasks with a project directory
+- `ConversationSessionEntity.WorkspacePath` — associates sessions with a project directory
+
 ## Interfaces & Contracts
 
 ### Service Registration (Program.cs)
 ```csharp
 builder.Services.AddAgentCatalog();       // singleton AgentCatalogOptions
 builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
+builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
 ```
 
 ### Key Types
 - `PostMessageRequest(RoomId, SenderId, Content, Kind?, CorrelationId?, Hint?)`
 - `PhaseTransitionRequest(RoomId, TargetPhase, Reason?)`
+- `WorktreeInfo(Branch, Path, CreatedAt)`
 - All shared model types from `AgentAcademy.Shared.Models`
 
 ### Dependencies
 - `AgentAcademyDbContext` (scoped)
 - `ILogger<WorkspaceRuntime>`
 - `AgentCatalogOptions` (singleton)
+- `WorktreeService` (singleton, optional — workspace isolation)
 
 ## Invariants
 
@@ -199,6 +247,7 @@ builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
 
 ## Revision History
 
+- **2026-04-10**: Workspace isolation — documented `WorktreeService` for agent-level git worktree isolation. Covers worktree creation/removal, agent-specific worktrees, orchestrator integration, and database fields. Synced during stabilization.
 - **2026-04-08**: Project scoping phase 1 — added `WorkspacePath` to `TaskEntity` and `ConversationSessionEntity`. Tasks and conversation sessions now have direct project association. `GetTasksAsync()` filters by `WorkspacePath` directly (with room fallback for pre-migration rows). `GetAllSessionsAsync` and `GetSessionStatsAsync` accept optional workspace filter. Migration includes data backfill from rooms table. API: `GET /api/sessions` and `GET /api/sessions/stats` accept `?workspace=` query parameter.
 - **2026-04-07**: Documented `RecoverFromCrashAsync` crash recovery behavior — closes active breakouts, resets stuck agents to Idle, unassigns orphaned in-progress tasks, posts correlation-deduped recovery notification. Called by `AgentOrchestrator.HandleStartupRecoveryAsync` on crash detection.
 - **2026-04-04**: Task item commands — `CREATE_TASK_ITEM`, `UPDATE_TASK_ITEM`, `LIST_TASK_ITEMS` commands added. Resolves the task item management known gap. Added `GetTaskItemAsync` and `GetTaskItemsAsync` to WorkspaceRuntime. `UpdateTaskItemStatusAsync` now throws on missing items (was silent no-op). Agent catalog validation on assignee, room existence validation on create.
