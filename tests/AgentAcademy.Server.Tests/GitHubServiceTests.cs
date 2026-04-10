@@ -25,6 +25,34 @@ public class GitHubServiceTests : IDisposable
         try { Directory.Delete(_tempDir, true); } catch { }
     }
 
+    /// <summary>
+    /// Writes a bash script with executable permissions, minimizing the time the write fd is
+    /// open to reduce ETXTBSY races from concurrent fork() in parallel test classes.
+    /// Uses UnixCreateMode to set permissions atomically with file creation.
+    /// </summary>
+    private static void WriteExecutableScript(string path, string content)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                    | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                    | UnixFileMode.OtherRead | UnixFileMode.OtherExecute
+            };
+            using var fs = new FileStream(path, options);
+            fs.Write(System.Text.Encoding.UTF8.GetBytes(content));
+            fs.Flush(flushToDisk: true);
+        }
+        else
+        {
+            File.WriteAllText(path, content);
+        }
+    }
+
     private string CreateGhWrapper(string stdout, int exitCode = 0, string stderr = "")
     {
         // Write stdout/stderr to files to avoid shell quoting issues
@@ -34,7 +62,7 @@ public class GitHubServiceTests : IDisposable
         File.WriteAllText(stderrFile, stderr);
 
         var wrapperPath = Path.Combine(_tempDir, $"gh-wrapper-{Guid.NewGuid():N}.sh");
-        File.WriteAllText(wrapperPath,
+        var content =
             $$"""
             #!/usr/bin/env bash
             cat '{{stdoutFile}}'
@@ -42,15 +70,9 @@ public class GitHubServiceTests : IDisposable
                 cat '{{stderrFile}}' >&2
             fi
             exit {{exitCode}}
-            """);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(
-                wrapperPath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
-                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
-        }
+            """;
+
+        WriteExecutableScript(wrapperPath, content);
         return wrapperPath;
     }
 
@@ -459,7 +481,7 @@ public class GitHubServiceTests : IDisposable
         }
 
         var wrapperPath = Path.Combine(_tempDir, $"gh-seq-{Guid.NewGuid():N}.sh");
-        File.WriteAllText(wrapperPath,
+        var content =
             $$"""
             #!/usr/bin/env bash
             COUNTER_FILE='{{counterFile}}'
@@ -470,17 +492,9 @@ public class GitHubServiceTests : IDisposable
             {{caseStatements}}
                 *) exit 1;;
             esac
-            """);
+            """;
 
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(
-                wrapperPath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
-                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
-        }
-
+        WriteExecutableScript(wrapperPath, content);
         return wrapperPath;
     }
 }
