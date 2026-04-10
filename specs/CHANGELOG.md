@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **300-frontend-ui**: Marked sprint panel metrics future work item as resolved (commit `9fe6d1f`).
+
+### Changed
 - **300-frontend-ui**: Documented room-centric conversation UI. ChatPanel now centers on selected room with session management toolbar (session dropdown, new session, agent add/remove). Removed standalone "Conversation" nav item — room selection in sidebar loads ChatPanel directly. Updated component tree descriptions.
 - **300-frontend-ui**: Documented tabbed SettingsPanel with 5 tabs: Custom Agents (create/delete with kebab-case ID preview), Built-in Agents (config cards), Templates (instruction template CRUD), Notifications (provider setup), Advanced (epoch settings).
 - **300-frontend-ui**: Documented inline room creation in SidebarPanel (+ button → name input → Enter to create).
