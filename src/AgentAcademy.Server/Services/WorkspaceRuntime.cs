@@ -13,31 +13,6 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class WorkspaceRuntime
 {
-    /// <summary>
-    /// Task statuses that represent active/in-progress work (not terminal, not queued).
-    /// </summary>
-    private static readonly HashSet<string> InProgressStatuses = new(StringComparer.Ordinal)
-    {
-        nameof(Shared.Models.TaskStatus.Active),
-        nameof(Shared.Models.TaskStatus.InReview),
-        nameof(Shared.Models.TaskStatus.ChangesRequested),
-        nameof(Shared.Models.TaskStatus.Approved),
-        nameof(Shared.Models.TaskStatus.Merging),
-        nameof(Shared.Models.TaskStatus.AwaitingValidation),
-    };
-
-    private static readonly HashSet<string> TerminalBreakoutStatuses =
-        BreakoutRoomService.TerminalBreakoutStatuses;
-
-    /// <summary>
-    /// Task statuses that represent finished work (no further action expected).
-    /// </summary>
-    private static readonly HashSet<string> TerminalTaskStatuses = new(StringComparer.Ordinal)
-    {
-        nameof(Shared.Models.TaskStatus.Completed),
-        nameof(Shared.Models.TaskStatus.Cancelled),
-    };
-
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceRuntime> _logger;
     private readonly AgentCatalogOptions _catalog;
@@ -529,9 +504,6 @@ public sealed class WorkspaceRuntime
         return await _taskQueries.GetTaskCommentCountAsync(taskId);
     }
 
-    private static TaskComment BuildTaskComment(TaskCommentEntity entity)
-        => TaskQueryService.BuildTaskComment(entity);
-
     // ── Task Evidence Ledger ──────────────────────────────────
 
     /// <summary>
@@ -571,9 +543,6 @@ public sealed class WorkspaceRuntime
     {
         return await _taskLifecycle.CheckGatesAsync(taskId);
     }
-
-    private static TaskEvidence BuildTaskEvidence(TaskEvidenceEntity entity)
-        => TaskQueryService.BuildTaskEvidence(entity);
 
     // ── Spec–Task Linking ───────────────────────────────────────
 
@@ -623,9 +592,6 @@ public sealed class WorkspaceRuntime
     {
         return await _taskQueries.GetUnlinkedTasksAsync();
     }
-
-    private static SpecTaskLink BuildSpecTaskLink(SpecTaskLinkEntity entity)
-        => TaskQueryService.BuildSpecTaskLink(entity);
 
     // ── Message Management (delegated to MessageService) ────────
 
@@ -820,36 +786,14 @@ public sealed class WorkspaceRuntime
         ActivitySeverity severity = ActivitySeverity.Info)
         => _activity.Publish(type, roomId, actorId, taskId, message, correlationId, severity);
 
-    private static TaskSnapshot BuildTaskSnapshot(TaskEntity entity, int commentCount = 0)
-        => TaskQueryService.BuildTaskSnapshot(entity, commentCount);
-
-    private static ChatEnvelope BuildChatEnvelope(MessageEntity entity)
-        => RoomService.BuildChatEnvelope(entity);
-
-    private static AgentLocation BuildAgentLocation(AgentLocationEntity entity)
-        => AgentLocationService.BuildAgentLocation(entity);
-
     private Task<List<BreakoutRoom>> GetAllBreakoutRoomsAsync()
         => _breakouts.GetAllBreakoutRoomsAsync();
 
     public Task<List<BreakoutRoom>> GetAgentSessionsAsync(string agentId)
         => _breakouts.GetAgentSessionsAsync(agentId);
 
-    private MessageEntity CreateMessageEntity(
-        string roomId, MessageKind kind, string content,
-        string? correlationId, DateTime sentAt)
-        => _messages.CreateMessageEntity(roomId, kind, content, correlationId, sentAt);
-
-    private Task TrimMessagesAsync(string roomId)
-        => _messages.TrimMessagesAsync(roomId);
-
     private static string Normalize(string value)
         => RoomService.Normalize(value);
-
-    private static string Truncate(string value, int maxLength)
-    {
-        return value.Length <= maxLength ? value : value[..maxLength] + "...";
-    }
 
     // ── Orchestrator Support Methods ────────────────────────────
 
