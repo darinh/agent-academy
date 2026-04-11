@@ -1551,3 +1551,50 @@ export function getAgentAnalyticsDetail(agentId: string, hoursBack?: number): Pr
   const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
   return request<AgentAnalyticsDetail>(apiUrl(`/api/analytics/agents/${encodeURIComponent(agentId)}${qs}`));
 }
+
+// ── Export / Download ──────────────────────────────────────────────────
+
+/**
+ * Triggers a browser file download from a fetch response.
+ * Handles Content-Disposition and falls back to the provided filename.
+ */
+async function downloadFile(url: string, fallbackFilename: string): Promise<void> {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ApiError | null;
+    throw new Error(body?.error ?? `Export failed: ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition");
+  let filename = fallbackFilename;
+  if (disposition) {
+    const match = /filename[^;=\n]*=["']?([^"';\n]*)/.exec(disposition);
+    if (match?.[1]) filename = match[1];
+  }
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+
+export function exportAgentAnalytics(hoursBack?: number, format: "csv" | "json" = "csv"): Promise<void> {
+  const params = new URLSearchParams({ format });
+  if (hoursBack != null) params.set("hoursBack", String(hoursBack));
+  return downloadFile(apiUrl(`/api/export/agents?${params}`), `agent-analytics.${format}`);
+}
+
+export function exportUsageRecords(
+  options?: { hoursBack?: number; agentId?: string; limit?: number; format?: "csv" | "json" },
+): Promise<void> {
+  const format = options?.format ?? "csv";
+  const params = new URLSearchParams({ format });
+  if (options?.hoursBack != null) params.set("hoursBack", String(options.hoursBack));
+  if (options?.agentId) params.set("agentId", options.agentId);
+  if (options?.limit != null) params.set("limit", String(options.limit));
+  return downloadFile(apiUrl(`/api/export/usage?${params}`), `usage-records.${format}`);
+}
