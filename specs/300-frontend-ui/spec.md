@@ -151,6 +151,7 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/sprints/{id}/cancel` | POST | Cancel an active sprint |
 | `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
 | `/api/analytics/agents` | GET | Per-agent performance metrics (optional `hoursBack` query param, 1–8760) |
+| `/api/analytics/agents/{agentId}` | GET | Agent detail drill-down (optional `hoursBack`, `requestLimit`, `errorLimit`, `taskLimit`) |
 
 ### Browse response shape (from server):
 ```json
@@ -356,6 +357,27 @@ interface AgentAnalyticsSummary {
   totalErrors: number;
 }
 ```
+
+**Card selection:** Clicking an agent card toggles selection (highlighted border). Selected card expands an inline `AgentDetailView` below the grid.
+
+### Agent Detail View (`AgentDetailView.tsx`)
+
+Drill-down panel showing detailed per-agent analytics when a card is selected.
+
+**Data source:** `GET /api/analytics/agents/{agentId}?hoursBack={N}` → `AgentAnalyticsDetail`. Fetches on mount and when `agentId` or `hoursBack` changes. Stale-response protection via `fetchIdRef`.
+
+**Layout:**
+- Header: agent name/ID, refresh button, close button (×)
+- KPI row: 6 cards — requests, tokens, cost, avg response time, errors (red when > 0), tasks done
+- Activity trend: 24-bucket sparkline (wider than card sparklines, 400×40)
+- Model breakdown: responsive grid of cards showing per-model request count, tokens, cost, and proportional bar
+- Recent requests: scrollable table (time, model, tokens in/out, cost, duration)
+- Recent errors: table with error type badge (`errorTypeBadge` from `panelUtils`), truncated message with tooltip, recovery status badge
+- Tasks: list with title, status badge (color-coded), branch icon tooltip, PR number, creation date
+
+**Empty states:** Per-section "No X in this window" messages.
+
+**API types (`api.ts`):** `AgentAnalyticsDetail`, `AgentUsageRecord`, `AgentErrorRecord`, `AgentTaskRecord`, `AgentModelBreakdown`, `AgentActivityBucket`.
 
 ## Room-Centric Conversation (`ChatPanel.tsx`)
 

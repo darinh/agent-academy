@@ -281,7 +281,8 @@ public class AgentAnalyticsTests : IDisposable
         long outputTokens = 0,
         double? cost = null,
         int? durationMs = null,
-        DateTime? recordedAt = null)
+        DateTime? recordedAt = null,
+        string? model = null)
     {
         return new LlmUsageEntity
         {
@@ -292,6 +293,7 @@ public class AgentAnalyticsTests : IDisposable
             Cost = cost,
             DurationMs = durationMs,
             RecordedAt = recordedAt ?? DateTime.UtcNow,
+            Model = model,
         };
     }
 
@@ -314,7 +316,9 @@ public class AgentAnalyticsTests : IDisposable
 
     private static TaskEntity MakeTask(
         string agentId,
-        string status = "Active")
+        string status = "Active",
+        DateTime? createdAt = null,
+        DateTime? completedAt = null)
     {
         return new TaskEntity
         {
@@ -322,8 +326,234 @@ public class AgentAnalyticsTests : IDisposable
             Title = "Test task",
             AssignedAgentId = agentId,
             Status = status,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = createdAt ?? DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
+            CompletedAt = completedAt,
         };
+    }
+
+    // ── Detail: empty / not found ───────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_UnknownAgent_ReturnsEmptyMetrics()
+    {
+        var result = await _service.GetAgentDetailAsync("nonexistent", hoursBack: 24);
+        Assert.NotNull(result);
+        Assert.Equal("nonexistent", result.Agent.AgentId);
+        Assert.Equal("nonexistent", result.Agent.AgentName); // Falls back to ID
+        Assert.Equal(0, result.Agent.TotalRequests);
+        Assert.Empty(result.RecentRequests);
+    }
+
+    [Fact]
+    public async Task GetDetail_NoData_ReturnsEmptyDetail()
+    {
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: 24);
+
+        Assert.NotNull(result);
+        Assert.Equal("planner-1", result.Agent.AgentId);
+        Assert.Equal("Planner", result.Agent.AgentName);
+        Assert.Equal(0, result.Agent.TotalRequests);
+        Assert.Empty(result.RecentRequests);
+        Assert.Empty(result.RecentErrors);
+        Assert.Empty(result.Tasks);
+        Assert.Empty(result.ModelBreakdown);
+        Assert.Equal(24, result.ActivityBuckets.Count);
+    }
+
+    // ── Detail: usage aggregation ───────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_WithUsage_AggregatesAndReturnsRecords()
+    {
+        using (var db = GetDb())
+        {
+            db.LlmUsage.AddRange(
+                MakeUsage("planner-1", inputTokens: 100, outputTokens: 50, cost: 0.01, durationMs: 500),
+                MakeUsage("planner-1", inputTokens: 200, outputTokens: 100, cost: 0.02, durationMs: 800),
+                MakeUsage("coder-1", inputTokens: 999, outputTokens: 999));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: 24);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Agent.TotalRequests);
+        Assert.Equal(300L, result.Agent.TotalInputTokens);
+        Assert.Equal(150L, result.Agent.TotalOutputTokens);
+        Assert.Equal(0.03, result.Agent.TotalCost, precision: 4);
+        Assert.Equal(2, result.RecentRequests.Count);
+        // Most recent first
+        Assert.True(result.RecentRequests[0].RecordedAt >= result.RecentRequests[1].RecordedAt);
+    }
+
+    // ── Detail: model breakdown ─────────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_ModelBreakdown_GroupsByModel()
+    {
+        using (var db = GetDb())
+        {
+            db.LlmUsage.AddRange(
+                MakeUsage("planner-1", inputTokens: 100, outputTokens: 50, cost: 0.01, model: "gpt-4"),
+                MakeUsage("planner-1", inputTokens: 200, outputTokens: 100, cost: 0.02, model: "gpt-4"),
+                MakeUsage("planner-1", inputTokens: 50, outputTokens: 25, cost: 0.005, model: "claude-3"));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: null);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.ModelBreakdown.Count);
+
+        var gpt4 = result.ModelBreakdown.First(m => m.Model == "gpt-4");
+        Assert.Equal(2, gpt4.Requests);
+        Assert.Equal(450L, gpt4.TotalTokens);
+
+        var claude = result.ModelBreakdown.First(m => m.Model == "claude-3");
+        Assert.Equal(1, claude.Requests);
+    }
+
+    [Fact]
+    public async Task GetDetail_NullModel_ShowsAsUnknown()
+    {
+        using (var db = GetDb())
+        {
+            db.LlmUsage.Add(MakeUsage("planner-1", inputTokens: 100, outputTokens: 50));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: null);
+
+        Assert.NotNull(result);
+        Assert.Single(result.ModelBreakdown);
+        Assert.Equal("unknown", result.ModelBreakdown[0].Model);
+    }
+
+    // ── Detail: errors ──────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_WithErrors_ReturnsRecentErrors()
+    {
+        using (var db = GetDb())
+        {
+            db.AgentErrors.AddRange(
+                MakeError("planner-1", recoverable: true),
+                MakeError("planner-1", recoverable: false),
+                MakeError("coder-1")); // different agent — should not appear
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: 24);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Agent.TotalErrors);
+        Assert.Equal(1, result.Agent.RecoverableErrors);
+        Assert.Equal(1, result.Agent.UnrecoverableErrors);
+        Assert.Equal(2, result.RecentErrors.Count);
+    }
+
+    // ── Detail: tasks ───────────────────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_Tasks_FiltersByActiveInWindow()
+    {
+        using (var db = GetDb())
+        {
+            // Created within window
+            db.Tasks.Add(MakeTask("planner-1", "Active", createdAt: DateTime.UtcNow.AddHours(-2)));
+            // Completed within window (created before)
+            db.Tasks.Add(MakeTask("planner-1", "Completed",
+                createdAt: DateTime.UtcNow.AddDays(-5),
+                completedAt: DateTime.UtcNow.AddHours(-1)));
+            // Outside window entirely
+            db.Tasks.Add(MakeTask("planner-1", "Completed",
+                createdAt: DateTime.UtcNow.AddDays(-10),
+                completedAt: DateTime.UtcNow.AddDays(-8)));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: 24);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Tasks.Count);
+    }
+
+    [Fact]
+    public async Task GetDetail_Tasks_CappedAtLimit()
+    {
+        using (var db = GetDb())
+        {
+            for (var i = 0; i < 10; i++)
+                db.Tasks.Add(MakeTask("planner-1", "Active"));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: null, taskLimit: 3);
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Tasks.Count);
+    }
+
+    // ── Detail: activity buckets ────────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_ActivityBuckets_Has24Buckets()
+    {
+        using (var db = GetDb())
+        {
+            db.LlmUsage.Add(MakeUsage("planner-1", inputTokens: 100, outputTokens: 50));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: 24);
+
+        Assert.NotNull(result);
+        Assert.Equal(24, result.ActivityBuckets.Count);
+        // Buckets cover the full window
+        Assert.True(result.ActivityBuckets[0].BucketStart >= result.WindowStart);
+        Assert.True(result.ActivityBuckets[^1].BucketEnd <= result.WindowEnd.AddSeconds(1));
+        // At least one bucket has data
+        Assert.True(result.ActivityBuckets.Sum(b => b.Tokens) > 0);
+    }
+
+    // ── Detail: window semantics ────────────────────────────────
+
+    [Fact]
+    public async Task GetDetail_AllTime_IncludesAllData()
+    {
+        using (var db = GetDb())
+        {
+            db.LlmUsage.Add(MakeUsage("planner-1", inputTokens: 100, outputTokens: 50,
+                recordedAt: DateTime.UtcNow.AddDays(-60)));
+            db.LlmUsage.Add(MakeUsage("planner-1", inputTokens: 200, outputTokens: 100,
+                recordedAt: DateTime.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: null);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Agent.TotalRequests);
+        Assert.Equal(2, result.RecentRequests.Count);
+    }
+
+    [Fact]
+    public async Task GetDetail_WithHoursBack_FiltersToWindow()
+    {
+        using (var db = GetDb())
+        {
+            db.LlmUsage.Add(MakeUsage("planner-1", inputTokens: 100, outputTokens: 50,
+                recordedAt: DateTime.UtcNow.AddHours(-48)));
+            db.LlmUsage.Add(MakeUsage("planner-1", inputTokens: 200, outputTokens: 100,
+                recordedAt: DateTime.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _service.GetAgentDetailAsync("planner-1", hoursBack: 24);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Agent.TotalRequests);
+        Assert.Single(result.RecentRequests);
     }
 }

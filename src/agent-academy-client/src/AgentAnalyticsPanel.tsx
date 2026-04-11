@@ -16,6 +16,7 @@ import V3Badge from "./V3Badge";
 import Sparkline from "./Sparkline";
 import { formatCost, formatTokenCount } from "./panelUtils";
 import { getAgentAnalytics, type AgentAnalyticsSummary, type AgentPerformanceMetrics } from "./api";
+import AgentDetailView from "./AgentDetailView";
 
 // ── Styles ──
 
@@ -92,6 +93,20 @@ const useLocalStyles = makeStyles({
     ...shorthands.borderRadius("8px"),
     border: "1px solid var(--aa-border)",
     backgroundColor: "var(--aa-bg)",
+    cursor: "pointer",
+    transitionProperty: "border-color",
+    transitionDuration: "0.15s",
+    ":hover": { ...shorthands.borderColor("var(--aa-cyan, #5b8def)") },
+  },
+  cardSelected: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    ...shorthands.padding("12px"),
+    ...shorthands.borderRadius("8px"),
+    border: "2px solid var(--aa-cyan, #5b8def)",
+    backgroundColor: "var(--aa-bg)",
+    cursor: "pointer",
   },
   cardHeader: {
     display: "flex",
@@ -197,6 +212,7 @@ export default function AgentAnalyticsPanel({ hoursBack }: AgentAnalyticsPanelPr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>("requests");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const fetchIdRef = useRef(0);
 
   const fetchData = useCallback(async () => {
@@ -291,16 +307,38 @@ export default function AgentAnalyticsPanel({ hoursBack }: AgentAnalyticsPanelPr
       {/* Agent cards */}
       <div className={s.grid}>
         {sorted.map((agent) => (
-          <AgentCard key={agent.agentId} agent={agent} styles={s} />
+          <AgentCard
+            key={agent.agentId}
+            agent={agent}
+            styles={s}
+            selected={agent.agentId === selectedAgentId}
+            onClick={() => setSelectedAgentId(
+              agent.agentId === selectedAgentId ? null : agent.agentId
+            )}
+          />
         ))}
       </div>
+
+      {/* Detail view */}
+      {selectedAgentId && (
+        <AgentDetailView
+          agentId={selectedAgentId}
+          hoursBack={hoursBack}
+          onClose={() => setSelectedAgentId(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ── Agent Card ──
 
-function AgentCard({ agent, styles: s }: { agent: AgentPerformanceMetrics; styles: ReturnType<typeof useLocalStyles> }) {
+function AgentCard({ agent, styles: s, selected, onClick }: {
+  agent: AgentPerformanceMetrics;
+  styles: ReturnType<typeof useLocalStyles>;
+  selected: boolean;
+  onClick: () => void;
+}) {
   const totalTokens = agent.totalInputTokens + agent.totalOutputTokens;
   const errColor = errorRateColor(agent.totalErrors, agent.totalRequests);
   const taskRate = agent.tasksAssigned > 0
@@ -308,7 +346,7 @@ function AgentCard({ agent, styles: s }: { agent: AgentPerformanceMetrics; style
     : null;
 
   return (
-    <div className={s.card}>
+    <div className={selected ? s.cardSelected : s.card} onClick={onClick}>
       <div className={s.cardHeader}>
         <div>
           <div className={s.agentName}>{agent.agentName}</div>

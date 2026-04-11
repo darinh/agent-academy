@@ -3,6 +3,7 @@ import type { AgentAnalyticsSummary, AgentPerformanceMetrics } from "../api";
 
 vi.mock("../api", () => ({
   getAgentAnalytics: vi.fn(),
+  getAgentAnalyticsDetail: vi.fn(),
 }));
 
 import { getAgentAnalytics } from "../api";
@@ -223,6 +224,206 @@ describe("AgentAnalyticsPanel", () => {
 
     it("returns red for high error rate", () => {
       expect(errorRateColor(25, 100)).toBe("red");
+    });
+  });
+});
+
+// ── Drill-down tests ──
+
+import type {
+  AgentAnalyticsDetail,
+  AgentUsageRecord,
+  AgentErrorRecord,
+  AgentTaskRecord,
+  AgentModelBreakdown,
+  AgentActivityBucket,
+} from "../api";
+
+import { getAgentAnalyticsDetail } from "../api";
+
+const mockGetDetail = vi.mocked(getAgentAnalyticsDetail);
+
+function makeUsageRecord(overrides: Partial<AgentUsageRecord> = {}): AgentUsageRecord {
+  return {
+    id: "u1",
+    roomId: "room-1",
+    model: "gpt-4",
+    inputTokens: 1000,
+    outputTokens: 500,
+    cost: 0.01,
+    durationMs: 800,
+    reasoningEffort: null,
+    recordedAt: "2026-04-11T19:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeErrorRecord(overrides: Partial<AgentErrorRecord> = {}): AgentErrorRecord {
+  return {
+    id: "e1",
+    roomId: "room-1",
+    errorType: "transient",
+    message: "Connection timeout",
+    recoverable: true,
+    retried: false,
+    occurredAt: "2026-04-11T19:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeTaskRecord(overrides: Partial<AgentTaskRecord> = {}): AgentTaskRecord {
+  return {
+    id: "task-1",
+    title: "Fix login bug",
+    status: "Completed",
+    roomId: "room-1",
+    branchName: "fix/login-bug",
+    pullRequestUrl: null,
+    pullRequestNumber: null,
+    createdAt: "2026-04-10T10:00:00Z",
+    completedAt: "2026-04-10T14:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeModelBreakdown(overrides: Partial<AgentModelBreakdown> = {}): AgentModelBreakdown {
+  return {
+    model: "gpt-4",
+    requests: 50,
+    totalTokens: 75_000,
+    totalCost: 0.75,
+    ...overrides,
+  };
+}
+
+function makeBucket(overrides: Partial<AgentActivityBucket> = {}): AgentActivityBucket {
+  return {
+    bucketStart: "2026-04-11T00:00:00Z",
+    bucketEnd: "2026-04-11T01:00:00Z",
+    requests: 5,
+    tokens: 3000,
+    ...overrides,
+  };
+}
+
+function makeDetail(overrides: Partial<AgentAnalyticsDetail> = {}): AgentAnalyticsDetail {
+  return {
+    agent: makeAgent(),
+    windowStart: "2026-04-10T20:00:00Z",
+    windowEnd: "2026-04-11T20:00:00Z",
+    recentRequests: [makeUsageRecord()],
+    recentErrors: [makeErrorRecord()],
+    tasks: [makeTaskRecord()],
+    modelBreakdown: [makeModelBreakdown()],
+    activityBuckets: Array.from({ length: 24 }, (_, i) => makeBucket({
+      bucketStart: `2026-04-10T${String(20 + i).padStart(2, "0")}:00:00Z`,
+      bucketEnd: `2026-04-10T${String(21 + i).padStart(2, "0")}:00:00Z`,
+    })),
+    ...overrides,
+  };
+}
+
+describe("AgentAnalyticsDetail", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  describe("API integration types", () => {
+    it("getAgentAnalyticsDetail returns full detail shape", async () => {
+      mockGetDetail.mockResolvedValue(makeDetail());
+      const result = await getAgentAnalyticsDetail("planner-1", 24);
+
+      expect(result.agent.agentId).toBe("planner-1");
+      expect(result.recentRequests).toHaveLength(1);
+      expect(result.recentErrors).toHaveLength(1);
+      expect(result.tasks).toHaveLength(1);
+      expect(result.modelBreakdown).toHaveLength(1);
+      expect(result.activityBuckets).toHaveLength(24);
+      expect(mockGetDetail).toHaveBeenCalledWith("planner-1", 24);
+    });
+
+    it("works without hoursBack parameter", async () => {
+      mockGetDetail.mockResolvedValue(makeDetail());
+      await getAgentAnalyticsDetail("planner-1");
+      expect(mockGetDetail).toHaveBeenCalledWith("planner-1");
+    });
+
+    it("handles empty detail response", async () => {
+      mockGetDetail.mockResolvedValue(makeDetail({
+        recentRequests: [],
+        recentErrors: [],
+        tasks: [],
+        modelBreakdown: [],
+      }));
+      const result = await getAgentAnalyticsDetail("planner-1");
+
+      expect(result.recentRequests).toHaveLength(0);
+      expect(result.recentErrors).toHaveLength(0);
+      expect(result.tasks).toHaveLength(0);
+      expect(result.modelBreakdown).toHaveLength(0);
+    });
+  });
+
+  describe("usage record shape", () => {
+    it("includes room context", () => {
+      const record = makeUsageRecord({ roomId: "room-42" });
+      expect(record.roomId).toBe("room-42");
+    });
+
+    it("handles null optional fields", () => {
+      const record = makeUsageRecord({ model: null, cost: null, durationMs: null, reasoningEffort: null });
+      expect(record.model).toBeNull();
+      expect(record.cost).toBeNull();
+      expect(record.durationMs).toBeNull();
+    });
+  });
+
+  describe("error record shape", () => {
+    it("includes recovery info", () => {
+      const rec = makeErrorRecord({ recoverable: true, retried: true });
+      expect(rec.recoverable).toBe(true);
+      expect(rec.retried).toBe(true);
+    });
+
+    it("includes room context", () => {
+      const rec = makeErrorRecord({ roomId: "room-5" });
+      expect(rec.roomId).toBe("room-5");
+    });
+  });
+
+  describe("task record shape", () => {
+    it("includes branch and PR context", () => {
+      const task = makeTaskRecord({
+        branchName: "feat/new-thing",
+        pullRequestUrl: "https://github.com/org/repo/pull/42",
+        pullRequestNumber: 42,
+      });
+      expect(task.branchName).toBe("feat/new-thing");
+      expect(task.pullRequestNumber).toBe(42);
+    });
+
+    it("handles null completedAt for active tasks", () => {
+      const task = makeTaskRecord({ status: "Active", completedAt: null });
+      expect(task.completedAt).toBeNull();
+    });
+  });
+
+  describe("model breakdown shape", () => {
+    it("contains aggregate metrics", () => {
+      const model = makeModelBreakdown({ model: "gpt-4", requests: 100, totalTokens: 200_000, totalCost: 2.5 });
+      expect(model.requests).toBe(100);
+      expect(model.totalTokens).toBe(200_000);
+      expect(model.totalCost).toBe(2.5);
+    });
+  });
+
+  describe("activity bucket shape", () => {
+    it("contains time range and metrics", () => {
+      const bucket = makeBucket({ requests: 10, tokens: 5000 });
+      expect(bucket.requests).toBe(10);
+      expect(bucket.tokens).toBe(5000);
+      expect(bucket.bucketStart).toBeDefined();
+      expect(bucket.bucketEnd).toBeDefined();
     });
   });
 });

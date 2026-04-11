@@ -1485,3 +1485,69 @@ export function getAgentAnalytics(hoursBack?: number): Promise<AgentAnalyticsSum
   const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
   return request<AgentAnalyticsSummary>(apiUrl(`/api/analytics/agents${qs}`));
 }
+
+// ── Agent analytics drill-down ──
+
+export interface AgentUsageRecord {
+  id: string;
+  roomId: string | null;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number | null;
+  durationMs: number | null;
+  reasoningEffort: string | null;
+  recordedAt: string;
+}
+
+export interface AgentErrorRecord {
+  id: string;
+  roomId: string | null;
+  errorType: string;
+  message: string;
+  recoverable: boolean;
+  retried: boolean;
+  occurredAt: string;
+}
+
+export interface AgentTaskRecord {
+  id: string;
+  title: string;
+  status: string;
+  roomId: string | null;
+  branchName: string | null;
+  pullRequestUrl: string | null;
+  pullRequestNumber: number | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AgentModelBreakdown {
+  model: string;
+  requests: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+export interface AgentActivityBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  requests: number;
+  tokens: number;
+}
+
+export interface AgentAnalyticsDetail {
+  agent: AgentPerformanceMetrics;
+  windowStart: string;
+  windowEnd: string;
+  recentRequests: AgentUsageRecord[];
+  recentErrors: AgentErrorRecord[];
+  tasks: AgentTaskRecord[];
+  modelBreakdown: AgentModelBreakdown[];
+  activityBuckets: AgentActivityBucket[];
+}
+
+export function getAgentAnalyticsDetail(agentId: string, hoursBack?: number): Promise<AgentAnalyticsDetail> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<AgentAnalyticsDetail>(apiUrl(`/api/analytics/agents/${encodeURIComponent(agentId)}${qs}`));
+}

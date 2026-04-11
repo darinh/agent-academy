@@ -196,6 +196,53 @@ Response:
 }
 ```
 
+#### Agent Detail
+
+```
+GET /api/analytics/agents/{agentId}?hoursBack={N}&requestLimit=50&errorLimit=20&taskLimit=50
+X-Consultant-Key: {secret}
+```
+
+Detailed analytics for a single agent: recent LLM requests, errors, tasks, model breakdown, and 24-bucket activity trend.
+
+- `hoursBack` (optional, 1–8760): Time window. Omit for all-time.
+- `requestLimit` (optional, 1–200, default 50): Max recent requests returned.
+- `errorLimit` (optional, 1–200, default 20): Max recent errors returned.
+- `taskLimit` (optional, 1–200, default 50): Max tasks returned.
+- Tasks are "active in window" — included if created OR completed within the time range.
+- Non-catalog agents (from telemetry) are accepted — agentId used as name fallback.
+- Always returns 200 with zeroed metrics if agent has no data.
+
+Response:
+```json
+{
+  "agent": { /* AgentPerformanceMetrics */ },
+  "windowStart": "ISO8601",
+  "windowEnd": "ISO8601",
+  "recentRequests": [{
+    "id": "string", "roomId": "string|null", "model": "string|null",
+    "inputTokens": 0, "outputTokens": 0, "cost": 0.0,
+    "durationMs": 0.0, "reasoningEffort": "string|null", "recordedAt": "ISO8601"
+  }],
+  "recentErrors": [{
+    "id": "string", "roomId": "string|null", "errorType": "string",
+    "message": "string", "recoverable": true, "retried": false, "occurredAt": "ISO8601"
+  }],
+  "tasks": [{
+    "id": "string", "title": "string", "status": "string",
+    "roomId": "string|null", "branchName": "string|null",
+    "pullRequestUrl": "string|null", "pullRequestNumber": null,
+    "createdAt": "ISO8601", "completedAt": "ISO8601|null"
+  }],
+  "modelBreakdown": [{
+    "model": "string", "requests": 0, "totalTokens": 0, "totalCost": 0.0
+  }],
+  "activityBuckets": [{
+    "bucketStart": "ISO8601", "bucketEnd": "ISO8601", "requests": 0, "tokens": 0
+  }]
+}
+```
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
