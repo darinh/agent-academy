@@ -64,6 +64,28 @@ public sealed class ActivityPublisher
     }
 
     /// <summary>
+    /// Publishes an AgentThinking activity event and saves immediately.
+    /// Convenience method extracted from WorkspaceRuntime.
+    /// </summary>
+    public async Task PublishThinkingAsync(AgentDefinition agent, string roomId)
+    {
+        Publish(ActivityEventType.AgentThinking, roomId, agent.Id, null,
+            $"{agent.Name} is thinking...");
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Publishes an AgentFinished activity event and saves immediately.
+    /// Convenience method extracted from WorkspaceRuntime.
+    /// </summary>
+    public async Task PublishFinishedAsync(AgentDefinition agent, string roomId)
+    {
+        Publish(ActivityEventType.AgentFinished, roomId, agent.Id, null,
+            $"{agent.Name} finished.");
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
     /// Returns recent activity events from the in-memory buffer.
     /// </summary>
     public IReadOnlyList<ActivityEvent> GetRecentActivity()

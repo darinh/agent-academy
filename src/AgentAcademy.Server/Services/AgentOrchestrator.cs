@@ -202,6 +202,7 @@ public sealed class AgentOrchestrator
 
             using var scope = _scopeFactory.CreateScope();
             var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
             var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
 
@@ -270,7 +271,7 @@ public sealed class AgentOrchestrator
             // Step 1 — Run the planner first
             if (planner is not null)
             {
-                await runtime.PublishThinkingAsync(planner, roomId);
+                await activity.PublishThinkingAsync(planner, roomId);
                 var plannerResponse = "";
                 try
                 {
@@ -293,7 +294,7 @@ public sealed class AgentOrchestrator
                 }
                 finally
                 {
-                    await runtime.PublishFinishedAsync(planner, roomId);
+                    await activity.PublishFinishedAsync(planner, roomId);
                 }
 
                 if (!string.IsNullOrWhiteSpace(plannerResponse) && !AgentResponseParser.IsPassResponse(plannerResponse)
@@ -348,7 +349,7 @@ public sealed class AgentOrchestrator
                 var location = await runtime.GetAgentLocationAsync(agent.Id);
                 if (location?.State == AgentState.Working) continue;
 
-                await runtime.PublishThinkingAsync(agent, roomId);
+                await activity.PublishThinkingAsync(agent, roomId);
                 var response = "";
                 try
                 {
@@ -365,7 +366,7 @@ public sealed class AgentOrchestrator
                 }
                 finally
                 {
-                    await runtime.PublishFinishedAsync(agent, roomId);
+                    await activity.PublishFinishedAsync(agent, roomId);
                 }
 
                 if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)
@@ -417,6 +418,7 @@ public sealed class AgentOrchestrator
 
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
 
         // Find the recipient agent in catalog
@@ -481,7 +483,7 @@ public sealed class AgentOrchestrator
         }
         catch { /* non-critical */ }
 
-        await runtime.PublishThinkingAsync(agent, roomId);
+        await activity.PublishThinkingAsync(agent, roomId);
         var response = "";
         try
         {
@@ -496,7 +498,7 @@ public sealed class AgentOrchestrator
         }
         finally
         {
-            await runtime.PublishFinishedAsync(agent, roomId);
+            await activity.PublishFinishedAsync(agent, roomId);
         }
 
         if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)

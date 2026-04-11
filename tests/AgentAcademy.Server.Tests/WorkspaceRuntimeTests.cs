@@ -922,7 +922,7 @@ public class WorkspaceRuntimeTests : IDisposable
         _runtime.StreamActivity(evt => received = evt);
 
         var agent = _catalog.Agents[0];
-        await _runtime.PublishThinkingAsync(agent, "main");
+        await _activityPublisher.PublishThinkingAsync(agent, "main");
 
         Assert.NotNull(received);
         Assert.Equal(ActivityEventType.AgentThinking, received.Type);
@@ -938,7 +938,7 @@ public class WorkspaceRuntimeTests : IDisposable
         _runtime.StreamActivity(evt => received = evt);
 
         var agent = _catalog.Agents[0];
-        await _runtime.PublishFinishedAsync(agent, "main");
+        await _activityPublisher.PublishFinishedAsync(agent, "main");
 
         Assert.NotNull(received);
         Assert.Equal(ActivityEventType.AgentFinished, received.Type);
@@ -964,11 +964,11 @@ public class WorkspaceRuntimeTests : IDisposable
         var count = 0;
         var unsub = _runtime.StreamActivity(_ => count++);
 
-        await _runtime.PublishThinkingAsync(_catalog.Agents[0], "main");
+        await _activityPublisher.PublishThinkingAsync(_catalog.Agents[0], "main");
         Assert.Equal(1, count);
 
         unsub();
-        await _runtime.PublishFinishedAsync(_catalog.Agents[0], "main");
+        await _activityPublisher.PublishFinishedAsync(_catalog.Agents[0], "main");
         Assert.Equal(1, count); // Should not increment
     }
 

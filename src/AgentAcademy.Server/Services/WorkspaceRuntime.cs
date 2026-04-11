@@ -170,19 +170,6 @@ public sealed class WorkspaceRuntime
     public Task<string?> GetActiveProjectNameAsync()
         => _rooms.GetActiveProjectNameAsync();
 
-    public async Task<RoomSnapshot> CreateDefaultRoomAsync()
-    {
-        var existing = await _db.Rooms.FindAsync(_catalog.DefaultRoomId);
-        if (existing is not null)
-        {
-            return await _rooms.BuildRoomSnapshotAsync(existing);
-        }
-
-        await InitializeAsync();
-        var room = await _db.Rooms.FindAsync(_catalog.DefaultRoomId);
-        return await _rooms.BuildRoomSnapshotAsync(room!);
-    }
-
     public Task<string> EnsureDefaultRoomForWorkspaceAsync(string workspacePath)
         => _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
@@ -599,26 +586,6 @@ public sealed class WorkspaceRuntime
     // ── Activity Publishing ─────────────────────────────────────
 
     /// <summary>
-    /// Publishes an AgentThinking activity event.
-    /// </summary>
-    public async Task PublishThinkingAsync(AgentDefinition agent, string roomId)
-    {
-        Publish(ActivityEventType.AgentThinking, roomId, agent.Id, null,
-            $"{agent.Name} is thinking...");
-        await _db.SaveChangesAsync();
-    }
-
-    /// <summary>
-    /// Publishes an AgentFinished activity event.
-    /// </summary>
-    public async Task PublishFinishedAsync(AgentDefinition agent, string roomId)
-    {
-        Publish(ActivityEventType.AgentFinished, roomId, agent.Id, null,
-            $"{agent.Name} finished.");
-        await _db.SaveChangesAsync();
-    }
-
-    /// <summary>
     /// Returns recent activity events from the singleton broadcaster.
     /// </summary>
     public IReadOnlyList<ActivityEvent> GetRecentActivity()
@@ -635,16 +602,6 @@ public sealed class WorkspaceRuntime
     }
 
     // ── Private Helpers ─────────────────────────────────────────
-
-    private ActivityEvent Publish(
-        ActivityEventType type,
-        string? roomId,
-        string? actorId,
-        string? taskId,
-        string message,
-        string? correlationId = null,
-        ActivitySeverity severity = ActivitySeverity.Info)
-        => _activity.Publish(type, roomId, actorId, taskId, message, correlationId, severity);
 
     private Task<List<BreakoutRoom>> GetAllBreakoutRoomsAsync()
         => _breakouts.GetAllBreakoutRoomsAsync();

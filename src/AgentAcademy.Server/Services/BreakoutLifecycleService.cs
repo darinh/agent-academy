@@ -112,6 +112,7 @@ public sealed class BreakoutLifecycleService
     {
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
 
@@ -252,7 +253,7 @@ public sealed class BreakoutLifecycleService
                     try { await runtime.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
                     catch { /* ok */ }
                 }
-                await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
+                await HandleBreakoutCompleteAsync(runtime, activity, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
                 return;
             }
 
@@ -285,7 +286,7 @@ public sealed class BreakoutLifecycleService
             return;
         }
 
-        await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
+        await HandleBreakoutCompleteAsync(runtime, activity, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
     }
 
     // ── STUCK DETECTION ────────────────────────────────────────
@@ -372,7 +373,7 @@ public sealed class BreakoutLifecycleService
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
 
     private async Task HandleBreakoutCompleteAsync(
-        WorkspaceRuntime runtime, AgentConfigService configService,
+        WorkspaceRuntime runtime, ActivityPublisher activity, AgentConfigService configService,
         string breakoutRoomId, string parentRoomId, string? worktreePath = null)
     {
         var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
@@ -417,7 +418,7 @@ public sealed class BreakoutLifecycleService
         }
         else
         {
-            var verdict = await RunReviewCycleAsync(runtime, configService, parentRoomId, agent, lastMessage?.Content ?? "");
+            var verdict = await RunReviewCycleAsync(runtime, activity, configService, parentRoomId, agent, lastMessage?.Content ?? "");
 
             var isApproved = verdict is null ||
                 Regex.IsMatch(verdict.Verdict, @"^\s*APPROVED", RegexOptions.IgnoreCase);
@@ -434,14 +435,14 @@ public sealed class BreakoutLifecycleService
     }
 
     private async Task<ParsedReviewVerdict?> RunReviewCycleAsync(
-        WorkspaceRuntime runtime, AgentConfigService configService,
+        WorkspaceRuntime runtime, ActivityPublisher activity, AgentConfigService configService,
         string parentRoomId, AgentDefinition presentingAgent, string workReport)
     {
         var catalogReviewer = FindReviewer(runtime);
         if (catalogReviewer is null) return null;
         var reviewer = await configService.GetEffectiveAgentAsync(catalogReviewer);
 
-        await runtime.PublishThinkingAsync(reviewer, parentRoomId);
+        await activity.PublishThinkingAsync(reviewer, parentRoomId);
         var reviewResponse = "";
         try
         {
@@ -458,7 +459,7 @@ public sealed class BreakoutLifecycleService
         }
         finally
         {
-            await runtime.PublishFinishedAsync(reviewer, parentRoomId);
+            await activity.PublishFinishedAsync(reviewer, parentRoomId);
         }
 
         if (string.IsNullOrWhiteSpace(reviewResponse) || AgentResponseParser.IsPassResponse(reviewResponse))
