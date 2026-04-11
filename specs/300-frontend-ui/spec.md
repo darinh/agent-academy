@@ -330,6 +330,17 @@ Lists user-created custom agents with delete capability. Includes an "Add Custom
 
 Displays agent configuration cards for catalog agents. Each card shows the agent's name, role, and current model/config overrides. Uses the existing `AgentConfigOverride` system.
 
+Each expanded card includes a **Resource Quotas** section:
+- **Max Requests / Hour**: Integer input. Limits the agent's LLM API call rate (authoritative, in-memory sliding window).
+- **Max Tokens / Hour**: Integer input. Best-effort limit on total tokens consumed per hour (DB aggregation).
+- **Max Cost / Hour ($)**: Decimal input. Best-effort limit on hourly spend.
+- Current usage counters shown below each field (requests, tokens, cost this hour).
+- "Quota" badge displayed in the card header when any limit is configured.
+- "Remove Limits" button with confirmation dialog resets to unlimited.
+- Quota loading is independent of config loading — quota endpoint failure does not block config editing.
+- Input validation: non-negative numbers; requests/tokens must be integers. Invalid input shows inline error, does not submit.
+- API: `GET/PUT/DELETE /api/agents/{id}/quota` (see §003).
+
 ### Templates Tab
 
 Instruction template CRUD interface. Templates are reusable prompt fragments that can be referenced in agent configurations.

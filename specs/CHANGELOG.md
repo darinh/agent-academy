@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **300-frontend-ui**: Agent quota UI in settings panel — `AgentConfigCard` now includes a Resource Quotas section with inputs for `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour`, current usage display, "Quota" badge, "Remove Limits" button with confirmation dialog, and input validation. Uses `Promise.allSettled` for independent loading. 35 new tests (595 total frontend).
 - **003-agent-system**: Per-agent resource quotas — `AgentQuotaService` enforces `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` via `agent_configs` table. Request-rate is authoritative (in-memory sliding window), token/cost is best-effort (DB aggregation). Quota checked in `CopilotExecutor.RunAsync` before circuit breaker. New API endpoints: `GET/PUT/DELETE /api/agents/{id}/quota`.
 - **003-agent-system**: Per-agent LLM call-rate limiting — each retry attempt in `SendAndCollectWithRetryAsync` counts toward the request quota. Composite index `(AgentId, RecordedAt)` on `llm_usage` for efficient quota queries.
 - **003-agent-system**: `AgentQuotaExceededException` — caught by `AgentOrchestrator.RunAgentAsync` to produce a user-visible pause message instead of crashing.
