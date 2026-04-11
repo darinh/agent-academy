@@ -40,10 +40,10 @@ const mockDeleteCustomAgent = vi.mocked(deleteCustomAgent);
 
 function makeProvider(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
   return {
-    id: "discord",
-    name: "Discord",
+    providerId: "discord",
+    displayName: "Discord",
+    isConfigured: true,
     isConnected: true,
-    channelHint: "#general",
     ...overrides,
   };
 }
@@ -69,7 +69,8 @@ function makeTemplate(overrides: Partial<InstructionTemplate> = {}): Instruction
     id: "template-1",
     name: "Default Template",
     content: "You are a helpful agent.",
-    isDefault: false,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -245,8 +246,8 @@ describe("SettingsPanel", () => {
   describe("API integration", () => {
     it("getNotificationProviders returns provider list", async () => {
       mockGetNotificationProviders.mockResolvedValue([
-        makeProvider({ id: "discord", isConnected: true }),
-        makeProvider({ id: "slack", name: "Slack", isConnected: false }),
+        makeProvider({ providerId: "discord", isConnected: true }),
+        makeProvider({ providerId: "slack", displayName: "Slack", isConnected: false }),
       ]);
       const result = await getNotificationProviders();
       expect(result).toHaveLength(2);
@@ -255,7 +256,7 @@ describe("SettingsPanel", () => {
     });
 
     it("disconnectProvider is callable", async () => {
-      mockDisconnectProvider.mockResolvedValue(undefined);
+      mockDisconnectProvider.mockResolvedValue({ status: "disconnected", providerId: "discord" });
       await disconnectProvider("discord");
       expect(mockDisconnectProvider).toHaveBeenCalledWith("discord");
     });
@@ -288,7 +289,7 @@ describe("SettingsPanel", () => {
     });
 
     it("updateSystemSettings sends updated values", async () => {
-      mockUpdateSystemSettings.mockResolvedValue(undefined);
+      mockUpdateSystemSettings.mockResolvedValue({ "conversation.mainRoomEpochSize": "100", "conversation.breakoutEpochSize": "50" });
       await updateSystemSettings({
         "conversation.mainRoomEpochSize": "100",
         "conversation.breakoutEpochSize": "50",
@@ -300,7 +301,7 @@ describe("SettingsPanel", () => {
     });
 
     it("createCustomAgent sends agent data", async () => {
-      mockCreateCustomAgent.mockResolvedValue(undefined);
+      mockCreateCustomAgent.mockResolvedValue(makeAgent({ id: "my-bot", name: "My Bot" }));
       await createCustomAgent({
         name: "My Bot",
         prompt: "You are helpful.",
@@ -314,7 +315,7 @@ describe("SettingsPanel", () => {
     });
 
     it("createCustomAgent omits model when undefined", async () => {
-      mockCreateCustomAgent.mockResolvedValue(undefined);
+      mockCreateCustomAgent.mockResolvedValue(makeAgent({ id: "bot", name: "Bot" }));
       await createCustomAgent({
         name: "Bot",
         prompt: "Hello.",
@@ -328,7 +329,7 @@ describe("SettingsPanel", () => {
     });
 
     it("deleteCustomAgent is callable", async () => {
-      mockDeleteCustomAgent.mockResolvedValue(undefined);
+      mockDeleteCustomAgent.mockResolvedValue({ status: "deleted", agentId: "custom-1" });
       await deleteCustomAgent("custom-1");
       expect(mockDeleteCustomAgent).toHaveBeenCalledWith("custom-1");
     });

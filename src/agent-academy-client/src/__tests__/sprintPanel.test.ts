@@ -429,9 +429,9 @@ describe("SprintPanel", () => {
     });
 
     it("rejectSprintAdvance is callable", async () => {
-      mockRejectSprintAdvance.mockResolvedValue(makeDetail({ currentStage: "Intake", awaitingSignOff: false }));
+      mockRejectSprintAdvance.mockResolvedValue(makeSprint({ currentStage: "Intake", awaitingSignOff: false }));
       const result = await rejectSprintAdvance("sprint-1");
-      expect(result.sprint.awaitingSignOff).toBe(false);
+      expect(result.awaitingSignOff).toBe(false);
     });
   });
 
