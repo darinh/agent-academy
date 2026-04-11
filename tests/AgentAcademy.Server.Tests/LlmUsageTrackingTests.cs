@@ -316,6 +316,9 @@ public class UsageApiEndpointTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
         var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
         var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
             _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
@@ -325,7 +328,8 @@ public class UsageApiEndpointTests : IDisposable
             new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService)),
             agentLocations,
-            planService);
+            planService,
+            crashRecovery);
     }
 
     public void Dispose()

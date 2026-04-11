@@ -70,6 +70,9 @@ public class ServerInstanceTests : IDisposable
 
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
         var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
 
         _runtime = new WorkspaceRuntime(
             _db,
@@ -85,7 +88,8 @@ public class ServerInstanceTests : IDisposable
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)),
             agentLocations,
-            planService);
+            planService,
+            crashRecovery);
     }
 
     public void Dispose()
@@ -703,6 +707,9 @@ public class RestartHistoryApiTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub);
         var agentLocations = new AgentLocationService(_db, catalog, actPub);
         var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, actPub, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, actPub);
         var runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
@@ -717,7 +724,8 @@ public class RestartHistoryApiTests : IDisposable
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService)),
             agentLocations,
-            planService);
+            planService,
+            crashRecovery);
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
