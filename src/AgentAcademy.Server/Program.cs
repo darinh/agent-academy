@@ -105,6 +105,7 @@ if (anyAuthEnabled)
                 options.UserInformationEndpoint = "https://api.github.com/user";
                 options.Scope.Add("read:user");
                 options.Scope.Add("user:email");
+                options.Scope.Add("repo");
                 options.SaveTokens = true;
                 options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
@@ -257,7 +258,10 @@ builder.Services.AddSingleton<GitService>();
 builder.Services.AddSingleton<WorktreeService>();
 
 // GitHub integration (singleton — PR creation via gh CLI)
-builder.Services.AddSingleton<GitHubService>();
+builder.Services.AddSingleton<GitHubService>(sp =>
+    new GitHubService(
+        sp.GetRequiredService<ILogger<GitHubService>>(),
+        tokenProvider: sp.GetRequiredService<CopilotTokenProvider>()));
 builder.Services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHubService>());
 
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)

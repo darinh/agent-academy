@@ -9,21 +9,27 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// GitHub integration via the gh CLI. Follows the same process-shell pattern
 /// as <see cref="GitService"/> for consistency and testability.
+/// When a <see cref="CopilotTokenProvider"/> is supplied and has a valid token,
+/// gh commands receive the OAuth token via <c>GH_TOKEN</c> environment variable,
+/// enabling PR operations without server-side <c>gh auth login</c>.
 /// </summary>
 public sealed class GitHubService : IGitHubService
 {
     private readonly ILogger<GitHubService> _logger;
     private readonly string _repositoryRoot;
     private readonly string _ghExecutable;
+    private readonly CopilotTokenProvider? _tokenProvider;
 
     public GitHubService(
         ILogger<GitHubService> logger,
         string? repositoryRoot = null,
-        string ghExecutable = "gh")
+        string ghExecutable = "gh",
+        CopilotTokenProvider? tokenProvider = null)
     {
         _logger = logger;
         _repositoryRoot = repositoryRoot ?? FindProjectRoot();
         _ghExecutable = string.IsNullOrWhiteSpace(ghExecutable) ? "gh" : ghExecutable;
+        _tokenProvider = tokenProvider;
     }
 
     public async Task<bool> IsConfiguredAsync()
@@ -204,8 +210,31 @@ public sealed class GitHubService : IGitHubService
     /// <summary>
     /// Runs a gh CLI command and returns stdout. Throws on non-zero exit.
     /// Reads stdout/stderr concurrently to avoid deadlock when pipe buffers fill.
+    /// When an OAuth token is available, sets <c>GH_TOKEN</c> on the process so
+    /// the gh CLI uses it instead of requiring <c>gh auth login</c>. If the OAuth
+    /// token fails with an auth error, retries once without it to fall back to
+    /// any existing <c>gh auth login</c> credentials.
     /// </summary>
     internal async Task<string> RunGhAsync(params string[] args)
+    {
+        // Snapshot the token to avoid TOCTOU race with token refresh.
+        // Skip injection if the token is known-expired — let gh fall back to CLI auth.
+        var oauthToken = _tokenProvider?.Token;
+        var isExpired = _tokenProvider?.ExpiresAtUtc is { } exp && DateTime.UtcNow >= exp;
+        var usedOAuth = !string.IsNullOrWhiteSpace(oauthToken) && !isExpired;
+
+        try
+        {
+            return await RunGhCoreAsync(args, usedOAuth ? oauthToken : null);
+        }
+        catch (InvalidOperationException ex) when (usedOAuth && IsAuthError(ex.Message))
+        {
+            _logger.LogWarning("gh command failed with OAuth token (auth error), retrying without GH_TOKEN");
+            return await RunGhCoreAsync(args, ghToken: null);
+        }
+    }
+
+    private async Task<string> RunGhCoreAsync(string[] args, string? ghToken)
     {
         var psi = new ProcessStartInfo
         {
@@ -217,10 +246,15 @@ public sealed class GitHubService : IGitHubService
             CreateNoWindow = true
         };
 
+        if (!string.IsNullOrWhiteSpace(ghToken))
+            psi.Environment["GH_TOKEN"] = ghToken;
+
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        _logger.LogDebug("Running: {GhExecutable} {Args}", _ghExecutable, string.Join(" ", args));
+        _logger.LogDebug("Running: {GhExecutable} {Args} (GH_TOKEN={TokenStatus})",
+            _ghExecutable, string.Join(" ", args),
+            ghToken is not null ? "set" : "unset");
 
         // Retry on ETXTBSY (Linux "Text file busy") — a race between concurrent
         // fork() inheriting a write fd on the executable and our execve() call.
@@ -276,6 +310,20 @@ public sealed class GitHubService : IGitHubService
 
             return stdout.Trim();
         }
+    }
+
+    /// <summary>
+    /// Heuristic: does the gh CLI error message indicate an authentication or
+    /// authorization problem? Used to trigger fallback from OAuth to CLI auth.
+    /// </summary>
+    private static bool IsAuthError(string message)
+    {
+        return message.Contains("401", StringComparison.Ordinal)
+            || message.Contains("403", StringComparison.Ordinal)
+            || message.Contains("authentication", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("authorization", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("bad credentials", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("token", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindProjectRoot()

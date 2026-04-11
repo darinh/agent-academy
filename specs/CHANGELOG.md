@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **010-task-management**: OAuth bridge for GitHub PR operations. OAuth scope expanded to include `repo`. `GitHubService` accepts `CopilotTokenProvider` and sets `GH_TOKEN` on `gh` CLI processes when token is available. Browser login now enables PR operations (create, review, merge) without server-side `gh auth login`. `GET /api/github/status` includes `authSource` field ("oauth"/"cli"/"none"). 4 new tests (1906 backend total). Resolves "No OAuth flow" known gap.
+
 ### Added
 - **013-sprint-system**: New spec documenting the complete sprint lifecycle. Covers 6-stage pipeline (Intake → Planning → Discussion → Validation → Implementation → FinalSynthesis), artifact gates, human sign-off mechanism, overflow carry-forward, orchestrator integration (stage preambles + role roster filtering), REST API (10 endpoints), agent commands (START_SPRINT, ADVANCE_STAGE, STORE_ARTIFACT, COMPLETE_SPRINT), frontend SprintPanel, real-time events, and session management per stage. ~332 tests across 7 test files.
 
