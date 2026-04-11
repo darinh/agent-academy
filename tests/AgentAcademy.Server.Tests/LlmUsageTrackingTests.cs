@@ -315,6 +315,7 @@ public class UsageApiEndpointTests : IDisposable
         var activityPublisher = new ActivityPublisher(_db, activityBus);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
         var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
+        var planService = new PlanService(_db);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
             _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
@@ -323,7 +324,8 @@ public class UsageApiEndpointTests : IDisposable
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService)),
-            agentLocations);
+            agentLocations,
+            planService);
     }
 
     public void Dispose()

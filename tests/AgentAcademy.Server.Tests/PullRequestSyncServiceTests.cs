@@ -123,6 +123,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<MessageService>();
         sc.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         sc.AddScoped<AgentLocationService>();
+        sc.AddScoped<PlanService>();
         sc.AddScoped<BreakoutRoomService>();
         sc.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         sc.AddScoped<TaskItemService>();
@@ -399,13 +400,15 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
         var agentLocations = new AgentLocationService(_db, catalog, _activityPublisher);
+        var planService = new PlanService(_db);
         _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, taskQueries, agentLocations),
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, _activityPublisher, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService)),
-            agentLocations);
+            agentLocations,
+            planService);
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 

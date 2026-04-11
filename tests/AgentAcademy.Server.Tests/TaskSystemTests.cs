@@ -65,6 +65,7 @@ public class TaskSystemTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);

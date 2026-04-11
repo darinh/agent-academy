@@ -260,6 +260,7 @@ public class AgentToolFunctionsTests : IDisposable
         services.AddScoped<MessageService>();
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
@@ -541,6 +542,7 @@ public class AgentWriteToolTests : IDisposable
         services.AddScoped<MessageService>();
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);

@@ -50,6 +50,7 @@ public sealed class WorkspaceRuntime
     private readonly TaskItemService _taskItems;
     private readonly RoomService _rooms;
     private readonly AgentLocationService _agentLocations;
+    private readonly PlanService _plans;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -63,7 +64,8 @@ public sealed class WorkspaceRuntime
         BreakoutRoomService breakouts,
         TaskItemService taskItems,
         RoomService rooms,
-        AgentLocationService agentLocations)
+        AgentLocationService agentLocations,
+        PlanService plans)
     {
         _db = db;
         _logger = logger;
@@ -77,6 +79,7 @@ public sealed class WorkspaceRuntime
         _taskItems = taskItems;
         _rooms = rooms;
         _agentLocations = agentLocations;
+        _plans = plans;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -956,58 +959,20 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns the plan content for a room, or null if none exists.
     /// </summary>
-    public async Task<PlanContent?> GetPlanAsync(string roomId)
-    {
-        var entity = await _db.Plans.FindAsync(roomId);
-        return entity is null ? null : new PlanContent(entity.Content);
-    }
+    public Task<PlanContent?> GetPlanAsync(string roomId)
+        => _plans.GetPlanAsync(roomId);
 
     /// <summary>
     /// Creates or updates the plan for a room.
     /// </summary>
-    public async Task SetPlanAsync(string roomId, string content)
-    {
-        if (string.IsNullOrWhiteSpace(roomId))
-            throw new ArgumentException("Room ID is required.", nameof(roomId));
-        if (string.IsNullOrWhiteSpace(content))
-            throw new ArgumentException("Plan content is required.", nameof(content));
-
-        if (!await PlanTargetExistsAsync(roomId))
-            throw new InvalidOperationException($"Room or breakout room '{roomId}' not found");
-
-        var entity = await _db.Plans.FindAsync(roomId);
-        var now = DateTime.UtcNow;
-
-        if (entity is null)
-        {
-            _db.Plans.Add(new PlanEntity
-            {
-                RoomId = roomId,
-                Content = content,
-                UpdatedAt = now
-            });
-        }
-        else
-        {
-            entity.Content = content;
-            entity.UpdatedAt = now;
-        }
-
-        await _db.SaveChangesAsync();
-    }
+    public Task SetPlanAsync(string roomId, string content)
+        => _plans.SetPlanAsync(roomId, content);
 
     /// <summary>
     /// Deletes the plan for a room. Returns true if a plan was deleted.
     /// </summary>
-    public async Task<bool> DeletePlanAsync(string roomId)
-    {
-        var entity = await _db.Plans.FindAsync(roomId);
-        if (entity is null) return false;
-
-        _db.Plans.Remove(entity);
-        await _db.SaveChangesAsync();
-        return true;
-    }
+    public Task<bool> DeletePlanAsync(string roomId)
+        => _plans.DeletePlanAsync(roomId);
 
     // ── Activity Publishing ─────────────────────────────────────
 
@@ -1064,12 +1029,6 @@ public sealed class WorkspaceRuntime
 
     private static ChatEnvelope BuildChatEnvelope(MessageEntity entity)
         => RoomService.BuildChatEnvelope(entity);
-
-    private async Task<bool> PlanTargetExistsAsync(string roomId)
-    {
-        return await _db.Rooms.AnyAsync(r => r.Id == roomId)
-            || await _db.BreakoutRooms.AnyAsync(br => br.Id == roomId);
-    }
 
     private static AgentLocation BuildAgentLocation(AgentLocationEntity entity)
         => AgentLocationService.BuildAgentLocation(entity);

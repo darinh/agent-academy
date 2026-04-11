@@ -69,6 +69,7 @@ public class ServerInstanceTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
+        var planService = new PlanService(_db);
 
         _runtime = new WorkspaceRuntime(
             _db,
@@ -83,7 +84,8 @@ public class ServerInstanceTests : IDisposable
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)),
-            agentLocations);
+            agentLocations,
+            planService);
     }
 
     public void Dispose()
@@ -700,6 +702,7 @@ public class RestartHistoryApiTests : IDisposable
         var actPub = new ActivityPublisher(_db, actBus);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub);
         var agentLocations = new AgentLocationService(_db, catalog, actPub);
+        var planService = new PlanService(_db);
         var runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
@@ -713,7 +716,8 @@ public class RestartHistoryApiTests : IDisposable
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService)),
-            agentLocations);
+            agentLocations,
+            planService);
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);

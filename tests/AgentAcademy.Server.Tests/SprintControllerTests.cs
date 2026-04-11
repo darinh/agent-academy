@@ -45,6 +45,7 @@ public class SprintControllerTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
+        var planService = new PlanService(_db);
 
         _runtime = new WorkspaceRuntime(
             _db,
@@ -55,7 +56,8 @@ public class SprintControllerTests : IDisposable
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService,
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)),
-            agentLocations);
+            agentLocations,
+            planService);
 
         _controller = new SprintController(
             _sprintService, _runtime,
