@@ -8,7 +8,33 @@ Documents the `WorkspaceRuntime` service — the central state manager for Agent
 
 **Status: Implemented**
 
-`WorkspaceRuntime` is a scoped service (`AddScoped<WorkspaceRuntime>()`) that uses EF Core (`AgentAcademyDbContext`) for persistence and an in-memory buffer for recent activity events.
+`WorkspaceRuntime` is a scoped facade (`AddScoped<WorkspaceRuntime>()`) that delegates to focused domain services. It provides a stable public API to controllers, command handlers, and the orchestrator, while internal logic lives in extracted services.
+
+### Internal Architecture
+
+WorkspaceRuntime delegates to 10 extracted services plus shared infrastructure:
+
+| Service | Responsibility | Registration |
+|---------|---------------|--------------|
+| `InitializationService` | Startup room/agent seeding, server instance tracking | Scoped |
+| `CrashRecoveryService` | Crash detection, breakout/agent/task recovery | Scoped |
+| `RoomService` | Room CRUD, snapshots, phase transitions, workspace scoping | Scoped |
+| `MessageService` | Room/DM/breakout messaging, message trimming | Scoped |
+| `TaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped |
+| `TaskLifecycleService` | Task creation staging, claim/release/approve/reject, evidence writes | Scoped |
+| `BreakoutRoomService` | Breakout room lifecycle, task association, stuck reopening | Scoped |
+| `TaskItemService` | Task item CRUD | Scoped |
+| `AgentLocationService` | Agent location tracking and movement | Scoped |
+| `PlanService` | Plan CRUD with room/breakout validation | Scoped |
+| `ActivityPublisher` | Event publishing, in-memory buffer, subscriber notification | Singleton |
+
+WorkspaceRuntime retains orchestration logic that coordinates across multiple services:
+- `CreateTaskAsync` — room creation/lookup + task staging + agent auto-join
+- `CompleteTaskAsync` — task completion + room auto-archive
+- `RejectTaskAsync` — task rejection + room/breakout reopening
+- `GetOverviewAsync` — aggregates rooms, locations, breakouts, activity
+
+All other public methods are thin one-liner delegations to the extracted services.
 
 ### Initialization
 
@@ -220,6 +246,18 @@ builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
 - `AgentAcademyDbContext` (scoped)
 - `ILogger<WorkspaceRuntime>`
 - `AgentCatalogOptions` (singleton)
+- `ActivityPublisher` (singleton)
+- `ConversationSessionService` (scoped)
+- `TaskQueryService` (scoped)
+- `TaskLifecycleService` (scoped)
+- `MessageService` (scoped)
+- `BreakoutRoomService` (scoped)
+- `TaskItemService` (scoped)
+- `RoomService` (scoped)
+- `AgentLocationService` (scoped)
+- `PlanService` (scoped)
+- `CrashRecoveryService` (scoped)
+- `InitializationService` (scoped)
 - `WorktreeService` (singleton, optional — workspace isolation)
 
 ## Invariants
@@ -247,6 +285,7 @@ builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
 
 ## Revision History
 
+- **2026-04-11**: Documented service extraction architecture — WorkspaceRuntime refactored from monolithic 1800+ line class to a thin facade (839 lines) delegating to 10 extracted services. Public API unchanged. Orchestration logic (CreateTask, CompleteTask, RejectTask, GetOverview) retained in WorkspaceRuntime; all other methods are one-liner delegations. Dead code removed after extraction.
 - **2026-04-10**: Workspace isolation — documented `WorktreeService` for agent-level git worktree isolation. Covers worktree creation/removal, agent-specific worktrees, orchestrator integration, and database fields. Synced during stabilization.
 - **2026-04-08**: Project scoping phase 1 — added `WorkspacePath` to `TaskEntity` and `ConversationSessionEntity`. Tasks and conversation sessions now have direct project association. `GetTasksAsync()` filters by `WorkspacePath` directly (with room fallback for pre-migration rows). `GetAllSessionsAsync` and `GetSessionStatsAsync` accept optional workspace filter. Migration includes data backfill from rooms table. API: `GET /api/sessions` and `GET /api/sessions/stats` accept `?workspace=` query parameter.
 - **2026-04-07**: Documented `RecoverFromCrashAsync` crash recovery behavior — closes active breakouts, resets stuck agents to Idle, unassigns orphaned in-progress tasks, posts correlation-deduped recovery notification. Called by `AgentOrchestrator.HandleStartupRecoveryAsync` on crash detection.
