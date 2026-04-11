@@ -319,7 +319,9 @@ public class UsageApiEndpointTests : IDisposable
             _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries),
-            new TaskItemService(_db, NullLogger<TaskItemService>.Instance));
+            new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
+            new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService,
+                new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService)));
     }
 
     public void Dispose()

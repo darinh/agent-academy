@@ -201,6 +201,7 @@ builder.Services.AddScoped<TaskLifecycleService>();
 builder.Services.AddScoped<MessageService>();
 builder.Services.AddScoped<BreakoutRoomService>();
 builder.Services.AddScoped<TaskItemService>();
+builder.Services.AddScoped<RoomService>();
 builder.Services.AddScoped<WorkspaceRuntime>();
 
 // Agent config service (scoped — merges catalog defaults with DB overrides)
