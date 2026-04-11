@@ -224,9 +224,9 @@ public class SprintServiceEventTests : IDisposable
         await _service.CancelSprintAsync(sprint.Id);
 
         var evt = Assert.Single(_capturedEvents);
-        Assert.Equal(ActivityEventType.SprintCompleted, evt.Type);
+        Assert.Equal(ActivityEventType.SprintCancelled, evt.Type);
         Assert.NotNull(evt.Metadata);
-        Assert.Equal("Cancelled", evt.Metadata["status"]?.ToString());
+        Assert.Equal("Cancelled", evt.Metadata!["status"]?.ToString());
     }
 
     // ── Event ordering: flush after save ─────────────────────────

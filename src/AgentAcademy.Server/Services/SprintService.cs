@@ -94,7 +94,9 @@ public sealed class SprintService
         if (lastSprint is not null)
         {
             overflowArtifact = await _db.SprintArtifacts
-                .FirstOrDefaultAsync(a => a.SprintId == lastSprint.Id && a.Type == "OverflowRequirements");
+                .FirstOrDefaultAsync(a => a.SprintId == lastSprint.Id
+                    && a.Stage == "FinalSynthesis"
+                    && a.Type == "OverflowRequirements");
             if (overflowArtifact is not null)
                 overflowFrom = lastSprint.Id;
         }
@@ -136,7 +138,22 @@ public sealed class SprintService
                 ["currentStage"] = Stages[0],
             });
 
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Unique index violation from concurrent CreateSprintAsync calls.
+            // Detach the failed entity so the context is usable for the re-query.
+            _db.Entry(sprint).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+            var conflict = await GetActiveSprintAsync(workspacePath);
+            if (conflict is not null)
+                throw new InvalidOperationException(
+                    $"Workspace already has an active sprint (#{conflict.Number}, id={conflict.Id}). " +
+                    "Complete or cancel it before starting a new one.");
+            throw;
+        }
         FlushEvents();
 
         _logger.LogInformation(
@@ -535,7 +552,7 @@ public sealed class SprintService
         sprint.Status = "Cancelled";
         sprint.CompletedAt = DateTime.UtcNow;
 
-        QueueEvent(ActivityEventType.SprintCompleted, null, null, null,
+        QueueEvent(ActivityEventType.SprintCancelled, null, null, null,
             $"Sprint #{sprint.Number} cancelled for workspace {sprint.WorkspacePath}",
             new Dictionary<string, object?>
             {

@@ -47,7 +47,7 @@ A completed or cancelled sprint sets `CompletedAt` to the current UTC timestamp.
 
 ### Overflow Carry-Forward
 
-When the previous sprint in the workspace has an `OverflowRequirements` artifact (regardless of which stage it was stored in), the next sprint created for the same workspace:
+When the previous sprint in the workspace has an `OverflowRequirements` artifact stored in the **FinalSynthesis** stage, the next sprint created for the same workspace:
 
 1. Sets `OverflowFromSprintId` to the previous sprint's ID
 2. Auto-injects the overflow content as an `OverflowRequirements` artifact in the new sprint's Intake stage
@@ -76,7 +76,7 @@ This ensures unfinished work is not silently dropped between sprints.
 
 **Table**: `sprints`
 **Indexes**:
-- `idx_sprints_workspace` on `WorkspacePath`
+- `idx_sprints_one_active_per_workspace` on `WorkspacePath` — unique, filtered: `Status = 'Active'`
 - `idx_sprints_workspace_status` on `(WorkspacePath, Status)`
 - `idx_sprints_workspace_number_unique` on `(WorkspacePath, Number)` — unique
 
@@ -199,7 +199,7 @@ Every state change queues an `ActivityEvent` which is persisted to the `activity
 | Store artifact | `SprintArtifactStored` | sprintId, artifactId (if update), stage, artifactType, createdByAgentId, isUpdate |
 | Advance stage | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff |
 | Complete sprint | `SprintCompleted` | sprintId, status (Completed) |
-| Cancel sprint | `SprintCompleted` | sprintId, status (Cancelled) |
+| Cancel sprint | `SprintCancelled` | sprintId, status (Cancelled) |
 
 ## Stage Preambles & Role Roster
 
@@ -433,12 +433,10 @@ Tasks can be filtered by sprint: `getTasks(sprintId?)` passes the sprint ID as a
 - **No artifact content validation**: The typed record schemas (`RequirementsDocument`, `SprintPlanDocument`, etc.) are not enforced at the storage layer. Agents can store arbitrary JSON that doesn't conform to the expected schema.
 - **No sprint duration limits**: There's no timeout or maximum duration for a sprint. A sprint in `AwaitingSignOff` will block indefinitely until a human responds.
 - **No sprint metrics aggregation**: While individual events are tracked, there's no rollup of sprint-level metrics (total rounds, token cost per sprint, time per stage).
-- **CancelSprint emits `SprintCompleted` event**: Cancellation uses the same `ActivityEventType.SprintCompleted` as completion, distinguished only by `status: "Cancelled"` in metadata. Consider a separate `SprintCancelled` event type for clearer event routing.
-- **No DB-level uniqueness for active sprint**: The "one active sprint per workspace" invariant is enforced by application code (read-then-insert), not by a database constraint. A unique partial index on `(WorkspacePath)` where `Status = 'Active'` would provide stronger guarantees.
-- **Overflow carry-forward is stage-agnostic**: The overflow query in `CreateSprintAsync` looks for any `OverflowRequirements` artifact on the previous sprint regardless of stage. If an earlier sprint's Intake stage had an overflow artifact auto-injected, and the sprint was cancelled without producing new overflow in FinalSynthesis, the next sprint will still carry forward the old overflow. This may cause stale overflow to persist across multiple sprint cycles.
 
 ## Revision History
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
 | 2026-04-11 | Initial spec — documenting implemented sprint system | — |
+| 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |

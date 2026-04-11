@@ -115,6 +115,26 @@ public class SprintServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateSprint_IgnoresOverflowFromNonFinalSynthesisStage()
+    {
+        var first = await _service.CreateSprintAsync(TestWorkspace);
+
+        // Store overflow in Intake (e.g. auto-injected from a previous sprint)
+        await _service.StoreArtifactAsync(
+            first.Id, "Intake", "OverflowRequirements",
+            """{"items": ["stale task"]}""", "aristotle");
+
+        await _service.CancelSprintAsync(first.Id);
+
+        var second = await _service.CreateSprintAsync(TestWorkspace);
+
+        // Should NOT carry forward overflow from Intake stage
+        Assert.Null(second.OverflowFromSprintId);
+        var artifacts = await _service.GetSprintArtifactsAsync(second.Id);
+        Assert.Empty(artifacts);
+    }
+
+    [Fact]
     public async Task CreateSprint_ThrowsOnNullWorkspace()
     {
         await Assert.ThrowsAnyAsync<ArgumentException>(

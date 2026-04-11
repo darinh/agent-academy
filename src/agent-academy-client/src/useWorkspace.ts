@@ -185,7 +185,8 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "SprintStarted":
       case "SprintStageAdvanced":
       case "SprintArtifactStored":
-      case "SprintCompleted": {
+      case "SprintCompleted":
+      case "SprintCancelled": {
         // Deduplicate events (SSE reconnect can replay recent events)
         if (processedSprintEventIds.current.has(evt.id)) break;
         processedSprintEventIds.current.add(evt.id);
