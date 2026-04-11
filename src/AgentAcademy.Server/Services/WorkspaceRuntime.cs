@@ -52,6 +52,7 @@ public sealed class WorkspaceRuntime
     private readonly ActivityBroadcaster _activityBus;
     private readonly ConversationSessionService _sessionService;
     private readonly TaskQueryService _taskQueries;
+    private readonly TaskLifecycleService _taskLifecycle;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -59,7 +60,8 @@ public sealed class WorkspaceRuntime
         AgentCatalogOptions catalog,
         ActivityBroadcaster activityBus,
         ConversationSessionService sessionService,
-        TaskQueryService taskQueries)
+        TaskQueryService taskQueries,
+        TaskLifecycleService taskLifecycle)
     {
         _db = db;
         _logger = logger;
@@ -67,6 +69,7 @@ public sealed class WorkspaceRuntime
         _activityBus = activityBus;
         _sessionService = sessionService;
         _taskQueries = taskQueries;
+        _taskLifecycle = taskLifecycle;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -1127,22 +1130,7 @@ public sealed class WorkspaceRuntime
     public async Task<TaskSnapshot?> SyncTaskPrStatusAsync(
         string taskId, Shared.Models.PullRequestStatus newStatus)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.PullRequestStatus;
-        if (string.Equals(currentStatus, newStatus.ToString(), StringComparison.Ordinal))
-            return null; // no change
-
-        var oldStatus = currentStatus ?? "None";
-        entity.PullRequestStatus = newStatus.ToString();
-        entity.UpdatedAt = DateTime.UtcNow;
-
-        Publish(ActivityEventType.TaskPrStatusChanged, entity.RoomId, null, taskId,
-            $"PR #{entity.PullRequestNumber} status changed: {oldStatus} → {newStatus}");
-
-        await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return await _taskLifecycle.SyncTaskPrStatusAsync(taskId, newStatus);
     }
 
     /// <summary>
@@ -1184,32 +1172,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<TaskSnapshot> ClaimTaskAsync(string taskId, string agentId, string agentName)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        if (!string.IsNullOrEmpty(entity.AssignedAgentId) && entity.AssignedAgentId != agentId)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
-
-        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
-        entity.AssignedAgentId = agent?.Id ?? agentId;
-        entity.AssignedAgentName = agent?.Name ?? agentName;
-
-        var now = DateTime.UtcNow;
-        entity.UpdatedAt = now;
-
-        // Auto-activate queued tasks when claimed
-        if (entity.Status == nameof(Shared.Models.TaskStatus.Queued))
-        {
-            entity.Status = nameof(Shared.Models.TaskStatus.Active);
-            entity.StartedAt ??= now;
-        }
-
-        Publish(ActivityEventType.TaskClaimed, entity.RoomId, agentId, taskId,
-            $"{entity.AssignedAgentName} claimed task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return await _taskLifecycle.ClaimTaskAsync(taskId, agentId, agentName);
     }
 
     /// <summary>
@@ -1217,27 +1180,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<TaskSnapshot> ReleaseTaskAsync(string taskId, string agentId)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        if (string.IsNullOrEmpty(entity.AssignedAgentId))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is not currently claimed by any agent");
-
-        if (entity.AssignedAgentId != agentId)
-            throw new InvalidOperationException(
-                $"Cannot release task '{taskId}' — claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
-
-        var releasedName = entity.AssignedAgentName ?? agentId;
-        entity.AssignedAgentId = null;
-        entity.AssignedAgentName = null;
-        entity.UpdatedAt = DateTime.UtcNow;
-
-        Publish(ActivityEventType.TaskReleased, entity.RoomId, agentId, taskId,
-            $"{releasedName} released task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return await _taskLifecycle.ReleaseTaskAsync(taskId, agentId);
     }
 
     /// <summary>
@@ -1245,35 +1188,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<TaskSnapshot> ApproveTaskAsync(string taskId, string reviewerAgentId, string? findings = null)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to approve");
-
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.Approved);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        if (!string.IsNullOrWhiteSpace(findings) && !string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"✅ **Approved** by {reviewerName}\n\n{findings}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskApproved, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} approved task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return await _taskLifecycle.ApproveTaskAsync(taskId, reviewerAgentId, findings);
     }
 
     /// <summary>
@@ -1281,39 +1196,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<TaskSnapshot> RequestChangesAsync(string taskId, string reviewerAgentId, string findings)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to request changes");
-
-        if (entity.ReviewRounds >= MaxReviewRounds)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
-
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"🔄 **Changes Requested** by {reviewerName}\n\n{findings}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskChangesRequested, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} requested changes on task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return await _taskLifecycle.RequestChangesAsync(taskId, reviewerAgentId, findings);
     }
 
     /// <summary>
@@ -1469,27 +1352,7 @@ public sealed class WorkspaceRuntime
         string taskId, string agentId, string agentName,
         TaskCommentType commentType, string content)
     {
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var comment = new TaskCommentEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            TaskId = taskId,
-            AgentId = agentId,
-            AgentName = agentName,
-            CommentType = commentType.ToString(),
-            Content = content,
-            CreatedAt = DateTime.UtcNow
-        };
-        _db.TaskComments.Add(comment);
-
-        Publish(ActivityEventType.TaskCommentAdded, task.RoomId, agentId, taskId,
-            $"{agentName} added {commentType.ToString().ToLower()} on task: {task.Title}");
-
-        await _db.SaveChangesAsync();
-
-        return BuildTaskComment(comment);
+        return await _taskLifecycle.AddTaskCommentAsync(taskId, agentId, agentName, commentType, content);
     }
 
     /// <summary>
@@ -1516,10 +1379,7 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Valid evidence phases.
     /// </summary>
-    public static readonly HashSet<string> ValidEvidencePhases = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Baseline", "After", "Review"
-    };
+    public static readonly HashSet<string> ValidEvidencePhases = TaskLifecycleService.ValidEvidencePhases;
 
     /// <summary>
     /// Records a structured verification check against a task.
@@ -1529,31 +1389,9 @@ public sealed class WorkspaceRuntime
         EvidencePhase phase, string checkName, string tool,
         string? command, int? exitCode, string? outputSnippet, bool passed)
     {
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var entity = new TaskEvidenceEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            TaskId = taskId,
-            Phase = phase.ToString(),
-            CheckName = checkName,
-            Tool = tool,
-            Command = command,
-            ExitCode = exitCode,
-            OutputSnippet = outputSnippet?.Length > 500 ? outputSnippet[..500] : outputSnippet,
-            Passed = passed,
-            AgentId = agentId,
-            AgentName = agentName,
-            CreatedAt = DateTime.UtcNow
-        };
-        _db.TaskEvidence.Add(entity);
-
-        Publish(ActivityEventType.EvidenceRecorded, task.RoomId, agentId, taskId,
-            $"{agentName} recorded {phase.ToString().ToLower()} evidence: {checkName} — {(passed ? "passed" : "FAILED")}");
-
-        await _db.SaveChangesAsync();
-        return BuildTaskEvidence(entity);
+        return await _taskLifecycle.RecordEvidenceAsync(
+            taskId, agentId, agentName, phase, checkName, tool,
+            command, exitCode, outputSnippet, passed);
     }
 
     /// <summary>
@@ -1573,73 +1411,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<GateCheckResult> CheckGatesAsync(string taskId)
     {
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var allEvidence = await _db.TaskEvidence
-            .Where(e => e.TaskId == taskId)
-            .OrderBy(e => e.CreatedAt)
-            .ToListAsync();
-
-        var evidenceModels = allEvidence.Select(BuildTaskEvidence).ToList();
-        var currentStatus = task.Status;
-        string targetStatus;
-        int requiredChecks;
-        string requiredPhaseFilter;
-        List<string> suggestedChecks;
-
-        switch (currentStatus)
-        {
-            case "Active":
-                targetStatus = "AwaitingValidation";
-                requiredChecks = 1;
-                requiredPhaseFilter = "After";
-                suggestedChecks = new List<string> { "build", "tests", "type-check" };
-                break;
-            case "AwaitingValidation":
-                targetStatus = "InReview";
-                requiredChecks = 2;
-                requiredPhaseFilter = "After";
-                suggestedChecks = new List<string> { "build", "tests", "type-check", "lint" };
-                break;
-            case "InReview":
-                targetStatus = "Approved";
-                requiredChecks = 1;
-                requiredPhaseFilter = "Review";
-                suggestedChecks = new List<string> { "code-review" };
-                break;
-            default:
-                targetStatus = "N/A";
-                requiredChecks = 0;
-                requiredPhaseFilter = "After";
-                suggestedChecks = new List<string>();
-                break;
-        }
-
-        var relevantPassed = allEvidence
-            .Where(e => e.Phase == requiredPhaseFilter && e.Passed)
-            .Select(e => e.CheckName)
-            .Distinct()
-            .ToList();
-
-        var missingChecks = suggestedChecks
-            .Where(s => !relevantPassed.Contains(s, StringComparer.OrdinalIgnoreCase))
-            .ToList();
-
-        Publish(ActivityEventType.GateChecked, task.RoomId, null, taskId,
-            $"Gate check for {currentStatus} → {targetStatus}: {relevantPassed.Count}/{requiredChecks} checks passed" +
-            (missingChecks.Count > 0 ? $". Missing: {string.Join(", ", missingChecks)}" : ""));
-
-        return new GateCheckResult(
-            TaskId: taskId,
-            CurrentPhase: currentStatus,
-            TargetPhase: targetStatus,
-            Met: relevantPassed.Count >= requiredChecks,
-            RequiredChecks: requiredChecks,
-            PassedChecks: relevantPassed.Count,
-            MissingChecks: missingChecks,
-            Evidence: evidenceModels
-        );
+        return await _taskLifecycle.CheckGatesAsync(taskId);
     }
 
     private static TaskEvidence BuildTaskEvidence(TaskEvidenceEntity entity)
@@ -1650,10 +1422,7 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Valid spec-task link types.
     /// </summary>
-    public static readonly HashSet<string> ValidLinkTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Implements", "Modifies", "Fixes", "References"
-    };
+    public static readonly HashSet<string> ValidLinkTypes = TaskLifecycleService.ValidLinkTypes;
 
     /// <summary>
     /// Links a task to a spec section. Idempotent — updates link type if the pair already exists.
@@ -1662,71 +1431,7 @@ public sealed class WorkspaceRuntime
         string taskId, string specSectionId, string agentId, string agentName,
         string linkType = "Implements", string? note = null)
     {
-        if (string.IsNullOrWhiteSpace(taskId))
-            throw new ArgumentException("taskId is required");
-        if (string.IsNullOrWhiteSpace(specSectionId))
-            throw new ArgumentException("specSectionId is required");
-        if (!ValidLinkTypes.Contains(linkType))
-            throw new ArgumentException(
-                $"Invalid link type '{linkType}'. Valid types: {string.Join(", ", ValidLinkTypes)}");
-
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        // Upsert with retry: catch unique constraint violation on concurrent insert
-        try
-        {
-            return await UpsertSpecLinkCoreAsync(
-                task, taskId, specSectionId, agentId, agentName, linkType, note);
-        }
-        catch (DbUpdateException)
-        {
-            // Concurrent insert hit unique constraint — reload and update
-            _db.ChangeTracker.Clear();
-            return await UpsertSpecLinkCoreAsync(
-                task, taskId, specSectionId, agentId, agentName, linkType, note);
-        }
-    }
-
-    private async Task<SpecTaskLink> UpsertSpecLinkCoreAsync(
-        TaskEntity task, string taskId, string specSectionId,
-        string agentId, string agentName, string linkType, string? note)
-    {
-        var existing = await _db.SpecTaskLinks
-            .FirstOrDefaultAsync(l => l.TaskId == taskId && l.SpecSectionId == specSectionId);
-
-        if (existing is not null)
-        {
-            existing.LinkType = linkType;
-            existing.Note = note ?? existing.Note;
-            existing.LinkedByAgentId = agentId;
-            existing.LinkedByAgentName = agentName;
-
-            Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
-                $"{agentName} updated spec link: {specSectionId} → {task.Title}");
-            await _db.SaveChangesAsync();
-
-            return BuildSpecTaskLink(existing);
-        }
-
-        var entity = new SpecTaskLinkEntity
-        {
-            Id = Guid.NewGuid().ToString("N")[..12],
-            TaskId = taskId,
-            SpecSectionId = specSectionId,
-            LinkType = linkType,
-            LinkedByAgentId = agentId,
-            LinkedByAgentName = agentName,
-            Note = note,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _db.SpecTaskLinks.Add(entity);
-        Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
-            $"{agentName} linked spec {specSectionId} to task: {Truncate(task.Title, 60)}");
-        await _db.SaveChangesAsync();
-
-        return BuildSpecTaskLink(entity);
+        return await _taskLifecycle.LinkTaskToSpecAsync(taskId, specSectionId, agentId, agentName, linkType, note);
     }
 
     /// <summary>

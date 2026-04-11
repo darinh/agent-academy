@@ -35,9 +35,11 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
+        services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();

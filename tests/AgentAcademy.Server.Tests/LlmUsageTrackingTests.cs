@@ -311,9 +311,11 @@ public class UsageApiEndpointTests : IDisposable
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
+        var activityBus = new ActivityBroadcaster();
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityBus);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
-            _catalog, new ActivityBroadcaster(), sessionService, taskQueries);
+            _catalog, activityBus, sessionService, taskQueries, taskLifecycle);
     }
 
     public void Dispose()

@@ -197,7 +197,9 @@ public class ErrorClassificationTests
             NullLogger<WorkspaceRuntime>.Instance);
         services.AddSingleton<ILogger<TaskQueryService>>(
             NullLogger<TaskQueryService>.Instance);
+        services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

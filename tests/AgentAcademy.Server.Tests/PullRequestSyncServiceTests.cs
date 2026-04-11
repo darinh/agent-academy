@@ -111,11 +111,13 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
             }));
         sc.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         sc.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
+        sc.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         sc.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
         sc.AddScoped<ConversationSessionService>();
         sc.AddScoped<TaskQueryService>();
+        sc.AddScoped<TaskLifecycleService>();
         sc.AddScoped<WorkspaceRuntime>();
         sc.AddSingleton(_github);
 
@@ -383,7 +385,8 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityBus, sessionService, taskQueries);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityBus);
+        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityBus, sessionService, taskQueries, taskLifecycle);
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 

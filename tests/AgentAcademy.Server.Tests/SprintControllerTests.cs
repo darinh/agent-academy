@@ -41,11 +41,12 @@ public class SprintControllerTests : IDisposable
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityBus);
 
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
-            catalog, activityBus, sessionService, taskQueries);
+            catalog, activityBus, sessionService, taskQueries, taskLifecycle);
 
         _controller = new SprintController(
             _sprintService, _runtime,
