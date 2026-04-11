@@ -900,6 +900,35 @@ export function testNotification(): Promise<TestNotificationResponse> {
   return request<TestNotificationResponse>(apiUrl(`${NOTIF_BASE}/test`), { method: "POST" });
 }
 
+// ── Agent quota types ──────────────────────────────────────────────────
+
+export interface ResourceQuota {
+  maxRequestsPerHour?: number | null;
+  maxTokensPerHour?: number | null;
+  maxCostPerHour?: number | null;
+}
+
+export interface AgentUsageWindow {
+  requestCount: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+export interface QuotaStatus {
+  agentId: string;
+  isAllowed: boolean;
+  deniedReason?: string | null;
+  retryAfterSeconds?: number | null;
+  configuredQuota?: ResourceQuota | null;
+  currentUsage?: AgentUsageWindow | null;
+}
+
+export interface UpdateQuotaRequest {
+  maxRequestsPerHour?: number | null;
+  maxTokensPerHour?: number | null;
+  maxCostPerHour?: number | null;
+}
+
 // ── Agent config types ─────────────────────────────────────────────────
 
 export interface AgentConfigOverride {
@@ -969,6 +998,29 @@ export function resetAgentConfig(agentId: string): Promise<AgentConfigResponse> 
 export function getAgentSessions(agentId: string): Promise<BreakoutRoom[]> {
   return request<BreakoutRoom[]>(
     apiUrl(`/api/agents/${encodeURIComponent(agentId)}/sessions`),
+  );
+}
+
+// ── Agent quota endpoints ──────────────────────────────────────────────
+
+export function getAgentQuota(agentId: string): Promise<QuotaStatus> {
+  return request<QuotaStatus>(apiUrl(`/api/agents/${encodeURIComponent(agentId)}/quota`));
+}
+
+export function updateAgentQuota(
+  agentId: string,
+  req: UpdateQuotaRequest,
+): Promise<QuotaStatus> {
+  return request<QuotaStatus>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/quota`),
+    { method: "PUT", body: JSON.stringify(req) },
+  );
+}
+
+export function removeAgentQuota(agentId: string): Promise<{ status: string; agentId: string }> {
+  return request<{ status: string; agentId: string }>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/quota`),
+    { method: "DELETE" },
   );
 }
 
