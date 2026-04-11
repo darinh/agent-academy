@@ -726,6 +726,17 @@ public class RestartHistoryApiTests : IDisposable
     }
 
     [Fact]
+    public void GetHealth_ReturnsBackendHealthyMessage()
+    {
+        var result = _controller.GetHealth();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<HealthResult>(ok.Value);
+
+        Assert.Equal("Agent Academy backend is healthy.", payload.Message);
+    }
+
+    [Fact]
     public async Task GetRestartHistory_EmptyDb_ReturnsEmptyList()
     {
         var result = await _controller.GetRestartHistory();

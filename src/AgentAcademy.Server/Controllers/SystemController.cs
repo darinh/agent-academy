@@ -105,7 +105,8 @@ public class SystemController : ControllerBase
         return Ok(new HealthResult(
             Status: "healthy",
             Uptime: uptime.ToString(@"d\.hh\:mm\:ss"),
-            Timestamp: DateTime.UtcNow
+            Timestamp: DateTime.UtcNow,
+            Message: "Agent Academy backend is healthy."
         ));
     }
 
