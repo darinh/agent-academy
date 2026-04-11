@@ -323,8 +323,7 @@ public class UsageApiEndpointTests : IDisposable
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         _runtime = new WorkspaceRuntime(
-            _db, NullLogger<WorkspaceRuntime>.Instance,
-            _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
+            _catalog, activityPublisher, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries, agentLocations),
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),

@@ -1,8 +1,5 @@
-using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
 
@@ -14,11 +11,8 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class WorkspaceRuntime
 {
-    private readonly AgentAcademyDbContext _db;
-    private readonly ILogger<WorkspaceRuntime> _logger;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityPublisher _activity;
-    private readonly ConversationSessionService _sessionService;
     private readonly TaskQueryService _taskQueries;
     private readonly TaskLifecycleService _taskLifecycle;
     private readonly MessageService _messages;
@@ -32,11 +26,8 @@ public sealed class WorkspaceRuntime
     private readonly TaskOrchestrationService _taskOrchestration;
 
     public WorkspaceRuntime(
-        AgentAcademyDbContext db,
-        ILogger<WorkspaceRuntime> logger,
         AgentCatalogOptions catalog,
         ActivityPublisher activity,
-        ConversationSessionService sessionService,
         TaskQueryService taskQueries,
         TaskLifecycleService taskLifecycle,
         MessageService messages,
@@ -49,11 +40,8 @@ public sealed class WorkspaceRuntime
         InitializationService initialization,
         TaskOrchestrationService taskOrchestration)
     {
-        _db = db;
-        _logger = logger;
         _catalog = catalog;
         _activity = activity;
-        _sessionService = sessionService;
         _taskQueries = taskQueries;
         _taskLifecycle = taskLifecycle;
         _messages = messages;
@@ -188,78 +176,60 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns all tasks.
     /// </summary>
-    public async Task<List<TaskSnapshot>> GetTasksAsync(string? sprintId = null)
-    {
-        return await _taskQueries.GetTasksAsync(sprintId);
-    }
+    public Task<List<TaskSnapshot>> GetTasksAsync(string? sprintId = null)
+        => _taskQueries.GetTasksAsync(sprintId);
 
     /// <summary>
     /// Returns a specific task by ID, or null if not found.
     /// </summary>
-    public async Task<TaskSnapshot?> GetTaskAsync(string taskId)
-    {
-        return await _taskQueries.GetTaskAsync(taskId);
-    }
+    public Task<TaskSnapshot?> GetTaskAsync(string taskId)
+        => _taskQueries.GetTaskAsync(taskId);
 
     /// <summary>
     /// Finds a task by title. Returns the first non-cancelled match, or null.
     /// </summary>
-    public async Task<TaskSnapshot?> FindTaskByTitleAsync(string title)
-    {
-        return await _taskQueries.FindTaskByTitleAsync(title);
-    }
+    public Task<TaskSnapshot?> FindTaskByTitleAsync(string title)
+        => _taskQueries.FindTaskByTitleAsync(title);
 
     /// <summary>
     /// Assigns an agent to a task. Validates the agent exists in the catalog.
     /// </summary>
-    public async Task<TaskSnapshot> AssignTaskAsync(string taskId, string agentId, string agentName)
-    {
-        return await _taskQueries.AssignTaskAsync(taskId, agentId, agentName);
-    }
+    public Task<TaskSnapshot> AssignTaskAsync(string taskId, string agentId, string agentName)
+        => _taskQueries.AssignTaskAsync(taskId, agentId, agentName);
 
     /// <summary>
     /// Updates a task's status. Automatically sets StartedAt/CompletedAt as appropriate.
     /// </summary>
-    public async Task<TaskSnapshot> UpdateTaskStatusAsync(string taskId, Shared.Models.TaskStatus status)
-    {
-        return await _taskQueries.UpdateTaskStatusAsync(taskId, status);
-    }
+    public Task<TaskSnapshot> UpdateTaskStatusAsync(string taskId, Shared.Models.TaskStatus status)
+        => _taskQueries.UpdateTaskStatusAsync(taskId, status);
 
     /// <summary>
     /// Records a branch name on a task. Branch metadata is write-once per task.
     /// </summary>
-    public async Task<TaskSnapshot> UpdateTaskBranchAsync(string taskId, string branchName)
-    {
-        return await _taskQueries.UpdateTaskBranchAsync(taskId, branchName);
-    }
+    public Task<TaskSnapshot> UpdateTaskBranchAsync(string taskId, string branchName)
+        => _taskQueries.UpdateTaskBranchAsync(taskId, branchName);
 
     /// <summary>
     /// Records PR information on a task.
     /// </summary>
-    public async Task<TaskSnapshot> UpdateTaskPrAsync(
+    public Task<TaskSnapshot> UpdateTaskPrAsync(
         string taskId, string url, int number, Shared.Models.PullRequestStatus status)
-    {
-        return await _taskQueries.UpdateTaskPrAsync(taskId, url, number, status);
-    }
+        => _taskQueries.UpdateTaskPrAsync(taskId, url, number, status);
 
     /// <summary>
     /// Updates only the PR status on a task. Used by PR sync polling.
     /// Emits a TaskPrStatusChanged activity event when the status actually changes.
     /// Returns null if the status was already up-to-date.
     /// </summary>
-    public async Task<TaskSnapshot?> SyncTaskPrStatusAsync(
+    public Task<TaskSnapshot?> SyncTaskPrStatusAsync(
         string taskId, Shared.Models.PullRequestStatus newStatus)
-    {
-        return await _taskLifecycle.SyncTaskPrStatusAsync(taskId, newStatus);
-    }
+        => _taskLifecycle.SyncTaskPrStatusAsync(taskId, newStatus);
 
     /// <summary>
     /// Returns task IDs that have open (non-terminal) pull requests for polling.
     /// </summary>
-    public async Task<List<(string TaskId, int PrNumber)>> GetTasksWithActivePrsAsync()
-    {
-        return await _taskQueries.GetTasksWithActivePrsAsync();
-    }
+    public Task<List<(string TaskId, int PrNumber)>> GetTasksWithActivePrsAsync()
+        => _taskQueries.GetTasksWithActivePrsAsync();
     public Task<TaskSnapshot> CompleteTaskAsync(
         string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
         => _taskOrchestration.CompleteTaskAsync(taskId, commitCount, testsCreated, mergeCommitSha);
@@ -270,34 +240,26 @@ public sealed class WorkspaceRuntime
     /// Claims a task for an agent. Prevents double-claiming by another agent.
     /// Auto-activates tasks in Queued status.
     /// </summary>
-    public async Task<TaskSnapshot> ClaimTaskAsync(string taskId, string agentId, string agentName)
-    {
-        return await _taskLifecycle.ClaimTaskAsync(taskId, agentId, agentName);
-    }
+    public Task<TaskSnapshot> ClaimTaskAsync(string taskId, string agentId, string agentName)
+        => _taskLifecycle.ClaimTaskAsync(taskId, agentId, agentName);
 
     /// <summary>
     /// Releases a task claim. Only the currently assigned agent can release.
     /// </summary>
-    public async Task<TaskSnapshot> ReleaseTaskAsync(string taskId, string agentId)
-    {
-        return await _taskLifecycle.ReleaseTaskAsync(taskId, agentId);
-    }
+    public Task<TaskSnapshot> ReleaseTaskAsync(string taskId, string agentId)
+        => _taskLifecycle.ReleaseTaskAsync(taskId, agentId);
 
     /// <summary>
     /// Approves a task after review. Records the reviewer and increments review rounds.
     /// </summary>
-    public async Task<TaskSnapshot> ApproveTaskAsync(string taskId, string reviewerAgentId, string? findings = null)
-    {
-        return await _taskLifecycle.ApproveTaskAsync(taskId, reviewerAgentId, findings);
-    }
+    public Task<TaskSnapshot> ApproveTaskAsync(string taskId, string reviewerAgentId, string? findings = null)
+        => _taskLifecycle.ApproveTaskAsync(taskId, reviewerAgentId, findings);
 
     /// <summary>
     /// Requests changes on a task after review. Records the reviewer and increments review rounds.
     /// </summary>
-    public async Task<TaskSnapshot> RequestChangesAsync(string taskId, string reviewerAgentId, string findings)
-    {
-        return await _taskLifecycle.RequestChangesAsync(taskId, reviewerAgentId, findings);
-    }
+    public Task<TaskSnapshot> RequestChangesAsync(string taskId, string reviewerAgentId, string findings)
+        => _taskLifecycle.RequestChangesAsync(taskId, reviewerAgentId, findings);
 
     /// <summary>
     /// Rejects an approved or completed task, returning it to ChangesRequested.
@@ -311,10 +273,8 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns tasks that are pending review (InReview or AwaitingValidation).
     /// </summary>
-    public async Task<List<TaskSnapshot>> GetReviewQueueAsync()
-    {
-        return await _taskQueries.GetReviewQueueAsync();
-    }
+    public Task<List<TaskSnapshot>> GetReviewQueueAsync()
+        => _taskQueries.GetReviewQueueAsync();
 
     /// <summary>
     /// Posts a system note to the room associated with a task.
@@ -328,28 +288,22 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Adds a comment or finding to a task.
     /// </summary>
-    public async Task<TaskComment> AddTaskCommentAsync(
+    public Task<TaskComment> AddTaskCommentAsync(
         string taskId, string agentId, string agentName,
         TaskCommentType commentType, string content)
-    {
-        return await _taskLifecycle.AddTaskCommentAsync(taskId, agentId, agentName, commentType, content);
-    }
+        => _taskLifecycle.AddTaskCommentAsync(taskId, agentId, agentName, commentType, content);
 
     /// <summary>
     /// Gets all comments for a task, ordered by creation time.
     /// </summary>
-    public async Task<List<TaskComment>> GetTaskCommentsAsync(string taskId)
-    {
-        return await _taskQueries.GetTaskCommentsAsync(taskId);
-    }
+    public Task<List<TaskComment>> GetTaskCommentsAsync(string taskId)
+        => _taskQueries.GetTaskCommentsAsync(taskId);
 
     /// <summary>
     /// Gets the count of comments for a task.
     /// </summary>
-    public async Task<int> GetTaskCommentCountAsync(string taskId)
-    {
-        return await _taskQueries.GetTaskCommentCountAsync(taskId);
-    }
+    public Task<int> GetTaskCommentCountAsync(string taskId)
+        => _taskQueries.GetTaskCommentCountAsync(taskId);
 
     // ── Task Evidence Ledger ──────────────────────────────────
 
@@ -361,23 +315,19 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Records a structured verification check against a task.
     /// </summary>
-    public async Task<TaskEvidence> RecordEvidenceAsync(
+    public Task<TaskEvidence> RecordEvidenceAsync(
         string taskId, string agentId, string agentName,
         EvidencePhase phase, string checkName, string tool,
         string? command, int? exitCode, string? outputSnippet, bool passed)
-    {
-        return await _taskLifecycle.RecordEvidenceAsync(
+        => _taskLifecycle.RecordEvidenceAsync(
             taskId, agentId, agentName, phase, checkName, tool,
             command, exitCode, outputSnippet, passed);
-    }
 
     /// <summary>
     /// Gets all evidence for a task, optionally filtered by phase.
     /// </summary>
-    public async Task<List<TaskEvidence>> GetTaskEvidenceAsync(string taskId, EvidencePhase? phase = null)
-    {
-        return await _taskQueries.GetTaskEvidenceAsync(taskId, phase);
-    }
+    public Task<List<TaskEvidence>> GetTaskEvidenceAsync(string taskId, EvidencePhase? phase = null)
+        => _taskQueries.GetTaskEvidenceAsync(taskId, phase);
 
     /// <summary>
     /// Checks whether a task meets the minimum evidence requirements for a phase transition.
@@ -386,10 +336,8 @@ public sealed class WorkspaceRuntime
     /// - AwaitingValidation → InReview: ≥2 "After" checks passed
     /// - InReview → Approved: ≥1 "Review" check passed
     /// </summary>
-    public async Task<GateCheckResult> CheckGatesAsync(string taskId)
-    {
-        return await _taskLifecycle.CheckGatesAsync(taskId);
-    }
+    public Task<GateCheckResult> CheckGatesAsync(string taskId)
+        => _taskLifecycle.CheckGatesAsync(taskId);
 
     // ── Spec–Task Linking ───────────────────────────────────────
 
@@ -401,44 +349,34 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Links a task to a spec section. Idempotent — updates link type if the pair already exists.
     /// </summary>
-    public async Task<SpecTaskLink> LinkTaskToSpecAsync(
+    public Task<SpecTaskLink> LinkTaskToSpecAsync(
         string taskId, string specSectionId, string agentId, string agentName,
         string linkType = "Implements", string? note = null)
-    {
-        return await _taskLifecycle.LinkTaskToSpecAsync(taskId, specSectionId, agentId, agentName, linkType, note);
-    }
+        => _taskLifecycle.LinkTaskToSpecAsync(taskId, specSectionId, agentId, agentName, linkType, note);
 
     /// <summary>
     /// Removes a spec-task link.
     /// </summary>
-    public async Task UnlinkTaskFromSpecAsync(string taskId, string specSectionId)
-    {
-        await _taskQueries.UnlinkTaskFromSpecAsync(taskId, specSectionId);
-    }
+    public Task UnlinkTaskFromSpecAsync(string taskId, string specSectionId)
+        => _taskQueries.UnlinkTaskFromSpecAsync(taskId, specSectionId);
 
     /// <summary>
     /// Gets all spec links for a task.
     /// </summary>
-    public async Task<List<SpecTaskLink>> GetSpecLinksForTaskAsync(string taskId)
-    {
-        return await _taskQueries.GetSpecLinksForTaskAsync(taskId);
-    }
+    public Task<List<SpecTaskLink>> GetSpecLinksForTaskAsync(string taskId)
+        => _taskQueries.GetSpecLinksForTaskAsync(taskId);
 
     /// <summary>
     /// Gets all tasks linked to a spec section.
     /// </summary>
-    public async Task<List<SpecTaskLink>> GetTasksForSpecAsync(string specSectionId)
-    {
-        return await _taskQueries.GetTasksForSpecAsync(specSectionId);
-    }
+    public Task<List<SpecTaskLink>> GetTasksForSpecAsync(string specSectionId)
+        => _taskQueries.GetTasksForSpecAsync(specSectionId);
 
     /// <summary>
     /// Gets tasks that have no spec links.
     /// </summary>
-    public async Task<List<TaskSnapshot>> GetUnlinkedTasksAsync()
-    {
-        return await _taskQueries.GetUnlinkedTasksAsync();
-    }
+    public Task<List<TaskSnapshot>> GetUnlinkedTasksAsync()
+        => _taskQueries.GetUnlinkedTasksAsync();
 
     // ── Message Management (delegated to MessageService) ────────
 

@@ -78,11 +78,8 @@ public class ServerInstanceTests : IDisposable
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
 
         _runtime = new WorkspaceRuntime(
-            _db,
-            NullLogger<WorkspaceRuntime>.Instance,
             catalog,
             activityPublisher,
-            sessionService,
             taskQueries,
             taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
@@ -727,11 +724,8 @@ public class RestartHistoryApiTests : IDisposable
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, actPub, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         var runtime = new WorkspaceRuntime(
-            _db,
-            NullLogger<WorkspaceRuntime>.Instance,
             catalog,
             actPub,
-            sessionService,
             taskQueries,
             taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService),

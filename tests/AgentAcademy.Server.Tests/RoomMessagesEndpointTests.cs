@@ -56,7 +56,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
-        _runtime = new WorkspaceRuntime(_db, logger, catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
+        _runtime = new WorkspaceRuntime(catalog, activityPublisher, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations),
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
