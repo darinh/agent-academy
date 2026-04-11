@@ -25,12 +25,15 @@ Human messages and DM triggers are enqueued by room ID. A single processing loop
 Each round in the main collaboration room follows this sequence:
 
 1. **Session rotation**: Round 1 runs `ConversationSessionService.CheckAndRotateAsync(roomId)` to check epoch thresholds
-2. **Planner first**: The agent with role `"Planner"` runs first, with instructions to tag other agents or create TASK ASSIGNMENT blocks
-3. **Tagged agents**: Agents @-mentioned in the planner's response run next (up to `MaxTaggedAgents = 6`)
-4. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run
-5. **Sequential execution**: Agents run one at a time so each sees prior responses. Agents in `Working` state (in breakout) are skipped.
-6. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed
-7. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
+2. **Context loading**: Spec context, session summary, and active sprint context are loaded once per round
+3. **Agent config overrides**: Each agent is resolved through `AgentConfigService.GetEffectiveAgentAsync()` to apply runtime overrides (model, prompt, templates) from the database
+4. **Sprint stage filtering**: When an active sprint exists, agents are filtered by `SprintPreambles.FilterByStageRoster()` — only roles allowed in the current stage participate
+5. **Planner first**: The agent with role `"Planner"` runs first, with instructions to tag other agents or create TASK ASSIGNMENT blocks. Planner is skipped if excluded by sprint stage.
+6. **Tagged agents**: Agents @-mentioned in the planner's response run next (up to `AgentResponseParser.MaxTaggedAgents = 6`)
+7. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run (excluding the planner)
+8. **Sequential execution**: Agents run one at a time so each sees prior responses. Agents in `Working` state (in breakout) are skipped.
+9. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed (via `AgentResponseParser.IsPassResponse`)
+10. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
 
 ### Task Assignment Workflow
 
@@ -54,15 +57,19 @@ The orchestrator:
 4. Creates a task item linked to the breakout room
 5. Ensures the breakout room has a persisted linked `TaskEntity` via `BreakoutRoomEntity.TaskId`
 6. Creates a dedicated task branch (`task/{slug}-{suffix}`), records it once on that task, and sets the breakout plan
-7. Returns to `develop` after branch setup
-8. Posts a system status message to the main room
-9. Launches the breakout loop asynchronously via `Task.Run` (fire-and-forget)
+7. Creates a worktree for isolated work (via `WorktreeService`) when a workspace is available
+8. Returns to `develop` after branch setup
+9. Posts a system status message to the main room
+10. Launches the breakout lifecycle asynchronously via `Task.Run(() => _breakoutLifecycle.RunBreakoutLifecycleAsync(...))`
 
-On setup failure, the breakout room is closed and any orphan task is cancelled.
+On setup failure, cleanup runs independently for each resource: breakout room is closed, orphan task is cancelled, orphan task item is rejected, worktree is removed, orphan git branch is deleted. Each cleanup step is independent — one failure does not prevent the others.
 
 ### Breakout Room Workflow
 
-Inside a breakout room, the assigned agent works in a loop capped at `MaxBreakoutRounds = 200`. Stuck detection closes after `MaxConsecutiveIdleRounds = 5` idle rounds:
+> **Delegated to**: `BreakoutLifecycleService` (extracted from `AgentOrchestrator`)
+> **Source**: `src/AgentAcademy.Server/Services/BreakoutLifecycleService.cs`
+
+Inside a breakout room, the assigned agent works in a loop capped at `BreakoutLifecycleService.MaxBreakoutRounds = 200`. Stuck detection closes after `BreakoutLifecycleService.MaxConsecutiveIdleRounds = 5` idle rounds:
 
 1. Session rotation check runs before each round
 2. Git round lock is acquired and the task branch is ensured
@@ -98,11 +105,16 @@ The orchestrator has full DM integration:
 
 ### Prompt Building
 
-Three prompt builders construct context for agent invocations:
+> **Delegated to**: `PromptBuilder` static class (extracted from `AgentOrchestrator`)
+> **Source**: `src/AgentAcademy.Server/Services/PromptBuilder.cs`
 
-- **`BuildConversationPrompt`**: Session summary (if available) + agent memories + room context + spec context + recent messages (last 20 from active session). **Note**: Agent startup prompt is NOT included — it's sent only during SDK session priming to avoid redundant context accumulation.
-- **`BuildBreakoutPrompt`**: Session summary (if available) + agent memories + breakout room name + tasks + work log (last 10 from active session) + unread DMs. Same startup prompt deduplication.
-- **`BuildReviewPrompt`**: Reviewer startup prompt + work report + spec context for accuracy verification
+Five prompt builders construct context for agent invocations:
+
+- **`PromptBuilder.BuildConversationPrompt`**: Session summary (if available) + agent memories (via `AgentMemoryLoader`) + room context + spec context + direct messages + sprint preamble + recent messages (last 20 from active session). **Note**: Agent startup prompt is NOT included — it's sent only during SDK session priming to avoid redundant context accumulation.
+- **`PromptBuilder.BuildBreakoutPrompt`**: Session summary (if available) + agent memories + breakout room name + tasks + work log (last 10 from active session) + unread DMs. Same startup prompt deduplication.
+- **`PromptBuilder.BuildReviewPrompt`**: Reviewer startup prompt + work report + spec context for accuracy verification
+- **`PromptBuilder.BuildAssignmentPlanContent`**: Generates initial plan content from a parsed task assignment
+- **`PromptBuilder.BuildTaskBrief`**: Summarizes active tasks and branch context for breakout prompts
 
 ### Epoch-Aware Round Logic
 
@@ -119,11 +131,40 @@ If exceeded:
 
 ### Spec Context Loading
 
-`LoadSpecContext()` reads the `specs/` directory, extracting the first heading and purpose paragraph from each `spec.md` file to provide agents with project context.
+`SpecManager.LoadSpecContextAsync()` reads the `specs/` directory, extracting the first heading and purpose paragraph from each `spec.md` file to provide agents with project context.
+
+> **Source**: `src/AgentAcademy.Server/Services/SpecManager.cs`
+
+### Sprint Context Loading
+
+When an active sprint exists, `LoadSprintContextAsync()` (private to `AgentOrchestrator`) loads the sprint's stage, prior context, and overflow requirements. `SprintPreambles.BuildPreamble()` generates a preamble injected into all agent prompts for the round. Sprint stage also controls which agent roles participate via `SprintPreambles.IsRoleAllowedInStage()` and `SprintPreambles.FilterByStageRoster()`.
+
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:LoadSprintContextAsync`, `src/AgentAcademy.Server/Services/SprintPreambles.cs`
+
+### Response Parsing
+
+> **Delegated to**: `AgentResponseParser` static class (extracted from `AgentOrchestrator`)
+> **Source**: `src/AgentAcademy.Server/Services/AgentResponseParser.cs`
+
+`AgentResponseParser` handles all response parsing and classification:
+- `ParseWorkReport(content)` — extracts `WORK REPORT:` blocks
+- `ParseReviewVerdict(content)` — extracts `REVIEW:` blocks
+- `ParseTaskAssignments(content)` — extracts `TASK ASSIGNMENT:` blocks
+- `ParseTaggedAgents(agents, content)` — finds @-mentioned agents (up to `MaxTaggedAgents = 6`)
+- `IsPassResponse(response)` — detects PASS/N/A/No comment/Nothing to add
+- `IsStubOfflineResponse(response)` — detects stub/offline markers
+- `InferMessageKind(role)` — maps agent roles to `MessageKind` values
+
+### Agent Memory Loading
+
+> **Delegated to**: `AgentMemoryLoader` (extracted from `AgentOrchestrator`)
+> **Source**: `src/AgentAcademy.Server/Services/AgentMemoryLoader.cs`
+
+`AgentMemoryLoader.LoadAsync(agentId)` retrieves agent memories from the database, including shared memories. Memories are injected into both conversation and breakout prompts.
 
 ### Message Kind Inference
 
-Agent roles map to `MessageKind` values:
+Agent roles map to `MessageKind` values (via `AgentResponseParser.InferMessageKind`):
 
 | Role | MessageKind |
 |------|-------------|
@@ -141,35 +182,78 @@ Agent roles map to `MessageKind` values:
 
 ```csharp
 // Program.cs
+builder.Services.AddSingleton<AgentMemoryLoader>();
+builder.Services.AddSingleton<BreakoutLifecycleService>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 ```
 
-Registered as a singleton. Uses `IServiceScopeFactory` to create scoped `WorkspaceRuntime` instances for each conversation round and breakout loop.
+`AgentOrchestrator` and its extracted services are registered as singletons. The orchestrator uses `IServiceScopeFactory` to create scoped `WorkspaceRuntime` instances for each conversation round. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
 
 ### Dependencies
 
+**AgentOrchestrator (singleton)**:
+
 | Dependency | Lifetime | Purpose |
 |------------|----------|---------|
-| `IServiceScopeFactory` | Singleton | Creates scoped DB contexts |
+| `IServiceScopeFactory` | Singleton | Creates scoped DB contexts per round |
 | `IAgentExecutor` | Singleton | Runs agents against prompts |
 | `ActivityBroadcaster` | Singleton | Publishes thinking/finished events |
+| `SpecManager` | Singleton | Loads spec context for prompts |
+| `CommandPipeline` | Singleton | Processes commands from agent responses |
+| `GitService` | Singleton | Creates task branches, returns to develop |
+| `WorktreeService` | Singleton | Creates/removes worktrees for isolated agent work |
+| `BreakoutLifecycleService` | Singleton | Manages breakout room loop and completion |
+| `AgentMemoryLoader` | Singleton | Loads agent memories for prompts |
 | `ILogger<AgentOrchestrator>` | Singleton | Structured logging |
-| `WorkspaceRuntime` | Scoped (per round) | Room/message/agent state management |
-| `ConversationSessionService` | Scoped (per round) | Epoch threshold checks and rotation |
+
+**Scoped dependencies (resolved per round via `IServiceScopeFactory`)**:
+
+| Dependency | Purpose |
+|------------|---------|
+| `WorkspaceRuntime` | Room/message/agent state management |
+| `AgentConfigService` | Runtime agent config overrides (model, prompt, templates) |
+| `ConversationSessionService` | Epoch threshold checks, rotation, and session context |
+| `SprintService` | Active sprint and stage loading |
+
+**BreakoutLifecycleService (singleton)**:
+
+| Dependency | Lifetime | Purpose |
+|------------|----------|---------|
+| `IServiceScopeFactory` | Singleton | Creates scoped DB contexts per round |
+| `IAgentExecutor` | Singleton | Runs agent in breakout loop |
+| `SpecManager` | Singleton | Loads spec context for breakout prompts |
+| `CommandPipeline` | Singleton | Processes commands from agent responses |
+| `GitService` | Singleton | Manages task branch checkout per round |
+| `WorktreeService` | Singleton | Manages worktree lifecycle |
+| `AgentMemoryLoader` | Singleton | Loads agent memories for breakout prompts |
+| `ILogger<BreakoutLifecycleService>` | Singleton | Structured logging |
 
 ### Constants
+
+**AgentOrchestrator**:
 
 | Name | Value | Description |
 |------|-------|-------------|
 | `MaxRoundsPerTrigger` | 3 | Max conversation rounds per human message |
+
+**AgentResponseParser**:
+
+| Name | Value | Description |
+|------|-------|-------------|
 | `MaxTaggedAgents` | 6 | Cap on tagged agents per round |
 
+**BreakoutLifecycleService**:
+
+| Name | Value | Description |
+|------|-------|-------------|
 | `MaxBreakoutRounds` | 200 | Absolute cap on breakout loop iterations |
 | `MaxConsecutiveIdleRounds` | 5 | Stuck detection threshold (idle rounds) |
 
 Session epoch sizes are configured via `SystemSettingsService`.
 
 ### Parsing Records
+
+Defined in `AgentResponseParser` (`src/AgentAcademy.Server/Services/AgentResponseParser.cs`):
 
 ```csharp
 internal record ParsedTaskAssignment(string Agent, string Title, string Description, List<string> Criteria, TaskType Type);
@@ -201,6 +285,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-11 | Service extraction reconciliation: updated dependencies, constants, and code references to reflect PromptBuilder, AgentResponseParser, AgentMemoryLoader, and BreakoutLifecycleService extractions. Added sprint context, agent config overrides, worktree creation, and response parsing documentation. | spec-006-extraction-reconciliation |
 | 2026-04-05 | Spec accuracy audit: fixed HandleDirectMessage signature (takes recipientAgentId only), corrected breakout loop caps (MaxBreakoutRounds=200, MaxConsecutiveIdleRounds=5), fixed DM handling in breakouts (posted as messages, not injected into prompt), added constants to table | spec-accuracy-audit |
 | 2026-04-04 | Queue reconstruction on startup: `ReconstructQueueAsync` re-enqueues rooms with unanswered human messages on every server startup. 8 new tests. Resolved queue persistence known gap. | queue-reconstruction |
 | 2026-04-04 | Breakout failure surfacing: `HandleBreakoutFailureAsync` catches unhandled exceptions from fire-and-forget breakout loops, closes breakout with `Failed` reason, marks task as `Blocked`, and notifies parent room. Added `Failed` to `BreakoutRoomCloseReason`. | breakout-failure-handling |
