@@ -75,7 +75,8 @@ public class ServerInstanceTests : IDisposable
             activityPublisher,
             sessionService,
             taskQueries,
-            taskLifecycle);
+            taskLifecycle,
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService));
     }
 
     public void Dispose()
@@ -698,7 +699,8 @@ public class RestartHistoryApiTests : IDisposable
             actPub,
             sessionService,
             taskQueries,
-            taskLifecycle);
+            taskLifecycle,
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService));
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);

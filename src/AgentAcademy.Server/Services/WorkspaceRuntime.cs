@@ -52,6 +52,7 @@ public sealed class WorkspaceRuntime
     private readonly ConversationSessionService _sessionService;
     private readonly TaskQueryService _taskQueries;
     private readonly TaskLifecycleService _taskLifecycle;
+    private readonly MessageService _messages;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -60,7 +61,8 @@ public sealed class WorkspaceRuntime
         ActivityPublisher activity,
         ConversationSessionService sessionService,
         TaskQueryService taskQueries,
-        TaskLifecycleService taskLifecycle)
+        TaskLifecycleService taskLifecycle,
+        MessageService messages)
     {
         _db = db;
         _logger = logger;
@@ -69,6 +71,7 @@ public sealed class WorkspaceRuntime
         _sessionService = sessionService;
         _taskQueries = taskQueries;
         _taskLifecycle = taskLifecycle;
+        _messages = messages;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -1336,343 +1339,60 @@ public sealed class WorkspaceRuntime
     private static SpecTaskLink BuildSpecTaskLink(SpecTaskLinkEntity entity)
         => TaskQueryService.BuildSpecTaskLink(entity);
 
-    // ── Message Management ──────────────────────────────────────
+    // ── Message Management (delegated to MessageService) ────────
 
     /// <summary>
     /// Posts an agent message to a room.
     /// </summary>
-    public async Task<ChatEnvelope> PostMessageAsync(PostMessageRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.RoomId))
-            throw new ArgumentException("RoomId is required", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.SenderId))
-            throw new ArgumentException("SenderId is required", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.Content))
-            throw new ArgumentException("Content is required", nameof(request));
-
-        var room = await _db.Rooms.FindAsync(request.RoomId)
-            ?? throw new InvalidOperationException($"Room '{request.RoomId}' not found");
-
-        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == request.SenderId)
-            ?? throw new InvalidOperationException($"Agent '{request.SenderId}' not found in catalog");
-
-        var now = DateTime.UtcNow;
-        var envelope = new ChatEnvelope(
-            Id: Guid.NewGuid().ToString("N"),
-            RoomId: request.RoomId,
-            SenderId: agent.Id,
-            SenderName: agent.Name,
-            SenderRole: agent.Role,
-            SenderKind: MessageSenderKind.Agent,
-            Kind: request.Kind,
-            Content: request.Content,
-            SentAt: now,
-            CorrelationId: request.CorrelationId,
-            Hint: request.Hint
-        );
-
-        var msgEntity = new MessageEntity
-        {
-            Id = envelope.Id,
-            RoomId = envelope.RoomId,
-            SenderId = envelope.SenderId,
-            SenderName = envelope.SenderName,
-            SenderRole = envelope.SenderRole,
-            SenderKind = envelope.SenderKind.ToString(),
-            Kind = envelope.Kind.ToString(),
-            Content = envelope.Content,
-            SentAt = envelope.SentAt,
-            CorrelationId = envelope.CorrelationId
-        };
-
-        // Tag message with active conversation session
-        var session = await _sessionService.GetOrCreateActiveSessionAsync(request.RoomId);
-        msgEntity.SessionId = session.Id;
-
-        _db.Messages.Add(msgEntity);
-        await _sessionService.IncrementMessageCountAsync(session.Id);
-
-        // Trim to last MaxRecentMessages
-        await TrimMessagesAsync(request.RoomId);
-
-        room.UpdatedAt = now;
-
-        Publish(ActivityEventType.MessagePosted, request.RoomId, agent.Id, null,
-            $"{agent.Name}: {request.Content}");
-
-        await _db.SaveChangesAsync();
-
-        return envelope;
-    }
+    public Task<ChatEnvelope> PostMessageAsync(PostMessageRequest request)
+        => _messages.PostMessageAsync(request);
 
     /// <summary>
     /// Posts a human message to a room.
-    /// When identity parameters are provided, the message is attributed to that user.
-    /// Otherwise falls back to generic "Human" identity.
     /// </summary>
-    public async Task<ChatEnvelope> PostHumanMessageAsync(
+    public Task<ChatEnvelope> PostHumanMessageAsync(
         string roomId, string content,
         string? userId = null, string? userName = null)
-    {
-        if (string.IsNullOrWhiteSpace(roomId))
-            throw new ArgumentException("roomId is required", nameof(roomId));
-        if (string.IsNullOrWhiteSpace(content))
-            throw new ArgumentException("content is required", nameof(content));
-
-        var room = await _db.Rooms.FindAsync(roomId)
-            ?? throw new InvalidOperationException($"Room '{roomId}' not found");
-
-        var senderId = userId ?? "human";
-        var senderName = userName ?? "Human";
-
-        var now = DateTime.UtcNow;
-        var envelope = new ChatEnvelope(
-            Id: Guid.NewGuid().ToString("N"),
-            RoomId: roomId,
-            SenderId: senderId,
-            SenderName: senderName,
-            SenderRole: "Human",
-            SenderKind: MessageSenderKind.User,
-            Kind: MessageKind.Response,
-            Content: content,
-            SentAt: now
-        );
-
-        var msgEntity = new MessageEntity
-        {
-            Id = envelope.Id,
-            RoomId = roomId,
-            SenderId = senderId,
-            SenderName = senderName,
-            SenderRole = "Human",
-            SenderKind = nameof(MessageSenderKind.User),
-            Kind = nameof(MessageKind.Response),
-            Content = content,
-            SentAt = now
-        };
-
-        // Tag message with active conversation session
-        var session = await _sessionService.GetOrCreateActiveSessionAsync(roomId);
-        msgEntity.SessionId = session.Id;
-
-        _db.Messages.Add(msgEntity);
-        await _sessionService.IncrementMessageCountAsync(session.Id);
-
-        await TrimMessagesAsync(roomId);
-
-        room.UpdatedAt = now;
-
-        // ActorId stays "human" for activity event filtering (broadcaster suppresses echo)
-        Publish(ActivityEventType.MessagePosted, roomId, "human", null,
-            $"{senderName}: {content}");
-
-        await _db.SaveChangesAsync();
-
-        return envelope;
-    }
+        => _messages.PostHumanMessageAsync(roomId, content, userId, userName);
 
     /// <summary>
     /// Posts a system message to a room (e.g. "Agent X joined the room.").
     /// </summary>
-    public async Task PostSystemMessageAsync(string roomId, string content)
-    {
-        var room = await _db.Rooms.FindAsync(roomId)
-            ?? throw new InvalidOperationException($"Room '{roomId}' not found");
-
-        var now = DateTime.UtcNow;
-        var session = await _sessionService.GetOrCreateActiveSessionAsync(roomId);
-
-        var msgEntity = new MessageEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            RoomId = roomId,
-            SenderId = "system",
-            SenderName = "System",
-            SenderKind = nameof(MessageSenderKind.System),
-            Kind = nameof(MessageKind.System),
-            Content = content,
-            SentAt = now,
-            SessionId = session.Id
-        };
-        _db.Messages.Add(msgEntity);
-        await _sessionService.IncrementMessageCountAsync(session.Id);
-
-        room.UpdatedAt = now;
-        await _db.SaveChangesAsync();
-    }
-
-    // ── Direct Messaging ────────────────────────────────────────
+    public Task PostSystemMessageAsync(string roomId, string content)
+        => _messages.PostSystemMessageAsync(roomId, content);
 
     /// <summary>
     /// Stores a direct message and posts a system notification in the recipient's room.
     /// </summary>
-    public async Task<string> SendDirectMessageAsync(
+    public Task<string> SendDirectMessageAsync(
         string senderId, string senderName, string senderRole,
         string recipientId, string message, string currentRoomId)
-    {
-        var now = DateTime.UtcNow;
-        var messageId = Guid.NewGuid().ToString("N");
-
-        var msgEntity = new MessageEntity
-        {
-            Id = messageId,
-            RoomId = currentRoomId,
-            SenderId = senderId,
-            SenderName = senderName,
-            SenderRole = senderRole,
-            SenderKind = senderId == "human" ? nameof(MessageSenderKind.User) : nameof(MessageSenderKind.Agent),
-            Kind = nameof(MessageKind.DirectMessage),
-            Content = message,
-            SentAt = now,
-            RecipientId = recipientId
-        };
-        _db.Messages.Add(msgEntity);
-
-        // Post system notification in recipient's current room (audit metadata, no content)
-        if (recipientId != "human")
-        {
-            var recipientLocation = await _db.AgentLocations.FindAsync(recipientId);
-            var notifyRoomId = recipientLocation?.RoomId ?? currentRoomId;
-            var notifyRoom = await _db.Rooms.FindAsync(notifyRoomId);
-            if (notifyRoom is not null)
-            {
-                var sysMsg = new MessageEntity
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    RoomId = notifyRoomId,
-                    SenderId = "system",
-                    SenderName = "System",
-                    SenderKind = nameof(MessageSenderKind.System),
-                    Kind = nameof(MessageKind.System),
-                    Content = $"📩 {senderName} sent a direct message to {recipientId}.",
-                    SentAt = now
-                };
-                _db.Messages.Add(sysMsg);
-                notifyRoom.UpdatedAt = now;
-            }
-        }
-
-        Publish(ActivityEventType.DirectMessageSent, currentRoomId, senderId, null,
-            $"DM from {senderName} to {recipientId}");
-
-        await _db.SaveChangesAsync();
-        return messageId;
-    }
+        => _messages.SendDirectMessageAsync(senderId, senderName, senderRole, recipientId, message, currentRoomId);
 
     /// <summary>
-    /// Returns recent DMs for an agent (both sent and received), ordered chronologically.
-    /// When unreadOnly is true (default), only returns DMs where the agent is the
-    /// recipient and hasn't acknowledged them yet.
+    /// Returns recent DMs for an agent.
     /// </summary>
-    public async Task<List<MessageEntity>> GetDirectMessagesForAgentAsync(
+    public Task<List<MessageEntity>> GetDirectMessagesForAgentAsync(
         string agentId, int limit = 20, bool unreadOnly = true)
-    {
-        IQueryable<MessageEntity> query;
-
-        if (unreadOnly)
-        {
-            // Only unacknowledged DMs where this agent is the recipient
-            query = _db.Messages
-                .Where(m => m.RecipientId == agentId && m.AcknowledgedAt == null);
-        }
-        else
-        {
-            query = _db.Messages
-                .Where(m => m.RecipientId != null &&
-                            (m.RecipientId == agentId || m.SenderId == agentId));
-        }
-
-        return await query
-            .OrderByDescending(m => m.SentAt)
-            .Take(limit)
-            .OrderBy(m => m.SentAt)
-            .ToListAsync();
-    }
+        => _messages.GetDirectMessagesForAgentAsync(agentId, limit, unreadOnly);
 
     /// <summary>
     /// Marks specific DMs as acknowledged by their IDs.
-    /// Call this after building a prompt that includes DMs, passing only the
-    /// message IDs that were actually included in the prompt.
     /// </summary>
-    public async Task AcknowledgeDirectMessagesAsync(string agentId, IReadOnlyList<string> messageIds)
-    {
-        if (messageIds.Count == 0) return;
-
-        var now = DateTime.UtcNow;
-        var messages = await _db.Messages
-            .Where(m => messageIds.Contains(m.Id) &&
-                        m.RecipientId == agentId &&
-                        m.AcknowledgedAt == null)
-            .ToListAsync();
-
-        foreach (var dm in messages)
-            dm.AcknowledgedAt = now;
-
-        if (messages.Count > 0)
-            await _db.SaveChangesAsync();
-    }
+    public Task AcknowledgeDirectMessagesAsync(string agentId, IReadOnlyList<string> messageIds)
+        => _messages.AcknowledgeDirectMessagesAsync(agentId, messageIds);
 
     /// <summary>
     /// Returns DM thread summaries for the human user, grouped by agent.
     /// </summary>
-    public async Task<List<DmThreadSummary>> GetDmThreadsForHumanAsync()
-    {
-        var humanDms = await _db.Messages
-            .Where(m => m.RecipientId != null &&
-                        (m.RecipientId == "human" || m.SenderId == "human"))
-            .OrderByDescending(m => m.SentAt)
-            .Take(500) // Cap to prevent unbounded scans
-            .ToListAsync();
-
-        var threads = new Dictionary<string, DmThreadSummary>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var dm in humanDms)
-        {
-            var agentId = dm.SenderId == "human" ? dm.RecipientId! : dm.SenderId;
-
-            if (!threads.ContainsKey(agentId))
-            {
-                // Find agent name from catalog
-                var agent = _catalog.Agents.FirstOrDefault(
-                    a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
-                var agentName = agent?.Name ?? agentId;
-                var agentRole = agent?.Role ?? "Agent";
-
-                threads[agentId] = new DmThreadSummary(
-                    AgentId: agentId,
-                    AgentName: agentName,
-                    AgentRole: agentRole,
-                    LastMessage: dm.Content.Length > 100 ? dm.Content[..100] + "…" : dm.Content,
-                    LastMessageAt: dm.SentAt,
-                    MessageCount: 0
-                );
-            }
-
-            threads[agentId] = threads[agentId] with
-            {
-                MessageCount = threads[agentId].MessageCount + 1
-            };
-        }
-
-        return threads.Values
-            .OrderByDescending(t => t.LastMessageAt)
-            .ToList();
-    }
+    public Task<List<DmThreadSummary>> GetDmThreadsForHumanAsync()
+        => _messages.GetDmThreadsForHumanAsync();
 
     /// <summary>
     /// Returns messages in a DM thread between the human and a specific agent.
     /// </summary>
-    public async Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50)
-    {
-        return await _db.Messages
-            .Where(m => m.RecipientId != null &&
-                        ((m.SenderId == "human" && m.RecipientId == agentId) ||
-                         (m.SenderId == agentId && m.RecipientId == "human")))
-            .OrderByDescending(m => m.SentAt)
-            .Take(limit)
-            .OrderBy(m => m.SentAt)
-            .ToListAsync();
-    }
+    public Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50)
+        => _messages.GetDmThreadMessagesAsync(agentId, limit);
 
     // ── Phase Management ────────────────────────────────────────
 
@@ -2464,20 +2184,7 @@ public sealed class WorkspaceRuntime
     private MessageEntity CreateMessageEntity(
         string roomId, MessageKind kind, string content,
         string? correlationId, DateTime sentAt)
-    {
-        return new MessageEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            RoomId = roomId,
-            SenderId = "system",
-            SenderName = "System",
-            SenderKind = nameof(MessageSenderKind.System),
-            Kind = kind.ToString(),
-            Content = content,
-            SentAt = sentAt,
-            CorrelationId = correlationId
-        };
-    }
+        => _messages.CreateMessageEntity(roomId, kind, content, correlationId, sentAt);
 
     private async Task<string> ResolveStartupMainRoomIdAsync(string? activeWorkspace)
     {
@@ -2509,22 +2216,8 @@ public sealed class WorkspaceRuntime
         return await EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
     }
 
-    private async Task TrimMessagesAsync(string roomId)
-    {
-        // Count committed room messages only (exclude DMs, pending tracked add is +1)
-        var messageCount = await _db.Messages.CountAsync(m => m.RoomId == roomId && m.RecipientId == null);
-        var totalAfterSave = messageCount + 1; // account for the pending message
-
-        if (totalAfterSave <= MaxRecentMessages) return;
-
-        var toRemove = await _db.Messages
-            .Where(m => m.RoomId == roomId && m.RecipientId == null)
-            .OrderBy(m => m.SentAt)
-            .Take(totalAfterSave - MaxRecentMessages)
-            .ToListAsync();
-
-        _db.Messages.RemoveRange(toRemove);
-    }
+    private Task TrimMessagesAsync(string roomId)
+        => _messages.TrimMessagesAsync(roomId);
 
     private static string Normalize(string value)
     {
@@ -2542,63 +2235,16 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Posts a system status message to a room (no agent sender required).
     /// </summary>
-    public async Task PostSystemStatusAsync(string roomId, string message)
-    {
-        var room = await _db.Rooms.FindAsync(roomId)
-            ?? throw new InvalidOperationException($"Room '{roomId}' not found");
-
-        var now = DateTime.UtcNow;
-        var entity = CreateMessageEntity(roomId, MessageKind.System, message, null, now);
-        _db.Messages.Add(entity);
-        room.UpdatedAt = now;
-
-        Publish(ActivityEventType.MessagePosted, roomId, null, null,
-            $"System: {Truncate(message, 100)}");
-
-        await _db.SaveChangesAsync();
-    }
+    public Task PostSystemStatusAsync(string roomId, string message)
+        => _messages.PostSystemStatusAsync(roomId, message);
 
     /// <summary>
     /// Adds a message to a breakout room's message log.
     /// </summary>
-    public async Task PostBreakoutMessageAsync(
+    public Task PostBreakoutMessageAsync(
         string breakoutRoomId, string senderId, string senderName,
         string senderRole, string content)
-    {
-        var br = await _db.BreakoutRooms.FindAsync(breakoutRoomId)
-            ?? throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' not found");
-
-        if (br.Status != nameof(RoomStatus.Active))
-            throw new InvalidOperationException($"Breakout room '{breakoutRoomId}' is archived");
-
-        var now = DateTime.UtcNow;
-        var entity = new BreakoutMessageEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            BreakoutRoomId = breakoutRoomId,
-            SenderId = senderId,
-            SenderName = senderName,
-            SenderRole = senderRole,
-            SenderKind = senderId == "system"
-                ? nameof(MessageSenderKind.System)
-                : nameof(MessageSenderKind.Agent),
-            Kind = senderId == "system"
-                ? nameof(MessageKind.System)
-                : nameof(MessageKind.Response),
-            Content = content,
-            SentAt = now
-        };
-
-        // Tag message with active conversation session for breakout room
-        var session = await _sessionService.GetOrCreateActiveSessionAsync(breakoutRoomId, "Breakout");
-        entity.SessionId = session.Id;
-
-        _db.BreakoutMessages.Add(entity);
-        await _sessionService.IncrementMessageCountAsync(session.Id);
-
-        br.UpdatedAt = now;
-        await _db.SaveChangesAsync();
-    }
+        => _messages.PostBreakoutMessageAsync(breakoutRoomId, senderId, senderName, senderRole, content);
 
     /// <summary>
     /// Creates a task item associated with a breakout room.

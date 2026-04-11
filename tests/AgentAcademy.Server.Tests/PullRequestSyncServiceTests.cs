@@ -119,6 +119,8 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<ConversationSessionService>();
         sc.AddScoped<TaskQueryService>();
         sc.AddScoped<TaskLifecycleService>();
+        sc.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        sc.AddScoped<MessageService>();
         sc.AddScoped<WorkspaceRuntime>();
         sc.AddSingleton(_github);
 
@@ -389,7 +391,8 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
-        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle);
+        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService));
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 

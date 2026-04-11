@@ -55,6 +55,7 @@ public class TaskEvidenceTests : IDisposable
         services.AddSingleton(catalog);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

@@ -256,6 +256,8 @@ public class AgentToolFunctionsTests : IDisposable
         services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
@@ -528,6 +530,8 @@ public class AgentWriteToolTests : IDisposable
         services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());

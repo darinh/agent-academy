@@ -198,6 +198,7 @@ builder.Services.AddSingleton<ActivityBroadcaster>();
 builder.Services.AddScoped<ActivityPublisher>();
 builder.Services.AddScoped<TaskQueryService>();
 builder.Services.AddScoped<TaskLifecycleService>();
+builder.Services.AddScoped<MessageService>();
 builder.Services.AddScoped<WorkspaceRuntime>();
 
 // Agent config service (scoped — merges catalog defaults with DB overrides)

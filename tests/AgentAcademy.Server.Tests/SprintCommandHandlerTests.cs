@@ -41,6 +41,8 @@ public class SprintCommandHandlerTests : IDisposable
         // WorkspaceRuntime and its dependencies
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);

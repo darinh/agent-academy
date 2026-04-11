@@ -47,7 +47,8 @@ public class SprintControllerTests : IDisposable
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
-            catalog, activityPublisher, sessionService, taskQueries, taskLifecycle);
+            catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService));
 
         _controller = new SprintController(
             _sprintService, _runtime,

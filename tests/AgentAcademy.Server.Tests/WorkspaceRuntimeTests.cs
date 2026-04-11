@@ -83,7 +83,8 @@ public class WorkspaceRuntimeTests : IDisposable
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher);
-        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle);
+        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
+            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService));
     }
 
     public void Dispose()

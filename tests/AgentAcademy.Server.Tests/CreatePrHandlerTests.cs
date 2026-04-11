@@ -71,6 +71,7 @@ public class CreatePrHandlerTests : IDisposable
         services.AddSingleton(catalog);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());

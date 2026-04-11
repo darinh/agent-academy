@@ -637,6 +637,8 @@ public class CopilotExecutorAuthTransitionTests
             services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
             services.AddScoped<TaskQueryService>();
             services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
             services.AddScoped<SystemSettingsService>();
             services.AddScoped<ConversationSessionService>();

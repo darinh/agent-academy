@@ -64,6 +64,7 @@ public class RejectTaskTests : IDisposable
         services.AddSingleton(_catalog);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

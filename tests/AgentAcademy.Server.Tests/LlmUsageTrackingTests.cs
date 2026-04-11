@@ -316,7 +316,8 @@ public class UsageApiEndpointTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
-            _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle);
+            _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
+            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService));
     }
 
     public void Dispose()
