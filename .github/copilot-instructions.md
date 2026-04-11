@@ -112,6 +112,12 @@ This project runs under an automated operator. Key rules:
    It handles GUID lookup, file creation, and restart trigger in one atomic step.
    If the command fails, debug it — do not fall back to manual file writes.
 4. **Server management**: Rebuild with `dotnet build AgentAcademy.sln`, kill old PID (`pgrep -f AgentAcademy.Server.dll`), relaunch with `ConsultantApi__SharedSecret="anvil-is-the-best"` and `--urls "http://localhost:5066"` (detach=true).
+5. **Delegate to agents via Consultant API.** Agents have their own git worktrees and can work independently. When the server is running and agents are loaded, prefer delegating work to them over doing it yourself:
+   - **Unblock agents**: If an agent is stuck, send a message to the main room or DM the agent with guidance via `POST /api/rooms/{roomId}/human` or `POST /api/dm/threads/{agentId}`.
+   - **Assign work**: Post tasks to the main room and let the orchestrator dispatch to agents. Each agent works in its own worktree — no merge conflicts with your work.
+   - **Monitor progress**: Poll `GET /api/rooms/{roomId}/messages?after={lastSeenId}` to track agent responses. Use `GET /api/rooms` to discover room IDs.
+   - **Execute commands**: Use `POST /api/commands/execute` for operations like `RUN_BUILD`, `RUN_TESTS`, `LIST_TASKS`, `SHOW_DIFF`.
+   - **When to delegate vs. do it yourself**: Delegate routine feature work, test writing, and spec updates when agents are available. Do it yourself for infrastructure changes, spec authoring, and anything touching the agent system itself (avoid agents modifying their own runtime).
 
 ### Stabilization Protocol
 
