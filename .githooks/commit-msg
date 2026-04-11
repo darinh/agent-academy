@@ -14,7 +14,7 @@ fi
 # Validate conventional commit prefix
 # Allowed: feat, fix, docs, refactor, test, ci, style, perf, build, chore, revert
 # Optionally followed by a scope in parentheses, optionally with ! for breaking change
-if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|refactor|test|ci|style|perf|build|chore|revert)(\(.+\))?\!?: .+"; then
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|refactor|test|ci|style|perf|build|chore|revert|merge)(\(.+\))?\!?: .+"; then
   echo ""
   echo "ERROR: Commit message does not follow Conventional Commits format."
   echo ""

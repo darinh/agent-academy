@@ -21,7 +21,7 @@ jobs:
           # Check all commits in the PR follow conventional commit format
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?\!?: .+'
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+\))?\!?: .+'
 
           COMMITS=$(git log --format="%h %s" "$BASE".."$HEAD") || {
             echo "❌ Failed to resolve commit range"
