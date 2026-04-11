@@ -470,7 +470,7 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 - ~~No validation attributes or FluentValidation rules specified~~ ✅ Resolved — DataAnnotations (`[Required]`, `[StringLength]`, `[MinLength]`, `[Range]`, `[Url]`) added to all API request records. Enforced automatically by `[ApiController]` pipeline. See `RequestValidationTests.cs` for coverage.
 - ~~`INotificationProvider` interface not yet defined~~ ✅ Resolved (notification providers implemented)
 - ~~Event sourcing vs. CRUD approach not decided~~ → CRUD via EF Core
-- `MetricsEntry.Data` uses `Dictionary<string, object>` — may need a more specific type
+- ~~`MetricsEntry.Data` uses `Dictionary<string, object>` — may need a more specific type~~ ✅ Resolved — Changed to `Dictionary<string, JsonElement>` for JSON serialization safety
 - ~~No DTO ↔ Entity mapping layer yet~~ → Service layer handles mapping inline
 
 ## Revision History
