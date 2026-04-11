@@ -1,9 +1,7 @@
 using System.Text.RegularExpressions;
 using AgentAcademy.Server.Commands;
-using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -35,6 +33,7 @@ public sealed class BreakoutLifecycleService
     private readonly CommandPipeline _commandPipeline;
     private readonly GitService _gitService;
     private readonly WorktreeService _worktreeService;
+    private readonly AgentMemoryLoader _memoryLoader;
     private readonly ILogger<BreakoutLifecycleService> _logger;
 
     private volatile bool _stopped;
@@ -46,6 +45,7 @@ public sealed class BreakoutLifecycleService
         CommandPipeline commandPipeline,
         GitService gitService,
         WorktreeService worktreeService,
+        AgentMemoryLoader memoryLoader,
         ILogger<BreakoutLifecycleService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -54,6 +54,7 @@ public sealed class BreakoutLifecycleService
         _commandPipeline = commandPipeline;
         _gitService = gitService;
         _worktreeService = worktreeService;
+        _memoryLoader = memoryLoader;
         _logger = logger;
     }
 
@@ -176,7 +177,7 @@ public sealed class BreakoutLifecycleService
 
                 try
                 {
-                    var breakoutMemories = await LoadAgentMemoriesAsync(agent.Id);
+                    var breakoutMemories = await _memoryLoader.LoadAsync(agent.Id);
                     var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                     if (breakoutDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(agent.Id, breakoutDms.Select(m => m.Id).ToList());
@@ -517,7 +518,7 @@ public sealed class BreakoutLifecycleService
             var response = "";
             try
             {
-                var fixMemories = await LoadAgentMemoriesAsync(agent.Id);
+                var fixMemories = await _memoryLoader.LoadAsync(agent.Id);
                 var fixDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                 if (fixDms.Count > 0)
                     await runtime.AcknowledgeDirectMessagesAsync(agent.Id, fixDms.Select(m => m.Id).ToList());
@@ -626,51 +627,6 @@ public sealed class BreakoutLifecycleService
         {
             _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
             return new CommandPipelineResult(new List<CommandEnvelope>(), responseText, ProcessingFailed: true);
-        }
-    }
-
-    private async Task<List<AgentMemory>> LoadAgentMemoriesAsync(string agentId)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-            var now = DateTime.UtcNow;
-
-            var entities = await db.AgentMemories
-                .Where(m => m.AgentId == agentId || m.Category == "shared")
-                .Where(m => m.ExpiresAt == null || m.ExpiresAt > now)
-                .OrderBy(m => m.Category)
-                .ThenBy(m => m.Key)
-                .ToListAsync();
-
-            if (entities.Count > 0)
-            {
-                try
-                {
-                    foreach (var group in entities.GroupBy(e => e.AgentId))
-                    {
-                        var aid = group.Key;
-                        var keyList = group.Select(g => g.Key).ToList();
-                        var placeholders = string.Join(", ", keyList.Select((_, i) => $"{{{i + 2}}}"));
-                        var sql = $"UPDATE agent_memories SET LastAccessedAt = {{0}} WHERE AgentId = {{1}} AND Key IN ({placeholders})";
-                        var parameters = new List<object> { now, aid };
-                        parameters.AddRange(keyList);
-                        await db.Database.ExecuteSqlRawAsync(sql, parameters.ToArray());
-                    }
-                }
-                catch { /* best-effort */ }
-            }
-
-            return entities.Select(e => new AgentMemory(
-                e.AgentId, e.Category, e.Key, e.Value, e.CreatedAt, e.UpdatedAt,
-                e.LastAccessedAt, e.ExpiresAt
-            )).ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load memories for agent {AgentId}", agentId);
-            return new List<AgentMemory>();
         }
     }
 }

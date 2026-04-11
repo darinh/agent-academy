@@ -1,8 +1,6 @@
 using AgentAcademy.Server.Commands;
-using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +21,7 @@ public sealed class AgentOrchestrator
     private readonly GitService _gitService;
     private readonly WorktreeService _worktreeService;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
+    private readonly AgentMemoryLoader _memoryLoader;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
@@ -44,6 +43,7 @@ public sealed class AgentOrchestrator
         GitService gitService,
         WorktreeService worktreeService,
         BreakoutLifecycleService breakoutLifecycle,
+        AgentMemoryLoader memoryLoader,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
@@ -54,6 +54,7 @@ public sealed class AgentOrchestrator
         _gitService = gitService;
         _worktreeService = worktreeService;
         _breakoutLifecycle = breakoutLifecycle;
+        _memoryLoader = memoryLoader;
         _logger = logger;
     }
 
@@ -304,7 +305,7 @@ public sealed class AgentOrchestrator
                 {
                     var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
                     var taskItems = await runtime.GetActiveTaskItemsAsync();
-                    var plannerMemories = await LoadAgentMemoriesAsync(planner.Id);
+                    var plannerMemories = await _memoryLoader.LoadAsync(planner.Id);
                     var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
                     if (plannerDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
@@ -380,7 +381,7 @@ public sealed class AgentOrchestrator
                 var response = "";
                 try
                 {
-                    var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
+                    var agentMemories = await _memoryLoader.LoadAsync(agent.Id);
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                     if (agentDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
@@ -494,7 +495,7 @@ public sealed class AgentOrchestrator
         if (room is null) return;
 
         var specContext = await _specManager.LoadSpecContextAsync();
-        var agentMemories = await LoadAgentMemoriesAsync(agent.Id);
+        var agentMemories = await _memoryLoader.LoadAsync(agent.Id);
         var directMessages = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
         if (directMessages.Count > 0)
             await runtime.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
@@ -854,56 +855,6 @@ public sealed class AgentOrchestrator
         {
             _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
             return new CommandPipelineResult(new List<CommandEnvelope>(), responseText, ProcessingFailed: true);
-        }
-    }
-
-    /// <summary>
-    /// Loads an agent's persisted memories from the database,
-    /// including shared memories from all agents.
-    /// </summary>
-    private async Task<List<AgentMemory>> LoadAgentMemoriesAsync(string agentId)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-            var now = DateTime.UtcNow;
-
-            var entities = await db.AgentMemories
-                .Where(m => m.AgentId == agentId || m.Category == "shared")
-                .Where(m => m.ExpiresAt == null || m.ExpiresAt > now)
-                .OrderBy(m => m.Category)
-                .ThenBy(m => m.Key)
-                .ToListAsync();
-
-            // Update LastAccessedAt for all loaded memories (best-effort, batched)
-            if (entities.Count > 0)
-            {
-                try
-                {
-                    foreach (var group in entities.GroupBy(e => e.AgentId))
-                    {
-                        var aid = group.Key;
-                        var keyList = group.Select(g => g.Key).ToList();
-                        var placeholders = string.Join(", ", keyList.Select((_, i) => $"{{{i + 2}}}"));
-                        var sql = $"UPDATE agent_memories SET LastAccessedAt = {{0}} WHERE AgentId = {{1}} AND Key IN ({placeholders})";
-                        var parameters = new List<object> { now, aid };
-                        parameters.AddRange(keyList);
-                        await db.Database.ExecuteSqlRawAsync(sql, parameters.ToArray());
-                    }
-                }
-                catch { /* best-effort */ }
-            }
-
-            return entities.Select(e => new AgentMemory(
-                e.AgentId, e.Category, e.Key, e.Value, e.CreatedAt, e.UpdatedAt,
-                e.LastAccessedAt, e.ExpiresAt
-            )).ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load memories for agent {AgentId}", agentId);
-            return new List<AgentMemory>();
         }
     }
 

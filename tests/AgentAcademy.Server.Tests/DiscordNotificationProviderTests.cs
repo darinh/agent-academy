@@ -383,11 +383,13 @@ public class DiscordNotificationProviderTests
             Substitute.For<ILogger<Commands.CommandPipeline>>());
         var gitService = new GitService(Substitute.For<ILogger<GitService>>());
         var worktreeService = new WorktreeService(Substitute.For<ILogger<WorktreeService>>(), repositoryRoot: "/tmp/test-repo");
+        var memoryLoader = new AgentMemoryLoader(scopeFactory, Substitute.For<ILogger<AgentMemoryLoader>>());
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, executor, specManager, pipeline, gitService, worktreeService,
+            memoryLoader,
             Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
-        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, gitService, worktreeService, breakoutLifecycle, logger);
+        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, gitService, worktreeService, breakoutLifecycle, memoryLoader, logger);
     }
 
     #endregion
