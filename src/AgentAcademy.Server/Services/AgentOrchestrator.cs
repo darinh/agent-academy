@@ -318,7 +318,7 @@ public sealed class AgentOrchestrator
                     var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
                     if (plannerDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary, sprintPreamble)
+                    var prompt = PromptBuilder.BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary, sprintPreamble)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -394,7 +394,7 @@ public sealed class AgentOrchestrator
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                     if (agentDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
-                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
+                    var prompt = PromptBuilder.BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
                     response = await RunAgentAsync(agent, prompt, roomId);
                 }
                 catch (Exception ex)
@@ -544,7 +544,7 @@ public sealed class AgentOrchestrator
         var response = "";
         try
         {
-            var prompt = BuildConversationPrompt(agent, room, specContext,
+            var prompt = PromptBuilder.BuildConversationPrompt(agent, room, specContext,
                 memories: agentMemories, directMessages: directMessages,
                 sessionSummary: dmSessionSummary, sprintPreamble: dmSprintPreamble);
             response = await RunAgentAsync(agent, prompt, roomId);
@@ -722,12 +722,12 @@ public sealed class AgentOrchestrator
 
             taskId = await runtime.EnsureTaskForBreakoutAsync(
                 br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
-                BuildAssignmentPlanContent(assignment), taskBranch);
+                PromptBuilder.BuildAssignmentPlanContent(assignment), taskBranch);
 
             var task = await runtime.GetTaskAsync(taskId);
             var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
                 ? task.CurrentPlan
-                : BuildAssignmentPlanContent(assignment);
+                : PromptBuilder.BuildAssignmentPlanContent(assignment);
             await runtime.SetPlanAsync(br.Id, planContent);
         }
         catch (Exception ex)
@@ -850,7 +850,7 @@ public sealed class AgentOrchestrator
         var tasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
         await runtime.PostBreakoutMessageAsync(
             breakoutRoomId, "system", "LocalAgentHost", "System",
-            BuildTaskBrief(agent, tasks, taskBranch));
+            PromptBuilder.BuildTaskBrief(agent, tasks, taskBranch));
 
         var consecutiveIdleRounds = 0;
 
@@ -926,7 +926,7 @@ public sealed class AgentOrchestrator
                     }
                     breakoutSpecContext ??= await _specManager.LoadSpecContextAsync();
 
-                    var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext);
+                    var prompt = PromptBuilder.BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext);
                     response = await RunAgentAsync(agent, prompt, breakoutRoomId, worktreePath);
                 }
                 catch (Exception ex)
@@ -1232,7 +1232,7 @@ public sealed class AgentOrchestrator
         {
             var room = await runtime.GetRoomAsync(parentRoomId);
             if (room is null) return null;
-            var prompt = BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
+            var prompt = PromptBuilder.BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
                 await _specManager.LoadSpecContextAsync());
             reviewResponse = await RunAgentAsync(reviewer, prompt, parentRoomId);
         }
@@ -1329,7 +1329,7 @@ public sealed class AgentOrchestrator
                 fixSpecContext ??= await _specManager.LoadSpecContextAsync();
 
                 response = await RunAgentAsync(
-                    agent, BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary, fixSpecContext),
+                    agent, PromptBuilder.BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary, fixSpecContext),
                     breakoutRoomId);
             }
             catch { continue; }
@@ -1517,296 +1517,6 @@ public sealed class AgentOrchestrator
         }
     }
 
-    // ── PROMPT BUILDERS ─────────────────────────────────────────
-
-    private static string BuildConversationPrompt(
-        AgentDefinition agent, RoomSnapshot room, string? specContext,
-        List<TaskItem>? activeTaskItems = null,
-        List<AgentMemory>? memories = null,
-        List<Data.Entities.MessageEntity>? directMessages = null,
-        string? sessionSummary = null,
-        string? sprintPreamble = null)
-    {
-        // Note: agent.StartupPrompt is NOT included here — it's already sent
-        // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
-        // Including it again would duplicate it in the SDK session context.
-        var lines = new List<string>();
-
-        // Inject sprint preamble before everything else (sets stage context)
-        if (!string.IsNullOrEmpty(sprintPreamble))
-        {
-            lines.Add(sprintPreamble);
-        }
-
-        // Inject session summary from previous epoch if available
-        if (!string.IsNullOrEmpty(sessionSummary))
-        {
-            lines.Add("=== PREVIOUS CONVERSATION SUMMARY ===");
-            lines.Add(sessionSummary);
-            lines.Add("");
-        }
-
-        // Inject agent memories before room context
-        if (memories is { Count: > 0 })
-        {
-            var ownMemories = memories.Where(m => m.Category != "shared" || m.AgentId == agent.Id).ToList();
-            var sharedMemories = memories.Where(m => m.Category == "shared" && m.AgentId != agent.Id).ToList();
-
-            if (ownMemories.Count > 0)
-            {
-                lines.Add("=== YOUR MEMORIES ===");
-                foreach (var m in ownMemories)
-                {
-                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
-                    var ttlTag = m.ExpiresAt.HasValue ? $" [expires {m.ExpiresAt.Value:yyyy-MM-dd}]" : "";
-                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}{staleTag}{ttlTag}");
-                }
-                lines.Add("");
-            }
-
-            if (sharedMemories.Count > 0)
-            {
-                lines.Add("=== SHARED KNOWLEDGE ===");
-                foreach (var m in sharedMemories)
-                {
-                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
-                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId}){staleTag}");
-                }
-                lines.Add("");
-            }
-        }
-
-        lines.Add("=== CURRENT ROOM CONTEXT ===");
-        lines.Add($"Room: {room.Name}");
-
-        if (room.ActiveTask is not null)
-        {
-            lines.Add("");
-            lines.Add("=== TASK ===");
-            lines.Add($"Title: {room.ActiveTask.Title}");
-            lines.Add($"Description: {room.ActiveTask.Description}");
-            if (!string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria))
-                lines.Add($"Success criteria: {room.ActiveTask.SuccessCriteria}");
-        }
-
-        if (activeTaskItems is { Count: > 0 })
-        {
-            lines.Add("");
-            lines.Add("=== IN-FLIGHT WORK ITEMS ===");
-            foreach (var item in activeTaskItems)
-            {
-                var workspace = item.BreakoutRoomId is not null ? " [in workspace]" : "";
-                lines.Add($"- [{item.Status}] \"{item.Title}\" → assigned to {item.AssignedTo}{workspace}");
-            }
-        }
-
-        if (specContext is not null)
-        {
-            lines.Add("");
-            lines.Add("=== PROJECT SPECIFICATION ===");
-            lines.Add("The project maintains a living spec in specs/. Relevant sections:");
-            lines.Add(specContext);
-        }
-
-        if (room.RecentMessages.Count > 0)
-        {
-            lines.Add("");
-            lines.Add("=== RECENT CONVERSATION ===");
-            foreach (var msg in room.RecentMessages.TakeLast(20))
-            {
-                lines.Add($"[{msg.SenderName} ({msg.SenderRole ?? msg.SenderKind.ToString()})]: {msg.Content}");
-            }
-        }
-
-        if (directMessages is { Count: > 0 })
-        {
-            lines.Add("");
-            lines.Add("=== DIRECT MESSAGES ===");
-            lines.Add("These are private messages only you can see. Reply via DM command if needed.");
-            foreach (var dm in directMessages)
-            {
-                var direction = dm.SenderId == agent.Id
-                    ? $"[DM to {dm.RecipientId}]"
-                    : $"[DM from {dm.SenderName}]";
-                lines.Add($"{direction}: {dm.Content}");
-            }
-        }
-
-        lines.Add("");
-        lines.Add("=== YOUR TURN ===");
-        lines.Add($"You are {agent.Name} ({agent.Role}).");
-        lines.Add("Respond naturally to the conversation. Be concise and actionable.");
-        lines.Add("If you have nothing meaningful to contribute, reply with exactly: PASS");
-
-        return string.Join("\n", lines);
-    }
-
-    private static string BuildBreakoutPrompt(AgentDefinition agent, BreakoutRoom br, int round,
-        List<AgentMemory>? memories = null,
-        List<Data.Entities.MessageEntity>? directMessages = null,
-        string? sessionSummary = null,
-        string? specContext = null)
-    {
-        // Note: agent.StartupPrompt is NOT included here — it's already sent
-        // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
-        var lines = new List<string>();
-
-        // Inject session summary from previous epoch if available
-        if (!string.IsNullOrEmpty(sessionSummary))
-        {
-            lines.Add("=== PREVIOUS WORK SUMMARY ===");
-            lines.Add(sessionSummary);
-            lines.Add("");
-        }
-
-        // Inject agent memories
-        if (memories is { Count: > 0 })
-        {
-            var ownMemories = memories.Where(m => m.Category != "shared" || m.AgentId == agent.Id).ToList();
-            var sharedMemories = memories.Where(m => m.Category == "shared" && m.AgentId != agent.Id).ToList();
-
-            if (ownMemories.Count > 0)
-            {
-                lines.Add("=== YOUR MEMORIES ===");
-                foreach (var m in ownMemories)
-                {
-                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
-                    var ttlTag = m.ExpiresAt.HasValue ? $" [expires {m.ExpiresAt.Value:yyyy-MM-dd}]" : "";
-                    lines.Add($"[{m.Category}] {m.Key}: {m.Value}{staleTag}{ttlTag}");
-                }
-                lines.Add("");
-            }
-
-            if (sharedMemories.Count > 0)
-            {
-                lines.Add("=== SHARED KNOWLEDGE ===");
-                foreach (var m in sharedMemories)
-                {
-                    var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
-                    lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId}){staleTag}");
-                }
-                lines.Add("");
-            }
-        }
-
-        lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
-        lines.Add($"Round: {round}");
-
-        if (specContext is not null)
-        {
-            lines.Add("");
-            lines.Add("=== PROJECT SPECIFICATIONS ===");
-            lines.Add("Sections marked with ★ are linked to your current task.");
-            lines.Add(specContext);
-        }
-
-        if (br.Tasks.Count > 0)
-        {
-            lines.Add("");
-            lines.Add("=== ASSIGNED TASKS ===");
-            foreach (var task in br.Tasks)
-            {
-                lines.Add($"Task: {task.Title}");
-                lines.Add($"Description: {task.Description}");
-                lines.Add($"Status: {task.Status}");
-                lines.Add("");
-            }
-        }
-
-        if (br.RecentMessages.Count > 0)
-        {
-            lines.Add("=== WORK LOG ===");
-            foreach (var msg in br.RecentMessages.TakeLast(10))
-            {
-                lines.Add($"[{msg.SenderName}]: {msg.Content}");
-            }
-        }
-
-        if (directMessages is { Count: > 0 })
-        {
-            lines.Add("");
-            lines.Add("=== DIRECT MESSAGES ===");
-            lines.Add("These are private messages only you can see. Reply via DM command if needed.");
-            foreach (var dm in directMessages)
-            {
-                var direction = dm.SenderId == agent.Id
-                    ? $"[DM to {dm.RecipientId}]"
-                    : $"[DM from {dm.SenderName}]";
-                lines.Add($"{direction}: {dm.Content}");
-            }
-        }
-
-        lines.Add("");
-        lines.Add("=== YOUR TURN ===");
-        lines.Add($"You are {agent.Name} ({agent.Role}).");
-        lines.Add("Do the work described in your tasks. Create files, write code, execute commands.");
-        lines.Add("When your work is complete, include a WORK REPORT block:");
-        lines.Add("WORK REPORT:");
-        lines.Add("Status: COMPLETE");
-        lines.Add("Files: [list of created/modified files]");
-        lines.Add("Evidence: [description of what was done and how it meets criteria]");
-
-        return string.Join("\n", lines);
-    }
-
-    private static string BuildReviewPrompt(
-        AgentDefinition reviewer, string agentName, string workReport, string? specContext)
-    {
-        var lines = new List<string> { reviewer.StartupPrompt, "" };
-        lines.Add("=== REVIEW REQUEST ===");
-        lines.Add($"{agentName} has completed work and is presenting their results.");
-        lines.Add("");
-        lines.Add("=== WORK REPORT ===");
-        lines.Add(workReport);
-
-        if (specContext is not null)
-        {
-            lines.Add("");
-            lines.Add("=== SPEC SECTIONS (verify accuracy against delivered work) ===");
-            lines.Add(specContext);
-        }
-
-        lines.Add("");
-        lines.Add("=== YOUR TURN ===");
-        lines.Add($"You are {reviewer.Name} ({reviewer.Role}).");
-        lines.Add("Review the work report and provide your assessment.");
-        lines.Add("End your review with a REVIEW: block:");
-        lines.Add("REVIEW:");
-        lines.Add("Verdict: APPROVED | NEEDS FIX");
-        lines.Add("Findings:");
-        lines.Add("- [list any issues or commendations]");
-        if (specContext is not null)
-        {
-            lines.Add("Spec Accuracy:");
-            lines.Add("- [PASS/FAIL] Do spec updates match the delivered implementation?");
-            lines.Add("- [list any spec-code discrepancies found]");
-        }
-
-        return string.Join("\n", lines);
-    }
-
-    internal static string BuildAssignmentPlanContent(ParsedTaskAssignment assignment)
-    {
-        var lines = new List<string>
-        {
-            $"# {assignment.Title}",
-            "",
-            "## Objective",
-            string.IsNullOrWhiteSpace(assignment.Description)
-                ? assignment.Title
-                : assignment.Description.Trim()
-        };
-
-        if (assignment.Criteria.Count > 0)
-        {
-            lines.Add("");
-            lines.Add("## Acceptance Criteria");
-            lines.AddRange(assignment.Criteria.Select(c => $"- {c}"));
-        }
-
-        return string.Join("\n", lines);
-    }
-
     // ── MESSAGE POSTING ─────────────────────────────────────────
 
     /// <summary>
@@ -1903,16 +1613,6 @@ public sealed class AgentOrchestrator
         }
     }
 
-    /// <summary>
-    /// A memory is stale if it hasn't been accessed in 30+ days and has no explicit TTL.
-    /// </summary>
-    private static bool IsMemoryStale(AgentMemory m)
-    {
-        if (m.ExpiresAt.HasValue) return false;
-        var lastActivity = m.LastAccessedAt ?? m.UpdatedAt ?? m.CreatedAt;
-        return (DateTime.UtcNow - lastActivity).TotalDays >= 30;
-    }
-
     private async Task PostAgentMessageAsync(
         WorkspaceRuntime runtime, AgentDefinition agent, string roomId, string content)
     {
@@ -1965,23 +1665,6 @@ public sealed class AgentOrchestrator
     /// </summary>
     internal static bool IsStubOfflineResponse(string response) =>
         response.Contains("is offline — the Copilot SDK is not connected", StringComparison.Ordinal);
-
-    private static string BuildTaskBrief(AgentDefinition agent, List<TaskItem> tasks, string? taskBranch = null)
-    {
-        var lines = new List<string>
-        {
-            $"Task Brief for {agent.Name}",
-            new('=', 40)
-        };
-        if (taskBranch != null)
-            lines.Add($"Branch: {taskBranch}");
-        foreach (var task in tasks)
-        {
-            lines.Add($"\nTask: {task.Title}");
-            lines.Add($"Description: {task.Description}");
-        }
-        return string.Join("\n", lines);
-    }
 }
 
 // ── Data Transfer Records ───────────────────────────────────────

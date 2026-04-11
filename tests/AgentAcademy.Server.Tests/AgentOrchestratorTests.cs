@@ -310,7 +310,7 @@ public class AgentOrchestratorTests
             Criteria: ["Plan tab shows content", "No API regressions"],
             Type: TaskType.Feature);
 
-        var content = AgentOrchestrator.BuildAssignmentPlanContent(assignment);
+        var content = PromptBuilder.BuildAssignmentPlanContent(assignment);
 
         Assert.Contains("# Add plan seeding", content);
         Assert.Contains("## Objective", content);
