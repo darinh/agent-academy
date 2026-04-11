@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **005-workspace-runtime**: Spec reconciliation after full facade decomposition. Added `TaskOrchestrationService` to services table (orchestrates CreateTask, CompleteTask, RejectTask, PostTaskNote). Fixed `ActivityPublisher` registration from Singleton to Scoped; separated `ActivityBroadcaster` (singleton in-memory buffer). Removed dead WorkspaceRuntime methods (PublishThinking, PublishFinished, GetRecentActivity, StreamActivity). Updated Dependencies to match actual constructor (13 dependencies, down from 16). Updated Service Registration. WorkspaceRuntime: 573 lines, pure delegation facade.
+
 ### Added
 - **300-frontend-ui**: Agent analytics drill-down (`AgentDetailView.tsx`). Clicking an agent card in the analytics panel opens an inline detail view showing: KPI row (6 metrics), 24-bucket activity trend sparkline, model breakdown grid, recent requests table (last 50), recent errors table (last 20 with type badges and recovery status), and task list (last 50 with status badges, branch/PR context). Non-catalog agents supported (ID used as name fallback). 11 backend + 11 frontend tests (1976 backend / 925 frontend total).
 - **012-consultant-api**: Agent detail endpoint `GET /api/analytics/agents/{agentId}?hoursBack={N}`. Returns `AgentAnalyticsDetail` with recent usage records, errors, tasks (active in window), per-model breakdown (including "unknown" bucket for null models), and 24 fixed activity buckets with start/end timestamps. Configurable limits via `requestLimit`, `errorLimit`, `taskLimit` query params. Always returns 200 (zeroed metrics for agents with no data).

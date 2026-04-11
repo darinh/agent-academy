@@ -12,7 +12,7 @@ Documents the `WorkspaceRuntime` service — the central state manager for Agent
 
 ### Internal Architecture
 
-WorkspaceRuntime delegates to 10 extracted services plus shared infrastructure:
+WorkspaceRuntime delegates to 12 extracted services plus shared infrastructure:
 
 | Service | Responsibility | Registration |
 |---------|---------------|--------------|
@@ -26,15 +26,16 @@ WorkspaceRuntime delegates to 10 extracted services plus shared infrastructure:
 | `TaskItemService` | Task item CRUD | Scoped |
 | `AgentLocationService` | Agent location tracking and movement | Scoped |
 | `PlanService` | Plan CRUD with room/breakout validation | Scoped |
-| `ActivityPublisher` | Event publishing, in-memory buffer, subscriber notification | Singleton |
+| `TaskOrchestrationService` | Task creation/completion/rejection coordinating rooms, agents, and lifecycle | Scoped |
+| `ActivityPublisher` | Event creation, EF persistence, broadcast via `ActivityBroadcaster` | Scoped |
 
-WorkspaceRuntime retains orchestration logic that coordinates across multiple services:
-- `CreateTaskAsync` — room creation/lookup + task staging + agent auto-join
-- `CompleteTaskAsync` — task completion + room auto-archive
-- `RejectTaskAsync` — task rejection + room/breakout reopening
-- `GetOverviewAsync` — aggregates rooms, locations, breakouts, activity
+Shared infrastructure (not WorkspaceRuntime dependencies, but used by sub-services):
 
-All other public methods are thin one-liner delegations to the extracted services.
+| Service | Responsibility | Registration |
+|---------|---------------|--------------|
+| `ActivityBroadcaster` | In-memory event buffer (last 100) and subscriber notification | Singleton |
+
+All public methods are thin one-liner delegations to the extracted services. The only method with local logic is `GetOverviewAsync`, which aggregates rooms, locations, breakouts, and activity from multiple sub-services into a single `WorkspaceOverview`.
 
 ### Initialization
 
@@ -90,11 +91,11 @@ Each `RoomSnapshot` includes:
 
 ### Task Management
 
-- `CreateTaskAsync(TaskAssignmentRequest)` → creates task, optionally creates new room
+- `CreateTaskAsync(TaskAssignmentRequest)` → delegates to `TaskOrchestrationService`; creates task, optionally creates new room
 - `GetTasksAsync()` → tasks for the active workspace, filtered by `WorkspacePath`
 - `GetTaskAsync(taskId)` → single task or null
 
-Task creation:
+Task creation (in `TaskOrchestrationService`):
 - If `RoomId` is provided and room exists: updates existing room to Active/Planning
 - If `RoomId` is null: creates new room with normalized title as ID, stamped with active workspace's `WorkspacePath`
 - Task entity is stamped with `WorkspacePath` from the room
@@ -154,20 +155,30 @@ Plan records are keyed by the active room identifier and may target either a mai
 
 ### Activity Publishing
 
-- `PublishThinking(agent, roomId)` → AgentThinking event
-- `PublishFinished(agent, roomId)` → AgentFinished event
-- `GetRecentActivity()` → last 100 events from in-memory buffer
-- `StreamActivity(callback)` → subscribe to events, returns unsubscribe action
+Activity publishing uses a two-layer architecture:
 
-Internal `Publish()` method:
-1. Creates `ActivityEvent` record
-2. Persists to `activity_events` table
-3. Buffers in-memory (last 100)
-4. Notifies all subscribers
+**`ActivityBroadcaster`** (singleton, `src/AgentAcademy.Server/Services/ActivityBroadcaster.cs`):
+- In-memory ring buffer of last 100 events
+- Subscriber list for real-time notification
+- Thread-safe: subscribers invoked outside the lock to prevent deadlocks
+- `Broadcast(evt)` — buffers event and notifies subscribers
+- `GetRecentActivity()` → last 100 events
+- `Subscribe(callback)` → returns unsubscribe `Action`
+
+**`ActivityPublisher`** (scoped, `src/AgentAcademy.Server/Services/ActivityPublisher.cs`):
+- Creates `ActivityEvent` records, adds them to the EF change tracker, and calls `ActivityBroadcaster.Broadcast`
+- Caller owns `SaveChangesAsync` (event is persisted when the caller's unit-of-work commits)
+- `Publish(type, roomId, actorId, taskId, message, ...)` → creates event, adds entity, broadcasts
+- `PublishThinkingAsync(agent, roomId)` → convenience method that publishes + saves immediately
+- `PublishFinishedAsync(agent, roomId)` → convenience method that publishes + saves immediately
+- `GetRecentActivity()` → delegates to `ActivityBroadcaster`
+- `Subscribe(callback)` → delegates to `ActivityBroadcaster`
+
+WorkspaceRuntime does not expose activity publishing methods directly. Callers that need to publish events (e.g., `TaskOrchestrationService`, `AgentOrchestrator`) inject `ActivityPublisher`.
 
 ### Crash Recovery
 
-> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (`RecoverFromCrashAsync`)
+> **Source**: `src/AgentAcademy.Server/Services/CrashRecoveryService.cs` (exposed via `WorkspaceRuntime.RecoverFromCrashAsync` delegation)
 
 On startup, `AgentOrchestrator.HandleStartupRecoveryAsync` checks `WorkspaceRuntime.CurrentCrashDetected` (set by `RecordServerInstanceAsync` when the previous instance had no clean shutdown). If a crash is detected, `RecoverFromCrashAsync(mainRoomId)` runs the following recovery steps in order:
 
@@ -231,9 +242,12 @@ The `AgentOrchestrator` uses `WorktreeService` to provide each agent with an iso
 
 ### Service Registration (Program.cs)
 ```csharp
-builder.Services.AddAgentCatalog();       // singleton AgentCatalogOptions
-builder.Services.AddScoped<WorkspaceRuntime>(); // scoped service
-builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
+builder.Services.AddAgentCatalog();                  // singleton AgentCatalogOptions
+builder.Services.AddSingleton<ActivityBroadcaster>(); // singleton event buffer
+builder.Services.AddScoped<ActivityPublisher>();       // scoped event publisher
+builder.Services.AddScoped<TaskOrchestrationService>(); // scoped task orchestration
+builder.Services.AddScoped<WorkspaceRuntime>();        // scoped facade
+builder.Services.AddSingleton<WorktreeService>();      // singleton worktree manager
 ```
 
 ### Key Types
@@ -243,11 +257,8 @@ builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
 - All shared model types from `AgentAcademy.Shared.Models`
 
 ### Dependencies
-- `AgentAcademyDbContext` (scoped)
-- `ILogger<WorkspaceRuntime>`
 - `AgentCatalogOptions` (singleton)
-- `ActivityPublisher` (singleton)
-- `ConversationSessionService` (scoped)
+- `ActivityPublisher` (scoped)
 - `TaskQueryService` (scoped)
 - `TaskLifecycleService` (scoped)
 - `MessageService` (scoped)
@@ -258,7 +269,9 @@ builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
 - `PlanService` (scoped)
 - `CrashRecoveryService` (scoped)
 - `InitializationService` (scoped)
-- `WorktreeService` (singleton, optional — workspace isolation)
+- `TaskOrchestrationService` (scoped)
+
+Note: `WorkspaceRuntime` no longer depends directly on `AgentAcademyDbContext`, `ILogger`, `ConversationSessionService`, or `WorktreeService`. These are consumed by the sub-services it delegates to.
 
 ## Invariants
 
@@ -285,6 +298,7 @@ builder.Services.AddSingleton<WorktreeService>(); // singleton worktree manager
 
 ## Revision History
 
+- **2026-04-11**: Spec reconciliation — updated to reflect full facade decomposition. Added `TaskOrchestrationService` (scoped) to services table; CreateTaskAsync, CompleteTaskAsync, RejectTaskAsync, PostTaskNoteAsync now delegate to it. Fixed `ActivityPublisher` registration from Singleton to Scoped. Separated `ActivityBroadcaster` (singleton in-memory buffer) from `ActivityPublisher` (scoped EF persistence + broadcast). Removed dead WorkspaceRuntime methods (`PublishThinking`, `PublishFinished`, `GetRecentActivity`, `StreamActivity`). Updated Dependencies to match actual constructor (removed `AgentAcademyDbContext`, `ILogger`, `ConversationSessionService`, `WorktreeService`). Updated Service Registration with all registered types. WorkspaceRuntime is now 573 lines (down from 839) — a pure delegation facade with no business logic except `GetOverviewAsync` aggregation.
 - **2026-04-11**: Documented service extraction architecture — WorkspaceRuntime refactored from monolithic 1800+ line class to a thin facade (839 lines) delegating to 10 extracted services. Public API unchanged. Orchestration logic (CreateTask, CompleteTask, RejectTask, GetOverview) retained in WorkspaceRuntime; all other methods are one-liner delegations. Dead code removed after extraction.
 - **2026-04-10**: Workspace isolation — documented `WorktreeService` for agent-level git worktree isolation. Covers worktree creation/removal, agent-specific worktrees, orchestrator integration, and database fields. Synced during stabilization.
 - **2026-04-08**: Project scoping phase 1 — added `WorkspacePath` to `TaskEntity` and `ConversationSessionEntity`. Tasks and conversation sessions now have direct project association. `GetTasksAsync()` filters by `WorkspacePath` directly (with room fallback for pre-migration rows). `GetAllSessionsAsync` and `GetSessionStatsAsync` accept optional workspace filter. Migration includes data backfill from rooms table. API: `GET /api/sessions` and `GET /api/sessions/stats` accept `?workspace=` query parameter.
