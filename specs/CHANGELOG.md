@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **300-frontend-ui**: GitHub integration status tab in Settings panel. New 6th tab shows connection status, repository slug, auth source badge (green=oauth, blue=cli, red=none), contextual guidance per auth method, and PR capabilities grid (create/review/merge/status-sync). Login CTA for unconfigured state. Request sequence guard prevents stale concurrent responses. `getGitHubStatus()` API function and `GitHubStatus` type. 11 new tests (896 frontend total).
+
 ### Changed
 - **010-task-management**: OAuth bridge for GitHub PR operations. OAuth scope expanded to include `repo`. `GitHubService` accepts `CopilotTokenProvider` and sets `GH_TOKEN` on `gh` CLI processes when token is available. Browser login now enables PR operations (create, review, merge) without server-side `gh auth login`. `GET /api/github/status` includes `authSource` field ("oauth"/"cli"/"none"). 4 new tests (1906 backend total). Resolves "No OAuth flow" known gap.
 
