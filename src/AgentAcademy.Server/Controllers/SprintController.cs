@@ -293,6 +293,52 @@ public class SprintController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// GET /api/sprints/{id}/metrics — aggregated metrics for a single sprint.
+    /// </summary>
+    [HttpGet("{id}/metrics")]
+    public async Task<IActionResult> GetSprintMetrics(string id)
+    {
+        try
+        {
+            var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+            if (ownerError is not null) return ownerError;
+
+            var metrics = await _sprintService.GetSprintMetricsAsync(id);
+            if (metrics is null) return NotFound();
+
+            return Ok(metrics);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get metrics for sprint {Id}", id);
+            return Problem("Failed to retrieve sprint metrics.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/sprints/metrics/summary — workspace-level rollup of sprint metrics.
+    /// </summary>
+    [HttpGet("metrics/summary")]
+    public async Task<IActionResult> GetMetricsSummary()
+    {
+        try
+        {
+            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return Ok(new SprintMetricsSummary(0, 0, 0, 0, null, 0, 0,
+                    new Dictionary<string, double>()));
+
+            var summary = await _sprintService.GetMetricsSummaryAsync(workspace);
+            return Ok(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sprint metrics summary");
+            return Problem("Failed to retrieve sprint metrics summary.");
+        }
+    }
+
     private static SprintSnapshot ToSnapshot(Data.Entities.SprintEntity e)
     {
         _ = Enum.TryParse<SprintStatus>(e.Status, out var status);

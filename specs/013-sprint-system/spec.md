@@ -133,6 +133,24 @@ public record SprintArtifact(
     string Content, string? CreatedByAgentId, DateTime CreatedAt, DateTime? UpdatedAt);
 ```
 
+### Metrics DTOs
+
+```csharp
+public record SprintMetrics(
+    string SprintId, int SprintNumber, SprintStatus Status,
+    double? DurationSeconds, int StageTransitions, int ArtifactCount,
+    int TaskCount, int CompletedTaskCount,
+    Dictionary<string, double> TimePerStageSeconds,
+    DateTime CreatedAt, DateTime? CompletedAt);
+
+public record SprintMetricsSummary(
+    int TotalSprints, int CompletedSprints, int CancelledSprints, int ActiveSprints,
+    double? AverageDurationSeconds, double AverageTaskCount, double AverageArtifactCount,
+    Dictionary<string, double> AverageTimePerStageSeconds);
+```
+
+Time values are in seconds (doubles) for clean JSON serialization. `DurationSeconds` is null for active sprints. `AverageDurationSeconds` is computed from completed sprints only. `TimePerStageSeconds` is derived from `SprintStageAdvanced` activity events — for active sprints, the current stage's elapsed time extends to `DateTime.UtcNow`.
+
 ### Typed Artifact Schemas
 
 Artifact content is JSON. The following record types describe the expected shape per artifact type:
@@ -277,6 +295,8 @@ All endpoints require authentication (cookie auth or consultant key) when auth i
 | GET | `/api/sprints/active` | Active sprint with artifacts | `SprintDetailResponse` or 204 |
 | GET | `/api/sprints/{id}` | Sprint by ID with artifacts | `SprintDetailResponse` or 404 |
 | GET | `/api/sprints/{id}/artifacts` | Artifacts for a sprint | `List<SprintArtifact>` |
+| GET | `/api/sprints/{id}/metrics` | Aggregated metrics for a sprint | `SprintMetrics` or 404 |
+| GET | `/api/sprints/metrics/summary` | Workspace-level sprint metrics rollup | `SprintMetricsSummary` |
 
 Query parameters:
 - `GET /api/sprints`: `limit` (default 20), `offset` (default 0)
@@ -423,16 +443,17 @@ Tasks can be filtered by sprint: `getTasks(sprintId?)` passes the sprint ID as a
 | `SprintControllerTests.cs` | REST API endpoints | 19 tests |
 | `SprintPreamblesTests.cs` | Preamble construction, role filtering | 19 tests |
 | `SprintServiceEventTests.cs` | Activity event emission | 17 tests |
+| `SprintMetricsTests.cs` | Per-sprint metrics and workspace-level summary | 15 tests |
 | `sprintPanel.test.ts` | Frontend panel rendering and interactions | 53 tests |
 | `sprintRealtime.test.ts` | Real-time event handling | 34 tests |
 
-**Total: 207 tests** across backend and frontend.
+**Total: 222 tests** across backend and frontend.
 
 ## Known Gaps
 
 - **No artifact content validation**: The typed record schemas (`RequirementsDocument`, `SprintPlanDocument`, etc.) are not enforced at the storage layer. Agents can store arbitrary JSON that doesn't conform to the expected schema.
 - **No sprint duration limits**: There's no timeout or maximum duration for a sprint. A sprint in `AwaitingSignOff` will block indefinitely until a human responds.
-- **No sprint metrics aggregation**: While individual events are tracked, there's no rollup of sprint-level metrics (total rounds, token cost per sprint, time per stage).
+- ~~**No sprint metrics aggregation**: While individual events are tracked, there's no rollup of sprint-level metrics (total rounds, token cost per sprint, time per stage).~~ — **Resolved**: `GetSprintMetricsAsync` returns per-sprint rollup (duration, stage transitions, artifact/task counts, time per stage). `GetMetricsSummaryAsync` returns workspace-level averages. REST endpoints: `GET /api/sprints/{id}/metrics` and `GET /api/sprints/metrics/summary`. 15 tests.
 
 ## Revision History
 
@@ -440,3 +461,4 @@ Tasks can be filtered by sprint: `getTasks(sprintId?)` passes the sprint ID as a
 |------|--------|-------------|
 | 2026-04-11 | Initial spec — documenting implemented sprint system | — |
 | 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |
+| 2026-04-11 | Sprint metrics aggregation: per-sprint and workspace-level rollup endpoints with 15 tests | develop |

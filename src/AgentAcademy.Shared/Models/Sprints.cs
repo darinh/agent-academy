@@ -79,3 +79,35 @@ public record SprintReport(
     List<string> Delivered,
     List<string> Learnings,
     List<string>? OverflowRequirements);
+
+// ── Sprint Metrics ──────────────────────────────────────────
+
+/// <summary>
+/// Aggregated metrics for a single sprint: duration, stage timing,
+/// task and artifact counts.
+/// </summary>
+public record SprintMetrics(
+    string SprintId,
+    int SprintNumber,
+    SprintStatus Status,
+    double? DurationSeconds,
+    int StageTransitions,
+    int ArtifactCount,
+    int TaskCount,
+    int CompletedTaskCount,
+    Dictionary<string, double> TimePerStageSeconds,
+    DateTime CreatedAt,
+    DateTime? CompletedAt);
+
+/// <summary>
+/// Workspace-level rollup of sprint metrics across all sprints.
+/// </summary>
+public record SprintMetricsSummary(
+    int TotalSprints,
+    int CompletedSprints,
+    int CancelledSprints,
+    int ActiveSprints,
+    double? AverageDurationSeconds,
+    double AverageTaskCount,
+    double AverageArtifactCount,
+    Dictionary<string, double> AverageTimePerStageSeconds);
