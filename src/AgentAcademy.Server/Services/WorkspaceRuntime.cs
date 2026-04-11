@@ -609,7 +609,7 @@ public sealed class WorkspaceRuntime
     /// Only returns non-DM messages from the active conversation session.
     /// </summary>
     public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
-        string roomId, string? afterMessageId = null, int limit = 50)
+        string roomId, string? afterMessageId = null, int limit = 50, string? sessionId = null)
     {
         limit = Math.Clamp(limit, 1, 200);
 
@@ -617,16 +617,21 @@ public sealed class WorkspaceRuntime
         if (room is null)
             throw new InvalidOperationException($"Room '{roomId}' not found.");
 
-        var activeSession = await _db.ConversationSessions
-            .Where(s => s.RoomId == roomId && s.Status == "Active")
-            .FirstOrDefaultAsync();
-        var activeSessionId = activeSession?.Id;
+        // If a specific sessionId was requested, use that; otherwise use the active session
+        string? targetSessionId = sessionId;
+        if (targetSessionId is null)
+        {
+            var activeSession = await _db.ConversationSessions
+                .Where(s => s.RoomId == roomId && s.Status == "Active")
+                .FirstOrDefaultAsync();
+            targetSessionId = activeSession?.Id;
+        }
 
         // Human/User messages persist across session boundaries so external
         // inputs (consultant, human) remain visible after epoch transitions.
         IQueryable<Data.Entities.MessageEntity> query = _db.Messages
             .Where(m => m.RoomId == roomId && m.RecipientId == null
-                && (activeSessionId == null || m.SessionId == activeSessionId
+                && (targetSessionId == null || m.SessionId == targetSessionId
                     || m.SessionId == null || m.SenderKind == nameof(MessageSenderKind.User)));
 
         if (!string.IsNullOrEmpty(afterMessageId))
@@ -976,10 +981,21 @@ public sealed class WorkspaceRuntime
             ImplementationSummary = task.ImplementationSummary,
             PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
             RoomId = roomEntity.Id,
+            WorkspacePath = roomEntity.WorkspacePath,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now
         };
+
+        // Associate task with active sprint if one exists
+        if (roomEntity.WorkspacePath is not null)
+        {
+            var activeSprint = await _db.Sprints
+                .FirstOrDefaultAsync(s => s.WorkspacePath == roomEntity.WorkspacePath && s.Status == "Active");
+            if (activeSprint is not null)
+                taskEntity.SprintId = activeSprint.Id;
+        }
+
         _db.Tasks.Add(taskEntity);
 
         // Add system messages for the task
@@ -1038,7 +1054,7 @@ public sealed class WorkspaceRuntime
         return new TaskAssignmentResult(
             CorrelationId: correlationId,
             Room: roomSnapshot,
-            Task: task,
+            Task: task with { WorkspacePath = roomEntity.WorkspacePath },
             Activity: activity
         );
     }
@@ -1046,25 +1062,25 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns all tasks.
     /// </summary>
-    public async Task<List<TaskSnapshot>> GetTasksAsync()
+    public async Task<List<TaskSnapshot>> GetTasksAsync(string? sprintId = null)
     {
         var activeWorkspace = await GetActiveWorkspacePathAsync();
         var query = _db.Tasks.AsQueryable();
 
         if (activeWorkspace is not null)
         {
-            // Keep historical tasks visible after workspace-scoped rooms were introduced:
-            // legacy "main" tasks may retain a detached room row, and older task rooms may
-            // no longer exist even though the task record is still valid.
-            var workspaceRoomIds = await _db.Rooms
-                .Where(r => r.WorkspacePath == activeWorkspace ||
-                            (r.Id == _catalog.DefaultRoomId && r.WorkspacePath == null))
-                .Select(r => r.Id)
-                .ToListAsync();
+            // Direct workspace filter — tasks are now stamped with WorkspacePath.
+            // Also include legacy tasks whose workspace was backfilled from their room,
+            // and tasks with null WorkspacePath (pre-migration orphans) that belong to
+            // workspace rooms.
+            query = query.Where(t => t.WorkspacePath == activeWorkspace
+                || (t.WorkspacePath == null && t.RoomId != null
+                    && _db.Rooms.Any(r => r.Id == t.RoomId && r.WorkspacePath == activeWorkspace)));
+        }
 
-            query = query.Where(t => t.RoomId != null &&
-                                     (workspaceRoomIds.Contains(t.RoomId) ||
-                                      !_db.Rooms.Any(r => r.Id == t.RoomId)));
+        if (sprintId is not null)
+        {
+            query = query.Where(t => t.SprintId == sprintId);
         }
 
         var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
@@ -2087,6 +2103,36 @@ public sealed class WorkspaceRuntime
         return envelope;
     }
 
+    /// <summary>
+    /// Posts a system message to a room (e.g. "Agent X joined the room.").
+    /// </summary>
+    public async Task PostSystemMessageAsync(string roomId, string content)
+    {
+        var room = await _db.Rooms.FindAsync(roomId)
+            ?? throw new InvalidOperationException($"Room '{roomId}' not found");
+
+        var now = DateTime.UtcNow;
+        var session = await _sessionService.GetOrCreateActiveSessionAsync(roomId);
+
+        var msgEntity = new MessageEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            RoomId = roomId,
+            SenderId = "system",
+            SenderName = "System",
+            SenderKind = nameof(MessageSenderKind.System),
+            Kind = nameof(MessageKind.System),
+            Content = content,
+            SentAt = now,
+            SessionId = session.Id
+        };
+        _db.Messages.Add(msgEntity);
+        await _sessionService.IncrementMessageCountAsync(session.Id);
+
+        room.UpdatedAt = now;
+        await _db.SaveChangesAsync();
+    }
+
     // ── Direct Messaging ────────────────────────────────────────
 
     /// <summary>
@@ -2340,8 +2386,14 @@ public sealed class WorkspaceRuntime
     public async Task<AgentLocation> MoveAgentAsync(
         string agentId, string roomId, AgentState state, string? breakoutRoomId = null)
     {
-        if (_catalog.Agents.All(a => a.Id != agentId))
-            throw new InvalidOperationException($"Agent '{agentId}' not found in catalog");
+        // Allow both catalog agents and custom agents (stored in agent_configs)
+        var inCatalog = _catalog.Agents.Any(a => a.Id == agentId);
+        if (!inCatalog)
+        {
+            var customConfig = await _db.AgentConfigs.FindAsync(agentId);
+            if (customConfig is null)
+                throw new InvalidOperationException($"Agent '{agentId}' not found in catalog or custom agents");
+        }
 
         var now = DateTime.UtcNow;
         var entity = await _db.AgentLocations.FindAsync(agentId);
@@ -2706,6 +2758,10 @@ public sealed class WorkspaceRuntime
         var now = DateTime.UtcNow;
         var taskId = Guid.NewGuid().ToString("N");
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+        var parentWorkspace = await _db.Rooms
+            .Where(r => r.Id == roomId)
+            .Select(r => r.WorkspacePath)
+            .FirstOrDefaultAsync();
 
         var entity = new TaskEntity
         {
@@ -2723,6 +2779,7 @@ public sealed class WorkspaceRuntime
             ImplementationSummary = "",
             PreferredRoles = "[]",
             RoomId = roomId,
+            WorkspacePath = parentWorkspace,
             AssignedAgentId = agentId,
             AssignedAgentName = agent?.Name,
             BranchName = branchName,
@@ -2990,7 +3047,9 @@ public sealed class WorkspaceRuntime
             TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
             CommitCount: entity.CommitCount,
             MergeCommitSha: entity.MergeCommitSha,
-            CommentCount: commentCount
+            CommentCount: commentCount,
+            WorkspacePath: entity.WorkspacePath,
+            SprintId: entity.SprintId
         );
     }
 

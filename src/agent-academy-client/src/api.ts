@@ -79,7 +79,8 @@ export type ActivityEventType =
   | "CheckpointCreated" | "AgentErrorOccurred" | "AgentWarningOccurred"
   | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
   | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
-  | "DirectMessageSent" | "TaskPrStatusChanged";
+  | "DirectMessageSent" | "TaskPrStatusChanged"
+  | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted";
 
 export interface ActivityEvent {
   id: string;
@@ -91,6 +92,7 @@ export interface ActivityEvent {
   message: string;
   correlationId?: string | null;
   occurredAt: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface AgentGitIdentity {
@@ -176,6 +178,7 @@ export interface TaskSnapshot {
   mergeCommitSha?: string | null;
   commentCount?: number;
   type?: "Feature" | "Bug" | "Chore" | "Spike";
+  sprintId?: string | null;
 }
 
 export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker";
@@ -504,6 +507,24 @@ export function getConfiguredAgents(): Promise<AgentDefinition[]> {
   return request<AgentDefinition[]>(apiUrl("/api/agents/configured"));
 }
 
+export function createCustomAgent(req: {
+  name: string;
+  prompt: string;
+  model?: string;
+}): Promise<AgentDefinition> {
+  return request<AgentDefinition>(apiUrl("/api/agents/custom"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+export function deleteCustomAgent(agentId: string): Promise<{ status: string; agentId: string }> {
+  return request<{ status: string; agentId: string }>(
+    apiUrl(`/api/agents/custom/${encodeURIComponent(agentId)}`),
+    { method: "DELETE" },
+  );
+}
+
 // ── Activity ───────────────────────────────────────────────────────────
 
 export function getRecentActivity(): Promise<ActivityEvent[]> {
@@ -520,6 +541,43 @@ export function getRoom(roomId: string): Promise<RoomSnapshot> {
   return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}`));
 }
 
+export function createRoom(name: string, description?: string): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl("/api/rooms"), {
+    method: "POST",
+    body: JSON.stringify({ name, description }),
+  });
+}
+
+export function createRoomSession(roomId: string): Promise<ConversationSessionSnapshot> {
+  return request<ConversationSessionSnapshot>(apiUrl(`/api/rooms/${roomId}/sessions`), {
+    method: "POST",
+  });
+}
+
+export function getRoomMessages(
+  roomId: string,
+  opts?: { after?: string; limit?: number; sessionId?: string },
+): Promise<RoomMessagesResponse> {
+  const params = new URLSearchParams();
+  if (opts?.after) params.set("after", opts.after);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.sessionId) params.set("sessionId", opts.sessionId);
+  const qs = params.toString();
+  return request<RoomMessagesResponse>(apiUrl(`/api/rooms/${roomId}/messages${qs ? `?${qs}` : ""}`));
+}
+
+export function addAgentToRoom(roomId: string, agentId: string): Promise<AgentLocation> {
+  return request<AgentLocation>(apiUrl(`/api/rooms/${roomId}/agents/${agentId}`), {
+    method: "POST",
+  });
+}
+
+export function removeAgentFromRoom(roomId: string, agentId: string): Promise<AgentLocation> {
+  return request<AgentLocation>(apiUrl(`/api/rooms/${roomId}/agents/${agentId}`), {
+    method: "DELETE",
+  });
+}
+
 // ── Collaboration ──────────────────────────────────────────────────────
 
 export function submitTask(req: TaskAssignmentRequest): Promise<TaskAssignmentResult> {
@@ -529,8 +587,9 @@ export function submitTask(req: TaskAssignmentRequest): Promise<TaskAssignmentRe
   });
 }
 
-export function getTasks(): Promise<TaskSnapshot[]> {
-  return request<TaskSnapshot[]>(apiUrl("/api/tasks"));
+export function getTasks(sprintId?: string): Promise<TaskSnapshot[]> {
+  const params = sprintId ? `?sprintId=${encodeURIComponent(sprintId)}` : "";
+  return request<TaskSnapshot[]>(apiUrl(`/api/tasks${params}`));
 }
 
 export function getTask(taskId: string): Promise<TaskSnapshot> {
@@ -842,6 +901,35 @@ export function testNotification(): Promise<TestNotificationResponse> {
   return request<TestNotificationResponse>(apiUrl(`${NOTIF_BASE}/test`), { method: "POST" });
 }
 
+// ── Agent quota types ──────────────────────────────────────────────────
+
+export interface ResourceQuota {
+  maxRequestsPerHour?: number | null;
+  maxTokensPerHour?: number | null;
+  maxCostPerHour?: number | null;
+}
+
+export interface AgentUsageWindow {
+  requestCount: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+export interface QuotaStatus {
+  agentId: string;
+  isAllowed: boolean;
+  deniedReason?: string | null;
+  retryAfterSeconds?: number | null;
+  configuredQuota?: ResourceQuota | null;
+  currentUsage?: AgentUsageWindow | null;
+}
+
+export interface UpdateQuotaRequest {
+  maxRequestsPerHour?: number | null;
+  maxTokensPerHour?: number | null;
+  maxCostPerHour?: number | null;
+}
+
 // ── Agent config types ─────────────────────────────────────────────────
 
 export interface AgentConfigOverride {
@@ -911,6 +999,29 @@ export function resetAgentConfig(agentId: string): Promise<AgentConfigResponse> 
 export function getAgentSessions(agentId: string): Promise<BreakoutRoom[]> {
   return request<BreakoutRoom[]>(
     apiUrl(`/api/agents/${encodeURIComponent(agentId)}/sessions`),
+  );
+}
+
+// ── Agent quota endpoints ──────────────────────────────────────────────
+
+export function getAgentQuota(agentId: string): Promise<QuotaStatus> {
+  return request<QuotaStatus>(apiUrl(`/api/agents/${encodeURIComponent(agentId)}/quota`));
+}
+
+export function updateAgentQuota(
+  agentId: string,
+  req: UpdateQuotaRequest,
+): Promise<QuotaStatus> {
+  return request<QuotaStatus>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/quota`),
+    { method: "PUT", body: JSON.stringify(req) },
+  );
+}
+
+export function removeAgentQuota(agentId: string): Promise<{ status: string; agentId: string }> {
+  return request<{ status: string; agentId: string }>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/quota`),
+    { method: "DELETE" },
   );
 }
 
@@ -1033,6 +1144,11 @@ export interface SessionListResponse {
   totalCount: number;
 }
 
+export interface RoomMessagesResponse {
+  messages: ChatEnvelope[];
+  hasMore: boolean;
+}
+
 export interface SessionStats {
   totalSessions: number;
   activeSessions: number;
@@ -1078,4 +1194,182 @@ export function getRoomSessions(
       `/api/rooms/${encodeURIComponent(roomId)}/sessions${qs ? `?${qs}` : ""}`,
     ),
   );
+}
+
+// ── Sprints ─────────────────────────────────────────────────────
+
+export type SprintStage =
+  | "Intake"
+  | "Planning"
+  | "Discussion"
+  | "Validation"
+  | "Implementation"
+  | "FinalSynthesis";
+
+export type SprintStatus = "Active" | "Completed" | "Cancelled";
+
+export type ArtifactType =
+  | "RequirementsDocument"
+  | "SprintPlan"
+  | "ValidationReport"
+  | "SprintReport"
+  | "OverflowRequirements";
+
+export interface SprintSnapshot {
+  id: string;
+  number: number;
+  status: SprintStatus;
+  currentStage: SprintStage;
+  overflowFromSprintId: string | null;
+  awaitingSignOff: boolean;
+  pendingStage: SprintStage | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SprintArtifact {
+  id: number;
+  sprintId: string;
+  stage: SprintStage;
+  type: ArtifactType;
+  content: string;
+  createdByAgentId: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface SprintDetailResponse {
+  sprint: SprintSnapshot;
+  artifacts: SprintArtifact[];
+  stages: string[];
+}
+
+export interface SprintListResponse {
+  sprints: SprintSnapshot[];
+  totalCount: number;
+}
+
+// ── Sprint real-time event types ──────────────────────────────
+
+export type SprintEventAction =
+  | "advanced"
+  | "signoff_requested"
+  | "approved"
+  | "rejected";
+
+export interface SprintRealtimeEvent {
+  eventId: string;
+  type: ActivityEventType;
+  sprintId: string;
+  metadata: Record<string, unknown>;
+  receivedAt: number;
+}
+
+export async function getActiveSprint(): Promise<SprintDetailResponse | null> {
+  const res = await fetch(apiUrl("/api/sprints/active"), { credentials: "include" });
+  if (res.status === 204) return null;
+  if (!res.ok) throw new Error("Failed to fetch active sprint");
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export function getSprints(limit = 20, offset = 0): Promise<SprintListResponse> {
+  const params = new URLSearchParams();
+  if (limit !== 20) params.set("limit", String(limit));
+  if (offset > 0) params.set("offset", String(offset));
+  const qs = params.toString();
+  return request<SprintListResponse>(apiUrl(`/api/sprints${qs ? `?${qs}` : ""}`));
+}
+
+export async function getSprintDetail(id: string): Promise<SprintDetailResponse | null> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}`), {
+    credentials: "include",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch sprint");
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export function getSprintArtifacts(
+  id: string,
+  stage?: SprintStage,
+): Promise<SprintArtifact[]> {
+  const params = new URLSearchParams();
+  if (stage) params.set("stage", stage);
+  const qs = params.toString();
+  return request<SprintArtifact[]>(
+    apiUrl(`/api/sprints/${encodeURIComponent(id)}/artifacts${qs ? `?${qs}` : ""}`),
+  );
+}
+
+export async function startSprint(): Promise<SprintDetailResponse> {
+  const res = await fetch(apiUrl("/api/sprints"), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to start sprint");
+  }
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export async function advanceSprint(id: string): Promise<SprintDetailResponse> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/advance`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to advance sprint");
+  }
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export async function completeSprint(id: string, force = false): Promise<SprintSnapshot> {
+  const qs = force ? "?force=true" : "";
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/complete${qs}`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to complete sprint");
+  }
+  return res.json() as Promise<SprintSnapshot>;
+}
+
+export async function cancelSprint(id: string): Promise<SprintSnapshot> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/cancel`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to cancel sprint");
+  }
+  return res.json() as Promise<SprintSnapshot>;
+}
+
+export async function approveSprintAdvance(id: string): Promise<SprintDetailResponse> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/approve-advance`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to approve sprint advance");
+  }
+  return res.json() as Promise<SprintDetailResponse>;
+}
+
+export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
+  const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/reject-advance`), {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Failed to reject sprint advance");
+  }
+  return res.json() as Promise<SprintSnapshot>;
 }

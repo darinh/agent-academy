@@ -18,6 +18,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly WorkspaceRuntime _runtime;
+    private readonly AgentCatalogOptions _catalog;
     private readonly string _roomId = "test-room";
 
     public RoomMessagesEndpointTests()
@@ -36,6 +37,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             DefaultRoomId: "main",
             DefaultRoomName: "Main Collaboration Room",
             Agents: []);
+        _catalog = catalog;
 
         var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
         var activityBus = new ActivityBroadcaster();
@@ -261,7 +263,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
-        return new RoomController(_runtime, usageTracker, errorTracker, logger);
+        return new RoomController(_runtime, _catalog, usageTracker, errorTracker, logger);
     }
 
     private void SeedMessages(params (string id, string content, DateTime sentAt)[] messages)

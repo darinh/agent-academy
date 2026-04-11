@@ -75,7 +75,7 @@ public record BreakoutRoom(string Id, string Name, string ParentRoomId, string A
 public record ChatEnvelope(string Id, string RoomId, string SenderId, string SenderName, string? SenderRole, MessageSenderKind SenderKind, MessageKind Kind, string Content, DateTime SentAt, string? CorrelationId = null, string? ReplyToMessageId = null, DeliveryHint? Hint = null);
 public record DeliveryHint(string? TargetRole, string? TargetAgentId, DeliveryPriority Priority, bool ReplyRequested);
 public record RoomMessagesResponse(List<ChatEnvelope> Messages, bool HasMore);
-public record ConversationSessionSnapshot(string Id, string RoomId, string RoomType, int SequenceNumber, string Status, string? Summary, int MessageCount, DateTime CreatedAt, DateTime? ArchivedAt);
+public record ConversationSessionSnapshot(string Id, string RoomId, string RoomType, int SequenceNumber, string Status, string? Summary, int MessageCount, DateTime CreatedAt, DateTime? ArchivedAt, string? WorkspacePath = null);
 public record SessionListResponse(List<ConversationSessionSnapshot> Sessions, int TotalCount);
 public record SessionStats(int TotalSessions, int ActiveSessions, int ArchivedSessions, int TotalMessages);
 ```
@@ -117,7 +117,8 @@ public record TaskSnapshot(
     List<string>? TestsCreated = null,
     int CommitCount = 0,
     string? MergeCommitSha = null,
-    int CommentCount = 0
+    int CommentCount = 0,
+    string? WorkspacePath = null
 );
 public record TaskItem(string Id, string Title, string Description, TaskItemStatus Status, string AssignedTo, string RoomId, string? BreakoutRoomId, string? Evidence, string? Feedback, DateTime CreatedAt, DateTime UpdatedAt);
 public record TaskAssignmentRequest(string Title, string Description, string SuccessCriteria, string? RoomId, List<string> PreferredRoles, TaskType Type = TaskType.Feature, string? CorrelationId = null, string? CurrentPlan = null);
@@ -326,6 +327,24 @@ The shared domain types (`AgentAcademy.Shared.Models`) are immutable C# records 
 - `AgentErrorEntity` extends `ErrorRecord` with `Retried` and `RetryAttempt` fields
 - `LlmUsageEntity` includes `CacheReadTokens`, `CacheWriteTokens`, `ApiCallId`, `Initiator` not present in `LlmUsageRecord`
 
+### Project Scoping
+
+Entities are associated with projects (workspaces) via `WorkspacePath`. The association pattern varies by entity:
+
+| Entity | Scoping | Notes |
+|--------|---------|-------|
+| `WorkspaceEntity` | **Is** the project | PK = `Path` |
+| `RoomEntity` | Direct `WorkspacePath` | Nullable — legacy rooms may be unscoped |
+| `TaskEntity` | Direct `WorkspacePath` | Stamped from active workspace on creation. Fallback: room lookup for pre-migration rows |
+| `ConversationSessionEntity` | Direct `WorkspacePath` | Stamped from room's workspace on creation. Inherited during rotation |
+| `SprintEntity` | Direct `WorkspacePath` | Required (non-nullable) |
+| `PlanEntity` | Via Room (PK = `RoomId`) | 1:1 with room — inherits workspace implicitly |
+| `MessageEntity` | Via Room (`RoomId`) | Always in a room |
+| `ActivityEventEntity` | Via Room (`RoomId`) | Nullable — some events are roomless |
+| Child entities | Via parent | TaskComment → Task, SprintArtifact → Sprint, etc. |
+
+**Query pattern**: When filtering by workspace, prefer the direct `WorkspacePath` column where available. For entities without direct workspace association, join through their parent room.
+
 ### Relationships
 
 - `Room → Messages` (one-to-many, cascade delete)
@@ -377,6 +396,8 @@ public enum BreakoutRoomCloseReason { Completed, Recalled, Cancelled, StuckDetec
 | `idx_notification_configs_provider_key` | `notification_configs` | `ProviderId, Key` | Unique |
 | `idx_instruction_templates_name` | `instruction_templates` | `Name` | Unique |
 | `idx_conversation_sessions_room_status` | `conversation_sessions` | `RoomId, Status` | Composite |
+| `idx_conversation_sessions_workspace` | `conversation_sessions` | `WorkspacePath` | Project scoping |
+| `idx_tasks_workspace` | `tasks` | `WorkspacePath` | Project scoping |
 | `idx_notification_deliveries_time` | `notification_deliveries` | `AttemptedAt` | |
 | `idx_notification_deliveries_provider` | `notification_deliveries` | `ProviderId` | |
 | `idx_notification_deliveries_channel` | `notification_deliveries` | `Channel` | |
@@ -420,3 +441,4 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 | 2025-07-25 | Ported all types from v1 TypeScript to C# records; added notification types; marked Implemented | domain-models |
 | 2025-07-27 | Added EF Core persistence layer: entity classes, DbContext, SQLite migration, indexes | ef-core-db |
 | 2026-04-06 | Full entity inventory: added 14 missing entities, 5 missing model files, 2 missing enums, updated all existing types to match code. Fixed NotificationType location (Notifications.cs, not Enums.cs). Added 30+ missing indexes. | spec-001-entity-inventory |
+| 2026-04-08 | Added WorkspacePath to TaskSnapshot and ConversationSessionSnapshot. Added project-scoping pattern section. Added idx_tasks_workspace and idx_conversation_sessions_workspace indexes. | project-scoping |

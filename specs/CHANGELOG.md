@@ -32,6 +32,71 @@ All changes to specifications are documented here.
 - **300-frontend-ui**: Added missing tabs and components (DmPanel, SettingsPanel, AgentSessionPanel, CommandPalette, RecoveryBanner, CircuitBreakerBanner, directMessages tab).
 
 ### Added
+- **300-frontend-ui**: Sprint real-time updates — `ActivityEvent` now carries optional `Metadata` payload (persisted as `MetadataJson`). `SprintService` broadcasts events post-commit via `QueueEvent`/`FlushEvents` pattern. `SprintPanel` applies optimistic updates for stage transitions, sign-off state, completion, and targeted artifact fetches with stale-response protection and debounced reconciliation.
+
+### Added
+- **300-frontend-ui**: Agent quota UI in settings panel — `AgentConfigCard` now includes a Resource Quotas section with inputs for `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour`, current usage display, "Quota" badge, "Remove Limits" button with confirmation dialog, and input validation. Uses `Promise.allSettled` for independent loading. 35 new tests (595 total frontend).
+- **003-agent-system**: Per-agent resource quotas — `AgentQuotaService` enforces `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` via `agent_configs` table. Request-rate is authoritative (in-memory sliding window), token/cost is best-effort (DB aggregation). Quota checked in `CopilotExecutor.RunAsync` before circuit breaker. New API endpoints: `GET/PUT/DELETE /api/agents/{id}/quota`.
+- **003-agent-system**: Per-agent LLM call-rate limiting — each retry attempt in `SendAndCollectWithRetryAsync` counts toward the request quota. Composite index `(AgentId, RecordedAt)` on `llm_usage` for efficient quota queries.
+- **003-agent-system**: `AgentQuotaExceededException` — caught by `AgentOrchestrator.RunAgentAsync` to produce a user-visible pause message instead of crashing.
+
+### Added
+- **005-workspace-runtime**: Documented workspace isolation via `WorktreeService` — agent-level git worktree management, per-agent checkout provisioning, orchestrator integration, and database fields.
+- **300-frontend-ui**: Documented user sign-off gates — `awaitingSignOff`/`pendingStage` fields, approval/rejection UI, and API endpoints.
+- **300-frontend-ui**: Documented sprint metrics bar — stage timing, word counts, and duration estimation from artifact timestamps.
+
+### Changed
+- **300-frontend-ui**: Updated `SprintSnapshot` type to include `awaitingSignOff`, `pendingStage` fields. Updated `SprintArtifact` to include `updatedAt`. Fixed `ArtifactType` enum values to match actual backend types. Updated `SprintDetailResponse` and `SprintListResponse` field names to match implementation.
+- **300-frontend-ui**: Marked sprint panel metrics future work item as resolved (commit `9fe6d1f`).
+
+### Changed
+- **300-frontend-ui**: Documented room-centric conversation UI. ChatPanel now centers on selected room with session management toolbar (session dropdown, new session, agent add/remove). Removed standalone "Conversation" nav item — room selection in sidebar loads ChatPanel directly. Updated component tree descriptions.
+- **300-frontend-ui**: Documented tabbed SettingsPanel with 5 tabs: Custom Agents (create/delete with kebab-case ID preview), Built-in Agents (config cards), Templates (instruction template CRUD), Notifications (provider setup), Advanced (epoch settings).
+- **300-frontend-ui**: Documented inline room creation in SidebarPanel (+ button → name input → Enter to create).
+- **300-frontend-ui**: Added 8 new API endpoints to contract table: room messages with session filter, room session creation, agent-room management, room creation, custom agent CRUD, configured agents list.
+
+### Changed
+- **300-frontend-ui**: Reordered sidebar navigation: Overview, Conversation, Messages, Plan, Tasks, Timeline, Sprint, Metrics, Commands. Renamed Dashboard → Metrics. Added project name display in sidebar brand block. Added sprint version indicator above nav items.
+- **300-frontend-ui**: Fixed SprintPanel TypeScript errors (unused imports, Griffel pseudo-selector syntax, component prop mismatches). Added sprint lifecycle controls (Start Sprint, Advance Stage, Complete Sprint, Cancel) to SprintPanel header and empty state.
+- **300-frontend-ui**: Added sprint write API client functions (`startSprint`, `advanceSprint`, `completeSprint`, `cancelSprint`) to `api.ts`.
+
+### Fixed
+- **SprintController**: `ListSprints` TotalCount returned page count instead of actual total row count. `GetSprintsForWorkspaceAsync` now returns `(List<SprintEntity>, int)` tuple.
+
+### Added
+- **SprintController**: Write endpoints: `POST /api/sprints` (start), `POST /api/sprints/{id}/advance`, `POST /api/sprints/{id}/complete`, `POST /api/sprints/{id}/cancel`.
+
+### Changed
+- **300-frontend-ui**: Added Sprint Panel documentation. Component tree updated to include `SprintPanel.tsx` and `sprint` tab. API contract table expanded with 4 sprint endpoints (`/api/sprints`, `/api/sprints/active`, `/api/sprints/{id}`, `/api/sprints/{id}/artifacts`). New section documents stage pipeline (6 stages), artifact viewer, sprint history, data flow, and API types. Future Work updated with sprint-specific items (SignalR, markdown rendering, metrics).
+- **001-domain-model**: Added `WorkspacePath` to `TaskSnapshot` and `ConversationSessionSnapshot`. Added project-scoping pattern section documenting entity-workspace associations. Added `idx_tasks_workspace` and `idx_conversation_sessions_workspace` indexes.
+- **005-workspace-runtime**: Documented project-scoping phase 1 — `TaskEntity` and `ConversationSessionEntity` now have direct `WorkspacePath`. `GetTasksAsync()` filters by workspace directly. `GetAllSessionsAsync`/`GetSessionStatsAsync` accept optional workspace filter. API endpoints accept `?workspace=` parameter.
+- **005-workspace-runtime**: Documented `RecoverFromCrashAsync` crash recovery behavior. Covers breakout closure, stuck agent reset, orphaned task unassignment, and correlation-deduped notification. Resolves spec gap flagged by agent team.
+- **007-agent-commands**: Added RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES to Phase 1C (Verification). Records structured verification checks against tasks with phase (Baseline/After/Review), check names, tool info, exit codes, and output. CHECK_GATES evaluates minimum evidence for status transitions. All 6 agents permitted. Human API allowlist updated. Permission model table updated with evidence command access. 23 new tests (1375 total). Committed in `42d4124`.
+- **010-task-management**: Added §6.6 Evidence Ledger documenting the task evidence system. Covers TaskEvidenceEntity data model, EvidencePhase enum, gate definitions for status transitions, authorization rules, and invariants #10 (immutable evidence) and #11 (advisory gates).
+- **010-task-management**: Added Invariant #9 documenting git-DB transaction ordering. Task metadata must not persist to database until git branch creation succeeds. Documents fix from commit `36e0dda` that moved `CreateTaskItemAsync` inside the try block after git operations complete. Prevents orphaned database records referencing non-existent branches.
+- **001-domain-model**: Full entity inventory update — added 14 missing entity classes (AgentConfigEntity, AgentErrorEntity, AgentMemoryEntity, CommandAuditEntity, ConversationSessionEntity, InstructionTemplateEntity, LlmUsageEntity, NotificationConfigEntity, NotificationDeliveryEntity, ServerInstanceEntity, SpecTaskLinkEntity, SystemSettingEntity, TaskCommentEntity, WorkspaceEntity). Added 5 missing model files (AgentMemory, Commands, DirectMessages, HumanCommands, Requests). Added 2 missing enums (CommandStatus, SpecLinkType). Updated ActivityEventType with 5 new values. Updated AgentDefinition with GitIdentity and Permissions. Updated RoomSnapshot with Topic field. Updated Rooms.cs types (RoomMessagesResponse, ConversationSessionSnapshot, SessionListResponse, SessionStats). Updated System.cs types (ErrorSummary, AgentUsageSummary, LlmUsageRecord, InstanceHealthResult). Added AgentQuestion to Notifications. Fixed NotificationType location (Notifications.cs, not Enums.cs). Added 30+ missing database indexes. Updated 3 new entity relationships. Resolved Known Gaps for INotificationProvider and DTO mapping.
+- **003-agent-system**: Renamed SDK tool `list_agents` → `show_agents` to avoid conflict with Copilot CLI built-in `list_agents` tool. All tool group tables, flow diagrams, and revision history updated.
+- **003-agent-system**: Triaged all 14 known gaps (#11). Resolved 3 (token tracking, tool calling, session resume). Accepted 8 as design constraints (tool safety limits, no direct agent-to-agent, no streaming to UI, no hot-reload, no versioning). Identified 3 genuine low-priority gaps (no resource quotas, no prompt injection mitigation, no agent-level rate limiting).
+- **000-system-overview**: Updated architecture diagram to reflect actual subsystems (WorkspaceRuntime, Orchestrator, Command Pipeline, CopilotExecutor, Notification Manager). Expanded component responsibilities table from 4 to 9 entries. Resolved diagram known gap.
+- **002-development-workflow**: Marked branch protection gap as resolved (scripts/protect-branches.sh). Marked pre-push hook as accepted constraint. Added #10 cross-reference.
+- **004-notification-system**: Marked 3 gaps as resolved/accepted (insertion order, Discord freeform OwnerId scoping, DiceBear fallback).
+- **005-workspace-runtime**: Marked 3 gaps as resolved/accepted (real-time push via SignalR/SSE, per-instance buffer, legacy rooms).
+- **011-state-recovery**: Marked restart loop prevention as resolved (wrapper.sh exponential backoff).
+
+### Fixed
+- **006-orchestrator**: Fixed `HandleDirectMessage` signature (takes `recipientAgentId` only, not `agentId, roomId`). Corrected breakout loop caps (`MaxBreakoutRounds=200`, `MaxConsecutiveIdleRounds=5`) — body text previously said "no round cap" while Known Gaps said resolved. Fixed DM handling in breakout rooms (posted as messages, not injected into prompt). Added constants table.
+- **007-agent-commands**: Updated handler count from 24 to 50. Fixed pipeline description to include rate limit stage. Fixed audit target from `ActivityEvent` to `CommandAuditEntity`. Fixed DM syntax to match parser format (indented `Key: value` lines, not comma-separated). Fixed `CLOSE_ROOM` role permission (Planner or Human, not Planner-only). Updated memory commands to include `EXPORT_MEMORIES`, `IMPORT_MEMORIES`, TTL, FTS5 search, shared category.
+- **003-agent-system**: Updated `IAgentExecutor` interface to include `IsAuthFailed`, `CircuitBreakerState`, `MarkAuthDegradedAsync`, `MarkAuthOperationalAsync`, `InvalidateAllSessionsAsync`.
+- **008-agent-memory**: Removed false claim that FORGET requires confirmation step and audit logging (it does neither).
+- **012-consultant-api**: Fixed `/api/commands/metadata` description (returns allowlisted+implemented, not "all"). Fixed room messages endpoint (includes sessionless and User messages cross-session, not session-restricted). Noted archived rooms excluded by default from `GET /api/rooms`.
+- **010-task-management**: Fixed `REBASE_TASK` permissions (Assignee/Planner/Reviewer/Human, not Any). Fixed `CANCEL_TASK` permissions (added Human role). Fixed `APPROVE_TASK` room message (conditional on findings). Added note about TaskEntity JSON-serialized list fields.
+- **004-notification-system**: Added `SendDirectMessageAsync` to `INotificationProvider` interface. Added `/deliveries` and `/deliveries/stats` REST endpoints. Added `RoomClosed` to tracked delivery channels (was 4, now 5). Fixed `RequestInputFromAnyAsync` iteration order note.
+- **001-domain-model**: Fixed `UsageSummary.TotalCost` type from `decimal` to `double`.
+- **002-development-workflow**: Noted version sync gap between .NET (`0.1.0`) and client (`0.0.0`).
+- **011-state-recovery**: Added `circuitBreakerState` to health endpoint response.
+- **300-frontend-ui**: Added missing tabs and components (DmPanel, SettingsPanel, AgentSessionPanel, CommandPalette, RecoveryBanner, CircuitBreakerBanner, directMessages tab).
+
+### Added
 - **012-consultant-api**: Task management commands — Added `UPDATE_TASK`, `CANCEL_TASK`, `APPROVE_TASK` to the human command allowlist in `CommandController`. `CancelTaskHandler` now accepts Human role (was Planner/Reviewer only). `HumanCommandRegistry` updated with metadata entries for dynamic UI rendering. Documented full command execution surface in spec 012 including allowlisted commands table, async command polling, and identity semantics.
 
 ### Added

@@ -61,12 +61,12 @@ public sealed class ShellCommandHandler : ICommandHandler
 
         return parsed!.Operation switch
         {
-            "git-checkout" => await ExecuteGitCheckoutAsync(command, parsed),
+            "git-checkout" => await ExecuteGitCheckoutAsync(command, parsed, context),
             "git-commit" => await ExecuteGitCommitAsync(command, parsed, context),
             "git-stash-pop" => await ExecuteGitStashPopAsync(command, parsed),
             "restart-server" => await ExecuteRestartServerAsync(command, context, parsed),
-            "dotnet-build" => await ExecuteDotnetAsync(command, parsed.Operation, "dotnet", ["build", "--nologo", "-v", "q"]),
-            "dotnet-test" => await ExecuteDotnetAsync(command, parsed.Operation, "dotnet", ["test", "--nologo", "-v", "q"]),
+            "dotnet-build" => await ExecuteDotnetAsync(command, parsed.Operation, "dotnet", ["build", "--nologo", "-v", "q"], context),
+            "dotnet-test" => await ExecuteDotnetAsync(command, parsed.Operation, "dotnet", ["test", "--nologo", "-v", "q"], context),
             _ => command with
             {
                 Status = CommandStatus.Error,
@@ -76,8 +76,37 @@ public sealed class ShellCommandHandler : ICommandHandler
         };
     }
 
-    private async Task<CommandEnvelope> ExecuteGitCheckoutAsync(CommandEnvelope command, ShellCommand parsed)
+    private async Task<CommandEnvelope> ExecuteGitCheckoutAsync(CommandEnvelope command, ShellCommand parsed, CommandContext context)
     {
+        if (context.WorkingDirectory is not null)
+        {
+            // Verify the requested branch matches the worktree's branch
+            var currentBranch = await _gitService.GetCurrentBranchInDirAsync(context.WorkingDirectory);
+            if (currentBranch is not null && !string.Equals(currentBranch, parsed.Branch, StringComparison.OrdinalIgnoreCase))
+            {
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Validation,
+                    Error = $"Cannot checkout '{parsed.Branch}' — agent is working in a worktree on branch '{currentBranch}'. " +
+                            $"Worktrees are locked to their assigned branch."
+                };
+            }
+
+            return command with
+            {
+                Status = CommandStatus.Success,
+                Result = new Dictionary<string, object?>
+                {
+                    ["operation"] = parsed.Operation,
+                    ["branch"] = parsed.Branch,
+                    ["exitCode"] = 0,
+                    ["success"] = true,
+                    ["message"] = $"Already on branch '{currentBranch ?? parsed.Branch}' in worktree — no checkout needed."
+                }
+            };
+        }
+
         try
         {
             await _gitService.CheckoutBranchAsync(parsed.Branch!);
@@ -111,7 +140,11 @@ public sealed class ShellCommandHandler : ICommandHandler
     {
         try
         {
-            var commitSha = await _gitService.CommitAsync(parsed.Message!, context.GitIdentity);
+            string commitSha;
+            if (context.WorkingDirectory is not null)
+                commitSha = await _gitService.CommitInDirAsync(context.WorkingDirectory, parsed.Message!, context.GitIdentity);
+            else
+                commitSha = await _gitService.CommitAsync(parsed.Message!, context.GitIdentity);
 
             return command with
             {
@@ -223,11 +256,12 @@ public sealed class ShellCommandHandler : ICommandHandler
         CommandEnvelope command,
         string operation,
         string fileName,
-        IReadOnlyList<string> arguments)
+        IReadOnlyList<string> arguments,
+        CommandContext? context = null)
     {
         try
         {
-            var result = await ExecuteProcessAsync(fileName, arguments, FindProjectRoot(), DotnetTimeout);
+            var result = await ExecuteProcessAsync(fileName, arguments, context?.WorkingDirectory ?? FindProjectRoot(), DotnetTimeout);
 
             return command with
             {

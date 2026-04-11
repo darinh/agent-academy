@@ -69,7 +69,7 @@ public class StubExecutorTests
         cts.Cancel();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => _sut.RunAsync(agent, "Hello", "room-1", cts.Token));
+            () => _sut.RunAsync(agent, "Hello", "room-1", workspacePath: null, cts.Token));
     }
 
     [Fact]
@@ -150,7 +150,8 @@ public class AgentExecutorInterfaceTests
             new NotificationManager(NullLogger<NotificationManager>.Instance),
             NSubstitute.Substitute.For<IAgentToolRegistry>(),
             new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
-            new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance));
+            new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+            new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance));
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
         connection.Dispose();
     }

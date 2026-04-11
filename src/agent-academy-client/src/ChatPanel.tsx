@@ -17,8 +17,8 @@ import {
 import { useStyles } from "./useStyles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
-import type { ChatEnvelope, RoomSnapshot } from "./api";
-import { getRoomSessions } from "./api";
+import type { ChatEnvelope, RoomSnapshot, AgentLocation, AgentDefinition, ConversationSessionSnapshot } from "./api";
+import { getRoomSessions, getRoomMessages } from "./api";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "./recovery";
 import EmptyState from "./EmptyState";
 import SkeletonLoader from "./SkeletonLoader";
@@ -157,6 +157,10 @@ const ChatPanel = memo(function ChatPanel(props: {
   onSendMessage: (roomId: string, content: string) => Promise<boolean>;
   readOnly?: boolean;
   hiddenFilters?: Set<MessageFilter>;
+  agentLocations?: AgentLocation[];
+  configuredAgents?: AgentDefinition[];
+  onCreateSession?: (roomId: string) => void;
+  onToggleAgent?: (roomId: string, agentId: string, present: boolean) => void;
 }) {
   const s = useStyles();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -175,9 +179,17 @@ const ChatPanel = memo(function ChatPanel(props: {
   const thinkingAgents = props.thinkingAgents;
   const connectionStatus = props.connectionStatus;
 
+  // Session management
+  const [sessions, setSessions] = useState<ConversationSessionSnapshot[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [sessionMessages, setSessionMessages] = useState<ChatEnvelope[] | null>(null);
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  const agentsRef = useRef<HTMLDivElement>(null);
+
+  const displayMessages = sessionMessages ?? room?.recentMessages ?? [];
   const filteredMessages = useMemo(
-    () => room?.recentMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)) ?? [],
-    [hiddenFilters, room],
+    () => displayMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)),
+    [hiddenFilters, displayMessages],
   );
 
   useEffect(() => {
@@ -205,6 +217,65 @@ const ChatPanel = memo(function ChatPanel(props: {
       });
     return () => { cancelled = true; };
   }, [room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load sessions for the room
+  useEffect(() => {
+    if (!room) { setSessions([]); setSelectedSessionId(null); setSessionMessages(null); return; }
+    let cancelled = false;
+    getRoomSessions(room.id, undefined, 50)
+      .then((res) => { if (!cancelled) setSessions(res.sessions); })
+      .catch(() => { if (!cancelled) setSessions([]); });
+    setSelectedSessionId(null);
+    setSessionMessages(null);
+    return () => { cancelled = true; };
+  }, [room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load messages when viewing a non-active session
+  useEffect(() => {
+    if (!selectedSessionId || !room) { setSessionMessages(null); return; }
+    // Find if this is the active session — if so, use live messages
+    const activeSession = sessions.find(s => s.status === "Active");
+    if (activeSession && activeSession.id === selectedSessionId) {
+      setSessionMessages(null); // null = use live room messages
+      return;
+    }
+    let cancelled = false;
+    getRoomMessages(room.id, { sessionId: selectedSessionId, limit: 200 })
+      .then((res) => { if (!cancelled) setSessionMessages(res.messages); })
+      .catch(() => { if (!cancelled) setSessionMessages([]); });
+    return () => { cancelled = true; };
+  }, [selectedSessionId, room?.id, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close agents dropdown on outside click
+  useEffect(() => {
+    if (!agentsOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (agentsRef.current && !agentsRef.current.contains(e.target as Node)) setAgentsOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [agentsOpen]);
+
+  const handleNewSession = useCallback(() => {
+    if (!room || !props.onCreateSession) return;
+    props.onCreateSession(room.id);
+    // Refresh sessions after a short delay for the backend to process
+    setTimeout(() => {
+      getRoomSessions(room.id, undefined, 50)
+        .then((res) => { setSessions(res.sessions); setSelectedSessionId(null); setSessionMessages(null); })
+        .catch(() => {});
+    }, 500);
+  }, [room, props.onCreateSession]);
+
+  const handleSessionChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSelectedSessionId(val || null);
+  }, []);
+
+  const handleToggleAgent = useCallback((agentId: string, currentlyInRoom: boolean) => {
+    if (!room || !props.onToggleAgent) return;
+    props.onToggleAgent(room.id, agentId, currentlyInRoom);
+  }, [room, props.onToggleAgent]);
 
   useEffect(() => {
     if (!room || readOnly) {
@@ -290,10 +361,117 @@ const ChatPanel = memo(function ChatPanel(props: {
   }, [doSend]);
 
 
+  const agentLocations = props.agentLocations ?? [];
+  const configuredAgents = props.configuredAgents ?? [];
+  const agentsInRoom = useMemo(
+    () => new Set(agentLocations.filter(l => l.roomId === room?.id).map(l => l.agentId)),
+    [agentLocations, room?.id],
+  );
+  const viewingHistoricSession = selectedSessionId != null && sessionMessages != null;
+
   return (
     <div className={s.conversationLayout}>
+      {/* Session & Agent toolbar */}
+      {room && !readOnly && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "8px",
+          padding: "6px 12px", borderBottom: "1px solid var(--aa-border, #333)",
+          fontSize: "12px", flexShrink: 0,
+        }}>
+          {props.onCreateSession && (
+            <button
+              onClick={handleNewSession}
+              style={{
+                background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+                borderRadius: "4px", padding: "3px 10px", color: "inherit", cursor: "pointer",
+                fontSize: "12px", whiteSpace: "nowrap",
+              }}
+            >
+              + New Session
+            </button>
+          )}
+          {sessions.length >= 0 && (
+            <select
+              value={selectedSessionId ?? ""}
+              onChange={handleSessionChange}
+              style={{
+                background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+                borderRadius: "4px", padding: "3px 8px", color: "inherit", fontSize: "12px",
+                maxWidth: "180px",
+              }}
+            >
+              <option value="">Current session</option>
+              {sessions
+                .filter(s => s.status === "Archived")
+                .map(s => (
+                  <option key={s.id} value={s.id}>
+                    Session #{s.sequenceNumber} ({s.messageCount} msgs)
+                  </option>
+                ))}
+            </select>
+          )}
+          {configuredAgents.length > 0 && props.onToggleAgent && (
+            <div ref={agentsRef} style={{ position: "relative" }}>
+              <button
+                onClick={() => setAgentsOpen(!agentsOpen)}
+                style={{
+                  background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+                  borderRadius: "4px", padding: "3px 10px", color: "inherit", cursor: "pointer",
+                  fontSize: "12px", whiteSpace: "nowrap",
+                }}
+              >
+                Agents ({agentsInRoom.size})
+              </button>
+              {agentsOpen && (
+                <div style={{
+                  position: "absolute", right: 0, top: "100%", zIndex: 100,
+                  background: "var(--aa-panel, #181825)", border: "1px solid var(--aa-border, #333)",
+                  borderRadius: "6px", padding: "6px 0", minWidth: "180px",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                }}>
+                  {configuredAgents.map((agent) => {
+                    const inRoom = agentsInRoom.has(agent.id);
+                    return (
+                      <label
+                        key={agent.id}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "8px",
+                          padding: "4px 12px", cursor: "pointer", fontSize: "12px",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={inRoom}
+                          onChange={() => handleToggleAgent(agent.id, inRoom)}
+                        />
+                        <span>{agent.name}</span>
+                        <span style={{ color: "var(--aa-soft)", fontSize: "11px", marginLeft: "auto" }}>
+                          {agent.role}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
        <div ref={scrollRef} className={s.messageList} role="log" aria-label="Conversation messages" aria-live="polite">
-        {hasArchivedContext && (
+        {viewingHistoricSession && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "8px 14px", borderRadius: "12px",
+            backgroundColor: "rgba(255, 193, 7, 0.08)",
+            border: "1px solid rgba(255, 193, 7, 0.18)",
+            fontSize: "12px", color: "var(--aa-soft)", marginBottom: "8px",
+          }}>
+            <span style={{ fontSize: "14px" }}>📂</span>
+            Viewing archived session. Messages are read-only.
+          </div>
+        )}
+        {hasArchivedContext && !viewingHistoricSession && (
           <div style={{
             display: "flex",
             alignItems: "center",

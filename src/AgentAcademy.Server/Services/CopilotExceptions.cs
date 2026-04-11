@@ -55,3 +55,24 @@ public sealed class CopilotQuotaException : CopilotException
     public CopilotQuotaException(string errorType, string message)
         : base(errorType, message) { }
 }
+
+/// <summary>
+/// Thrown when an agent exceeds its configured resource quota
+/// (requests/hour, tokens/hour, or cost/hour). Not retryable
+/// until the quota window resets.
+/// </summary>
+public sealed class AgentQuotaExceededException : Exception
+{
+    public string AgentId { get; }
+    public string QuotaType { get; }
+    public int RetryAfterSeconds { get; }
+
+    public AgentQuotaExceededException(
+        string agentId, string quotaType, string message, int retryAfterSeconds)
+        : base(message)
+    {
+        AgentId = agentId;
+        QuotaType = quotaType;
+        RetryAfterSeconds = retryAfterSeconds;
+    }
+}

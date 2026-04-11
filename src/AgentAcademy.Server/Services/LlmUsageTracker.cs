@@ -81,6 +81,31 @@ public sealed class LlmUsageTracker
     }
 
     /// <summary>
+    /// Aggregated usage for a specific agent since a given time.
+    /// Used by <see cref="AgentQuotaService"/> for quota enforcement.
+    /// </summary>
+    public async Task<AgentUsageWindow> GetAgentUsageSinceAsync(string agentId, DateTime since)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        var stats = await db.LlmUsage
+            .Where(u => u.AgentId == agentId && u.RecordedAt >= since)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                TotalTokens = g.Sum(u => u.InputTokens + u.OutputTokens),
+                TotalCost = g.Sum(u => u.Cost ?? 0),
+                Count = g.Count(),
+            })
+            .FirstOrDefaultAsync();
+
+        return stats is null
+            ? new AgentUsageWindow(0, 0, 0m)
+            : new AgentUsageWindow(stats.Count, stats.TotalTokens, (decimal)stats.TotalCost);
+    }
+
+    /// <summary>
     /// Aggregated usage for a specific room.
     /// </summary>
     public async Task<UsageSummary> GetRoomUsageAsync(string roomId)

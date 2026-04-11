@@ -45,9 +45,23 @@ public sealed class CommitChangesHandler : ICommandHandler
             };
         }
 
+        if (!ConventionalCommitMessage.TryValidate(message, out var validationError))
+        {
+            return command with
+            {
+                Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Validation,
+                Error = validationError
+            };
+        }
+
         try
         {
-            var commitSha = await _gitService.CommitAsync(message, context.GitIdentity);
+            string commitSha;
+            if (context.WorkingDirectory is not null)
+                commitSha = await _gitService.CommitInDirAsync(context.WorkingDirectory, message, context.GitIdentity);
+            else
+                commitSha = await _gitService.CommitAsync(message, context.GitIdentity);
 
             _logger.LogInformation(
                 "COMMIT_CHANGES by {AgentId} ({Role}): {CommitSha} — {Message}",

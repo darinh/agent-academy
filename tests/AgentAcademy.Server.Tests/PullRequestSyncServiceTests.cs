@@ -524,6 +524,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
 /// <summary>
 /// Tests for ReviewDecision field on PullRequestInfo via GitHubService parsing.
 /// </summary>
+[Collection("ProcessIntensive")]
 public class GitHubServiceReviewDecisionTests : IDisposable
 {
     private readonly string _tempDir;
@@ -545,20 +546,38 @@ public class GitHubServiceReviewDecisionTests : IDisposable
         var stdoutFile = Path.Combine(_tempDir, $"stdout-{Guid.NewGuid():N}.txt");
         File.WriteAllText(stdoutFile, stdout);
         var wrapperPath = Path.Combine(_tempDir, $"gh-wrapper-{Guid.NewGuid():N}.sh");
-        File.WriteAllText(wrapperPath,
+        var content =
             $$"""
             #!/usr/bin/env bash
             cat '{{stdoutFile}}'
             exit {{exitCode}}
-            """);
+            """;
+
+        WriteExecutableScript(wrapperPath, content);
+        return wrapperPath;
+    }
+
+    private static void WriteExecutableScript(string path, string content)
+    {
         if (!OperatingSystem.IsWindows())
         {
-            File.SetUnixFileMode(wrapperPath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
-                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+                UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                    | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                    | UnixFileMode.OtherRead | UnixFileMode.OtherExecute
+            };
+            using var fs = new FileStream(path, options);
+            fs.Write(System.Text.Encoding.UTF8.GetBytes(content));
+            fs.Flush(flushToDisk: true);
         }
-        return wrapperPath;
+        else
+        {
+            File.WriteAllText(path, content);
+        }
     }
 
     [Fact]

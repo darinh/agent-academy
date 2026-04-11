@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -12,13 +13,20 @@ namespace AgentAcademy.Server.Controllers;
 public class RoomController : ControllerBase
 {
     private readonly WorkspaceRuntime _runtime;
+    private readonly AgentCatalogOptions _catalog;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly ILogger<RoomController> _logger;
 
-    public RoomController(WorkspaceRuntime runtime, LlmUsageTracker usageTracker, AgentErrorTracker errorTracker, ILogger<RoomController> logger)
+    public RoomController(
+        WorkspaceRuntime runtime,
+        AgentCatalogOptions catalog,
+        LlmUsageTracker usageTracker,
+        AgentErrorTracker errorTracker,
+        ILogger<RoomController> logger)
     {
         _runtime = runtime;
+        _catalog = catalog;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
         _logger = logger;
@@ -67,11 +75,12 @@ public class RoomController : ControllerBase
     public async Task<ActionResult<RoomMessagesResponse>> GetRoomMessages(
         string roomId,
         [FromQuery] string? after = null,
-        [FromQuery] int limit = 50)
+        [FromQuery] int limit = 50,
+        [FromQuery] string? sessionId = null)
     {
         try
         {
-            var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(roomId, after, limit);
+            var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(roomId, after, limit, sessionId);
             return Ok(new RoomMessagesResponse(messages, hasMore));
         }
         catch (InvalidOperationException ex)
@@ -251,6 +260,137 @@ public class RoomController : ControllerBase
             return Problem("Failed to retrieve session history.");
         }
     }
+
+    /// <summary>
+    /// POST /api/rooms — create a new room.
+    /// </summary>
+    [HttpPost]
+    public async Task<ActionResult<RoomSnapshot>> CreateRoom([FromBody] CreateRoomRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return BadRequest(new { code = "invalid_name", message = "Room name cannot be empty" });
+
+        try
+        {
+            var room = await _runtime.CreateRoomAsync(request.Name.Trim(), request.Description?.Trim());
+            return CreatedAtAction(nameof(GetRoom), new { roomId = room.Id }, room);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create room");
+            return Problem("Failed to create room.");
+        }
+    }
+
+    /// <summary>
+    /// POST /api/rooms/{roomId}/sessions — create a new conversation session (archives current).
+    /// </summary>
+    [HttpPost("{roomId}/sessions")]
+    public async Task<ActionResult<ConversationSessionSnapshot>> CreateSession(
+        string roomId,
+        [FromServices] ConversationSessionService sessionService)
+    {
+        try
+        {
+            var room = await _runtime.GetRoomAsync(roomId);
+            if (room is null)
+                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+
+            var session = await sessionService.CreateNewSessionAsync(roomId);
+            return CreatedAtAction(nameof(GetRoomSessions), new { roomId }, session);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create session for room '{RoomId}'", roomId);
+            return Problem("Failed to create session.");
+        }
+    }
+
+    /// <summary>
+    /// POST /api/rooms/{roomId}/agents/{agentId} — add an agent to this room.
+    /// </summary>
+    [HttpPost("{roomId}/agents/{agentId}")]
+    public async Task<ActionResult<AgentLocation>> AddAgentToRoom(string roomId, string agentId,
+        [FromServices] AgentAcademyDbContext db)
+    {
+        try
+        {
+            var room = await _runtime.GetRoomAsync(roomId);
+            if (room is null)
+                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+
+            var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
+            if (agentName is null)
+            {
+                // Check custom agents
+                var config = await db.AgentConfigs.FindAsync(agentId);
+                if (config is null)
+                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                agentName = agentId;
+                if (!string.IsNullOrEmpty(config.CustomInstructions))
+                {
+                    try
+                    {
+                        var meta = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(config.CustomInstructions);
+                        if (meta.TryGetProperty("displayName", out var dn)) agentName = dn.GetString() ?? agentId;
+                    }
+                    catch { /* use agentId */ }
+                }
+            }
+
+            var location = await _runtime.MoveAgentAsync(agentId, roomId, AgentState.Idle);
+            await _runtime.PostSystemMessageAsync(roomId, $"{agentName} joined the room.");
+            return Ok(location);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to add agent '{AgentId}' to room '{RoomId}'", agentId, roomId);
+            return Problem("Failed to add agent to room.");
+        }
+    }
+
+    /// <summary>
+    /// DELETE /api/rooms/{roomId}/agents/{agentId} — remove an agent from this room (back to main).
+    /// </summary>
+    [HttpDelete("{roomId}/agents/{agentId}")]
+    public async Task<ActionResult<AgentLocation>> RemoveAgentFromRoom(string roomId, string agentId,
+        [FromServices] AgentAcademyDbContext db)
+    {
+        try
+        {
+            var room = await _runtime.GetRoomAsync(roomId);
+            if (room is null)
+                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+
+            var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
+            if (agentName is null)
+            {
+                var config = await db.AgentConfigs.FindAsync(agentId);
+                if (config is null)
+                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                agentName = agentId;
+                if (!string.IsNullOrEmpty(config.CustomInstructions))
+                {
+                    try
+                    {
+                        var meta = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(config.CustomInstructions);
+                        if (meta.TryGetProperty("displayName", out var dn)) agentName = dn.GetString() ?? agentId;
+                    }
+                    catch { /* use agentId */ }
+                }
+            }
+
+            var location = await _runtime.MoveAgentAsync(agentId, _catalog.DefaultRoomId, AgentState.Idle);
+            await _runtime.PostSystemMessageAsync(roomId, $"{agentName} left the room.");
+            return Ok(location);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to remove agent '{AgentId}' from room '{RoomId}'", agentId, roomId);
+            return Problem("Failed to remove agent from room.");
+        }
+    }
 }
 
 public record RenameRoomRequest(string Name);
+public record CreateRoomRequest(string Name, string? Description = null);

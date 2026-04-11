@@ -28,5 +28,6 @@ public record CommandContext(
     string? RoomId,
     string? BreakoutRoomId,
     IServiceProvider Services,
-    AgentGitIdentity? GitIdentity = null
+    AgentGitIdentity? GitIdentity = null,
+    string? WorkingDirectory = null
 );

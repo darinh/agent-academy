@@ -85,7 +85,8 @@ public record ConversationSessionSnapshot(
     string? Summary,
     int MessageCount,
     DateTime CreatedAt,
-    DateTime? ArchivedAt
+    DateTime? ArchivedAt,
+    string? WorkspacePath = null
 );
 
 /// <summary>

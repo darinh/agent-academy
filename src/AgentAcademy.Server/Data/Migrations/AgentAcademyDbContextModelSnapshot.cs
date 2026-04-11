@@ -32,6 +32,9 @@ namespace AgentAcademy.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("OccurredAt")
                         .HasColumnType("TEXT");
 
@@ -72,6 +75,15 @@ namespace AgentAcademy.Server.Data.Migrations
 
                     b.Property<string>("InstructionTemplateId")
                         .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("MaxCostPerHour")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MaxRequestsPerHour")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("MaxTokensPerHour")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("ModelOverride")
                         .HasColumnType("TEXT");
@@ -206,6 +218,34 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_agent_memories_expires");
 
                     b.ToTable("agent_memories", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.AgentWorkspaceEntity", b =>
+                {
+                    b.Property<string>("WorkspacePath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CurrentBranch")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastAccessedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorktreePath")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("WorkspacePath", "AgentId");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("idx_agent_workspaces_agent");
+
+                    b.ToTable("agent_workspaces", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.BreakoutMessageEntity", b =>
@@ -394,6 +434,12 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(1);
 
+                    b.Property<string>("SprintId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SprintStage")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -403,7 +449,16 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Property<string>("Summary")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("WorkspacePath")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("SprintId")
+                        .HasDatabaseName("idx_conversation_sessions_sprint");
+
+                    b.HasIndex("WorkspacePath")
+                        .HasDatabaseName("idx_conversation_sessions_workspace");
 
                     b.HasIndex("RoomId", "Status")
                         .HasDatabaseName("idx_conversation_sessions_room_status");
@@ -497,6 +552,9 @@ namespace AgentAcademy.Server.Data.Migrations
 
                     b.HasIndex("RoomId")
                         .HasDatabaseName("idx_llm_usage_room");
+
+                    b.HasIndex("AgentId", "RecordedAt")
+                        .HasDatabaseName("idx_llm_usage_agent_time");
 
                     b.ToTable("llm_usage", (string)null);
                 });
@@ -659,10 +717,15 @@ namespace AgentAcademy.Server.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SprintId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
                     b.HasKey("RoomId");
+
+                    b.HasIndex("SprintId");
 
                     b.ToTable("plans", (string)null);
                 });
@@ -780,6 +843,113 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_spec_task_links_unique");
 
                     b.ToTable("spec_task_links", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SprintArtifactEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByAgentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SprintId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SprintId")
+                        .HasDatabaseName("idx_sprint_artifacts_sprint");
+
+                    b.HasIndex("SprintId", "Stage")
+                        .HasDatabaseName("idx_sprint_artifacts_sprint_stage");
+
+                    b.HasIndex("SprintId", "Type")
+                        .HasDatabaseName("idx_sprint_artifacts_sprint_type");
+
+                    b.HasIndex("SprintId", "Stage", "Type")
+                        .IsUnique()
+                        .HasDatabaseName("idx_sprint_artifacts_sprint_stage_type_unique");
+
+                    b.ToTable("sprint_artifacts", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SprintEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("AwaitingSignOff")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CurrentStage")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Intake");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OverflowFromSprintId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PendingStage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Active");
+
+                    b.Property<string>("WorkspacePath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OverflowFromSprintId");
+
+                    b.HasIndex("WorkspacePath")
+                        .HasDatabaseName("idx_sprints_workspace");
+
+                    b.HasIndex("WorkspacePath", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("idx_sprints_workspace_number_unique");
+
+                    b.HasIndex("WorkspacePath", "Status")
+                        .HasDatabaseName("idx_sprints_workspace_status");
+
+                    b.ToTable("sprints", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SystemSettingEntity", b =>
@@ -933,6 +1103,9 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Property<string>("Size")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SprintId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("TEXT");
 
@@ -984,6 +1157,9 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("");
 
+                    b.Property<string>("WorkspacePath")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AssignedAgentId")
@@ -992,8 +1168,14 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.HasIndex("RoomId")
                         .HasDatabaseName("idx_tasks_room");
 
+                    b.HasIndex("SprintId")
+                        .HasDatabaseName("idx_tasks_sprint");
+
                     b.HasIndex("Status")
                         .HasDatabaseName("idx_tasks_status");
+
+                    b.HasIndex("WorkspacePath")
+                        .HasDatabaseName("idx_tasks_workspace");
 
                     b.ToTable("tasks", (string)null);
                 });
@@ -1118,6 +1300,12 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DefaultBranch")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HostProvider")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -1125,6 +1313,9 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProjectName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RepositoryUrl")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Path");
@@ -1152,6 +1343,17 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("InstructionTemplate");
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.AgentWorkspaceEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.WorkspaceEntity", "Workspace")
+                        .WithMany("AgentWorktrees")
+                        .HasForeignKey("WorkspacePath")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.BreakoutMessageEntity", b =>
                 {
                     b.HasOne("AgentAcademy.Server.Data.Entities.BreakoutRoomEntity", "BreakoutRoom")
@@ -1174,6 +1376,16 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("ParentRoom");
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.ConversationSessionEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.SprintEntity", "Sprint")
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Sprint");
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.MessageEntity", b =>
                 {
                     b.HasOne("AgentAcademy.Server.Data.Entities.RoomEntity", "Room")
@@ -1185,6 +1397,16 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("Room");
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.PlanEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.SprintEntity", "Sprint")
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Sprint");
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SpecTaskLinkEntity", b =>
                 {
                     b.HasOne("AgentAcademy.Server.Data.Entities.TaskEntity", "Task")
@@ -1194,6 +1416,27 @@ namespace AgentAcademy.Server.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SprintArtifactEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.SprintEntity", "Sprint")
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Sprint");
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SprintEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.SprintEntity", "OverflowFromSprint")
+                        .WithMany()
+                        .HasForeignKey("OverflowFromSprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("OverflowFromSprint");
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskCommentEntity", b =>
@@ -1214,7 +1457,14 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasForeignKey("RoomId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("AgentAcademy.Server.Data.Entities.SprintEntity", "Sprint")
+                        .WithMany()
+                        .HasForeignKey("SprintId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Room");
+
+                    b.Navigation("Sprint");
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskEvidenceEntity", b =>
@@ -1242,6 +1492,11 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("Messages");
 
                     b.Navigation("Tasks");
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.WorkspaceEntity", b =>
+                {
+                    b.Navigation("AgentWorktrees");
                 });
 #pragma warning restore 612, 618
         }

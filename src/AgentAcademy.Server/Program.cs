@@ -1,6 +1,6 @@
 using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
-using AgentAcademy.Server.Commands.Handlers;
+
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Hubs;
@@ -206,6 +206,9 @@ builder.Services.AddScoped<SystemSettingsService>();
 // Conversation session management (scoped — epoch lifecycle and summarization)
 builder.Services.AddScoped<ConversationSessionService>();
 
+// Sprint lifecycle management (scoped — creation, stage advancement, artifacts)
+builder.Services.AddScoped<SprintService>();
+
 // Copilot token provider (singleton — captures OAuth token for SDK activation)
 builder.Services.AddSingleton<CopilotTokenProvider>();
 builder.Services.AddSingleton<TokenPersistenceService>();
@@ -214,6 +217,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<TokenPersistenceSe
 // LLM usage tracking (singleton — captures AssistantUsageEvent from SDK)
 builder.Services.AddSingleton<LlmUsageTracker>();
 builder.Services.AddSingleton<AgentErrorTracker>();
+builder.Services.AddSingleton<AgentQuotaService>();
 
 // SDK tool calling — tool functions use IServiceScopeFactory for scoped service access
 builder.Services.AddSingleton<AgentToolFunctions>();
@@ -238,6 +242,7 @@ builder.Services.AddSingleton<ProjectScanner>();
 
 // Git service (singleton — branch management for breakout rooms)
 builder.Services.AddSingleton<GitService>();
+builder.Services.AddSingleton<WorktreeService>();
 
 // GitHub integration (singleton — PR creation via gh CLI)
 builder.Services.AddSingleton<GitHubService>();
@@ -246,72 +251,11 @@ builder.Services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHub
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)
 builder.Services.AddSingleton<AgentOrchestrator>();
 
-// Command system (singleton pipeline + handlers registered via interface)
-builder.Services.AddSingleton<CommandRateLimiter>();
-builder.Services.AddSingleton<CommandPipeline>();
-builder.Services.AddSingleton<ICommandHandler, ListRoomsHandler>();
-builder.Services.AddSingleton<ICommandHandler, ListAgentsHandler>();
-builder.Services.AddSingleton<ICommandHandler, ListCommandsHandler>();
-builder.Services.AddSingleton<ICommandHandler, ListTasksHandler>();
-builder.Services.AddSingleton<ICommandHandler, ReadFileHandler>();
-builder.Services.AddSingleton<ICommandHandler, SearchCodeHandler>();
-builder.Services.AddSingleton<ICommandHandler, RememberHandler>();
-builder.Services.AddSingleton<ICommandHandler, RecallHandler>();
-builder.Services.AddSingleton<ICommandHandler, ListMemoriesHandler>();
-builder.Services.AddSingleton<ICommandHandler, ForgetHandler>();
-builder.Services.AddSingleton<ICommandHandler, ExportMemoriesHandler>();
-builder.Services.AddSingleton<ICommandHandler, ImportMemoriesHandler>();
-builder.Services.AddSingleton<ICommandHandler, DmHandler>();
-builder.Services.AddSingleton<ICommandHandler, ClaimTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, ReleaseTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, UpdateTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, ApproveTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, RequestChangesHandler>();
-builder.Services.AddSingleton<ICommandHandler, RejectTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, ShowReviewQueueHandler>();
-builder.Services.AddSingleton<ICommandHandler, RunBuildHandler>();
-builder.Services.AddSingleton<ICommandHandler, RunTestsHandler>();
-builder.Services.AddSingleton<ICommandHandler, ShowDiffHandler>();
-builder.Services.AddSingleton<ICommandHandler, GitLogHandler>();
-builder.Services.AddSingleton<ICommandHandler, RoomHistoryHandler>();
-builder.Services.AddSingleton<ICommandHandler, MoveToRoomHandler>();
-builder.Services.AddSingleton<ICommandHandler, SetPlanHandler>();
-builder.Services.AddSingleton<ICommandHandler, AddTaskCommentHandler>();
-builder.Services.AddSingleton<ICommandHandler, RecallAgentHandler>();
-builder.Services.AddSingleton<ICommandHandler, CloseRoomHandler>();
-builder.Services.AddSingleton<ICommandHandler, CleanupRoomsHandler>();
-builder.Services.AddSingleton<ICommandHandler, CreateRoomHandler>();
-builder.Services.AddSingleton<ICommandHandler, ReopenRoomHandler>();
-builder.Services.AddSingleton<ICommandHandler, RoomTopicHandler>();
-builder.Services.AddSingleton<ICommandHandler, InviteToRoomHandler>();
-builder.Services.AddSingleton<ICommandHandler, ReturnToMainHandler>();
-builder.Services.AddSingleton<ICommandHandler, MergeTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, RebaseTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, CancelTaskHandler>();
-builder.Services.AddSingleton<ICommandHandler, CreateTaskItemHandler>();
-builder.Services.AddSingleton<ICommandHandler, UpdateTaskItemHandler>();
-builder.Services.AddSingleton<ICommandHandler, ListTaskItemsHandler>();
-builder.Services.AddSingleton<ICommandHandler, ShellCommandHandler>();
-builder.Services.AddSingleton<ICommandHandler, RestartServerHandler>();
-builder.Services.AddSingleton<ICommandHandler, CreatePrHandler>();
-builder.Services.AddSingleton<ICommandHandler, MergePrHandler>();
-builder.Services.AddSingleton<ICommandHandler, PostPrReviewHandler>();
-builder.Services.AddSingleton<ICommandHandler, GetPrReviewsHandler>();
-builder.Services.AddSingleton<ICommandHandler, LinkTaskToSpecHandler>();
-builder.Services.AddSingleton<ICommandHandler, ShowUnlinkedChangesHandler>();
-builder.Services.AddSingleton<ICommandHandler, RecordEvidenceHandler>();
-builder.Services.AddSingleton<ICommandHandler, QueryEvidenceHandler>();
-builder.Services.AddSingleton<ICommandHandler, CheckGatesHandler>();
-builder.Services.AddSingleton<ICommandHandler, CommitChangesHandler>();
+// Command system (auto-discovers all ICommandHandler implementations)
+builder.Services.AddCommandSystem();
 
 // Notification system
-builder.Services.AddSingleton<ConfigEncryptionService>();
-builder.Services.AddSingleton<NotificationDeliveryTracker>();
-builder.Services.AddSingleton<NotificationManager>();
-builder.Services.AddSingleton<ConsoleNotificationProvider>();
-builder.Services.AddSingleton<DiscordNotificationProvider>();
-builder.Services.AddSingleton<SlackNotificationProvider>();
-builder.Services.AddHttpClient("Slack");
+builder.Services.AddNotificationSystem();
 
 // SignalR hub broadcaster (hosted service — bridges ActivityBroadcaster → SignalR)
 builder.Services.AddHostedService<ActivityHubBroadcaster>();

@@ -9,6 +9,17 @@ public record AgentGitIdentity(
 );
 
 /// <summary>
+/// Per-agent resource limits. Null values mean unlimited.
+/// Token/cost quotas are best-effort (checked pre-call against recent DB records;
+/// concurrent calls or large responses may slightly overshoot).
+/// </summary>
+public record ResourceQuota(
+    int? MaxRequestsPerHour,
+    long? MaxTokensPerHour,
+    decimal? MaxCostPerHour
+);
+
+/// <summary>
 /// Defines an agent's identity, capabilities, and configuration.
 /// Loaded from the agent catalog at startup.
 /// </summary>
@@ -23,7 +34,8 @@ public record AgentDefinition(
     List<string> EnabledTools,
     bool AutoJoinDefaultRoom,
     AgentGitIdentity? GitIdentity = null,
-    CommandPermissionSet? Permissions = null
+    CommandPermissionSet? Permissions = null,
+    ResourceQuota? Quota = null
 );
 
 /// <summary>

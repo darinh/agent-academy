@@ -38,6 +38,7 @@ public sealed class AgentOrchestrator
     private readonly SpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
     private readonly GitService _gitService;
+    private readonly WorktreeService _worktreeService;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
@@ -57,6 +58,7 @@ public sealed class AgentOrchestrator
         SpecManager specManager,
         CommandPipeline commandPipeline,
         GitService gitService,
+        WorktreeService worktreeService,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
@@ -65,6 +67,7 @@ public sealed class AgentOrchestrator
         _specManager = specManager;
         _commandPipeline = commandPipeline;
         _gitService = gitService;
+        _worktreeService = worktreeService;
         _logger = logger;
     }
 
@@ -248,9 +251,58 @@ public sealed class AgentOrchestrator
                 _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId);
             }
 
+            // Load active sprint context (if any) for stage-aware prompts and roster filtering
+            string? sprintPreamble = null;
+            string? activeSprintStage = null;
+            try
+            {
+                var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+                var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+                if (workspacePath is not null)
+                {
+                    var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
+                    if (sprint is not null)
+                    {
+                        activeSprintStage = sprint.CurrentStage;
+                        var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
+
+                        // Load overflow content when entering Intake with overflow from previous sprint
+                        string? overflowContent = null;
+                        if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
+                        {
+                            var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
+                            var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
+                            overflowContent = overflow?.Content;
+                        }
+
+                        sprintPreamble = SprintPreambles.BuildPreamble(
+                            sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load sprint context for room {RoomId}", roomId);
+            }
+
             var planner = FindPlanner(runtime);
             if (planner is not null)
                 planner = await configService.GetEffectiveAgentAsync(planner);
+
+            // Capture planner ID before potential exclusion so the idle-agent
+            // fallback can still exclude the planner from its pool
+            var plannerId = planner?.Id;
+
+            // Skip planner if not allowed in current sprint stage
+            if (planner is not null && activeSprintStage is not null
+                && !SprintPreambles.IsRoleAllowedInStage(planner.Role, activeSprintStage))
+            {
+                _logger.LogInformation(
+                    "Planner {PlannerName} excluded from sprint stage {Stage}",
+                    planner.Name, activeSprintStage);
+                planner = null;
+            }
+
             var agentsToRun = new List<AgentDefinition>();
 
             // Step 1 — Run the planner first
@@ -266,7 +318,7 @@ public sealed class AgentOrchestrator
                     var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
                     if (plannerDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
-                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary)
+                    var prompt = BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary, sprintPreamble)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
                         + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
@@ -309,8 +361,15 @@ public sealed class AgentOrchestrator
             {
                 agentsToRun.AddRange(
                     (await GetIdleAgentsInRoomAsync(runtime, roomId))
-                        .Where(a => a.Id != planner?.Id)
+                        .Where(a => a.Id != plannerId)
                         .Take(3));
+            }
+
+            // Filter agents by sprint stage roster (if active sprint)
+            if (activeSprintStage is not null)
+            {
+                agentsToRun = SprintPreambles.FilterByStageRoster(
+                    agentsToRun, activeSprintStage, a => a.Role);
             }
 
             // Step 3 — Run agents sequentially so each sees the previous response
@@ -335,7 +394,7 @@ public sealed class AgentOrchestrator
                     var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
                     if (agentDms.Count > 0)
                         await runtime.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
-                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary);
+                    var prompt = BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
                     response = await RunAgentAsync(agent, prompt, roomId);
                 }
                 catch (Exception ex)
@@ -450,10 +509,34 @@ public sealed class AgentOrchestrator
         if (directMessages.Count > 0)
             await runtime.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
         string? dmSessionSummary = null;
+        string? dmSprintPreamble = null;
         try
         {
             var dmSessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
             dmSessionSummary = await dmSessionService.GetSessionContextAsync(roomId);
+
+            // Inject sprint context into DMs so the agent has stage awareness
+            var dmSprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            if (workspacePath is not null)
+            {
+                var sprint = await dmSprintService.GetActiveSprintAsync(workspacePath);
+                if (sprint is not null)
+                {
+                    var priorContext = await dmSessionService.GetSprintContextAsync(sprint.Id);
+
+                    string? overflowContent = null;
+                    if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
+                    {
+                        var overflowArtifacts = await dmSprintService.GetSprintArtifactsAsync(sprint.Id);
+                        var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
+                        overflowContent = overflow?.Content;
+                    }
+
+                    dmSprintPreamble = SprintPreambles.BuildPreamble(
+                        sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
+                }
+            }
         }
         catch { /* non-critical */ }
 
@@ -462,7 +545,8 @@ public sealed class AgentOrchestrator
         try
         {
             var prompt = BuildConversationPrompt(agent, room, specContext,
-                memories: agentMemories, directMessages: directMessages, sessionSummary: dmSessionSummary);
+                memories: agentMemories, directMessages: directMessages,
+                sessionSummary: dmSessionSummary, sprintPreamble: dmSprintPreamble);
             response = await RunAgentAsync(agent, prompt, roomId);
         }
         catch (Exception ex)
@@ -602,6 +686,7 @@ public sealed class AgentOrchestrator
         string? taskBranch = null;
         string? taskId = null;
         TaskItem? taskItem = null;
+        string? worktreePath = null;
         try
         {
             taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
@@ -610,6 +695,26 @@ public sealed class AgentOrchestrator
                 throw new InvalidOperationException($"Branch '{taskBranch}' was not created");
 
             await _gitService.ReturnToDevelopAsync(taskBranch);
+
+            // Create a worktree for isolated work when a workspace is available
+            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            if (workspacePath is not null && taskBranch is not null)
+            {
+                try
+                {
+                    var worktree = await _worktreeService.CreateWorktreeAsync(taskBranch);
+                    worktreePath = worktree.Path;
+                    _logger.LogInformation(
+                        "Created worktree for task branch {Branch} at {Path}",
+                        taskBranch, worktree.Path);
+                }
+                catch (Exception wtEx)
+                {
+                    _logger.LogWarning(wtEx,
+                        "Failed to create worktree for {Branch} — agent will work on shared checkout",
+                        taskBranch);
+                }
+            }
 
             taskItem = await runtime.CreateTaskItemAsync(
                 assignment.Title, descriptionWithCriteria,
@@ -670,6 +775,19 @@ public sealed class AgentOrchestrator
             // must checkout develop first since git can't delete the checked-out branch.
             if (taskBranch is not null)
             {
+                // Remove worktree first — git can't delete a branch checked out in a worktree
+                if (worktreePath is not null)
+                {
+                    try
+                    {
+                        await _worktreeService.RemoveWorktreeAsync(taskBranch);
+                    }
+                    catch (Exception wtEx)
+                    {
+                        _logger.LogWarning(wtEx, "Failed to remove worktree for orphaned branch {Branch}", taskBranch);
+                    }
+                }
+
                 try
                 {
                     await _gitService.ReturnToDevelopAsync(taskBranch);
@@ -700,7 +818,7 @@ public sealed class AgentOrchestrator
 
         _ = Task.Run(async () =>
         {
-            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch); }
+            try { await RunBreakoutLoopAsync(br.Id, agent.Id, taskBranch, worktreePath); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Breakout loop failed for {AgentName} in {BreakoutId}", agent.Name, br.Id);
@@ -711,7 +829,7 @@ public sealed class AgentOrchestrator
 
     // ── BREAKOUT ROOM ───────────────────────────────────────────
 
-    private async Task RunBreakoutLoopAsync(string breakoutRoomId, string agentId, string? taskBranch = null)
+    private async Task RunBreakoutLoopAsync(string breakoutRoomId, string agentId, string? taskBranch = null, string? worktreePath = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
@@ -727,6 +845,8 @@ public sealed class AgentOrchestrator
 
         _logger.LogInformation("Starting breakout loop for {AgentName} in {BreakoutName}", agent.Name, br.Name);
 
+        try
+        {
         var tasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
         await runtime.PostBreakoutMessageAsync(
             breakoutRoomId, "system", "LocalAgentHost", "System",
@@ -772,11 +892,15 @@ public sealed class AgentOrchestrator
             var isStubOffline = false;
             var commandCount = 0;
             var commandProcessingFailed = false;
-            if (taskBranch != null)
+
+            // When a worktree is available, skip the round lock and branch switching —
+            // the worktree is already checked out on the task branch in its own directory.
+            var useWorktree = worktreePath != null;
+            if (!useWorktree && taskBranch != null)
                 await _gitService.AcquireRoundLockAsync();
             try
             {
-                if (taskBranch != null)
+                if (!useWorktree && taskBranch != null)
                     await _gitService.EnsureBranchInternalAsync(taskBranch);
 
                 try
@@ -803,7 +927,7 @@ public sealed class AgentOrchestrator
                     breakoutSpecContext ??= await _specManager.LoadSpecContextAsync();
 
                     var prompt = BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext);
-                    response = await RunAgentAsync(agent, prompt, breakoutRoomId);
+                    response = await RunAgentAsync(agent, prompt, breakoutRoomId, worktreePath);
                 }
                 catch (Exception ex)
                 {
@@ -811,14 +935,13 @@ public sealed class AgentOrchestrator
                     continue;
                 }
 
-                // Process commands while still on the task branch so git
-                // operations (SHELL git-commit, etc.) target the correct branch.
+                // Process commands targeting the worktree directory (or main checkout if no worktree)
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     isStubOffline = IsStubOfflineResponse(response);
                     if (!isStubOffline)
                     {
-                        var cmdResult = await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                        var cmdResult = await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
                         commandCount = cmdResult.Results.Count;
                         commandProcessingFailed = cmdResult.ProcessingFailed;
                     }
@@ -826,7 +949,7 @@ public sealed class AgentOrchestrator
             }
             finally
             {
-                if (taskBranch != null)
+                if (!useWorktree && taskBranch != null)
                 {
                     await _gitService.ReturnToDevelopInternalAsync(taskBranch);
                     _gitService.ReleaseRoundLock();
@@ -860,7 +983,7 @@ public sealed class AgentOrchestrator
                     try { await runtime.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
                     catch { /* ok */ }
                 }
-                await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
+                await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
                 return;
             }
 
@@ -898,7 +1021,34 @@ public sealed class AgentOrchestrator
             return;
         }
 
-        await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId);
+        await HandleBreakoutCompleteAsync(runtime, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
+        }
+        finally
+        {
+            // Clean up worktree on ALL exit paths (stuck, failure, recalled, offline, normal)
+            if (worktreePath is not null && taskBranch is not null)
+            {
+                // Dispose the worktree-scoped CopilotClient first (closes sessions)
+                if (_executor is CopilotExecutor copilotExecutor)
+                {
+                    try { await copilotExecutor.DisposeWorktreeClientAsync(worktreePath); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to dispose worktree CopilotClient for {Path}", worktreePath);
+                    }
+                }
+
+                try
+                {
+                    await _worktreeService.RemoveWorktreeAsync(taskBranch);
+                    _logger.LogInformation("Cleaned up worktree for {Branch} on breakout exit", taskBranch);
+                }
+                catch (Exception wtEx)
+                {
+                    _logger.LogWarning(wtEx, "Failed to clean up worktree for {Branch} on breakout exit", taskBranch);
+                }
+            }
+        }
     }
 
     // ── STUCK DETECTION ────────────────────────────────────────
@@ -956,9 +1106,24 @@ public sealed class AgentOrchestrator
 
             var breakoutName = (await runtime.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
 
+            // Clean up worktree for the failed breakout's task branch
             var taskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
             if (taskId is not null)
             {
+                try
+                {
+                    var task = await runtime.GetTaskAsync(taskId);
+                    if (task?.BranchName is not null)
+                    {
+                        await _worktreeService.RemoveWorktreeAsync(task.BranchName);
+                        _logger.LogInformation("Removed worktree for failed breakout branch {Branch}", task.BranchName);
+                    }
+                }
+                catch (Exception wtEx)
+                {
+                    _logger.LogWarning(wtEx, "Failed to clean up worktree during breakout failure for {BreakoutId}", breakoutRoomId);
+                }
+
                 try
                 {
                     await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
@@ -988,7 +1153,7 @@ public sealed class AgentOrchestrator
 
     private async Task HandleBreakoutCompleteAsync(
         WorkspaceRuntime runtime, AgentConfigService configService,
-        string breakoutRoomId, string parentRoomId)
+        string breakoutRoomId, string parentRoomId, string? worktreePath = null)
     {
         var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
         if (br is null) return;
@@ -1044,7 +1209,7 @@ public sealed class AgentOrchestrator
 
             if (!isApproved)
             {
-                await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br);
+                await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br, worktreePath);
             }
             else
             {
@@ -1109,7 +1274,7 @@ public sealed class AgentOrchestrator
 
     private async Task HandleReviewRejectionAsync(
         WorkspaceRuntime runtime, string breakoutRoomId, string parentRoomId,
-        AgentDefinition agent, BreakoutRoom br)
+        AgentDefinition agent, BreakoutRoom br, string? worktreePath = null)
     {
         // Resolve session service for epoch context
         using var fixScope = _scopeFactory.CreateScope();
@@ -1185,7 +1350,7 @@ public sealed class AgentOrchestrator
                     breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
 
                 // Process commands from fix-round response
-                await ProcessCommandsAsync(agent, response, breakoutRoomId);
+                await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
             }
 
             var report = ParseWorkReport(response);
@@ -1332,11 +1497,18 @@ public sealed class AgentOrchestrator
     }
 
     private async Task<string> RunAgentAsync(
-        AgentDefinition agent, string prompt, string roomId)
+        AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)
     {
         try
         {
-            return await _executor.RunAsync(agent, prompt, roomId);
+            return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
+        }
+        catch (AgentQuotaExceededException ex)
+        {
+            _logger.LogWarning(
+                "Agent {AgentName} quota exceeded ({QuotaType}): {Message}",
+                agent.Name, ex.QuotaType, ex.Message);
+            return $"⚠️ **{agent.Name} is temporarily paused** — {ex.Message}";
         }
         catch (OperationCanceledException)
         {
@@ -1352,12 +1524,19 @@ public sealed class AgentOrchestrator
         List<TaskItem>? activeTaskItems = null,
         List<AgentMemory>? memories = null,
         List<Data.Entities.MessageEntity>? directMessages = null,
-        string? sessionSummary = null)
+        string? sessionSummary = null,
+        string? sprintPreamble = null)
     {
         // Note: agent.StartupPrompt is NOT included here — it's already sent
         // as session priming in CopilotExecutor.GetOrCreateSessionEntryAsync.
         // Including it again would duplicate it in the SDK session context.
         var lines = new List<string>();
+
+        // Inject sprint preamble before everything else (sets stage context)
+        if (!string.IsNullOrEmpty(sprintPreamble))
+        {
+            lines.Add(sprintPreamble);
+        }
 
         // Inject session summary from previous epoch if available
         if (!string.IsNullOrEmpty(sessionSummary))
@@ -1659,13 +1838,13 @@ public sealed class AgentOrchestrator
     /// Runs agent response text through the command pipeline within a new scope.
     /// </summary>
     private async Task<CommandPipelineResult> ProcessCommandsAsync(
-        AgentDefinition agent, string responseText, string roomId)
+        AgentDefinition agent, string responseText, string roomId, string? workingDirectory = null)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             return await _commandPipeline.ProcessResponseAsync(
-                agent.Id, responseText, roomId, agent, scope.ServiceProvider);
+                agent.Id, responseText, roomId, agent, scope.ServiceProvider, workingDirectory);
         }
         catch (Exception ex)
         {

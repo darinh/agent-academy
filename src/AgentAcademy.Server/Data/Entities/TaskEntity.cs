@@ -20,6 +20,7 @@ public class TaskEntity
     public string ImplementationSummary { get; set; } = string.Empty;
     public string PreferredRoles { get; set; } = "[]";
     public string? RoomId { get; set; }
+    public string? WorkspacePath { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
@@ -41,6 +42,10 @@ public class TaskEntity
     public int CommitCount { get; set; }
     public string? MergeCommitSha { get; set; }
 
+    // Sprint association
+    public string? SprintId { get; set; }
+
     // Navigation properties
     public RoomEntity? Room { get; set; }
+    public SprintEntity? Sprint { get; set; }
 }

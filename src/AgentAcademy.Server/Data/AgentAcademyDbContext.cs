@@ -24,6 +24,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<PlanEntity> Plans => Set<PlanEntity>();
     public DbSet<ActivityEventEntity> ActivityEvents => Set<ActivityEventEntity>();
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
+    public DbSet<AgentWorkspaceEntity> AgentWorkspaces => Set<AgentWorkspaceEntity>();
     public DbSet<CommandAuditEntity> CommandAudits => Set<CommandAuditEntity>();
     public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
     public DbSet<NotificationConfigEntity> NotificationConfigs => Set<NotificationConfigEntity>();
@@ -38,6 +39,8 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<AgentErrorEntity> AgentErrors => Set<AgentErrorEntity>();
     public DbSet<SpecTaskLinkEntity> SpecTaskLinks => Set<SpecTaskLinkEntity>();
     public DbSet<TaskEvidenceEntity> TaskEvidence => Set<TaskEvidenceEntity>();
+    public DbSet<SprintEntity> Sprints => Set<SprintEntity>();
+    public DbSet<SprintArtifactEntity> SprintArtifacts => Set<SprintArtifactEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -113,9 +116,17 @@ public class AgentAcademyDbContext : DbContext
                 .HasForeignKey(e => e.RoomId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_tasks_room");
             entity.HasIndex(e => e.AssignedAgentId).HasDatabaseName("idx_tasks_agent");
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_tasks_status");
+            entity.HasIndex(e => e.SprintId).HasDatabaseName("idx_tasks_sprint");
+            entity.Property(e => e.WorkspacePath).IsRequired(false);
+            entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_tasks_workspace");
         });
 
         // ── Task Items ────────────────────────────────────────
@@ -239,6 +250,11 @@ public class AgentAcademyDbContext : DbContext
             entity.HasKey(e => e.RoomId);
             entity.Property(e => e.Content).IsRequired();
             entity.Property(e => e.UpdatedAt).IsRequired();
+
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Activity Events ───────────────────────────────────
@@ -266,6 +282,21 @@ public class AgentAcademyDbContext : DbContext
             entity.ToTable("workspaces");
             entity.HasKey(e => e.Path);
             entity.Property(e => e.CreatedAt).IsRequired();
+        });
+
+        // ── Agent Workspaces ─────────────────────────────────
+        modelBuilder.Entity<AgentWorkspaceEntity>(entity =>
+        {
+            entity.ToTable("agent_workspaces");
+            entity.HasKey(e => new { e.WorkspacePath, e.AgentId });
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Workspace)
+                .WithMany(w => w.AgentWorktrees)
+                .HasForeignKey(e => e.WorkspacePath)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_agent_workspaces_agent");
         });
 
         // ── Command Audits ───────────────────────────────────
@@ -323,6 +354,7 @@ public class AgentAcademyDbContext : DbContext
             entity.ToTable("agent_configs");
             entity.HasKey(e => e.AgentId);
             entity.Property(e => e.UpdatedAt).IsRequired();
+            entity.Property(e => e.MaxCostPerHour).HasColumnType("TEXT"); // SQLite decimal
 
             entity.HasOne(e => e.InstructionTemplate)
                 .WithMany()
@@ -368,6 +400,17 @@ public class AgentAcademyDbContext : DbContext
 
             entity.HasIndex(e => new { e.RoomId, e.Status })
                 .HasDatabaseName("idx_conversation_sessions_room_status");
+            entity.Property(e => e.WorkspacePath).IsRequired(false);
+            entity.HasIndex(e => e.WorkspacePath)
+                .HasDatabaseName("idx_conversation_sessions_workspace");
+
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(e => e.SprintId)
+                .HasDatabaseName("idx_conversation_sessions_sprint");
         });
 
         // ── System Settings ─────────────────────────────────────
@@ -406,6 +449,8 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_llm_usage_agent");
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_llm_usage_room");
             entity.HasIndex(e => e.RecordedAt).HasDatabaseName("idx_llm_usage_time");
+            entity.HasIndex(e => new { e.AgentId, e.RecordedAt })
+                .HasDatabaseName("idx_llm_usage_agent_time");
         });
 
         modelBuilder.Entity<AgentErrorEntity>(entity =>
@@ -446,6 +491,58 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => new { e.TaskId, e.SpecSectionId })
                 .IsUnique()
                 .HasDatabaseName("idx_spec_task_links_unique");
+        });
+
+        // ── Sprints ────────────────────────────────────────────
+        modelBuilder.Entity<SprintEntity>(entity =>
+        {
+            entity.ToTable("sprints");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Number).IsRequired();
+            entity.Property(e => e.WorkspacePath).IsRequired();
+            entity.Property(e => e.Status).IsRequired().HasDefaultValue("Active");
+            entity.Property(e => e.CurrentStage).IsRequired().HasDefaultValue("Intake");
+            entity.Property(e => e.AwaitingSignOff).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_sprints_workspace");
+            entity.HasIndex(e => new { e.WorkspacePath, e.Status })
+                .HasDatabaseName("idx_sprints_workspace_status");
+            entity.HasIndex(e => new { e.WorkspacePath, e.Number })
+                .IsUnique()
+                .HasDatabaseName("idx_sprints_workspace_number_unique");
+
+            entity.HasOne(e => e.OverflowFromSprint)
+                .WithMany()
+                .HasForeignKey(e => e.OverflowFromSprintId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── Sprint Artifacts ───────────────────────────────────
+        modelBuilder.Entity<SprintArtifactEntity>(entity =>
+        {
+            entity.ToTable("sprint_artifacts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.SprintId).IsRequired();
+            entity.Property(e => e.Stage).IsRequired();
+            entity.Property(e => e.Type).IsRequired();
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Sprint)
+                .WithMany()
+                .HasForeignKey(e => e.SprintId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.SprintId).HasDatabaseName("idx_sprint_artifacts_sprint");
+            entity.HasIndex(e => new { e.SprintId, e.Stage })
+                .HasDatabaseName("idx_sprint_artifacts_sprint_stage");
+            entity.HasIndex(e => new { e.SprintId, e.Type })
+                .HasDatabaseName("idx_sprint_artifacts_sprint_type");
+            entity.HasIndex(e => new { e.SprintId, e.Stage, e.Type })
+                .IsUnique()
+                .HasDatabaseName("idx_sprint_artifacts_sprint_stage_type_unique");
         });
     }
 }

@@ -38,7 +38,8 @@ public sealed class CommandPipeline
         string responseText,
         string? roomId,
         AgentDefinition agent,
-        IServiceProvider scopedServices)
+        IServiceProvider scopedServices,
+        string? workingDirectory = null)
     {
         var parseResult = _parser.Parse(responseText);
 
@@ -58,7 +59,8 @@ public sealed class CommandPipeline
             RoomId: roomId,
             BreakoutRoomId: null,
             Services: scopedServices,
-            GitIdentity: agent.GitIdentity
+            GitIdentity: agent.GitIdentity,
+            WorkingDirectory: workingDirectory
         );
 
         var results = new List<CommandEnvelope>();

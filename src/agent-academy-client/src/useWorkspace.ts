@@ -11,6 +11,7 @@ import type {
   AgentPresence,
   CollaborationPhase,
   RoomSnapshot,
+  SprintRealtimeEvent,
   TaskAssignmentResult,
   WorkspaceOverview,
 } from "./api";
@@ -88,6 +89,9 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
   // Thinking state keyed by roomId → Map<agentId, info>
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
+  const [sprintVersion, setSprintVersion] = useState(0);
+  const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
+  const processedSprintEventIds = useRef(new Set<string>());
 
   const setTab = useCallback((value: string) => {
     setTabRaw(value);
@@ -178,6 +182,32 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "SubagentCompleted":
         void refreshRef.current?.({ showBusy: false });
         break;
+      case "SprintStarted":
+      case "SprintStageAdvanced":
+      case "SprintArtifactStored":
+      case "SprintCompleted": {
+        // Deduplicate events (SSE reconnect can replay recent events)
+        if (processedSprintEventIds.current.has(evt.id)) break;
+        processedSprintEventIds.current.add(evt.id);
+        // Cap the set size to prevent memory leaks
+        if (processedSprintEventIds.current.size > 200) {
+          const entries = [...processedSprintEventIds.current];
+          processedSprintEventIds.current = new Set(entries.slice(-100));
+        }
+
+        const sprintId = (evt.metadata?.sprintId as string) ?? undefined;
+        if (sprintId && evt.metadata) {
+          setLastSprintEvent({
+            eventId: evt.id,
+            type: evt.type,
+            sprintId,
+            metadata: evt.metadata,
+            receivedAt: Date.now(),
+          });
+        }
+        setSprintVersion((v) => v + 1);
+        break;
+      }
     }
   }, []);
 
@@ -445,6 +475,8 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     activityTransport: transport,
     agentLocations: ov.agentLocations ?? [],
     breakoutRooms: ov.breakoutRooms ?? [],
+    sprintVersion,
+    lastSprintEvent,
     err,
     busy,
     tab,

@@ -146,6 +146,27 @@ public record LlmUsageRecord(
 );
 
 /// <summary>
+/// Aggregated agent usage within a time window, used for quota enforcement.
+/// </summary>
+public record AgentUsageWindow(
+    int RequestCount,
+    long TotalTokens,
+    decimal TotalCost
+);
+
+/// <summary>
+/// Result of a quota check — whether the agent is allowed to proceed.
+/// </summary>
+public record QuotaStatus(
+    string AgentId,
+    bool IsAllowed,
+    string? DeniedReason,
+    int? RetryAfterSeconds,
+    ResourceQuota? ConfiguredQuota,
+    AgentUsageWindow? CurrentUsage
+);
+
+/// <summary>
 /// Wrapper for plan content text.
 /// </summary>
 public record PlanContent(

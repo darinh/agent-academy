@@ -23,13 +23,14 @@ App.tsx (FluentProvider + AppShell)
 └── Shell (when workspace is active)
     ├── SidebarPanel.tsx
     │   ├── Room list (each card shows agents in that room via agentLocations)
+    │   ├── Inline room creation (+ button → name input → Enter to create)
     │   ├── Per-agent thinking spinner (spinning ring around status dot)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (chat, tasks, plan, commands, timeline, dashboard, overview, directMessages)
+        ├── Tab bar (overview, directMessages, plan, tasks, timeline, sprint, dashboard [Metrics], commands)
         └── Tab content panels
-            ├── ChatPanel.tsx (with SignalR connection status bar)
+            ├── ChatPanel.tsx (room-centric conversation with session management)
             ├── TaskListPanel.tsx
             ├── PlanPanel.tsx
             ├── CommandsPanel.tsx
@@ -37,7 +38,8 @@ App.tsx (FluentProvider + AppShell)
             ├── DashboardPanel.tsx
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
-            ├── SettingsPanel.tsx (notification provider setup)
+            ├── SprintPanel.tsx (sprint lifecycle viewer)
+            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, advanced)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
             ├── RecoveryBanner.tsx (crash recovery notification)
@@ -129,8 +131,24 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/commands/{correlationId}` | GET | Poll async human command status/results |
 | `/api/filesystem/browse` | GET | Browse filesystem |
 | `/api/rooms/{id}/human` | POST | Send human message |
+| `/api/rooms/{id}/messages` | GET | Get room messages (supports `after`, `limit`, `sessionId` query params) |
+| `/api/rooms/{id}/sessions` | POST | Create/rotate to a new conversation session |
+| `/api/rooms/{id}/agents/{agentId}` | POST | Add agent to room |
+| `/api/rooms/{id}/agents/{agentId}` | DELETE | Remove agent from room |
 | `/api/rooms/{id}/phase` | POST | Transition phase |
+| `/api/rooms` | POST | Create a new room |
 | `/api/tasks` | POST | Create task |
+| `/api/agents/custom` | POST | Create custom agent from prompt |
+| `/api/agents/custom/{agentId}` | DELETE | Delete custom agent |
+| `/api/agents/configured` | GET | List all agents (catalog + custom) |
+| `/api/sprints` | GET | List sprints (supports `limit` and `offset` query params) |
+| `/api/sprints` | POST | Start a new sprint for the active workspace |
+| `/api/sprints/active` | GET | Get active sprint with artifacts (returns 204 if none) |
+| `/api/sprints/{id}` | GET | Get sprint detail with artifacts |
+| `/api/sprints/{id}/advance` | POST | Advance sprint to next stage |
+| `/api/sprints/{id}/complete` | POST | Complete sprint (optional `force` query param) |
+| `/api/sprints/{id}/cancel` | POST | Cancel an active sprint |
+| `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
 
 ### Browse response shape (from server):
 ```json
@@ -216,6 +234,30 @@ The frontend connects to the server's SignalR hub at `/hubs/activity` via `@micr
 | `TaskCreated` | Trigger refresh |
 | `PhaseChanged` | Trigger refresh |
 | `PresenceUpdated` | Trigger refresh |
+| `SprintStarted` | Extract metadata → optimistic update + reconcile |
+| `SprintStageAdvanced` | Extract metadata → optimistic update + reconcile |
+| `SprintArtifactStored` | Extract metadata → targeted artifact fetch + reconcile |
+| `SprintCompleted` | Extract metadata → optimistic update + reconcile |
+
+### Sprint Real-Time Updates
+
+Sprint events carry structured `metadata` payloads on `ActivityEvent` (added as `Dictionary<string, object?>? Metadata` on the shared model, persisted as `MetadataJson` on the entity). The `SprintService` queues events before `SaveChangesAsync` but only broadcasts them **after** the commit succeeds (`QueueEvent` + `FlushEvents` pattern), preventing subscribers from seeing uncommitted state.
+
+**Event metadata payloads:**
+
+| Event | Key Fields |
+|-------|-----------|
+| `SprintStarted` | `sprintId`, `sprintNumber`, `status`, `currentStage` |
+| `SprintStageAdvanced` | `sprintId`, `action` (`advanced`/`signoff_requested`/`approved`/`rejected`), `currentStage`, `pendingStage`, `awaitingSignOff` |
+| `SprintArtifactStored` | `sprintId`, `stage`, `artifactType`, `createdByAgentId`, `isUpdate` |
+| `SprintCompleted` | `sprintId`, `status` (`Completed`/`Cancelled`) |
+
+**Frontend handling (`SprintPanel`):**
+- **Optimistic updates**: Stage transitions, sign-off state, and completion status are applied immediately from metadata without waiting for an API response.
+- **Targeted artifact fetch**: Artifact events trigger `getSprintArtifacts(sprintId, stage)` for just the affected stage, with a sequence counter to discard stale responses from out-of-order fetches.
+- **Debounced reconciliation**: A 1.5-second trailing reconciliation fetch replaces the previous immediate full-refetch-on-every-event pattern, reducing API load during rapid sprint activity.
+- **Event deduplication**: Processed event IDs are tracked in a `Set` (capped at 200 entries) to prevent duplicate processing on SSE reconnect replay.
+- **Fallback**: If an event arrives without metadata (e.g., from a pre-upgrade server), the fallback `sprintVersion` path triggers a full refetch.
 
 ### Sidebar Agent Display
 
@@ -263,10 +305,189 @@ Mini SVG trend charts in the dashboard panels showing activity over time.
 - **ErrorsPanel**: Error rate trend (red)
 - **AuditLogPanel**: Command count trend (purple), using a separate 200-record fetch for accurate trend data (not the paged table slice)
 
+## Room-Centric Conversation (`ChatPanel.tsx`)
+
+The Conversation panel provides the primary chat interface, centered on the selected room. Rather than being a standalone tab, it renders as the main content area when a room is selected in the sidebar.
+
+### Session Management
+
+Each room contains conversation sessions (epochs). The ChatPanel toolbar includes:
+
+- **Sessions dropdown**: Always visible. Lists all sessions (active + archived) for the current room. Selecting an archived session loads its historical messages in read-only mode.
+- **New Session button**: Creates a new conversation session via `POST /api/rooms/{roomId}/sessions`, archiving the current active session.
+- **Agent management dropdown**: Shows agents currently in the room with remove buttons, plus a list of available agents with add buttons. Uses `POST /api/rooms/{roomId}/agents/{agentId}` and `DELETE /api/rooms/{roomId}/agents/{agentId}`.
+
+### Message Display
+
+- `displayMessages` switches between live room messages (from SignalR/polling) and session-scoped historical messages based on the selected session.
+- When viewing an archived session, a banner reads: "Viewing archived session. Messages are read-only."
+- Messages are loaded via `GET /api/rooms/{roomId}/messages?sessionId={id}&limit=200`.
+
+### Connection Status Bar
+
+The status bar shows live SignalR connection state with color indicators (connected/connecting/reconnecting/disconnected).
+
+## Sidebar Room Creation (`SidebarPanel.tsx`)
+
+The sidebar Rooms section includes inline room creation:
+
+- A `+` button in the Rooms header opens a text input field.
+- Pressing Enter creates a room via `POST /api/rooms` with the entered name.
+- Pressing Escape cancels the input.
+- The "Conversation" nav item has been removed from the sidebar navigation — room selection in the sidebar directly loads the ChatPanel.
+
+## Settings Panel (`SettingsPanel.tsx`)
+
+The Settings panel is a full tabbed configuration page with five tabs:
+
+### Custom Agents Tab
+
+Lists user-created custom agents with delete capability. Includes an "Add Custom Agent" form:
+
+- **Agent Name**: Free-text input. A kebab-case ID preview is shown below (e.g., "My Agent" → `my-agent`).
+- **Agent Prompt** (`agent.md`): Textarea for the agent's system prompt / instruction document.
+- **Model** (optional): Text input for model override.
+- Submit calls `POST /api/agents/custom`, which validates uniqueness against both built-in catalog agents and existing custom agents.
+- Delete calls `DELETE /api/agents/custom/{agentId}`.
+
+### Built-in Agents Tab
+
+Displays agent configuration cards for catalog agents. Each card shows the agent's name, role, and current model/config overrides. Uses the existing `AgentConfigOverride` system.
+
+Each expanded card includes a **Resource Quotas** section:
+- **Max Requests / Hour**: Integer input. Limits the agent's LLM API call rate (authoritative, in-memory sliding window).
+- **Max Tokens / Hour**: Integer input. Best-effort limit on total tokens consumed per hour (DB aggregation).
+- **Max Cost / Hour ($)**: Decimal input. Best-effort limit on hourly spend.
+- Current usage counters shown below each field (requests, tokens, cost this hour).
+- "Quota" badge displayed in the card header when any limit is configured.
+- "Remove Limits" button with confirmation dialog resets to unlimited.
+- Quota loading is independent of config loading — quota endpoint failure does not block config editing.
+- Input validation: non-negative numbers; requests/tokens must be integers. Invalid input shows inline error, does not submit.
+- API: `GET/PUT/DELETE /api/agents/{id}/quota` (see §003).
+
+### Templates Tab
+
+Instruction template CRUD interface. Templates are reusable prompt fragments that can be referenced in agent configurations.
+
+### Notifications Tab
+
+Provider setup UI for notification integrations (Discord, Slack, etc.). Connect/disconnect controls per provider, with the `NotificationSetupWizard` handling provider-specific configuration.
+
+### Advanced Tab
+
+System-level settings:
+- **Main Room Epoch** and **Breakout Room Epoch**: Configure conversation session rotation thresholds (message count before automatic session archival).
+
+## Sprint Panel (`SprintPanel.tsx`)
+
+The Sprint tab provides a lifecycle viewer for agent sprints — structured iterations that progress through defined stages.
+
+### Stage Pipeline
+
+A 6-column grid (responsive: 3-col at 900px, 1-col at 600px) visualizes the sprint lifecycle:
+
+| Stage | Icon | Description |
+|-------|------|-------------|
+| Intake | 📥 | Requirements gathering and scope definition |
+| Planning | 📋 | Sprint plan creation and phase breakdown |
+| Discussion | 💬 | Team discussion and design decisions |
+| Validation | ✅ | Plan validation and readiness check |
+| Implementation | 🔨 | Active development and task execution |
+| FinalSynthesis | 📊 | Sprint report and deliverable summary |
+
+Each stage card shows:
+- Visual state: **active** (cyan border + gradient), **completed** (green border + gradient), or **pending** (muted)
+- Artifact count for that stage (or description text if no artifacts)
+- Stage timing: `⏱ {duration}` and word count `· {N}w` for stages with artifacts
+- Clickable — selecting a stage filters the artifact detail view below
+
+### Sprint Metrics
+
+A summary metrics bar displays below the pipeline:
+- **Total duration** — elapsed time from sprint creation to completion (or now for active)
+- **Selected stage duration** — time in the currently selected stage
+- **Total words** — cumulative word count across all artifacts
+- **Selected stage words** — word count for the selected stage's artifacts
+- **Artifact count** — total number of artifacts
+
+Stage durations are estimated from artifact timestamps: each stage starts at its first artifact (or sprint start for Intake) and ends at the first artifact of the next stage.
+
+### Artifact Viewer
+
+When a stage is selected, artifacts for that stage are listed as expandable cards:
+- Header: artifact type (PascalCase split to words), stage badge, agent badge, relative timestamp
+- Content: monospace pre-wrapped text, truncated at 200 chars with "Show full content" toggle
+- Types include: `DesignDoc`, `SprintPlan`, `CodeReview`, `SprintReport`, and others defined by the backend
+
+### Sprint History
+
+When multiple sprints exist, a history list appears below the artifacts:
+- Each row shows sprint number, status badge (Active/Completed/Cancelled → active/done/cancel colors), current stage, and timestamp
+- Clicking a sprint loads its detail via `GET /api/sprints/{id}`
+- Active sprint data is cached to avoid redundant fetches
+
+### Sprint Lifecycle Controls
+
+The Sprint panel header includes context-aware action buttons:
+
+| State | Available Actions |
+|-------|-------------------|
+| No active sprint | **Start Sprint** button (header + empty state) |
+| Active, not final stage | **Advance Stage** + **Cancel** |
+| Active, final stage (FinalSynthesis) | **Complete Sprint** + **Cancel** |
+| Completed/Cancelled | No actions |
+
+Actions call write endpoints (`POST /api/sprints`, `/advance`, `/complete`, `/cancel`) and refresh data on success. Error messages display in the error state. A busy flag disables buttons during async operations.
+
+### User Sign-Off Gates
+
+Certain stage transitions require human approval before advancing:
+
+- When agents request advancement from **Intake** or **Planning**, the sprint enters an `awaitingSignOff` state
+- A yellow banner appears: "User sign-off required — agents want to advance from {current} to {pending}"
+- Two action buttons replace the normal Advance Stage button: **Approve → {pendingStage}** and **Reject**
+- Approve calls `POST /api/sprints/{id}/approve`, Reject calls `POST /api/sprints/{id}/reject`
+- On reject, the sprint stays at the current stage; on approve, it advances to the pending stage
+
+### Data Flow
+
+- On mount: fetches active sprint + sprint list in parallel
+- Defaults to showing the active sprint (if one exists)
+- Manual refresh via header sync button
+- SignalR `sprintVersion` prop triggers automatic refresh on sprint events
+
+### API Types
+
+```typescript
+type SprintStage = "Intake" | "Planning" | "Discussion" | "Validation" | "Implementation" | "FinalSynthesis";
+type SprintStatus = "Active" | "Completed" | "Cancelled";
+type ArtifactType = "RequirementsDocument" | "SprintPlan" | "ValidationReport" | "SprintReport" | "OverflowRequirements";
+
+interface SprintSnapshot {
+  id: string; number: number; status: SprintStatus;
+  currentStage: SprintStage; overflowFromSprintId: string | null;
+  awaitingSignOff: boolean; pendingStage: SprintStage | null;
+  createdAt: string; completedAt: string | null;
+}
+
+interface SprintArtifact {
+  id: number; sprintId: string; stage: SprintStage;
+  type: string; content: string;
+  createdByAgentId: string | null; createdAt: string;
+  updatedAt: string | null;
+}
+
+interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; stages: string[]; }
+interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
+```
+
 ## Future Work
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
-- SSE activity stream integration
+- ~~Sprint panel: SignalR integration for real-time stage/artifact updates~~ **RESOLVED** — Sprint events carry structured `metadata` payloads (sprintId, stage, action, status). `SprintPanel` applies optimistic updates for stage transitions, sign-off state, and completion. Artifact events trigger targeted fetch with stale-response protection. Debounced reconciliation (1.5s) replaces immediate full refetch. Event deduplication prevents replay issues on reconnect. Committed in this session.
+- ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **RESOLVED** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown. Committed in `08a7447`.
+- ~~Sprint panel: Sprint metrics (time per stage, artifact word counts)~~ **RESOLVED** — `SprintPanel.tsx` shows time-in-stage durations and artifact word counts. Committed in `9fe6d1f`.
+- ~~SSE activity stream integration~~ **RESOLVED** — `useWorkspace.ts` integrates both SignalR and SSE transports via `aa-transport` localStorage key. `useActivitySSE.ts` hook connects to `/api/activity/stream` with auto-reconnect. `ActivityController.cs` SSE endpoint serializes full `ActivityEvent` including `Metadata` field. Transport selection is transparent — both hooks always mount but only the active one connects (`enabled` parameter). Tests added for both backend (13 tests in `ActivityControllerTests.cs`) and frontend (10 tests in `useActivitySSE.test.ts`).
 - ~~Notification setup wizard (component exists, not yet wired)~~ **RESOLVED** — `NotificationSetupWizard` refactored to multi-provider. Accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and generic fallback. Settings tab routes all providers to the wizard.
 - ~~TaskStatePanel integration~~ **RESOLVED** — `TaskListPanel.tsx` now includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons (Approve/Request Changes/Reject/Merge) wired through `executeCommand` API.
 - ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **RESOLVED** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.

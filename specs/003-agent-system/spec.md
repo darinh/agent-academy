@@ -238,9 +238,9 @@ These are intentional safety constraints, not missing features:
 
 ### Genuine Gaps (Low Priority)
 
-- **No per-agent resource quotas**: `LlmUsageTracker` records token/cost metrics but has no enforcement logic. Agents can make unlimited LLM calls. Adding budget caps per agent would require a quota check in `CopilotExecutor` before each call.
+- ~~**No per-agent resource quotas**~~ — **Resolved**: `AgentQuotaService` enforces per-agent resource limits configured in `agent_configs` (nullable `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` columns — null = unlimited). Request-rate limiting uses an authoritative in-memory sliding window (1-hour window). Token/cost checks are best-effort via DB aggregation against the `llm_usage` table (concurrent calls may slightly overshoot). Quota is checked in `CopilotExecutor.RunAsync` before the circuit breaker, and each retry attempt counts toward the request limit. Quota violations throw `AgentQuotaExceededException`, caught by `AgentOrchestrator.RunAgentAsync` which returns a system-style pause message. Configuration via `PUT /api/agents/{id}/quota`, status via `GET /api/agents/{id}/quota`. Cache invalidated on config change. Composite index `(AgentId, RecordedAt)` on `llm_usage` ensures efficient aggregation.
 - **No prompt injection mitigation**: User-supplied text (room messages, DMs, task descriptions) is interpolated verbatim into agent prompts in `AgentOrchestrator.BuildConversationPrompt` and `BuildBreakoutPrompt`. No input sanitization or prompt boundary markers exist. Low risk in single-user context (the user *is* the operator), but would need attention for any multi-user deployment.
-- **No agent-level rate limiting**: `CommandRateLimiter` throttles human command execution, and `CopilotExecutor` has a circuit breaker for quota/transient errors, but there's no per-agent call-rate limiter. An agent in a tight loop could make many LLM calls in quick succession.
+- ~~**No agent-level rate limiting**~~ — **Resolved**: `AgentQuotaService` includes per-agent LLM call-rate limiting via an in-memory sliding window. Each LLM attempt (including retries in `SendAndCollectWithRetryAsync`) is recorded. Configurable via `MaxRequestsPerHour` in `agent_configs`. See "No per-agent resource quotas" above for full details.
 
 ### SDK Tool Calling
 

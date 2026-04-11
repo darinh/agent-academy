@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -221,36 +222,60 @@ public sealed class GitHubService : IGitHubService
 
         _logger.LogDebug("Running: {GhExecutable} {Args}", _ghExecutable, string.Join(" ", args));
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start gh process");
-
-        // Read both streams concurrently to prevent deadlock when pipe buffers fill
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        try
+        // Retry on ETXTBSY (Linux "Text file busy") — a race between concurrent
+        // fork() inheriting a write fd on the executable and our execve() call.
+        // Can also occur in production if the gh binary is updated while running.
+        const int maxStartAttempts = 3;
+        Process? process = null;
+        for (var attempt = 1; ; attempt++)
         {
-            await process.WaitForExitAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw new InvalidOperationException(
-                $"gh {string.Join(" ", args)} timed out after 60s");
-        }
-
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-
-        if (process.ExitCode != 0)
-        {
-            var message = $"gh {string.Join(" ", args)} failed (exit {process.ExitCode}): {stderr.Trim()}";
-            _logger.LogWarning("{Message}", message);
-            throw new InvalidOperationException(message);
+            try
+            {
+                process = Process.Start(psi);
+                break;
+            }
+            catch (Win32Exception ex) when (
+                attempt < maxStartAttempts && ex.NativeErrorCode == 26 /* ETXTBSY */)
+            {
+                _logger.LogDebug("ETXTBSY on attempt {Attempt}, retrying in {Delay}ms",
+                    attempt, 10 * attempt);
+                await Task.Delay(10 * attempt);
+            }
         }
 
-        return stdout.Trim();
+        if (process is null)
+            throw new InvalidOperationException("Failed to start gh process");
+
+        using (process)
+        {
+            // Read both streams concurrently to prevent deadlock when pipe buffers fill
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                process.Kill(entireProcessTree: true);
+                throw new InvalidOperationException(
+                    $"gh {string.Join(" ", args)} timed out after 60s");
+            }
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+
+            if (process.ExitCode != 0)
+            {
+                var message = $"gh {string.Join(" ", args)} failed (exit {process.ExitCode}): {stderr.Trim()}";
+                _logger.LogWarning("{Message}", message);
+                throw new InvalidOperationException(message);
+            }
+
+            return stdout.Trim();
+        }
     }
 
     private static string FindProjectRoot()

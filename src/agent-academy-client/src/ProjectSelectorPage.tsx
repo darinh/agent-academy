@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Body1,
-  Body1Strong,
   Button,
-  Caption1,
   Dialog,
   DialogActions,
   DialogBody,
@@ -314,8 +311,12 @@ const useStyles = makeStyles({
   workspaceMeta: {
     color: "var(--aa-soft)",
     fontSize: "12px",
+    lineHeight: "16px",
     whiteSpace: "nowrap",
   },
+  body1: { fontSize: "14px", lineHeight: "20px" },
+  body1Strong: { fontSize: "14px", lineHeight: "20px", fontWeight: 600 },
+  caption1: { fontSize: "12px", lineHeight: "16px" },
   badge: {
     display: "inline-flex",
     alignItems: "center",
@@ -475,7 +476,7 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
   if (fetchError) {
     return (
       <div className={classes.placeholder}>
-        <Body1>Failed to load workspaces. Check your connection and try again.</Body1>
+        <span className={classes.body1}>Failed to load workspaces. Check your connection and try again.</span>
         <Button appearance="subtle" onClick={() => setFetchKey((k) => k + 1)} style={{ marginTop: "12px" }}>
           Retry
         </Button>
@@ -486,7 +487,7 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
   if (workspaces.length === 0) {
     return (
       <div className={classes.placeholder}>
-        <Body1>No existing projects found yet. Onboard a repository or create a new workspace below.</Body1>
+        <span className={classes.body1}>No existing projects found yet. Onboard a repository or create a new workspace below.</span>
       </div>
     );
   }
@@ -506,9 +507,9 @@ function LoadExistingSection({ onProjectSelected }: { onProjectSelected: (path: 
             <div className={classes.workspaceName}>{ws.projectName ?? ws.path.split("/").pop()}</div>
             <div className={classes.workspacePath}>{ws.path}</div>
           </div>
-          <Caption1 className={classes.workspaceMeta}>
+          <span className={classes.workspaceMeta}>
             {ws.lastAccessedAt ? `Active ${relativeTime(ws.lastAccessedAt)}` : "New workspace"}
-          </Caption1>
+          </span>
         </button>
       ))}
     </div>
@@ -695,7 +696,7 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
           <div className={classes.scanResults}>
             <div className={classes.scanRow}>
               <span className={classes.scanLabel}>Project</span>
-              <Body1Strong>{scanResult.projectName ?? scanResult.path}</Body1Strong>
+              <span className={classes.body1Strong}>{scanResult.projectName ?? scanResult.path}</span>
             </div>
             {scanResult.techStack.length > 0 && (
               <div className={classes.scanRow}>
@@ -740,10 +741,10 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                 <DialogContent>
                   <div style={{ display: "grid", gap: "12px" }}>
                     <div>
-                      <Body1Strong>{scanResult.projectName ?? scannedPath.split("/").pop()}</Body1Strong>
-                      <Caption1 style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
+                      <span className={classes.body1Strong}>{scanResult.projectName ?? scannedPath.split("/").pop()}</span>
+                      <span className={classes.caption1} style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
                         {scannedPath}
-                      </Caption1>
+                      </span>
                     </div>
                     {scanResult.techStack.length > 0 && (
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -757,17 +758,17 @@ function OnboardSection({ onProjectOnboarded }: { onProjectOnboarded: (r: Onboar
                       <div>
                         {scanResult.hasSpecs ? (
                           <>
-                            <Body1Strong>Existing specification found.</Body1Strong>
-                            <Body1 style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
+                            <span className={classes.body1Strong}>Existing specification found.</span>
+                            <span className={classes.body1} style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
                               The agent team will anchor on the current specs/ directory during onboarding.
-                            </Body1>
+                            </span>
                           </>
                         ) : (
                           <>
-                            <Body1Strong>No specification found — one will be generated automatically.</Body1Strong>
-                            <Body1 style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
+                            <span className={classes.body1Strong}>No specification found — one will be generated automatically.</span>
+                            <span className={classes.body1} style={{ display: "block", color: "var(--aa-muted)", marginTop: "4px" }}>
                               Agent Academy will inspect the codebase and create an initial spec set for review.
-                            </Body1>
+                            </span>
                           </>
                         )}
                       </div>

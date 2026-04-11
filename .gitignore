@@ -45,3 +45,8 @@ out/
 .playwright/
 .playwright-cli/
 .claude/
+
+# MemPalace
+entities.json
+mempalace.yaml
+.mempalace/

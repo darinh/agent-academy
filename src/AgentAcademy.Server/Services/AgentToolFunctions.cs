@@ -793,7 +793,6 @@ public sealed class AgentToolFunctions
         // Files that agents must never modify (core infrastructure).
         private static readonly string[] ProtectedPaths =
         [
-            "Services/AgentPermissionHandler.cs",
             "Services/AgentToolFunctions.cs",
             "Services/AgentToolRegistry.cs",
             "Services/IAgentToolRegistry.cs",

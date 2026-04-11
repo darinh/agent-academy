@@ -21,18 +21,24 @@ jobs:
           # Check all commits in the PR follow conventional commit format
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?\!?: .+'
+          PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|merge)(\(.+\))?\!?: .+'
 
           COMMITS=$(git log --format="%h %s" "$BASE".."$HEAD") || {
             echo "❌ Failed to resolve commit range"
             exit 1
           }
 
+          MERGE_PATTERN='^Merge '
+
           FAILED=0
           while IFS= read -r line; do
             [ -z "$line" ] && continue
             SHA=$(echo "$line" | cut -d' ' -f1)
             SUBJECT=$(echo "$line" | cut -d' ' -f2-)
+            # Skip merge commits — they use Git's default message format
+            if echo "$SUBJECT" | grep -qE "$MERGE_PATTERN"; then
+              continue
+            fi
             if ! echo "$SUBJECT" | grep -qE "$PATTERN"; then
               echo "❌ Bad commit: $SHA — $SUBJECT"
               FAILED=1

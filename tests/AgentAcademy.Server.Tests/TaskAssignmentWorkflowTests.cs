@@ -86,6 +86,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Is<AgentDefinition>(a => a.Role == "Planner"),
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(assignmentResponse),
@@ -95,6 +96,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         _executor.RunAsync(
                 Arg.Is<AgentDefinition>(a => a.Role == "SoftwareEngineer"),
                 Arg.Any<string>(),
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(
@@ -114,6 +116,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             _gitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");
@@ -166,6 +169,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Is<AgentDefinition>(a => a.Role == "Planner"),
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult(assignmentResponse),
@@ -174,6 +178,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         _executor.RunAsync(
                 Arg.Is<AgentDefinition>(a => a.Role == "SoftwareEngineer"),
                 Arg.Any<string>(),
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult("Acknowledged"));
@@ -200,6 +205,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             mockGitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");

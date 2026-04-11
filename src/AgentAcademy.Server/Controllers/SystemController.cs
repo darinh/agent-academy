@@ -149,12 +149,47 @@ public class SystemController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/agents/configured — agent catalog list.
+    /// GET /api/agents/configured — agent catalog + custom agents.
     /// </summary>
     [HttpGet("api/agents/configured")]
-    public ActionResult<IReadOnlyList<AgentDefinition>> GetConfiguredAgents()
+    public async Task<ActionResult<List<AgentDefinition>>> GetConfiguredAgents()
     {
-        return Ok(_catalog.Agents);
+        var agents = new List<AgentDefinition>(_catalog.Agents);
+
+        // Add custom agents from DB (agent_configs entries with no catalog match)
+        var catalogIds = new HashSet<string>(_catalog.Agents.Select(a => a.Id), StringComparer.OrdinalIgnoreCase);
+        var customConfigs = await _db.AgentConfigs
+            .Where(c => !catalogIds.Contains(c.AgentId))
+            .ToListAsync();
+
+        foreach (var config in customConfigs)
+        {
+            string displayName = config.AgentId;
+            string role = "Custom";
+            if (!string.IsNullOrEmpty(config.CustomInstructions))
+            {
+                try
+                {
+                    var meta = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(config.CustomInstructions);
+                    if (meta.TryGetProperty("displayName", out var dn)) displayName = dn.GetString() ?? config.AgentId;
+                    if (meta.TryGetProperty("role", out var r)) role = r.GetString() ?? "Custom";
+                }
+                catch { /* metadata parse failure — use defaults */ }
+            }
+
+            agents.Add(new AgentDefinition(
+                Id: config.AgentId,
+                Name: displayName,
+                Role: role,
+                Summary: $"Custom agent: {displayName}",
+                StartupPrompt: config.StartupPromptOverride ?? "",
+                Model: config.ModelOverride,
+                CapabilityTags: new List<string> { "custom" },
+                EnabledTools: new List<string> { "chat", "memory" },
+                AutoJoinDefaultRoom: false));
+        }
+
+        return Ok(agents);
     }
 
     /// <summary>

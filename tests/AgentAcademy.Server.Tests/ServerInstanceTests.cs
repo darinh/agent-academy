@@ -245,6 +245,7 @@ public class ServerInstanceTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             new GitService(NullLogger<GitService>.Instance),
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
 
         await orchestrator.HandleStartupRecoveryAsync("main");
@@ -312,6 +313,7 @@ public class ServerInstanceTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             new GitService(NullLogger<GitService>.Instance),
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
 
         await orchestrator.HandleStartupRecoveryAsync("main");
@@ -549,6 +551,7 @@ public class ServerInstanceTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             new GitService(NullLogger<GitService>.Instance),
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
         orchestrator.Stop();
 
@@ -600,6 +603,7 @@ public class ServerInstanceTests : IDisposable
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             new GitService(NullLogger<GitService>.Instance),
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             NullLogger<AgentOrchestrator>.Instance);
         orchestrator.Stop();
 

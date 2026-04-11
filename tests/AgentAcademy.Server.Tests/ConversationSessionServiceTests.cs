@@ -82,6 +82,23 @@ public class ConversationSessionServiceTests : IDisposable
         }
     }
 
+    private async Task SeedSprintAsync(string sprintId, string workspacePath = "/test")
+    {
+        if (!await _db.Sprints.AnyAsync(s => s.Id == sprintId))
+        {
+            _db.Sprints.Add(new Data.Entities.SprintEntity
+            {
+                Id = sprintId,
+                Number = 1,
+                WorkspacePath = workspacePath,
+                Status = "Active",
+                CurrentStage = "Intake",
+                CreatedAt = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync();
+        }
+    }
+
     [Fact]
     public async Task GetOrCreate_CreatesFirstSession()
     {
@@ -188,6 +205,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("Summary of 5 messages.");
 
@@ -243,6 +261,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("Breakout summary.");
 
@@ -428,6 +447,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("LLM summary of workspace.");
 
@@ -494,6 +514,7 @@ public class ConversationSessionServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Any<string>(),
             Arg.Is<string?>(x => x == null),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>())
             .Returns("Resume context: important decisions were made.");
 
@@ -837,5 +858,425 @@ public class ConversationSessionServiceTests : IDisposable
 
         Assert.Equal(1, totalCount);
         Assert.Single(sessions);
+    }
+
+    // ── Sprint-scoped session tests ──────────────────────────────
+
+    [Fact]
+    public async Task CreateSessionForStage_CreatesTaggedSession()
+    {
+        await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
+
+        var session = await _service.CreateSessionForStageAsync(
+            "room-sprint", "sprint-1", "Intake");
+
+        Assert.Equal("Active", session.Status);
+        Assert.Equal("sprint-1", session.SprintId);
+        Assert.Equal("Intake", session.SprintStage);
+        Assert.Equal("room-sprint", session.RoomId);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_ArchivesPreviousActiveSession()
+    {
+        await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
+
+        var first = await _service.GetOrCreateActiveSessionAsync("room-sprint");
+        Assert.Equal("Active", first.Status);
+
+        var second = await _service.CreateSessionForStageAsync(
+            "room-sprint", "sprint-1", "Intake");
+
+        // Reload the first session
+        var archived = await _db.ConversationSessions.FindAsync(first.Id);
+        Assert.Equal("Archived", archived!.Status);
+        Assert.NotNull(archived.ArchivedAt);
+        Assert.Equal("Active", second.Status);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_InvalidatesSdkSessions()
+    {
+        await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
+
+        await _service.CreateSessionForStageAsync(
+            "room-sprint", "sprint-1", "Intake");
+
+        await _executor.Received(1).InvalidateRoomSessionsAsync("room-sprint");
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_SurvivesSdkInvalidationFailure()
+    {
+        await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
+        _executor.InvalidateRoomSessionsAsync(Arg.Any<string>())
+            .Returns(Task.FromException(new Exception("SDK down")));
+
+        // Should not throw — invalidation failure is non-fatal
+        var session = await _service.CreateSessionForStageAsync(
+            "room-sprint", "sprint-1", "Intake");
+
+        Assert.Equal("Active", session.Status);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_IncrementsSequenceNumber()
+    {
+        await SeedRoomAsync("room-sprint");
+        await SeedSprintAsync("sprint-1");
+
+        var first = await _service.GetOrCreateActiveSessionAsync("room-sprint");
+        var second = await _service.CreateSessionForStageAsync(
+            "room-sprint", "sprint-1", "Intake");
+
+        Assert.Equal(first.SequenceNumber + 1, second.SequenceNumber);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_WorksWithNoExistingSession()
+    {
+        await SeedRoomAsync("room-empty");
+        await SeedSprintAsync("sprint-1");
+
+        var session = await _service.CreateSessionForStageAsync(
+            "room-empty", "sprint-1", "Planning");
+
+        Assert.Equal("Active", session.Status);
+        Assert.Equal(1, session.SequenceNumber);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_ThrowsOnNullRoomId()
+    {
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => _service.CreateSessionForStageAsync(null!, "sprint-1", "Intake"));
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_ThrowsOnNullSprintId()
+    {
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => _service.CreateSessionForStageAsync("room-1", null!, "Intake"));
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_ThrowsOnNullStage()
+    {
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => _service.CreateSessionForStageAsync("room-1", "sprint-1", null!));
+    }
+
+    [Fact]
+    public async Task GetStageContext_ReturnsNullWhenNoArchived()
+    {
+        var result = await _service.GetStageContextAsync("sprint-1", "Intake");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetStageContext_ReturnsSummaryFromArchivedSession()
+    {
+        await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
+
+        // Create a session for Intake, add a summary, archive it
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-intake",
+            RoomId = "room-ctx",
+            SequenceNumber = 1,
+            Status = "Archived",
+            Summary = "Intake discussion summary",
+            SprintId = "sprint-1",
+            SprintStage = "Intake",
+            ArchivedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _service.GetStageContextAsync("sprint-1", "Intake");
+
+        Assert.Equal("Intake discussion summary", result);
+    }
+
+    [Fact]
+    public async Task GetStageContext_ReturnsLatestBySequence()
+    {
+        await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
+
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-old",
+            RoomId = "room-ctx",
+            SequenceNumber = 1,
+            Status = "Archived",
+            Summary = "Old summary",
+            SprintId = "sprint-1",
+            SprintStage = "Planning",
+            ArchivedAt = DateTime.UtcNow,
+        });
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-new",
+            RoomId = "room-ctx",
+            SequenceNumber = 2,
+            Status = "Archived",
+            Summary = "New summary",
+            SprintId = "sprint-1",
+            SprintStage = "Planning",
+            ArchivedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _service.GetStageContextAsync("sprint-1", "Planning");
+
+        Assert.Equal("New summary", result);
+    }
+
+    [Fact]
+    public async Task GetStageContext_DoesNotReturnActiveSession()
+    {
+        await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
+
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-active",
+            RoomId = "room-ctx",
+            SequenceNumber = 1,
+            Status = "Active",
+            Summary = "Should not appear",
+            SprintId = "sprint-1",
+            SprintStage = "Intake",
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _service.GetStageContextAsync("sprint-1", "Intake");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetSprintContext_ReturnsLatestPerStageInCanonicalOrder()
+    {
+        await SeedRoomAsync("room-ctx");
+        await SeedSprintAsync("sprint-1");
+
+        // Two sessions for Intake (should only get latest), one for Planning
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-intake-old",
+            RoomId = "room-ctx",
+            SequenceNumber = 1,
+            Status = "Archived",
+            Summary = "Old intake",
+            SprintId = "sprint-1",
+            SprintStage = "Intake",
+            ArchivedAt = DateTime.UtcNow.AddMinutes(1),
+        });
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-intake-new",
+            RoomId = "room-ctx",
+            SequenceNumber = 3,
+            Status = "Archived",
+            Summary = "New intake",
+            SprintId = "sprint-1",
+            SprintStage = "Intake",
+            ArchivedAt = DateTime.UtcNow.AddMinutes(3),
+        });
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-planning",
+            RoomId = "room-ctx",
+            SequenceNumber = 2,
+            Status = "Archived",
+            Summary = "Planning outcomes",
+            SprintId = "sprint-1",
+            SprintStage = "Planning",
+            ArchivedAt = DateTime.UtcNow.AddMinutes(2),
+        });
+        await _db.SaveChangesAsync();
+
+        var context = await _service.GetSprintContextAsync("sprint-1");
+
+        // Deduplicated: one per stage, canonical order (Intake before Planning)
+        Assert.Equal(2, context.Count);
+        Assert.Equal("Intake", context[0].Stage);
+        Assert.Equal("New intake", context[0].Summary);
+        Assert.Equal("Planning", context[1].Stage);
+        Assert.Equal("Planning outcomes", context[1].Summary);
+    }
+
+    [Fact]
+    public async Task GetSprintContext_IgnoresNullSummaries()
+    {
+        await SeedSprintAsync("sprint-1");
+        _db.ConversationSessions.Add(new ConversationSessionEntity
+        {
+            Id = "sess-nosummary",
+            RoomId = "room-ctx",
+            SequenceNumber = 1,
+            Status = "Archived",
+            Summary = null,
+            SprintId = "sprint-1",
+            SprintStage = "Intake",
+            ArchivedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        var context = await _service.GetSprintContextAsync("sprint-1");
+
+        Assert.Empty(context);
+    }
+
+    [Fact]
+    public async Task GetSprintContext_ReturnsEmptyForUnknownSprint()
+    {
+        var context = await _service.GetSprintContextAsync("nonexistent");
+
+        Assert.Empty(context);
+    }
+
+    // ── WorkspacePath scoping tests ─────────────────────────────
+
+    [Fact]
+    public async Task GetOrCreate_StampsWorkspacePathFromRoom()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "ws-room",
+            Name = "Workspace Room",
+            Status = "Active",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/project",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        var session = await _service.GetOrCreateActiveSessionAsync("ws-room");
+
+        Assert.Equal("/home/test/project", session.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task GetOrCreate_NullWorkspaceWhenRoomHasNone()
+    {
+        await SeedRoomAsync("plain-room");
+
+        var session = await _service.GetOrCreateActiveSessionAsync("plain-room");
+
+        Assert.Null(session.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task Rotation_InheritsWorkspacePathFromArchivedSession()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "rotate-room",
+            Name = "Rotate Room",
+            Status = "Active",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/home/test/project",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        // Set threshold low so rotation triggers
+        await _settings.SetAsync(SystemSettingsService.MainRoomEpochSizeKey, "2");
+
+        _executor.IsFullyOperational.Returns(false);
+
+        var session = await _service.GetOrCreateActiveSessionAsync("rotate-room");
+        await _service.IncrementMessageCountAsync(session.Id);
+        await _service.IncrementMessageCountAsync(session.Id);
+        var rotated = await _service.CheckAndRotateAsync("rotate-room");
+
+        Assert.True(rotated);
+
+        var newSession = await _db.ConversationSessions
+            .Where(s => s.RoomId == "rotate-room" && s.Status == "Active")
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(newSession);
+        Assert.Equal("/home/test/project", newSession!.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task GetAllSessions_FiltersByWorkspace()
+    {
+        _db.Rooms.AddRange(
+            new RoomEntity { Id = "ws-a-room", Name = "A", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/project-a", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "ws-b-room", Name = "B", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/project-b", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        await _service.GetOrCreateActiveSessionAsync("ws-a-room");
+        await _service.GetOrCreateActiveSessionAsync("ws-b-room");
+
+        var (allSessions, allCount) = await _service.GetAllSessionsAsync();
+        Assert.Equal(2, allCount);
+
+        var (filteredSessions, filteredCount) = await _service.GetAllSessionsAsync(
+            workspacePath: "/project-a");
+        Assert.Equal(1, filteredCount);
+        Assert.All(filteredSessions, s => Assert.Equal("/project-a", s.WorkspacePath));
+    }
+
+    [Fact]
+    public async Task GetSessionStats_FiltersByWorkspace()
+    {
+        _db.Rooms.AddRange(
+            new RoomEntity { Id = "stats-a-room", Name = "A", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/stats-project-a", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "stats-b-room", Name = "B", Status = "Active", CurrentPhase = "Intake",
+                WorkspacePath = "/stats-project-b", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        var s1 = await _service.GetOrCreateActiveSessionAsync("stats-a-room");
+        await _service.IncrementMessageCountAsync(s1.Id);
+        await _service.IncrementMessageCountAsync(s1.Id);
+        await _service.GetOrCreateActiveSessionAsync("stats-b-room");
+
+        var globalStats = await _service.GetSessionStatsAsync();
+        Assert.Equal(2, globalStats.TotalSessions);
+
+        var scopedStats = await _service.GetSessionStatsAsync(workspacePath: "/stats-project-a");
+        Assert.Equal(1, scopedStats.TotalSessions);
+        Assert.Equal(2, scopedStats.TotalMessages);
+    }
+
+    [Fact]
+    public async Task CreateSessionForStage_StampsWorkspacePath()
+    {
+        await SeedSprintAsync("sprint-1");
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "sprint-ws-room",
+            Name = "Sprint Room",
+            Status = "Active",
+            CurrentPhase = "Intake",
+            WorkspacePath = "/sprint-project",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        _executor.IsFullyOperational.Returns(false);
+
+        var session = await _service.CreateSessionForStageAsync(
+            "sprint-ws-room", "sprint-1", "Planning");
+
+        Assert.Equal("/sprint-project", session.WorkspacePath);
+        Assert.Equal("sprint-1", session.SprintId);
+        Assert.Equal("Planning", session.SprintStage);
     }
 }

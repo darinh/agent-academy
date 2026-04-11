@@ -23,7 +23,7 @@ import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
-import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getAuthStatus, logout } from "./api";
+import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
 import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
@@ -40,6 +40,7 @@ import SettingsPanel from "./SettingsPanel";
 import DmPanel from "./DmPanel";
 import AgentSessionPanel from "./AgentSessionPanel";
 import CommandsPanel from "./CommandsPanel";
+import SprintPanel from "./SprintPanel";
 import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
 import CircuitBreakerBanner from "./CircuitBreakerBanner";
@@ -67,8 +68,9 @@ const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   tasks: { title: "Tasks", meta: "Delivery queue" },
   plan: { title: "Room Plan", meta: "" },
   commands: { title: "Command Deck", meta: "" },
+  sprint: { title: "Sprint", meta: "Active iteration" },
   timeline: { title: "Activity Timeline", meta: "" },
-  dashboard: { title: "Dashboard", meta: "System telemetry" },
+  dashboard: { title: "Metrics", meta: "System telemetry" },
   overview: { title: "Overview", meta: "Room state" },
   directMessages: { title: "Direct Messages", meta: "" },
 };
@@ -157,6 +159,8 @@ function AppShell() {
     recoveryBanner,
     connectionStatus,
     breakoutRooms,
+    sprintVersion,
+    lastSprintEvent,
     err,
     busy,
     tab,
@@ -195,6 +199,7 @@ function AppShell() {
   const [tasksError, setTasksError] = useState(false);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksFetchKey, setTasksFetchKey] = useState(0);
+  const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -294,6 +299,9 @@ function AppShell() {
       .then((tasks) => { if (!cancelled) setAllTasks(tasks); })
       .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } })
       .finally(() => { if (!cancelled) setTasksLoading(false); });
+    getActiveSprint()
+      .then((detail) => { if (!cancelled) setActiveSprintId(detail?.sprint.id ?? null); })
+      .catch(() => { if (!cancelled) setActiveSprintId(null); });
     return () => { cancelled = true; };
   }, [showProjectSelector, tab, tasksFetchKey]);
 
@@ -391,8 +399,24 @@ function AppShell() {
     (id: string) => {
       setSelectedWorkspaceId(null);
       handleRoomSelect(id);
+      setTab("chat");
     },
     [handleRoomSelect],
+  );
+
+  const handleCreateRoom = useCallback(
+    async (name: string) => {
+      try {
+        const room = await createRoom(name);
+        handleRoomSelect(room.id);
+        setSelectedWorkspaceId(null);
+        setTab("chat");
+        handleManualRefresh();
+      } catch (err) {
+        console.error("Failed to create room:", err);
+      }
+    },
+    [handleRoomSelect, handleManualRefresh, setTab],
   );
 
   const handleWorkspaceSelect = useCallback(
@@ -400,6 +424,34 @@ function AppShell() {
       setSelectedWorkspaceId(breakoutId);
     },
     [],
+  );
+
+  const handleCreateSession = useCallback(
+    async (roomId: string) => {
+      try {
+        await createRoomSession(roomId);
+        handleManualRefresh();
+      } catch (err) {
+        console.error("Failed to create session:", err);
+      }
+    },
+    [handleManualRefresh],
+  );
+
+  const handleToggleAgent = useCallback(
+    async (roomId: string, agentId: string, currentlyInRoom: boolean) => {
+      try {
+        if (currentlyInRoom) {
+          await removeAgentFromRoom(roomId, agentId);
+        } else {
+          await addAgentToRoom(roomId, agentId);
+        }
+        handleManualRefresh();
+      } catch (err) {
+        console.error("Failed to toggle agent:", err);
+      }
+    },
+    [handleManualRefresh],
   );
 
   const doLogout = useCallback(async () => {
@@ -522,6 +574,7 @@ function AppShell() {
             onToggleSidebar={handleToggleSidebar}
             onSelectRoom={wrappedRoomSelect}
             onSelectWorkspace={handleWorkspaceSelect}
+            onCreateRoom={handleCreateRoom}
             activeView={tab}
             onViewChange={setTab}
             workspace={
@@ -533,6 +586,7 @@ function AppShell() {
             user={hasDisplayUser(auth.user) && auth.user ? auth.user : null}
             onLogout={handleLogout}
             onOpenSettings={() => setShowSettings(true)}
+            sprintVersion={sprintVersion}
           />
 
           <main className={s.workspace} aria-label="Workspace content">
@@ -645,6 +699,9 @@ function AppShell() {
                     {tab === "commands" && (
                       <span className={s.workspaceMetaText}>Command Deck</span>
                     )}
+                    {tab === "sprint" && (
+                      <span className={s.workspaceMetaText}>Active iteration</span>
+                    )}
                     {tab === "timeline" && (
                       <span className={s.workspaceMetaText}>All events</span>
                     )}
@@ -697,6 +754,10 @@ function AppShell() {
                       onSendMessage={handleSendMessage}
                       readOnly={workspaceLimited}
                       hiddenFilters={hiddenFilters}
+                      agentLocations={ov.agentLocations ?? []}
+                      configuredAgents={ov.configuredAgents}
+                      onCreateSession={handleCreateSession}
+                      onToggleAgent={handleToggleAgent}
                     />
                   )}
                   {tab === "tasks" && (
@@ -705,6 +766,7 @@ function AppShell() {
                       loading={tasksLoading}
                       error={tasksError}
                       onRefresh={() => setTasksFetchKey((k) => k + 1)}
+                      activeSprintId={activeSprintId}
                     />
                   )}
                   {tab === "plan" && (
@@ -713,6 +775,7 @@ function AppShell() {
                   {tab === "commands" && (
                     <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
                   )}
+                  {tab === "sprint" && <SprintPanel sprintVersion={sprintVersion} lastSprintEvent={lastSprintEvent} />}
                   {tab === "timeline" && (
                     <TimelinePanel activity={activity} loading={busy} />
                   )}

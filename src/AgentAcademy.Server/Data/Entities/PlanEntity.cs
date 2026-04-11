@@ -9,4 +9,10 @@ public class PlanEntity
     public string RoomId { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public DateTime UpdatedAt { get; set; }
+
+    // Sprint association
+    public string? SprintId { get; set; }
+
+    // Navigation
+    public SprintEntity? Sprint { get; set; }
 }

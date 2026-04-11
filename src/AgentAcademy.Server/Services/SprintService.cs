@@ -1,0 +1,626 @@
+using System.Collections.ObjectModel;
+using System.Text.Json;
+using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Shared.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace AgentAcademy.Server.Services;
+
+/// <summary>
+/// Manages sprint lifecycle: creation, stage advancement, artifact storage,
+/// and completion. Each workspace has at most one active sprint.
+/// </summary>
+public sealed class SprintService
+{
+    /// <summary>
+    /// Ordered stages of a sprint. Advancement follows this sequence.
+    /// </summary>
+    private static readonly string[] StagesArray =
+    [
+        "Intake",
+        "Planning",
+        "Discussion",
+        "Validation",
+        "Implementation",
+        "FinalSynthesis",
+    ];
+
+    /// <summary>
+    /// Read-only view of the sprint stages. Cannot be mutated by callers.
+    /// </summary>
+    public static readonly ReadOnlyCollection<string> Stages = Array.AsReadOnly(StagesArray);
+
+    /// <summary>
+    /// Artifact types that must exist before leaving a stage.
+    /// Stages not listed here have no mandatory artifact gate.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> RequiredArtifactByStage =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Intake"] = "RequirementsDocument",
+            ["Planning"] = "SprintPlan",
+            ["Validation"] = "ValidationReport",
+            ["FinalSynthesis"] = "SprintReport",
+        };
+
+    /// <summary>
+    /// Stages that require user sign-off before advancing.
+    /// When an agent triggers ADVANCE_STAGE from one of these stages,
+    /// the sprint enters AwaitingSignOff state until a human approves.
+    /// </summary>
+    private static readonly IReadOnlySet<string> SignOffRequiredStages =
+        new HashSet<string>(StringComparer.Ordinal) { "Intake", "Planning" };
+
+    private readonly AgentAcademyDbContext _db;
+    private readonly ActivityBroadcaster _activityBus;
+    private readonly ILogger<SprintService> _logger;
+
+    public SprintService(AgentAcademyDbContext db, ActivityBroadcaster activityBus, ILogger<SprintService> logger)
+    {
+        _db = db;
+        _activityBus = activityBus;
+        _logger = logger;
+    }
+
+    // ── Create ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates the next sprint for a workspace. If a previous sprint exists and
+    /// has overflow artifacts, they are linked via <see cref="SprintEntity.OverflowFromSprintId"/>.
+    /// Throws if there is already an active sprint for this workspace.
+    /// </summary>
+    public async Task<SprintEntity> CreateSprintAsync(string workspacePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
+
+        var existing = await GetActiveSprintAsync(workspacePath);
+        if (existing is not null)
+            throw new InvalidOperationException(
+                $"Workspace already has an active sprint (#{existing.Number}, id={existing.Id}). " +
+                "Complete or cancel it before starting a new one.");
+
+        var lastSprint = await _db.Sprints
+            .Where(s => s.WorkspacePath == workspacePath)
+            .OrderByDescending(s => s.Number)
+            .FirstOrDefaultAsync();
+
+        var nextNumber = (lastSprint?.Number ?? 0) + 1;
+
+        // Check for overflow artifacts from the previous sprint
+        string? overflowFrom = null;
+        SprintArtifactEntity? overflowArtifact = null;
+        if (lastSprint is not null)
+        {
+            overflowArtifact = await _db.SprintArtifacts
+                .FirstOrDefaultAsync(a => a.SprintId == lastSprint.Id && a.Type == "OverflowRequirements");
+            if (overflowArtifact is not null)
+                overflowFrom = lastSprint.Id;
+        }
+
+        var sprint = new SprintEntity
+        {
+            Id = Guid.NewGuid().ToString(),
+            Number = nextNumber,
+            WorkspacePath = workspacePath,
+            Status = "Active",
+            CurrentStage = Stages[0],
+            OverflowFromSprintId = overflowFrom,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        _db.Sprints.Add(sprint);
+
+        // Auto-inject overflow requirements into the new sprint's Intake stage
+        if (overflowArtifact is not null)
+        {
+            _db.SprintArtifacts.Add(new SprintArtifactEntity
+            {
+                SprintId = sprint.Id,
+                Stage = "Intake",
+                Type = "OverflowRequirements",
+                Content = overflowArtifact.Content,
+                CreatedByAgentId = null, // system-injected
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+
+        QueueEvent(ActivityEventType.SprintStarted, null, null, null,
+            $"Sprint #{sprint.Number} started for workspace {workspacePath}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprint.Id,
+                ["sprintNumber"] = sprint.Number,
+                ["status"] = "Active",
+                ["currentStage"] = Stages[0],
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "Created sprint #{Number} ({Id}) for workspace {Workspace}{Overflow}",
+            sprint.Number, sprint.Id, workspacePath,
+            overflowFrom is not null ? $" (overflow from {overflowFrom})" : "");
+
+        return sprint;
+    }
+
+    // ── Query ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the active sprint for a workspace, or null if none.
+    /// </summary>
+    public async Task<SprintEntity?> GetActiveSprintAsync(string workspacePath)
+    {
+        return await _db.Sprints
+            .Where(s => s.WorkspacePath == workspacePath && s.Status == "Active")
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Returns a sprint by ID, or null if not found.
+    /// </summary>
+    public async Task<SprintEntity?> GetSprintByIdAsync(string sprintId)
+    {
+        return await _db.Sprints.FindAsync(sprintId);
+    }
+
+    /// <summary>
+    /// Returns all sprints for a workspace, ordered by number descending.
+    /// </summary>
+    public async Task<(List<SprintEntity> Items, int TotalCount)> GetSprintsForWorkspaceAsync(
+        string workspacePath, int limit = 20, int offset = 0)
+    {
+        var query = _db.Sprints.Where(s => s.WorkspacePath == workspacePath);
+        var totalCount = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(s => s.Number)
+            .Skip(Math.Max(offset, 0))
+            .Take(Math.Clamp(limit, 1, 100))
+            .ToListAsync();
+        return (items, totalCount);
+    }
+
+    // ── Artifacts ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Stores a deliverable artifact for a sprint stage.
+    /// If an artifact of the same type already exists for the stage, it is updated.
+    /// </summary>
+    public async Task<SprintArtifactEntity> StoreArtifactAsync(
+        string sprintId, string stage, string type, string content, string? agentId = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sprintId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(type);
+        ArgumentException.ThrowIfNullOrWhiteSpace(content);
+
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (sprint.Status != "Active")
+            throw new InvalidOperationException(
+                $"Cannot store artifacts in sprint {sprintId} — status is {sprint.Status}.");
+
+        ValidateStage(stage);
+
+        var existing = await _db.SprintArtifacts
+            .Where(a => a.SprintId == sprintId && a.Stage == stage && a.Type == type)
+            .FirstOrDefaultAsync();
+
+        if (existing is not null)
+        {
+            existing.Content = content;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            QueueEvent(ActivityEventType.SprintArtifactStored, null, agentId, null,
+                $"Artifact '{type}' updated for sprint stage {stage}",
+                new Dictionary<string, object?>
+                {
+                    ["sprintId"] = sprintId,
+                    ["artifactId"] = existing.Id,
+                    ["stage"] = stage,
+                    ["artifactType"] = type,
+                    ["createdByAgentId"] = agentId,
+                    ["isUpdate"] = true,
+                });
+
+            await _db.SaveChangesAsync();
+            FlushEvents();
+
+            _logger.LogInformation(
+                "Updated artifact {Type} for sprint {SprintId} stage {Stage}",
+                type, sprintId, stage);
+
+            return existing;
+        }
+
+        var artifact = new SprintArtifactEntity
+        {
+            SprintId = sprintId,
+            Stage = stage,
+            Type = type,
+            Content = content,
+            CreatedByAgentId = agentId,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        _db.SprintArtifacts.Add(artifact);
+
+        QueueEvent(ActivityEventType.SprintArtifactStored, null, agentId, null,
+            $"Artifact '{type}' stored for sprint stage {stage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["stage"] = stage,
+                ["artifactType"] = type,
+                ["createdByAgentId"] = agentId,
+                ["isUpdate"] = false,
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "Stored artifact {Type} for sprint {SprintId} stage {Stage} by {Agent}",
+            type, sprintId, stage, agentId ?? "(system)");
+
+        return artifact;
+    }
+
+    /// <summary>
+    /// Returns artifacts for a sprint, optionally filtered by stage.
+    /// </summary>
+    public async Task<List<SprintArtifactEntity>> GetSprintArtifactsAsync(
+        string sprintId, string? stage = null)
+    {
+        var query = _db.SprintArtifacts
+            .Where(a => a.SprintId == sprintId);
+
+        if (!string.IsNullOrEmpty(stage))
+        {
+            ValidateStage(stage);
+            query = query.Where(a => a.Stage == stage);
+        }
+
+        return await query
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync();
+    }
+
+    // ── Stage Advancement ────────────────────────────────────────
+
+    /// <summary>
+    /// Advances the sprint to the next stage. Validates that any required
+    /// artifact for the current stage exists before allowing advancement.
+    /// If the current stage requires user sign-off, enters AwaitingSignOff
+    /// state instead of advancing immediately.
+    /// Returns the updated sprint.
+    /// </summary>
+    public async Task<SprintEntity> AdvanceStageAsync(string sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (sprint.Status != "Active")
+            throw new InvalidOperationException(
+                $"Cannot advance sprint {sprintId} — status is {sprint.Status}.");
+
+        if (sprint.AwaitingSignOff)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is awaiting user sign-off to advance from {sprint.CurrentStage}. " +
+                "A human must approve before the stage can change.");
+
+        var currentIndex = Stages.IndexOf(sprint.CurrentStage);
+        if (currentIndex < 0)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is in unknown stage '{sprint.CurrentStage}'.");
+
+        if (currentIndex >= Stages.Count - 1)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is already at the final stage ({sprint.CurrentStage}). " +
+                "Use CompleteSprintAsync to finish it.");
+
+        // Check for required artifact before advancing
+        if (RequiredArtifactByStage.TryGetValue(sprint.CurrentStage, out var requiredType))
+        {
+            var hasArtifact = await _db.SprintArtifacts
+                .AnyAsync(a => a.SprintId == sprintId
+                    && a.Stage == sprint.CurrentStage
+                    && a.Type == requiredType);
+
+            if (!hasArtifact)
+                throw new InvalidOperationException(
+                    $"Cannot advance from {sprint.CurrentStage}: " +
+                    $"required artifact '{requiredType}' has not been stored.");
+        }
+
+        // Check if user sign-off is required for this stage
+        if (SignOffRequiredStages.Contains(sprint.CurrentStage))
+        {
+            sprint.AwaitingSignOff = true;
+            sprint.PendingStage = Stages[currentIndex + 1];
+
+            QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+                $"Sprint #{sprint.Number} awaiting user sign-off to advance from {sprint.CurrentStage} → {sprint.PendingStage}",
+                new Dictionary<string, object?>
+                {
+                    ["sprintId"] = sprintId,
+                    ["action"] = "signoff_requested",
+                    ["currentStage"] = sprint.CurrentStage,
+                    ["pendingStage"] = sprint.PendingStage,
+                    ["awaitingSignOff"] = true,
+                });
+
+            await _db.SaveChangesAsync();
+            FlushEvents();
+
+            _logger.LogInformation(
+                "Sprint #{Number} ({Id}) awaiting sign-off: {Current} → {Pending}",
+                sprint.Number, sprint.Id, sprint.CurrentStage, sprint.PendingStage);
+
+            return sprint;
+        }
+
+        var previousStage = sprint.CurrentStage;
+        sprint.CurrentStage = Stages[currentIndex + 1];
+
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "advanced",
+                ["previousStage"] = previousStage,
+                ["currentStage"] = sprint.CurrentStage,
+                ["awaitingSignOff"] = false,
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "Advanced sprint #{Number} ({Id}) from {Previous} → {Current}",
+            sprint.Number, sprint.Id, previousStage, sprint.CurrentStage);
+
+        return sprint;
+    }
+
+    /// <summary>
+    /// Approves a pending stage advancement (user sign-off).
+    /// Only valid when the sprint is AwaitingSignOff.
+    /// </summary>
+    public async Task<SprintEntity> ApproveAdvanceAsync(string sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (!sprint.AwaitingSignOff || sprint.PendingStage is null)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is not awaiting sign-off.");
+
+        var previousStage = sprint.CurrentStage;
+        sprint.CurrentStage = sprint.PendingStage;
+        sprint.AwaitingSignOff = false;
+        sprint.PendingStage = null;
+
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "approved",
+                ["previousStage"] = previousStage,
+                ["currentStage"] = sprint.CurrentStage,
+                ["awaitingSignOff"] = false,
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "User approved sprint #{Number} ({Id}) advance: {Previous} → {Current}",
+            sprint.Number, sprint.Id, previousStage, sprint.CurrentStage);
+
+        return sprint;
+    }
+
+    /// <summary>
+    /// Rejects a pending stage advancement. Clears AwaitingSignOff so
+    /// agents can revise their work and request advancement again.
+    /// </summary>
+    public async Task<SprintEntity> RejectAdvanceAsync(string sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (!sprint.AwaitingSignOff)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is not awaiting sign-off.");
+
+        var pendingStage = sprint.PendingStage;
+        sprint.AwaitingSignOff = false;
+        sprint.PendingStage = null;
+
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advance rejected by user — staying at {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "rejected",
+                ["currentStage"] = sprint.CurrentStage,
+                ["awaitingSignOff"] = false,
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "User rejected sprint #{Number} ({Id}) advance from {Current} → {Pending}",
+            sprint.Number, sprint.Id, sprint.CurrentStage, pendingStage);
+
+        return sprint;
+    }
+
+    // ── Completion ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Marks a sprint as completed. Must be in the FinalSynthesis stage
+    /// (or force=true to skip the stage check). If overflow requirements
+    /// exist, they'll be picked up by the next sprint's creation.
+    /// </summary>
+    public async Task<SprintEntity> CompleteSprintAsync(string sprintId, bool force = false)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (sprint.Status != "Active")
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is already {sprint.Status}.");
+
+        if (!force && sprint.CurrentStage != "FinalSynthesis")
+            throw new InvalidOperationException(
+                $"Cannot complete sprint {sprintId} — current stage is {sprint.CurrentStage}, " +
+                "expected FinalSynthesis. Use force=true to override.");
+
+        // Check for the final required artifact
+        if (!force && RequiredArtifactByStage.TryGetValue("FinalSynthesis", out var requiredType))
+        {
+            var hasArtifact = await _db.SprintArtifacts
+                .AnyAsync(a => a.SprintId == sprintId
+                    && a.Stage == "FinalSynthesis"
+                    && a.Type == requiredType);
+
+            if (!hasArtifact)
+                throw new InvalidOperationException(
+                    $"Cannot complete sprint: required artifact '{requiredType}' " +
+                    "for FinalSynthesis has not been stored.");
+        }
+
+        sprint.Status = "Completed";
+        sprint.CompletedAt = DateTime.UtcNow;
+
+        QueueEvent(ActivityEventType.SprintCompleted, null, null, null,
+            $"Sprint #{sprint.Number} completed for workspace {sprint.WorkspacePath}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["status"] = "Completed",
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "Completed sprint #{Number} ({Id}) for workspace {Workspace}",
+            sprint.Number, sprint.Id, sprint.WorkspacePath);
+
+        return sprint;
+    }
+
+    /// <summary>
+    /// Cancels an active sprint.
+    /// </summary>
+    public async Task<SprintEntity> CancelSprintAsync(string sprintId)
+    {
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (sprint.Status != "Active")
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is already {sprint.Status}.");
+
+        sprint.Status = "Cancelled";
+        sprint.CompletedAt = DateTime.UtcNow;
+
+        QueueEvent(ActivityEventType.SprintCompleted, null, null, null,
+            $"Sprint #{sprint.Number} cancelled for workspace {sprint.WorkspacePath}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["status"] = "Cancelled",
+            });
+
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "Cancelled sprint #{Number} ({Id}) for workspace {Workspace}",
+            sprint.Number, sprint.Id, sprint.WorkspacePath);
+
+        return sprint;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────
+
+    private static void ValidateStage(string stage)
+    {
+        if (!Stages.Contains(stage))
+            throw new ArgumentException(
+                $"Invalid stage '{stage}'. Valid stages: {string.Join(", ", Stages)}",
+                nameof(stage));
+    }
+
+    /// <summary>
+    /// Returns the index of the given stage, or -1 if not found.
+    /// </summary>
+    public static int GetStageIndex(string stage) => Stages.IndexOf(stage);
+
+    /// <summary>
+    /// Returns the next stage after the given one, or null if it's the last.
+    /// </summary>
+    public static string? GetNextStage(string stage)
+    {
+        var idx = Stages.IndexOf(stage);
+        return idx >= 0 && idx < Stages.Count - 1 ? Stages[idx + 1] : null;
+    }
+
+    private readonly List<ActivityEvent> _pendingEvents = [];
+
+    private void QueueEvent(
+        ActivityEventType type, string? roomId, string? actorId, string? taskId, string message,
+        Dictionary<string, object?>? metadata = null)
+    {
+        var evt = new ActivityEvent(
+            Id: Guid.NewGuid().ToString("N"),
+            Type: type,
+            Severity: ActivitySeverity.Info,
+            RoomId: roomId,
+            ActorId: actorId,
+            TaskId: taskId,
+            Message: message,
+            CorrelationId: null,
+            OccurredAt: DateTime.UtcNow,
+            Metadata: metadata
+        );
+
+        _db.ActivityEvents.Add(new ActivityEventEntity
+        {
+            Id = evt.Id,
+            Type = evt.Type.ToString(),
+            Severity = evt.Severity.ToString(),
+            RoomId = evt.RoomId,
+            ActorId = evt.ActorId,
+            TaskId = evt.TaskId,
+            Message = evt.Message,
+            CorrelationId = evt.CorrelationId,
+            OccurredAt = evt.OccurredAt,
+            MetadataJson = metadata is not null ? JsonSerializer.Serialize(metadata) : null,
+        });
+
+        _pendingEvents.Add(evt);
+    }
+
+    /// <summary>
+    /// Broadcasts all queued events. Call AFTER SaveChangesAsync to ensure
+    /// subscribers never see events for uncommitted data.
+    /// </summary>
+    private void FlushEvents()
+    {
+        foreach (var evt in _pendingEvents)
+            _activityBus.Broadcast(evt);
+        _pendingEvents.Clear();
+    }
+}
