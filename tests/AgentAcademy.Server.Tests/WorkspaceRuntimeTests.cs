@@ -919,7 +919,7 @@ public class WorkspaceRuntimeTests : IDisposable
         await _runtime.InitializeAsync();
 
         ActivityEvent? received = null;
-        _runtime.StreamActivity(evt => received = evt);
+        _activityBus.Subscribe(evt => received = evt);
 
         var agent = _catalog.Agents[0];
         await _activityPublisher.PublishThinkingAsync(agent, "main");
@@ -935,7 +935,7 @@ public class WorkspaceRuntimeTests : IDisposable
         await _runtime.InitializeAsync();
 
         ActivityEvent? received = null;
-        _runtime.StreamActivity(evt => received = evt);
+        _activityBus.Subscribe(evt => received = evt);
 
         var agent = _catalog.Agents[0];
         await _activityPublisher.PublishFinishedAsync(agent, "main");
@@ -951,7 +951,7 @@ public class WorkspaceRuntimeTests : IDisposable
         await _runtime.InitializeAsync();
 
         // Initialize generates several events
-        var activity = _runtime.GetRecentActivity();
+        var activity = _activityBus.GetRecentActivity();
         Assert.NotEmpty(activity);
         Assert.Contains(activity, e => e.Type == ActivityEventType.RoomCreated);
     }
@@ -962,7 +962,7 @@ public class WorkspaceRuntimeTests : IDisposable
         await _runtime.InitializeAsync();
 
         var count = 0;
-        var unsub = _runtime.StreamActivity(_ => count++);
+        var unsub = _activityBus.Subscribe(_ => count++);
 
         await _activityPublisher.PublishThinkingAsync(_catalog.Agents[0], "main");
         Assert.Equal(1, count);

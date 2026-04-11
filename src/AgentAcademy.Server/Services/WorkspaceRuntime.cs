@@ -583,25 +583,7 @@ public sealed class WorkspaceRuntime
     public Task<bool> DeletePlanAsync(string roomId)
         => _plans.DeletePlanAsync(roomId);
 
-    // ── Activity Publishing ─────────────────────────────────────
-
-    /// <summary>
-    /// Returns recent activity events from the singleton broadcaster.
-    /// </summary>
-    public IReadOnlyList<ActivityEvent> GetRecentActivity()
-    {
-        return _activity.GetRecentActivity();
-    }
-
-    /// <summary>
-    /// Subscribes to activity events. Returns an unsubscribe action.
-    /// </summary>
-    public Action StreamActivity(Action<ActivityEvent> callback)
-    {
-        return _activity.Subscribe(callback);
-    }
-
-    // ── Private Helpers ─────────────────────────────────────────
+        // ── Private Helpers ─────────────────────────────────────────
 
     private Task<List<BreakoutRoom>> GetAllBreakoutRoomsAsync()
         => _breakouts.GetAllBreakoutRoomsAsync();
