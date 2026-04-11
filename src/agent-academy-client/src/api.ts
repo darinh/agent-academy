@@ -193,6 +193,66 @@ export interface TaskComment {
   createdAt: string;
 }
 
+export type SpecLinkType = "Implements" | "Modifies" | "Fixes" | "References";
+
+export interface SpecTaskLink {
+  id: string;
+  taskId: string;
+  specSectionId: string;
+  linkType: SpecLinkType;
+  linkedByAgentId: string;
+  linkedByAgentName: string;
+  note?: string | null;
+  createdAt: string;
+}
+
+export type EvidencePhase = "Baseline" | "After" | "Review";
+
+// Matches the row shape returned by QUERY_EVIDENCE command result
+export interface EvidenceRow {
+  id: string;
+  phase: string;
+  checkName: string;
+  tool: string;
+  command?: string | null;
+  exitCode?: number | null;
+  output?: string | null;
+  passed: boolean;
+  agentName: string;
+  createdAt: string;
+}
+
+// Matches the full QUERY_EVIDENCE command result
+export interface EvidenceQueryResult {
+  taskId: string;
+  phase: string;
+  total: number;
+  passed: number;
+  failed: number;
+  evidence: EvidenceRow[];
+}
+
+// Matches the evidence summary shape in CHECK_GATES result
+export interface GateEvidenceSummary {
+  phase: string;
+  checkName: string;
+  passed: boolean;
+  agentName: string;
+}
+
+// Matches the full CHECK_GATES command result
+export interface GateCheckResult {
+  taskId: string;
+  currentPhase: string;
+  targetPhase: string;
+  met: boolean;
+  requiredChecks: number;
+  passedChecks: number;
+  missingChecks: string[];
+  evidence: GateEvidenceSummary[];
+  message: string;
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -637,6 +697,10 @@ export function completeTask(
 
 export function getTaskComments(taskId: string): Promise<TaskComment[]> {
   return request<TaskComment[]>(apiUrl(`/api/tasks/${taskId}/comments`));
+}
+
+export function getTaskSpecLinks(taskId: string): Promise<SpecTaskLink[]> {
+  return request<SpecTaskLink[]>(apiUrl(`/api/tasks/${taskId}/specs`));
 }
 
 export function sendHumanMessage(roomId: string, content: string): Promise<ChatEnvelope> {

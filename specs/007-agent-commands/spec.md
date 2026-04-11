@@ -618,10 +618,21 @@ Keyboard-driven command search and execution overlay, opened with `Cmd+K` / `Ctr
 
 **Required for**: Discovery (knowing what commands exist), inspection (seeing what agents did), debugging (understanding command failures).
 
-### Task Panel (Dedicated) — PLANNED
-Review queue, spec links, task claims — purpose-built UI for structured state management.
+### Task Panel (Dedicated) — IMPLEMENTED
+Purpose-built UI for structured task state management, integrated into the existing `TaskListPanel`.
 
-**Required for**: Task-specific commands (APPROVE_TASK, REQUEST_CHANGES, CLAIM_TASK).
+**Features**:
+- Review queue filter (tasks in InReview, AwaitingValidation, Approved, ChangesRequested)
+- Spec links section in task detail: fetched from `GET /api/tasks/{taskId}/specs`, displays section ID, link type (Implements/Modifies/Fixes/References), linked-by agent, and optional note
+- Evidence ledger section: on-demand load via `QUERY_EVIDENCE` command, displays verification checks in a table with phase, check name, pass/fail, tool, and agent
+- Gate status check: on-demand via `CHECK_GATES` command for Active/AwaitingValidation/InReview tasks, shows met/unmet status with missing check names
+- Agent assignment for Queued tasks: agent picker using `PUT /api/tasks/{taskId}/assign`
+- Detail caching: spec links, evidence, gate results, and comments cached by task ID + updatedAt timestamp to avoid refetching on collapse/expand
+- Review actions: Approve, Request Changes, Reject, Merge (unchanged from prior implementation)
+
+**Evidence**: `src/agent-academy-client/src/TaskListPanel.tsx`, `src/agent-academy-client/src/api.ts` (types: `SpecTaskLink`, `TaskEvidence`, `GateCheckResult`; function: `getTaskSpecLinks`)
+
+**Required for**: Task-specific commands (APPROVE_TASK, REQUEST_CHANGES, CLAIM_TASK via agent assignment).
 
 ### Room Sidebar (Navigation) — EXISTS (enhanced planned)
 Agent workspaces and room navigation affordances exist. Command feedback integration planned.
@@ -649,7 +660,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - ~~**Error recovery**~~: **Partially resolved** — CopilotExecutor has exponential backoff retries (transient: 2s/4s/8s, 3 attempts; quota: 5s/15s/30s, 3 attempts) and a global circuit breaker (trips after 5 consecutive failures, 60s cooldown before probing). Structured error codes (`errorCode` field) enable agents to make programmatic retry/skip decisions. Remaining: no per-command retry at the command pipeline level (agents must re-issue failed commands manually).
 - **Rate limiting**: Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
-- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette (Cmd+K) implemented with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard shows execution stats (total, success, error, denied), breakdowns by agent and command, and paginated recent command records. Task panel enhancements still planned.
+- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Resolved** — Commands tab with dynamic catalog from `GET /api/commands/metadata`. Command palette (Cmd+K) with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard. Task panel enhanced with spec links, evidence ledger, gate status, and agent assignment UI.
 - **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
 
 ## Discord Agent Question Bridge

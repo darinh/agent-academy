@@ -767,6 +767,7 @@ function AppShell() {
                       error={tasksError}
                       onRefresh={() => setTasksFetchKey((k) => k + 1)}
                       activeSprintId={activeSprintId}
+                      agents={ov.configuredAgents}
                     />
                   )}
                   {tab === "plan" && (
