@@ -563,6 +563,20 @@ export function logout(): Promise<void> {
   return request<void>(apiUrl("/api/auth/logout"), { method: "POST" });
 }
 
+// ── GitHub ─────────────────────────────────────────────────────────────
+
+export type GitHubAuthSource = "oauth" | "cli" | "none";
+
+export interface GitHubStatus {
+  isConfigured: boolean;
+  repository: string | null;
+  authSource: GitHubAuthSource;
+}
+
+export function getGitHubStatus(): Promise<GitHubStatus> {
+  return request<GitHubStatus>(apiUrl("/api/github/status"));
+}
+
 export function getConfiguredAgents(): Promise<AgentDefinition[]> {
   return request<AgentDefinition[]>(apiUrl("/api/agents/configured"));
 }

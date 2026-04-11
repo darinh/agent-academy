@@ -39,7 +39,7 @@ App.tsx (FluentProvider + AppShell)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
-            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, advanced)
+            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, github, advanced)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
             ├── RecoveryBanner.tsx (crash recovery notification)
@@ -338,7 +338,7 @@ The sidebar Rooms section includes inline room creation:
 
 ## Settings Panel (`SettingsPanel.tsx`)
 
-The Settings panel is a full tabbed configuration page with five tabs:
+The Settings panel is a full tabbed configuration page with six tabs:
 
 ### Custom Agents Tab
 
@@ -372,6 +372,22 @@ Instruction template CRUD interface. Templates are reusable prompt fragments tha
 ### Notifications Tab
 
 Provider setup UI for notification integrations (Discord, Slack, etc.). Connect/disconnect controls per provider, with the `NotificationSetupWizard` handling provider-specific configuration.
+
+### GitHub Tab
+
+GitHub integration status and PR capability overview. Data loaded from `GET /api/github/status` (see §010).
+
+- **Status card**: Shows connected/not-connected status with refresh button, repository slug (monospace), and auth source badge.
+- **Auth source badge**: Color-coded — green for `oauth`, blue for `cli`, red for `none`.
+- **Auth source explanation**: Contextual guidance based on current auth method:
+  - `oauth`: Confirms PR operations are available through browser session.
+  - `cli`: Notes server-side authentication; suggests browser login for OAuth.
+  - `none`: Shows error state with "Login with GitHub" button linking to `/api/auth/login`.
+- **PR Capabilities grid**: 2×2 grid showing create/review/merge/status-sync capabilities. All enabled when `isConfigured = true`, all disabled otherwise.
+- **Error state**: Connection errors show error message with retry button.
+- **Loading state**: Spinner with "Checking GitHub status…" text.
+
+API type: `GitHubStatus { isConfigured: boolean; repository: string | null; authSource: "oauth" | "cli" | "none" }` — exported from `api.ts`.
 
 ### Advanced Tab
 
