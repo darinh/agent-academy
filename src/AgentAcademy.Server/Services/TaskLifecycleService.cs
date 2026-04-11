@@ -9,9 +9,10 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Handles task lifecycle transitions that have side-effects (activity events, review messages).
-/// Extracted from WorkspaceRuntime to reduce class complexity. Phase 2 covers claim/release,
-/// review workflow, evidence recording, gate checks, and spec linking.
-/// Methods that require room/agent-location management remain in WorkspaceRuntime.
+/// Extracted from WorkspaceRuntime to reduce class complexity.
+/// Phase 2: claim/release, review workflow, evidence, gates, spec linking.
+/// Phase 3: create/complete/reject task entity mutations — room/agent orchestration
+/// remains in WorkspaceRuntime which delegates here for the task-state changes.
 /// </summary>
 public sealed class TaskLifecycleService
 {
@@ -436,6 +437,223 @@ public sealed class TaskLifecycleService
 
         return TaskQueryService.BuildSpecTaskLink(entity);
     }
+
+    // ── Task Create / Complete / Reject ────────────────────────
+
+    /// <summary>
+    /// Stages a new task entity, messages, and activity events against the supplied room.
+    /// Does NOT call SaveChangesAsync — the caller owns the unit of work so it can
+    /// perform additional operations (agent auto-join, room snapshot) before committing.
+    /// </summary>
+    /// <returns>The staged TaskSnapshot and the initial activity event.</returns>
+    public (TaskSnapshot Task, ActivityEvent Activity) StageNewTask(
+        TaskAssignmentRequest request, string roomId, string? workspacePath,
+        bool isNewRoom, string correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title))
+            throw new ArgumentException("Title is required", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.Description))
+            throw new ArgumentException("Description is required", nameof(request));
+
+        var now = DateTime.UtcNow;
+        var taskId = Guid.NewGuid().ToString("N");
+
+        var preferredRoles = request.PreferredRoles
+            .Select(r => r.Trim())
+            .Where(r => !string.IsNullOrEmpty(r))
+            .Distinct()
+            .ToList();
+        var currentPlan = ResolveTaskPlanContent(request.Title, request.CurrentPlan);
+
+        var task = new TaskSnapshot(
+            Id: taskId,
+            Title: request.Title,
+            Description: request.Description,
+            SuccessCriteria: request.SuccessCriteria,
+            Status: Shared.Models.TaskStatus.Active,
+            Type: request.Type,
+            CurrentPhase: CollaborationPhase.Planning,
+            CurrentPlan: currentPlan,
+            ValidationStatus: WorkstreamStatus.Ready,
+            ValidationSummary: "Pending reviewer and validator feedback.",
+            ImplementationStatus: WorkstreamStatus.NotStarted,
+            ImplementationSummary: "Implementation has not started yet.",
+            PreferredRoles: preferredRoles,
+            CreatedAt: now,
+            UpdatedAt: now
+        );
+
+        var taskEntity = new TaskEntity
+        {
+            Id = task.Id,
+            Title = task.Title,
+            Description = task.Description,
+            SuccessCriteria = task.SuccessCriteria,
+            Status = task.Status.ToString(),
+            Type = task.Type.ToString(),
+            CurrentPhase = task.CurrentPhase.ToString(),
+            CurrentPlan = task.CurrentPlan,
+            ValidationStatus = task.ValidationStatus.ToString(),
+            ValidationSummary = task.ValidationSummary,
+            ImplementationStatus = task.ImplementationStatus.ToString(),
+            ImplementationSummary = task.ImplementationSummary,
+            PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
+            RoomId = roomId,
+            WorkspacePath = workspacePath,
+            StartedAt = now,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        _db.Tasks.Add(taskEntity);
+
+        var assignmentMsg = CreateMessageEntity(
+            roomId, MessageKind.TaskAssignment,
+            $"New task assigned: {request.Title}\n\n{request.Description}",
+            correlationId, now);
+        _db.Messages.Add(assignmentMsg);
+
+        var planMsg = CreateMessageEntity(
+            roomId, MessageKind.Coordination,
+            $"Phase set to Planning. Begin by reviewing requirements and proposing an approach.",
+            correlationId, now);
+        _db.Messages.Add(planMsg);
+
+        if (isNewRoom)
+        {
+            Publish(ActivityEventType.RoomCreated, roomId, null, taskId,
+                $"Room created for task: {request.Title}");
+        }
+
+        var activity = Publish(ActivityEventType.TaskCreated, roomId, null, taskId,
+            $"Task created: {request.Title}", correlationId);
+
+        Publish(ActivityEventType.PhaseChanged, roomId, null, taskId,
+            "Phase changed to Planning");
+
+        return (task with { WorkspacePath = workspacePath }, activity);
+    }
+
+    /// <summary>
+    /// Associates a staged task with the active sprint for its workspace, if one exists.
+    /// Must be called after StageNewTask and before SaveChangesAsync.
+    /// </summary>
+    public async Task AssociateTaskWithActiveSprintAsync(string taskId, string? workspacePath)
+    {
+        if (workspacePath is null) return;
+
+        var activeSprint = await _db.Sprints
+            .FirstOrDefaultAsync(s => s.WorkspacePath == workspacePath && s.Status == "Active");
+
+        if (activeSprint is not null)
+        {
+            var taskEntity = _db.Tasks.Local.FirstOrDefault(t => t.Id == taskId)
+                ?? await _db.Tasks.FindAsync(taskId);
+            if (taskEntity is not null)
+                taskEntity.SprintId = activeSprint.Id;
+        }
+    }
+
+    /// <summary>
+    /// Marks a task as completed. Updates status, timestamps, and commit metadata.
+    /// Saves changes. Returns the snapshot and the room ID for post-completion room cleanup.
+    /// </summary>
+    public async Task<(TaskSnapshot Snapshot, string? RoomId)> CompleteTaskCoreAsync(
+        string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var now = DateTime.UtcNow;
+        entity.Status = nameof(Shared.Models.TaskStatus.Completed);
+        entity.CompletedAt = now;
+        entity.CommitCount = commitCount;
+        if (testsCreated is not null)
+            entity.TestsCreated = JsonSerializer.Serialize(testsCreated);
+        entity.MergeCommitSha = mergeCommitSha;
+        entity.UpdatedAt = now;
+
+        await _db.SaveChangesAsync();
+        return (TaskQueryService.BuildTaskSnapshot(entity), entity.RoomId);
+    }
+
+    /// <summary>
+    /// Rejects a task (from Approved or Completed state). Updates status, adds review message,
+    /// publishes activity. Does NOT save — the caller owns the unit of work so room/breakout
+    /// reopen can be committed atomically with the rejection.
+    /// </summary>
+    public async Task<RejectTaskResult> RejectTaskCoreAsync(
+        string taskId, string reviewerAgentId, string reason, string? revertCommitSha = null)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var currentStatus = entity.Status;
+        if (currentStatus != nameof(Shared.Models.TaskStatus.Approved) &&
+            currentStatus != nameof(Shared.Models.TaskStatus.Completed))
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is in '{currentStatus}' state — must be Approved or Completed to reject");
+
+        if (entity.ReviewRounds >= MaxReviewRounds)
+            throw new InvalidOperationException(
+                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
+
+        var now = DateTime.UtcNow;
+        var wasCompleted = currentStatus == nameof(Shared.Models.TaskStatus.Completed);
+
+        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
+        entity.ReviewerAgentId = reviewerAgentId;
+        entity.ReviewRounds++;
+        entity.UpdatedAt = now;
+
+        if (wasCompleted)
+        {
+            entity.MergeCommitSha = null;
+            entity.CompletedAt = null;
+        }
+
+        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
+
+        var statusNote = revertCommitSha is not null ? " (merge reverted)" : "";
+        if (!string.IsNullOrEmpty(entity.RoomId))
+        {
+            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
+                $"❌ **Rejected** by {reviewerName}{statusNote}\n\n{reason}", null, now);
+            _db.Messages.Add(msgEntity);
+        }
+
+        Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
+            $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
+
+        // NOTE: Does NOT call SaveChangesAsync — the caller (WorkspaceRuntime.RejectTaskAsync)
+        // performs room/breakout reopen and saves everything in one atomic commit.
+
+        return new RejectTaskResult(
+            Snapshot: TaskQueryService.BuildTaskSnapshot(entity),
+            RoomId: entity.RoomId,
+            TaskId: taskId,
+            ReviewerName: reviewerName);
+    }
+
+    /// <summary>
+    /// Generates default plan content for a task when no explicit plan is provided.
+    /// </summary>
+    internal static string ResolveTaskPlanContent(string title, string? currentPlan)
+    {
+        if (!string.IsNullOrWhiteSpace(currentPlan))
+            return currentPlan.Trim();
+
+        return $"# {title}\n\n## Plan\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate";
+    }
+
+    /// <summary>
+    /// Result of a task rejection, containing the info needed for room/breakout reopen.
+    /// </summary>
+    public sealed record RejectTaskResult(
+        TaskSnapshot Snapshot,
+        string? RoomId,
+        string TaskId,
+        string ReviewerName);
 
     // ── Shared Helpers ──────────────────────────────────────────
 

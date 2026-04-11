@@ -16,7 +16,6 @@ namespace AgentAcademy.Server.Services;
 public sealed class WorkspaceRuntime
 {
     private const int MaxRecentMessages = 200;
-    private const int MaxReviewRounds = 5;
 
     /// <summary>
     /// Task statuses that represent active/in-progress work (not terminal, not queued).
@@ -902,40 +901,10 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public async Task<TaskAssignmentResult> CreateTaskAsync(TaskAssignmentRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Title))
-            throw new ArgumentException("Title is required", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.Description))
-            throw new ArgumentException("Description is required", nameof(request));
-
         var now = DateTime.UtcNow;
         var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
-        var taskId = Guid.NewGuid().ToString("N");
 
-        var preferredRoles = request.PreferredRoles
-            .Select(r => r.Trim())
-            .Where(r => !string.IsNullOrEmpty(r))
-            .Distinct()
-            .ToList();
-        var currentPlan = ResolveTaskPlanContent(request.Title, request.CurrentPlan);
-
-        var task = new TaskSnapshot(
-            Id: taskId,
-            Title: request.Title,
-            Description: request.Description,
-            SuccessCriteria: request.SuccessCriteria,
-            Status: Shared.Models.TaskStatus.Active,
-            Type: request.Type,
-            CurrentPhase: CollaborationPhase.Planning,
-            CurrentPlan: currentPlan,
-            ValidationStatus: WorkstreamStatus.Ready,
-            ValidationSummary: "Pending reviewer and validator feedback.",
-            ImplementationStatus: WorkstreamStatus.NotStarted,
-            ImplementationSummary: "Implementation has not started yet.",
-            PreferredRoles: preferredRoles,
-            CreatedAt: now,
-            UpdatedAt: now
-        );
-
+        // Room creation/lookup stays in WorkspaceRuntime (room/agent orchestration)
         RoomEntity roomEntity;
         bool isNewRoom;
 
@@ -970,70 +939,15 @@ public sealed class WorkspaceRuntime
             isNewRoom = true;
         }
 
-        // Persist the task
-        var taskEntity = new TaskEntity
-        {
-            Id = task.Id,
-            Title = task.Title,
-            Description = task.Description,
-            SuccessCriteria = task.SuccessCriteria,
-            Status = task.Status.ToString(),
-            Type = task.Type.ToString(),
-            CurrentPhase = task.CurrentPhase.ToString(),
-            CurrentPlan = task.CurrentPlan,
-            ValidationStatus = task.ValidationStatus.ToString(),
-            ValidationSummary = task.ValidationSummary,
-            ImplementationStatus = task.ImplementationStatus.ToString(),
-            ImplementationSummary = task.ImplementationSummary,
-            PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
-            RoomId = roomEntity.Id,
-            WorkspacePath = roomEntity.WorkspacePath,
-            StartedAt = now,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
+        // Delegate task entity creation, messages, and activity to TaskLifecycleService
+        var (task, activity) = _taskLifecycle.StageNewTask(
+            request, roomEntity.Id, roomEntity.WorkspacePath, isNewRoom, correlationId);
 
-        // Associate task with active sprint if one exists
-        if (roomEntity.WorkspacePath is not null)
-        {
-            var activeSprint = await _db.Sprints
-                .FirstOrDefaultAsync(s => s.WorkspacePath == roomEntity.WorkspacePath && s.Status == "Active");
-            if (activeSprint is not null)
-                taskEntity.SprintId = activeSprint.Id;
-        }
-
-        _db.Tasks.Add(taskEntity);
-
-        // Add system messages for the task
-        var assignmentMsg = CreateMessageEntity(
-            roomEntity.Id, MessageKind.TaskAssignment,
-            $"New task assigned: {request.Title}\n\n{request.Description}",
-            correlationId, now);
-        _db.Messages.Add(assignmentMsg);
-
-        var planMsg = CreateMessageEntity(
-            roomEntity.Id, MessageKind.Coordination,
-            $"Phase set to Planning. Begin by reviewing requirements and proposing an approach.",
-            correlationId, now);
-        _db.Messages.Add(planMsg);
-
-        // Publish activity events (adds entities to tracker before save)
-        if (isNewRoom)
-        {
-            Publish(ActivityEventType.RoomCreated, roomEntity.Id, null, taskId,
-                $"Room created for task: {request.Title}");
-        }
-
-        var activity = Publish(ActivityEventType.TaskCreated, roomEntity.Id, null, taskId,
-            $"Task created: {request.Title}", correlationId);
-
-        Publish(ActivityEventType.PhaseChanged, roomEntity.Id, null, taskId,
-            "Phase changed to Planning");
+        await _taskLifecycle.AssociateTaskWithActiveSprintAsync(task.Id, roomEntity.WorkspacePath);
 
         await _db.SaveChangesAsync();
 
         // Auto-join agents into the new task room so GetIdleAgentsInRoomAsync finds them.
-        // Only move agents that aren't actively working (preserve breakout assignments).
         if (isNewRoom)
         {
             foreach (var agent in _catalog.Agents.Where(a => a.AutoJoinDefaultRoom))
@@ -1060,7 +974,7 @@ public sealed class WorkspaceRuntime
         return new TaskAssignmentResult(
             CorrelationId: correlationId,
             Room: roomSnapshot,
-            Task: task with { WorkspacePath = roomEntity.WorkspacePath },
+            Task: task,
             Activity: activity
         );
     }
@@ -1143,25 +1057,16 @@ public sealed class WorkspaceRuntime
     public async Task<TaskSnapshot> CompleteTaskAsync(
         string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.Completed);
-        entity.CompletedAt = now;
-        entity.CommitCount = commitCount;
-        if (testsCreated is not null)
-            entity.TestsCreated = JsonSerializer.Serialize(testsCreated);
-        entity.MergeCommitSha = mergeCommitSha;
-        entity.UpdatedAt = now;
-        await _db.SaveChangesAsync();
+        var (snapshot, roomId) = await _taskLifecycle.CompleteTaskCoreAsync(
+            taskId, commitCount, testsCreated, mergeCommitSha);
 
         // Auto-archive the room if all tasks in it are terminal
-        if (!string.IsNullOrEmpty(entity.RoomId))
+        if (!string.IsNullOrEmpty(roomId))
         {
-            await TryAutoArchiveRoomAsync(entity.RoomId);
+            await TryAutoArchiveRoomAsync(roomId);
         }
 
-        return BuildTaskSnapshot(entity);
+        return snapshot;
     }
 
     // ── Task State Commands ──────────────────────────────────────
@@ -1207,57 +1112,19 @@ public sealed class WorkspaceRuntime
     public async Task<TaskSnapshot> RejectTaskAsync(
         string taskId, string reviewerAgentId, string reason, string? revertCommitSha = null)
     {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+        var result = await _taskLifecycle.RejectTaskCoreAsync(
+            taskId, reviewerAgentId, reason, revertCommitSha);
 
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.Approved) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.Completed))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be Approved or Completed to reject");
-
-        if (entity.ReviewRounds >= MaxReviewRounds)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
-
-        var now = DateTime.UtcNow;
-        var wasCompleted = currentStatus == nameof(Shared.Models.TaskStatus.Completed);
-
-        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        if (wasCompleted)
+        // Room/breakout reopen stays in WorkspaceRuntime (room/agent orchestration)
+        if (!string.IsNullOrEmpty(result.RoomId))
         {
-            entity.MergeCommitSha = null;
-            entity.CompletedAt = null;
+            await TryReopenRoomForTaskAsync(result.RoomId);
         }
 
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        var statusNote = revertCommitSha is not null ? " (merge reverted)" : "";
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"❌ **Rejected** by {reviewerName}{statusNote}\n\n{reason}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
-
-        // Reopen the parent room if it was auto-archived on task completion
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            await TryReopenRoomForTaskAsync(entity.RoomId);
-        }
-
-        // Reopen the breakout room for the assigned agent to fix
-        await TryReopenBreakoutForTaskAsync(taskId, reason, reviewerName);
+        await TryReopenBreakoutForTaskAsync(result.TaskId, reason, result.ReviewerName);
 
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return result.Snapshot;
     }
 
     /// <summary>
@@ -2273,7 +2140,7 @@ public sealed class WorkspaceRuntime
             Status = nameof(Shared.Models.TaskStatus.Active),
             Type = nameof(TaskType.Feature),
             CurrentPhase = nameof(CollaborationPhase.Implementation),
-            CurrentPlan = ResolveTaskPlanContent(title, currentPlan),
+            CurrentPlan = TaskLifecycleService.ResolveTaskPlanContent(title, currentPlan),
             ValidationStatus = nameof(WorkstreamStatus.NotStarted),
             ValidationSummary = "",
             ImplementationStatus = nameof(WorkstreamStatus.InProgress),
@@ -2538,14 +2405,6 @@ public sealed class WorkspaceRuntime
     {
         return await _db.Rooms.AnyAsync(r => r.Id == roomId)
             || await _db.BreakoutRooms.AnyAsync(br => br.Id == roomId);
-    }
-
-    private static string ResolveTaskPlanContent(string title, string? currentPlan)
-    {
-        if (!string.IsNullOrWhiteSpace(currentPlan))
-            return currentPlan.Trim();
-
-        return $"# {title}\n\n## Plan\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate";
     }
 
     private static AgentLocation BuildAgentLocation(AgentLocationEntity entity)
