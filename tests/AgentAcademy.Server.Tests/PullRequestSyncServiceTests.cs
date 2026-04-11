@@ -110,10 +110,12 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
                     "You are an engineer.", null, ["impl"], ["code"], true)
             }));
         sc.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
+        sc.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         sc.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
         sc.AddScoped<ConversationSessionService>();
+        sc.AddScoped<TaskQueryService>();
         sc.AddScoped<WorkspaceRuntime>();
         sc.AddSingleton(_github);
 
@@ -380,7 +382,8 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityBus, sessionService);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityBus, sessionService, taskQueries);
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 

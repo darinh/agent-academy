@@ -310,9 +310,10 @@ public class UsageApiEndpointTests : IDisposable
         var sessionService = new ConversationSessionService(
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
-            _catalog, new ActivityBroadcaster(), sessionService);
+            _catalog, new ActivityBroadcaster(), sessionService, taskQueries);
     }
 
     public void Dispose()

@@ -56,6 +56,7 @@ public class DmCommandTests : IDisposable
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton(_catalog);
+        services.AddScoped<TaskQueryService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();

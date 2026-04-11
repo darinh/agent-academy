@@ -5,6 +5,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
@@ -78,7 +79,8 @@ public class WorkspaceRuntimeTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityBus, sessionService);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
+        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityBus, sessionService, taskQueries);
     }
 
     public void Dispose()

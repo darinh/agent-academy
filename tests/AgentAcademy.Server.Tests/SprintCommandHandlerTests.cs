@@ -39,7 +39,9 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddSingleton(Substitute.For<IAgentExecutor>());
 
         // WorkspaceRuntime and its dependencies
+        services.AddScoped<TaskQueryService>();
         services.AddScoped<WorkspaceRuntime>();
+        services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
         services.AddSingleton(typeof(ILogger<WorkspaceRuntime>), sp => NullLogger<WorkspaceRuntime>.Instance);
         services.AddSingleton(CreateTestCatalog());
         services.AddSingleton<ActivityBroadcaster>();

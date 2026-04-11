@@ -64,13 +64,15 @@ public class ServerInstanceTests : IDisposable
         var executor = NSubstitute.Substitute.For<IAgentExecutor>();
         var sessionLogger = NullLogger<ConversationSessionService>.Instance;
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
 
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
             catalog,
             activityBus,
-            sessionService);
+            sessionService,
+            taskQueries);
     }
 
     public void Dispose()
@@ -682,12 +684,14 @@ public class RestartHistoryApiTests : IDisposable
         var settings = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(
             _db, settings, executor, NullLogger<ConversationSessionService>.Instance);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
             catalog,
             new ActivityBroadcaster(),
-            sessionService);
+            sessionService,
+            taskQueries);
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);

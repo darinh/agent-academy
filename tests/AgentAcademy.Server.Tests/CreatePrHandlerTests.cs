@@ -68,6 +68,7 @@ public class CreatePrHandlerTests : IDisposable
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton(catalog);
+        services.AddScoped<TaskQueryService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());

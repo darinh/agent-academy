@@ -195,6 +195,9 @@ public class ErrorClassificationTests
             "main", "Main Room", new List<AgentDefinition>()));
         services.AddSingleton<ILogger<WorkspaceRuntime>>(
             NullLogger<WorkspaceRuntime>.Instance);
+        services.AddSingleton<ILogger<TaskQueryService>>(
+            NullLogger<TaskQueryService>.Instance);
+        services.AddScoped<TaskQueryService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

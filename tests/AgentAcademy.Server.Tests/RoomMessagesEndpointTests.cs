@@ -45,7 +45,8 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _runtime = new WorkspaceRuntime(_db, logger, catalog, activityBus, sessionService);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        _runtime = new WorkspaceRuntime(_db, logger, catalog, activityBus, sessionService, taskQueries);
 
         // Seed a room
         _db.Rooms.Add(new RoomEntity
