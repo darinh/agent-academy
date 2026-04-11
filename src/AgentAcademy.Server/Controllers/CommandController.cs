@@ -24,19 +24,13 @@ public sealed class CommandController : ControllerBase
 
     private static readonly HashSet<string> AllowedCommands = new(StringComparer.OrdinalIgnoreCase)
     {
-        "READ_FILE",
-        "SEARCH_CODE",
         "LIST_ROOMS",
         "LIST_AGENTS",
         "LIST_TASKS",
         "LIST_COMMANDS",
-        "SHOW_DIFF",
-        "GIT_LOG",
         "SHOW_REVIEW_QUEUE",
         "ROOM_HISTORY",
         "ROOM_TOPIC",
-        "RUN_BUILD",
-        "RUN_TESTS",
         "CREATE_ROOM",
         "REOPEN_ROOM",
         "CLOSE_ROOM",
@@ -59,8 +53,6 @@ public sealed class CommandController : ControllerBase
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
     {
-        "RUN_BUILD",
-        "RUN_TESTS",
         "CREATE_PR",
         "MERGE_PR",
     };

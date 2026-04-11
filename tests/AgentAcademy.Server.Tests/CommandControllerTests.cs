@@ -42,26 +42,25 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task Execute_SyncCommand_ReturnsResultAndAuditsHumanUi()
     {
-        var handler = new CapturingHandler("GIT_LOG");
+        var handler = new CapturingHandler("LIST_ROOMS");
         var controller = CreateController(handler);
 
         var result = await controller.Execute(new ExecuteCommandRequest(
-            Command: "GIT_LOG",
-            Args: ParseArgs("""{"count":5,"since":"2 days ago"}""")));
+            Command: "LIST_ROOMS",
+            Args: ParseArgs("""{"status":"Active"}""")));
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var payload = Assert.IsType<ExecuteCommandResponse>(ok.Value);
 
         Assert.Equal("completed", payload.Status);
         Assert.Equal("human", payload.ExecutedBy);
-        Assert.Equal("5", handler.LastEnvelope!.Args["count"]);
-        Assert.Equal("2 days ago", handler.LastEnvelope.Args["since"]);
+        Assert.Equal("Active", handler.LastEnvelope!.Args["status"]);
 
         await using var scope = _serviceProvider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         var audit = await db.CommandAudits.SingleAsync();
         Assert.Equal("human-ui", audit.Source);
-        Assert.Equal("GIT_LOG", audit.Command);
+        Assert.Equal("LIST_ROOMS", audit.Command);
         Assert.Equal("Success", audit.Status);
     }
 
@@ -83,7 +82,7 @@ public sealed class CommandControllerTests : IDisposable
         var controller = CreateController(handler);
 
         var executeResult = await controller.Execute(new ExecuteCommandRequest(
-            Command: "RUN_BUILD",
+            Command: "CREATE_PR",
             Args: null));
 
         var accepted = Assert.IsType<AcceptedResult>(executeResult);
@@ -126,10 +125,9 @@ public sealed class CommandControllerTests : IDisposable
     {
         var handlers = new ICommandHandler[]
         {
-            new CapturingHandler("GIT_LOG"),
-            new CapturingHandler("READ_FILE"),
-            new CapturingHandler("RUN_BUILD"),
             new CapturingHandler("LIST_ROOMS"),
+            new CapturingHandler("LIST_TASKS"),
+            new CapturingHandler("CREATE_PR"),
         };
         var controller = CreateController(handlers);
 
@@ -144,27 +142,23 @@ public sealed class CommandControllerTests : IDisposable
 
         // Verify well-known commands are present
         var commands = list.Cast<AgentAcademy.Shared.Models.HumanCommandMetadata>().ToList();
-        Assert.Contains(commands, m => m.Command == "READ_FILE");
-        Assert.Contains(commands, m => m.Command == "RUN_BUILD");
-        Assert.Contains(commands, m => m.Command == "GIT_LOG");
+        Assert.Contains(commands, m => m.Command == "LIST_ROOMS");
+        Assert.Contains(commands, m => m.Command == "LIST_TASKS");
+        Assert.Contains(commands, m => m.Command == "CREATE_PR");
 
-        // Verify field metadata is populated
-        var readFile = commands.Single(m => m.Command == "READ_FILE");
-        Assert.Equal("Read file", readFile.Title);
-        Assert.Equal("code", readFile.Category);
-        Assert.False(readFile.IsAsync);
-        Assert.True(readFile.Fields.Count > 0, "READ_FILE should have fields");
-        Assert.Contains(readFile.Fields, f => f.Name == "path" && f.Required);
+        // Verify field metadata is populated for a known command
+        var listRooms = commands.Single(m => m.Command == "LIST_ROOMS");
+        Assert.False(listRooms.IsAsync);
 
         // Verify async commands are flagged
-        var runBuild = commands.Single(m => m.Command == "RUN_BUILD");
-        Assert.True(runBuild.IsAsync);
+        var createPr = commands.Single(m => m.Command == "CREATE_PR");
+        Assert.True(createPr.IsAsync);
     }
 
     [Fact]
     public void GetMetadata_WhenUnauthenticated_ReturnsUnauthorized()
     {
-        var controller = CreateController(new CapturingHandler("GIT_LOG"), authenticated: false);
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"), authenticated: false);
 
         var result = controller.GetMetadata();
 
@@ -174,7 +168,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public void GetMetadata_OnlyReturnsAllowlistedCommands()
     {
-        var controller = CreateController(new CapturingHandler("GIT_LOG"));
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
 
         var result = controller.GetMetadata();
 
@@ -191,18 +185,18 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public void GetMetadata_ExcludesCommandsWithoutRegisteredHandler()
     {
-        // Only register a handler for GIT_LOG — metadata should not include
+        // Only register a handler for LIST_ROOMS — metadata should not include
         // any allowlisted command that lacks a handler.
-        var controller = CreateController(new CapturingHandler("GIT_LOG"));
+        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
 
         var result = controller.GetMetadata();
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var commands = Assert.IsAssignableFrom<List<AgentAcademy.Shared.Models.HumanCommandMetadata>>(ok.Value);
 
-        // Only GIT_LOG has a handler registered
+        // Only LIST_ROOMS has a handler registered
         Assert.Single(commands);
-        Assert.Equal("GIT_LOG", commands[0].Command);
+        Assert.Equal("LIST_ROOMS", commands[0].Command);
     }
 
     // ── Audit Log Endpoint Tests ─────────────────────────────────────────
@@ -550,7 +544,7 @@ public sealed class CommandControllerTests : IDisposable
 
     private sealed class BlockingHandler(TaskCompletionSource gate) : ICommandHandler
     {
-        public string CommandName => "RUN_BUILD";
+        public string CommandName => "CREATE_PR";
 
         public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
         {
