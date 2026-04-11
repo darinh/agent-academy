@@ -3,7 +3,25 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
-## Unreleased (2026-04-07)
+## Unreleased (2026-04-11)
+
+### Features
+
+- add GitHub integration status tab to Settings panel
+- bridge OAuth token to gh CLI for PR operations
+- **add DataAnnotations validation to all API request types** — enforces string length limits, required fields, and range constraints on 20+ request records. Invalid requests now return 400 + ProblemDetails.
+
+### Tests
+
+- add 31 request validation tests (RequestValidationTests.cs)
+- add 18 controller-level tests for sprint endpoints
+
+### Docs
+
+- add changelog entry for GitHub status tab
+- close spec 001 validation known gap with validation rules table
+
+## 2026-04-07
 
 ### Features
 

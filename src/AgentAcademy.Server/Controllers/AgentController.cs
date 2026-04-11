@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -534,20 +535,20 @@ public class AgentController : ControllerBase
 /// Request body for creating a custom agent.
 /// </summary>
 public record CreateCustomAgentRequest(
-    string Name,
-    string Prompt,
-    string? Model = null
+    [property: Required, StringLength(100)] string Name,
+    [property: Required, MinLength(1), StringLength(100_000)] string Prompt,
+    [property: StringLength(100)] string? Model = null
 );
 public record UpdateLocationRequest(
-    string RoomId,
-    AgentState State,
-    string? BreakoutRoomId = null
+    [property: Required, StringLength(100)] string RoomId,
+    [property: EnumDataType(typeof(AgentState))] AgentState State,
+    [property: StringLength(100)] string? BreakoutRoomId = null
 );
 
 /// <summary>
 /// Request body for appending agent knowledge.
 /// </summary>
-public record AppendKnowledgeRequest(string Entry);
+public record AppendKnowledgeRequest([property: Required, MinLength(1), StringLength(10_000)] string Entry);
 
 // ── Agent Config DTOs ──────────────────────────────────────
 
@@ -579,10 +580,10 @@ public record AgentConfigOverrideDto(
 /// All fields nullable — null clears that override field.
 /// </summary>
 public record UpsertAgentConfigRequest(
-    string? StartupPromptOverride,
-    string? ModelOverride,
-    string? CustomInstructions,
-    string? InstructionTemplateId
+    [property: StringLength(100_000)] string? StartupPromptOverride,
+    [property: StringLength(100)] string? ModelOverride,
+    [property: StringLength(100_000)] string? CustomInstructions,
+    [property: StringLength(100)] string? InstructionTemplateId
 );
 
 /// <summary>
@@ -590,7 +591,7 @@ public record UpsertAgentConfigRequest(
 /// Null values mean unlimited.
 /// </summary>
 public record UpdateQuotaRequest(
-    int? MaxRequestsPerHour,
-    long? MaxTokensPerHour,
-    decimal? MaxCostPerHour
+    [property: Range(1, 100_000)] int? MaxRequestsPerHour,
+    [property: Range(1, 100_000_000)] long? MaxTokensPerHour,
+    [property: Range(0.01, 10_000)] decimal? MaxCostPerHour
 );

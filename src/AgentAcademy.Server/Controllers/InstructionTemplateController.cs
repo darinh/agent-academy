@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -170,9 +171,9 @@ public class InstructionTemplateController : ControllerBase
 /// Request body for creating or updating an instruction template.
 /// </summary>
 public record InstructionTemplateRequest(
-    string Name,
-    string? Description,
-    string Content
+    [property: Required, StringLength(200)] string Name,
+    [property: StringLength(1000)] string? Description,
+    [property: Required, MinLength(1), StringLength(100_000)] string Content
 );
 
 /// <summary>

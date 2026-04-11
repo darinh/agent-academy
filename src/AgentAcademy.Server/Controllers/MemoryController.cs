@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -198,15 +199,21 @@ public class MemoryController : ControllerBase
 
     public record MemoryImportRequest
     {
+        [MaxLength(500)]
         public List<MemoryImportEntry> Memories { get; init; } = [];
     }
 
     public record MemoryImportEntry
     {
+        [Required, StringLength(100)]
         public string AgentId { get; init; } = "";
+        [Required, StringLength(200)]
         public string Category { get; init; } = "";
+        [Required, StringLength(200)]
         public string Key { get; init; } = "";
+        [Required, StringLength(500)]
         public string Value { get; init; } = "";
+        [Range(1, 87_600)]
         public int? TtlHours { get; init; }
     }
 }

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
@@ -392,5 +393,7 @@ public class RoomController : ControllerBase
     }
 }
 
-public record RenameRoomRequest(string Name);
-public record CreateRoomRequest(string Name, string? Description = null);
+public record RenameRoomRequest([property: Required, StringLength(200)] string Name);
+public record CreateRoomRequest(
+    [property: Required, StringLength(200)] string Name,
+    [property: StringLength(1000)] string? Description = null);

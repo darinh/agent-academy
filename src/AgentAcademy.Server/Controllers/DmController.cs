@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -109,4 +110,4 @@ public class DmController : ControllerBase
     }
 }
 
-public record SendDmRequest(string Message);
+public record SendDmRequest([property: Required, MinLength(1), StringLength(50_000)] string Message);

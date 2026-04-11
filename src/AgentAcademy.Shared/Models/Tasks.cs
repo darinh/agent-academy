@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AgentAcademy.Shared.Models;
 
 /// <summary>
@@ -63,14 +65,14 @@ public record TaskItem(
 /// Request to create and assign a new task to a room.
 /// </summary>
 public record TaskAssignmentRequest(
-    string Title,
-    string Description,
-    string SuccessCriteria,
-    string? RoomId,
+    [property: Required, StringLength(200)] string Title,
+    [property: Required, MinLength(1), StringLength(10_000)] string Description,
+    [property: Required, MinLength(1), StringLength(5_000)] string SuccessCriteria,
+    [property: StringLength(100)] string? RoomId,
     List<string> PreferredRoles,
-    TaskType Type = TaskType.Feature,
+    [property: EnumDataType(typeof(TaskType))] TaskType Type = TaskType.Feature,
     string? CorrelationId = null,
-    string? CurrentPlan = null
+    [property: StringLength(50_000)] string? CurrentPlan = null
 );
 
 /// <summary>

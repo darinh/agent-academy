@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
@@ -313,12 +314,12 @@ public class WorkspaceController : ControllerBase
 /// <summary>
 /// Request body for scan and onboard endpoints.
 /// </summary>
-public record ScanRequest(string Path);
+public record ScanRequest([property: Required, StringLength(1000)] string Path);
 
 /// <summary>
 /// Request body for switching active workspace.
 /// </summary>
-public record SwitchWorkspaceRequest(string Path);
+public record SwitchWorkspaceRequest([property: Required, StringLength(1000)] string Path);
 
 /// <summary>
 /// Result of onboarding a project.

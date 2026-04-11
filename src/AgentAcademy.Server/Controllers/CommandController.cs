@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
@@ -507,7 +508,7 @@ public sealed class CommandController : ControllerBase
 }
 
 public sealed record ExecuteCommandRequest(
-    string Command,
+    [property: Required, MinLength(1), StringLength(10_000)] string Command,
     Dictionary<string, JsonElement>? Args);
 
 public sealed record ExecuteCommandResponse(

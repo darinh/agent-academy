@@ -276,6 +276,46 @@ All types live in `AgentAcademy.Shared.Models` namespace. They are:
 - Timestamps use `DateTime` (UTC by convention)
 - Optional fields use nullable types (`string?`, `T?`)
 
+### API Request Validation
+
+All API request types use `System.ComponentModel.DataAnnotations` attributes, enforced automatically by the `[ApiController]` pipeline. Invalid requests receive a `400 Bad Request` with `ProblemDetails` response.
+
+**Validation rules by request type:**
+
+| Request | Field | Constraints |
+|---------|-------|-------------|
+| `PostMessageRequest` | `RoomId`, `SenderId` | Required, max 100 chars |
+| `PostMessageRequest` | `Content` | Required, 1–50,000 chars |
+| `PostMessageRequest` | `Kind` | Valid `MessageKind` enum |
+| `PhaseTransitionRequest` | `TargetPhase` | Valid `CollaborationPhase` enum |
+| `TaskAssignmentRequest` | `Title` | Required, max 200 chars |
+| `TaskAssignmentRequest` | `Description` | Required, 1–10,000 chars |
+| `TaskAssignmentRequest` | `SuccessCriteria` | Required, 1–5,000 chars |
+| `TaskAssignmentRequest` | `Type` | Valid `TaskType` enum |
+| `HumanMessageRequest` | `Content` | Required, 1–50,000 chars |
+| `SendDmRequest` | `Message` | Required, 1–50,000 chars |
+| `CreateCustomAgentRequest` | `Name` | Required, max 100 chars |
+| `CreateCustomAgentRequest` | `Prompt` | Required, 1–100,000 chars |
+| `CreateRoomRequest` | `Name` | Required, max 200 chars |
+| `CreateRoomRequest` | `Description` | Optional, max 1,000 chars |
+| `InstructionTemplateRequest` | `Name` | Required, max 200 chars |
+| `InstructionTemplateRequest` | `Content` | Required, 1–100,000 chars |
+| `ExecuteCommandRequest` | `Command` | Required, 1–10,000 chars |
+| `UpdateQuotaRequest` | `MaxRequestsPerHour` | Optional, 1–100,000 |
+| `UpdateQuotaRequest` | `MaxTokensPerHour` | Optional, 1–100,000,000 |
+| `UpdateQuotaRequest` | `MaxCostPerHour` | Optional, 0.01–10,000 |
+| `CompleteTaskRequest` | `CommitCount` | 0–100,000 |
+| `UpdateTaskPrRequest` | `Url` | Required, valid URL, max 2,000 chars |
+| `UpdateTaskPrRequest` | `Number` | Required, ≥ 1 |
+| `ScanRequest`, `SwitchWorkspaceRequest` | `Path` | Required, max 1,000 chars |
+| `UpdateTaskStatusRequest` | `Status` | Valid `TaskStatus` enum |
+| `UpdateTaskPrRequest` | `Status` | Valid `PullRequestStatus` enum |
+| `UpdateLocationRequest` | `State` | Valid `AgentState` enum |
+| `MemoryImportRequest` | `Memories` | Max 500 entries |
+| `MemoryImportEntry` | `AgentId`, `Category`, `Key` | Required, max 100–200 chars |
+| `MemoryImportEntry` | `Value` | Required, max 500 chars |
+| `MemoryImportEntry` | `TtlHours` | Optional, 1–87,600 |
+
 ## Data Persistence
 
 > **Status: Implemented** — EF Core with SQLite, entity classes in `src/AgentAcademy.Server/Data/Entities/`.
@@ -427,7 +467,7 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 ## Known Gaps
 
 - ~~No persistence mapping (EF Core entity configuration) defined yet~~ ✅ Resolved
-- No validation attributes or FluentValidation rules specified
+- ~~No validation attributes or FluentValidation rules specified~~ ✅ Resolved — DataAnnotations (`[Required]`, `[StringLength]`, `[MinLength]`, `[Range]`, `[Url]`) added to all API request records. Enforced automatically by `[ApiController]` pipeline. See `RequestValidationTests.cs` for coverage.
 - ~~`INotificationProvider` interface not yet defined~~ ✅ Resolved (notification providers implemented)
 - ~~Event sourcing vs. CRUD approach not decided~~ → CRUD via EF Core
 - `MetricsEntry.Data` uses `Dictionary<string, object>` — may need a more specific type
@@ -442,3 +482,4 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 | 2025-07-27 | Added EF Core persistence layer: entity classes, DbContext, SQLite migration, indexes | ef-core-db |
 | 2026-04-06 | Full entity inventory: added 14 missing entities, 5 missing model files, 2 missing enums, updated all existing types to match code. Fixed NotificationType location (Notifications.cs, not Enums.cs). Added 30+ missing indexes. | spec-001-entity-inventory |
 | 2026-04-08 | Added WorkspacePath to TaskSnapshot and ConversationSessionSnapshot. Added project-scoping pattern section. Added idx_tasks_workspace and idx_conversation_sessions_workspace indexes. | project-scoping |
+| 2026-04-11 | Added DataAnnotations validation to all API request types. 31 validation tests. Closed validation known gap. | add-request-validation |

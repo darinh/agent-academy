@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -350,10 +351,17 @@ public class CollaborationController : ControllerBase
 /// <summary>
 /// Request body for human message endpoint.
 /// </summary>
-public record HumanMessageRequest(string Content);
+public record HumanMessageRequest([property: Required, MinLength(1), StringLength(50_000)] string Content);
 
-public record AssignTaskRequest(string AgentId, string AgentName);
-public record UpdateTaskStatusRequest(Shared.Models.TaskStatus Status);
-public record UpdateTaskBranchRequest(string BranchName);
-public record UpdateTaskPrRequest(string Url, int Number, Shared.Models.PullRequestStatus Status);
-public record CompleteTaskRequest(int CommitCount, List<string>? TestsCreated = null);
+public record AssignTaskRequest(
+    [property: Required, StringLength(100)] string AgentId,
+    [property: Required, StringLength(200)] string AgentName);
+public record UpdateTaskStatusRequest([property: EnumDataType(typeof(Shared.Models.TaskStatus))] Shared.Models.TaskStatus Status);
+public record UpdateTaskBranchRequest([property: Required, StringLength(300)] string BranchName);
+public record UpdateTaskPrRequest(
+    [property: Required, Url, StringLength(2000)] string Url,
+    [property: Range(1, int.MaxValue)] int Number,
+    [property: EnumDataType(typeof(Shared.Models.PullRequestStatus))] Shared.Models.PullRequestStatus Status);
+public record CompleteTaskRequest(
+    [property: Range(0, 100_000)] int CommitCount,
+    List<string>? TestsCreated = null);

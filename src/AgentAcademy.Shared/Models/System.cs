@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AgentAcademy.Shared.Models;
 
 /// <summary>
@@ -171,7 +173,7 @@ public record QuotaStatus(
 /// Wrapper for plan content text.
 /// </summary>
 public record PlanContent(
-    string Content
+    [property: Required, MinLength(1), StringLength(100_000)] string Content
 );
 
 /// <summary>
