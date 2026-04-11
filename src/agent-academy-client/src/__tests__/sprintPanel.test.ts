@@ -52,6 +52,7 @@ function makeSprint(overrides: Partial<SprintSnapshot> = {}): SprintSnapshot {
     overflowFromSprintId: null,
     awaitingSignOff: false,
     pendingStage: null,
+    signOffRequestedAt: null,
     createdAt: "2026-04-01T00:00:00Z",
     completedAt: null,
     ...overrides,

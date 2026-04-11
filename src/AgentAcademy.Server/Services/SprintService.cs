@@ -359,6 +359,7 @@ public sealed class SprintService
         {
             sprint.AwaitingSignOff = true;
             sprint.PendingStage = Stages[currentIndex + 1];
+            sprint.SignOffRequestedAt = DateTime.UtcNow;
 
             QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
                 $"Sprint #{sprint.Number} awaiting user sign-off to advance from {sprint.CurrentStage} → {sprint.PendingStage}",
@@ -422,6 +423,7 @@ public sealed class SprintService
         sprint.CurrentStage = sprint.PendingStage;
         sprint.AwaitingSignOff = false;
         sprint.PendingStage = null;
+        sprint.SignOffRequestedAt = null;
 
         QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
             $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}",
@@ -460,6 +462,7 @@ public sealed class SprintService
         var pendingStage = sprint.PendingStage;
         sprint.AwaitingSignOff = false;
         sprint.PendingStage = null;
+        sprint.SignOffRequestedAt = null;
 
         QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
             $"Sprint #{sprint.Number} advance rejected by user — staying at {sprint.CurrentStage}",
@@ -566,6 +569,110 @@ public sealed class SprintService
         _logger.LogInformation(
             "Cancelled sprint #{Number} ({Id}) for workspace {Workspace}",
             sprint.Number, sprint.Id, sprint.WorkspacePath);
+
+        return sprint;
+    }
+
+    // ── Timeout Queries ──────────────────────────────────────────
+
+    /// <summary>
+    /// Returns active sprints that have been in AwaitingSignOff longer than the specified timeout.
+    /// </summary>
+    public async Task<List<SprintEntity>> GetTimedOutSignOffSprintsAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
+        var cutoff = DateTime.UtcNow - timeout;
+        return await _db.Sprints
+            .Where(s => s.Status == "Active"
+                && s.AwaitingSignOff
+                && s.SignOffRequestedAt != null
+                && s.SignOffRequestedAt < cutoff)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Returns active sprints whose total duration exceeds the specified limit.
+    /// </summary>
+    public async Task<List<SprintEntity>> GetOverdueSprintsAsync(TimeSpan maxDuration, CancellationToken ct = default)
+    {
+        var cutoff = DateTime.UtcNow - maxDuration;
+        return await _db.Sprints
+            .Where(s => s.Status == "Active" && s.CreatedAt < cutoff)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Auto-rejects a sign-off that has timed out. Clears AwaitingSignOff
+    /// and emits an event with reason "timeout".
+    /// </summary>
+    public async Task<SprintEntity> TimeOutSignOffAsync(string sprintId, CancellationToken ct = default)
+    {
+        var sprint = await _db.Sprints.FindAsync([sprintId], ct)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (!sprint.AwaitingSignOff)
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is not awaiting sign-off.");
+
+        var pendingStage = sprint.PendingStage;
+        sprint.AwaitingSignOff = false;
+        sprint.PendingStage = null;
+        sprint.SignOffRequestedAt = null;
+
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} sign-off timed out — auto-rejected, staying at {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "timeout_rejected",
+                ["currentStage"] = sprint.CurrentStage,
+                ["pendingStage"] = pendingStage,
+                ["awaitingSignOff"] = false,
+                ["reason"] = "timeout",
+            });
+
+        await _db.SaveChangesAsync(ct);
+        FlushEvents();
+
+        _logger.LogWarning(
+            "Sprint #{Number} ({Id}) sign-off timed out — auto-rejected from {Current} → {Pending}",
+            sprint.Number, sprint.Id, sprint.CurrentStage, pendingStage);
+
+        return sprint;
+    }
+
+    /// <summary>
+    /// Auto-cancels a sprint that has exceeded the maximum duration.
+    /// </summary>
+    public async Task<SprintEntity> TimeOutSprintAsync(string sprintId, CancellationToken ct = default)
+    {
+        var sprint = await _db.Sprints.FindAsync([sprintId], ct)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        if (sprint.Status != "Active")
+            throw new InvalidOperationException(
+                $"Sprint {sprintId} is already {sprint.Status}.");
+
+        sprint.Status = "Cancelled";
+        sprint.CompletedAt = DateTime.UtcNow;
+        sprint.AwaitingSignOff = false;
+        sprint.PendingStage = null;
+        sprint.SignOffRequestedAt = null;
+
+        QueueEvent(ActivityEventType.SprintCancelled, null, null, null,
+            $"Sprint #{sprint.Number} auto-cancelled — exceeded maximum duration",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["status"] = "Cancelled",
+                ["reason"] = "timeout",
+            });
+
+        await _db.SaveChangesAsync(ct);
+        FlushEvents();
+
+        _logger.LogWarning(
+            "Sprint #{Number} ({Id}) auto-cancelled — exceeded maximum duration",
+            sprint.Number, sprint.Id);
 
         return sprint;
     }

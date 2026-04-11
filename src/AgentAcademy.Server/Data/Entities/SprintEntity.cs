@@ -14,6 +14,7 @@ public class SprintEntity
     public string? OverflowFromSprintId { get; set; }
     public bool AwaitingSignOff { get; set; }
     public string? PendingStage { get; set; }
+    public DateTime? SignOffRequestedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
 

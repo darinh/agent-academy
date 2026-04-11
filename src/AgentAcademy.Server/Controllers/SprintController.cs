@@ -347,7 +347,7 @@ public class SprintController : ControllerBase
         return new(e.Id, e.Number, status, stage,
             e.OverflowFromSprintId, e.AwaitingSignOff,
             e.PendingStage is not null ? pendingStage : null,
-            e.CreatedAt, e.CompletedAt);
+            e.SignOffRequestedAt, e.CreatedAt, e.CompletedAt);
     }
 
     /// <summary>

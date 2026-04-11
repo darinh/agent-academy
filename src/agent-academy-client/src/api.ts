@@ -1288,6 +1288,7 @@ export interface SprintSnapshot {
   overflowFromSprintId: string | null;
   awaitingSignOff: boolean;
   pendingStage: SprintStage | null;
+  signOffRequestedAt: string | null;
   createdAt: string;
   completedAt: string | null;
 }

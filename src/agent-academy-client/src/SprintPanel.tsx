@@ -931,6 +931,12 @@ export default function SprintPanel({
             <strong>{detail.sprint.currentStage}</strong> to{" "}
             <strong>{detail.sprint.pendingStage}</strong>.
             Review the {detail.sprint.currentStage} artifacts and approve or reject.
+            {detail.sprint.signOffRequestedAt && (() => {
+              const elapsed = Date.now() - new Date(detail.sprint.signOffRequestedAt!).getTime();
+              const mins = Math.floor(elapsed / 60000);
+              const label = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+              return ` Waiting ${label}.`;
+            })()}
           </span>
         </div>
       )}

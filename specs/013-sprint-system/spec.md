@@ -71,6 +71,7 @@ This ensures unfinished work is not silently dropped between sprints.
 | `OverflowFromSprintId` | `string?` | FK to previous sprint if overflow exists |
 | `AwaitingSignOff` | `bool` | True when waiting for human approval to advance |
 | `PendingStage` | `string?` | The stage that will become current if sign-off is approved |
+| `SignOffRequestedAt` | `DateTime?` | UTC timestamp when `AwaitingSignOff` became true |
 | `CreatedAt` | `DateTime` | UTC creation timestamp |
 | `CompletedAt` | `DateTime?` | UTC completion/cancellation timestamp |
 
@@ -126,6 +127,7 @@ All use `JsonStringEnumConverter` for JSON serialization.
 public record SprintSnapshot(
     string Id, int Number, SprintStatus Status, SprintStage CurrentStage,
     string? OverflowFromSprintId, bool AwaitingSignOff, SprintStage? PendingStage,
+    DateTime? SignOffRequestedAt,
     DateTime CreatedAt, DateTime? CompletedAt);
 
 public record SprintArtifact(
@@ -423,6 +425,39 @@ When a sprint event arrives, the panel:
 
 Tasks can be filtered by sprint: `getTasks(sprintId?)` passes the sprint ID as a query parameter to `GET /api/tasks?sprintId={id}`. This shows only tasks created during the active sprint.
 
+## Sprint Duration Limits
+
+> **Source**: `src/AgentAcademy.Server/Services/SprintTimeoutService.cs`
+
+A background service prevents sprints from blocking indefinitely. Two timeout types:
+
+### Sign-Off Timeout
+
+When a sprint enters `AwaitingSignOff`, `SignOffRequestedAt` is set on the entity. If no human approves or rejects within the configured timeout (default: 4 hours), the service auto-rejects the sign-off — clearing `AwaitingSignOff` so agents can revise and re-request.
+
+The auto-reject emits a `SprintStageAdvanced` event with `action: "timeout_rejected"` and `reason: "timeout"` metadata.
+
+### Sprint Max Duration Timeout
+
+If an active sprint exceeds the configured max duration (default: 48 hours), the service auto-cancels it. This emits a `SprintCancelled` event with `reason: "timeout"` metadata.
+
+### Configuration
+
+> **Source**: `src/AgentAcademy.Shared/Models/Sprints.cs` (`SprintTimeoutSettings`)
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `Enabled` | `bool` | `true` | Master switch for timeout checking |
+| `SignOffTimeoutMinutes` | `int` | `240` | Minutes before auto-reject of pending sign-off |
+| `MaxSprintDurationHours` | `int` | `48` | Hours before auto-cancel of active sprint |
+| `CheckIntervalMinutes` | `int` | `5` | Polling interval for the background service |
+
+Configuration section: `SprintTimeouts` in `appsettings.json`.
+
+### Entity Change
+
+`SprintEntity.SignOffRequestedAt` (`DateTime?`) — set when `AwaitingSignOff` becomes true, cleared on approve/reject/timeout. Persisted in the `sprints` table (migration: `AddSprintSignOffRequestedAt`). Exposed in `SprintSnapshot` DTO.
+
 ## Invariants
 
 1. **One active sprint per workspace**: `CreateSprintAsync` enforces this with a read-then-insert check. The index on `(WorkspacePath, Status)` is not unique — concurrent requests could theoretically race and create duplicates. In practice, sprint creation is single-threaded (triggered by one agent or one human via the command pipeline or REST API). The unique index on `(WorkspacePath, Number)` prevents duplicate numbering but not duplicate active status.
@@ -444,15 +479,16 @@ Tasks can be filtered by sprint: `getTasks(sprintId?)` passes the sprint ID as a
 | `SprintPreamblesTests.cs` | Preamble construction, role filtering | 19 tests |
 | `SprintServiceEventTests.cs` | Activity event emission | 17 tests |
 | `SprintMetricsTests.cs` | Per-sprint metrics and workspace-level summary | 15 tests |
+| `SprintTimeoutTests.cs` | Sign-off/duration timeout + background service | 19 tests |
 | `sprintPanel.test.ts` | Frontend panel rendering and interactions | 53 tests |
 | `sprintRealtime.test.ts` | Real-time event handling | 34 tests |
 
-**Total: 222 tests** across backend and frontend.
+**Total: 241 tests** across backend and frontend.
 
 ## Known Gaps
 
 - **No artifact content validation**: The typed record schemas (`RequirementsDocument`, `SprintPlanDocument`, etc.) are not enforced at the storage layer. Agents can store arbitrary JSON that doesn't conform to the expected schema.
-- **No sprint duration limits**: There's no timeout or maximum duration for a sprint. A sprint in `AwaitingSignOff` will block indefinitely until a human responds.
+- ~~**No sprint duration limits**: There's no timeout or maximum duration for a sprint. A sprint in `AwaitingSignOff` will block indefinitely until a human responds.~~ — **Resolved**: `SprintTimeoutService` background service checks every 5 minutes (configurable). Sign-off timeout auto-rejects after 4 hours (configurable). Sprint max duration auto-cancels after 48 hours (configurable). `SignOffRequestedAt` field on `SprintEntity` tracks sign-off entry time. Configurable via `SprintTimeoutSettings` (section: `SprintTimeouts`). Events include `reason: "timeout"` metadata. 19 tests.
 - ~~**No sprint metrics aggregation**: While individual events are tracked, there's no rollup of sprint-level metrics (total rounds, token cost per sprint, time per stage).~~ — **Resolved**: `GetSprintMetricsAsync` returns per-sprint rollup (duration, stage transitions, artifact/task counts, time per stage). `GetMetricsSummaryAsync` returns workspace-level averages. REST endpoints: `GET /api/sprints/{id}/metrics` and `GET /api/sprints/metrics/summary`. 15 tests.
 
 ## Revision History
@@ -462,3 +498,4 @@ Tasks can be filtered by sprint: `getTasks(sprintId?)` passes the sprint ID as a
 | 2026-04-11 | Initial spec — documenting implemented sprint system | — |
 | 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |
 | 2026-04-11 | Sprint metrics aggregation: per-sprint and workspace-level rollup endpoints with 15 tests | develop |
+| 2026-04-11 | Sprint duration limits: sign-off timeout (4h default), max duration (48h default), SprintTimeoutService background service, 19 tests | develop |

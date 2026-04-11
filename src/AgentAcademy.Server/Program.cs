@@ -6,6 +6,7 @@ using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Hubs;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
@@ -281,6 +282,11 @@ builder.Services.AddHostedService<CopilotAuthMonitorService>();
 
 // PR status sync (polls GitHub every 2 minutes for PR state changes)
 builder.Services.AddHostedService<PullRequestSyncService>();
+
+// Sprint timeout checking (auto-rejects stale sign-offs, auto-cancels overdue sprints)
+builder.Services.Configure<SprintTimeoutSettings>(
+    builder.Configuration.GetSection(SprintTimeoutSettings.SectionName));
+builder.Services.AddHostedService<SprintTimeoutService>();
 
 var app = builder.Build();
 
