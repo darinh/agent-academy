@@ -45,7 +45,7 @@ public interface IAgentExecutor
     CircuitState CircuitBreakerState { get; }
     Task MarkAuthDegradedAsync(CancellationToken ct = default);
     Task MarkAuthOperationalAsync(CancellationToken ct = default);
-    Task<string> RunAsync(AgentDefinition agent, string prompt, string? roomId, CancellationToken ct = default);
+    Task<string> RunAsync(AgentDefinition agent, string prompt, string? roomId, string? workspacePath = null, CancellationToken ct = default);
     Task InvalidateSessionAsync(string agentId, string? roomId);
     Task InvalidateRoomSessionsAsync(string roomId);
     Task InvalidateAllSessionsAsync();
@@ -60,7 +60,7 @@ public interface IAgentExecutor
 | `CircuitBreakerState` | Current circuit breaker state: `Closed` (normal), `Open` (fallback), `HalfOpen` (probing) |
 | `MarkAuthDegradedAsync` | Transitions to auth-degraded; emits room notice + notifications on first failure |
 | `MarkAuthOperationalAsync` | Transitions back to auth-operational; emits recovery notice on state change |
-| `RunAsync` | Sends prompt, returns complete response text |
+| `RunAsync` | Sends prompt, returns complete response text. Optional `workspacePath` creates/uses a worktree-scoped CopilotClient. |
 | `InvalidateSessionAsync` | Disposes a single cached session |
 | `InvalidateRoomSessionsAsync` | Disposes all sessions for a room |
 | `InvalidateAllSessionsAsync` | Disposes all sessions across all rooms and agents |
@@ -87,7 +87,8 @@ Key behaviors:
 - **Auth failure handling**: On definitive auth failure, the executor sets `IsAuthFailed = true`, posts a re-authentication notice to the main room, and notifies via the notification system. When the user re-authenticates (token changes), the flag is cleared and a recovery message is posted automatically.
 - **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state. Before probing, the monitor checks if the token is expiring soon (within 30 minutes); if so, it proactively refreshes via `ICopilotAuthProbe.RefreshTokenAsync()`. On auth failure, a refresh is attempted before degrading the system.
 - **Permission handling**: Sessions use `AgentPermissionHandler.Create()` which approves tool calls for the registered tools. When no tools are registered for an agent, all permissions are approved (same as `PermissionHandler.ApproveAll`). The handler logs all permission requests for diagnostics.
-- **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`.
+- **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`. Worktree-scoped sessions use the key `{worktreePath}:{agentId}:{roomId}`.
+- **Per-worktree CopilotClient**: When an agent works in a git worktree (breakout room), a dedicated `CopilotClient` is created with `Cwd` set to the worktree directory, ensuring the CLI's built-in tools operate in the correct filesystem location. Worktree clients are stored in a `ConcurrentDictionary<string, CopilotClient>` keyed by path. Lifecycle: created on first use per worktree path, disposed when the breakout room closes, and all worktree clients are disposed on token rotation. `EnsureWorktreeClientAsync` avoids deadlocks by returning `null` (caller falls back to the default client) rather than calling `EnsureClientAsync` while holding the lock.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity. The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
 - **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
