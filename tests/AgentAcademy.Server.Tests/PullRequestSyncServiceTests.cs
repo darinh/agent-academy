@@ -131,6 +131,8 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<RoomService>();
         sc.AddScoped<CrashRecoveryService>();
         sc.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        sc.AddScoped<InitializationService>();
+        sc.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         sc.AddScoped<WorkspaceRuntime>();
         sc.AddSingleton(_github);
 
@@ -406,6 +408,8 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService);
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, _activityPublisher, sessionService, messageService);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService);
         _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, taskQueries, agentLocations),
@@ -414,7 +418,8 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
                 new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService)),
             agentLocations,
             planService,
-            crashRecovery);
+            crashRecovery,
+            initializationService);
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 

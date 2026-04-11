@@ -52,6 +52,7 @@ public sealed class WorkspaceRuntime
     private readonly AgentLocationService _agentLocations;
     private readonly PlanService _plans;
     private readonly CrashRecoveryService _crashRecovery;
+    private readonly InitializationService _initialization;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -67,7 +68,8 @@ public sealed class WorkspaceRuntime
         RoomService rooms,
         AgentLocationService agentLocations,
         PlanService plans,
-        CrashRecoveryService crashRecovery)
+        CrashRecoveryService crashRecovery,
+        InitializationService initialization)
     {
         _db = db;
         _logger = logger;
@@ -83,6 +85,7 @@ public sealed class WorkspaceRuntime
         _agentLocations = agentLocations;
         _plans = plans;
         _crashRecovery = crashRecovery;
+        _initialization = initialization;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -109,93 +112,10 @@ public sealed class WorkspaceRuntime
     /// Call once at startup within a scope.
     /// Also tracks server instance lifecycle for crash detection.
     /// </summary>
-    public async Task InitializeAsync()
-    {
-        // ── Server Instance Tracking ────────────────────────────
-        await RecordServerInstanceAsync();
-
-        var defaultRoomId = _catalog.DefaultRoomId;
-        var activeWorkspace = await GetActiveWorkspacePathAsync();
-
-        // When a workspace is active, EnsureDefaultRoomForWorkspaceAsync handles room creation.
-        // Only create the legacy "main" room when no workspace exists (first boot).
-        if (activeWorkspace is null)
-        {
-            var existing = await _db.Rooms.FindAsync(defaultRoomId);
-
-            if (existing is null)
-            {
-                var now = DateTime.UtcNow;
-                var room = new RoomEntity
-                {
-                    Id = defaultRoomId,
-                    Name = _catalog.DefaultRoomName,
-                    Status = nameof(RoomStatus.Idle),
-                    CurrentPhase = nameof(CollaborationPhase.Intake),
-                    CreatedAt = now,
-                    UpdatedAt = now
-                };
-                _db.Rooms.Add(room);
-
-                var welcomeMsg = new MessageEntity
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    RoomId = defaultRoomId,
-                    SenderId = "system",
-                    SenderName = "System",
-                    SenderKind = nameof(MessageSenderKind.System),
-                    Kind = nameof(MessageKind.System),
-                    Content = "Collaboration host started. Agents are loading.",
-                    SentAt = now
-                };
-                _db.Messages.Add(welcomeMsg);
-
-                await _db.SaveChangesAsync();
-
-                Publish(ActivityEventType.RoomCreated, defaultRoomId, null, null,
-                    $"Default room created: {_catalog.DefaultRoomName}");
-
-                foreach (var agent in _catalog.Agents)
-                {
-                    Publish(ActivityEventType.AgentLoaded, defaultRoomId, agent.Id, null,
-                        $"Agent loaded: {agent.Name} ({agent.Role})");
-                }
-
-                _logger.LogInformation("Created default room '{RoomName}' with {AgentCount} agents",
-                    _catalog.DefaultRoomName, _catalog.Agents.Count);
-            }
-        }
-
-        var startupMainRoomId = await ResolveStartupMainRoomIdAsync(activeWorkspace);
-
-        // Initialize agent locations for any agent not already tracked
-        foreach (var agent in _catalog.Agents)
-        {
-            var loc = await _db.AgentLocations.FindAsync(agent.Id);
-            if (loc is null)
-            {
-                _db.AgentLocations.Add(new AgentLocationEntity
-                {
-                    AgentId = agent.Id,
-                    RoomId = defaultRoomId,
-                    State = nameof(AgentState.Idle),
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
-        }
-
-        await _db.SaveChangesAsync();
-    }
+    public Task InitializeAsync()
+        => _initialization.InitializeAsync();
 
     // ── Server Instance Tracking (delegated to CrashRecoveryService) ──
-
-    /// <summary>
-    /// Records a new server instance and detects if the previous one crashed
-    /// (had no clean shutdown). The current instance ID is stored in
-    /// <see cref="CurrentInstanceId"/> for the health endpoint.
-    /// </summary>
-    private Task RecordServerInstanceAsync()
-        => _crashRecovery.RecordServerInstanceAsync();
 
     /// <summary>
     /// The ID of the current server instance. Set during <see cref="InitializeAsync"/>.
@@ -919,9 +839,6 @@ public sealed class WorkspaceRuntime
         string roomId, MessageKind kind, string content,
         string? correlationId, DateTime sentAt)
         => _messages.CreateMessageEntity(roomId, kind, content, correlationId, sentAt);
-
-    private Task<string> ResolveStartupMainRoomIdAsync(string? activeWorkspace)
-        => _rooms.ResolveStartupMainRoomIdAsync(activeWorkspace);
 
     private Task TrimMessagesAsync(string roomId)
         => _messages.TrimMessagesAsync(roomId);

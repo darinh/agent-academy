@@ -53,6 +53,8 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddScoped<RoomService>();
         services.AddScoped<CrashRecoveryService>();
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<WorkspaceRuntime>();
         services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
