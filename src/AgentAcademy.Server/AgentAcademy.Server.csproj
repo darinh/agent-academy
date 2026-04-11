@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <PackageReference Include="Discord.Net" Version="3.19.1" />
-    <PackageReference Include="GitHub.Copilot.SDK" Version="0.2.1" />
+    <PackageReference Include="GitHub.Copilot.SDK" Version="0.2.2" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.25" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
