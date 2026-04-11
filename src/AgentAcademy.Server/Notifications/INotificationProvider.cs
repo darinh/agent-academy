@@ -21,6 +21,12 @@ public interface INotificationProvider
     bool IsConnected { get; }
 
     /// <summary>
+    /// The most recent connection error message, or null if the last connection succeeded.
+    /// Surfaced in the provider status API so the UI can explain why a configured provider is not connected.
+    /// </summary>
+    string? LastError => null;
+
+    /// <summary>
     /// Applies provider-specific configuration (e.g., API tokens, webhook URLs).
     /// </summary>
     /// <param name="configuration">Key-value pairs matching the provider's <see cref="GetConfigSchema"/> fields.</param>

@@ -45,7 +45,8 @@ public class NotificationController : ControllerBase
                 p.ProviderId,
                 p.DisplayName,
                 p.IsConfigured,
-                p.IsConnected))
+                p.IsConnected,
+                p.LastError))
             .ToList();
 
         return Ok(providers);
@@ -139,7 +140,8 @@ public class NotificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to connect provider '{ProviderId}'", id);
-            return StatusCode(500, new { error = "Failed to connect provider" });
+            var detail = provider.LastError ?? "Connection failed. Check server logs for details.";
+            return StatusCode(500, new { error = $"Failed to connect provider: {detail}" });
         }
     }
 
@@ -227,7 +229,8 @@ public record ProviderStatusDto(
     string ProviderId,
     string DisplayName,
     bool IsConfigured,
-    bool IsConnected
+    bool IsConnected,
+    string? LastError
 );
 
 /// <summary>

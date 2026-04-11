@@ -405,6 +405,10 @@ export function DiscordInstructions({
         <li>Click <strong>New Application</strong> and give it a name</li>
         <li>Navigate to <strong>Bot</strong> in the left sidebar</li>
         <li>Click <strong>Reset Token</strong> and copy the token (you'll need it in the next step)</li>
+        <li>
+          Still on the <strong>Bot</strong> page, scroll to <strong>Privileged Gateway Intents</strong> and
+          enable <strong>MESSAGE CONTENT INTENT</strong> — this is required for the bot to read human replies
+        </li>
       </ol>
 
       <p style={{ marginTop: 16 }}>

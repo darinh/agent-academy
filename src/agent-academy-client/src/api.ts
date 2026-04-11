@@ -894,6 +894,7 @@ export interface ProviderStatus {
   displayName: string;
   isConfigured: boolean;
   isConnected: boolean;
+  lastError: string | null;
 }
 
 export interface ConfigField {

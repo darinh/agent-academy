@@ -57,6 +57,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
     }
 
+    private string? _lastError;
+
     /// <inheritdoc />
     public string ProviderId => "discord";
 
@@ -68,6 +70,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     /// <inheritdoc />
     public bool IsConnected => _client?.ConnectionState == ConnectionState.Connected;
+
+    /// <inheritdoc />
+    public string? LastError => _lastError;
 
     /// <inheritdoc />
     public Task ConfigureAsync(Dictionary<string, string> configuration, CancellationToken cancellationToken = default)
@@ -106,6 +111,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
+            _lastError = null; // Clear previous error on each connect attempt
+
             if (IsConnected)
             {
                 _logger.LogDebug("Discord provider is already connected");
@@ -130,6 +137,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _client.Log += OnDiscordLog;
 
             _readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            string? disconnectReason = null;
 
             _client.Ready += () =>
             {
@@ -140,6 +148,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _client.Disconnected += ex =>
             {
                 _logger.LogWarning(ex, "Discord client disconnected");
+                disconnectReason = ExtractDisconnectReason(ex);
                 _readyTcs?.TrySetResult(false);
                 return Task.CompletedTask;
             };
@@ -147,7 +156,16 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             // Persistent handler for routing replies from agent channels back to rooms
             _client.MessageReceived += OnAgentChannelMessageReceived;
 
-            await _client.LoginAsync(TokenType.Bot, _botToken);
+            try
+            {
+                await _client.LoginAsync(TokenType.Bot, _botToken);
+            }
+            catch (ArgumentException ex)
+            {
+                _lastError = $"Invalid bot token: {ex.Message}";
+                await DisposeClientAsync();
+                throw;
+            }
             await _client.StartAsync();
 
             // Wait for Ready event with timeout
@@ -160,20 +178,25 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 if (!ready)
                 {
                     await DisposeClientAsync();
-                    throw new InvalidOperationException("Discord client failed to reach Ready state.");
+                    _lastError = disconnectReason
+                        ?? "Discord client failed to reach Ready state. Check bot token and Message Content Intent in Discord Developer Portal.";
+                    throw new InvalidOperationException(_lastError);
                 }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 await DisposeClientAsync();
+                _lastError = "Discord client did not become ready within 30 seconds. Check bot token and network connectivity.";
                 throw new TimeoutException("Discord client did not become ready within 30 seconds.");
             }
-            catch (Exception) when (_client is not null)
+            catch (Exception ex) when (_client is not null)
             {
                 await DisposeClientAsync();
+                _lastError ??= $"Discord connection failed: {ex.Message}";
                 throw;
             }
 
+            _lastError = null; // Connected successfully — clear any previous error
             _logger.LogInformation("Discord provider connected as {BotUser}", _client.CurrentUser?.Username ?? "unknown");
 
             // Rebuild channel mapping from existing Discord state (survives restarts)
@@ -1372,6 +1395,36 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         _logger.Log(level, logMessage.Exception, "Discord: {Message}", logMessage.Message);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Extracts a user-friendly error message from the disconnect exception chain.
+    /// Discord close code 4014 = privileged intent not enabled in the Developer Portal.
+    /// HTTP 401 = invalid/expired bot token.
+    /// </summary>
+    private static string? ExtractDisconnectReason(Exception? ex)
+    {
+        var current = ex;
+        while (current is not null)
+        {
+            var msg = current.Message;
+            if (msg.Contains("4014", StringComparison.Ordinal) || msg.Contains("Disallowed intent", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Discord rejected the connection: privileged Message Content Intent is not enabled. "
+                     + "Go to https://discord.com/developers/applications → your bot → Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT, then reconnect.";
+            }
+            if (msg.Contains("4004", StringComparison.Ordinal) || msg.Contains("Authentication failed", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Discord rejected the bot token — it may be invalid or revoked. Regenerate the token in the Discord Developer Portal and reconfigure.";
+            }
+            if (msg.Contains("401", StringComparison.Ordinal) && msg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Discord returned 401 Unauthorized — the bot token is invalid, expired, or was never a bot token. "
+                     + "Go to https://discord.com/developers/applications → your bot → Bot → Reset Token, then reconfigure with the new token.";
+            }
+            current = current.InnerException;
+        }
+        return null;
     }
 
     private async Task DisposeClientAsync()

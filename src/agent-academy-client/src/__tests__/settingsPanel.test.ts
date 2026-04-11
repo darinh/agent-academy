@@ -44,6 +44,7 @@ function makeProvider(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
     displayName: "Discord",
     isConfigured: true,
     isConnected: true,
+    lastError: null,
     ...overrides,
   };
 }

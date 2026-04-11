@@ -670,6 +670,11 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                           )}
                         </div>
                       </div>
+                      {!p.isConnected && p.lastError && (
+                        <div style={{ padding: "6px 12px", fontSize: 12, color: "var(--colorStatusDangerForeground1, #d13438)", background: "var(--colorStatusDangerBackground1, #fde7e9)", borderRadius: 4, margin: "4px 0" }}>
+                          ⚠ {p.lastError}
+                        </div>
+                      )}
                       {expandedProvider === p.providerId && (
                         <div className={s.wizardContainer}>
                           <NotificationSetupWizard providerId={p.providerId} inline onClose={handleSetupComplete} />
