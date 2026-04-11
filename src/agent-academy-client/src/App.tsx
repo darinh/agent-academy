@@ -160,6 +160,7 @@ function AppShell() {
     connectionStatus,
     breakoutRooms,
     sprintVersion,
+    lastSprintEvent,
     err,
     busy,
     tab,
@@ -774,7 +775,7 @@ function AppShell() {
                   {tab === "commands" && (
                     <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
                   )}
-                  {tab === "sprint" && <SprintPanel sprintVersion={sprintVersion} />}
+                  {tab === "sprint" && <SprintPanel sprintVersion={sprintVersion} lastSprintEvent={lastSprintEvent} />}
                   {tab === "timeline" && (
                     <TimelinePanel activity={activity} loading={busy} />
                   )}

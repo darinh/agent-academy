@@ -19,11 +19,13 @@ import type {
   SprintArtifact,
   SprintStage,
   SprintStatus,
+  SprintRealtimeEvent,
 } from "./api";
 import {
   getActiveSprint,
   getSprints,
   getSprintDetail,
+  getSprintArtifacts,
   startSprint,
   advanceSprint,
   completeSprint,
@@ -417,7 +419,13 @@ const useLocalStyles = makeStyles({
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: number }) {
+export default function SprintPanel({
+  sprintVersion = 0,
+  lastSprintEvent,
+}: {
+  sprintVersion?: number;
+  lastSprintEvent?: SprintRealtimeEvent | null;
+}) {
   const s = useLocalStyles();
 
   const [loading, setLoading] = useState(true);
@@ -434,11 +442,17 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
     new Set(),
   );
   const mountedRef = useRef(true);
+  const reconcileTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastHandledEventRef = useRef<string | null>(null);
+  const artifactFetchSeqRef = useRef(0);
+  // Tracks the sprintVersion that was last handled by an optimistic update
+  const optimisticVersionRef = useRef(-1);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
     };
   }, []);
 
@@ -502,21 +516,179 @@ export default function SprintPanel({ sprintVersion = 0 }: { sprintVersion?: num
     fetchData();
   }, [fetchData]);
 
-  // Re-fetch when SignalR sprint events arrive
+  // Schedule a debounced reconciliation fetch (replaces immediate refetch on every event)
+  const scheduleReconcile = useCallback(() => {
+    if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
+    reconcileTimerRef.current = setTimeout(() => {
+      fetchData();
+    }, 1500);
+  }, [fetchData]);
+
+  // Handle real-time sprint events with optimistic updates
+  useEffect(() => {
+    if (!lastSprintEvent || lastSprintEvent.eventId === lastHandledEventRef.current) return;
+    lastHandledEventRef.current = lastSprintEvent.eventId;
+    optimisticVersionRef.current = sprintVersion;
+    const { type, sprintId, metadata } = lastSprintEvent;
+
+    switch (type) {
+      case "SprintStageAdvanced": {
+        const action = metadata.action as string | undefined;
+        const currentStage = metadata.currentStage as SprintStage | undefined;
+        const pendingStage = metadata.pendingStage as SprintStage | undefined;
+
+        // Optimistically update the active sprint's stage/sign-off state
+        setActiveSprint((prev) => {
+          if (!prev || prev.sprint.id !== sprintId) return prev;
+          const updated = { ...prev, sprint: { ...prev.sprint } };
+          if (action === "signoff_requested") {
+            updated.sprint.awaitingSignOff = true;
+            updated.sprint.pendingStage = pendingStage ?? null;
+          } else if (action === "advanced" || action === "approved") {
+            if (currentStage) updated.sprint.currentStage = currentStage;
+            updated.sprint.awaitingSignOff = false;
+            updated.sprint.pendingStage = null;
+          } else if (action === "rejected") {
+            updated.sprint.awaitingSignOff = false;
+            updated.sprint.pendingStage = null;
+          }
+          return updated;
+        });
+
+        // Update selected detail if viewing this sprint
+        setSelectedDetail((prev) => {
+          if (!prev || prev.sprint.id !== sprintId) return prev;
+          const updated = { ...prev, sprint: { ...prev.sprint } };
+          if (action === "signoff_requested") {
+            updated.sprint.awaitingSignOff = true;
+            updated.sprint.pendingStage = pendingStage ?? null;
+          } else if (action === "advanced" || action === "approved") {
+            if (currentStage) {
+              updated.sprint.currentStage = currentStage;
+              setSelectedStage(currentStage);
+            }
+            updated.sprint.awaitingSignOff = false;
+            updated.sprint.pendingStage = null;
+          } else if (action === "rejected") {
+            updated.sprint.awaitingSignOff = false;
+            updated.sprint.pendingStage = null;
+          }
+          return updated;
+        });
+
+        // Update history snapshot
+        setHistory((prev) =>
+          prev.map((snap) => {
+            if (snap.id !== sprintId) return snap;
+            const updated = { ...snap };
+            if (action === "signoff_requested") {
+              updated.awaitingSignOff = true;
+              updated.pendingStage = pendingStage ?? null;
+            } else if (action === "advanced" || action === "approved") {
+              if (currentStage) updated.currentStage = currentStage;
+              updated.awaitingSignOff = false;
+              updated.pendingStage = null;
+            } else if (action === "rejected") {
+              updated.awaitingSignOff = false;
+              updated.pendingStage = null;
+            }
+            return updated;
+          }),
+        );
+
+        scheduleReconcile();
+        break;
+      }
+
+      case "SprintArtifactStored": {
+        // Fetch updated artifacts for the affected sprint
+        const affectedStage = metadata.stage as SprintStage | undefined;
+        if (sprintId === selectedSprintIdRef.current) {
+          const seq = ++artifactFetchSeqRef.current;
+          getSprintArtifacts(sprintId, affectedStage ?? undefined)
+            .then((artifacts) => {
+              // Ignore stale responses from earlier fetches
+              if (!mountedRef.current || artifactFetchSeqRef.current !== seq) return;
+              setSelectedDetail((prev) => {
+                if (!prev || prev.sprint.id !== sprintId) return prev;
+                if (affectedStage) {
+                  // Merge: replace artifacts for this stage, keep others
+                  const otherArtifacts = prev.artifacts.filter((a) => a.stage !== affectedStage);
+                  return { ...prev, artifacts: [...otherArtifacts, ...artifacts] };
+                }
+                return { ...prev, artifacts };
+              });
+              // Also update activeSprint if it matches
+              setActiveSprint((prev) => {
+                if (!prev || prev.sprint.id !== sprintId) return prev;
+                if (affectedStage) {
+                  const otherArtifacts = prev.artifacts.filter((a) => a.stage !== affectedStage);
+                  return { ...prev, artifacts: [...otherArtifacts, ...artifacts] };
+                }
+                return { ...prev, artifacts };
+              });
+            })
+            .catch(() => { /* ignore — reconcile will fix */ });
+        }
+        scheduleReconcile();
+        break;
+      }
+
+      case "SprintStarted":
+        // New sprint — full refetch to get the snapshot
+        fetchData();
+        break;
+
+      case "SprintCompleted": {
+        const status = metadata.status as SprintStatus | undefined;
+        // Optimistically mark sprint as completed/cancelled
+        setActiveSprint((prev) => {
+          if (!prev || prev.sprint.id !== sprintId) return prev;
+          return {
+            ...prev,
+            sprint: {
+              ...prev.sprint,
+              status: status ?? "Completed",
+              completedAt: new Date().toISOString(),
+            },
+          };
+        });
+        setSelectedDetail((prev) => {
+          if (!prev || prev.sprint.id !== sprintId) return prev;
+          return {
+            ...prev,
+            sprint: {
+              ...prev.sprint,
+              status: status ?? "Completed",
+              completedAt: new Date().toISOString(),
+            },
+          };
+        });
+        setHistory((prev) =>
+          prev.map((snap) =>
+            snap.id === sprintId
+              ? { ...snap, status: status ?? "Completed", completedAt: new Date().toISOString() }
+              : snap,
+          ),
+        );
+        scheduleReconcile();
+        break;
+      }
+    }
+  }, [lastSprintEvent, sprintVersion, fetchData, scheduleReconcile]);
+
+  // Fallback: re-fetch on sprintVersion change if no structured event handled it
+  // (e.g., events without metadata from older server versions)
   const prevVersionRef = useRef(sprintVersion);
   useEffect(() => {
     if (sprintVersion !== prevVersionRef.current) {
       prevVersionRef.current = sprintVersion;
-      fetchData();
-      // Also refresh detail for a non-active selected sprint
-      const sel = selectedSprintIdRef.current;
-      if (sel && (!activeSprint || activeSprint.sprint.id !== sel)) {
-        getSprintDetail(sel).then((detail) => {
-          if (mountedRef.current && detail) setSelectedDetail(detail);
-        }).catch(() => { /* ignore */ });
+      // Only refetch if this version bump was NOT handled by the optimistic path
+      if (optimisticVersionRef.current !== sprintVersion) {
+        fetchData();
       }
     }
-  }, [sprintVersion, fetchData, activeSprint]);
+  }, [sprintVersion, fetchData]);
 
   const handleSelectSprint = useCallback(
     async (id: string) => {

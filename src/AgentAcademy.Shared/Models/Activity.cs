@@ -13,7 +13,8 @@ public record ActivityEvent(
     string? TaskId,
     string Message,
     string? CorrelationId,
-    DateTime OccurredAt
+    DateTime OccurredAt,
+    Dictionary<string, object?>? Metadata = null
 );
 
 /// <summary>

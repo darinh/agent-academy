@@ -92,6 +92,7 @@ export interface ActivityEvent {
   message: string;
   correlationId?: string | null;
   occurredAt: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface AgentGitIdentity {
@@ -1246,6 +1247,22 @@ export interface SprintDetailResponse {
 export interface SprintListResponse {
   sprints: SprintSnapshot[];
   totalCount: number;
+}
+
+// ── Sprint real-time event types ──────────────────────────────
+
+export type SprintEventAction =
+  | "advanced"
+  | "signoff_requested"
+  | "approved"
+  | "rejected";
+
+export interface SprintRealtimeEvent {
+  eventId: string;
+  type: ActivityEventType;
+  sprintId: string;
+  metadata: Record<string, unknown>;
+  receivedAt: number;
 }
 
 export async function getActiveSprint(): Promise<SprintDetailResponse | null> {

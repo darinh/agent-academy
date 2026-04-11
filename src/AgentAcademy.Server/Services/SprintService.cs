@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
@@ -125,10 +126,18 @@ public sealed class SprintService
             });
         }
 
-        Publish(ActivityEventType.SprintStarted, null, null, null,
-            $"Sprint #{sprint.Number} started for workspace {workspacePath}");
+        QueueEvent(ActivityEventType.SprintStarted, null, null, null,
+            $"Sprint #{sprint.Number} started for workspace {workspacePath}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprint.Id,
+                ["sprintNumber"] = sprint.Number,
+                ["status"] = "Active",
+                ["currentStage"] = Stages[0],
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "Created sprint #{Number} ({Id}) for workspace {Workspace}{Overflow}",
@@ -206,10 +215,20 @@ public sealed class SprintService
             existing.Content = content;
             existing.UpdatedAt = DateTime.UtcNow;
 
-            Publish(ActivityEventType.SprintArtifactStored, null, agentId, null,
-                $"Artifact '{type}' updated for sprint stage {stage}");
+            QueueEvent(ActivityEventType.SprintArtifactStored, null, agentId, null,
+                $"Artifact '{type}' updated for sprint stage {stage}",
+                new Dictionary<string, object?>
+                {
+                    ["sprintId"] = sprintId,
+                    ["artifactId"] = existing.Id,
+                    ["stage"] = stage,
+                    ["artifactType"] = type,
+                    ["createdByAgentId"] = agentId,
+                    ["isUpdate"] = true,
+                });
 
             await _db.SaveChangesAsync();
+            FlushEvents();
 
             _logger.LogInformation(
                 "Updated artifact {Type} for sprint {SprintId} stage {Stage}",
@@ -230,10 +249,19 @@ public sealed class SprintService
 
         _db.SprintArtifacts.Add(artifact);
 
-        Publish(ActivityEventType.SprintArtifactStored, null, agentId, null,
-            $"Artifact '{type}' stored for sprint stage {stage}");
+        QueueEvent(ActivityEventType.SprintArtifactStored, null, agentId, null,
+            $"Artifact '{type}' stored for sprint stage {stage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["stage"] = stage,
+                ["artifactType"] = type,
+                ["createdByAgentId"] = agentId,
+                ["isUpdate"] = false,
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "Stored artifact {Type} for sprint {SprintId} stage {Stage} by {Agent}",
@@ -315,10 +343,19 @@ public sealed class SprintService
             sprint.AwaitingSignOff = true;
             sprint.PendingStage = Stages[currentIndex + 1];
 
-            Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
-                $"Sprint #{sprint.Number} awaiting user sign-off to advance from {sprint.CurrentStage} → {sprint.PendingStage}");
+            QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+                $"Sprint #{sprint.Number} awaiting user sign-off to advance from {sprint.CurrentStage} → {sprint.PendingStage}",
+                new Dictionary<string, object?>
+                {
+                    ["sprintId"] = sprintId,
+                    ["action"] = "signoff_requested",
+                    ["currentStage"] = sprint.CurrentStage,
+                    ["pendingStage"] = sprint.PendingStage,
+                    ["awaitingSignOff"] = true,
+                });
 
             await _db.SaveChangesAsync();
+            FlushEvents();
 
             _logger.LogInformation(
                 "Sprint #{Number} ({Id}) awaiting sign-off: {Current} → {Pending}",
@@ -330,10 +367,19 @@ public sealed class SprintService
         var previousStage = sprint.CurrentStage;
         sprint.CurrentStage = Stages[currentIndex + 1];
 
-        Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
-            $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}");
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "advanced",
+                ["previousStage"] = previousStage,
+                ["currentStage"] = sprint.CurrentStage,
+                ["awaitingSignOff"] = false,
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "Advanced sprint #{Number} ({Id}) from {Previous} → {Current}",
@@ -360,10 +406,19 @@ public sealed class SprintService
         sprint.AwaitingSignOff = false;
         sprint.PendingStage = null;
 
-        Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
-            $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}");
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advanced (user approved): {previousStage} → {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "approved",
+                ["previousStage"] = previousStage,
+                ["currentStage"] = sprint.CurrentStage,
+                ["awaitingSignOff"] = false,
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "User approved sprint #{Number} ({Id}) advance: {Previous} → {Current}",
@@ -389,10 +444,18 @@ public sealed class SprintService
         sprint.AwaitingSignOff = false;
         sprint.PendingStage = null;
 
-        Publish(ActivityEventType.SprintStageAdvanced, null, null, null,
-            $"Sprint #{sprint.Number} advance rejected by user — staying at {sprint.CurrentStage}");
+        QueueEvent(ActivityEventType.SprintStageAdvanced, null, null, null,
+            $"Sprint #{sprint.Number} advance rejected by user — staying at {sprint.CurrentStage}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["action"] = "rejected",
+                ["currentStage"] = sprint.CurrentStage,
+                ["awaitingSignOff"] = false,
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "User rejected sprint #{Number} ({Id}) advance from {Current} → {Pending}",
@@ -439,10 +502,16 @@ public sealed class SprintService
         sprint.Status = "Completed";
         sprint.CompletedAt = DateTime.UtcNow;
 
-        Publish(ActivityEventType.SprintCompleted, null, null, null,
-            $"Sprint #{sprint.Number} completed for workspace {sprint.WorkspacePath}");
+        QueueEvent(ActivityEventType.SprintCompleted, null, null, null,
+            $"Sprint #{sprint.Number} completed for workspace {sprint.WorkspacePath}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["status"] = "Completed",
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "Completed sprint #{Number} ({Id}) for workspace {Workspace}",
@@ -466,10 +535,16 @@ public sealed class SprintService
         sprint.Status = "Cancelled";
         sprint.CompletedAt = DateTime.UtcNow;
 
-        Publish(ActivityEventType.SprintCompleted, null, null, null,
-            $"Sprint #{sprint.Number} cancelled for workspace {sprint.WorkspacePath}");
+        QueueEvent(ActivityEventType.SprintCompleted, null, null, null,
+            $"Sprint #{sprint.Number} cancelled for workspace {sprint.WorkspacePath}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["status"] = "Cancelled",
+            });
 
         await _db.SaveChangesAsync();
+        FlushEvents();
 
         _logger.LogInformation(
             "Cancelled sprint #{Number} ({Id}) for workspace {Workspace}",
@@ -502,8 +577,11 @@ public sealed class SprintService
         return idx >= 0 && idx < Stages.Count - 1 ? Stages[idx + 1] : null;
     }
 
-    private void Publish(
-        ActivityEventType type, string? roomId, string? actorId, string? taskId, string message)
+    private readonly List<ActivityEvent> _pendingEvents = [];
+
+    private void QueueEvent(
+        ActivityEventType type, string? roomId, string? actorId, string? taskId, string message,
+        Dictionary<string, object?>? metadata = null)
     {
         var evt = new ActivityEvent(
             Id: Guid.NewGuid().ToString("N"),
@@ -514,7 +592,8 @@ public sealed class SprintService
             TaskId: taskId,
             Message: message,
             CorrelationId: null,
-            OccurredAt: DateTime.UtcNow
+            OccurredAt: DateTime.UtcNow,
+            Metadata: metadata
         );
 
         _db.ActivityEvents.Add(new ActivityEventEntity
@@ -528,8 +607,20 @@ public sealed class SprintService
             Message = evt.Message,
             CorrelationId = evt.CorrelationId,
             OccurredAt = evt.OccurredAt,
+            MetadataJson = metadata is not null ? JsonSerializer.Serialize(metadata) : null,
         });
 
-        _activityBus.Broadcast(evt);
+        _pendingEvents.Add(evt);
+    }
+
+    /// <summary>
+    /// Broadcasts all queued events. Call AFTER SaveChangesAsync to ensure
+    /// subscribers never see events for uncommitted data.
+    /// </summary>
+    private void FlushEvents()
+    {
+        foreach (var evt in _pendingEvents)
+            _activityBus.Broadcast(evt);
+        _pendingEvents.Clear();
     }
 }

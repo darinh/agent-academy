@@ -234,6 +234,30 @@ The frontend connects to the server's SignalR hub at `/hubs/activity` via `@micr
 | `TaskCreated` | Trigger refresh |
 | `PhaseChanged` | Trigger refresh |
 | `PresenceUpdated` | Trigger refresh |
+| `SprintStarted` | Extract metadata → optimistic update + reconcile |
+| `SprintStageAdvanced` | Extract metadata → optimistic update + reconcile |
+| `SprintArtifactStored` | Extract metadata → targeted artifact fetch + reconcile |
+| `SprintCompleted` | Extract metadata → optimistic update + reconcile |
+
+### Sprint Real-Time Updates
+
+Sprint events carry structured `metadata` payloads on `ActivityEvent` (added as `Dictionary<string, object?>? Metadata` on the shared model, persisted as `MetadataJson` on the entity). The `SprintService` queues events before `SaveChangesAsync` but only broadcasts them **after** the commit succeeds (`QueueEvent` + `FlushEvents` pattern), preventing subscribers from seeing uncommitted state.
+
+**Event metadata payloads:**
+
+| Event | Key Fields |
+|-------|-----------|
+| `SprintStarted` | `sprintId`, `sprintNumber`, `status`, `currentStage` |
+| `SprintStageAdvanced` | `sprintId`, `action` (`advanced`/`signoff_requested`/`approved`/`rejected`), `currentStage`, `pendingStage`, `awaitingSignOff` |
+| `SprintArtifactStored` | `sprintId`, `stage`, `artifactType`, `createdByAgentId`, `isUpdate` |
+| `SprintCompleted` | `sprintId`, `status` (`Completed`/`Cancelled`) |
+
+**Frontend handling (`SprintPanel`):**
+- **Optimistic updates**: Stage transitions, sign-off state, and completion status are applied immediately from metadata without waiting for an API response.
+- **Targeted artifact fetch**: Artifact events trigger `getSprintArtifacts(sprintId, stage)` for just the affected stage, with a sequence counter to discard stale responses from out-of-order fetches.
+- **Debounced reconciliation**: A 1.5-second trailing reconciliation fetch replaces the previous immediate full-refetch-on-every-event pattern, reducing API load during rapid sprint activity.
+- **Event deduplication**: Processed event IDs are tracked in a `Set` (capped at 200 entries) to prevent duplicate processing on SSE reconnect replay.
+- **Fallback**: If an event arrives without metadata (e.g., from a pre-upgrade server), the fallback `sprintVersion` path triggers a full refetch.
 
 ### Sidebar Agent Display
 
@@ -460,7 +484,7 @@ interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
 ## Future Work
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
-- Sprint panel: SignalR integration for real-time stage/artifact updates
+- ~~Sprint panel: SignalR integration for real-time stage/artifact updates~~ **RESOLVED** — Sprint events carry structured `metadata` payloads (sprintId, stage, action, status). `SprintPanel` applies optimistic updates for stage transitions, sign-off state, and completion. Artifact events trigger targeted fetch with stale-response protection. Debounced reconciliation (1.5s) replaces immediate full refetch. Event deduplication prevents replay issues on reconnect. Committed in this session.
 - ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **RESOLVED** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown. Committed in `08a7447`.
 - ~~Sprint panel: Sprint metrics (time per stage, artifact word counts)~~ **RESOLVED** — `SprintPanel.tsx` shows time-in-stage durations and artifact word counts. Committed in `9fe6d1f`.
 - SSE activity stream integration

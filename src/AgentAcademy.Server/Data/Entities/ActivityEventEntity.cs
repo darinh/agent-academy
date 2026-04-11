@@ -16,6 +16,9 @@ public class ActivityEventEntity
     public string? CorrelationId { get; set; }
     public DateTime OccurredAt { get; set; }
 
+    /// <summary>JSON-serialized metadata payload for structured event data.</summary>
+    public string? MetadataJson { get; set; }
+
     // Navigation properties
     public RoomEntity? Room { get; set; }
 }
