@@ -231,6 +231,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<TokenPersistenceSe
 builder.Services.AddSingleton<LlmUsageTracker>();
 builder.Services.AddSingleton<AgentErrorTracker>();
 builder.Services.AddSingleton<AgentQuotaService>();
+builder.Services.AddSingleton<AgentAnalyticsService>();
 
 // SDK tool calling — tool functions use IServiceScopeFactory for scoped service access
 builder.Services.AddSingleton<AgentToolFunctions>();

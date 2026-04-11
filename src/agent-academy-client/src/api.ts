@@ -1453,3 +1453,35 @@ export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
   }
   return res.json() as Promise<SprintSnapshot>;
 }
+
+// ── Agent Analytics ───────────────────────────────────────────
+
+export interface AgentPerformanceMetrics {
+  agentId: string;
+  agentName: string;
+  totalRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  averageResponseTimeMs: number | null;
+  totalErrors: number;
+  recoverableErrors: number;
+  unrecoverableErrors: number;
+  tasksAssigned: number;
+  tasksCompleted: number;
+  tokenTrend: number[];
+}
+
+export interface AgentAnalyticsSummary {
+  agents: AgentPerformanceMetrics[];
+  windowStart: string;
+  windowEnd: string;
+  totalRequests: number;
+  totalCost: number;
+  totalErrors: number;
+}
+
+export function getAgentAnalytics(hoursBack?: number): Promise<AgentAnalyticsSummary> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<AgentAnalyticsSummary>(apiUrl(`/api/analytics/agents${qs}`));
+}
