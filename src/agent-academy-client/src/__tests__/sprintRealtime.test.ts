@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type {
   SprintSnapshot,
   SprintArtifact,
@@ -27,7 +27,7 @@ vi.mock("../api", () => ({
 }));
 
 import { getSprintArtifacts } from "../api";
-const mockGetSprintArtifacts = vi.mocked(getSprintArtifacts);
+vi.mocked(getSprintArtifacts);
 
 // ---------------------------------------------------------------------------
 // Factories
@@ -73,6 +73,7 @@ function makeDetail(
   };
 }
 
+// @ts-expect-error factory prepared for future event-level tests
 function makeEvent(overrides: Partial<SprintRealtimeEvent>): SprintRealtimeEvent {
   return {
     eventId: `evt-${Math.random().toString(36).slice(2)}`,
@@ -336,11 +337,11 @@ describe("Sprint realtime optimistic updates", () => {
   describe("mergeArtifactsByStage", () => {
     it("replaces artifacts for the affected stage only", () => {
       const existing = [
-        makeArtifact({ id: 1, stage: "Intake", type: "Doc" }),
-        makeArtifact({ id: 2, stage: "Planning", type: "Plan" }),
+        makeArtifact({ id: 1, stage: "Intake", type: "RequirementsDocument" }),
+        makeArtifact({ id: 2, stage: "Planning", type: "SprintPlan" }),
       ];
       const incoming = [
-        makeArtifact({ id: 3, stage: "Intake", type: "Doc" }),
+        makeArtifact({ id: 3, stage: "Intake", type: "RequirementsDocument" }),
       ];
       const result = mergeArtifactsByStage(existing, incoming, "Intake");
       expect(result).toHaveLength(2);

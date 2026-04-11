@@ -88,7 +88,7 @@ Object.assign(globalThis, {
 // installed. Instead, test the hook's logic by calling it in a controlled way.
 // We'll import the module and test the EventSource interaction patterns.
 
-import { useActivitySSE } from "../useActivitySSE";
+import { useActivitySSE as _useActivitySSE } from "../useActivitySSE";
 
 // Simple hook runner that captures state via React-like simulation
 // Since we don't have @testing-library/react, test the EventSource patterns directly.
