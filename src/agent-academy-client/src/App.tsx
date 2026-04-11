@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   FluentProvider,
@@ -12,6 +12,7 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
+  Spinner,
   Toaster,
   useToastController,
   useId,
@@ -25,26 +26,29 @@ import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
-import ProjectSelectorPage from "./ProjectSelectorPage";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
 import { loadFilters, saveFilters } from "./chatUtils";
 import type { MessageFilter } from "./chatUtils";
-import PlanPanel from "./PlanPanel";
-import TimelinePanel from "./TimelinePanel";
-import DashboardPanel from "./DashboardPanel";
-import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
-import TaskListPanel from "./TaskListPanel";
-import LoginPage from "./LoginPage";
-import SettingsPanel from "./SettingsPanel";
-import DmPanel from "./DmPanel";
-import AgentSessionPanel from "./AgentSessionPanel";
-import CommandsPanel from "./CommandsPanel";
-import SprintPanel from "./SprintPanel";
-import CommandPalette from "./CommandPalette";
 import RecoveryBanner from "./RecoveryBanner";
 import CircuitBreakerBanner from "./CircuitBreakerBanner";
 import ConfirmDialog from "./ConfirmDialog";
+import ChunkErrorBoundary from "./ChunkErrorBoundary";
+
+// Lazy-loaded panels — each becomes its own chunk
+const ProjectSelectorPage = lazy(() => import("./ProjectSelectorPage"));
+const PlanPanel = lazy(() => import("./PlanPanel"));
+const TimelinePanel = lazy(() => import("./TimelinePanel"));
+const DashboardPanel = lazy(() => import("./DashboardPanel"));
+const WorkspaceOverviewPanel = lazy(() => import("./WorkspaceOverviewPanel"));
+const TaskListPanel = lazy(() => import("./TaskListPanel"));
+const LoginPage = lazy(() => import("./LoginPage"));
+const SettingsPanel = lazy(() => import("./SettingsPanel"));
+const DmPanel = lazy(() => import("./DmPanel"));
+const AgentSessionPanel = lazy(() => import("./AgentSessionPanel"));
+const CommandsPanel = lazy(() => import("./CommandsPanel"));
+const SprintPanel = lazy(() => import("./SprintPanel"));
+const CommandPalette = lazy(() => import("./CommandPalette"));
 import { useCircuitBreakerPolling } from "./useCircuitBreakerPolling";
 import {
   getCopilotStatusCopy,
@@ -495,7 +499,7 @@ function AppShell() {
 
   // Unavailable auth fail-closes to LoginPage; degraded stays visible in limited mode.
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
-    return <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />;
+    return <ChunkErrorBoundary><Suspense fallback={<div className={s.root} />}><LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} /></Suspense></ChunkErrorBoundary>;
   }
 
   const workspaceLimited = isWorkspaceLimited(auth);
@@ -552,12 +556,16 @@ function AppShell() {
       )}
 
       {showProjectSelector ? (
+        <ChunkErrorBoundary>
+        <Suspense fallback={<div className={s.root}><Spinner label="Loading…" /></div>}>
         <ProjectSelectorPage
           onProjectSelected={handleProjectSelected}
           onProjectOnboarded={handleProjectOnboarded}
           user={auth.user ?? null}
           onLogout={handleLogout}
         />
+        </Suspense>
+        </ChunkErrorBoundary>
       ) : (
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
           <SidebarPanel
@@ -713,6 +721,8 @@ function AppShell() {
               )}
 
               {/* ─ Content ─ */}
+              <ChunkErrorBoundary>
+              <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
               {sessionAgent ? (
                 <section className={s.tabContent}>
                   <AgentSessionPanel
@@ -804,19 +814,29 @@ function AppShell() {
                   )}
                 </section>
               )}
+              </Suspense>
+              </ChunkErrorBoundary>
             </>
           </main>
         </div>
       )}
       {showSettings && (
-        <SettingsPanel onClose={() => setShowSettings(false)} />
+        <ChunkErrorBoundary>
+          <Suspense fallback={null}>
+            <SettingsPanel onClose={() => setShowSettings(false)} />
+          </Suspense>
+        </ChunkErrorBoundary>
       )}
-      <CommandPalette
-        open={paletteOpen}
-        onDismiss={() => setPaletteOpen(false)}
-        roomId={room?.id ?? null}
-        readOnly={workspaceLimited}
-      />
+      <ChunkErrorBoundary>
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={paletteOpen}
+            onDismiss={() => setPaletteOpen(false)}
+            roomId={room?.id ?? null}
+            readOnly={workspaceLimited}
+          />
+        </Suspense>
+      </ChunkErrorBoundary>
       <ConfirmDialog
         open={logoutConfirmOpen}
         onConfirm={confirmLogout}
