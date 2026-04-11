@@ -49,7 +49,8 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
         _runtime = new WorkspaceRuntime(_db, logger, catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService));
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries));
 
         // Seed a room
         _db.Rooms.Add(new RoomEntity

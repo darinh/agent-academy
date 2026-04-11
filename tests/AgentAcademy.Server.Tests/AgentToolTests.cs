@@ -258,6 +258,8 @@ public class AgentToolFunctionsTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<BreakoutRoomService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
@@ -532,6 +534,8 @@ public class AgentWriteToolTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<BreakoutRoomService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());

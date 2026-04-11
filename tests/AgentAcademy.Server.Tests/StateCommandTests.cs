@@ -56,6 +56,7 @@ public class StateCommandTests : IDisposable
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();
+        services.AddScoped<BreakoutRoomService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

@@ -76,7 +76,8 @@ public class ServerInstanceTests : IDisposable
             sessionService,
             taskQueries,
             taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService));
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries));
     }
 
     public void Dispose()
@@ -700,7 +701,8 @@ public class RestartHistoryApiTests : IDisposable
             sessionService,
             taskQueries,
             taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService));
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, actPub, sessionService, taskQueries));
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);

@@ -43,6 +43,8 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<BreakoutRoomService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();

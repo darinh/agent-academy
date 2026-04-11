@@ -252,7 +252,8 @@ public class ErrorApiEndpointTests : IDisposable
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
             _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService));
+            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries));
     }
 
     public void Dispose()

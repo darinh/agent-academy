@@ -84,7 +84,8 @@ public class WorkspaceRuntimeTests : IDisposable
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher);
         _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService));
+            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, taskQueries));
     }
 
     public void Dispose()

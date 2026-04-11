@@ -48,7 +48,8 @@ public class SprintControllerTests : IDisposable
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
             catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService));
+            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries));
 
         _controller = new SprintController(
             _sprintService, _runtime,
