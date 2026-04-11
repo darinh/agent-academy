@@ -69,7 +69,7 @@ public interface IAgentExecutor
 ### Implementation: `CopilotExecutor`
 
 **File**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`
-**NuGet**: `GitHub.Copilot.SDK` v0.2.0
+**NuGet**: `GitHub.Copilot.SDK` v0.2.2
 
 Key behaviors:
 - **Lazy client initialization**: `CopilotClient` is created on first use and cached.
