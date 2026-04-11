@@ -391,6 +391,8 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       setInput("");
       void refreshMessages(selectedAgentId);
       void refreshThreads();
+    } catch {
+      // Send failed — input is preserved so the user can retry
     } finally {
       setSending(false);
     }
