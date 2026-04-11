@@ -173,7 +173,7 @@ public record SprintReport(string Summary, List<string> Delivered,
     List<string> Learnings, List<string>? OverflowRequirements);
 ```
 
-**Note**: These types are available for deserialization but the `Content` field on `SprintArtifactEntity` is stored as raw JSON string. The typed records are not enforced at the database level — agents may store content that doesn't conform to these schemas.
+**Note**: These types are enforced at the storage layer by `ValidateArtifactContent`. When `StoreArtifactAsync` is called with a known artifact type, the JSON content must deserialize into the corresponding record with all required fields present and non-empty. OverflowRequirements is exempt (free-form). Unknown type strings are rejected.
 
 ## Service Layer
 
@@ -487,7 +487,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 ## Known Gaps
 
-- **No artifact content validation**: The typed record schemas (`RequirementsDocument`, `SprintPlanDocument`, etc.) are not enforced at the storage layer. Agents can store arbitrary JSON that doesn't conform to the expected schema.
+- ~~**No artifact content validation**: The typed record schemas (`RequirementsDocument`, `SprintPlanDocument`, etc.) are not enforced at the storage layer. Agents can store arbitrary JSON that doesn't conform to the expected schema.~~ — **Resolved**: `StoreArtifactAsync` validates artifact content against typed record schemas before storage. RequirementsDocument, SprintPlan, ValidationReport, and SprintReport must deserialize correctly with all required fields present and non-empty. SprintPlanPhase nested records are validated. OverflowRequirements is free-form (no validation). Unknown artifact type strings are rejected. Malformed JSON and missing required fields produce distinct `ArgumentException` messages. 10 tests.
 - ~~**No sprint duration limits**: There's no timeout or maximum duration for a sprint. A sprint in `AwaitingSignOff` will block indefinitely until a human responds.~~ — **Resolved**: `SprintTimeoutService` background service checks every 5 minutes (configurable). Sign-off timeout auto-rejects after 4 hours (configurable). Sprint max duration auto-cancels after 48 hours (configurable). `SignOffRequestedAt` field on `SprintEntity` tracks sign-off entry time. Configurable via `SprintTimeoutSettings` (section: `SprintTimeouts`). Events include `reason: "timeout"` metadata. 19 tests.
 - ~~**No sprint metrics aggregation**: While individual events are tracked, there's no rollup of sprint-level metrics (total rounds, token cost per sprint, time per stage).~~ — **Resolved**: `GetSprintMetricsAsync` returns per-sprint rollup (duration, stage transitions, artifact/task counts, time per stage). `GetMetricsSummaryAsync` returns workspace-level averages. REST endpoints: `GET /api/sprints/{id}/metrics` and `GET /api/sprints/metrics/summary`. 15 tests.
 
@@ -499,3 +499,4 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 | 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |
 | 2026-04-11 | Sprint metrics aggregation: per-sprint and workspace-level rollup endpoints with 15 tests | develop |
 | 2026-04-11 | Sprint duration limits: sign-off timeout (4h default), max duration (48h default), SprintTimeoutService background service, 19 tests | develop |
+| 2026-04-11 | Artifact content validation: typed schema enforcement at storage layer, unknown type rejection, 10 tests | develop |

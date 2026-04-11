@@ -159,7 +159,7 @@ public class SprintControllerTests : IDisposable
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _sprintService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument",
-            "{\"title\":\"Test\"}", "agent-1");
+            TestArtifactContent.RequirementsDocument, "agent-1");
 
         var result = await _controller.GetActiveSprint();
 
@@ -207,10 +207,10 @@ public class SprintControllerTests : IDisposable
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _sprintService.StoreArtifactAsync(
-            sprint.Id, "Intake", "RequirementsDocument", "{}", "a1");
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
         await _sprintService.AdvanceStageAsync(sprint.Id);
         await _sprintService.StoreArtifactAsync(
-            sprint.Id, "Planning", "SprintPlan", "{}", "a1");
+            sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan, "a1");
 
         // All artifacts
         var allResult = await _controller.GetArtifacts(sprint.Id);
@@ -268,7 +268,7 @@ public class SprintControllerTests : IDisposable
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _sprintService.StoreArtifactAsync(
-            sprint.Id, "Intake", "RequirementsDocument", "{}", "a1");
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
 
         var result = await _controller.AdvanceSprint(sprint.Id);
 

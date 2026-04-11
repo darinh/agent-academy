@@ -222,6 +222,7 @@ public sealed class SprintService
                 $"Cannot store artifacts in sprint {sprintId} — status is {sprint.Status}.");
 
         ValidateStage(stage);
+        ValidateArtifactContent(type, content);
 
         var existing = await _db.SprintArtifacts
             .Where(a => a.SprintId == sprintId && a.Stage == stage && a.Type == type)
@@ -973,6 +974,90 @@ public sealed class SprintService
             throw new ArgumentException(
                 $"Invalid stage '{stage}'. Valid stages: {string.Join(", ", Stages)}",
                 nameof(stage));
+    }
+
+    /// <summary>
+    /// Validates artifact content against the expected schema for known artifact types.
+    /// Throws <see cref="ArgumentException"/> if the content is malformed JSON or
+    /// missing required fields.
+    /// </summary>
+    private static void ValidateArtifactContent(string type, string content)
+    {
+        if (!Enum.TryParse<ArtifactType>(type, ignoreCase: false, out var artifactType)
+            || !Enum.IsDefined(artifactType))
+            throw new ArgumentException(
+                $"Unknown artifact type '{type}'. Valid types: {string.Join(", ", Enum.GetNames<ArtifactType>())}",
+                nameof(type));
+
+        // OverflowRequirements is free-form — no schema to validate
+        if (artifactType == ArtifactType.OverflowRequirements)
+            return;
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        try
+        {
+            switch (artifactType)
+            {
+                case ArtifactType.RequirementsDocument:
+                    var req = JsonSerializer.Deserialize<RequirementsDocument>(content, options)
+                        ?? throw new ArgumentException("Content deserialized to null.");
+                    RequireString(req.Title, "Title");
+                    RequireString(req.Description, "Description");
+                    RequireList(req.InScope, "InScope");
+                    RequireList(req.OutOfScope, "OutOfScope");
+                    RequireList(req.AcceptanceCriteria, "AcceptanceCriteria");
+                    break;
+
+                case ArtifactType.SprintPlan:
+                    var plan = JsonSerializer.Deserialize<SprintPlanDocument>(content, options)
+                        ?? throw new ArgumentException("Content deserialized to null.");
+                    RequireString(plan.Summary, "Summary");
+                    RequireList(plan.Phases, "Phases");
+                    for (var i = 0; i < plan.Phases.Count; i++)
+                    {
+                        var phase = plan.Phases[i];
+                        RequireString(phase.Name, $"Phases[{i}].Name");
+                        RequireString(phase.Description, $"Phases[{i}].Description");
+                        RequireList(phase.Deliverables, $"Phases[{i}].Deliverables");
+                    }
+                    break;
+
+                case ArtifactType.ValidationReport:
+                    var vr = JsonSerializer.Deserialize<ValidationReport>(content, options)
+                        ?? throw new ArgumentException("Content deserialized to null.");
+                    RequireString(vr.Verdict, "Verdict");
+                    RequireList(vr.Findings, "Findings");
+                    break;
+
+                case ArtifactType.SprintReport:
+                    var sr = JsonSerializer.Deserialize<SprintReport>(content, options)
+                        ?? throw new ArgumentException("Content deserialized to null.");
+                    RequireString(sr.Summary, "Summary");
+                    RequireList(sr.Delivered, "Delivered");
+                    RequireList(sr.Learnings, "Learnings");
+                    break;
+            }
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException(
+                $"Invalid JSON for artifact type '{type}': {ex.Message}", nameof(content), ex);
+        }
+    }
+
+    private static void RequireString(string? value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException(
+                $"Required field '{fieldName}' is missing or empty.");
+    }
+
+    private static void RequireList<T>(List<T>? value, string fieldName)
+    {
+        if (value is null)
+            throw new ArgumentException(
+                $"Required field '{fieldName}' is missing.");
     }
 
     /// <summary>
