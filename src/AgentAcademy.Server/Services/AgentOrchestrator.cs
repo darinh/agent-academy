@@ -243,38 +243,9 @@ public sealed class AgentOrchestrator
             }
 
             // Load active sprint context (if any) for stage-aware prompts and roster filtering
-            string? sprintPreamble = null;
-            string? activeSprintStage = null;
-            try
-            {
-                var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
-                var workspacePath = await runtime.GetActiveWorkspacePathAsync();
-                if (workspacePath is not null)
-                {
-                    var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
-                    if (sprint is not null)
-                    {
-                        activeSprintStage = sprint.CurrentStage;
-                        var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
-
-                        // Load overflow content when entering Intake with overflow from previous sprint
-                        string? overflowContent = null;
-                        if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
-                        {
-                            var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
-                            var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
-                            overflowContent = overflow?.Content;
-                        }
-
-                        sprintPreamble = SprintPreambles.BuildPreamble(
-                            sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load sprint context for room {RoomId}", roomId);
-            }
+            var sprintCtx = await LoadSprintContextAsync(scope, runtime, sessionService);
+            var sprintPreamble = sprintCtx.Preamble;
+            var activeSprintStage = sprintCtx.ActiveStage;
 
             var planner = FindPlanner(runtime);
             if (planner is not null)
@@ -505,29 +476,8 @@ public sealed class AgentOrchestrator
         {
             var dmSessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
             dmSessionSummary = await dmSessionService.GetSessionContextAsync(roomId);
-
-            // Inject sprint context into DMs so the agent has stage awareness
-            var dmSprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
-            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
-            if (workspacePath is not null)
-            {
-                var sprint = await dmSprintService.GetActiveSprintAsync(workspacePath);
-                if (sprint is not null)
-                {
-                    var priorContext = await dmSessionService.GetSprintContextAsync(sprint.Id);
-
-                    string? overflowContent = null;
-                    if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
-                    {
-                        var overflowArtifacts = await dmSprintService.GetSprintArtifactsAsync(sprint.Id);
-                        var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
-                        overflowContent = overflow?.Content;
-                    }
-
-                    dmSprintPreamble = SprintPreambles.BuildPreamble(
-                        sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
-                }
-            }
+            var dmSprintCtx = await LoadSprintContextAsync(scope, runtime, dmSessionService);
+            dmSprintPreamble = dmSprintCtx.Preamble;
         }
         catch { /* non-critical */ }
 
@@ -855,6 +805,42 @@ public sealed class AgentOrchestrator
         {
             _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
             return new CommandPipelineResult(new List<CommandEnvelope>(), responseText, ProcessingFailed: true);
+        }
+    }
+
+    private record SprintContext(string? Preamble, string? ActiveStage);
+
+    private async Task<SprintContext> LoadSprintContextAsync(
+        IServiceScope scope, WorkspaceRuntime runtime, ConversationSessionService sessionService)
+    {
+        try
+        {
+            var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            if (workspacePath is null) return new(null, null);
+
+            var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
+            if (sprint is null) return new(null, null);
+
+            var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
+
+            string? overflowContent = null;
+            if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
+            {
+                var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
+                var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
+                overflowContent = overflow?.Content;
+            }
+
+            var preamble = SprintPreambles.BuildPreamble(
+                sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
+
+            return new(preamble, sprint.CurrentStage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load sprint context");
+            return new(null, null);
         }
     }
 
