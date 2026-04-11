@@ -312,10 +312,11 @@ public class UsageApiEndpointTests : IDisposable
             NullLogger<ConversationSessionService>.Instance);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
         var activityBus = new ActivityBroadcaster();
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityBus);
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
-            _catalog, activityBus, sessionService, taskQueries, taskLifecycle);
+            _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle);
     }
 
     public void Dispose()

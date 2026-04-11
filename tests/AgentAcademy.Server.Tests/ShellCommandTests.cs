@@ -61,6 +61,7 @@ public sealed class ShellCommandTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(options => options.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();

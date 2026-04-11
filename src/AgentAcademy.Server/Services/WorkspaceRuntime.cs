@@ -48,7 +48,7 @@ public sealed class WorkspaceRuntime
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceRuntime> _logger;
     private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
     private readonly TaskQueryService _taskQueries;
     private readonly TaskLifecycleService _taskLifecycle;
@@ -57,7 +57,7 @@ public sealed class WorkspaceRuntime
         AgentAcademyDbContext db,
         ILogger<WorkspaceRuntime> logger,
         AgentCatalogOptions catalog,
-        ActivityBroadcaster activityBus,
+        ActivityPublisher activity,
         ConversationSessionService sessionService,
         TaskQueryService taskQueries,
         TaskLifecycleService taskLifecycle)
@@ -65,7 +65,7 @@ public sealed class WorkspaceRuntime
         _db = db;
         _logger = logger;
         _catalog = catalog;
-        _activityBus = activityBus;
+        _activity = activity;
         _sessionService = sessionService;
         _taskQueries = taskQueries;
         _taskLifecycle = taskLifecycle;
@@ -254,7 +254,7 @@ public sealed class WorkspaceRuntime
         var rooms = await GetRoomsAsync();
         var agentLocations = await GetAgentLocationsAsync();
         var breakoutRooms = await GetAllBreakoutRoomsAsync();
-        var recentActivity = _activityBus.GetRecentActivity();
+        var recentActivity = _activity.GetRecentActivity();
 
         return new WorkspaceOverview(
             ConfiguredAgents: [.. _catalog.Agents],
@@ -2253,7 +2253,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public IReadOnlyList<ActivityEvent> GetRecentActivity()
     {
-        return _activityBus.GetRecentActivity();
+        return _activity.GetRecentActivity();
     }
 
     /// <summary>
@@ -2261,7 +2261,7 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public Action StreamActivity(Action<ActivityEvent> callback)
     {
-        return _activityBus.Subscribe(callback);
+        return _activity.Subscribe(callback);
     }
 
     // ── Private Helpers ─────────────────────────────────────────
@@ -2274,38 +2274,7 @@ public sealed class WorkspaceRuntime
         string message,
         string? correlationId = null,
         ActivitySeverity severity = ActivitySeverity.Info)
-    {
-        var evt = new ActivityEvent(
-            Id: Guid.NewGuid().ToString("N"),
-            Type: type,
-            Severity: severity,
-            RoomId: roomId,
-            ActorId: actorId,
-            TaskId: taskId,
-            Message: message,
-            CorrelationId: correlationId,
-            OccurredAt: DateTime.UtcNow
-        );
-
-        // Add to EF tracker (caller must call SaveChangesAsync)
-        _db.ActivityEvents.Add(new ActivityEventEntity
-        {
-            Id = evt.Id,
-            Type = evt.Type.ToString(),
-            Severity = evt.Severity.ToString(),
-            RoomId = evt.RoomId,
-            ActorId = evt.ActorId,
-            TaskId = evt.TaskId,
-            Message = evt.Message,
-            CorrelationId = evt.CorrelationId,
-            OccurredAt = evt.OccurredAt
-        });
-
-        // Broadcast via singleton (in-memory buffer + subscribers)
-        _activityBus.Broadcast(evt);
-
-        return evt;
-    }
+        => _activity.Publish(type, roomId, actorId, taskId, message, correlationId, severity);
 
     private async Task<RoomSnapshot> BuildRoomSnapshotAsync(
         RoomEntity room, List<AgentLocationEntity>? preloadedLocations = null)

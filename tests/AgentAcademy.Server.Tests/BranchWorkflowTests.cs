@@ -65,6 +65,7 @@ public class BranchWorkflowTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();

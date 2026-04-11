@@ -36,17 +36,18 @@ public class SprintControllerTests : IDisposable
 
         var catalog = new AgentCatalogOptions("main", "Main Room", []);
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionService = new ConversationSessionService(
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityBus);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
-            catalog, activityBus, sessionService, taskQueries, taskLifecycle);
+            catalog, activityPublisher, sessionService, taskQueries, taskLifecycle);
 
         _controller = new SprintController(
             _sprintService, _runtime,

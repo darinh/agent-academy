@@ -37,18 +37,18 @@ public sealed class TaskLifecycleService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskLifecycleService> _logger;
     private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly ActivityPublisher _activity;
 
     public TaskLifecycleService(
         AgentAcademyDbContext db,
         ILogger<TaskLifecycleService> logger,
         AgentCatalogOptions catalog,
-        ActivityBroadcaster activityBus)
+        ActivityPublisher activity)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
-        _activityBus = activityBus;
+        _activity = activity;
     }
 
     // ── Task State Transitions ──────────────────────────────────
@@ -665,35 +665,7 @@ public sealed class TaskLifecycleService
         string message,
         string? correlationId = null,
         ActivitySeverity severity = ActivitySeverity.Info)
-    {
-        var evt = new ActivityEvent(
-            Id: Guid.NewGuid().ToString("N"),
-            Type: type,
-            Severity: severity,
-            RoomId: roomId,
-            ActorId: actorId,
-            TaskId: taskId,
-            Message: message,
-            CorrelationId: correlationId,
-            OccurredAt: DateTime.UtcNow
-        );
-
-        _db.ActivityEvents.Add(new ActivityEventEntity
-        {
-            Id = evt.Id,
-            Type = evt.Type.ToString(),
-            Severity = evt.Severity.ToString(),
-            RoomId = evt.RoomId,
-            ActorId = evt.ActorId,
-            TaskId = evt.TaskId,
-            Message = evt.Message,
-            CorrelationId = evt.CorrelationId,
-            OccurredAt = evt.OccurredAt
-        });
-
-        _activityBus.Broadcast(evt);
-        return evt;
-    }
+        => _activity.Publish(type, roomId, actorId, taskId, message, correlationId, severity);
 
     private static MessageEntity CreateMessageEntity(
         string roomId, MessageKind kind, string content,

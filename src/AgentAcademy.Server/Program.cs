@@ -195,6 +195,7 @@ builder.Services.AddAgentCatalog();
 builder.Services.AddSingleton<ActivityBroadcaster>();
 
 // Workspace runtime (scoped — one per request, uses scoped DbContext)
+builder.Services.AddScoped<ActivityPublisher>();
 builder.Services.AddScoped<TaskQueryService>();
 builder.Services.AddScoped<TaskLifecycleService>();
 builder.Services.AddScoped<WorkspaceRuntime>();

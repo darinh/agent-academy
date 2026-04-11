@@ -41,13 +41,14 @@ public sealed class RoomMessagesEndpointTests : IDisposable
 
         var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityBus);
-        _runtime = new WorkspaceRuntime(_db, logger, catalog, activityBus, sessionService, taskQueries, taskLifecycle);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
+        _runtime = new WorkspaceRuntime(_db, logger, catalog, activityPublisher, sessionService, taskQueries, taskLifecycle);
 
         // Seed a room
         _db.Rooms.Add(new RoomEntity

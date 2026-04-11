@@ -22,6 +22,7 @@ public class WorkspaceRuntimeTests : IDisposable
     private readonly WorkspaceRuntime _runtime;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityBroadcaster _activityBus;
+    private readonly ActivityPublisher _activityPublisher;
 
     public WorkspaceRuntimeTests()
     {
@@ -75,13 +76,14 @@ public class WorkspaceRuntimeTests : IDisposable
 
         var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
         _activityBus = new ActivityBroadcaster();
+        _activityPublisher = new ActivityPublisher(_db, _activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityBus);
-        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityBus, sessionService, taskQueries, taskLifecycle);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher);
+        _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle);
     }
 
     public void Dispose()

@@ -60,18 +60,19 @@ public class ServerInstanceTests : IDisposable
             ]);
 
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = NSubstitute.Substitute.For<IAgentExecutor>();
         var sessionLogger = NullLogger<ConversationSessionService>.Instance;
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityBus);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
             catalog,
-            activityBus,
+            activityPublisher,
             sessionService,
             taskQueries,
             taskLifecycle);
@@ -688,12 +689,13 @@ public class RestartHistoryApiTests : IDisposable
             _db, settings, executor, NullLogger<ConversationSessionService>.Instance);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var actBus = new ActivityBroadcaster();
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actBus);
+        var actPub = new ActivityPublisher(_db, actBus);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub);
         var runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
             catalog,
-            actBus,
+            actPub,
             sessionService,
             taskQueries,
             taskLifecycle);

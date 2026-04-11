@@ -103,6 +103,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var sc = new ServiceCollection();
         sc.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         sc.AddSingleton<ActivityBroadcaster>();
+        sc.AddScoped<ActivityPublisher>();
         sc.AddSingleton(new AgentCatalogOptions("main", "Main Room",
             new List<AgentDefinition>
             {
@@ -359,6 +360,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     private readonly AgentAcademyDbContext _db;
     private readonly WorkspaceRuntime _runtime;
     private readonly ActivityBroadcaster _activityBus;
+    private readonly ActivityPublisher _activityPublisher;
 
     public WorkspaceRuntimePrSyncTests()
     {
@@ -380,13 +382,14 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
             });
 
         _activityBus = new ActivityBroadcaster();
+        _activityPublisher = new ActivityPublisher(_db, _activityBus);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityBus);
-        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityBus, sessionService, taskQueries, taskLifecycle);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
+        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle);
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 
