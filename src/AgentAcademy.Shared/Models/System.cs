@@ -6,7 +6,8 @@ namespace AgentAcademy.Shared.Models;
 public record HealthResult(
     string Status,
     string Uptime,
-    DateTime Timestamp
+    DateTime Timestamp,
+    string Message = "Agent Academy backend is healthy."
 );
 
 /// <summary>
