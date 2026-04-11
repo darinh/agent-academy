@@ -259,7 +259,7 @@ GET /api/export/usage?hoursBack={N}&agentId={id}&limit=10000&format=csv|json
 - `format` (optional, default `csv`): `csv` or `json`. CSV uses RFC 4180 with CRLF line endings, InvariantCulture formatting, ISO 8601 timestamps, and formula injection protection (cells starting with `=`, `+`, `-`, `@` are prefixed with `'`).
 - `limit` (optional, 1–50000, default 10000): Max records for usage export. Server fetches `limit+1` to detect truncation accurately.
 - Response headers: `X-Record-Count` (actual count returned), `X-Truncated: true` (only when more records exist beyond limit).
-- Content-Disposition: `attachment; filename="agent-analytics-{timestamp}.csv"` (triggers browser download).
+- Content-Disposition: `attachment; filename="agent-analytics-{timestamp}.{csv|json}"` (agents) or `"usage-records[-{agentId}]-{timestamp}.{csv|json}"` (usage). Triggers browser download.
 
 Frontend: Export CSV button on `AgentAnalyticsPanel` toolbar. Uses `downloadFile()` helper in `api.ts` which reads blob from fetch response and triggers download via temporary anchor element.
 

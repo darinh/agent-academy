@@ -317,7 +317,7 @@ Per-agent performance dashboard showing LLM usage, errors, and task completion a
 
 **Summary row:** Four cards at the top — active agent count, total requests, total cost, total errors. Values formatted via shared `formatCost()` and `formatTokenCount()` utilities.
 
-**Sort toolbar:** Dropdown to sort agent cards by Requests (default), Tokens, Cost, Errors, or Tasks. Manual refresh button with loading state.
+**Sort toolbar:** Dropdown to sort agent cards by Requests (default), Tokens, Cost, Errors, or Tasks. Manual refresh button with loading state. Export CSV button triggers `exportAgentAnalytics(hoursBack, "csv")` and downloads the file via the `downloadFile()` helper in `api.ts`.
 
 **Agent cards:** Responsive grid (`minmax(280px, 1fr)`). Each card shows:
 - Agent name + ID
