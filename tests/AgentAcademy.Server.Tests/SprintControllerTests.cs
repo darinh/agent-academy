@@ -343,4 +343,248 @@ public class SprintControllerTests : IDisposable
 
         Assert.IsType<ConflictObjectResult>(result);
     }
+
+    // ── ApproveAdvance ──────────────────────────────────────────
+
+    [Fact]
+    public async Task ApproveAdvance_Success_ReturnsNextStage()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+
+        var result = await _controller.ApproveAdvance(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(SprintStage.Planning, body.Sprint.CurrentStage);
+        Assert.False(body.Sprint.AwaitingSignOff);
+        Assert.Null(body.Sprint.PendingStage);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_NotAwaitingSignOff_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.ApproveAdvance(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.ApproveAdvance("nonexistent");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.ApproveAdvance(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    // ── RejectAdvance ───────────────────────────────────────────
+
+    [Fact]
+    public async Task RejectAdvance_Success_StaysAtCurrentStage()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+
+        var result = await _controller.RejectAdvance(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintSnapshot>(ok.Value);
+        Assert.Equal(SprintStage.Intake, body.CurrentStage);
+        Assert.False(body.AwaitingSignOff);
+        Assert.Null(body.PendingStage);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_NotAwaitingSignOff_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.RejectAdvance(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.RejectAdvance("nonexistent");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.RejectAdvance(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    // ── GetSprintMetrics ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSprintMetrics_Success_ReturnsMetrics()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetrics>(ok.Value);
+        Assert.Equal(sprint.Id, body.SprintId);
+        Assert.Equal(1, body.SprintNumber);
+        Assert.Equal(SprintStatus.Active, body.Status);
+        Assert.Null(body.DurationSeconds); // still active
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_NotFound_Returns404()
+    {
+        await ActivateWorkspace();
+
+        var result = await _controller.GetSprintMetrics("nonexistent");
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.GetSprintMetrics("any-id");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_CompletedSprint_HasDuration()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CompleteSprintAsync(sprint.Id, force: true);
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetrics>(ok.Value);
+        Assert.NotNull(body.DurationSeconds);
+        Assert.Equal(SprintStatus.Completed, body.Status);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_WithArtifacts_CountsThem()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "OverflowRequirements", TestArtifactContent.OverflowRequirements, "a1");
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetrics>(ok.Value);
+        Assert.Equal(2, body.ArtifactCount);
+        Assert.Equal(0, body.TaskCount);
+        Assert.Equal(0, body.CompletedTaskCount);
+    }
+
+    // ── GetMetricsSummary ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetMetricsSummary_NoWorkspace_ReturnsEmptySummary()
+    {
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(0, body.TotalSprints);
+        Assert.Equal(0, body.CompletedSprints);
+        Assert.Equal(0, body.CancelledSprints);
+        Assert.Equal(0, body.ActiveSprints);
+        Assert.Null(body.AverageDurationSeconds);
+        Assert.Equal(0, body.AverageTaskCount);
+        Assert.Equal(0, body.AverageArtifactCount);
+        Assert.Empty(body.AverageTimePerStageSeconds);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummary_NoSprints_ReturnsZeros()
+    {
+        await ActivateWorkspace();
+
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(0, body.TotalSprints);
+        Assert.Equal(0, body.CompletedSprints);
+        Assert.Equal(0, body.ActiveSprints);
+        Assert.Null(body.AverageDurationSeconds);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummary_WithSprints_ReturnsCounts()
+    {
+        await ActivateWorkspace();
+        var s1 = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CompleteSprintAsync(s1.Id, force: true);
+        var s2 = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(2, body.TotalSprints);
+        Assert.Equal(1, body.CompletedSprints);
+        Assert.Equal(1, body.ActiveSprints);
+        Assert.NotNull(body.AverageDurationSeconds);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummary_ScopedToActiveWorkspace()
+    {
+        await ActivateWorkspace();
+        await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(1, body.TotalSprints);
+    }
 }
