@@ -98,14 +98,19 @@ This project runs under an automated operator. Key rules:
    b. **Fix ratio gate**: Count the last 10 conventional commits. If 4+ are `fix:` commits, run the Stabilization Protocol (see below) before starting new feature work.
    c. **Refactor gate**: If any single file has been touched by 3+ `fix:` commits in the last 30 days (`git log --since="30 days ago" --format="%H" -- {file} | ...`), add a refactoring task for that file to the top of the backlog.
    d. **Otherwise**: Continue to the next task from the handoff/backlog/spec gaps.
-3. **Session handoff is mandatory.** When context gets heavy or a major task completes with next steps, use the `handoff` command:
+3. **Session handoff is mandatory.** When context gets heavy or a major task completes with next steps, use the `handoff` **shell command** (located at `~/.local/bin/handoff`):
    ```bash
    handoff --instance agent-academy \
      --status "What was completed" \
      --next "Prioritized next steps" \
-     --context "Key decisions, gotchas"
+     --context "Key decisions, gotchas" \
+     --prompt "Ready-to-execute prompt for next session"
    ```
-   This atomically writes the handoff file and triggers the operator restart.
+   This atomically writes the handoff file AND triggers the operator restart.
+   
+   **⚠️ NEVER write `next-session.md` manually.** Always use the `handoff` command.
+   It handles GUID lookup, file creation, and restart trigger in one atomic step.
+   If the command fails, debug it — do not fall back to manual file writes.
 4. **Server management**: Rebuild with `dotnet build AgentAcademy.sln`, kill old PID (`pgrep -f AgentAcademy.Server.dll`), relaunch with `ConsultantApi__SharedSecret="anvil-is-the-best"` and `--urls "http://localhost:5066"` (detach=true).
 
 ### Stabilization Protocol
