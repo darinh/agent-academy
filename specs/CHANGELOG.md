@@ -5,6 +5,8 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **300-frontend-ui**: Agent analytics panel (`AgentAnalyticsPanel.tsx`). Summary row (agent count, requests, cost, errors), sortable agent cards (by requests/tokens/cost/errors/tasks), per-agent metrics (LLM usage, error rates, task completion), 12-bucket token trend sparklines. Auto-refreshes every 60s. Receives `hoursBack` from shared `DashboardPanel` time range selector. 9 backend + 18 frontend tests.
+- **012-consultant-api**: Analytics endpoint `GET /api/analytics/agents?hoursBack={N}`. Per-agent performance metrics aggregated over configurable time window. `AgentAnalyticsService` (singleton with `IServiceScopeFactory`) queries LLM usage, errors, and tasks. Token trend capped at 30 days. Accessible via consultant auth.
 - **300-frontend-ui**: GitHub integration status tab in Settings panel. New 6th tab shows connection status, repository slug, auth source badge (green=oauth, blue=cli, red=none), contextual guidance per auth method, and PR capabilities grid (create/review/merge/status-sync). Login CTA for unconfigured state. Request sequence guard prevents stale concurrent responses. `getGitHubStatus()` API function and `GitHubStatus` type. 11 new tests (896 frontend total).
 
 ### Changed

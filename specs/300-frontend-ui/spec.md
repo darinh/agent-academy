@@ -36,6 +36,7 @@ App.tsx (FluentProvider + AppShell)
             ├── CommandsPanel.tsx
             ├── TimelinePanel.tsx
             ├── DashboardPanel.tsx
+            │   └── AgentAnalyticsPanel.tsx (per-agent performance metrics)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
@@ -149,6 +150,7 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/sprints/{id}/complete` | POST | Complete sprint (optional `force` query param) |
 | `/api/sprints/{id}/cancel` | POST | Cancel an active sprint |
 | `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
+| `/api/analytics/agents` | GET | Per-agent performance metrics (optional `hoursBack` query param, 1–8760) |
 
 ### Browse response shape (from server):
 ```json
@@ -304,6 +306,56 @@ Mini SVG trend charts in the dashboard panels showing activity over time.
 - **UsagePanel**: Two sparklines — request count trend (amber) and token volume trend (blue)
 - **ErrorsPanel**: Error rate trend (red)
 - **AuditLogPanel**: Command count trend (purple), using a separate 200-record fetch for accurate trend data (not the paged table slice)
+- **AgentAnalyticsPanel**: Per-agent token volume trend (default blue sparkline)
+
+### Agent Analytics Panel (`AgentAnalyticsPanel.tsx`)
+
+Per-agent performance dashboard showing LLM usage, errors, and task completion aggregated over a configurable time window.
+
+**Data source:** `GET /api/analytics/agents?hoursBack={N}` → `AgentAnalyticsSummary`. Receives `hoursBack` prop from the shared `DashboardPanel` time range selector.
+
+**Summary row:** Four cards at the top — active agent count, total requests, total cost, total errors. Values formatted via shared `formatCost()` and `formatTokenCount()` utilities.
+
+**Sort toolbar:** Dropdown to sort agent cards by Requests (default), Tokens, Cost, Errors, or Tasks. Manual refresh button with loading state.
+
+**Agent cards:** Responsive grid (`minmax(280px, 1fr)`). Each card shows:
+- Agent name + ID
+- Badges: error count (red V3Badge when > 0), task completion percentage (ok/warn/err based on 80%/50% thresholds)
+- Metrics grid: requests, tokens, cost, average response time (seconds)
+- Error/task row: error count with color coding (green < 5%, yellow < 20%, red ≥ 20% error rate), tasks completed/assigned
+- Token trend sparkline (12 equal-sized buckets spanning the window, newest last)
+
+**Refresh behavior:** Auto-refreshes every 60 seconds. Stale-response protection via `fetchIdRef` counter — concurrent fetches are discarded if a newer request has been issued.
+
+**Empty state:** Icon + message when no agent activity exists for the time window.
+
+**API types (`api.ts`):**
+```typescript
+interface AgentPerformanceMetrics {
+  agentId: string;
+  agentName: string;
+  totalRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  averageResponseTimeMs: number | null;
+  totalErrors: number;
+  recoverableErrors: number;
+  unrecoverableErrors: number;
+  tasksAssigned: number;
+  tasksCompleted: number;
+  tokenTrend: number[];  // 12 buckets
+}
+
+interface AgentAnalyticsSummary {
+  agents: AgentPerformanceMetrics[];
+  windowStart: string;
+  windowEnd: string;
+  totalRequests: number;
+  totalCost: number;
+  totalErrors: number;
+}
+```
 
 ## Room-Centric Conversation (`ChatPanel.tsx`)
 

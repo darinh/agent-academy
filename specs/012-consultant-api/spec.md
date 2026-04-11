@@ -157,6 +157,45 @@ Async commands (`RUN_BUILD`, `RUN_TESTS`, `CREATE_PR`, `MERGE_PR`) return `statu
 
 **Identity**: Commands execute with `agentId = "human"`, `agentRole = "Human"`. Role gates on handlers respect this (e.g., `APPROVE_TASK` accepts Human role).
 
+### Analytics
+
+```
+GET /api/analytics/agents?hoursBack={N}
+X-Consultant-Key: {secret}
+```
+
+Per-agent performance metrics aggregated over a time window. Returns `AgentAnalyticsSummary` with per-agent LLM usage (requests, tokens, cost, avg response time), errors (total, recoverable, unrecoverable), tasks (assigned, completed), and a 12-bucket token trend.
+
+- `hoursBack` (optional, 1–8760): Time window. Omit for all-time data.
+- Token trend is capped at 30 days max regardless of `hoursBack` to avoid unbounded materialization.
+- Agents sorted by total requests descending.
+
+Response:
+```json
+{
+  "agents": [{
+    "agentId": "string",
+    "agentName": "string",
+    "totalRequests": 0,
+    "totalInputTokens": 0,
+    "totalOutputTokens": 0,
+    "totalCost": 0.0,
+    "averageResponseTimeMs": null,
+    "totalErrors": 0,
+    "recoverableErrors": 0,
+    "unrecoverableErrors": 0,
+    "tasksAssigned": 0,
+    "tasksCompleted": 0,
+    "tokenTrend": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  }],
+  "windowStart": "ISO8601",
+  "windowEnd": "ISO8601",
+  "totalRequests": 0,
+  "totalCost": 0.0,
+  "totalErrors": 0
+}
+```
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
