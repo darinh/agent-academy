@@ -321,6 +321,7 @@ public class UsageApiEndpointTests : IDisposable
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
             _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
@@ -332,7 +333,8 @@ public class UsageApiEndpointTests : IDisposable
             agentLocations,
             planService,
             crashRecovery,
-            initializationService);
+            initializationService,
+            taskOrchestration);
     }
 
     public void Dispose()

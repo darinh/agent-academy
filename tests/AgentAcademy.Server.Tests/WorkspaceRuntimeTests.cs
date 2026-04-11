@@ -90,6 +90,7 @@ public class WorkspaceRuntimeTests : IDisposable
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         _runtime = new WorkspaceRuntime(_db, logger, _catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, taskQueries, agentLocations),
@@ -99,7 +100,8 @@ public class WorkspaceRuntimeTests : IDisposable
             agentLocations,
             planService,
             crashRecovery,
-            initializationService);
+            initializationService,
+            taskOrchestration);
     }
 
     public void Dispose()

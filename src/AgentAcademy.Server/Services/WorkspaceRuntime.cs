@@ -7,9 +7,10 @@ using Microsoft.Extensions.Logging;
 namespace AgentAcademy.Server.Services;
 
 /// <summary>
-/// Central state manager for the Agent Academy workspace.
-/// Handles rooms, agents, messages, tasks, breakout rooms, plans,
-/// and activity events. Ported from v1 TypeScript WorkspaceRuntime.
+/// Delegation facade for the Agent Academy workspace.
+/// Routes calls to focused sub-services; contains no business logic itself.
+/// Ported from v1 TypeScript WorkspaceRuntime; orchestration logic now
+/// lives in TaskOrchestrationService and other leaf services.
 /// </summary>
 public sealed class WorkspaceRuntime
 {
@@ -28,6 +29,7 @@ public sealed class WorkspaceRuntime
     private readonly PlanService _plans;
     private readonly CrashRecoveryService _crashRecovery;
     private readonly InitializationService _initialization;
+    private readonly TaskOrchestrationService _taskOrchestration;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -44,7 +46,8 @@ public sealed class WorkspaceRuntime
         AgentLocationService agentLocations,
         PlanService plans,
         CrashRecoveryService crashRecovery,
-        InitializationService initialization)
+        InitializationService initialization,
+        TaskOrchestrationService taskOrchestration)
     {
         _db = db;
         _logger = logger;
@@ -61,6 +64,7 @@ public sealed class WorkspaceRuntime
         _plans = plans;
         _crashRecovery = crashRecovery;
         _initialization = initialization;
+        _taskOrchestration = taskOrchestration;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -73,14 +77,8 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns the path of the currently active workspace, or null if none.
     /// </summary>
-    public async Task<string?> GetActiveWorkspacePathAsync()
-    {
-        var active = await _db.Workspaces
-            .Where(w => w.IsActive)
-            .Select(w => w.Path)
-            .FirstOrDefaultAsync();
-        return active;
-    }
+    public Task<string?> GetActiveWorkspacePathAsync()
+        => _rooms.GetActiveWorkspacePathAsync();
 
     /// <summary>
     /// Ensures the default room and agent locations exist.
@@ -197,85 +195,8 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Creates a new task, optionally in an existing room or a new room.
     /// </summary>
-    public async Task<TaskAssignmentResult> CreateTaskAsync(TaskAssignmentRequest request)
-    {
-        var now = DateTime.UtcNow;
-        var correlationId = request.CorrelationId ?? Guid.NewGuid().ToString("N");
-
-        // Room creation/lookup stays in WorkspaceRuntime (room/agent orchestration)
-        RoomEntity roomEntity;
-        bool isNewRoom;
-
-        if (!string.IsNullOrEmpty(request.RoomId))
-        {
-            var existing = await _db.Rooms.FindAsync(request.RoomId);
-            if (existing is null)
-                throw new InvalidOperationException($"Room '{request.RoomId}' not found");
-
-            existing.Status = nameof(RoomStatus.Active);
-            existing.CurrentPhase = nameof(CollaborationPhase.Planning);
-            existing.UpdatedAt = now;
-            roomEntity = existing;
-            isNewRoom = false;
-        }
-        else
-        {
-            var roomId = $"{Normalize(request.Title)}-{Guid.NewGuid().ToString("N")[..8]}";
-            var activeWorkspace = await GetActiveWorkspacePathAsync();
-
-            roomEntity = new RoomEntity
-            {
-                Id = roomId,
-                Name = request.Title,
-                Status = nameof(RoomStatus.Active),
-                CurrentPhase = nameof(CollaborationPhase.Planning),
-                WorkspacePath = activeWorkspace,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _db.Rooms.Add(roomEntity);
-            isNewRoom = true;
-        }
-
-        // Delegate task entity creation, messages, and activity to TaskLifecycleService
-        var (task, activity) = _taskLifecycle.StageNewTask(
-            request, roomEntity.Id, roomEntity.WorkspacePath, isNewRoom, correlationId);
-
-        await _taskLifecycle.AssociateTaskWithActiveSprintAsync(task.Id, roomEntity.WorkspacePath);
-
-        await _db.SaveChangesAsync();
-
-        // Auto-join agents into the new task room so GetIdleAgentsInRoomAsync finds them.
-        if (isNewRoom)
-        {
-            foreach (var agent in _catalog.Agents.Where(a => a.AutoJoinDefaultRoom))
-            {
-                try
-                {
-                    var loc = await _db.AgentLocations.FindAsync(agent.Id);
-                    if (loc is not null && loc.State == nameof(AgentState.Working))
-                        continue;
-
-                    await MoveAgentAsync(agent.Id, roomEntity.Id, AgentState.Idle);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex,
-                        "Failed to auto-join agent {AgentId} into room {RoomId}; skipping",
-                        agent.Id, roomEntity.Id);
-                }
-            }
-        }
-
-        var roomSnapshot = await _rooms.BuildRoomSnapshotAsync(roomEntity);
-
-        return new TaskAssignmentResult(
-            CorrelationId: correlationId,
-            Room: roomSnapshot,
-            Task: task,
-            Activity: activity
-        );
-    }
+    public Task<TaskAssignmentResult> CreateTaskAsync(TaskAssignmentRequest request)
+        => _taskOrchestration.CreateTaskAsync(request);
 
     /// <summary>
     /// Returns all tasks.
@@ -352,20 +273,9 @@ public sealed class WorkspaceRuntime
     {
         return await _taskQueries.GetTasksWithActivePrsAsync();
     }
-    public async Task<TaskSnapshot> CompleteTaskAsync(
+    public Task<TaskSnapshot> CompleteTaskAsync(
         string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
-    {
-        var (snapshot, roomId) = await _taskLifecycle.CompleteTaskCoreAsync(
-            taskId, commitCount, testsCreated, mergeCommitSha);
-
-        // Auto-archive the room if all tasks in it are terminal
-        if (!string.IsNullOrEmpty(roomId))
-        {
-            await _rooms.TryAutoArchiveRoomAsync(roomId);
-        }
-
-        return snapshot;
-    }
+        => _taskOrchestration.CompleteTaskAsync(taskId, commitCount, testsCreated, mergeCommitSha);
 
     // ── Task State Commands ──────────────────────────────────────
 
@@ -407,51 +317,9 @@ public sealed class WorkspaceRuntime
     /// For completed tasks, clears the merge metadata. Reopens the breakout room
     /// so the assigned agent can address the rejection findings.
     /// </summary>
-    public async Task<TaskSnapshot> RejectTaskAsync(
+    public Task<TaskSnapshot> RejectTaskAsync(
         string taskId, string reviewerAgentId, string reason, string? revertCommitSha = null)
-    {
-        var result = await _taskLifecycle.RejectTaskCoreAsync(
-            taskId, reviewerAgentId, reason, revertCommitSha);
-
-        // Room/breakout reopen stays in WorkspaceRuntime (room/agent orchestration)
-        if (!string.IsNullOrEmpty(result.RoomId))
-        {
-            await TryReopenRoomForTaskAsync(result.RoomId);
-        }
-
-        await TryReopenBreakoutForTaskAsync(result.TaskId, reason, result.ReviewerName);
-
-        await _db.SaveChangesAsync();
-        return result.Snapshot;
-    }
-
-    /// <summary>
-    /// Reopens a room that was auto-archived when its task completed.
-    /// No-op if the room is not archived.
-    /// </summary>
-    private async Task TryReopenRoomForTaskAsync(string roomId)
-    {
-        var room = await _db.Rooms.FindAsync(roomId);
-        if (room is null || room.Status != nameof(RoomStatus.Archived))
-            return;
-
-        room.Status = nameof(RoomStatus.Active);
-        room.UpdatedAt = DateTime.UtcNow;
-
-        Publish(ActivityEventType.RoomStatusChanged, roomId, null, null,
-            $"Room reopened (task rejected): {room.Name}");
-
-        _logger.LogInformation(
-            "Reopened auto-archived room '{RoomId}' ({RoomName}) due to task rejection",
-            roomId, room.Name);
-    }
-
-    /// <summary>
-    /// Finds the most recent breakout room for a task and reopens it if archived.
-    /// Moves the assigned agent back into the breakout to address rejection findings.
-    /// </summary>
-    private Task TryReopenBreakoutForTaskAsync(string taskId, string reason, string reviewerName)
-        => _breakouts.TryReopenBreakoutForTaskAsync(taskId, reason, reviewerName);
+        => _taskOrchestration.RejectTaskAsync(taskId, reviewerAgentId, reason, revertCommitSha);
 
     /// <summary>
     /// Returns tasks that are pending review (InReview or AwaitingValidation).
@@ -465,16 +333,8 @@ public sealed class WorkspaceRuntime
     /// Posts a system note to the room associated with a task.
     /// No-op if the task has no room.
     /// </summary>
-    public async Task PostTaskNoteAsync(string taskId, string message)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        if (string.IsNullOrEmpty(entity.RoomId))
-            return;
-
-        await PostSystemStatusAsync(entity.RoomId, message);
-    }
+    public Task PostTaskNoteAsync(string taskId, string message)
+        => _taskOrchestration.PostTaskNoteAsync(taskId, message);
 
     // ── Task Comments ──────────────────────────────────────────
 
@@ -791,9 +651,6 @@ public sealed class WorkspaceRuntime
 
     public Task<List<BreakoutRoom>> GetAgentSessionsAsync(string agentId)
         => _breakouts.GetAgentSessionsAsync(agentId);
-
-    private static string Normalize(string value)
-        => RoomService.Normalize(value);
 
     // ── Orchestrator Support Methods ────────────────────────────
 

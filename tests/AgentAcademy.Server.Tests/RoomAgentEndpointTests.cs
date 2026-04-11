@@ -71,6 +71,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, _sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         _runtime = new WorkspaceRuntime(_db, logger, _catalog, activityPublisher, _sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService),
             new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, _sessionService, taskQueries, agentLocations),
@@ -80,7 +81,8 @@ public sealed class RoomAgentEndpointTests : IDisposable
             agentLocations,
             planService,
             crashRecovery,
-            initializationService);
+            initializationService,
+            taskOrchestration);
         _configService = new AgentConfigService(_db);
 
         SeedMainRoom();

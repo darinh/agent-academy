@@ -816,7 +816,10 @@ public sealed class RoomService
 
     // ── Private Helpers ─────────────────────────────────────────
 
-    private async Task<string?> GetActiveWorkspacePathAsync()
+    /// <summary>
+    /// Returns the path of the currently active workspace, or null if none.
+    /// </summary>
+    public async Task<string?> GetActiveWorkspacePathAsync()
     {
         var active = await _db.Workspaces
             .Where(w => w.IsActive)

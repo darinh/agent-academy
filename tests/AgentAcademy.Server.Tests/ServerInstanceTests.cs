@@ -75,6 +75,7 @@ public class ServerInstanceTests : IDisposable
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
 
         _runtime = new WorkspaceRuntime(
             _db,
@@ -92,7 +93,8 @@ public class ServerInstanceTests : IDisposable
             agentLocations,
             planService,
             crashRecovery,
-            initializationService);
+            initializationService,
+            taskOrchestration);
     }
 
     public void Dispose()
@@ -723,6 +725,7 @@ public class RestartHistoryApiTests : IDisposable
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, actPub);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, actPub, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         var runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
@@ -739,7 +742,8 @@ public class RestartHistoryApiTests : IDisposable
             agentLocations,
             planService,
             crashRecovery,
-            initializationService);
+            initializationService,
+            taskOrchestration);
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
