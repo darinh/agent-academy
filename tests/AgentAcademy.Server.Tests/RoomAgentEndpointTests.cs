@@ -66,7 +66,8 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
         _runtime = new WorkspaceRuntime(_db, logger, _catalog, activityPublisher, _sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, _sessionService, taskQueries));
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, _sessionService, taskQueries),
+            new TaskItemService(_db, NullLogger<TaskItemService>.Instance));
         _configService = new AgentConfigService(_db);
 
         SeedMainRoom();

@@ -143,6 +143,8 @@ public class AgentExecutorInterfaceTests
         services.AddScoped<MessageService>();
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddScoped<TaskItemService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

@@ -123,6 +123,8 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<MessageService>();
         sc.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         sc.AddScoped<BreakoutRoomService>();
+        sc.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        sc.AddScoped<TaskItemService>();
         sc.AddScoped<WorkspaceRuntime>();
         sc.AddSingleton(_github);
 
@@ -395,7 +397,8 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
         _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityPublisher, sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, taskQueries));
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, taskQueries),
+            new TaskItemService(_db, NullLogger<TaskItemService>.Instance));
         _runtime.InitializeAsync().GetAwaiter().GetResult();
     }
 

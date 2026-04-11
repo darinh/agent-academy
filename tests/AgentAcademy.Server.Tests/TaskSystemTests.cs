@@ -65,6 +65,8 @@ public class TaskSystemTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddScoped<TaskItemService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

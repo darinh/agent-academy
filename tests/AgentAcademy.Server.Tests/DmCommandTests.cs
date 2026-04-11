@@ -61,6 +61,8 @@ public class DmCommandTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddScoped<TaskItemService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();

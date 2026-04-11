@@ -6,6 +6,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
@@ -64,6 +65,8 @@ public class MergePrHandlerTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddScoped<TaskItemService>();
         services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());

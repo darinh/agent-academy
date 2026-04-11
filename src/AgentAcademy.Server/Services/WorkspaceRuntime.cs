@@ -51,6 +51,7 @@ public sealed class WorkspaceRuntime
     private readonly TaskLifecycleService _taskLifecycle;
     private readonly MessageService _messages;
     private readonly BreakoutRoomService _breakouts;
+    private readonly TaskItemService _taskItems;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -61,7 +62,8 @@ public sealed class WorkspaceRuntime
         TaskQueryService taskQueries,
         TaskLifecycleService taskLifecycle,
         MessageService messages,
-        BreakoutRoomService breakouts)
+        BreakoutRoomService breakouts,
+        TaskItemService taskItems)
     {
         _db = db;
         _logger = logger;
@@ -72,6 +74,7 @@ public sealed class WorkspaceRuntime
         _taskLifecycle = taskLifecycle;
         _messages = messages;
         _breakouts = breakouts;
+        _taskItems = taskItems;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -1931,146 +1934,26 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Creates a task item associated with a breakout room.
     /// </summary>
-    public async Task<TaskItem> CreateTaskItemAsync(
+    // ── Task Items (delegated to TaskItemService) ─────────────────
+
+    public Task<TaskItem> CreateTaskItemAsync(
         string title, string description, string assignedTo,
         string roomId, string? breakoutRoomId)
-    {
-        var now = DateTime.UtcNow;
-        var entity = new TaskItemEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Title = title,
-            Description = description,
-            Status = nameof(TaskItemStatus.Pending),
-            AssignedTo = assignedTo,
-            RoomId = roomId,
-            BreakoutRoomId = breakoutRoomId,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-        _db.TaskItems.Add(entity);
-        await _db.SaveChangesAsync();
+        => _taskItems.CreateTaskItemAsync(title, description, assignedTo, roomId, breakoutRoomId);
 
-        return new TaskItem(
-            entity.Id, entity.Title, entity.Description,
-            TaskItemStatus.Pending, entity.AssignedTo,
-            entity.RoomId, entity.BreakoutRoomId,
-            null, null, now, now);
-    }
-
-    /// <summary>
-    /// Updates the status of a task item, with optional evidence.
-    /// </summary>
-    public async Task UpdateTaskItemStatusAsync(
+    public Task UpdateTaskItemStatusAsync(
         string taskItemId, TaskItemStatus status, string? evidence = null)
-    {
-        var entity = await _db.TaskItems.FindAsync(taskItemId);
-        if (entity is null)
-            throw new InvalidOperationException($"Task item '{taskItemId}' not found");
+        => _taskItems.UpdateTaskItemStatusAsync(taskItemId, status, evidence);
 
-        entity.Status = status.ToString();
-        entity.UpdatedAt = DateTime.UtcNow;
-        if (evidence is not null) entity.Evidence = evidence;
+    public Task<List<TaskItem>> GetBreakoutTaskItemsAsync(string breakoutRoomId)
+        => _taskItems.GetBreakoutTaskItemsAsync(breakoutRoomId);
 
-        await _db.SaveChangesAsync();
-    }
+    public Task<List<TaskItem>> GetActiveTaskItemsAsync()
+        => _taskItems.GetActiveTaskItemsAsync();
 
-    /// <summary>
-    /// Returns task items associated with a breakout room.
-    /// </summary>
-    public async Task<List<TaskItem>> GetBreakoutTaskItemsAsync(string breakoutRoomId)
-    {
-        var entities = await _db.TaskItems
-            .Where(t => t.BreakoutRoomId == breakoutRoomId)
-            .ToListAsync();
+    public Task<TaskItem?> GetTaskItemAsync(string taskItemId)
+        => _taskItems.GetTaskItemAsync(taskItemId);
 
-        return entities.Select(e => new TaskItem(
-            e.Id, e.Title, e.Description,
-            Enum.Parse<TaskItemStatus>(e.Status),
-            e.AssignedTo, e.RoomId, e.BreakoutRoomId,
-            e.Evidence, e.Feedback,
-            e.CreatedAt, e.UpdatedAt)).ToList();
-    }
-
-    /// <summary>
-    /// Returns all task items that are not done (Pending or Active).
-    /// </summary>
-    public async Task<List<TaskItem>> GetActiveTaskItemsAsync()
-    {
-        var activeWorkspace = await GetActiveWorkspacePathAsync();
-        var activeStatuses = new[] { nameof(TaskItemStatus.Pending), nameof(TaskItemStatus.Active) };
-        var query = _db.TaskItems
-            .Where(t => activeStatuses.Contains(t.Status));
-
-        if (activeWorkspace is not null)
-        {
-            var workspaceRoomIds = await _db.Rooms
-                .Where(r => r.WorkspacePath == activeWorkspace)
-                .Select(r => r.Id)
-                .ToListAsync();
-            query = query.Where(t => workspaceRoomIds.Contains(t.RoomId));
-        }
-
-        var entities = await query.OrderBy(t => t.CreatedAt).ToListAsync();
-
-        return entities.Select(e => new TaskItem(
-            e.Id, e.Title, e.Description,
-            Enum.Parse<TaskItemStatus>(e.Status),
-            e.AssignedTo, e.RoomId, e.BreakoutRoomId,
-            e.Evidence, e.Feedback,
-            e.CreatedAt, e.UpdatedAt)).ToList();
-    }
-
-    /// <summary>
-    /// Returns a single task item by ID, or null if not found.
-    /// </summary>
-    public async Task<TaskItem?> GetTaskItemAsync(string taskItemId)
-    {
-        var entity = await _db.TaskItems.FindAsync(taskItemId);
-        if (entity is null) return null;
-
-        return new TaskItem(
-            entity.Id, entity.Title, entity.Description,
-            Enum.Parse<TaskItemStatus>(entity.Status),
-            entity.AssignedTo, entity.RoomId, entity.BreakoutRoomId,
-            entity.Evidence, entity.Feedback,
-            entity.CreatedAt, entity.UpdatedAt);
-    }
-
-    /// <summary>
-    /// Returns task items filtered by room and/or status.
-    /// </summary>
-    public async Task<List<TaskItem>> GetTaskItemsAsync(string? roomId = null, TaskItemStatus? status = null)
-    {
-        var query = _db.TaskItems.AsQueryable();
-
-        if (roomId is not null)
-            query = query.Where(t => t.RoomId == roomId || t.BreakoutRoomId == roomId);
-
-        if (status is not null)
-            query = query.Where(t => t.Status == status.Value.ToString());
-
-        // Scope to active workspace when no room filter is specified
-        if (roomId is null)
-        {
-            var activeWorkspace = await GetActiveWorkspacePathAsync();
-            if (activeWorkspace is not null)
-            {
-                var workspaceRoomIds = await _db.Rooms
-                    .Where(r => r.WorkspacePath == activeWorkspace)
-                    .Select(r => r.Id)
-                    .ToListAsync();
-                query = query.Where(t => workspaceRoomIds.Contains(t.RoomId));
-            }
-        }
-
-        var entities = await query.OrderBy(t => t.CreatedAt).ToListAsync();
-
-        return entities.Select(e => new TaskItem(
-            e.Id, e.Title, e.Description,
-            Enum.Parse<TaskItemStatus>(e.Status),
-            e.AssignedTo, e.RoomId, e.BreakoutRoomId,
-            e.Evidence, e.Feedback,
-            e.CreatedAt, e.UpdatedAt)).ToList();
-    }
+    public Task<List<TaskItem>> GetTaskItemsAsync(string? roomId = null, TaskItemStatus? status = null)
+        => _taskItems.GetTaskItemsAsync(roomId, status);
 }
