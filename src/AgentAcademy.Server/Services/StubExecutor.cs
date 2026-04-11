@@ -67,6 +67,11 @@ public sealed class StubExecutor : IAgentExecutor
         return Task.CompletedTask;
     }
 
+    public Task DisposeWorktreeClientAsync(string workspacePath)
+    {
+        return Task.CompletedTask;
+    }
+
     public Task DisposeAsync()
     {
         return Task.CompletedTask;

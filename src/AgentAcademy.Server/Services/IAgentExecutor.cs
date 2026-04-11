@@ -72,6 +72,13 @@ public interface IAgentExecutor
     Task InvalidateAllSessionsAsync();
 
     /// <summary>
+    /// Disposes a worktree-scoped client and all sessions that belong to it.
+    /// Called when a worktree is removed (task complete/cancelled).
+    /// No-op when the executor doesn't manage per-worktree resources.
+    /// </summary>
+    Task DisposeWorktreeClientAsync(string workspacePath);
+
+    /// <summary>
     /// Releases all managed resources (sessions, client connections).
     /// </summary>
     Task DisposeAsync();

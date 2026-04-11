@@ -125,14 +125,23 @@ public class TaskAssignmentWorkflowTests : IDisposable
             await runtime.PostHumanMessageAsync("main", "Assign the backend task.");
         }
 
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, _executor, new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            _gitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            NullLogger<BreakoutLifecycleService>.Instance);
+
         var orchestrator = new AgentOrchestrator(
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory,
             _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             _gitService,
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");
@@ -214,14 +223,23 @@ public class TaskAssignmentWorkflowTests : IDisposable
             await runtime.PostHumanMessageAsync("main", "Build the widget please.");
         }
 
+        var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var breakoutLifecycle2 = new BreakoutLifecycleService(
+            scopeFactory2, _executor, new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            mockGitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            NullLogger<BreakoutLifecycleService>.Instance);
+
         var orchestrator = new AgentOrchestrator(
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory2,
             _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             mockGitService,
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            breakoutLifecycle2,
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");
