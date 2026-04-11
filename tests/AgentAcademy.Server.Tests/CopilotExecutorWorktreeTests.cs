@@ -44,6 +44,7 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<AgentLocationService>();
         services.AddScoped<BreakoutRoomService>();
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);

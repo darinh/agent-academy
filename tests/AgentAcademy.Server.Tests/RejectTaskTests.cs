@@ -66,6 +66,7 @@ public class RejectTaskTests : IDisposable
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();
+        services.AddScoped<AgentLocationService>();
         services.AddScoped<BreakoutRoomService>();
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);

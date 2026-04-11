@@ -199,6 +199,7 @@ builder.Services.AddScoped<ActivityPublisher>();
 builder.Services.AddScoped<TaskQueryService>();
 builder.Services.AddScoped<TaskLifecycleService>();
 builder.Services.AddScoped<MessageService>();
+builder.Services.AddScoped<AgentLocationService>();
 builder.Services.AddScoped<BreakoutRoomService>();
 builder.Services.AddScoped<TaskItemService>();
 builder.Services.AddScoped<RoomService>();

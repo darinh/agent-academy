@@ -49,6 +49,7 @@ public sealed class WorkspaceRuntime
     private readonly BreakoutRoomService _breakouts;
     private readonly TaskItemService _taskItems;
     private readonly RoomService _rooms;
+    private readonly AgentLocationService _agentLocations;
 
     public WorkspaceRuntime(
         AgentAcademyDbContext db,
@@ -61,7 +62,8 @@ public sealed class WorkspaceRuntime
         MessageService messages,
         BreakoutRoomService breakouts,
         TaskItemService taskItems,
-        RoomService rooms)
+        RoomService rooms,
+        AgentLocationService agentLocations)
     {
         _db = db;
         _logger = logger;
@@ -74,6 +76,7 @@ public sealed class WorkspaceRuntime
         _breakouts = breakouts;
         _taskItems = taskItems;
         _rooms = rooms;
+        _agentLocations = agentLocations;
     }
 
     // ── Initialization ──────────────────────────────────────────
@@ -806,66 +809,21 @@ public sealed class WorkspaceRuntime
     /// <summary>
     /// Returns all agent locations.
     /// </summary>
-    public async Task<List<AgentLocation>> GetAgentLocationsAsync()
-    {
-        var entities = await _db.AgentLocations.ToListAsync();
-        return entities.Select(BuildAgentLocation).ToList();
-    }
+    public Task<List<AgentLocation>> GetAgentLocationsAsync()
+        => _agentLocations.GetAgentLocationsAsync();
 
     /// <summary>
     /// Returns a single agent's location, or null if not tracked.
     /// </summary>
-    public async Task<AgentLocation?> GetAgentLocationAsync(string agentId)
-    {
-        var entity = await _db.AgentLocations.FindAsync(agentId);
-        return entity is null ? null : BuildAgentLocation(entity);
-    }
+    public Task<AgentLocation?> GetAgentLocationAsync(string agentId)
+        => _agentLocations.GetAgentLocationAsync(agentId);
 
     /// <summary>
     /// Moves an agent to a new room/state.
     /// </summary>
-    public async Task<AgentLocation> MoveAgentAsync(
+    public Task<AgentLocation> MoveAgentAsync(
         string agentId, string roomId, AgentState state, string? breakoutRoomId = null)
-    {
-        // Allow both catalog agents and custom agents (stored in agent_configs)
-        var inCatalog = _catalog.Agents.Any(a => a.Id == agentId);
-        if (!inCatalog)
-        {
-            var customConfig = await _db.AgentConfigs.FindAsync(agentId);
-            if (customConfig is null)
-                throw new InvalidOperationException($"Agent '{agentId}' not found in catalog or custom agents");
-        }
-
-        var now = DateTime.UtcNow;
-        var entity = await _db.AgentLocations.FindAsync(agentId);
-
-        if (entity is null)
-        {
-            entity = new AgentLocationEntity
-            {
-                AgentId = agentId,
-                RoomId = roomId,
-                State = state.ToString(),
-                BreakoutRoomId = breakoutRoomId,
-                UpdatedAt = now
-            };
-            _db.AgentLocations.Add(entity);
-        }
-        else
-        {
-            entity.RoomId = roomId;
-            entity.State = state.ToString();
-            entity.BreakoutRoomId = breakoutRoomId;
-            entity.UpdatedAt = now;
-        }
-
-        Publish(ActivityEventType.PresenceUpdated, roomId, agentId, null,
-            $"Agent {agentId} moved to {roomId} ({state})");
-
-        await _db.SaveChangesAsync();
-
-        return BuildAgentLocation(entity);
-    }
+        => _agentLocations.MoveAgentAsync(agentId, roomId, state, breakoutRoomId);
 
     // ── Breakout Rooms ──────────────────────────────────────────
 
@@ -1114,15 +1072,7 @@ public sealed class WorkspaceRuntime
     }
 
     private static AgentLocation BuildAgentLocation(AgentLocationEntity entity)
-    {
-        return new AgentLocation(
-            AgentId: entity.AgentId,
-            RoomId: entity.RoomId,
-            State: Enum.Parse<AgentState>(entity.State),
-            BreakoutRoomId: entity.BreakoutRoomId,
-            UpdatedAt: entity.UpdatedAt
-        );
-    }
+        => AgentLocationService.BuildAgentLocation(entity);
 
     private Task<List<BreakoutRoom>> GetAllBreakoutRoomsAsync()
         => _breakouts.GetAllBreakoutRoomsAsync();

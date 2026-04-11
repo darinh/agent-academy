@@ -68,6 +68,8 @@ public class ServerInstanceTests : IDisposable
         var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
+        var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
+
         _runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
@@ -77,10 +79,11 @@ public class ServerInstanceTests : IDisposable
             taskQueries,
             taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations),
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)));
+                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)),
+            agentLocations);
     }
 
     public void Dispose()
@@ -696,6 +699,7 @@ public class RestartHistoryApiTests : IDisposable
         var actBus = new ActivityBroadcaster();
         var actPub = new ActivityPublisher(_db, actBus);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub);
+        var agentLocations = new AgentLocationService(_db, catalog, actPub);
         var runtime = new WorkspaceRuntime(
             _db,
             NullLogger<WorkspaceRuntime>.Instance,
@@ -705,10 +709,11 @@ public class RestartHistoryApiTests : IDisposable
             taskQueries,
             taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, actPub, sessionService, taskQueries),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, actPub, sessionService, taskQueries, agentLocations),
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService)));
+                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService)),
+            agentLocations);
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);

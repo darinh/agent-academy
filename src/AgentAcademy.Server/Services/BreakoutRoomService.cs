@@ -25,6 +25,7 @@ public sealed class BreakoutRoomService
     private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
     private readonly TaskQueryService _taskQueries;
+    private readonly AgentLocationService _agentLocations;
 
     public BreakoutRoomService(
         AgentAcademyDbContext db,
@@ -32,7 +33,8 @@ public sealed class BreakoutRoomService
         AgentCatalogOptions catalog,
         ActivityPublisher activity,
         ConversationSessionService sessionService,
-        TaskQueryService taskQueries)
+        TaskQueryService taskQueries,
+        AgentLocationService agentLocations)
     {
         _db = db;
         _logger = logger;
@@ -40,6 +42,7 @@ public sealed class BreakoutRoomService
         _activity = activity;
         _sessionService = sessionService;
         _taskQueries = taskQueries;
+        _agentLocations = agentLocations;
     }
 
     // ── Creation & Closure ──────────────────────────────────────
@@ -416,53 +419,9 @@ public sealed class BreakoutRoomService
         );
     }
 
-    private async Task<AgentLocation> MoveAgentAsync(
+    private Task<AgentLocation> MoveAgentAsync(
         string agentId, string roomId, AgentState state, string? breakoutRoomId = null)
-    {
-        var inCatalog = _catalog.Agents.Any(a => a.Id == agentId);
-        if (!inCatalog)
-        {
-            var customConfig = await _db.AgentConfigs.FindAsync(agentId);
-            if (customConfig is null)
-                throw new InvalidOperationException($"Agent '{agentId}' not found in catalog or custom agents");
-        }
-
-        var now = DateTime.UtcNow;
-        var entity = await _db.AgentLocations.FindAsync(agentId);
-
-        if (entity is null)
-        {
-            entity = new AgentLocationEntity
-            {
-                AgentId = agentId,
-                RoomId = roomId,
-                State = state.ToString(),
-                BreakoutRoomId = breakoutRoomId,
-                UpdatedAt = now
-            };
-            _db.AgentLocations.Add(entity);
-        }
-        else
-        {
-            entity.RoomId = roomId;
-            entity.State = state.ToString();
-            entity.BreakoutRoomId = breakoutRoomId;
-            entity.UpdatedAt = now;
-        }
-
-        _activity.Publish(ActivityEventType.PresenceUpdated, roomId, agentId, null,
-            $"Agent {agentId} moved to {roomId} ({state})");
-
-        await _db.SaveChangesAsync();
-
-        return new AgentLocation(
-            AgentId: entity.AgentId,
-            RoomId: entity.RoomId,
-            State: Enum.Parse<AgentState>(entity.State),
-            BreakoutRoomId: entity.BreakoutRoomId,
-            UpdatedAt: entity.UpdatedAt
-        );
-    }
+        => _agentLocations.MoveAgentAsync(agentId, roomId, state, breakoutRoomId);
 
     private async Task<string?> GetActiveWorkspacePathAsync()
     {

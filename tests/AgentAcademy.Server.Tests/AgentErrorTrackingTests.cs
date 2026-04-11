@@ -249,14 +249,16 @@ public class ErrorApiEndpointTests : IDisposable
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
+        var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
         _runtime = new WorkspaceRuntime(
             _db, NullLogger<WorkspaceRuntime>.Instance,
             _catalog, activityPublisher, sessionService, taskQueries, taskLifecycle,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries),
+            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries, agentLocations),
             new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
             new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService)));
+                new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService)),
+            agentLocations);
     }
 
     public void Dispose()
