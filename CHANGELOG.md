@@ -7,6 +7,7 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Features
 
+- **add analytics CSV/JSON export** — `GET /api/export/agents` and `GET /api/export/usage` endpoints with downloadable CSV (RFC 4180, formula injection protection) and JSON formats. Truncation detection via `X-Truncated` header. Frontend export button on agent analytics panel.
 - add GitHub integration status tab to Settings panel
 - bridge OAuth token to gh CLI for PR operations
 - **add DataAnnotations validation to all API request types** — enforces string length limits, required fields, and range constraints on 20+ request records. Invalid requests now return 400 + ProblemDetails.

@@ -215,7 +215,9 @@ public sealed class LlmUsageTracker
     public async Task<List<LlmUsageRecord>> GetRecentUsageAsync(
         string? roomId = null,
         string? agentId = null,
-        int limit = 50)
+        int limit = 50,
+        DateTime? since = null,
+        CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -226,6 +228,8 @@ public sealed class LlmUsageTracker
             query = query.Where(u => u.RoomId == roomId);
         if (agentId is not null)
             query = query.Where(u => u.AgentId == agentId);
+        if (since is not null)
+            query = query.Where(u => u.RecordedAt >= since.Value);
 
         return await query
             .OrderByDescending(u => u.RecordedAt)
@@ -244,7 +248,7 @@ public sealed class LlmUsageTracker
                 u.ReasoningEffort,
                 u.RecordedAt
             ))
-            .ToListAsync();
+            .ToListAsync(ct);
     }
 
     /// <summary>

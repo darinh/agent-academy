@@ -7,6 +7,7 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowSyncRegular,
+  ArrowDownloadRegular,
   PeopleRegular,
   ErrorCircleRegular,
   CheckmarkCircleRegular,
@@ -15,7 +16,7 @@ import {
 import V3Badge from "./V3Badge";
 import Sparkline from "./Sparkline";
 import { formatCost, formatTokenCount } from "./panelUtils";
-import { getAgentAnalytics, type AgentAnalyticsSummary, type AgentPerformanceMetrics } from "./api";
+import { getAgentAnalytics, exportAgentAnalytics, type AgentAnalyticsSummary, type AgentPerformanceMetrics } from "./api";
 import AgentDetailView from "./AgentDetailView";
 
 // ── Styles ──
@@ -301,6 +302,17 @@ export default function AgentAnalyticsPanel({ hoursBack }: AgentAnalyticsPanelPr
         <button className={s.refreshBtn} onClick={fetchData} disabled={loading}>
           <ArrowSyncRegular style={{ fontSize: 12 }} />
           {loading ? "Loading…" : "Refresh"}
+        </button>
+        <button
+          className={s.refreshBtn}
+          onClick={() => exportAgentAnalytics(hoursBack, "csv").catch((e) => {
+            setError(e instanceof Error ? e.message : "Export failed");
+          })}
+          disabled={loading || !data}
+          title="Export agent analytics as CSV"
+        >
+          <ArrowDownloadRegular style={{ fontSize: 12 }} />
+          Export CSV
         </button>
       </div>
 

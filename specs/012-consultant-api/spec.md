@@ -243,6 +243,28 @@ Response:
 }
 ```
 
+#### Analytics Export
+
+> **Source**: `src/AgentAcademy.Server/Controllers/ExportController.cs`, `src/AgentAcademy.Server/Services/CsvExportService.cs`
+
+Downloadable analytics data in CSV or JSON format.
+
+```
+GET /api/export/agents?hoursBack={N}&format=csv|json
+GET /api/export/usage?hoursBack={N}&agentId={id}&limit=10000&format=csv|json
+```
+
+**Agent summary export** returns one row per agent with flat metrics (no token trend). **Usage records export** returns individual LLM API call records with optional agent and time filters.
+
+- `format` (optional, default `csv`): `csv` or `json`. CSV uses RFC 4180 with CRLF line endings, InvariantCulture formatting, ISO 8601 timestamps, and formula injection protection (cells starting with `=`, `+`, `-`, `@` are prefixed with `'`).
+- `limit` (optional, 1–50000, default 10000): Max records for usage export. Server fetches `limit+1` to detect truncation accurately.
+- Response headers: `X-Record-Count` (actual count returned), `X-Truncated: true` (only when more records exist beyond limit).
+- Content-Disposition: `attachment; filename="agent-analytics-{timestamp}.csv"` (triggers browser download).
+
+Frontend: Export CSV button on `AgentAnalyticsPanel` toolbar. Uses `downloadFile()` helper in `api.ts` which reads blob from fetch response and triggers download via temporary anchor element.
+
+> **Tests**: `CsvExportTests` (20 tests — formatting, escaping, formula injection, edge cases), `ExportControllerTests` (14 tests — validation, content types, truncation, time filtering, integration with real DB).
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
@@ -329,3 +351,4 @@ This handles:
 - **WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.
 - **Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.
 - **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages.
+- **Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records. Implemented.
