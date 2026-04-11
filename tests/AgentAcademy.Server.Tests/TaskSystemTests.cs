@@ -105,7 +105,7 @@ public class TaskSystemTests : IDisposable
             Type: Bug
             """;
 
-        var result = AgentOrchestrator.ParseTaskAssignments(content);
+        var result = AgentResponseParser.ParseTaskAssignments(content);
 
         Assert.Single(result);
         Assert.Equal(TaskType.Bug, result[0].Type);
@@ -124,7 +124,7 @@ public class TaskSystemTests : IDisposable
             - Users can log in
             """;
 
-        var result = AgentOrchestrator.ParseTaskAssignments(content);
+        var result = AgentResponseParser.ParseTaskAssignments(content);
 
         Assert.Single(result);
         Assert.Equal(TaskType.Feature, result[0].Type);
@@ -140,7 +140,7 @@ public class TaskSystemTests : IDisposable
             Type: spike
             """;
 
-        var result = AgentOrchestrator.ParseTaskAssignments(content);
+        var result = AgentResponseParser.ParseTaskAssignments(content);
 
         Assert.Single(result);
         Assert.Equal(TaskType.Spike, result[0].Type);
@@ -156,7 +156,7 @@ public class TaskSystemTests : IDisposable
             Type: NotARealType
             """;
 
-        var result = AgentOrchestrator.ParseTaskAssignments(content);
+        var result = AgentResponseParser.ParseTaskAssignments(content);
 
         Assert.Single(result);
         Assert.Equal(TaskType.Feature, result[0].Type);
@@ -176,7 +176,7 @@ public class TaskSystemTests : IDisposable
             Type: Bug
             """;
 
-        var result = AgentOrchestrator.ParseTaskAssignments(content);
+        var result = AgentResponseParser.ParseTaskAssignments(content);
 
         Assert.Single(result);
         Assert.Equal(TaskType.Bug, result[0].Type);

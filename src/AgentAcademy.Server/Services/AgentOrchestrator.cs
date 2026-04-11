@@ -16,9 +16,6 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class AgentOrchestrator
 {
-    /// <summary>Cap on the number of agents that can be tagged in one round.</summary>
-    private const int MaxTaggedAgents = 6;
-
     /// <summary>
     /// Consecutive breakout rounds with zero commands parsed before the agent is
     /// considered stuck and the breakout is terminated.
@@ -334,8 +331,8 @@ public sealed class AgentOrchestrator
                     await runtime.PublishFinishedAsync(planner, roomId);
                 }
 
-                if (!string.IsNullOrWhiteSpace(plannerResponse) && !IsPassResponse(plannerResponse)
-                    && !IsStubOfflineResponse(plannerResponse))
+                if (!string.IsNullOrWhiteSpace(plannerResponse) && !AgentResponseParser.IsPassResponse(plannerResponse)
+                    && !AgentResponseParser.IsStubOfflineResponse(plannerResponse))
                 {
                     hadNonPassResponse = true;
 
@@ -343,13 +340,13 @@ public sealed class AgentOrchestrator
                     await ProcessAndPostAgentResponseAsync(runtime, planner, roomId, plannerResponse);
 
                     // Collect @-mentioned agents for the next step
-                    foreach (var a in ParseTaggedAgents(runtime, plannerResponse))
+                    foreach (var a in AgentResponseParser.ParseTaggedAgents(runtime.GetConfiguredAgents(), plannerResponse))
                     {
                         if (a.Id != planner.Id) agentsToRun.Add(a);
                     }
 
                     // Detect and handle task assignments
-                    foreach (var assignment in ParseTaskAssignments(plannerResponse))
+                    foreach (var assignment in AgentResponseParser.ParseTaskAssignments(plannerResponse))
                     {
                         await HandleTaskAssignmentAsync(runtime, roomId, assignment);
                     }
@@ -406,15 +403,15 @@ public sealed class AgentOrchestrator
                     await runtime.PublishFinishedAsync(agent, roomId);
                 }
 
-                if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response)
-                    && !IsStubOfflineResponse(response))
+                if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)
+                    && !AgentResponseParser.IsStubOfflineResponse(response))
                 {
                     hadNonPassResponse = true;
 
                     // Process commands and post remaining text
                     await ProcessAndPostAgentResponseAsync(runtime, agent, roomId, response);
 
-                    foreach (var assignment in ParseTaskAssignments(response))
+                    foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
                     {
                         if (await TryHandleTaskAssignmentWithGatingAsync(runtime, agent, roomId, assignment))
                             await HandleTaskAssignmentAsync(runtime, roomId, assignment);
@@ -558,12 +555,12 @@ public sealed class AgentOrchestrator
             await runtime.PublishFinishedAsync(agent, roomId);
         }
 
-        if (!string.IsNullOrWhiteSpace(response) && !IsPassResponse(response)
-            && !IsStubOfflineResponse(response))
+        if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)
+            && !AgentResponseParser.IsStubOfflineResponse(response))
         {
             await ProcessAndPostAgentResponseAsync(runtime, agent, roomId, response);
 
-            foreach (var assignment in ParseTaskAssignments(response))
+            foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
             {
                 if (await TryHandleTaskAssignmentWithGatingAsync(runtime, agent, roomId, assignment))
                     await HandleTaskAssignmentAsync(runtime, roomId, assignment);
@@ -605,50 +602,6 @@ public sealed class AgentOrchestrator
     }
 
     // ── TASK ASSIGNMENT PARSING ─────────────────────────────────
-
-    /// <summary>
-    /// Parses TASK ASSIGNMENT: blocks from an agent's response text.
-    /// </summary>
-    internal static List<ParsedTaskAssignment> ParseTaskAssignments(string content)
-    {
-        var assignments = new List<ParsedTaskAssignment>();
-
-        var blocks = Regex.Split(content, @"TASK ASSIGNMENT:", RegexOptions.IgnoreCase);
-        foreach (var block in blocks.Skip(1))
-        {
-            var agentMatch = Regex.Match(block, @"Agent:\s*@?(\S+)", RegexOptions.IgnoreCase);
-            var titleMatch = Regex.Match(block, @"Title:\s*(.+)", RegexOptions.IgnoreCase);
-            var descMatch = Regex.Match(block, @"Description:\s*([\s\S]*?)(?=Acceptance Criteria:|Type:|TASK ASSIGNMENT:|$)", RegexOptions.IgnoreCase);
-            var criteriaMatch = Regex.Match(block, @"Acceptance Criteria:\s*([\s\S]*?)(?=Type:|TASK ASSIGNMENT:|$)", RegexOptions.IgnoreCase);
-            var typeMatch = Regex.Match(block, @"Type:\s*(\S+)", RegexOptions.IgnoreCase);
-
-            if (!agentMatch.Success || !titleMatch.Success) continue;
-
-            var criteria = new List<string>();
-            if (criteriaMatch.Success)
-            {
-                foreach (var line in criteriaMatch.Groups[1].Value.Split('\n'))
-                {
-                    var trimmed = Regex.Replace(line, @"^[-*]\s*", "").Trim();
-                    if (!string.IsNullOrEmpty(trimmed)) criteria.Add(trimmed);
-                }
-            }
-
-            var taskType = TaskType.Feature;
-            if (typeMatch.Success)
-                Enum.TryParse(typeMatch.Groups[1].Value.Trim(), ignoreCase: true, out taskType);
-
-            assignments.Add(new ParsedTaskAssignment(
-                Agent: agentMatch.Groups[1].Value.Trim(),
-                Title: titleMatch.Groups[1].Value.Trim(),
-                Description: descMatch.Success ? descMatch.Groups[1].Value.Trim() : titleMatch.Groups[1].Value.Trim(),
-                Criteria: criteria,
-                Type: taskType));
-        }
-
-        return assignments;
-    }
-
     private async Task HandleTaskAssignmentAsync(
         WorkspaceRuntime runtime, string roomId, ParsedTaskAssignment assignment)
     {
@@ -938,7 +891,7 @@ public sealed class AgentOrchestrator
                 // Process commands targeting the worktree directory (or main checkout if no worktree)
                 if (!string.IsNullOrWhiteSpace(response))
                 {
-                    isStubOffline = IsStubOfflineResponse(response);
+                    isStubOffline = AgentResponseParser.IsStubOfflineResponse(response);
                     if (!isStubOffline)
                     {
                         var cmdResult = await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
@@ -974,7 +927,7 @@ public sealed class AgentOrchestrator
                     breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
             }
 
-            var report = ParseWorkReport(response);
+            var report = AgentResponseParser.ParseWorkReport(response);
             if (report is not null && Regex.IsMatch(report.Status, @"complete", RegexOptions.IgnoreCase))
             {
                 var latestTasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
@@ -1246,11 +1199,11 @@ public sealed class AgentOrchestrator
             await runtime.PublishFinishedAsync(reviewer, parentRoomId);
         }
 
-        if (string.IsNullOrWhiteSpace(reviewResponse) || IsPassResponse(reviewResponse))
+        if (string.IsNullOrWhiteSpace(reviewResponse) || AgentResponseParser.IsPassResponse(reviewResponse))
             return null;
 
         // If reviewer returned offline notice, skip the review cycle entirely
-        if (IsStubOfflineResponse(reviewResponse))
+        if (AgentResponseParser.IsStubOfflineResponse(reviewResponse))
         {
             _logger.LogWarning("Reviewer returned stub offline notice — skipping review cycle");
             return null;
@@ -1269,7 +1222,7 @@ public sealed class AgentOrchestrator
             _logger.LogWarning(ex, "Failed to post review");
         }
 
-        return ParseReviewVerdict(reviewResponse);
+        return AgentResponseParser.ParseReviewVerdict(reviewResponse);
     }
 
     private async Task HandleReviewRejectionAsync(
@@ -1337,7 +1290,7 @@ public sealed class AgentOrchestrator
             if (!string.IsNullOrWhiteSpace(response))
             {
                 // Bail if agent returned stub offline notice
-                if (IsStubOfflineResponse(response))
+                if (AgentResponseParser.IsStubOfflineResponse(response))
                 {
                     _logger.LogWarning(
                         "Agent {AgentName} returned stub offline notice in fix round — aborting",
@@ -1353,7 +1306,7 @@ public sealed class AgentOrchestrator
                 await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
             }
 
-            var report = ParseWorkReport(response);
+            var report = AgentResponseParser.ParseWorkReport(response);
             if (report is not null && Regex.IsMatch(report.Status, @"complete", RegexOptions.IgnoreCase))
             {
                 var latestTasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
@@ -1381,68 +1334,6 @@ public sealed class AgentOrchestrator
         }
     }
 
-    // ── PARSING ─────────────────────────────────────────────────
-
-    /// <summary>
-    /// Parses a WORK REPORT: block from agent response text.
-    /// Returns null if no report block is found.
-    /// </summary>
-    internal static ParsedWorkReport? ParseWorkReport(string content)
-    {
-        var match = Regex.Match(content, @"WORK REPORT:([\s\S]*?)(?=$|\nTASK ASSIGNMENT:)", RegexOptions.IgnoreCase);
-        if (!match.Success) return null;
-
-        var block = match.Groups[1].Value;
-        var statusMatch = Regex.Match(block, @"Status:\s*(.+)", RegexOptions.IgnoreCase);
-        var filesMatch = Regex.Match(block, @"Files?:\s*([\s\S]*?)(?=Evidence:|$)", RegexOptions.IgnoreCase);
-        var evidenceMatch = Regex.Match(block, @"Evidence:\s*([\s\S]*?)$", RegexOptions.IgnoreCase);
-
-        var files = new List<string>();
-        if (filesMatch.Success)
-        {
-            foreach (var line in filesMatch.Groups[1].Value.Split('\n'))
-            {
-                var trimmed = Regex.Replace(line, @"^[-*]\s*", "").Trim();
-                if (!string.IsNullOrEmpty(trimmed)) files.Add(trimmed);
-            }
-        }
-
-        return new ParsedWorkReport(
-            Status: statusMatch.Success ? statusMatch.Groups[1].Value.Trim() : "unknown",
-            Files: files,
-            Evidence: evidenceMatch.Success ? evidenceMatch.Groups[1].Value.Trim() : "");
-    }
-
-    /// <summary>
-    /// Parses a REVIEW: block from reviewer response text.
-    /// Returns null if no review block is found.
-    /// </summary>
-    internal static ParsedReviewVerdict? ParseReviewVerdict(string content)
-    {
-        var match = Regex.Match(content, @"REVIEW:([\s\S]*?)$", RegexOptions.IgnoreCase);
-        if (!match.Success) return null;
-
-        var block = match.Groups[1].Value;
-        var verdictMatch = Regex.Match(block, @"(?:Verdict|Status|Decision):\s*(.+)", RegexOptions.IgnoreCase);
-        var findingsMatch = Regex.Match(block, @"(?:Findings?|Issues?|Comments?):\s*([\s\S]*?)$", RegexOptions.IgnoreCase);
-
-        var findings = new List<string>();
-        if (findingsMatch.Success)
-        {
-            foreach (var line in findingsMatch.Groups[1].Value.Split('\n'))
-            {
-                var trimmed = Regex.Replace(line, @"^[-*]\s*", "").Trim();
-                if (!string.IsNullOrEmpty(trimmed)) findings.Add(trimmed);
-            }
-        }
-
-        return new ParsedReviewVerdict(
-            Verdict: verdictMatch.Success
-                ? verdictMatch.Groups[1].Value.Trim()
-                : block.Trim().Split('\n').FirstOrDefault()?.Trim() ?? "",
-            Findings: findings);
-    }
-
     // ── AGENT HELPERS ───────────────────────────────────────────
 
     private static AgentDefinition? FindPlanner(WorkspaceRuntime runtime) =>
@@ -1468,32 +1359,6 @@ public sealed class AgentOrchestrator
             }
         }
         return result;
-    }
-
-    private List<AgentDefinition> ParseTaggedAgents(WorkspaceRuntime runtime, string response)
-    {
-        if (string.IsNullOrWhiteSpace(response)) return [];
-
-        var allAgents = runtime.GetConfiguredAgents();
-        var tagged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<AgentDefinition>();
-
-        foreach (var agent in allAgents)
-        {
-            if (tagged.Contains(agent.Id)) continue;
-
-            var namePattern = $@"@?{Regex.Escape(agent.Name)}\b";
-            var idPattern = $@"@?{Regex.Escape(agent.Id)}\b";
-
-            if (Regex.IsMatch(response, namePattern, RegexOptions.IgnoreCase) ||
-                Regex.IsMatch(response, idPattern, RegexOptions.IgnoreCase))
-            {
-                tagged.Add(agent.Id);
-                result.Add(agent);
-            }
-        }
-
-        return result.Take(MaxTaggedAgents).ToList();
     }
 
     private async Task<string> RunAgentAsync(
@@ -1531,7 +1396,7 @@ public sealed class AgentOrchestrator
 
         // Post the remaining text (with commands stripped) as the agent's message
         var textToPost = pipelineResult.RemainingText;
-        if (!string.IsNullOrWhiteSpace(textToPost) && !IsPassResponse(textToPost))
+        if (!string.IsNullOrWhiteSpace(textToPost) && !AgentResponseParser.IsPassResponse(textToPost))
         {
             await PostAgentMessageAsync(runtime, agent, roomId, textToPost);
         }
@@ -1622,68 +1487,11 @@ public sealed class AgentOrchestrator
                 RoomId: roomId,
                 SenderId: agent.Id,
                 Content: content,
-                Kind: InferMessageKind(agent.Role)));
+                Kind: AgentResponseParser.InferMessageKind(agent.Role)));
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to post message for {AgentId}", agent.Id);
         }
     }
-
-    /// <summary>
-    /// Maps an agent's role to the appropriate <see cref="MessageKind"/>.
-    /// </summary>
-    internal static MessageKind InferMessageKind(string role) => role switch
-    {
-        "Planner" => MessageKind.Coordination,
-        "Architect" => MessageKind.Decision,
-        "SoftwareEngineer" => MessageKind.Response,
-        "Reviewer" => MessageKind.Review,
-        "Validator" => MessageKind.Validation,
-        "TechnicalWriter" => MessageKind.SpecChangeProposal,
-        _ => MessageKind.Response,
-    };
-
-    /// <summary>
-    /// Detects "pass" responses — short responses that indicate the agent
-    /// has nothing meaningful to contribute.
-    /// </summary>
-    internal static bool IsPassResponse(string response)
-    {
-        var trimmed = response.Trim();
-        return trimmed.Length < 30 &&
-               (Regex.IsMatch(trimmed, @"PASS", RegexOptions.IgnoreCase) ||
-                Regex.IsMatch(trimmed, @"^N/A$", RegexOptions.IgnoreCase) ||
-                trimmed == "No comment." ||
-                trimmed == "Nothing to add.");
-    }
-
-    /// <summary>
-    /// Detects StubExecutor offline responses. When the Copilot SDK is not
-    /// connected, retrying will produce the same result — abort early instead
-    /// of burning through all breakout/review rounds.
-    /// </summary>
-    internal static bool IsStubOfflineResponse(string response) =>
-        response.Contains("is offline — the Copilot SDK is not connected", StringComparison.Ordinal);
 }
-
-// ── Data Transfer Records ───────────────────────────────────────
-
-/// <summary>A parsed TASK ASSIGNMENT: block.</summary>
-internal record ParsedTaskAssignment(
-    string Agent,
-    string Title,
-    string Description,
-    List<string> Criteria,
-    TaskType Type = TaskType.Feature);
-
-/// <summary>A parsed WORK REPORT: block.</summary>
-internal record ParsedWorkReport(
-    string Status,
-    List<string> Files,
-    string Evidence);
-
-/// <summary>A parsed REVIEW: verdict block.</summary>
-internal record ParsedReviewVerdict(
-    string Verdict,
-    List<string> Findings);
