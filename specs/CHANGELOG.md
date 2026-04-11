@@ -5,6 +5,11 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **003-agent-system**: Per-agent resource quotas — `AgentQuotaService` enforces `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` via `agent_configs` table. Request-rate is authoritative (in-memory sliding window), token/cost is best-effort (DB aggregation). Quota checked in `CopilotExecutor.RunAsync` before circuit breaker. New API endpoints: `GET/PUT/DELETE /api/agents/{id}/quota`.
+- **003-agent-system**: Per-agent LLM call-rate limiting — each retry attempt in `SendAndCollectWithRetryAsync` counts toward the request quota. Composite index `(AgentId, RecordedAt)` on `llm_usage` for efficient quota queries.
+- **003-agent-system**: `AgentQuotaExceededException` — caught by `AgentOrchestrator.RunAgentAsync` to produce a user-visible pause message instead of crashing.
+
+### Added
 - **005-workspace-runtime**: Documented workspace isolation via `WorktreeService` — agent-level git worktree management, per-agent checkout provisioning, orchestrator integration, and database fields.
 - **300-frontend-ui**: Documented user sign-off gates — `awaitingSignOff`/`pendingStage` fields, approval/rejection UI, and API endpoints.
 - **300-frontend-ui**: Documented sprint metrics bar — stage timing, word counts, and duration estimation from artifact timestamps.

@@ -150,7 +150,8 @@ public class AgentExecutorInterfaceTests
             new NotificationManager(NullLogger<NotificationManager>.Instance),
             NSubstitute.Substitute.For<IAgentToolRegistry>(),
             new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
-            new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance));
+            new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+            new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance));
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
         connection.Dispose();
     }

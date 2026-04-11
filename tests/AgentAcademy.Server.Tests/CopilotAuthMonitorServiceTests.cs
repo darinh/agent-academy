@@ -659,7 +659,8 @@ public class CopilotExecutorAuthTransitionTests
                 serviceProvider.GetRequiredService<NotificationManager>(),
                 NSubstitute.Substitute.For<IAgentToolRegistry>(),
                 new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
-                new AgentErrorTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance));
+                new AgentErrorTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+                new AgentQuotaService(serviceProvider.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance));
 
             return new CopilotExecutorFixture(serviceProvider, connection, executor, provider);
         }

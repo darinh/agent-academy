@@ -1503,6 +1503,13 @@ public sealed class AgentOrchestrator
         {
             return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
         }
+        catch (AgentQuotaExceededException ex)
+        {
+            _logger.LogWarning(
+                "Agent {AgentName} quota exceeded ({QuotaType}): {Message}",
+                agent.Name, ex.QuotaType, ex.Message);
+            return $"⚠️ **{agent.Name} is temporarily paused** — {ex.Message}";
+        }
         catch (OperationCanceledException)
         {
             _logger.LogWarning("Agent {AgentName} was cancelled", agent.Name);

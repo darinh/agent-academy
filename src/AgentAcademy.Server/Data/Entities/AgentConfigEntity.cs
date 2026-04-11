@@ -31,6 +31,11 @@ public class AgentConfigEntity
     /// </summary>
     public string? InstructionTemplateId { get; set; }
 
+    // ── Resource Quotas (null = unlimited) ──────────────────
+    public int? MaxRequestsPerHour { get; set; }
+    public long? MaxTokensPerHour { get; set; }
+    public decimal? MaxCostPerHour { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 
     // Navigation

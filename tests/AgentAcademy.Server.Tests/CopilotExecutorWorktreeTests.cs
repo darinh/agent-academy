@@ -64,7 +64,13 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
                 NullLogger<LlmUsageTracker>.Instance),
             new AgentErrorTracker(
                 _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                NullLogger<AgentErrorTracker>.Instance));
+                NullLogger<AgentErrorTracker>.Instance),
+            new AgentQuotaService(
+                _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                new LlmUsageTracker(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    NullLogger<LlmUsageTracker>.Instance),
+                NullLogger<AgentQuotaService>.Instance));
     }
 
     [Fact]

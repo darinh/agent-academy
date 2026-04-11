@@ -354,6 +354,7 @@ public class AgentAcademyDbContext : DbContext
             entity.ToTable("agent_configs");
             entity.HasKey(e => e.AgentId);
             entity.Property(e => e.UpdatedAt).IsRequired();
+            entity.Property(e => e.MaxCostPerHour).HasColumnType("TEXT"); // SQLite decimal
 
             entity.HasOne(e => e.InstructionTemplate)
                 .WithMany()
@@ -448,6 +449,8 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.AgentId).HasDatabaseName("idx_llm_usage_agent");
             entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_llm_usage_room");
             entity.HasIndex(e => e.RecordedAt).HasDatabaseName("idx_llm_usage_time");
+            entity.HasIndex(e => new { e.AgentId, e.RecordedAt })
+                .HasDatabaseName("idx_llm_usage_agent_time");
         });
 
         modelBuilder.Entity<AgentErrorEntity>(entity =>

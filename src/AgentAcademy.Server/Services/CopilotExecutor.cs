@@ -66,6 +66,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly IAgentToolRegistry _toolRegistry;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
+    private readonly AgentQuotaService _quotaService;
     private readonly CopilotCircuitBreaker _circuitBreaker = new();
     private readonly string? _configToken;
     private readonly string? _cliPath;
@@ -91,7 +92,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         NotificationManager notificationManager,
         IAgentToolRegistry toolRegistry,
         LlmUsageTracker usageTracker,
-        AgentErrorTracker errorTracker)
+        AgentErrorTracker errorTracker,
+        AgentQuotaService quotaService)
     {
         _logger = logger;
         _stubLogger = stubLogger;
@@ -103,6 +105,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _toolRegistry = toolRegistry;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
+        _quotaService = quotaService;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -141,6 +144,10 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         string? workspacePath,
         CancellationToken ct = default)
     {
+        // Quota enforcement: early check before spending resources on session setup.
+        // Also checked per-attempt in SendAndCollectWithRetryAsync.
+        await _quotaService.EnforceQuotaAsync(agent.Id);
+
         // Circuit breaker: if the API has been consistently failing,
         // skip directly to the fallback without burning through retries.
         if (!_circuitBreaker.AllowRequest())
@@ -692,6 +699,9 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
         for (int attempt = 0; ; attempt++)
         {
+            // Enforce quota before each attempt (including retries)
+            await _quotaService.EnforceQuotaAsync(agent.Id);
+
             try
             {
                 return await SendAndCollectAsync(session, agent, prompt, roomId, ct);

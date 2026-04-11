@@ -16,6 +16,7 @@ public class AgentController : ControllerBase
     private readonly IAgentExecutor _executor;
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentConfigService _configService;
+    private readonly AgentQuotaService _quotaService;
     private readonly ILogger<AgentController> _logger;
 
     public AgentController(
@@ -23,12 +24,14 @@ public class AgentController : ControllerBase
         IAgentExecutor executor,
         AgentCatalogOptions catalog,
         AgentConfigService configService,
+        AgentQuotaService quotaService,
         ILogger<AgentController> logger)
     {
         _runtime = runtime;
         _executor = executor;
         _catalog = catalog;
         _configService = configService;
+        _quotaService = quotaService;
         _logger = logger;
     }
 
@@ -311,6 +314,118 @@ public class AgentController : ControllerBase
         }
     }
 
+    // ── Agent Quota Endpoints ──────────────────────────────
+
+    /// <summary>
+    /// GET /api/agents/{agentId}/quota — current quota status and usage.
+    /// </summary>
+    [HttpGet("{agentId}/quota")]
+    public async Task<ActionResult<QuotaStatus>> GetAgentQuota(string agentId)
+    {
+        var agent = FindAgent(agentId);
+        if (agent is null)
+            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+
+        try
+        {
+            var status = await _quotaService.GetStatusAsync(agent.Id);
+            return Ok(status);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get quota for agent '{AgentId}'", agentId);
+            return Problem("Failed to retrieve agent quota.");
+        }
+    }
+
+    /// <summary>
+    /// PUT /api/agents/{agentId}/quota — update quota limits.
+    /// </summary>
+    [HttpPut("{agentId}/quota")]
+    public async Task<ActionResult<QuotaStatus>> UpdateAgentQuota(
+        string agentId, [FromBody] UpdateQuotaRequest request)
+    {
+        // Validate: limits must be non-negative when provided
+        if (request.MaxRequestsPerHour is < 0)
+            return BadRequest(new { code = "invalid_quota", message = "MaxRequestsPerHour must be >= 0" });
+        if (request.MaxTokensPerHour is < 0)
+            return BadRequest(new { code = "invalid_quota", message = "MaxTokensPerHour must be >= 0" });
+        if (request.MaxCostPerHour is < 0)
+            return BadRequest(new { code = "invalid_quota", message = "MaxCostPerHour must be >= 0" });
+
+        var agent = FindAgent(agentId);
+        if (agent is null)
+            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+
+        try
+        {
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AgentAcademyDbContext>();
+
+            var config = await db.AgentConfigs.FindAsync(agent.Id);
+            if (config is null)
+            {
+                config = new Data.Entities.AgentConfigEntity
+                {
+                    AgentId = agent.Id,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                db.AgentConfigs.Add(config);
+            }
+
+            config.MaxRequestsPerHour = request.MaxRequestsPerHour;
+            config.MaxTokensPerHour = request.MaxTokensPerHour;
+            config.MaxCostPerHour = request.MaxCostPerHour;
+            config.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            _quotaService.InvalidateCache(agent.Id);
+
+            var status = await _quotaService.GetStatusAsync(agent.Id);
+            return Ok(status);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update quota for agent '{AgentId}'", agentId);
+            return Problem("Failed to update agent quota.");
+        }
+    }
+
+    /// <summary>
+    /// DELETE /api/agents/{agentId}/quota — remove quota limits (unlimited).
+    /// </summary>
+    [HttpDelete("{agentId}/quota")]
+    public async Task<ActionResult> RemoveAgentQuota(string agentId)
+    {
+        var agent = FindAgent(agentId);
+        if (agent is null)
+            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+
+        try
+        {
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AgentAcademyDbContext>();
+
+            var config = await db.AgentConfigs.FindAsync(agent.Id);
+            if (config is not null)
+            {
+                config.MaxRequestsPerHour = null;
+                config.MaxTokensPerHour = null;
+                config.MaxCostPerHour = null;
+                config.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
+
+            _quotaService.InvalidateCache(agent.Id);
+            return Ok(new { status = "removed", agentId = agent.Id });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to remove quota for agent '{AgentId}'", agentId);
+            return Problem("Failed to remove agent quota.");
+        }
+    }
+
     // ── Custom Agent Endpoints ────────────────────────────────
 
     /// <summary>
@@ -409,6 +524,10 @@ public class AgentController : ControllerBase
         }
         return sb.ToString().Trim('-');
     }
+
+    private AgentDefinition? FindAgent(string agentId) =>
+        _catalog.Agents.FirstOrDefault(
+            a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>
@@ -464,4 +583,14 @@ public record UpsertAgentConfigRequest(
     string? ModelOverride,
     string? CustomInstructions,
     string? InstructionTemplateId
+);
+
+/// <summary>
+/// Request body for updating an agent's resource quotas.
+/// Null values mean unlimited.
+/// </summary>
+public record UpdateQuotaRequest(
+    int? MaxRequestsPerHour,
+    long? MaxTokensPerHour,
+    decimal? MaxCostPerHour
 );

@@ -492,6 +492,9 @@ public sealed class RoomAgentEndpointTests : IDisposable
     {
         var logger = Substitute.For<ILogger<AgentController>>();
         var executor = Substitute.For<IAgentExecutor>();
-        return new AgentController(_runtime, executor, _catalog, _configService, logger);
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
+        var quotaService = new AgentQuotaService(scopeFactory, usageTracker, NullLogger<AgentQuotaService>.Instance);
+        return new AgentController(_runtime, executor, _catalog, _configService, quotaService, logger);
     }
 }
