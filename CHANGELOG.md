@@ -3,10 +3,48 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
-## Unreleased (2026-04-07)
+## Unreleased (2026-04-10)
 
 ### Features
 
+- sprint SignalR real-time updates with optimistic UI
+- agent quota UI in settings panel
+- per-agent resource quotas with request rate limiting
+- upgrade GitHub.Copilot.SDK 0.2.1 → 0.2.2
+- per-worktree CopilotClient for agent workspace isolation
+- add sprint panel metrics — stage timing and word counts
+- tabbed settings page with custom agent creation
+- room-centric conversation UI
+- workspace isolation phase 2 — worktree-aware orchestrator and command handlers
+- workspace isolation phase 1 — git metadata, agent worktrees, directory-aware GitService
+- PR workflow for sprint Implementation stage
+- add user sign-off gates for Intake and Planning stages
+- add task-sprint scoping with filter support
+- auto-inject overflow requirements into next sprint's intake
+- add FK constraints for Sprint associations
+- sprint write endpoints, frontend controls, and SprintPanel fixes
+- reorder sidebar navigation and display project name
+- render sprint artifacts as markdown
+- add SignalR real-time updates to sprint panel
+- add sprint frontend panel with REST API
+- add WorkspacePath to TaskEntity and ConversationSessionEntity
+- add WorktreeService for task-level git worktree isolation
+- add sprint command handlers (START_SPRINT, ADVANCE_STAGE, STORE_ARTIFACT, COMPLETE_SPRINT)
+- add sprint stage preambles, roster filtering, and orchestrator integration
+- add sprint-scoped session management with stage boundaries
+- add SprintService with lifecycle management, artifact gates, and 51 tests
+- add sprint entity layer — database schema for sprint workflow
+- v3 UI redesign
+- add V3Badge component and v3 global CSS primitives
+- add phase selector dropdown and filter to chat toolbar
+- implement v3 UI redesign — Matrix dark theme
+- add commit_changes SDK tool for SoftwareEngineer agents
+- add COMMIT_CHANGES command for SoftwareEngineer agents
+- add ToolAuditEntry record for tool usage audit
+- add write_file tool for SoftwareEngineer agents
+- add evidence ledger commands (RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES)
+- add agent activity bar, dashboard hover effects, and UI polish (#20)
+- add automated changelog generation from conventional commits (#10)
 - add branch protection configuration script (#8)
 - add tab overflow menu to reduce information density (#32)
 - register 11 missing commands in HumanCommandRegistry (#17)
@@ -142,6 +180,28 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Fixes
 
+- resolve frontend type errors in test files after merge
+- align test factories with current API types
+- remove ExcludedTools blocklist and grant agents full CLI tool access
+- add revert commit type to all three validators
+- resolve flaky ETXTBSY race in GitHubService tests
+- resolve frontend TypeScript build errors
+- remove dangerous grandparent directory cleanup from WorktreeServiceTests
+- always show sessions dropdown, left-align all toolbar controls
+- preserve original CreatedByAgentId on artifact update
+- change default agent model from gpt-5 to claude-opus-4.6
+- enforce conventional commit format in breakout rooms
+- dashboard overflow and DM thread list cleanup
+- restyle Tasks, Timeline, Plan, Commands, DM to match v3 mockup
+- adjust role pill padding to 3px/2px for 4px optical gap
+- optically center role badge text
+- add explicit line-height:1 to msg-name and msg-role
+- vertically center role badges next to agent names
+- user badge to sidebar, add toolbar, fix line-height, restyle all panels
+- polish chat/header to match v3 mockup
+- suppress built-in CLI tools from agent sessions
+- prevent orphaned tasks on branch creation failure
+- resolve all TypeScript build errors for clean tsc -b
 - scope Discord freeform input to configured owner user (#13)
 - show legacy rooms with null WorkspacePath in active workspace (#16)
 - align client package.json version to 0.1.0 (#4)
@@ -220,6 +280,28 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Documentation
 
+- make handoff-over-task_complete explicit in instructions
+- enforce handoff command usage in copilot instructions
+- update spec §300 and changelog for quota UI
+- sync specs for workspace isolation, sign-off gates, and sprint metrics
+- add health gates, stabilization protocol, and pre-commit checklist
+- mark sprint metrics as resolved in frontend spec
+- update Vite version from 6 to 8 in copilot instructions
+- update handoff instructions to use handoff command
+- mark sprint markdown rendering as resolved in spec
+- update frontend spec for room-centric UI and settings panel
+- add Sprint Panel to frontend UI spec
+- update specs for project-scoping changes
+- add comprehensive task-based user guide with gap analysis
+- v3 full-fidelity with separate header/toolbar and complete dashboard
+- add v2 with contextual toolbars and all 7 screens
+- add v1 Matrix-style UI mockup for iteration
+- add write_file tool documentation to SoftwareEngineer prompts
+- document RecoverFromCrashAsync in spec 005
+- add evidence ledger documentation to specs 007 and 010
+- add Invariant #9 to spec 010 — git-DB transaction ordering
+- fix TBD commit reference in spec 007 human command section
+- update architecture diagram to reflect actual subsystems (#5)
 - audit and resolve known gaps across 6 specs (#19)
 - triage 14 known gaps in spec 003 agent system (#11)
 - add setup script for git hooks and dependencies (#9)
@@ -274,6 +356,14 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Refactoring
 
+- delete 6 redundant command handlers and dead AgentPermissionHandler
+- extract command and notification DI into extension methods
+- remove Fluent typography components from ProjectSelectorPage
+- migrate Fluent Badge to V3Badge across all sub-panels
+- compact workspace UI for demo readiness
+- rename formatDuration to formatLatency in UsagePanel
+- consolidate formatDuration into shared formatElapsed
+- consolidate duplicated panel utilities into shared panelUtils.ts
 - convert SpecManager to async file I/O
 - move crash recovery trigger to bootstrap, consolidate close reasons
 - extract portable conventions to user-level copilot-instructions
@@ -282,6 +372,21 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Tests
 
+- add 51 tests for sprint realtime event metadata and optimistic updates
+- add SSE activity stream tests and mark spec resolved
+- add 87 tests for DmPanel, PlanPanel, AgentSessionPanel, WorkspaceOverviewPanel
+- add worktree CopilotClient lifecycle tests
+- add 87 tests for SprintPanel and SettingsPanel
+- add 54 tests for ProjectScanner
+- add 37 tests for ConventionalCommitMessage validation
+- add 29 tests for room management and custom agent endpoints
+- add SessionHistoryPanel test suite (15 tests) + extract utils
+- add TimelinePanel test suite (16 tests) + extract timelinePanelUtils.ts
+- add TaskStatePanel test suite (25 tests) + extract taskStatePanelUtils.ts
+- add CommandsPanel test suite (53 tests) + extract commandsPanelUtils.ts
+- add SidebarPanel test suite and extract sidebar utilities
+- add ChatPanel test suite and extract chat utilities
+- add DashboardPanel test suite and extract shared utils
 - add Human role coverage for CancelTaskHandler
 - add E2E tests for circuit breaker banner, sparklines, and fix flaky command palette
 - E2E tests for audit log panel
@@ -293,6 +398,15 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Other
 
+- ci: allow merge: commit type in linting
+- ci: skip merge commits in conventional commit lint
+- build: update GitHub.Copilot.SDK 0.2.0→0.2.1, NSubstitute 5.1.0→5.3.0
+- build: update frontend dependencies to latest patch versions
+- style(frontend): v3 audit — all screens aligned to design system
+- style(frontend): v3 audit — tasks page, task state panel, sidebar fix
+- style: eliminate remaining v1/v2 visual remnants across all views
+- style: align dashboard/overview sub-panels with v3 mockup
+- Merge task: ITimeProvider by Hephaestus + fix commands tab UI
 - style: unify visual hierarchy and component consistency across workspace panels
 - ci: enhance pipeline with caching, commit validation, and CODEOWNERS
 - ci: add branching strategy, CI, versioning, hooks, and PR templates
