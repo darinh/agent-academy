@@ -198,15 +198,11 @@ Where `{suffix}` is a six-character GUID. Examples:
 - Default target: `develop`
 - Squash-merge via `MERGE_TASK` always targets `develop`
 
-### Branch Naming (Planned — GitHub Integration)
+### Branch Naming
 
-When GitHub PR integration is added, branches will use the pattern:
+Branches use the pattern `task/{slug}-{suffix}`, where `slug` is a sanitized lowercase version of the task title and `suffix` is a 6-character GUID fragment for uniqueness (e.g., `task/my-feature-a1b2c3`).
 
-```
-agents/{agent-name}/{task-slug}
-```
-
-This allows attributing branches to named agents in the remote repository.
+> **Source**: `src/AgentAcademy.Server/Services/GitService.cs` — `CreateTaskBranchAsync`
 
 ### Commit Format
 
@@ -351,17 +347,22 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 
 ## 5. GitHub Integration
 
-**Status**: Implemented (Phase 1 — push + PR creation via `gh` CLI).
+**Status**: Implemented — push, PR creation, PR reviews, PR merge, PR status sync, and OAuth token bridge.
 
 The system can push task branches to GitHub and create pull requests via the `gh` CLI. Task entities are updated with PR URL, number, and status.
 
 ### Authentication
 
-GitHub operations use the `gh` CLI's stored credentials. The `gh` CLI must be authenticated on the server via `gh auth login`. Required scopes: `repo` (full repository access).
+GitHub operations use the `gh` CLI. Two authentication paths are supported:
+
+1. **OAuth token bridge** (preferred): When a user authenticates via the browser, `GitHubService` receives `CopilotTokenProvider` and injects the OAuth token via the `GH_TOKEN` environment variable on `gh` CLI subprocesses. If the OAuth token fails with an auth error (401/403/bad credentials), the service retries without `GH_TOKEN` to fall back to CLI credentials. Expired tokens are skipped entirely.
+2. **CLI auth**: Server-side `gh auth login` provides credentials when no OAuth token is available.
+
+Required scopes: `repo` (full repository access for PR operations).
 
 > **Source**: `src/AgentAcademy.Server/Services/GitHubService.cs`
 
-The `GET /api/github/status` endpoint reports whether `gh` is authenticated and returns the repository slug.
+`GET /api/github/status` reports authentication status including `authSource` (`"oauth"`, `"cli"`, or `"none"`) and the repository slug.
 
 > **Source**: `src/AgentAcademy.Server/Controllers/GitHubController.cs`
 
@@ -376,6 +377,9 @@ public interface IGitHubService
     Task<string?> GetRepositorySlugAsync();
     Task<PullRequestInfo> CreatePullRequestAsync(string branch, string title, string body, string baseBranch = "develop");
     Task<PullRequestInfo> GetPullRequestAsync(int prNumber);
+    Task PostPrReviewAsync(int prNumber, string body, PrReviewAction action = PrReviewAction.Comment);
+    Task<IReadOnlyList<PullRequestReview>> GetPrReviewsAsync(int prNumber);
+    Task<PrMergeResult> MergePullRequestAsync(int prNumber, string? commitTitle = null, bool deleteBranch = false);
 }
 ```
 
@@ -410,7 +414,7 @@ Creates a GitHub pull request for a task.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `GET /api/github/status` | GET | Returns `{ isConfigured, repository }` |
+| `GET /api/github/status` | GET | Returns `{ isConfigured, repository, authSource }` |
 
 ### Human Command Registry
 
@@ -476,6 +480,32 @@ Retrieves all reviews on a task's GitHub pull request.
   ]
 }
 ```
+
+### `MERGE_PR` Command
+
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergePrHandler.cs`
+
+Squash-merges a task's GitHub pull request via `gh pr merge --squash`.
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `taskId` | ✅ | — | Task whose PR to merge |
+| `deleteBranch` | — | `false` | Delete the head branch after merging |
+
+**Role gate**: Planner, Reviewer, or Human only.
+
+**Workflow**:
+1. Validates task exists, is `Approved`, and has a PR
+2. Transitions task status to `Merging`
+3. Calls `MergePullRequestAsync` which runs `gh pr merge --squash`
+4. On success: updates PR status to `Merged`, completes the task with merge commit SHA
+5. On failure: reverts task status to `Approved`
+
+### Pull Request Status Sync
+
+> **Source**: `src/AgentAcademy.Server/Services/PullRequestSyncService.cs`
+
+`PullRequestSyncService` is a `BackgroundService` that polls GitHub every 2 minutes for PR status changes. Maps GitHub review decisions to task PR statuses: `REVIEW_REQUIRED` → `ReviewRequested`, `APPROVED` → `Approved`, `CHANGES_REQUESTED` → `ChangesRequested`, merged → `Merged`, closed → `Closed`. Emits `TaskPrStatusChanged` activity events. Skips tasks with terminal PR statuses. Error isolation per PR — one failure doesn't block others.
 
 ### Known Gaps (Phase 2)
 
@@ -691,9 +721,9 @@ See spec 007 § Phase 1C for the full command reference: `RECORD_EVIDENCE`, `QUE
 
 Reviews happen via agent commands (`APPROVE_TASK`, `REQUEST_CHANGES`), not REST endpoints. There are no REST review endpoints.
 
-### GitHub Integration (Planned)
+### GitHub Integration
 
-See section 5 for planned GitHub API endpoints.
+See section 5 for GitHub API endpoints, PR commands, and status sync.
 
 ---
 
@@ -859,7 +889,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 ## Known Gaps
 
-- ~~**GitHub PR integration not implemented** — task model has PR fields but no API service exists~~ — **resolved**: `IGitHubService` / `GitHubService` wraps `gh` CLI for PR creation, status queries, review operations, and PR merging. `CREATE_PR` command pushes branch + opens PR + updates task entity. `POST_PR_REVIEW` posts reviews (approve/request changes/comment). `GET_PR_REVIEWS` fetches review history. `MERGE_PR` squash-merges PRs via GitHub API. `PullRequestSyncService` polls for status changes every 2 minutes. `GET /api/github/status` reports auth status. Phase 2 gap remaining: no OAuth flow.
+- ~~**GitHub PR integration not implemented** — task model has PR fields but no API service exists~~ — **resolved**: `IGitHubService` / `GitHubService` wraps `gh` CLI for PR creation, status queries, review operations, and PR merging. `CREATE_PR` command pushes branch + opens PR + updates task entity. `POST_PR_REVIEW` posts reviews (approve/request changes/comment). `GET_PR_REVIEWS` fetches review history. `MERGE_PR` squash-merges PRs via GitHub API. `PullRequestSyncService` polls for status changes every 2 minutes. `GET /api/github/status` reports auth status and source. OAuth token bridge enables PR operations without server-side `gh auth login`.
 - ~~No remote push capability — all work is local-only~~ — **resolved**: `GitService.PushBranchAsync` pushes branches to remote origin. Used by `CREATE_PR` command.
 - ~~No `REJECT_TASK` command for reverting approved tasks back to `ChangesRequested`~~ — **resolved**: `REJECT_TASK` handler supports `Approved` → `ChangesRequested` (simple status change + breakout reopen) and `Completed` → `ChangesRequested` (reverts merge commit on develop + breakout reopen). Role-gated to Planner, Reviewer, Human. 19 tests.
 - ~~Agent git identity configuration exists but commits are not yet attributed to agents~~ — **resolved**: `GitService.CommitAsync` and `SquashMergeAsync` now accept `AgentGitIdentity` and pass `--author` to git. `CommandContext` carries the identity from `AgentDefinition.GitIdentity`. Wired through `ShellCommandHandler` (SHELL git-commit) and `MergeTaskHandler` (MERGE_TASK).
@@ -871,6 +901,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-11 | Spec reconciliation — updated GitHub Integration section: corrected status, added OAuth bridge auth docs, updated IGitHubService interface, added MERGE_PR and PullRequestSyncService sections, fixed branch naming (task/ prefix, not agents/), updated API endpoints table with authSource, removed stale Planned markers | Anvil |
 | 2026-04-07 | Evidence ledger: new §6.6 documenting task evidence system. TaskEvidenceEntity data model, EvidencePhase enum (Baseline/After/Review), gate definitions for status transitions (Active→AwaitingValidation: ≥1, AwaitingValidation→InReview: ≥2, InReview→Approved: ≥1). Authorization rules, commands cross-reference to spec 007. Invariants #10 (immutable evidence) and #11 (advisory gates). | Anvil |
 | 2026-04-07 | Added Invariant #9: git-DB transaction ordering — task metadata must not persist to database until git branch creation succeeds (commit `36e0dda`). Documents failure mode hierarchy and UI contract. | Thucydides / Anvil |
 | 2026-04-11 | OAuth bridge for GitHub PR operations. OAuth scope expanded to include `repo`. GitHubService sets GH_TOKEN from CopilotTokenProvider. GET /api/github/status includes `authSource`. 4 new tests (1906 total). Resolves "No OAuth flow" gap. | Anvil |
