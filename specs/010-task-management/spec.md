@@ -235,7 +235,7 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 
 ### Assignment Behavior
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`, `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1943-2027`
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`, `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs`
 
 - Task assignment creates a `BreakoutRoomEntity` and a `TaskItemEntity` linked to it
 - The orchestrator ensures the breakout room has a persisted `TaskId`; if none exists yet, it creates a new `TaskEntity` for that breakout and stores the link before branch creation continues (`EnsureTaskForBreakoutAsync`)
@@ -261,7 +261,7 @@ When a task is assigned, the breakout room's persisted `TaskId` is the only sour
 
 The branch workflow must not infer task identity from title matches, room status, agent status, or "unassigned task" heuristics. If a write would replace a different existing `BranchName`, the operation fails and logs the conflict instead of mutating task metadata.
 
-> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:977-1005` (write-once `UpdateTaskBranchAsync`), `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1888-1920` (`SetBreakoutTaskIdAsync`)
+> **Source**: `src/AgentAcademy.Server/Services/TaskQueryService.cs` (write-once `UpdateTaskBranchAsync`), `src/AgentAcademy.Server/Services/BreakoutRoomService.cs` (`SetBreakoutTaskIdAsync`)
 
 ### Rejection Flow
 
@@ -280,7 +280,7 @@ After a task is approved (or even completed/merged), a reviewer or planner can r
 
 **Required arguments**: `taskId`, `reason`
 
-> **Source**: `src/AgentAcademy.Server/Commands/Handlers/RejectTaskHandler.cs`, `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (`RejectTaskAsync`, `TryReopenBreakoutForTaskAsync`), `src/AgentAcademy.Server/Services/GitService.cs` (`RevertCommitAsync`)
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/RejectTaskHandler.cs`, `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs` (`RejectTaskAsync`), `src/AgentAcademy.Server/Services/BreakoutRoomService.cs` (`TryReopenBreakoutForTaskAsync`), `src/AgentAcademy.Server/Services/GitService.cs` (`RevertCommitAsync`)
 
 ---
 
@@ -311,7 +311,7 @@ Socrates may use multiple models for review depth:
 | `REQUEST_CHANGES` | Sets task status to `ChangesRequested`, increments `ReviewRounds`, posts feedback in room |
 
 > **Source**: `src/AgentAcademy.Server/Commands/Handlers/ApproveTaskHandler.cs`, `RequestChangesHandler.cs`
-> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs:1110-1175` (ReviewRounds increment logic)
+> **Source**: `src/AgentAcademy.Server/Services/TaskLifecycleService.cs` (ReviewRounds increment logic)
 
 > **Note**: `APPROVE_TASK`, `REQUEST_CHANGES`, and `REJECT_TASK` enforce Planner/Reviewer/Human role gates at the handler level. Engineers and other roles are denied.
 
@@ -626,7 +626,7 @@ Comments are ordered by `CreatedAt` ascending.
 
 ## 6.6. Evidence Ledger
 
-> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (lines 1643–1769)
+> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/TaskLifecycleService.cs`
 
 The evidence ledger records structured verification checks against tasks. Each check captures what was verified, how, and whether it passed. Evidence accumulates on a task and is evaluated by gate checks before status transitions.
 
@@ -666,7 +666,7 @@ Task status transitions (e.g., Active → AwaitingValidation → InReview → Ap
 
 ### Gate Definitions
 
-Gates are minimum evidence requirements for task status transitions. Evaluated by `WorkspaceRuntime.CheckGatesAsync()`:
+Gates are minimum evidence requirements for task status transitions. Evaluated by `TaskLifecycleService.CheckGatesAsync()`:
 
 | Current Status | Target Status | Required Checks | Required Phase | Suggested Check Names |
 |---------------|---------------|-----------------|----------------|----------------------|
@@ -739,7 +739,7 @@ When a project is onboarded and has no existing specs (`!scan.HasSpecs`), the sy
    - Description: analyze codebase, generate spec in `specs/`
    - SuccessCriteria: spec files created and committed
    - PreferredRoles: `["Planner", "TechnicalWriter"]`
-3. Calls `WorkspaceRuntime.CreateTaskAsync(request)`
+3. Calls `TaskOrchestrationService.CreateTaskAsync(request)`
 4. Triggers `AgentOrchestrator.HandleHumanMessageAsync(roomId)` to kick off agent work
 5. Returns `specTaskCreated: true` and `roomId` in `OnboardResult`
 
@@ -796,8 +796,8 @@ When task status → `InReview`:
 
 Agents communicate progress while working:
 - `AgentThinking` / `AgentFinished` activity events
-- System status messages via `WorkspaceRuntime.PostSystemStatusAsync()`
-- Direct room messages via `WorkspaceRuntime.PostMessageAsync()`
+- System status messages via `MessageService.PostSystemStatusAsync()`
+- Direct room messages via `MessageService.PostMessageAsync()`
 
 Agents typically post:
 - "Starting work on {task title}" when claimed
@@ -829,33 +829,33 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 ---
 
-## 11. WorkspaceRuntime Task Methods
+## 11. Task Service Method Index
 
-> **Source**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs`
+> **Source**: `src/AgentAcademy.Server/Services/TaskQueryService.cs`, `TaskLifecycleService.cs`, `TaskOrchestrationService.cs`, `BreakoutRoomService.cs`
 
-| Method | Line | Description |
-|--------|------|-------------|
-| `CreateTaskAsync` | 719 | Creates task with room, plan, agents |
-| `GetTasksAsync` | 876 | Returns all tasks |
-| `FindTaskByTitleAsync` | 915 | Finds latest non-cancelled task by exact title |
-| `AssignTaskAsync` | 929 | Sets assigned agent on task |
-| `UpdateTaskStatusAsync` | 954 | Updates task status |
-| `UpdateTaskBranchAsync` | 977 | Write-once branch assignment |
-| `UpdateTaskPrAsync` | 1010 | Records PR info on task |
-| `CompleteTaskAsync` | 1026 | Marks task completed with metadata |
-| `ClaimTaskAsync` | 1049 | Agent claims task (prevents double-claim) |
-| `ReleaseTaskAsync` | 1082 | Agent releases task |
-| `ApproveTaskAsync` | 1110 | Approves task, increments ReviewRounds |
-| `RequestChangesAsync` | 1146 | Requests changes, increments ReviewRounds |
-| `GetReviewQueueAsync` | 1182 | Returns tasks awaiting review |
-| `PostTaskNoteAsync` | 1202 | Posts note to task's room |
-| `AddTaskCommentAsync` | 1218 | Adds structured comment |
-| `GetTaskCommentsAsync` | 1248 | Returns comments for a task |
-| `GetTaskCommentCountAsync` | 1264 | Returns comment count |
-| `SetBreakoutTaskIdAsync` | 1888 | Write-once breakout→task link |
-| `GetBreakoutTaskIdAsync` | 1920 | Gets task ID for breakout |
-| `TransitionBreakoutTaskToInReviewAsync` | 1930 | Moves breakout task to InReview |
-| `EnsureTaskForBreakoutAsync` | 1943 | Creates or reuses task for breakout |
+| Method | Service | Description |
+|--------|---------|-------------|
+| `CreateTaskAsync` | `TaskOrchestrationService` | Creates task with room, plan, agents |
+| `GetTasksAsync` | `TaskQueryService` | Returns all tasks |
+| `FindTaskByTitleAsync` | `TaskQueryService` | Finds latest non-cancelled task by exact title |
+| `AssignTaskAsync` | `TaskQueryService` | Sets assigned agent on task |
+| `UpdateTaskStatusAsync` | `TaskQueryService` | Updates task status |
+| `UpdateTaskBranchAsync` | `TaskQueryService` | Write-once branch assignment |
+| `UpdateTaskPrAsync` | `TaskQueryService` | Records PR info on task |
+| `CompleteTaskAsync` | `TaskOrchestrationService` | Marks task completed with metadata |
+| `ClaimTaskAsync` | `TaskLifecycleService` | Agent claims task (prevents double-claim) |
+| `ReleaseTaskAsync` | `TaskLifecycleService` | Agent releases task |
+| `ApproveTaskAsync` | `TaskLifecycleService` | Approves task, increments ReviewRounds |
+| `RequestChangesAsync` | `TaskLifecycleService` | Requests changes, increments ReviewRounds |
+| `GetReviewQueueAsync` | `TaskQueryService` | Returns tasks awaiting review |
+| `PostTaskNoteAsync` | `TaskOrchestrationService` | Posts note to task's room |
+| `AddTaskCommentAsync` | `TaskLifecycleService` | Adds structured comment |
+| `GetTaskCommentsAsync` | `TaskQueryService` | Returns comments for a task |
+| `GetTaskCommentCountAsync` | `TaskQueryService` | Returns comment count |
+| `SetBreakoutTaskIdAsync` | `BreakoutRoomService` | Write-once breakout→task link |
+| `GetBreakoutTaskIdAsync` | `BreakoutRoomService` | Gets task ID for breakout |
+| `TransitionBreakoutTaskToInReviewAsync` | `BreakoutRoomService` | Moves breakout task to InReview |
+| `EnsureTaskForBreakoutAsync` | `TaskOrchestrationService` | Creates or reuses task for breakout |
 
 ---
 

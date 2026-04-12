@@ -1,45 +1,42 @@
-# 005 — Workspace Runtime
+# 005 — Domain Services Layer
 
 ## Purpose
 
-Documents the `WorkspaceRuntime` service — the central state manager for Agent Academy. It orchestrates rooms, agents, messages, tasks, breakout rooms, plans, and activity events.
+Documents the domain services that manage core workspace state — rooms, agents, messages, tasks, breakout rooms, plans, and activity events. Controllers, command handlers, and the orchestrator inject these services directly.
 
 ## Current Behavior
 
 **Status: Implemented**
 
-`WorkspaceRuntime` is a scoped facade (`AddScoped<WorkspaceRuntime>()`) that delegates to focused domain services. It provides a stable public API to controllers, command handlers, and the orchestrator, while internal logic lives in extracted services.
+> **History**: This spec originally documented `WorkspaceRuntime`, a scoped facade that delegated to domain services. As of 2026-04-12, the facade has been deleted — all consumers now inject the focused domain services directly. The behavioral documentation below remains accurate; only the indirection layer was removed.
 
-### Internal Architecture
+### Service Architecture
 
-WorkspaceRuntime delegates to 12 extracted services plus shared infrastructure:
+Controllers and command handlers inject focused domain services directly via constructor injection. There is no facade or intermediary layer.
 
-| Service | Responsibility | Registration |
-|---------|---------------|--------------|
-| `InitializationService` | Startup room/agent seeding, server instance tracking | Scoped |
-| `CrashRecoveryService` | Crash detection, breakout/agent/task recovery | Scoped |
-| `RoomService` | Room CRUD, snapshots, phase transitions, workspace scoping | Scoped |
-| `MessageService` | Room/DM/breakout messaging, message trimming | Scoped |
-| `TaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped |
-| `TaskLifecycleService` | Task creation staging, claim/release/approve/reject, evidence writes | Scoped |
-| `BreakoutRoomService` | Breakout room lifecycle, task association, stuck reopening | Scoped |
-| `TaskItemService` | Task item CRUD | Scoped |
-| `AgentLocationService` | Agent location tracking and movement | Scoped |
-| `PlanService` | Plan CRUD with room/breakout validation | Scoped |
-| `TaskOrchestrationService` | Task creation/completion/rejection coordinating rooms, agents, and lifecycle | Scoped |
-| `ActivityPublisher` | Event creation, EF persistence, broadcast via `ActivityBroadcaster` | Scoped |
+| Service | Responsibility | Registration | Source |
+|---------|---------------|--------------|--------|
+| `InitializationService` | Startup room/agent seeding, server instance tracking | Scoped | `Services/InitializationService.cs` |
+| `CrashRecoveryService` | Crash detection, breakout/agent/task recovery | Scoped | `Services/CrashRecoveryService.cs` |
+| `RoomService` | Room CRUD, snapshots, phase transitions, workspace scoping | Scoped | `Services/RoomService.cs` |
+| `MessageService` | Room/DM/breakout messaging, message trimming | Scoped | `Services/MessageService.cs` |
+| `TaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped | `Services/TaskQueryService.cs` |
+| `TaskLifecycleService` | Task creation staging, claim/release/approve/reject, evidence writes | Scoped | `Services/TaskLifecycleService.cs` |
+| `BreakoutRoomService` | Breakout room lifecycle, task association, stuck reopening | Scoped | `Services/BreakoutRoomService.cs` |
+| `TaskItemService` | Task item CRUD | Scoped | `Services/TaskItemService.cs` |
+| `AgentLocationService` | Agent location tracking and movement | Scoped | `Services/AgentLocationService.cs` |
+| `PlanService` | Plan CRUD with room/breakout validation | Scoped | `Services/PlanService.cs` |
+| `TaskOrchestrationService` | Task creation/completion/rejection coordinating rooms, agents, and lifecycle | Scoped | `Services/TaskOrchestrationService.cs` |
+| `ActivityPublisher` | Event creation, EF persistence, broadcast via `ActivityBroadcaster` | Scoped | `Services/ActivityPublisher.cs` |
+| `ActivityBroadcaster` | In-memory event buffer (last 100) and subscriber notification | Singleton | `Services/ActivityBroadcaster.cs` |
 
-Shared infrastructure (not WorkspaceRuntime dependencies, but used by sub-services):
-
-| Service | Responsibility | Registration |
-|---------|---------------|--------------|
-| `ActivityBroadcaster` | In-memory event buffer (last 100) and subscriber notification | Singleton |
-
-All public methods are thin one-liner delegations to the extracted services. The only method with local logic is `GetOverviewAsync`, which aggregates rooms, locations, breakouts, and activity from multiple sub-services into a single `WorkspaceOverview`.
+The workspace overview aggregation (rooms, locations, breakouts, activity) is inlined in `SystemController.GetOverview()` (`Controllers/SystemController.cs`).
 
 ### Initialization
 
-On startup, `Program.cs` calls `InitializeAsync()` which:
+> **Source**: `src/AgentAcademy.Server/Services/InitializationService.cs`
+
+On startup, `Program.cs` calls `InitializationService.InitializeAsync()` which:
 1. Creates the default room (`main` / "Main Collaboration Room") if it doesn't exist
 2. Adds a system welcome message
 3. Publishes `RoomCreated` and `AgentLoaded` events for each agent
@@ -66,13 +63,15 @@ Configured agents (v1 port):
 
 ### Room Management
 
-- `GetRoomsAsync(includeArchived)` → rooms for the active workspace, default room first then alphabetically. Archived rooms are excluded by default; pass `includeArchived: true` to include them.
-- `GetRoomAsync(roomId)` → single room snapshot or null
-- `RenameRoomAsync(roomId, newName)` → renames a room, publishes `RoomRenamed` activity event, cascades to Discord channel name via `OnRoomRenamedAsync`
-- `CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
-- `EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
-- `GetProjectNameForRoomAsync(roomId)` → resolves `roomId → WorkspacePath → ProjectName` (falls back to directory basename)
-- `CleanupStaleRoomsAsync()` → scans for non-main rooms where all tasks are terminal (Completed/Cancelled), evacuates agents to default room, archives the rooms. Returns count of rooms cleaned up.
+> **Source**: `src/AgentAcademy.Server/Services/RoomService.cs`
+
+- `RoomService.GetRoomsAsync(includeArchived)` → rooms for the active workspace, default room first then alphabetically. Archived rooms are excluded by default; pass `includeArchived: true` to include them.
+- `RoomService.GetRoomAsync(roomId)` → single room snapshot or null
+- `RoomService.RenameRoomAsync(roomId, newName)` → renames a room, publishes `RoomRenamed` activity event, cascades to Discord channel name via `OnRoomRenamedAsync`
+- `RoomService.CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
+- `RoomService.EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
+- `RoomService.GetProjectNameForRoomAsync(roomId)` → resolves `roomId → WorkspacePath → ProjectName` (falls back to directory basename)
+- `RoomService.CleanupStaleRoomsAsync()` → scans for non-main rooms where all tasks are terminal (Completed/Cancelled), evacuates agents to default room, archives the rooms. Returns count of rooms cleaned up.
 
 **Room rename API**: `PUT /api/rooms/{roomId}/name` with `{ "name": "..." }` body. Returns updated `RoomSnapshot`. Frontend: double-click room name in sidebar to edit inline.
 
@@ -91,9 +90,11 @@ Each `RoomSnapshot` includes:
 
 ### Task Management
 
-- `CreateTaskAsync(TaskAssignmentRequest)` → delegates to `TaskOrchestrationService`; creates task, optionally creates new room
-- `GetTasksAsync()` → tasks for the active workspace, filtered by `WorkspacePath`
-- `GetTaskAsync(taskId)` → single task or null
+> **Source**: `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs`, `src/AgentAcademy.Server/Services/TaskQueryService.cs`
+
+- `TaskOrchestrationService.CreateTaskAsync(TaskAssignmentRequest)` → creates task, optionally creates new room
+- `TaskQueryService.GetTasksAsync()` → tasks for the active workspace, filtered by `WorkspacePath`
+- `TaskQueryService.GetTaskAsync(taskId)` → single task or null
 
 Task creation (in `TaskOrchestrationService`):
 - If `RoomId` is provided and room exists: updates existing room to Active/Planning
@@ -108,8 +109,10 @@ Task creation (in `TaskOrchestrationService`):
 
 ### Message Management
 
-- `PostMessageAsync(PostMessageRequest)` → posts agent message
-- `PostHumanMessageAsync(roomId, content)` → posts human message
+> **Source**: `src/AgentAcademy.Server/Services/MessageService.cs`
+
+- `MessageService.PostMessageAsync(PostMessageRequest)` → posts agent message
+- `MessageService.PostHumanMessageAsync(roomId, content)` → posts human message
 
 Validation: room must exist, sender must be in catalog (for agent messages).
 
@@ -121,7 +124,9 @@ Validation: room must exist, sender must be in catalog (for agent messages).
 
 ### Phase Management
 
-- `TransitionPhaseAsync(roomId, targetPhase, reason?)` → updates room and active task phase
+> **Source**: `src/AgentAcademy.Server/Services/RoomService.cs`
+
+- `RoomService.TransitionPhaseAsync(roomId, targetPhase, reason?)` → updates room and active task phase
 
 Behavior:
 - No-op if already in target phase
@@ -133,23 +138,29 @@ No phase state machine — any phase can transition to any other phase.
 
 ### Agent Location
 
-- `GetAgentLocationsAsync()` → all agent locations
-- `GetAgentLocationAsync(agentId)` → single location
-- `MoveAgentAsync(agentId, roomId, state, breakoutRoomId?)` → updates location
+> **Source**: `src/AgentAcademy.Server/Services/AgentLocationService.cs`
+
+- `AgentLocationService.GetAgentLocationsAsync()` → all agent locations
+- `AgentLocationService.GetAgentLocationAsync(agentId)` → single location
+- `AgentLocationService.MoveAgentAsync(agentId, roomId, state, breakoutRoomId?)` → updates location
 
 Agent must be in catalog. Room existence is not validated (matches v1).
 
 ### Breakout Rooms
 
-- `CreateBreakoutRoomAsync(parentRoomId, agentId, name)` → creates breakout, moves agent to Working
-- `CloseBreakoutRoomAsync(breakoutId)` → moves agent to Idle, deletes breakout + messages
-- `GetBreakoutRoomsAsync(parentRoomId)` → list for parent room
+> **Source**: `src/AgentAcademy.Server/Services/BreakoutRoomService.cs`
+
+- `BreakoutRoomService.CreateBreakoutRoomAsync(parentRoomId, agentId, name)` → creates breakout, moves agent to Working
+- `BreakoutRoomService.CloseBreakoutRoomAsync(breakoutId)` → moves agent to Idle, deletes breakout + messages
+- `BreakoutRoomService.GetBreakoutRoomsAsync(parentRoomId)` → list for parent room
 
 ### Plan Management
 
-- `GetPlanAsync(roomId)` → `PlanContent` or null
-- `SetPlanAsync(roomId, content)` → create or update (upsert)
-- `DeletePlanAsync(roomId)` → returns true if deleted
+> **Source**: `src/AgentAcademy.Server/Services/PlanService.cs`
+
+- `PlanService.GetPlanAsync(roomId)` → `PlanContent` or null
+- `PlanService.SetPlanAsync(roomId, content)` → create or update (upsert)
+- `PlanService.DeletePlanAsync(roomId)` → returns true if deleted
 
 Plan records are keyed by the active room identifier and may target either a main collaboration room or a breakout room. `SetPlanAsync` validates that the target ID belongs to an existing room or breakout room before writing.
 
@@ -174,13 +185,13 @@ Activity publishing uses a two-layer architecture:
 - `GetRecentActivity()` → delegates to `ActivityBroadcaster`
 - `Subscribe(callback)` → delegates to `ActivityBroadcaster`
 
-WorkspaceRuntime does not expose activity publishing methods directly. Callers that need to publish events (e.g., `TaskOrchestrationService`, `AgentOrchestrator`) inject `ActivityPublisher`.
+Callers that need to publish events (e.g., `TaskOrchestrationService`, `AgentOrchestrator`) inject `ActivityPublisher` directly.
 
 ### Crash Recovery
 
-> **Source**: `src/AgentAcademy.Server/Services/CrashRecoveryService.cs` (exposed via `WorkspaceRuntime.RecoverFromCrashAsync` delegation)
+> **Source**: `src/AgentAcademy.Server/Services/CrashRecoveryService.cs`
 
-On startup, `AgentOrchestrator.HandleStartupRecoveryAsync` checks `WorkspaceRuntime.CurrentCrashDetected` (set by `RecordServerInstanceAsync` when the previous instance had no clean shutdown). If a crash is detected, `RecoverFromCrashAsync(mainRoomId)` runs the following recovery steps in order:
+On startup, `AgentOrchestrator.HandleStartupRecoveryAsync` checks `CrashRecoveryService.CurrentCrashDetected` (set by `RecordServerInstanceAsync` when the previous instance had no clean shutdown). If a crash is detected, `CrashRecoveryService.RecoverFromCrashAsync(mainRoomId)` runs the following recovery steps in order:
 
 1. **Close all active breakout rooms** — queries for non-terminal breakout rooms and calls `CloseBreakoutRoomAsync` with `BreakoutRoomCloseReason.ClosedByRecovery`
 2. **Reset stuck agents** — finds agents in `Working` state whose `BreakoutRoomId` is null or doesn't match an active breakout, moves them to `Idle` via `MoveAgentAsync`
@@ -242,12 +253,29 @@ The `AgentOrchestrator` uses `WorktreeService` to provide each agent with an iso
 
 ### Service Registration (Program.cs)
 ```csharp
-builder.Services.AddAgentCatalog();                  // singleton AgentCatalogOptions
-builder.Services.AddSingleton<ActivityBroadcaster>(); // singleton event buffer
-builder.Services.AddScoped<ActivityPublisher>();       // scoped event publisher
-builder.Services.AddScoped<TaskOrchestrationService>(); // scoped task orchestration
-builder.Services.AddScoped<WorkspaceRuntime>();        // scoped facade
-builder.Services.AddSingleton<WorktreeService>();      // singleton worktree manager
+// Singletons
+builder.Services.AddAgentCatalog();                      // AgentCatalogOptions
+builder.Services.AddSingleton<ActivityBroadcaster>();     // event buffer
+builder.Services.AddSingleton<WorktreeService>();         // worktree manager
+
+// Scoped domain services
+builder.Services.AddScoped<ActivityPublisher>();
+builder.Services.AddScoped<TaskQueryService>();
+builder.Services.AddScoped<TaskLifecycleService>();
+builder.Services.AddScoped<MessageService>();
+builder.Services.AddScoped<AgentLocationService>();
+builder.Services.AddScoped<PlanService>();
+builder.Services.AddScoped<CrashRecoveryService>();
+builder.Services.AddScoped<InitializationService>();
+builder.Services.AddScoped<BreakoutRoomService>();
+builder.Services.AddScoped<TaskItemService>();
+builder.Services.AddScoped<RoomService>();
+builder.Services.AddScoped<TaskOrchestrationService>();
+builder.Services.AddScoped<AgentConfigService>();
+builder.Services.AddScoped<SystemSettingsService>();
+builder.Services.AddScoped<ConversationSessionService>();
+builder.Services.AddScoped<SprintService>();
+builder.Services.AddScoped<SearchService>();
 ```
 
 ### Key Types
@@ -256,22 +284,7 @@ builder.Services.AddSingleton<WorktreeService>();      // singleton worktree man
 - `WorktreeInfo(Branch, Path, CreatedAt)`
 - All shared model types from `AgentAcademy.Shared.Models`
 
-### Dependencies
-- `AgentCatalogOptions` (singleton)
-- `ActivityPublisher` (scoped)
-- `TaskQueryService` (scoped)
-- `TaskLifecycleService` (scoped)
-- `MessageService` (scoped)
-- `BreakoutRoomService` (scoped)
-- `TaskItemService` (scoped)
-- `RoomService` (scoped)
-- `AgentLocationService` (scoped)
-- `PlanService` (scoped)
-- `CrashRecoveryService` (scoped)
-- `InitializationService` (scoped)
-- `TaskOrchestrationService` (scoped)
-
-Note: `WorkspaceRuntime` no longer depends directly on `AgentAcademyDbContext`, `ILogger`, `ConversationSessionService`, or `WorktreeService`. These are consumed by the sub-services it delegates to.
+Each domain service depends on `AgentAcademyDbContext` (scoped) and the specific services it needs. There is no central facade — services are composed directly by their consumers.
 
 ## Invariants
 
@@ -298,7 +311,8 @@ Note: `WorkspaceRuntime` no longer depends directly on `AgentAcademyDbContext`, 
 
 ## Revision History
 
-- **2026-04-11**: Spec reconciliation — updated to reflect full facade decomposition. Added `TaskOrchestrationService` (scoped) to services table; CreateTaskAsync, CompleteTaskAsync, RejectTaskAsync, PostTaskNoteAsync now delegate to it. Fixed `ActivityPublisher` registration from Singleton to Scoped. Separated `ActivityBroadcaster` (singleton in-memory buffer) from `ActivityPublisher` (scoped EF persistence + broadcast). Removed dead WorkspaceRuntime methods (`PublishThinking`, `PublishFinished`, `GetRecentActivity`, `StreamActivity`). Updated Dependencies to match actual constructor (removed `AgentAcademyDbContext`, `ILogger`, `ConversationSessionService`, `WorktreeService`). Updated Service Registration with all registered types. WorkspaceRuntime is now 573 lines (down from 839) — a pure delegation facade with no business logic except `GetOverviewAsync` aggregation.
+- **2026-04-12**: `WorkspaceRuntime` facade deleted — spec rewritten as "Domain Services Layer". All controllers and command handlers now inject focused services directly. Behavioral documentation preserved; source references updated to actual service files. `GetOverviewAsync` inlined in `SystemController`. No behavioral changes to rooms, messages, tasks, agents, breakouts, plans, or activity publishing.
+- **2026-04-11**: Spec reconciliation — updated to reflect full facade decomposition. Added `TaskOrchestrationService` (scoped) to services table; CreateTaskAsync, CompleteTaskAsync, RejectTaskAsync, PostTaskNoteAsync now delegate to it. Fixed `ActivityPublisher` registration from Singleton to Scoped. Separated `ActivityBroadcaster` (singleton in-memory buffer) from `ActivityPublisher` (scoped EF persistence + broadcast). Removed dead methods. Updated Dependencies and Service Registration.
 - **2026-04-11**: Documented service extraction architecture — WorkspaceRuntime refactored from monolithic 1800+ line class to a thin facade (839 lines) delegating to 10 extracted services. Public API unchanged. Orchestration logic (CreateTask, CompleteTask, RejectTask, GetOverview) retained in WorkspaceRuntime; all other methods are one-liner delegations. Dead code removed after extraction.
 - **2026-04-10**: Workspace isolation — documented `WorktreeService` for agent-level git worktree isolation. Covers worktree creation/removal, agent-specific worktrees, orchestrator integration, and database fields. Synced during stabilization.
 - **2026-04-08**: Project scoping phase 1 — added `WorkspacePath` to `TaskEntity` and `ConversationSessionEntity`. Tasks and conversation sessions now have direct project association. `GetTasksAsync()` filters by `WorkspacePath` directly (with room fallback for pre-migration rows). `GetAllSessionsAsync` and `GetSessionStatsAsync` accept optional workspace filter. Migration includes data backfill from rooms table. API: `GET /api/sessions` and `GET /api/sessions/stats` accept `?workspace=` query parameter.

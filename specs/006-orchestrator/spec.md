@@ -4,7 +4,7 @@
 
 The `AgentOrchestrator` drives the multi-agent conversation lifecycle — from receiving a human message through planner-led rounds, breakout room work, and review cycles. It is the central coordination service that determines which agents speak, when, and in what order.
 
-Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await patterns and scoped `WorkspaceRuntime` access.
+Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await patterns and scoped domain service access.
 
 ## Current Behavior
 
@@ -18,7 +18,7 @@ Human messages and DM triggers are enqueued by room ID. A single processing loop
 - Entry point: `HandleDirectMessage(recipientAgentId)` — resolves the agent's current room, enqueues with dedupe
 - Processing is serialized via `_processing` flag + `_lock` — only one room is processed at a time
 - The orchestrator can be stopped via `Stop()`, which flips `_stopped` and halts queue processing
-- **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
+- **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `RoomService.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
 
 ### Conversation Rounds
 
@@ -187,7 +187,7 @@ builder.Services.AddSingleton<BreakoutLifecycleService>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 ```
 
-`AgentOrchestrator` and its extracted services are registered as singletons. The orchestrator uses `IServiceScopeFactory` to create scoped `WorkspaceRuntime` instances for each conversation round. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
+`AgentOrchestrator` and its extracted services are registered as singletons. The orchestrator uses `IServiceScopeFactory` to create scoped service instances (e.g., `RoomService`, `MessageService`, `TaskOrchestrationService`) for each conversation round. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
 
 ### Dependencies
 
@@ -210,7 +210,9 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 
 | Dependency | Purpose |
 |------------|---------|
-| `WorkspaceRuntime` | Room/message/agent state management |
+| `RoomService` (scoped) | Room/message/agent state management |
+| `MessageService` (scoped) | Message posting and retrieval |
+| `TaskOrchestrationService` (scoped) | Task creation, completion, rejection |
 | `AgentConfigService` | Runtime agent config overrides (model, prompt, templates) |
 | `ConversationSessionService` | Epoch threshold checks, rotation, and session context |
 | `SprintService` | Active sprint and stage loading |
@@ -275,7 +277,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 ## Known Gaps
 
-- ~~No persistence of queue state — pending messages are lost on restart~~ — **resolved**: `ReconstructQueueAsync()` runs on every startup and re-enqueues rooms with pending human messages. Uses `WorkspaceRuntime.GetRoomsWithPendingHumanMessagesAsync()` to find rooms where the latest message has `SenderKind = User`.
+- ~~No persistence of queue state — pending messages are lost on restart~~ — **resolved**: `ReconstructQueueAsync()` runs on every startup and re-enqueues rooms with pending human messages. Uses `RoomService.GetRoomsWithPendingHumanMessagesAsync()` to find rooms where the latest message has `SenderKind = User`.
 - ~~Breakout rooms use fire-and-forget (`Task.Run`) — unobserved exceptions are logged but not surfaced to the caller~~ — **resolved**: `HandleBreakoutFailureAsync` catches unhandled exceptions, closes the breakout room with `Failed` reason, marks linked task as `Blocked`, and posts a failure notification to the parent room.
 - ~~No concurrency control on simultaneous breakout rooms for the same agent~~ — **resolved**: `HandleTaskAssignmentAsync` checks `AgentState.Working` before creating a breakout room. If the agent is already working, the assignment is skipped with a status message posted to the room.
 - ~~`LoadSpecContext` reads from the file system synchronously~~ — **resolved**: all `SpecManager` methods converted to async (`LoadSpecContextAsync`, `GetSpecSectionsAsync`, `GetSpecContentAsync`) using `File.ReadAllTextAsync`.
