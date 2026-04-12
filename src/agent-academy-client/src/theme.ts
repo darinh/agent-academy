@@ -24,6 +24,7 @@ export const ROLE_COLORS: Record<string, RoleTheme> = {
   TechnicalWriter:  { accent: "#7dd3fc", foreground: "#09111f", avatar: "colorful" },
   Writer:           { accent: "#7dd3fc", foreground: "#09111f", avatar: "colorful" },
   Human:            { accent: "#6cb6ff", foreground: "#ffffff", avatar: "brand" },
+  Consultant:       { accent: "#e0976e", foreground: "#1a1208", avatar: "pumpkin" },
 };
 
 const DEFAULT_ROLE: RoleTheme = { accent: "#94a3b8", foreground: "#ffffff", avatar: "colorful" };

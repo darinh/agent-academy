@@ -15,6 +15,12 @@ public sealed class MessageService
 {
     private const int MaxRecentMessages = 200;
 
+    /// <summary>
+    /// Sender IDs that represent the human side of DM conversations.
+    /// Both the direct human user and the consultant API share the same DM inbox.
+    /// </summary>
+    private static readonly string[] HumanSideSenderIds = ["human", "consultant"];
+
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<MessageService> _logger;
     private readonly AgentCatalogOptions _catalog;
@@ -109,7 +115,8 @@ public sealed class MessageService
     /// </summary>
     public async Task<ChatEnvelope> PostHumanMessageAsync(
         string roomId, string content,
-        string? userId = null, string? userName = null)
+        string? userId = null, string? userName = null,
+        string? userRole = null)
     {
         if (string.IsNullOrWhiteSpace(roomId))
             throw new ArgumentException("roomId is required", nameof(roomId));
@@ -121,6 +128,7 @@ public sealed class MessageService
 
         var senderId = userId ?? "human";
         var senderName = userName ?? "Human";
+        var senderRole = userRole ?? "Human";
 
         var now = DateTime.UtcNow;
         var envelope = new ChatEnvelope(
@@ -128,7 +136,7 @@ public sealed class MessageService
             RoomId: roomId,
             SenderId: senderId,
             SenderName: senderName,
-            SenderRole: "Human",
+            SenderRole: senderRole,
             SenderKind: MessageSenderKind.User,
             Kind: MessageKind.Response,
             Content: content,
@@ -141,7 +149,7 @@ public sealed class MessageService
             RoomId = roomId,
             SenderId = senderId,
             SenderName = senderName,
-            SenderRole = "Human",
+            SenderRole = senderRole,
             SenderKind = nameof(MessageSenderKind.User),
             Kind = nameof(MessageKind.Response),
             Content = content,
@@ -331,7 +339,8 @@ public sealed class MessageService
     {
         var humanDms = await _db.Messages
             .Where(m => m.RecipientId != null &&
-                        (m.RecipientId == "human" || m.SenderId == "human"))
+                        (HumanSideSenderIds.Contains(m.RecipientId) ||
+                         HumanSideSenderIds.Contains(m.SenderId)))
             .OrderByDescending(m => m.SentAt)
             .Take(500)
             .ToListAsync();
@@ -340,7 +349,7 @@ public sealed class MessageService
 
         foreach (var dm in humanDms)
         {
-            var agentId = dm.SenderId == "human" ? dm.RecipientId! : dm.SenderId;
+            var agentId = HumanSideSenderIds.Contains(dm.SenderId) ? dm.RecipientId! : dm.SenderId;
 
             if (!threads.ContainsKey(agentId))
             {
@@ -377,8 +386,8 @@ public sealed class MessageService
     {
         return await _db.Messages
             .Where(m => m.RecipientId != null &&
-                        ((m.SenderId == "human" && m.RecipientId == agentId) ||
-                         (m.SenderId == agentId && m.RecipientId == "human")))
+                        ((HumanSideSenderIds.Contains(m.SenderId) && m.RecipientId == agentId) ||
+                         (m.SenderId == agentId && HumanSideSenderIds.Contains(m.RecipientId!))))
             .OrderByDescending(m => m.SentAt)
             .Take(limit)
             .OrderBy(m => m.SentAt)

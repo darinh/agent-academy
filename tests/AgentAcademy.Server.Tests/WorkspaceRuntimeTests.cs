@@ -396,6 +396,31 @@ public class WorkspaceRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PostHumanMessage_UsesConsultantRole_WhenProvided()
+    {
+        await _runtime.InitializeAsync();
+
+        var envelope = await _runtime.PostHumanMessageAsync(
+            "main", "Agent review needed", "consultant", "Consultant", "Consultant");
+
+        Assert.Equal("consultant", envelope.SenderId);
+        Assert.Equal("Consultant", envelope.SenderName);
+        Assert.Equal("Consultant", envelope.SenderRole);
+        Assert.Equal(MessageSenderKind.User, envelope.SenderKind);
+    }
+
+    [Fact]
+    public async Task PostHumanMessage_DefaultsToHumanRole_WhenRoleOmitted()
+    {
+        await _runtime.InitializeAsync();
+
+        var envelope = await _runtime.PostHumanMessageAsync(
+            "main", "Hello team!", "darinious", "Darin");
+
+        Assert.Equal("Human", envelope.SenderRole);
+    }
+
+    [Fact]
     public async Task PostMessage_TrimsToMaxMessages()
     {
         await _runtime.InitializeAsync();

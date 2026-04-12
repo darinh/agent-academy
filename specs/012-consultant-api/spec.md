@@ -349,6 +349,6 @@ This handles:
 
 - **OAuth2 provider**: Replace shared secret with Entra ID or similar. The auth scheme abstraction makes this a swap.
 - **WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.
-- **Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.
+- ~~**Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.~~ — **Resolved**: Consultant messages now carry `SenderRole = "Consultant"` (derived from `User.IsInRole("Consultant")` claim). Frontend renders a copper-colored "Consultant" role pill in ChatPanel and SearchPanel. DmPanel shows consultant label + distinct bubble styling. DM service includes consultant messages in the human inbox via `HumanSideSenderIds` array. `DmMessage` model includes `SenderRole` field.
 - **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages.
-- **Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records. Implemented.
+- ~~**Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records.~~ — **Resolved** (implemented previously).
