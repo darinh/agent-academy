@@ -22,7 +22,7 @@ internal static class PromptBuilder
         string? sessionSummary = null,
         string? sprintPreamble = null)
     {
-        var lines = new List<string>();
+        var lines = new List<string> { PromptSanitizer.BoundaryInstruction, "" };
 
         if (!string.IsNullOrEmpty(sprintPreamble))
         {
@@ -32,34 +32,38 @@ internal static class PromptBuilder
         if (!string.IsNullOrEmpty(sessionSummary))
         {
             lines.Add("=== PREVIOUS CONVERSATION SUMMARY ===");
-            lines.Add(sessionSummary);
+            lines.Add(PromptSanitizer.WrapBlock(sessionSummary));
             lines.Add("");
         }
 
         AppendMemories(lines, memories, agent.Id);
 
         lines.Add("=== CURRENT ROOM CONTEXT ===");
-        lines.Add($"Room: {room.Name}");
+        lines.Add($"Room: {PromptSanitizer.SanitizeMetadata(room.Name)}");
 
         if (room.ActiveTask is not null)
         {
             lines.Add("");
             lines.Add("=== TASK ===");
-            lines.Add($"Title: {room.ActiveTask.Title}");
-            lines.Add($"Description: {room.ActiveTask.Description}");
-            if (!string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria))
-                lines.Add($"Success criteria: {room.ActiveTask.SuccessCriteria}");
+            lines.Add(PromptSanitizer.WrapBlock(
+                $"Title: {room.ActiveTask.Title}\n" +
+                $"Description: {room.ActiveTask.Description}" +
+                (string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria)
+                    ? ""
+                    : $"\nSuccess criteria: {room.ActiveTask.SuccessCriteria}")));
         }
 
         if (activeTaskItems is { Count: > 0 })
         {
             lines.Add("");
             lines.Add("=== IN-FLIGHT WORK ITEMS ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var item in activeTaskItems)
             {
                 var workspace = item.BreakoutRoomId is not null ? " [in workspace]" : "";
-                lines.Add($"- [{item.Status}] \"{item.Title}\" → assigned to {item.AssignedTo}{workspace}");
+                lines.Add($"- [{item.Status}] \"{PromptSanitizer.SanitizeMetadata(item.Title)}\" → assigned to {PromptSanitizer.SanitizeMetadata(item.AssignedTo)}{workspace}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         if (specContext is not null)
@@ -74,10 +78,12 @@ internal static class PromptBuilder
         {
             lines.Add("");
             lines.Add("=== RECENT CONVERSATION ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var msg in room.RecentMessages.TakeLast(20))
             {
-                lines.Add($"[{msg.SenderName} ({msg.SenderRole ?? msg.SenderKind.ToString()})]: {msg.Content}");
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(msg.SenderName)} ({PromptSanitizer.SanitizeMetadata(msg.SenderRole ?? msg.SenderKind.ToString())})]: {PromptSanitizer.EscapeMarkers(msg.Content)}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         AppendDirectMessages(lines, directMessages, agent.Id);
@@ -102,18 +108,18 @@ internal static class PromptBuilder
         string? sessionSummary = null,
         string? specContext = null)
     {
-        var lines = new List<string>();
+        var lines = new List<string> { PromptSanitizer.BoundaryInstruction, "" };
 
         if (!string.IsNullOrEmpty(sessionSummary))
         {
             lines.Add("=== PREVIOUS WORK SUMMARY ===");
-            lines.Add(sessionSummary);
+            lines.Add(PromptSanitizer.WrapBlock(sessionSummary));
             lines.Add("");
         }
 
         AppendMemories(lines, memories, agent.Id);
 
-        lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
+        lines.Add($"=== BREAKOUT ROOM: {PromptSanitizer.SanitizeMetadata(br.Name)} ===");
         lines.Add($"Round: {round}");
 
         if (specContext is not null)
@@ -128,22 +134,26 @@ internal static class PromptBuilder
         {
             lines.Add("");
             lines.Add("=== ASSIGNED TASKS ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var task in br.Tasks)
             {
-                lines.Add($"Task: {task.Title}");
-                lines.Add($"Description: {task.Description}");
+                lines.Add($"Task: {PromptSanitizer.EscapeMarkers(task.Title)}");
+                lines.Add($"Description: {PromptSanitizer.EscapeMarkers(task.Description)}");
                 lines.Add($"Status: {task.Status}");
                 lines.Add("");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         if (br.RecentMessages.Count > 0)
         {
             lines.Add("=== WORK LOG ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var msg in br.RecentMessages.TakeLast(10))
             {
-                lines.Add($"[{msg.SenderName}]: {msg.Content}");
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(msg.SenderName)}]: {PromptSanitizer.EscapeMarkers(msg.Content)}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         AppendDirectMessages(lines, directMessages, agent.Id);
@@ -168,12 +178,12 @@ internal static class PromptBuilder
     internal static string BuildReviewPrompt(
         AgentDefinition reviewer, string agentName, string workReport, string? specContext)
     {
-        var lines = new List<string> { reviewer.StartupPrompt, "" };
+        var lines = new List<string> { reviewer.StartupPrompt, "", PromptSanitizer.BoundaryInstruction, "" };
         lines.Add("=== REVIEW REQUEST ===");
-        lines.Add($"{agentName} has completed work and is presenting their results.");
+        lines.Add($"{PromptSanitizer.SanitizeMetadata(agentName)} has completed work and is presenting their results.");
         lines.Add("");
         lines.Add("=== WORK REPORT ===");
-        lines.Add(workReport);
+        lines.Add(PromptSanitizer.WrapBlock(workReport));
 
         if (specContext is not null)
         {
@@ -273,23 +283,27 @@ internal static class PromptBuilder
         if (ownMemories.Count > 0)
         {
             lines.Add("=== YOUR MEMORIES ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var m in ownMemories)
             {
                 var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
                 var ttlTag = m.ExpiresAt.HasValue ? $" [expires {m.ExpiresAt.Value:yyyy-MM-dd}]" : "";
-                lines.Add($"[{m.Category}] {m.Key}: {m.Value}{staleTag}{ttlTag}");
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(m.Category)}] {PromptSanitizer.SanitizeMetadata(m.Key)}: {PromptSanitizer.EscapeMarkers(m.Value)}{staleTag}{ttlTag}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
             lines.Add("");
         }
 
         if (sharedMemories.Count > 0)
         {
             lines.Add("=== SHARED KNOWLEDGE ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var m in sharedMemories)
             {
                 var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
-                lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId}){staleTag}");
+                lines.Add($"[shared] {PromptSanitizer.SanitizeMetadata(m.Key)}: {PromptSanitizer.EscapeMarkers(m.Value)} (from: {PromptSanitizer.SanitizeMetadata(m.AgentId)}){staleTag}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
             lines.Add("");
         }
     }
@@ -304,12 +318,14 @@ internal static class PromptBuilder
         lines.Add("");
         lines.Add("=== DIRECT MESSAGES ===");
         lines.Add("These are private messages only you can see. Reply via DM command if needed.");
+        lines.Add(PromptSanitizer.ContentMarkerOpen);
         foreach (var dm in directMessages)
         {
             var direction = dm.SenderId == agentId
-                ? $"[DM to {dm.RecipientId}]"
-                : $"[DM from {dm.SenderName}]";
-            lines.Add($"{direction}: {dm.Content}");
+                ? $"[DM to {PromptSanitizer.SanitizeMetadata(dm.RecipientId)}]"
+                : $"[DM from {PromptSanitizer.SanitizeMetadata(dm.SenderName)}]";
+            lines.Add($"{direction}: {PromptSanitizer.EscapeMarkers(dm.Content)}");
         }
+        lines.Add(PromptSanitizer.ContentMarkerClose);
     }
 }
