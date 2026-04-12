@@ -24,7 +24,11 @@ public class DiscordNotificationProviderTests
         var channelManager = new DiscordChannelManager(channelManagerLogger, _scopeFactory);
         var inputHandlerLogger = Substitute.For<ILogger<DiscordInputHandler>>();
         var inputHandler = new DiscordInputHandler(inputHandlerLogger);
-        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator, channelManager, inputHandler);
+        var senderLogger = Substitute.For<ILogger<DiscordMessageSender>>();
+        var sender = new DiscordMessageSender(channelManager, senderLogger);
+        var routerLogger = Substitute.For<ILogger<DiscordMessageRouter>>();
+        var router = new DiscordMessageRouter(_scopeFactory, orchestrator, channelManager, routerLogger);
+        _provider = new DiscordNotificationProvider(_logger, channelManager, inputHandler, sender, router);
     }
 
     #region Properties
