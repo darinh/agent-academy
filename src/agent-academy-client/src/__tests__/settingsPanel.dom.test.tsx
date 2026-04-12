@@ -433,7 +433,7 @@ describe("SettingsPanel (interactive)", () => {
       ]);
 
       await renderPanelAndWait();
-      expect(screen.getByText("Bot One")).toBeInTheDocument();
+      expect(await screen.findByText("Bot One")).toBeInTheDocument();
       expect(screen.getByText("Bot Two")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Delete Bot One" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Delete Bot Two" })).toBeInTheDocument();
@@ -446,7 +446,8 @@ describe("SettingsPanel (interactive)", () => {
       mockGetAgents.mockResolvedValueOnce([makeCustomAgent({ id: "bot-1", name: "Bot One" })]);
 
       await renderPanelAndWait();
-      await userEvent.click(screen.getByRole("button", { name: "Delete Bot One" }));
+      const deleteBtn = await screen.findByRole("button", { name: "Delete Bot One" });
+      await userEvent.click(deleteBtn);
       expect(mockDeleteAgent).toHaveBeenCalledWith("bot-1");
     });
 

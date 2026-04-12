@@ -9,11 +9,15 @@
  * (reset confirmation, remove quota confirmation), error handling, and badges.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
+
+// Fluent UI Dialog portals can take >1s to mount under parallel test load
+// because the motion system schedules extra render cycles in test environments.
+configure({ asyncUtilTimeout: 5000 });
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -396,16 +400,14 @@ describe("AgentConfigCard (interactive)", () => {
 
     it("shows confirmation dialog on Reset click", async () => {
       setupDefaultMocks(makeConfigWithOverride());
-      const user = userEvent.setup();
       renderCard({ expanded: true });
       await waitFor(() => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
-      await user.click(screen.getByText("Reset to Defaults"));
-      await waitFor(() => {
-        expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
-      });
-      expect(screen.getByText(/remove all overrides/)).toBeInTheDocument();
+      fireEvent.click(screen.getByText("Reset to Defaults"));
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/remove all overrides/)).toBeInTheDocument();
     });
 
     it("calls resetAgentConfig when confirmed", async () => {
@@ -416,11 +418,11 @@ describe("AgentConfigCard (interactive)", () => {
       await waitFor(() => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
-      await user.click(screen.getByText("Reset to Defaults"));
+      fireEvent.click(screen.getByText("Reset to Defaults"));
 
-      // Wait for dialog portal to fully mount — both title and action buttons
-      const resetBtn = await screen.findByRole("button", { name: "Reset" });
-      await user.click(resetBtn);
+      // Scope to dialog portal — findByRole("dialog") survives parallel test load
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Reset" }));
 
       await waitFor(() => {
         expect(mockResetConfig).toHaveBeenCalledWith("architect");
@@ -435,11 +437,11 @@ describe("AgentConfigCard (interactive)", () => {
       await waitFor(() => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
-      await user.click(screen.getByText("Reset to Defaults"));
+      fireEvent.click(screen.getByText("Reset to Defaults"));
 
-      // Wait for dialog portal to fully mount
-      const cancelBtn = await screen.findByRole("button", { name: "Cancel" });
-      await user.click(cancelBtn);
+      // Scope to dialog portal — findByRole("dialog") survives parallel test load
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
       expect(mockResetConfig).not.toHaveBeenCalled();
     });
   });
@@ -557,22 +559,18 @@ describe("AgentConfigCard (interactive)", () => {
 
     it("shows confirmation dialog on Remove Limits click", async () => {
       setupDefaultMocks(makeConfig(), makeQuotaWithLimits());
-      const user = userEvent.setup();
       renderCard({ expanded: true });
       await waitFor(() => {
         expect(screen.getByText("Remove Limits")).toBeInTheDocument();
       });
-      await user.click(screen.getByText("Remove Limits"));
-      await waitFor(() => {
-        expect(screen.getByText(/Remove Athena's Quotas/)).toBeInTheDocument();
-      });
+      fireEvent.click(screen.getByText("Remove Limits"));
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText(/Remove Athena's Quotas/)).toBeInTheDocument();
     });
 
     it("calls removeAgentQuota when confirmed", async () => {
       setupDefaultMocks(makeConfig(), makeQuotaWithLimits());
       mockRemoveQuota.mockResolvedValue({ status: "removed", agentId: "architect" });
-      // After removal, getAgentQuota is called again — return empty quota
-      // Use mockResolvedValueOnce so it doesn't override the initial mock
       const user = userEvent.setup();
       renderCard({ expanded: true });
       await waitFor(() => {
@@ -581,14 +579,10 @@ describe("AgentConfigCard (interactive)", () => {
       // Override getQuota for the post-removal fetch
       mockGetQuota.mockResolvedValueOnce(makeQuota());
       // Click the "Remove Limits" button to open dialog
-      await user.click(screen.getByRole("button", { name: /Remove Limits/ }));
-      // Wait for dialog to appear, then confirm
-      await waitFor(() => {
-        expect(screen.getByText(/Remove Athena's Quotas/)).toBeInTheDocument();
-      });
-      // The dialog has its own "Remove Limits" button; use findAllByRole for portal timing
-      const removeBtns = await screen.findAllByRole("button", { name: /Remove Limits/ });
-      await user.click(removeBtns[removeBtns.length - 1]);
+      fireEvent.click(screen.getByRole("button", { name: /Remove Limits/ }));
+      // Scope to dialog portal for the confirmation button
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: /Remove Limits/ }));
       await waitFor(() => {
         expect(mockRemoveQuota).toHaveBeenCalledWith("architect");
       });

@@ -8,11 +8,14 @@
  * interactions, error handling, and delete confirmation dialog.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
+
+// Fluent UI Dialog portals can take >1s to mount under parallel test load.
+configure({ asyncUtilTimeout: 5000 });
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -258,32 +261,22 @@ describe("TemplateCard (interactive)", () => {
 
   describe("delete template", () => {
     it("shows a confirmation dialog when Delete is clicked", async () => {
-      const user = userEvent.setup();
       renderCard({ expanded: true });
 
-      await user.click(screen.getByRole("button", { name: /delete/i }));
+      fireEvent.click(screen.getByRole("button", { name: /delete/i }));
 
-      await waitFor(() => {
-        expect(
-          screen.getByText(/delete "Engineering"\?/i),
-        ).toBeInTheDocument();
-      });
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
     });
 
     it("does not delete when dialog Cancel is clicked", async () => {
       const user = userEvent.setup();
       renderCard({ expanded: true });
 
-      await user.click(screen.getByRole("button", { name: /delete/i }));
+      fireEvent.click(screen.getByRole("button", { name: /delete/i }));
 
-      await waitFor(() => {
-        expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
-      });
-
-      // The dialog has its own Cancel button; use findAllByRole for portal timing
-      const dialogButtons = await screen.findAllByRole("button", { name: /cancel/i });
-      const dialogCancel = dialogButtons[dialogButtons.length - 1];
-      await user.click(dialogCancel);
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
 
       expect(mockDelete).not.toHaveBeenCalled();
     });
@@ -293,16 +286,10 @@ describe("TemplateCard (interactive)", () => {
       mockDelete.mockResolvedValue({ status: "deleted", id: "tmpl-1" });
       const { onSaved } = renderCard({ expanded: true });
 
-      await user.click(screen.getByRole("button", { name: /delete/i }));
+      fireEvent.click(screen.getByRole("button", { name: /delete/i }));
 
-      await waitFor(() => {
-        expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
-      });
-
-      // Inside the dialog, find the confirmation Delete button; use findAllByRole for portal timing
-      const dialogDeleteBtns = await screen.findAllByRole("button", { name: /delete/i });
-      const confirmBtn = dialogDeleteBtns[dialogDeleteBtns.length - 1];
-      await user.click(confirmBtn);
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: /delete/i }));
 
       await waitFor(() => {
         expect(mockDelete).toHaveBeenCalledWith("tmpl-1");
@@ -315,15 +302,10 @@ describe("TemplateCard (interactive)", () => {
       mockDelete.mockRejectedValue(new Error("Permission denied"));
       renderCard({ expanded: true });
 
-      await user.click(screen.getByRole("button", { name: /delete/i }));
+      fireEvent.click(screen.getByRole("button", { name: /delete/i }));
 
-      await waitFor(() => {
-        expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
-      });
-
-      const dialogDeleteBtns = await screen.findAllByRole("button", { name: /delete/i });
-      const confirmBtn = dialogDeleteBtns[dialogDeleteBtns.length - 1];
-      await user.click(confirmBtn);
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: /delete/i }));
 
       await waitFor(() => {
         expect(screen.getByText("Permission denied")).toBeInTheDocument();
@@ -335,15 +317,10 @@ describe("TemplateCard (interactive)", () => {
       mockDelete.mockRejectedValue(42);
       renderCard({ expanded: true });
 
-      await user.click(screen.getByRole("button", { name: /delete/i }));
+      fireEvent.click(screen.getByRole("button", { name: /delete/i }));
 
-      await waitFor(() => {
-        expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
-      });
-
-      const dialogDeleteBtns2 = await screen.findAllByRole("button", { name: /delete/i });
-      const confirmBtn2 = dialogDeleteBtns2[dialogDeleteBtns2.length - 1];
-      await user.click(confirmBtn2);
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: /delete/i }));
 
       await waitFor(() => {
         expect(screen.getByText("Failed to delete template")).toBeInTheDocument();
