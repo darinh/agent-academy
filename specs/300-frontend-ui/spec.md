@@ -152,6 +152,7 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
 | `/api/analytics/agents` | GET | Per-agent performance metrics (optional `hoursBack` query param, 1–8760) |
 | `/api/analytics/agents/{agentId}` | GET | Agent detail drill-down (optional `hoursBack`, `requestLimit`, `errorLimit`, `taskLimit`) |
+| `/api/search` | GET | Full-text search across messages and tasks (required `q`, optional `scope`, `messageLimit`, `taskLimit`) |
 
 ### Browse response shape (from server):
 ```json
@@ -569,6 +570,57 @@ interface SprintArtifact {
 
 interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; stages: string[]; }
 interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
+```
+
+## Workspace Search (`SearchPanel.tsx`)
+
+Full-text search across workspace messages (room + breakout) and tasks. Powered by SQLite FTS5 virtual tables with BM25 ranking.
+
+### API
+
+- **Endpoint**: `GET /api/search?q=term&scope=all|messages|tasks&messageLimit=25&taskLimit=25`
+- **Backend**: `SearchService` (scoped) queries FTS5 tables `messages_fts`, `breakout_messages_fts`, `tasks_fts`
+- **Workspace-scoped**: Results filtered to the active workspace
+- **FTS5 safety**: Query terms are quoted and escaped (reuses `RecallHandler` pattern)
+- **LIKE fallback**: If FTS5 tables are unavailable, falls back to `LIKE` queries
+- **System messages excluded**: Only `Agent` and `User` messages are searched
+
+### UI
+
+- **Access**: 🔍 Search item in sidebar navigation, or press `/` to open
+- **Search bar**: Debounced input (300ms) with Fluent UI Input
+- **Scope filter**: All / Messages / Tasks toggle buttons
+- **Message results**: Sender name, role pill, room name, breakout badge, FTS5 snippet with `«highlighted»` terms, timestamp. Click navigates to the room.
+- **Task results**: Title, status badge, assigned agent, FTS5 snippet, created date. Click navigates to tasks tab.
+- **Status bar**: Shows total result count and query term
+- **Empty states**: Initial help text, and "no results" feedback
+
+### Data Flow
+
+```
+SearchPanel → searchWorkspace(q, {scope}) → GET /api/search?q=...
+  → SearchController → SearchService.SearchAsync()
+    → FTS5 MATCH on messages_fts / breakout_messages_fts / tasks_fts
+    → JOIN to entity tables for metadata
+    → snippet() for highlighted excerpts
+    → Merge room + breakout results, ordered by recency
+  → SearchResults { messages[], tasks[], totalCount, query }
+```
+
+### Types
+
+```typescript
+type SearchScope = "all" | "messages" | "tasks";
+interface MessageSearchResult {
+  messageId: string; roomId: string; roomName: string;
+  senderName: string; senderKind: MessageSenderKind; senderRole: string | null;
+  snippet: string; sentAt: string; sessionId: string | null; source: "room" | "breakout";
+}
+interface TaskSearchResult {
+  taskId: string; title: string; status: string;
+  assignedAgentName: string | null; snippet: string; createdAt: string; roomId: string | null;
+}
+interface SearchResults { messages: MessageSearchResult[]; tasks: TaskSearchResult[]; totalCount: number; query: string; }
 ```
 
 ## Future Work

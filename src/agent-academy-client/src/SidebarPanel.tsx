@@ -21,6 +21,7 @@ import {
 
 const NAV_ITEMS = [
   { value: "overview", icon: "🔲", label: "Overview" },
+  { value: "search", icon: "🔍", label: "Search" },
   { value: "directMessages", icon: "✉️", label: "Messages" },
   { value: "plan", icon: "📄", label: "Plan" },
   { value: "tasks", icon: "📋", label: "Tasks" },

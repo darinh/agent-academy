@@ -222,6 +222,7 @@ builder.Services.AddScoped<ConversationSessionService>();
 
 // Sprint lifecycle management (scoped — creation, stage advancement, artifacts)
 builder.Services.AddScoped<SprintService>();
+builder.Services.AddScoped<SearchService>();
 
 // Copilot token provider (singleton — captures OAuth token for SDK activation)
 builder.Services.AddSingleton<CopilotTokenProvider>();

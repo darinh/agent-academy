@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **300-frontend-ui**: Workspace Search (`SearchPanel.tsx`). FTS5-powered full-text search across room messages, breakout messages, and tasks. `GET /api/search?q=term&scope=all|messages|tasks` endpoint with `SearchService` (scoped), `SearchController`. FTS5 virtual tables (`messages_fts`, `breakout_messages_fts`, `tasks_fts`) with INSERT/UPDATE/DELETE triggers. LIKE fallback for pre-migration databases. Frontend: debounced search input, scope filters (All/Messages/Tasks), BM25-ranked results with highlighted snippets, breakout badge, room navigation on click. Keyboard shortcut `/` opens search. 27 backend + 29 frontend tests.
+
 ### Changed
 - **005-workspace-runtime**: Spec reconciliation after full facade decomposition. Added `TaskOrchestrationService` to services table (orchestrates CreateTask, CompleteTask, RejectTask, PostTaskNote). Fixed `ActivityPublisher` registration from Singleton to Scoped; separated `ActivityBroadcaster` (singleton in-memory buffer). Removed dead WorkspaceRuntime methods (PublishThinking, PublishFinished, GetRecentActivity, StreamActivity). Updated Dependencies to match actual constructor (13 dependencies, down from 16). Updated Service Registration. WorkspaceRuntime: 573 lines, pure delegation facade.
 
