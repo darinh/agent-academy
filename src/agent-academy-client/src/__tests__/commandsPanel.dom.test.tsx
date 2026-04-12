@@ -622,4 +622,152 @@ describe("CommandsPanel", () => {
       expect(screen.getByText("0 pending")).toBeInTheDocument();
     });
   });
+
+  describe("destructive command confirmation", () => {
+    const destructiveMetadata = [
+      {
+        command: "CLOSE_ROOM",
+        title: "Close room",
+        category: "operations",
+        description: "Archive a room permanently.",
+        detail: "Agents will be moved out.",
+        isAsync: false,
+        isDestructive: true,
+        destructiveWarning: "This will archive the room permanently. Agents in the room will be moved out.",
+        fields: [{ name: "roomId", label: "Room ID", kind: "text", description: "Room to close", placeholder: "agent-academy-main", required: true }],
+      },
+      {
+        command: "READ_FILE",
+        title: "Read file",
+        category: "code",
+        description: "Read a file.",
+        detail: "Reads file content.",
+        isAsync: false,
+        isDestructive: false,
+        fields: [{ name: "path", label: "Path", kind: "text", description: "File path", placeholder: "src/main.ts", required: true }],
+      },
+    ];
+
+    beforeEach(() => {
+      mockExecuteCommand.mockClear();
+    });
+
+    it("shows destructive badge on destructive command cards", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Close room").length).toBeGreaterThanOrEqual(1);
+      });
+      expect(screen.getByText("destructive")).toBeInTheDocument();
+    });
+
+    it("shows destructive warning text in composer for destructive commands", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Close room").length).toBeGreaterThanOrEqual(1);
+      });
+      const cards = screen.getAllByText("Close room");
+      const card = cards[0].closest("button")!;
+      await act(async () => { fireEvent.click(card); });
+      expect(screen.getByText(/archive the room permanently/)).toBeInTheDocument();
+    });
+
+    it("opens confirmation dialog instead of executing destructive command", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Close room").length).toBeGreaterThanOrEqual(1);
+      });
+      // Select destructive command
+      const cards = screen.getAllByText("Close room");
+      const card = cards[0].closest("button")!;
+      await act(async () => { fireEvent.click(card); });
+      // Fill required field
+      const roomInput = screen.getByPlaceholderText("agent-academy-main");
+      await act(async () => { fireEvent.change(roomInput, { target: { value: "main-room" } }); });
+      // Click execute
+      await act(async () => { fireEvent.click(screen.getByText(/^Run Close room$/)); });
+      // Should show dialog, NOT call executeCommand
+      expect(mockExecuteCommand).not.toHaveBeenCalled();
+      expect(screen.getByText("Confirm Close room")).toBeInTheDocument();
+      expect(screen.getByText("Yes, proceed")).toBeInTheDocument();
+    });
+
+    it("executes with confirm=true when user confirms in dialog", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Close room").length).toBeGreaterThanOrEqual(1);
+      });
+      // Select, fill, click execute
+      const cards = screen.getAllByText("Close room");
+      await act(async () => { fireEvent.click(cards[0].closest("button")!); });
+      const roomInput = screen.getByPlaceholderText("agent-academy-main");
+      await act(async () => { fireEvent.change(roomInput, { target: { value: "main-room" } }); });
+      await act(async () => { fireEvent.click(screen.getByText(/^Run Close room$/)); });
+      // Confirm in dialog
+      await act(async () => { fireEvent.click(screen.getByText("Yes, proceed")); });
+      await waitFor(() => {
+        expect(mockExecuteCommand).toHaveBeenCalledTimes(1);
+      });
+      const callArgs = mockExecuteCommand.mock.calls[0][0];
+      expect(callArgs.command).toBe("CLOSE_ROOM");
+      expect(callArgs.args?.confirm).toBe("true");
+    });
+
+    it("does not execute when user cancels in dialog", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Close room").length).toBeGreaterThanOrEqual(1);
+      });
+      const cards = screen.getAllByText("Close room");
+      await act(async () => { fireEvent.click(cards[0].closest("button")!); });
+      const roomInput = screen.getByPlaceholderText("agent-academy-main");
+      await act(async () => { fireEvent.change(roomInput, { target: { value: "main-room" } }); });
+      await act(async () => { fireEvent.click(screen.getByText(/^Run Close room$/)); });
+      // Cancel in dialog
+      await act(async () => { fireEvent.click(screen.getByText("Cancel")); });
+      expect(mockExecuteCommand).not.toHaveBeenCalled();
+    });
+
+    it("does not show confirmation dialog for non-destructive commands", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Read file").length).toBeGreaterThanOrEqual(1);
+      });
+      // Select non-destructive command
+      const cards = screen.getAllByText("Read file");
+      await act(async () => { fireEvent.click(cards[0].closest("button")!); });
+      const pathInput = screen.getByPlaceholderText("src/main.ts");
+      await act(async () => { fireEvent.change(pathInput, { target: { value: "test.ts" } }); });
+      await act(async () => { fireEvent.click(screen.getByText(/^Run Read file$/)); });
+      // Should execute directly without dialog
+      await waitFor(() => {
+        expect(mockExecuteCommand).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.queryByText("Yes, proceed")).not.toBeInTheDocument();
+      // Confirm no confirm flag in request
+      const callArgs = mockExecuteCommand.mock.calls[0][0];
+      expect(callArgs.args?.confirm).toBeUndefined();
+    });
+
+    it("still validates required fields before showing dialog for destructive commands", async () => {
+      mockGetCommandMetadata.mockResolvedValue(destructiveMetadata);
+      await act(async () => { renderPanel(); });
+      await waitFor(() => {
+        expect(screen.getAllByText("Close room").length).toBeGreaterThanOrEqual(1);
+      });
+      const cards = screen.getAllByText("Close room");
+      await act(async () => { fireEvent.click(cards[0].closest("button")!); });
+      // Do NOT fill required field, try to execute
+      await act(async () => { fireEvent.click(screen.getByText(/^Run Close room$/)); });
+      // Should show validation error, not dialog
+      expect(screen.getByText("Room ID is required.")).toBeInTheDocument();
+      expect(screen.queryByText("Yes, proceed")).not.toBeInTheDocument();
+      expect(mockExecuteCommand).not.toHaveBeenCalled();
+    });
+  });
 });
