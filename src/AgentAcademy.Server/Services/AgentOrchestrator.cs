@@ -232,34 +232,22 @@ public sealed class AgentOrchestrator
                 "Conversation round {Round}/{MaxRounds} for room {RoomId}",
                 round, MaxRoundsPerTrigger, roomId);
 
-            // Load spec context once for all prompts in this round
+            // Load shared context for this round
             var specContext = await _specManager.LoadSpecContextAsync();
-
-            // Load session summary for context continuity after epoch rotation
             string? sessionSummary = null;
-            try
-            {
-                sessionSummary = await sessionService.GetSessionContextAsync(roomId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId);
-            }
+            try { sessionSummary = await sessionService.GetSessionContextAsync(roomId); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId); }
 
-            // Load active sprint context (if any) for stage-aware prompts and roster filtering
             var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
-            var sprintPreamble = sprintCtx.Preamble;
             var activeSprintStage = sprintCtx.ActiveStage;
 
+            // ── Planner phase ──
             var planner = FindPlanner();
             if (planner is not null)
                 planner = await configService.GetEffectiveAgentAsync(planner);
 
-            // Capture planner ID before potential exclusion so the idle-agent
-            // fallback can still exclude the planner from its pool
             var plannerId = planner?.Id;
 
-            // Skip planner if not allowed in current sprint stage
             if (planner is not null && activeSprintStage is not null
                 && !SprintPreambles.IsRoleAllowedInStage(planner.Role, activeSprintStage))
             {
@@ -271,58 +259,30 @@ public sealed class AgentOrchestrator
 
             var agentsToRun = new List<AgentDefinition>();
 
-            // Step 1 — Run the planner first
             if (planner is not null)
             {
-                await activity.PublishThinkingAsync(planner, roomId);
-                var plannerResponse = "";
-                try
-                {
-                    var freshRoom = await roomService.GetRoomAsync(roomId) ?? room;
-                    var taskItems = await taskItemService.GetActiveTaskItemsAsync();
-                    var plannerMemories = await _memoryLoader.LoadAsync(planner.Id);
-                    var plannerDms = await messageService.GetDirectMessagesForAgentAsync(planner.Id);
-                    if (plannerDms.Count > 0)
-                        await messageService.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
-                    var prompt = PromptBuilder.BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary, sprintPreamble)
-                        + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
-                        + "by name if they should respond (e.g., '@Archimedes should review').\n"
-                        + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
-                        + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
-                    plannerResponse = await RunAgentAsync(planner, prompt, roomId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Planner failed");
-                }
-                finally
-                {
-                    await activity.PublishFinishedAsync(planner, roomId);
-                }
+                var freshRoom = await roomService.GetRoomAsync(roomId) ?? room;
+                var taskItems = await taskItemService.GetActiveTaskItemsAsync();
+                var plannerSuffix = "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
+                    + "by name if they should respond (e.g., '@Archimedes should review').\n"
+                    + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
+                    + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
 
-                if (!string.IsNullOrWhiteSpace(plannerResponse) && !AgentResponseParser.IsPassResponse(plannerResponse)
-                    && !AgentResponseParser.IsStubOfflineResponse(plannerResponse))
+                var (resolvedPlanner, plannerResponse, plannerIsNonPass) = await RunAgentTurnAsync(
+                    planner, scope, messageService, configService, activity,
+                    freshRoom, roomId, specContext, taskItems, sessionSummary, sprintCtx.Preamble, plannerSuffix);
+
+                if (plannerIsNonPass)
                 {
                     hadNonPassResponse = true;
-
-                    // Process commands and post remaining text
-                    await ProcessAndPostAgentResponseAsync(messageService, planner, roomId, plannerResponse);
-
-                    // Collect @-mentioned agents for the next step
                     foreach (var a in AgentResponseParser.ParseTaggedAgents(_catalog.Agents, plannerResponse))
                     {
-                        if (a.Id != planner.Id) agentsToRun.Add(a);
-                    }
-
-                    // Detect and handle task assignments
-                    foreach (var assignment in AgentResponseParser.ParseTaskAssignments(plannerResponse))
-                    {
-                        await _taskAssignmentHandler.ProcessAssignmentAsync(scope, planner, roomId, assignment);
+                        if (a.Id != resolvedPlanner.Id) agentsToRun.Add(a);
                     }
                 }
             }
 
-            // Step 2 — Fall back to idle agents if nobody was tagged
+            // ── Fallback to idle agents if nobody was tagged ──
             if (agentsToRun.Count == 0)
             {
                 agentsToRun.AddRange(
@@ -331,14 +291,10 @@ public sealed class AgentOrchestrator
                         .Take(3));
             }
 
-            // Filter agents by sprint stage roster (if active sprint)
             if (activeSprintStage is not null)
-            {
-                agentsToRun = SprintPreambles.FilterByStageRoster(
-                    agentsToRun, activeSprintStage, a => a.Role);
-            }
+                agentsToRun = SprintPreambles.FilterByStageRoster(agentsToRun, activeSprintStage, a => a.Role);
 
-            // Step 3 — Run agents sequentially so each sees the previous response
+            // ── Run agents sequentially so each sees prior responses ──
             foreach (var catalogAgent in agentsToRun)
             {
                 if (_stopped) break;
@@ -346,54 +302,20 @@ public sealed class AgentOrchestrator
                 var currentRoom = await roomService.GetRoomAsync(roomId);
                 if (currentRoom is null) break;
 
-                var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
-
-                // Skip agents that are already working in a breakout room
-                var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
+                var location = await agentLocationService.GetAgentLocationAsync(catalogAgent.Id);
                 if (location?.State == AgentState.Working) continue;
 
-                await activity.PublishThinkingAsync(agent, roomId);
-                var response = "";
-                try
-                {
-                    var agentMemories = await _memoryLoader.LoadAsync(agent.Id);
-                    var agentDms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
-                    if (agentDms.Count > 0)
-                        await messageService.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
-                    var prompt = PromptBuilder.BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
-                    response = await RunAgentAsync(agent, prompt, roomId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Agent {AgentName} failed", agent.Name);
-                }
-                finally
-                {
-                    await activity.PublishFinishedAsync(agent, roomId);
-                }
+                var (_, _, agentIsNonPass) = await RunAgentTurnAsync(
+                    catalogAgent, scope, messageService, configService, activity,
+                    currentRoom, roomId, specContext,
+                    sessionSummary: sessionSummary, sprintPreamble: sprintCtx.Preamble);
 
-                if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)
-                    && !AgentResponseParser.IsStubOfflineResponse(response))
-                {
-                    hadNonPassResponse = true;
-
-                    // Process commands and post remaining text
-                    await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
-
-                    foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
-                    {
-                        await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
-                    }
-                }
+                if (agentIsNonPass) hadNonPassResponse = true;
             }
 
             _logger.LogInformation(
                 "Conversation round {Round} finished for room {RoomId}", round, roomId);
 
-            // Continue with another round only if:
-            // 1. Agents produced non-PASS responses (conversation is progressing)
-            // 2. The room still has an active task (not just casual chat)
-            // 3. We haven't hit the cap
             if (!hadNonPassResponse || _stopped) break;
 
             var updatedRoom = await roomService.GetRoomAsync(roomId);
@@ -425,7 +347,6 @@ public sealed class AgentOrchestrator
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
 
-        // Find the recipient agent in catalog
         var catalogAgent = _catalog.Agents.FirstOrDefault(
             a => string.Equals(a.Id, recipientAgentId, StringComparison.OrdinalIgnoreCase));
 
@@ -437,11 +358,10 @@ public sealed class AgentOrchestrator
 
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
-        // Find the agent's current room
+        // If agent is in a breakout room, forward DMs there instead
         var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
         if (location?.State == AgentState.Working && location.BreakoutRoomId is not null)
         {
-            // Agent is in a breakout room — post all unread DMs as breakout messages
             var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
             if (dms.Count > 0)
             {
@@ -471,51 +391,86 @@ public sealed class AgentOrchestrator
         if (room is null) return;
 
         var specContext = await _specManager.LoadSpecContextAsync();
-        var agentMemories = await _memoryLoader.LoadAsync(agent.Id);
-        var directMessages = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
-        if (directMessages.Count > 0)
-            await messageService.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
-        string? dmSessionSummary = null;
-        string? dmSprintPreamble = null;
+        string? sessionSummary = null;
+        string? sprintPreamble = null;
         try
         {
-            var dmSessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
-            dmSessionSummary = await dmSessionService.GetSessionContextAsync(roomId);
-            var dmSprintCtx = await LoadSprintContextAsync(scope, roomService, dmSessionService);
-            dmSprintPreamble = dmSprintCtx.Preamble;
+            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+            sessionSummary = await sessionService.GetSessionContextAsync(roomId);
+            var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
+            sprintPreamble = sprintCtx.Preamble;
         }
         catch { /* non-critical */ }
 
+        await RunAgentTurnAsync(
+            catalogAgent, scope, messageService, configService, activity,
+            room, roomId, specContext,
+            sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
+
+        _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
+    }
+
+    // ── AGENT TURN HELPER ────────────────────────────────────────
+
+    /// <summary>
+    /// Runs a single agent turn: resolves effective config, loads memories and DMs,
+    /// builds the prompt, executes the agent, and processes the response (commands,
+    /// message posting, task assignments). Returns the effective agent, raw response,
+    /// and whether the response was substantive (non-pass/non-offline).
+    /// </summary>
+    private async Task<(AgentDefinition Agent, string Response, bool IsNonPass)> RunAgentTurnAsync(
+        AgentDefinition catalogAgent,
+        IServiceScope scope,
+        MessageService messageService,
+        AgentConfigService configService,
+        ActivityPublisher activity,
+        RoomSnapshot room,
+        string roomId,
+        string? specContext,
+        List<TaskItem>? taskItems = null,
+        string? sessionSummary = null,
+        string? sprintPreamble = null,
+        string? promptSuffix = null)
+    {
+        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
+
         await activity.PublishThinkingAsync(agent, roomId);
-        var response = "";
+        string response;
         try
         {
-            var prompt = PromptBuilder.BuildConversationPrompt(agent, room, specContext,
-                memories: agentMemories, directMessages: directMessages,
-                sessionSummary: dmSessionSummary, sprintPreamble: dmSprintPreamble);
+            var memories = await _memoryLoader.LoadAsync(agent.Id);
+            var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
+            if (dms.Count > 0)
+                await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
+
+            var prompt = PromptBuilder.BuildConversationPrompt(
+                agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble);
+            if (promptSuffix is not null) prompt += promptSuffix;
+
             response = await RunAgentAsync(agent, prompt, roomId);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "DM round: agent {AgentName} failed", agent.Name);
+            _logger.LogWarning(ex, "Agent {AgentName} failed", agent.Name);
+            response = "";
         }
         finally
         {
             await activity.PublishFinishedAsync(agent, roomId);
         }
 
-        if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)
-            && !AgentResponseParser.IsStubOfflineResponse(response))
+        bool isNonPass = !string.IsNullOrWhiteSpace(response)
+            && !AgentResponseParser.IsPassResponse(response)
+            && !AgentResponseParser.IsStubOfflineResponse(response);
+
+        if (isNonPass)
         {
             await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
-
             foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
-            {
                 await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
-            }
         }
 
-        _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
+        return (agent, response, isNonPass);
     }
 
     // ── AGENT HELPERS ───────────────────────────────────────────
