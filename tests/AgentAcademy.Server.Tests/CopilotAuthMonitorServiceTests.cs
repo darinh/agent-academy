@@ -672,8 +672,10 @@ public class CopilotExecutorAuthTransitionTests
             var executor = new CopilotExecutor(
                 NullLogger<CopilotExecutor>.Instance,
                 NullLogger<StubExecutor>.Instance,
-                new ConfigurationBuilder().Build(),
-                new CopilotTokenProvider(),
+                new CopilotClientFactory(
+                    NullLogger<CopilotClientFactory>.Instance,
+                    new ConfigurationBuilder().Build(),
+                    new CopilotTokenProvider()),
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                 serviceProvider.GetRequiredService<NotificationManager>(),
                 NSubstitute.Substitute.For<IAgentToolRegistry>(),

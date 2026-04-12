@@ -224,8 +224,10 @@ public class ErrorClassificationTests
         var executor = new CopilotExecutor(
             NullLogger<CopilotExecutor>.Instance,
             NullLogger<StubExecutor>.Instance,
-            new ConfigurationBuilder().Build(),
-            new CopilotTokenProvider(),
+            new CopilotClientFactory(
+                NullLogger<CopilotClientFactory>.Instance,
+                new ConfigurationBuilder().Build(),
+                new CopilotTokenProvider()),
             sp.GetRequiredService<IServiceScopeFactory>(),
             new NotificationManager(NullLogger<NotificationManager>.Instance),
             NSubstitute.Substitute.For<IAgentToolRegistry>(),
