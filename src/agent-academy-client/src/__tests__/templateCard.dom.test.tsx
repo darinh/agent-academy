@@ -280,8 +280,8 @@ describe("TemplateCard (interactive)", () => {
         expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
       });
 
-      // The dialog has its own Cancel button
-      const dialogButtons = screen.getAllByRole("button", { name: /cancel/i });
+      // The dialog has its own Cancel button; use findAllByRole for portal timing
+      const dialogButtons = await screen.findAllByRole("button", { name: /cancel/i });
       const dialogCancel = dialogButtons[dialogButtons.length - 1];
       await user.click(dialogCancel);
 
@@ -299,8 +299,8 @@ describe("TemplateCard (interactive)", () => {
         expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
       });
 
-      // Inside the dialog, find the confirmation Delete button
-      const dialogDeleteBtns = screen.getAllByRole("button", { name: /delete/i });
+      // Inside the dialog, find the confirmation Delete button; use findAllByRole for portal timing
+      const dialogDeleteBtns = await screen.findAllByRole("button", { name: /delete/i });
       const confirmBtn = dialogDeleteBtns[dialogDeleteBtns.length - 1];
       await user.click(confirmBtn);
 
@@ -321,7 +321,7 @@ describe("TemplateCard (interactive)", () => {
         expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
       });
 
-      const dialogDeleteBtns = screen.getAllByRole("button", { name: /delete/i });
+      const dialogDeleteBtns = await screen.findAllByRole("button", { name: /delete/i });
       const confirmBtn = dialogDeleteBtns[dialogDeleteBtns.length - 1];
       await user.click(confirmBtn);
 
@@ -341,9 +341,9 @@ describe("TemplateCard (interactive)", () => {
         expect(screen.getByText(/delete "Engineering"\?/i)).toBeInTheDocument();
       });
 
-      const dialogDeleteBtns = screen.getAllByRole("button", { name: /delete/i });
-      const confirmBtn = dialogDeleteBtns[dialogDeleteBtns.length - 1];
-      await user.click(confirmBtn);
+      const dialogDeleteBtns2 = await screen.findAllByRole("button", { name: /delete/i });
+      const confirmBtn2 = dialogDeleteBtns2[dialogDeleteBtns2.length - 1];
+      await user.click(confirmBtn2);
 
       await waitFor(() => {
         expect(screen.getByText("Failed to delete template")).toBeInTheDocument();

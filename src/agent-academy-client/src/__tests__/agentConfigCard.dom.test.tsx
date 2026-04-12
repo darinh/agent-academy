@@ -402,7 +402,9 @@ describe("AgentConfigCard (interactive)", () => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
       await user.click(screen.getByText("Reset to Defaults"));
-      expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
+      });
       expect(screen.getByText(/remove all overrides/)).toBeInTheDocument();
     });
 
@@ -416,12 +418,9 @@ describe("AgentConfigCard (interactive)", () => {
       });
       await user.click(screen.getByText("Reset to Defaults"));
 
-      // Wait for dialog content — portal may mount asynchronously
-      await waitFor(() => {
-        expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
-      });
-      // The dialog "Reset" button is distinct from the form "Reset to Defaults"
-      await user.click(screen.getByRole("button", { name: "Reset" }));
+      // Wait for dialog portal to fully mount — both title and action buttons
+      const resetBtn = await screen.findByRole("button", { name: "Reset" });
+      await user.click(resetBtn);
 
       await waitFor(() => {
         expect(mockResetConfig).toHaveBeenCalledWith("architect");
@@ -437,11 +436,10 @@ describe("AgentConfigCard (interactive)", () => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
       await user.click(screen.getByText("Reset to Defaults"));
-      await waitFor(() => {
-        expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
-      });
-      // Cancel is unambiguous — only appears in the dialog; use findByRole for portal timing
-      await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+      // Wait for dialog portal to fully mount
+      const cancelBtn = await screen.findByRole("button", { name: "Cancel" });
+      await user.click(cancelBtn);
       expect(mockResetConfig).not.toHaveBeenCalled();
     });
   });
@@ -565,7 +563,9 @@ describe("AgentConfigCard (interactive)", () => {
         expect(screen.getByText("Remove Limits")).toBeInTheDocument();
       });
       await user.click(screen.getByText("Remove Limits"));
-      expect(screen.getByText(/Remove Athena's Quotas/)).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText(/Remove Athena's Quotas/)).toBeInTheDocument();
+      });
     });
 
     it("calls removeAgentQuota when confirmed", async () => {
@@ -586,8 +586,8 @@ describe("AgentConfigCard (interactive)", () => {
       await waitFor(() => {
         expect(screen.getByText(/Remove Athena's Quotas/)).toBeInTheDocument();
       });
-      // The dialog has its own "Remove Limits" button — grab all and click the last one
-      const removeBtns = screen.getAllByRole("button", { name: /Remove Limits/ });
+      // The dialog has its own "Remove Limits" button; use findAllByRole for portal timing
+      const removeBtns = await screen.findAllByRole("button", { name: /Remove Limits/ });
       await user.click(removeBtns[removeBtns.length - 1]);
       await waitFor(() => {
         expect(mockRemoveQuota).toHaveBeenCalledWith("architect");
