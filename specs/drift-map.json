@@ -32,6 +32,21 @@
       "note": "Copilot client lifecycle"
     },
     {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotSessionPool.cs",
+      "specs": ["003"],
+      "note": "Session cache with TTL and send serialization"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotSdkSender.cs",
+      "specs": ["003"],
+      "note": "SDK communication, streaming, error classification, retry"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/PromptSanitizer.cs",
+      "specs": ["003"],
+      "note": "Prompt injection mitigation"
+    },
+    {
       "pattern": "src/AgentAcademy.Server/Services/CopilotCircuitBreaker.cs",
       "specs": ["003"],
       "note": "Circuit breaker for agent execution"
@@ -190,6 +205,36 @@
       "pattern": "src/AgentAcademy.Server/Services/ServiceRegistrationExtensions.cs",
       "specs": ["000"],
       "note": "DI registration"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotAuthMonitorService.cs",
+      "specs": ["003"],
+      "note": "Auth state monitoring background service"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotExceptions.cs",
+      "specs": ["003"],
+      "note": "Typed Copilot SDK exceptions"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/StubExecutor.cs",
+      "specs": ["003"],
+      "note": "Stub/fallback executor when SDK unavailable"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/ConventionalCommitMessage.cs",
+      "specs": ["010"],
+      "note": "Conventional commit message parsing"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/GitHubService.cs",
+      "specs": ["010"],
+      "note": "GitHub API integration via gh CLI"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/MergeConflictException.cs",
+      "specs": ["010"],
+      "note": "Merge conflict exception type"
     },
     {
       "pattern": "src/AgentAcademy.Server/Services/PullRequestSyncService.cs",
