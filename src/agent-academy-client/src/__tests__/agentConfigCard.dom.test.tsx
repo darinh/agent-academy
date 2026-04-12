@@ -416,12 +416,12 @@ describe("AgentConfigCard (interactive)", () => {
       });
       await user.click(screen.getByText("Reset to Defaults"));
 
-      // Wait for dialog content, then scope interaction via role
+      // Wait for dialog content — portal may mount asynchronously
       await waitFor(() => {
         expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
       });
-      const dialog = screen.getByRole("dialog");
-      await user.click(within(dialog).getByText("Reset"));
+      // The dialog "Reset" button is distinct from the form "Reset to Defaults"
+      await user.click(screen.getByRole("button", { name: "Reset" }));
 
       await waitFor(() => {
         expect(mockResetConfig).toHaveBeenCalledWith("architect");
@@ -440,8 +440,8 @@ describe("AgentConfigCard (interactive)", () => {
       await waitFor(() => {
         expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
       });
-      const dialog = screen.getByRole("dialog");
-      await user.click(within(dialog).getByText("Cancel"));
+      // Cancel is unambiguous — only appears in the dialog
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
       expect(mockResetConfig).not.toHaveBeenCalled();
     });
   });
