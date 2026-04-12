@@ -114,6 +114,10 @@ In `Program.cs`:
 - `NotificationManager` registered as singleton
 - `ConsoleNotificationProvider` registered as singleton
 - `DiscordNotificationProvider` registered as singleton
+- `DiscordMessageSender` registered as singleton
+- `DiscordMessageRouter` registered as singleton
+- `DiscordChannelManager` registered as singleton
+- `DiscordInputHandler` registered as singleton
 - `SlackNotificationProvider` registered as singleton
 - `ActivityNotificationBroadcaster` registered as hosted service
 - All providers registered with manager at startup
@@ -449,7 +453,9 @@ Questions are posted to the room channel with Block Kit formatting (header, sect
 | `src/AgentAcademy.Server/Notifications/INotificationProvider.cs` | Provider interface |
 | `src/AgentAcademy.Server/Notifications/NotificationManager.cs` | Provider orchestrator |
 | `src/AgentAcademy.Server/Notifications/ConsoleNotificationProvider.cs` | Reference provider |
-| `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs` | Discord bot provider (notification delivery, connection lifecycle) |
+| `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs` | Discord bot provider (connection lifecycle, thin delegation wrapper) |
+| `src/AgentAcademy.Server/Notifications/DiscordMessageSender.cs` | Discord outbound message delivery (room channels, agent questions, DMs, webhooks) |
+| `src/AgentAcademy.Server/Notifications/DiscordMessageRouter.cs` | Discord inbound message routing (Discord → Agent Academy rooms) |
 | `src/AgentAcademy.Server/Notifications/DiscordInputHandler.cs` | Discord input collection (choice buttons, freeform text) |
 | `src/AgentAcademy.Server/Notifications/SlackApiClient.cs` | Slack Web API HTTP wrapper |
 | `src/AgentAcademy.Server/Notifications/SlackNotificationProvider.cs` | Slack notification provider |
@@ -551,6 +557,8 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.
 
 ## Revision History
+
+- **2026-04-12**: Structural refactor — extracted `DiscordMessageSender` (outbound delivery) and `DiscordMessageRouter` (inbound routing) from `DiscordNotificationProvider` (776→500 lines). Provider is now a thin connection lifecycle wrapper. Also fixed event handler lifecycle (named handlers properly unsubscribed), startup race (router attached after channel rebuild), and room-send fallback (unified default-send path). Zero behavioral changes.
 
 - **2026-04-12**: Structural refactor — extracted `DiscordInputHandler` from `DiscordNotificationProvider`. Stateless handler receives `DiscordSocketClient`, channel ID, and owner ID as method parameters (no mutable state). `DiscordNotificationProvider` retains notification delivery, connection lifecycle, and channel management. Zero behavioral changes.
 
