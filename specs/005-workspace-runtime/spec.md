@@ -22,7 +22,8 @@ Controllers and command handlers inject focused domain services directly via con
 | `RoomLifecycleService` | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped | `Services/RoomLifecycleService.cs` |
 | `MessageService` | Room/DM/breakout messaging, message trimming | Scoped | `Services/MessageService.cs` |
 | `TaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped | `Services/TaskQueryService.cs` |
-| `TaskLifecycleService` | Task creation staging, claim/release/approve/reject, evidence writes | Scoped | `Services/TaskLifecycleService.cs` |
+| `TaskLifecycleService` | Task creation staging, claim/release/approve/reject | Scoped | `Services/TaskLifecycleService.cs` |
+| `TaskEvidenceService` | Evidence recording and gate checks | Scoped | `Services/TaskEvidenceService.cs` |
 | `BreakoutRoomService` | Breakout room lifecycle, task association, stuck reopening | Scoped | `Services/BreakoutRoomService.cs` |
 | `TaskItemService` | Task item CRUD | Scoped | `Services/TaskItemService.cs` |
 | `AgentLocationService` | Agent location tracking and movement | Scoped | `Services/AgentLocationService.cs` |
@@ -267,6 +268,7 @@ builder.Services.AddSingleton<WorktreeService>();         // worktree manager
 builder.Services.AddScoped<ActivityPublisher>();
 builder.Services.AddScoped<TaskQueryService>();
 builder.Services.AddScoped<TaskLifecycleService>();
+builder.Services.AddScoped<TaskEvidenceService>();
 builder.Services.AddScoped<MessageService>();
 builder.Services.AddScoped<AgentLocationService>();
 builder.Services.AddScoped<PlanService>();

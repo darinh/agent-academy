@@ -626,7 +626,7 @@ Comments are ordered by `CreatedAt` ascending.
 
 ## 6.6. Evidence Ledger
 
-> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/TaskLifecycleService.cs`
+> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/TaskEvidenceService.cs`
 
 The evidence ledger records structured verification checks against tasks. Each check captures what was verified, how, and whether it passed. Evidence accumulates on a task and is evaluated by gate checks before status transitions.
 
@@ -666,7 +666,7 @@ Task status transitions (e.g., Active → AwaitingValidation → InReview → Ap
 
 ### Gate Definitions
 
-Gates are minimum evidence requirements for task status transitions. Evaluated by `TaskLifecycleService.CheckGatesAsync()`:
+Gates are minimum evidence requirements for task status transitions. Evaluated by `TaskEvidenceService.CheckGatesAsync()`:
 
 | Current Status | Target Status | Required Checks | Required Phase | Suggested Check Names |
 |---------------|---------------|-----------------|----------------|----------------------|
