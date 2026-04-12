@@ -197,6 +197,11 @@ describe("AgentConfigCard (interactive)", () => {
 
   afterEach(() => {
     cleanup();
+    // Fluent UI Dialog renders via portals appended to document.body.
+    // React cleanup() unmounts the component tree but portal container
+    // divs may linger, causing subsequent tests to find stale elements
+    // or fail to locate newly-rendered dialogs under heavy parallel load.
+    document.body.innerHTML = "";
   });
 
   // ── Collapsed state ──
@@ -411,8 +416,11 @@ describe("AgentConfigCard (interactive)", () => {
       });
       await user.click(screen.getByText("Reset to Defaults"));
 
-      // Click the Reset button in the dialog
-      const dialog = await screen.findByRole("dialog");
+      // Wait for dialog content, then scope interaction via role
+      await waitFor(() => {
+        expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
+      });
+      const dialog = screen.getByRole("dialog");
       await user.click(within(dialog).getByText("Reset"));
 
       await waitFor(() => {
@@ -429,7 +437,10 @@ describe("AgentConfigCard (interactive)", () => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
       await user.click(screen.getByText("Reset to Defaults"));
-      const dialog = await screen.findByRole("dialog");
+      await waitFor(() => {
+        expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
+      });
+      const dialog = screen.getByRole("dialog");
       await user.click(within(dialog).getByText("Cancel"));
       expect(mockResetConfig).not.toHaveBeenCalled();
     });

@@ -654,7 +654,7 @@ public sealed class CommandControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task GetMetadata_IncludesDestructiveFlags()
+    public Task GetMetadata_IncludesDestructiveFlags()
     {
         var handler = new DestructiveCapturingHandler("CLOSE_ROOM");
         var controller = CreateController(handler);
@@ -667,5 +667,6 @@ public sealed class CommandControllerTests : IDisposable
         Assert.NotNull(closeRoom);
         Assert.True(closeRoom.IsDestructive);
         Assert.NotNull(closeRoom.DestructiveWarning);
+        return Task.CompletedTask;
     }
 }
