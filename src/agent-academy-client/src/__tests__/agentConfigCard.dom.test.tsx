@@ -412,7 +412,7 @@ describe("AgentConfigCard (interactive)", () => {
       await user.click(screen.getByText("Reset to Defaults"));
 
       // Click the Reset button in the dialog
-      const dialog = screen.getByRole("dialog");
+      const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByText("Reset"));
 
       await waitFor(() => {
@@ -429,7 +429,7 @@ describe("AgentConfigCard (interactive)", () => {
         expect(screen.getByText("Reset to Defaults")).toBeInTheDocument();
       });
       await user.click(screen.getByText("Reset to Defaults"));
-      const dialog = screen.getByRole("dialog");
+      const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByText("Cancel"));
       expect(mockResetConfig).not.toHaveBeenCalled();
     });
