@@ -276,7 +276,7 @@ Each Agent Academy room gets a dedicated Discord channel under a project-specifi
   💬 main-collaboration-room                   ← legacy room
 ```
 
-**Project resolution**: When creating a channel for a room, the provider resolves the room's project name via `WorkspaceRuntime.GetProjectNameForRoomAsync(roomId)` which follows the chain: `roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName`. If `ProjectName` is null, falls back to the workspace directory basename.
+**Project resolution**: When creating a channel for a room, the provider resolves the room's project name via `RoomService.GetProjectNameForRoomAsync(roomId)` which follows the chain: `roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName`. If `ProjectName` is null, falls back to the workspace directory basename.
 
 **Category naming**: Room categories are named `"{projectName} Rooms"` for workspace-scoped rooms. DM/message categories are named `"{projectName} Messages"`. Legacy rooms (no `WorkspacePath`) use the `"Rooms"` category. Categories are cached in memory keyed by project name.
 

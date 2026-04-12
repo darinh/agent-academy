@@ -289,9 +289,9 @@ Wire into Program.cs:
 
 **Files:**
 - `src/AgentAcademy.Server/Controllers/RoomController.cs` (MODIFY — add GET messages action)
-- `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (MODIFY — add GetRoomMessagesAsync with cursor)
+- `src/AgentAcademy.Server/Services/RoomService.cs` (already has GetRoomMessagesAsync with cursor)
 
-Add `GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit)` to WorkspaceRuntime:
+`RoomService.GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit)` returns paginated messages:
 ```csharp
 public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
     string roomId, string? afterMessageId = null, int limit = 50)

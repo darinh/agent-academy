@@ -40,7 +40,7 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 │  └─────────────────────────┬──────────────────────────┘  │
 │                            │                             │
 │  ┌─────────────────────────┼──────────────────────────┐  │
-│  │              WorkspaceRuntime                      │  │
+│  │           Domain Services Layer                   │  │
 │  │  (rooms, agents, tasks, messages, activity)        │  │
 │  └──────┬──────────┬──────────┬──────────┬────────────┘  │
 │         │          │          │          │                │
@@ -68,7 +68,7 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 | Shared Models | `AgentAcademy.Shared` | Domain types, enums, DTOs shared between server and tests |
 | Frontend | `agent-academy-client` | React SPA with Fluent UI, SignalR/SSE client, workspace state management |
 | Tests | `AgentAcademy.Server.Tests` | xUnit integration and unit tests |
-| WorkspaceRuntime | `AgentAcademy.Server` | Central state manager: rooms, agents, tasks, messages, activity, plans |
+| Domain Services | `AgentAcademy.Server` | State management layer: rooms, agents, tasks, messages, activity, plans — injected directly by controllers and handlers |
 | AgentOrchestrator | `AgentAcademy.Server` | Conversation rounds, breakout loops, DM routing, prompt construction |
 | CopilotExecutor | `AgentAcademy.Server` | Copilot SDK sessions, tool registration, circuit breaker, retry logic |
 | CommandPipeline | `AgentAcademy.Server` | Parse → authorize → rate-limit → dispatch → audit for agent commands |
@@ -108,7 +108,7 @@ The server exposes a SignalR hub at `/hubs/activity` for real-time event streami
 
 ## Known Gaps
 
-- ~~Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted).~~ — **Resolved**: Updated to show WorkspaceRuntime, Orchestrator, Command Pipeline, CopilotExecutor, and Notification Manager subsystems.
+- ~~Architecture diagram is aspirational — actual component interactions are richer than shown (e.g., command pipeline, activity broadcaster, workspace scoping not depicted).~~ — **Resolved**: Updated to show Domain Services Layer, Orchestrator, Command Pipeline, CopilotExecutor, and Notification Manager subsystems.
 - No multi-user auth model — single-user token via `CopilotTokenProvider`. — *Tracked in #2, accepted design constraint for single-user product*
 - No session persistence across server restarts — in-memory Copilot SDK sessions are lost. — *Tracked in #3, mitigated by LLM-generated session summaries on workspace switch*
 

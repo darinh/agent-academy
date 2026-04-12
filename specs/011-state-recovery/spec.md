@@ -71,7 +71,7 @@ public class ServerInstanceEntity
 
 ### 3. Startup and Shutdown Hooks
 
-The `WorkspaceRuntime` service manages instance lifecycle events.
+The `InitializationService` and `CrashRecoveryService` manage instance lifecycle events.
 
 **On Startup** (`InitializeAsync` + startup bootstrap, **implemented**):
 1. Query for the most recent `ServerInstanceEntity` where `ShutdownAt = NULL`
@@ -79,7 +79,7 @@ The `WorkspaceRuntime` service manages instance lifecycle events.
    - Set `CrashDetected = true` on the current startup instance
    - Update the previous instance: `ShutdownAt = NOW(), ExitCode = -1`
 3. Create new `ServerInstanceEntity` with `CrashDetected` flag and assembly version
-4. Set `WorkspaceRuntime.CurrentInstanceId` (static property for health endpoint)
+4. Set `CrashRecoveryService.CurrentInstanceId` (static property for health endpoint)
 5. Proceed with existing initialization (default room, agents, welcome message)
 6. Resolve the authoritative main room for the active workspace, if any
 7. If `CrashDetected = true`, ask `AgentOrchestrator` to run startup recovery before normal work resumes
@@ -90,7 +90,7 @@ The `WorkspaceRuntime` service manages instance lifecycle events.
 2. Set `ShutdownAt = DateTime.UtcNow`
 3. Set `ExitCode = Environment.ExitCode`
 
-**Files**: `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Program.cs`
+**Files**: `src/AgentAcademy.Server/Services/InitializationService.cs`, `src/AgentAcademy.Server/Services/CrashRecoveryService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Program.cs`
 
 ### 4. Client Reconnect Protocol
 
@@ -331,7 +331,7 @@ Result: Server exits with code 75, wrapper restarts process
 
 - ~~Wrapper script implementation~~ — **Implemented**: `src/AgentAcademy.Server/wrapper.sh`
 - ~~`ServerInstanceEntity` not yet added~~ — **Implemented**: `src/AgentAcademy.Server/Data/Entities/ServerInstanceEntity.cs`
-- ~~Startup crash detection logic~~ — **Implemented** in `WorkspaceRuntime.InitializeAsync`
+- ~~Startup crash detection logic~~ — **Implemented** in `InitializationService.InitializeAsync`
 - ~~Shutdown hook not yet registered~~ — **Implemented** in `Program.cs` via `IHostApplicationLifetime.ApplicationStopping`
 - ~~`/api/health/instance` endpoint~~ — **Implemented** in `SystemController.cs`
 - ~~`RESTART_SERVER` command handler~~ — **Implemented**: `RestartServerHandler.cs`

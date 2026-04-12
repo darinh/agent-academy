@@ -523,7 +523,7 @@ The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFac
 | `HandleBreakoutCompleteAsync` | Resolves effective agent for presenting agent |
 | `RunReviewCycleAsync` | Resolves effective reviewer agent |
 
-`WorkspaceRuntime` continues using `_catalog.Agents` for identity-only operations (location tracking, room assignment, task claims). Config overrides are not needed for these operations.
+The agent catalog (`AgentCatalogOptions`) is used by domain services for identity-only operations (location tracking, room assignment, task claims). Config overrides are not needed for these operations.
 
 `CopilotExecutor` is unchanged — it receives the already-merged `AgentDefinition` and uses its `Model` and `StartupPrompt` properties as before.
 

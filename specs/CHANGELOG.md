@@ -4,6 +4,17 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **005-workspace-runtime → 005-domain-services**: `WorkspaceRuntime` facade fully deleted from codebase. Spec rewritten as "Domain Services Layer" — documents the 13 focused services that controllers and command handlers inject directly. All behavioral documentation preserved; source references updated to actual service files. `GetOverviewAsync` inlined in `SystemController`. Zero behavioral changes.
+- **000-system-overview**: Architecture diagram and component table updated — "WorkspaceRuntime" → "Domain Services Layer".
+- **003-agent-system**: Updated agent catalog reference from WorkspaceRuntime to domain services.
+- **004-notification-system**: Updated project resolution reference from `WorkspaceRuntime.GetProjectNameForRoomAsync` to `RoomService.GetProjectNameForRoomAsync`.
+- **006-orchestrator**: Updated scoped service references — orchestrator now creates scoped domain service instances (RoomService, MessageService, TaskOrchestrationService) instead of scoped WorkspaceRuntime. Updated dependency table.
+- **007-agent-commands**: Updated all command handler implementation references to use actual service names (PlanService, TaskItemService, RoomService, TaskLifecycleService, TaskQueryService, AgentLocationService, MessageService).
+- **010-task-management**: Updated all source references from WorkspaceRuntime to actual service files. Renamed "WorkspaceRuntime Task Methods" section to "Task Service Method Index" with service-per-method mapping.
+- **011-state-recovery**: Updated lifecycle references from WorkspaceRuntime to InitializationService and CrashRecoveryService.
+- **012-consultant-api**: Updated message pagination reference from WorkspaceRuntime to RoomService.
+
 ### Added
 - **300-frontend-ui**: Keyboard shortcuts help overlay (`KeyboardShortcutsDialog.tsx`). Press `?` to toggle a dialog listing all app shortcuts (⌘/Ctrl+K, /, ?, Enter, Shift+Enter, Esc). Platform-aware modifier display (⌘ on Mac, Ctrl elsewhere). Input-guarded, lazy-loaded, Fluent UI Dialog with `<kbd>` styling. 21 new tests (1498 frontend total).
 - **300-frontend-ui**: Browser desktop notifications (`useDesktopNotifications.ts`). Opt-in Notification API integration alerts operator when tab is backgrounded: DMs, agent errors, sprint events, task creation. Toggle in Settings > Advanced. Permission request on first enable, denial/revocation handling, event deduplication (SSE replay protection), 8s auto-close, click-to-focus. localStorage preference. 20 hook tests + 6 settings panel tests (1477 frontend total).
