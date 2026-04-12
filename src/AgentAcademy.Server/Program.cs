@@ -54,31 +54,7 @@ builder.Services.AddAgentCatalog();
 builder.Services.AddSingleton<ActivityBroadcaster>();
 
 // Domain services (scoped — one per request, uses scoped DbContext)
-builder.Services.AddScoped<ActivityPublisher>();
-builder.Services.AddScoped<TaskQueryService>();
-builder.Services.AddScoped<TaskLifecycleService>();
-builder.Services.AddScoped<MessageService>();
-builder.Services.AddScoped<AgentLocationService>();
-builder.Services.AddScoped<PlanService>();
-builder.Services.AddScoped<CrashRecoveryService>();
-builder.Services.AddScoped<InitializationService>();
-builder.Services.AddScoped<BreakoutRoomService>();
-builder.Services.AddScoped<TaskItemService>();
-builder.Services.AddScoped<RoomService>();
-builder.Services.AddScoped<TaskOrchestrationService>();
-
-// Agent config service (scoped — merges catalog defaults with DB overrides)
-builder.Services.AddScoped<AgentConfigService>();
-
-// System settings (scoped — typed access to system_settings table)
-builder.Services.AddScoped<SystemSettingsService>();
-
-// Conversation session management (scoped — epoch lifecycle and summarization)
-builder.Services.AddScoped<ConversationSessionService>();
-
-// Sprint lifecycle management (scoped — creation, stage advancement, artifacts)
-builder.Services.AddScoped<SprintService>();
-builder.Services.AddScoped<SearchService>();
+builder.Services.AddDomainServices();
 
 // Copilot token provider (singleton — captures OAuth token for SDK activation)
 builder.Services.AddSingleton<CopilotTokenProvider>();
