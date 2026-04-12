@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **009-spec-management**: Automated spec drift detection. CI job (`spec-drift`) warns on PRs when source code changes lack corresponding spec updates. `specs/drift-map.json` maps source file patterns to spec sections. `scripts/check-spec-drift.sh` + `scripts/check-spec-drift.js` perform the analysis. Supports `spec-exempt:` marker for intentional exemptions. Reports unmapped source files. Known gap #1 resolved.
+
 ### Changed
 - **003-agent-system**: Structural refactor — extracted `CopilotClientFactory` from `CopilotExecutor`. Updated architecture diagram, implementation section (now "CopilotExecutor + CopilotClientFactory"), auth flow diagram, and DI registration to reflect split. Client lifecycle (token resolution, client creation, worktree clients) now owned by `CopilotClientFactory`; session management, retry, error classification, circuit breaker remain in `CopilotExecutor`. `ResolveToken()` divergence between Factory (returns null for SDK fallback) and `CopilotAuthProbe` (checks env vars for raw HTTP probes) documented as intentional.
 - **004-notification-system**: Structural refactor — extracted `DiscordInputHandler` from `DiscordNotificationProvider`. Updated input collection section and file locations table. Stateless handler receives `DiscordSocketClient`, channel ID, and owner ID as method parameters. Zero behavioral changes.

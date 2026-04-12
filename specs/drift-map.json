@@ -1,0 +1,280 @@
+{
+  "description": "Maps source file path patterns to spec sections for automated spec drift detection. Patterns use directory-level ownership with specific overrides for cross-cutting files.",
+  "mappings": [
+    {
+      "pattern": "src/AgentAcademy.Shared/Models/",
+      "specs": ["001"],
+      "note": "Domain model types"
+    },
+    {
+      "pattern": "src/AgentAcademy.Shared/",
+      "specs": ["001"],
+      "note": "Shared library (domain types)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentOrchestrator.cs",
+      "specs": ["006"],
+      "note": "Orchestrator mechanics"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotExecutor.cs",
+      "specs": ["003"],
+      "note": "Agent execution / LLM interaction"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotTokenProvider.cs",
+      "specs": ["003"],
+      "note": "Agent auth token management"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotClientFactory.cs",
+      "specs": ["003"],
+      "note": "Copilot client lifecycle"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotCircuitBreaker.cs",
+      "specs": ["003"],
+      "note": "Circuit breaker for agent execution"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CopilotAuthProbe.cs",
+      "specs": ["003"],
+      "note": "Auth probe"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentTool",
+      "specs": ["003"],
+      "note": "SDK tool calling"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentQuotaService.cs",
+      "specs": ["003"],
+      "note": "Per-agent resource quotas"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/PromptBuilder.cs",
+      "specs": ["006"],
+      "note": "Prompt construction for orchestrator"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentResponseParser.cs",
+      "specs": ["006"],
+      "note": "Response parsing in orchestrator"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/BreakoutLifecycleService.cs",
+      "specs": ["006"],
+      "note": "Breakout room lifecycle"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/BreakoutRoomService.cs",
+      "specs": ["006"],
+      "note": "Breakout room management"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/RoomService.cs",
+      "specs": ["005"],
+      "note": "Room/workspace runtime"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/MessageService.cs",
+      "specs": ["005"],
+      "note": "Message handling in rooms"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/SpecManager.cs",
+      "specs": ["009"],
+      "note": "Spec management service"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/*Task*",
+      "specs": ["010"],
+      "note": "Task management services"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/*Sprint*",
+      "specs": ["013"],
+      "note": "Sprint system services"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/*Memory*",
+      "specs": ["008"],
+      "note": "Agent memory system"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/*Recovery*",
+      "specs": ["011"],
+      "note": "State recovery services"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/GitService.cs",
+      "specs": ["010"],
+      "note": "Git operations for task workflow"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/WorktreeService.cs",
+      "specs": ["010"],
+      "note": "Worktree management"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/LlmUsageTracker.cs",
+      "specs": ["003"],
+      "note": "LLM usage tracking"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/ConversationSessionService.cs",
+      "specs": ["003"],
+      "note": "Conversation session management"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentAnalyticsService.cs",
+      "specs": ["003"],
+      "note": "Agent analytics"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentConfigService.cs",
+      "specs": ["003"],
+      "note": "Agent configuration service"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentErrorTracker.cs",
+      "specs": ["003"],
+      "note": "Agent error tracking"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentPermissionHandler.cs",
+      "specs": ["007"],
+      "note": "Command permission handling"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentLocationService.cs",
+      "specs": ["005"],
+      "note": "Agent location in rooms"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/PlanService.cs",
+      "specs": ["006"],
+      "note": "Planning service"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/Activity*",
+      "specs": ["005"],
+      "note": "Activity broadcasting"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/SearchService.cs",
+      "specs": ["005"],
+      "note": "Search service"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/CsvExportService.cs",
+      "specs": ["005"],
+      "note": "CSV export"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/ProjectScanner.cs",
+      "specs": ["005"],
+      "note": "Project scanning"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/SystemSettingsService.cs",
+      "specs": ["005"],
+      "note": "System settings"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/InitializationService.cs",
+      "specs": ["000"],
+      "note": "Application initialization"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/ServiceRegistrationExtensions.cs",
+      "specs": ["000"],
+      "note": "DI registration"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/PullRequestSyncService.cs",
+      "specs": ["010"],
+      "note": "PR sync for task workflow"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/TokenPersistenceService.cs",
+      "specs": ["003"],
+      "note": "Token persistence"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/",
+      "specs": ["005"],
+      "note": "Catch-all for unmapped services → domain services layer"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Commands/",
+      "specs": ["007"],
+      "note": "Agent command system"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Notifications/",
+      "specs": ["004"],
+      "note": "Notification system"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Controllers/",
+      "specs": ["012"],
+      "note": "API endpoints (Consultant API)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Hubs/",
+      "specs": ["005", "300"],
+      "note": "SignalR hubs (runtime + frontend)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Data/Entities/",
+      "specs": ["001"],
+      "note": "EF Core entity definitions"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Models/",
+      "specs": ["001"],
+      "note": "Server-side models"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Auth/",
+      "specs": ["012"],
+      "note": "Authentication"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Config/",
+      "specs": ["003"],
+      "note": "Agent configuration"
+    },
+    {
+      "pattern": "src/agent-academy-client/src/",
+      "specs": ["300"],
+      "note": "Frontend UI"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Program.cs",
+      "specs": ["000"],
+      "note": "Application bootstrap / system overview"
+    }
+  ],
+  "excludes": [
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/bin/",
+    "**/obj/",
+    "**/node_modules/",
+    "**/dist/",
+    "**/Data/Migrations/",
+    "tests/",
+    "docs/",
+    "scripts/",
+    ".github/",
+    "**/*.md",
+    "**/*.json",
+    "**/*.yml",
+    "**/*.yaml",
+    "**/*.sln",
+    "**/*.props",
+    "**/*.lock"
+  ]
+}

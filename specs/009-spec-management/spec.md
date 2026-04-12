@@ -212,10 +212,44 @@ When specs exist, review prompts include a `Spec Accuracy` section requesting:
 8. Spec sections use three-digit numbered folders that are never renumbered
 9. Thucydides is the sole owner of spec content — other agents review but don't write specs
 10. `GetSpecContent` guards against path traversal attacks
+11. The `spec-drift` CI job warns (does not block) when source changes lack corresponding spec updates
+
+### Automated Spec Drift Detection
+
+**Files**: `scripts/check-spec-drift.sh` (bash wrapper), `scripts/check-spec-drift.js` (Node.js analyzer), `specs/drift-map.json` (path-to-spec mapping)
+
+**CI Integration**: `.github/workflows/ci.yml` → `spec-drift` job. Runs on PRs only. Non-blocking (warning-only).
+
+**How it works**:
+1. Bash wrapper resolves base/head SHAs from PR context or CLI args
+2. Checks for `spec-exempt:` marker in PR body or commit messages
+3. Gets changed files via `git diff --name-only --diff-filter=ACMR -M -C`
+4. Pipes file list to Node.js analyzer
+5. Analyzer loads `specs/drift-map.json`, filters excluded files, matches remaining against mappings
+6. Reports: which spec sections should have been updated (based on which source files changed) vs which specs were actually modified
+7. Warns about unmapped source files (files that changed but don't match any mapping)
+
+**Drift map format** (`specs/drift-map.json`):
+```json
+{
+  "mappings": [
+    { "pattern": "src/AgentAcademy.Server/Commands/", "specs": ["007"], "note": "..." }
+  ],
+  "excludes": ["tests/", "**/*.test.*", "*.md", ...]
+}
+```
+
+Patterns support glob wildcards (`*`, `**`), directory prefixes (trailing `/`), and exact file matches. Files are matched against ALL patterns (union), not first-match. Excludes use the same glob syntax.
+
+**Exemption mechanism**: Add `spec-exempt: <reason>` to either:
+- The PR description body
+- Any commit message in the PR
+
+This suppresses all drift warnings for the PR.
 
 ## Known Gaps
 
-1. **No automated spec drift detection**: There is no CI job or tool that automatically detects when code changes without corresponding spec updates. This relies entirely on the agent workflow and adversarial review. Partial mitigation: `SHOW_UNLINKED_CHANGES` command lists active tasks without spec links.
+1. ~~**No automated spec drift detection**~~: **Resolved** — `scripts/check-spec-drift.sh` runs as a CI job on PRs (`.github/workflows/ci.yml`, `spec-drift` job). Uses `specs/drift-map.json` to map source file path patterns to spec sections. Detects when code changes lack corresponding spec updates and produces GitHub Actions warnings. Supports `spec-exempt:` marker in PR body or commit messages to suppress false positives. Reports unmapped source files that need mapping additions. Warning-only (non-blocking) posture for initial rollout. Analysis engine in `scripts/check-spec-drift.js` (Node.js).
 2. ~~**No spec search**: `LoadSpecContext()` loads all spec section headings. There is no semantic search or filtering by relevance to the current task — all sections are included.~~ **Partially resolved**: `SpecManager.LoadSpecContextForTaskAsync` accepts a list of linked spec section IDs and marks linked sections with ★ in the spec context. `LINK_TASK_TO_SPEC` command creates traceability links. Full semantic search is not yet implemented, but task-scoped filtering is available.
 3. **No spec versioning beyond git**: Spec changes are tracked in CHANGELOG.md and git history, but there's no formal versioning scheme for the spec itself.
 
@@ -225,3 +259,4 @@ When specs exist, review prompts include a `Spec Accuracy` section requesting:
 |------|------|---------|
 | 2025-07-25 | Port spec system | Created SpecManager service, integrated with orchestrator, added agent spec awareness |
 | 2026-04-05 | spec-task-linking | Added `LoadSpecContextForTaskAsync` to SpecManager for task-filtered spec loading. Updated known gap #2. |
+| 2026-04-12 | spec-drift-detection | Added automated spec drift detection CI job. `scripts/check-spec-drift.sh` + `scripts/check-spec-drift.js` + `specs/drift-map.json`. Integrated into `.github/workflows/ci.yml`. Known gap #1 resolved. |
