@@ -20,7 +20,9 @@ public class DiscordNotificationProviderTests
         _logger = Substitute.For<ILogger<DiscordNotificationProvider>>();
         _scopeFactory = Substitute.For<IServiceScopeFactory>();
         var orchestrator = CreateMockOrchestrator();
-        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator);
+        var channelManagerLogger = Substitute.For<ILogger<DiscordChannelManager>>();
+        var channelManager = new DiscordChannelManager(channelManagerLogger, _scopeFactory);
+        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator, channelManager);
     }
 
     #region Properties

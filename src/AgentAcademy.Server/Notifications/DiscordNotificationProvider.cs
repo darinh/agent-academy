@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Discord;
@@ -10,34 +9,17 @@ namespace AgentAcademy.Server.Notifications;
 
 /// <summary>
 /// Notification provider that delivers notifications and collects user input via a Discord bot.
-/// Supports room-based channel routing (one Discord channel per Agent Academy room) with webhook-based
-/// message formatting (each agent appears as a distinct sender with custom name and avatar).
-/// Also supports agent-to-human question bridge: creates a category per workspace, a channel per agent,
-/// and a thread per question. Human replies are routed back to the asking agent's room.
+/// Delegates channel/category lifecycle to <see cref="DiscordChannelManager"/>.
+/// Owns the Discord client connection and message sending/routing logic.
 /// </summary>
 public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncDisposable
 {
     private readonly ILogger<DiscordNotificationProvider> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AgentOrchestrator _orchestrator;
+    private readonly DiscordChannelManager _channelManager;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly SemaphoreSlim _inputLock = new(1, 1);
-
-    // Maps Discord channel ID → agent routing info (for agent question channels)
-    private readonly ConcurrentDictionary<ulong, AgentChannelInfo> _agentChannels = new();
-    // Maps workspace roomId → Discord category ID (for ASK_HUMAN)
-    private readonly ConcurrentDictionary<string, ulong> _workspaceCategories = new();
-    // Maps AA roomId → Discord channel ID (for room-based routing)
-    private readonly ConcurrentDictionary<string, ulong> _roomChannels = new();
-    // Maps Discord channel ID → AA roomId (for reverse routing of human replies)
-    private readonly ConcurrentDictionary<ulong, string> _channelToRoom = new();
-    // Maps Discord channel ID → webhook client (for agent-identity messages)
-    private readonly ConcurrentDictionary<ulong, DiscordWebhookClient> _webhooks = new();
-    // Discord category ID for the "Agent Academy" room channels (keyed by project name, "__default__" for legacy)
-    private readonly ConcurrentDictionary<string, ulong> _roomCategories = new();
-    private const string DefaultCategoryKey = "__default__";
-    // Serializes channel/category creation to prevent duplicates from concurrent calls
-    private readonly SemaphoreSlim _channelCreateLock = new(1, 1);
 
     private DiscordSocketClient? _client;
     private string? _botToken;
@@ -50,11 +32,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     public DiscordNotificationProvider(
         ILogger<DiscordNotificationProvider> logger,
         IServiceScopeFactory scopeFactory,
-        AgentOrchestrator orchestrator)
+        AgentOrchestrator orchestrator,
+        DiscordChannelManager channelManager)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
+        _channelManager = channelManager ?? throw new ArgumentNullException(nameof(channelManager));
     }
 
     private string? _lastError;
@@ -200,7 +184,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _logger.LogInformation("Discord provider connected as {BotUser}", _client.CurrentUser?.Username ?? "unknown");
 
             // Rebuild channel mapping from existing Discord state (survives restarts)
-            await RebuildChannelMappingAsync();
+            var guild = _client.GetGuild(_guildId);
+            if (guild is not null)
+                await _channelManager.RebuildAsync(guild);
         }
         finally
         {
@@ -214,6 +200,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
+            await _channelManager.ResetAsync();
             await DisposeClientAsync();
             _logger.LogInformation("Discord provider disconnected");
         }
@@ -279,14 +266,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         ITextChannel? roomChannel = null;
         DiscordWebhookClient? webhook = null;
 
-        await _channelCreateLock.WaitAsync();
         try
         {
-            roomChannel = await FindOrCreateRoomChannelAsync(guild, message.RoomId!);
-
-            // Create webhook inside the lock to prevent duplicate creation
-            if (!string.IsNullOrEmpty(message.AgentName))
-                webhook = await GetOrCreateWebhookAsync(roomChannel);
+            (roomChannel, webhook) = await _channelManager.EnsureRoomChannelAsync(
+                guild, message.RoomId!, message.AgentName);
         }
         catch (Discord.Net.HttpException httpEx) when (httpEx.DiscordCode == DiscordErrorCode.MissingPermissions)
         {
@@ -294,10 +277,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 "Cannot create room channel/webhook (Missing Permissions) — falling back to default channel. " +
                 "Grant the bot 'Manage Channels' and 'Manage Webhooks' at the server level.");
             roomChannel = null;
-        }
-        finally
-        {
-            _channelCreateLock.Release();
         }
 
         // Fallback to configured default channel if room channel creation failed
@@ -315,10 +294,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         // Use webhook for agent messages (custom sender name/avatar)
         if (webhook is not null && !string.IsNullOrEmpty(message.AgentName))
         {
-            var agentDisplayName = FormatAgentDisplayName(message.AgentName);
-            var avatarUrl = GetAgentAvatarUrl(message.AgentName);
+            var agentDisplayName = DiscordChannelManager.FormatAgentDisplayName(message.AgentName);
+            var avatarUrl = DiscordChannelManager.GetAgentAvatarUrl(message.AgentName);
 
-            // For error/system messages, use a compact embed; for regular messages, plain text
             if (message.Type is NotificationType.Error or NotificationType.TaskFailed)
             {
                 var embed = new EmbedBuilder()
@@ -451,14 +429,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await DisposeClientAsync();
         _connectLock.Dispose();
         _inputLock.Dispose();
-        _channelCreateLock.Dispose();
-
-        // Dispose webhook clients
-        foreach (var webhook in _webhooks.Values)
-        {
-            try { webhook.Dispose(); } catch { /* best-effort */ }
-        }
-        _webhooks.Clear();
     }
 
     /// <summary>
@@ -485,21 +455,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 return false;
             }
 
-            ITextChannel channel;
-            IThreadChannel thread;
-
-            // Serialize category/channel creation to prevent duplicate Discord resources
-            await _channelCreateLock.WaitAsync(cancellationToken);
-            try
-            {
-                var category = await FindOrCreateWorkspaceCategoryAsync(guild, question.RoomId, question.RoomName);
-                channel = await FindOrCreateAgentChannelAsync(guild, category, question.AgentId, question.AgentName, question.RoomId);
-                thread = await CreateQuestionThreadAsync(channel, question);
-            }
-            finally
-            {
-                _channelCreateLock.Release();
-            }
+            var (channel, thread) = await _channelManager.EnsureQuestionThreadAsync(
+                guild, question.RoomId, question.RoomName, question.AgentId, question.AgentName,
+                question.Question, cancellationToken);
 
             var embed = new EmbedBuilder()
                 .WithTitle($"❓ {question.AgentName} asks:")
@@ -549,18 +507,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             var guild = _client.GetGuild(_guildId);
             if (guild is null) return false;
 
-            ITextChannel channel;
-
-            await _channelCreateLock.WaitAsync(cancellationToken);
-            try
-            {
-                var category = await FindOrCreateWorkspaceCategoryAsync(guild, dm.RoomId, dm.RoomName);
-                channel = await FindOrCreateAgentChannelAsync(guild, category, dm.AgentId, dm.AgentName, dm.RoomId);
-            }
-            finally
-            {
-                _channelCreateLock.Release();
-            }
+            var channel = await _channelManager.EnsureAgentChannelAsync(
+                guild, dm.RoomId, dm.RoomName, dm.AgentId, dm.AgentName, cancellationToken);
 
             var embed = new EmbedBuilder()
                 .WithDescription(dm.Question)
@@ -583,271 +531,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
     }
 
+
     #region Private helpers
-
-    /// <summary>
-    /// Finds or creates a Discord category for DM/message channels.
-    /// Category name uses "{ProjectName} Messages" format.
-    /// </summary>
-    private async Task<ICategoryChannel> FindOrCreateWorkspaceCategoryAsync(
-        SocketGuild guild, string roomId, string roomName)
-    {
-        // Resolve project name for category naming
-        string? projectName = null;
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            projectName = await runtime.GetProjectNameForRoomAsync(roomId);
-
-            // Fall back to active workspace name if room has no workspace link
-            if (projectName is null)
-                projectName = await runtime.GetActiveProjectNameAsync();
-        }
-        catch { /* fall back to room name */ }
-
-        var cacheKey = projectName ?? roomId;
-
-        if (_workspaceCategories.TryGetValue(cacheKey, out var existingCategoryId))
-        {
-            var existing = guild.GetCategoryChannel(existingCategoryId);
-            if (existing is not null)
-                return existing;
-            _workspaceCategories.TryRemove(cacheKey, out _);
-        }
-
-        var displayName = projectName is not null
-            ? ProjectScanner.HumanizeProjectName(projectName)
-            : roomName;
-        var categoryName = SanitizeCategoryName($"{displayName} Messages");
-
-        var found = guild.CategoryChannels.FirstOrDefault(
-            c => c.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
-
-        if (found is not null)
-        {
-            _workspaceCategories[cacheKey] = found.Id;
-            return found;
-        }
-
-        var created = await guild.CreateCategoryChannelAsync(categoryName);
-        _workspaceCategories[cacheKey] = created.Id;
-        _logger.LogInformation("Created Discord category '{CategoryName}' for workspace '{RoomId}'", categoryName, roomId);
-        return created;
-    }
-
-    /// <summary>
-    /// Finds or creates a text channel for an agent within a workspace category.
-    /// Also registers the channel in the agent routing map.
-    /// </summary>
-    private async Task<ITextChannel> FindOrCreateAgentChannelAsync(
-        SocketGuild guild, ICategoryChannel category, string agentId, string agentName, string roomId)
-    {
-        var channelName = SanitizeChannelName(agentName, fallbackId: agentId);
-
-        // Check existing channels in the category
-        var existing = guild.TextChannels.FirstOrDefault(
-            c => c.CategoryId == category.Id &&
-                 c.Name.Equals(channelName, StringComparison.OrdinalIgnoreCase));
-
-        if (existing is not null)
-        {
-            _agentChannels[existing.Id] = new AgentChannelInfo(agentId, agentName, roomId);
-            return existing;
-        }
-
-        var created = await guild.CreateTextChannelAsync(channelName, props =>
-        {
-            props.CategoryId = category.Id;
-            props.Topic = $"Direct messages — {agentName} · Room: {roomId}";
-        });
-
-        _agentChannels[created.Id] = new AgentChannelInfo(agentId, agentName, roomId);
-        _logger.LogInformation(
-            "Created Discord channel '#{ChannelName}' for agent '{AgentName}' in category '{CategoryName}'",
-            channelName, agentName, category.Name);
-
-        return created;
-    }
-
-    /// <summary>
-    /// Creates a thread for a specific question within an agent's channel.
-    /// Thread name is the question text, truncated to Discord's 100-char limit.
-    /// </summary>
-    private static async Task<IThreadChannel> CreateQuestionThreadAsync(ITextChannel channel, AgentQuestion question)
-    {
-        var threadName = question.Question.Length > 97
-            ? string.Concat(question.Question.AsSpan(0, 97), "...")
-            : question.Question;
-
-        return await channel.CreateThreadAsync(
-            name: threadName,
-            type: ThreadType.PublicThread,
-            autoArchiveDuration: ThreadArchiveDuration.OneDay);
-    }
-
-    // ── Room Channel Routing ──────────────────────────────────────
-
-    /// <summary>
-    /// Finds or creates the parent category for room channels.
-    /// Uses "{projectName} Rooms" format; falls back to "Rooms" for legacy rooms without a project.
-    /// </summary>
-    private async Task<ICategoryChannel> FindOrCreateRoomCategoryAsync(SocketGuild guild, string? projectName)
-    {
-        var cacheKey = projectName ?? DefaultCategoryKey;
-
-        if (_roomCategories.TryGetValue(cacheKey, out var cachedId) && cachedId != 0)
-        {
-            var existing = guild.GetCategoryChannel(cachedId);
-            if (existing is not null)
-                return existing;
-            _roomCategories.TryRemove(cacheKey, out _);
-        }
-
-        var categoryName = SanitizeCategoryName(projectName is not null
-            ? $"{ProjectScanner.HumanizeProjectName(projectName)} Rooms"
-            : "Rooms");
-
-        var found = guild.CategoryChannels.FirstOrDefault(
-            c => c.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
-
-        if (found is not null)
-        {
-            _roomCategories[cacheKey] = found.Id;
-            return found;
-        }
-
-        var created = await guild.CreateCategoryChannelAsync(categoryName);
-        _roomCategories[cacheKey] = created.Id;
-        _logger.LogInformation("Created Discord category '{CategoryName}'", categoryName);
-        return created;
-    }
-
-    /// <summary>
-    /// Finds or creates a Discord text channel for a room,
-    /// under the project-specific category (or "Rooms" for legacy rooms).
-    /// Also registers the reverse mapping.
-    /// </summary>
-    private async Task<ITextChannel> FindOrCreateRoomChannelAsync(SocketGuild guild, string roomId)
-    {
-        if (_roomChannels.TryGetValue(roomId, out var existingChannelId))
-        {
-            var existing = guild.GetTextChannel(existingChannelId);
-            if (existing is not null)
-                return existing;
-            _roomChannels.TryRemove(roomId, out _);
-            _channelToRoom.TryRemove(existingChannelId, out _);
-        }
-
-        // Resolve room name and project name for category scoping
-        var roomName = roomId;
-        string? projectName = null;
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            var room = await runtime.GetRoomAsync(roomId);
-            if (room is not null)
-                roomName = room.Name;
-            projectName = await runtime.GetProjectNameForRoomAsync(roomId);
-
-            // If room has no workspace link, fall back to the active workspace name
-            if (projectName is null)
-                projectName = await runtime.GetActiveProjectNameAsync();
-        }
-        catch { /* fall back to roomId, no project scoping */ }
-
-        var category = await FindOrCreateRoomCategoryAsync(guild, projectName);
-
-        var channelName = SanitizeChannelName(roomName);
-
-        // Search for existing channel in the category — verify topic contains correct roomId
-        var found = guild.TextChannels.FirstOrDefault(
-            c => c.CategoryId == category.Id &&
-                 (c.Topic ?? "").Contains($"ID: {roomId}"));
-
-        if (found is not null)
-        {
-            _roomChannels[roomId] = found.Id;
-            _channelToRoom[found.Id] = roomId;
-            return found;
-        }
-
-        var created = await guild.CreateTextChannelAsync(channelName, props =>
-        {
-            props.CategoryId = category.Id;
-            props.Topic = $"Group discussion room for agent collaboration · ID: {roomId}";
-        });
-
-        _roomChannels[roomId] = created.Id;
-        _channelToRoom[created.Id] = roomId;
-        _logger.LogInformation("Created Discord room channel '#{ChannelName}' for room '{RoomId}'",
-            channelName, roomId);
-
-        return created;
-    }
-
-    /// <summary>
-    /// Gets or creates a webhook for a Discord channel, enabling per-message sender identity.
-    /// Webhooks are cached in memory and reused across messages.
-    /// </summary>
-    private async Task<DiscordWebhookClient?> GetOrCreateWebhookAsync(ITextChannel channel)
-    {
-        if (_webhooks.TryGetValue(channel.Id, out var existing))
-            return existing;
-
-        try
-        {
-            // Check for an existing AA webhook
-            var webhooks = await channel.GetWebhooksAsync();
-            var aaWebhook = webhooks.FirstOrDefault(w => w.Name == "Agent Academy");
-
-            if (aaWebhook is null)
-            {
-                aaWebhook = await channel.CreateWebhookAsync("Agent Academy");
-                _logger.LogInformation("Created webhook for channel '#{ChannelName}'", channel.Name);
-            }
-
-            var client = new DiscordWebhookClient(aaWebhook);
-            _webhooks[channel.Id] = client;
-            return client;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to create webhook for channel '#{ChannelName}' — falling back to bot messages",
-                channel.Name);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Formats an agent ID or name into a display name for Discord webhook messages.
-    /// </summary>
-    private static string FormatAgentDisplayName(string agentNameOrId)
-    {
-        if (string.IsNullOrWhiteSpace(agentNameOrId))
-            return "Agent Academy";
-
-        // If it looks like an ID (contains hyphens, all lowercase), try to humanize
-        if (agentNameOrId.Contains('-') && agentNameOrId == agentNameOrId.ToLowerInvariant())
-        {
-            // "planner-1" → "Planner 1", "software-engineer-1" → "Software Engineer 1"
-            return string.Join(' ', agentNameOrId.Split('-')
-                .Select(s => s.Length > 0 ? char.ToUpper(s[0]) + s[1..] : s));
-        }
-
-        return agentNameOrId;
-    }
-
-    /// <summary>
-    /// Returns a unique avatar URL for each agent using DiceBear Identicons.
-    /// Each agent gets a deterministic, visually distinct avatar.
-    /// </summary>
-    private static string GetAgentAvatarUrl(string agentNameOrId)
-    {
-        var seed = Uri.EscapeDataString(agentNameOrId.ToLowerInvariant());
-        return $"https://api.dicebear.com/9.x/identicon/png?seed={seed}&size=128";
-    }
 
     /// <summary>
     /// Persistent handler for messages in agent channels and room channels.
@@ -864,7 +549,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         // Skip non-text messages
         if (string.IsNullOrWhiteSpace(message.Content))
         {
-            try { await message.Channel.SendMessageAsync("ℹ️ Please reply with text — attachments can't be forwarded to the agents."); }
+            try { await message.Channel.SendMessageAsync("ℹ️ Please reply with text — attachments can’t be forwarded to the agents."); }
             catch { /* best-effort hint */ }
             return;
         }
@@ -882,7 +567,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
 
         // Check if this is a room channel message (bidirectional bridge)
-        if (_channelToRoom.TryGetValue(channelId, out var roomId))
+        if (_channelManager.TryGetRoomForChannel(channelId, out var roomId) && roomId is not null)
         {
             try
             {
@@ -900,14 +585,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to route Discord message to room '{RoomId}'", roomId);
-                try { await message.Channel.SendMessageAsync($"⚠️ Failed to deliver message to room. Please try again."); }
+                try { await message.Channel.SendMessageAsync("⚠️ Failed to deliver message to room. Please try again."); }
                 catch { /* best-effort */ }
             }
             return;
         }
 
         // Check if this is an ASK_HUMAN agent channel message
-        if (!_agentChannels.TryGetValue(channelId, out var agentInfo))
+        if (!_channelManager.TryGetAgentInfoForChannel(channelId, out var agentInfo) || agentInfo is null)
             return;
 
         try
@@ -917,7 +602,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             await runtime.PostHumanMessageAsync(agentInfo.RoomId, message.Content);
             _orchestrator.HandleHumanMessage(agentInfo.RoomId);
 
-            await message.Channel.SendMessageAsync($"✅ Reply received — sent to **{agentInfo.AgentName}**");
+            await message.Channel.SendMessageAsync("✅ Reply received — sent to **" + agentInfo.AgentName + "**");
 
             _logger.LogInformation(
                 "Routed Discord reply to agent '{AgentName}' in room '{RoomId}'",
@@ -928,7 +613,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _logger.LogError(ex, "Failed to route Discord reply to agent '{AgentName}'", agentInfo.AgentName);
             try
             {
-                await message.Channel.SendMessageAsync($"⚠️ Failed to deliver reply to {agentInfo.AgentName}. Please try again.");
+                await message.Channel.SendMessageAsync("⚠️ Failed to deliver reply to " + agentInfo.AgentName + ". Please try again.");
             }
             catch (Exception ackEx)
             {
@@ -938,38 +623,16 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     }
 
     /// <summary>
-    /// Renames the Discord channel associated with a room.
-    /// Updates both the channel name and topic to reflect the new room name.
+    /// Renames the Discord channel associated with a room (delegates to channel manager).
     /// </summary>
     public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
     {
         if (_client is null || !_isConfigured) return;
 
-        if (!_roomChannels.TryGetValue(roomId, out var channelId)) return;
-
         var guild = _client.GetGuild(_guildId);
         if (guild is null) return;
 
-        var channel = guild.GetTextChannel(channelId);
-        if (channel is null) return;
-
-        try
-        {
-            var newChannelName = SanitizeChannelName(newName);
-
-            await channel.ModifyAsync(props =>
-            {
-                props.Name = newChannelName;
-                props.Topic = $"Group discussion room for agent collaboration · ID: {roomId}";
-            });
-
-            _logger.LogInformation("Renamed Discord channel for room '{RoomId}' to '#{ChannelName}'",
-                roomId, newChannelName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to rename Discord channel for room '{RoomId}'", roomId);
-        }
+        await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
     }
 
     /// <inheritdoc />
@@ -977,231 +640,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         if (_client is null || !_isConfigured) return;
 
-        if (!_roomChannels.TryGetValue(roomId, out var channelId)) return;
-
         var guild = _client.GetGuild(_guildId);
         if (guild is null) return;
 
-        var channel = guild.GetTextChannel(channelId);
-        if (channel is null)
-        {
-            // Channel already gone — just clean up caches
-            CleanupChannelCaches(roomId, channelId);
-            return;
-        }
-
-        try
-        {
-            await channel.DeleteAsync(new RequestOptions { CancelToken = cancellationToken });
-            _logger.LogInformation("Deleted Discord channel '#{ChannelName}' for closed room '{RoomId}'",
-                channel.Name, roomId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete Discord channel for closed room '{RoomId}'", roomId);
-            throw; // Let NotificationManager record the failure via retry/tracker
-        }
-
-        CleanupChannelCaches(roomId, channelId);
-    }
-
-    private void CleanupChannelCaches(string roomId, ulong channelId)
-    {
-        _roomChannels.TryRemove(roomId, out _);
-        _channelToRoom.TryRemove(channelId, out _);
-        if (_webhooks.TryRemove(channelId, out var webhook))
-            webhook.Dispose();
-    }
-
-    /// <summary>
-    /// Sanitizes a name for use as a Discord channel/category name.
-    /// Discord channel names: lowercase, hyphens instead of spaces, max 100 chars.
-    /// Falls back to a deterministic slug if the name would be empty after sanitization.
-    /// </summary>
-    private static string SanitizeChannelName(string name, string? fallbackId = null)
-    {
-        var sanitized = name.ToLowerInvariant()
-            .Replace(' ', '-')
-            .Replace('_', '-');
-
-        // Remove chars not allowed in Discord channel names
-        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"[^a-z0-9\-]", "");
-
-        // Collapse multiple hyphens and trim leading/trailing hyphens
-        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"-{2,}", "-").Trim('-');
-
-        // Fallback for empty results (e.g., non-ASCII input)
-        if (string.IsNullOrEmpty(sanitized))
-            sanitized = fallbackId is not null ? $"agent-{fallbackId[..Math.Min(8, fallbackId.Length)]}" : "unknown";
-
-        return sanitized.Length > 100 ? sanitized[..100] : sanitized;
-    }
-
-    /// <summary>
-    /// Sanitizes a name for use as a Discord category name.
-    /// Categories allow spaces and mixed case but have a 100-char limit.
-    /// </summary>
-    internal static string SanitizeCategoryName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return "General";
-
-        return name.Length > 100 ? name[..100] : name;
-    }
-
-    /// <summary>Routing info for an agent's Discord channel.</summary>
-    private sealed record AgentChannelInfo(string AgentId, string AgentName, string RoomId);
-
-    /// <summary>
-    /// Rebuilds the in-memory channel mappings by scanning existing Discord categories.
-    /// Restores DM agent channels (under "*Messages" categories) and
-    /// room channels (under "*Rooms" categories). Also supports legacy naming.
-    /// Survives server restarts.
-    /// </summary>
-    private Task RebuildChannelMappingAsync()
-    {
-        if (_client is null) return Task.CompletedTask;
-
-        try
-        {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null) return Task.CompletedTask;
-
-            var restoredAgentChannels = 0;
-            var restoredRoomChannels = 0;
-
-            // Rebuild DM/message agent channel mappings (under "*Messages" categories, legacy "aa-*")
-            foreach (var category in guild.CategoryChannels
-                         .Where(c => c.Name.EndsWith(" Messages", StringComparison.OrdinalIgnoreCase) ||
-                                     c.Name.StartsWith("aa-", StringComparison.OrdinalIgnoreCase)))
-            {
-                var channels = guild.TextChannels.Where(c => c.CategoryId == category.Id).ToList();
-
-                foreach (var channel in channels)
-                {
-                    var topic = channel.Topic ?? "";
-                    var agentName = channel.Name;
-
-                    // Parse roomId from topic — supports both formats:
-                    // New: "Direct messages — {agentName} · Room: {roomId}"
-                    // Legacy: "Agent Academy — {agentName} questions (Room: {roomId})"
-                    var restoredRoomId = "unknown";
-
-                    // Try new format first: "· Room: {roomId}"
-                    var roomMarkerNew = "· Room: ";
-                    var roomStartNew = topic.IndexOf(roomMarkerNew, StringComparison.Ordinal);
-                    if (roomStartNew >= 0)
-                    {
-                        restoredRoomId = topic[(roomStartNew + roomMarkerNew.Length)..].Trim();
-
-                        // Parse agent name from "Direct messages — {agentName}"
-                        var dashIdx = topic.IndexOf('—');
-                        if (dashIdx >= 0)
-                        {
-                            var afterDash = topic[(dashIdx + 1)..].Trim();
-                            var dotIdx = afterDash.IndexOf('·');
-                            if (dotIdx > 0)
-                                agentName = afterDash[..dotIdx].Trim();
-                        }
-                    }
-                    else if (topic.Contains("Agent Academy"))
-                    {
-                        // Legacy format: "Agent Academy — {agentName} questions (Room: {roomId})"
-                        var dashIdx = topic.IndexOf('—');
-                        if (dashIdx >= 0)
-                        {
-                            var afterDash = topic[(dashIdx + 1)..].Trim();
-                            var questionsIdx = afterDash.IndexOf(" questions", StringComparison.OrdinalIgnoreCase);
-                            if (questionsIdx > 0)
-                                agentName = afterDash[..questionsIdx].Trim();
-                        }
-
-                        var roomMarker = "(Room: ";
-                        var roomStart = topic.IndexOf(roomMarker, StringComparison.Ordinal);
-                        if (roomStart >= 0)
-                        {
-                            var roomValue = topic[(roomStart + roomMarker.Length)..];
-                            var roomEnd = roomValue.IndexOf(')');
-                            if (roomEnd > 0)
-                                restoredRoomId = roomValue[..roomEnd];
-                        }
-                    }
-
-                    _agentChannels[channel.Id] = new AgentChannelInfo(
-                        AgentId: channel.Name,
-                        AgentName: agentName,
-                        RoomId: restoredRoomId
-                    );
-                    restoredAgentChannels++;
-                }
-            }
-
-            // Rebuild room channel mappings from project categories ("* Rooms") and legacy ("AA: *", "Agent Academy", "Rooms")
-            foreach (var roomCategory in guild.CategoryChannels.Where(
-                         c => c.Name.EndsWith(" Rooms", StringComparison.OrdinalIgnoreCase) ||
-                              c.Name.Equals("Rooms", StringComparison.OrdinalIgnoreCase) ||
-                              c.Name.StartsWith("AA: ", StringComparison.OrdinalIgnoreCase) ||
-                              c.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase)))
-            {
-                // Cache the category under the appropriate key
-                string categoryKey;
-                if (roomCategory.Name.Equals("Rooms", StringComparison.OrdinalIgnoreCase) ||
-                    roomCategory.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase))
-                    categoryKey = DefaultCategoryKey;
-                else if (roomCategory.Name.EndsWith(" Rooms", StringComparison.OrdinalIgnoreCase))
-                    categoryKey = roomCategory.Name[..^6]; // Strip " Rooms" suffix to get project name
-                else
-                    categoryKey = roomCategory.Name[4..]; // Strip "AA: " prefix (legacy)
-                _roomCategories[categoryKey] = roomCategory.Id;
-
-                foreach (var channel in guild.TextChannels.Where(c => c.CategoryId == roomCategory.Id))
-                {
-                    var topic = channel.Topic ?? "";
-                    // Parse roomId from topic — supports both formats:
-                    // Old: "Agent Academy — Room: {roomName} (ID: {roomId})"
-                    // New: "... · ID: {roomId}"
-                    string? roomId = null;
-
-                    var oldMarker = "(ID: ";
-                    var oldStart = topic.IndexOf(oldMarker, StringComparison.Ordinal);
-                    if (oldStart >= 0)
-                    {
-                        var idValue = topic[(oldStart + oldMarker.Length)..];
-                        var idEnd = idValue.IndexOf(')');
-                        if (idEnd > 0)
-                            roomId = idValue[..idEnd];
-                    }
-
-                    if (roomId is null)
-                    {
-                        var newMarker = "· ID: ";
-                        var newStart = topic.IndexOf(newMarker, StringComparison.Ordinal);
-                        if (newStart >= 0)
-                            roomId = topic[(newStart + newMarker.Length)..].Trim();
-                    }
-
-                    if (roomId is not null)
-                    {
-                        _roomChannels[roomId] = channel.Id;
-                        _channelToRoom[channel.Id] = roomId;
-                        restoredRoomChannels++;
-                    }
-                }
-            }
-
-            if (restoredAgentChannels > 0 || restoredRoomChannels > 0)
-            {
-                _logger.LogInformation(
-                    "Rebuilt Discord channel mapping: {AgentChannels} agent channels, {RoomChannels} room channels",
-                    restoredAgentChannels, restoredRoomChannels);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to rebuild Discord channel mapping — new channels will be created on demand");
-        }
-
-        return Task.CompletedTask;
+        await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
     }
 
     private Embed BuildEmbed(NotificationMessage message)
@@ -1231,9 +673,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         _ => Color.LightGrey
     };
 
-    /// <summary>
-    /// Resolves the notification channel, validating it belongs to the configured guild.
-    /// </summary>
     private IMessageChannel? ResolveChannel()
     {
         var guild = _client!.GetGuild(_guildId);
@@ -1283,7 +722,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
         var sentMessage = await channel.SendMessageAsync(embed: embed.Build(), components: components.Build());
 
-        // Wait for button interaction
         var tcs = new TaskCompletionSource<UserResponse?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Task OnInteractionCreated(SocketInteraction interaction)
@@ -1304,7 +742,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             var selected = choices[choiceIndex];
             tcs.TrySetResult(new UserResponse(selected, selected, ProviderId));
 
-            // Acknowledge the interaction
             _ = component.DeferAsync();
             return Task.CompletedTask;
         }
@@ -1331,15 +768,12 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         EmbedBuilder embed,
         CancellationToken cancellationToken)
     {
-        // Serialize freeform input requests to prevent concurrent listeners from
-        // consuming the same user message.
         await _inputLock.WaitAsync(cancellationToken);
         try
         {
             embed.WithFooter("Reply in this channel to respond");
             await channel.SendMessageAsync(embed: embed.Build());
 
-            // Wait for next user (non-bot) message in the channel
             var tcs = new TaskCompletionSource<UserResponse?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             Task OnMessageReceived(SocketMessage msg)
@@ -1350,7 +784,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 if (msg.Author.IsBot)
                     return Task.CompletedTask;
 
-                // Scope to owner if configured, otherwise accept any non-bot user
                 if (_ownerId.HasValue && msg.Author.Id != _ownerId.Value)
                     return Task.CompletedTask;
 
@@ -1397,11 +830,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Extracts a user-friendly error message from the disconnect exception chain.
-    /// Discord close code 4014 = privileged intent not enabled in the Developer Portal.
-    /// HTTP 401 = invalid/expired bot token.
-    /// </summary>
     private static string? ExtractDisconnectReason(Exception? ex)
     {
         var current = ex;
