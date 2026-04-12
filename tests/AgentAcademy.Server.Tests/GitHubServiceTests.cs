@@ -497,4 +497,164 @@ public class GitHubServiceTests : IDisposable
         WriteExecutableScript(wrapperPath, content);
         return wrapperPath;
     }
+
+    // ── OAuth Token Bridge ──────────────────────────────────────
+
+    private string CreateGhTokenEchoWrapper()
+    {
+        var wrapperPath = Path.Combine(_tempDir, $"gh-echo-{Guid.NewGuid():N}.sh");
+        var content =
+            """
+            #!/usr/bin/env bash
+            echo "${GH_TOKEN:-<unset>}"
+            exit 0
+            """;
+
+        WriteExecutableScript(wrapperPath, content);
+        return wrapperPath;
+    }
+
+    [Fact]
+    public async Task RunGhAsync_WithOAuthToken_SetsGhTokenEnvVar()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken("gho_test_token_12345");
+        var wrapper = CreateGhTokenEchoWrapper();
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper, tokenProvider);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("gho_test_token_12345", result);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_WithoutTokenProvider_DoesNotSetGhToken()
+    {
+        var wrapper = CreateGhTokenEchoWrapper();
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("<unset>", result);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_WithNullToken_DoesNotSetGhToken()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        // Token is null by default — no SetToken called
+        var wrapper = CreateGhTokenEchoWrapper();
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper, tokenProvider);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("<unset>", result);
+    }
+
+    [Fact]
+    public async Task IsConfiguredAsync_WithOAuthToken_ReturnsTrue()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken("gho_valid_token");
+        var wrapper = CreateGhWrapper(""); // exit 0 = authenticated
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper, tokenProvider);
+
+        var result = await svc.IsConfiguredAsync();
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_WithExpiredToken_DoesNotSetGhToken()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        // Set a token that expires immediately
+        tokenProvider.SetTokens("gho_expired", expiresIn: TimeSpan.FromMilliseconds(1));
+        await Task.Delay(10); // ensure it's expired
+
+        var wrapper = CreateGhTokenEchoWrapper();
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper, tokenProvider);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("<unset>", result);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_OAuthAuthError_FallsBackToCliAuth()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken("gho_expired_token");
+
+        // Create a wrapper that fails with auth error when GH_TOKEN is set,
+        // but succeeds (echoes "ok") when GH_TOKEN is unset
+        var wrapperPath = Path.Combine(_tempDir, $"gh-fallback-{Guid.NewGuid():N}.sh");
+        var content =
+            """
+            #!/usr/bin/env bash
+            if [ -n "$GH_TOKEN" ]; then
+                echo "bad credentials" >&2
+                exit 1
+            fi
+            echo "ok"
+            exit 0
+            """;
+        WriteExecutableScript(wrapperPath, content);
+
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapperPath, tokenProvider);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("ok", result);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_OAuthNonAuthError_DoesNotFallBack()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken("gho_valid_token");
+
+        // Fails with a non-auth error ("not found") even when GH_TOKEN is set
+        var wrapperPath = Path.Combine(_tempDir, $"gh-noauth-{Guid.NewGuid():N}.sh");
+        var content =
+            """
+            #!/usr/bin/env bash
+            echo "resource not found" >&2
+            exit 1
+            """;
+        WriteExecutableScript(wrapperPath, content);
+
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapperPath, tokenProvider);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.RunGhAsync("pr", "view", "999"));
+
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_WithEmptyToken_DoesNotSetGhToken()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken(""); // empty string
+        var wrapper = CreateGhTokenEchoWrapper();
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper, tokenProvider);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("<unset>", result);
+    }
+
+    [Fact]
+    public async Task RunGhAsync_WhitespaceOnlyToken_DoesNotSetGhToken()
+    {
+        var tokenProvider = new CopilotTokenProvider();
+        tokenProvider.SetToken("   ");
+        var wrapper = CreateGhTokenEchoWrapper();
+        var svc = new GitHubService(NullLogger<GitHubService>.Instance, _tempDir, wrapper, tokenProvider);
+
+        var result = await svc.RunGhAsync("auth", "status");
+
+        Assert.Equal("<unset>", result);
+    }
 }

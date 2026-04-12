@@ -13,8 +13,8 @@ public sealed class ShowReviewQueueHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var tasks = await runtime.GetReviewQueueAsync();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var tasks = await taskQueries.GetReviewQueueAsync();
 
         var result = tasks.Select(t => new Dictionary<string, object?>
         {

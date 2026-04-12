@@ -505,9 +505,12 @@ public class AgentAcademyDbContext : DbContext
             entity.Property(e => e.AwaitingSignOff).HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).IsRequired();
 
-            entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_sprints_workspace");
             entity.HasIndex(e => new { e.WorkspacePath, e.Status })
                 .HasDatabaseName("idx_sprints_workspace_status");
+            entity.HasIndex(e => e.WorkspacePath)
+                .IsUnique()
+                .HasFilter("\"Status\" = 'Active'")
+                .HasDatabaseName("idx_sprints_one_active_per_workspace");
             entity.HasIndex(e => new { e.WorkspacePath, e.Number })
                 .IsUnique()
                 .HasDatabaseName("idx_sprints_workspace_number_unique");

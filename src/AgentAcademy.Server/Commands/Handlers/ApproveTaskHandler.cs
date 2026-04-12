@@ -48,11 +48,11 @@ public sealed class ApproveTaskHandler : ICommandHandler
             findings = findingsStr;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
 
         try
         {
-            var task = await runtime.ApproveTaskAsync(taskId, context.AgentId, findings);
+            var task = await taskLifecycle.ApproveTaskAsync(taskId, context.AgentId, findings);
             return command with
             {
                 Status = CommandStatus.Success,

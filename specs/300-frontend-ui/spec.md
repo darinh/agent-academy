@@ -36,12 +36,14 @@ App.tsx (FluentProvider + AppShell)
             ├── CommandsPanel.tsx
             ├── TimelinePanel.tsx
             ├── DashboardPanel.tsx
+            │   └── AgentAnalyticsPanel.tsx (per-agent performance metrics)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
-            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, advanced)
+            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, github, advanced)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
+            ├── KeyboardShortcutsDialog.tsx (? key shortcut help)
             ├── RecoveryBanner.tsx (crash recovery notification)
             └── CircuitBreakerBanner.tsx (auth degradation warning)
 ```
@@ -149,6 +151,9 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/sprints/{id}/complete` | POST | Complete sprint (optional `force` query param) |
 | `/api/sprints/{id}/cancel` | POST | Cancel an active sprint |
 | `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
+| `/api/analytics/agents` | GET | Per-agent performance metrics (optional `hoursBack` query param, 1–8760) |
+| `/api/analytics/agents/{agentId}` | GET | Agent detail drill-down (optional `hoursBack`, `requestLimit`, `errorLimit`, `taskLimit`) |
+| `/api/search` | GET | Full-text search across messages and tasks (required `q`, optional `scope`, `messageLimit`, `taskLimit`) |
 
 ### Browse response shape (from server):
 ```json
@@ -304,6 +309,77 @@ Mini SVG trend charts in the dashboard panels showing activity over time.
 - **UsagePanel**: Two sparklines — request count trend (amber) and token volume trend (blue)
 - **ErrorsPanel**: Error rate trend (red)
 - **AuditLogPanel**: Command count trend (purple), using a separate 200-record fetch for accurate trend data (not the paged table slice)
+- **AgentAnalyticsPanel**: Per-agent token volume trend (default blue sparkline)
+
+### Agent Analytics Panel (`AgentAnalyticsPanel.tsx`)
+
+Per-agent performance dashboard showing LLM usage, errors, and task completion aggregated over a configurable time window.
+
+**Data source:** `GET /api/analytics/agents?hoursBack={N}` → `AgentAnalyticsSummary`. Receives `hoursBack` prop from the shared `DashboardPanel` time range selector.
+
+**Summary row:** Four cards at the top — active agent count, total requests, total cost, total errors. Values formatted via shared `formatCost()` and `formatTokenCount()` utilities.
+
+**Sort toolbar:** Dropdown to sort agent cards by Requests (default), Tokens, Cost, Errors, or Tasks. Manual refresh button with loading state. Export CSV button triggers `exportAgentAnalytics(hoursBack, "csv")` and downloads the file via the `downloadFile()` helper in `api.ts`.
+
+**Agent cards:** Responsive grid (`minmax(280px, 1fr)`). Each card shows:
+- Agent name + ID
+- Badges: error count (red V3Badge when > 0), task completion percentage (ok/warn/err based on 80%/50% thresholds)
+- Metrics grid: requests, tokens, cost, average response time (seconds)
+- Error/task row: error count with color coding (green < 5%, yellow < 20%, red ≥ 20% error rate), tasks completed/assigned
+- Token trend sparkline (12 equal-sized buckets spanning the window, newest last)
+
+**Refresh behavior:** Auto-refreshes every 60 seconds. Stale-response protection via `fetchIdRef` counter — concurrent fetches are discarded if a newer request has been issued.
+
+**Empty state:** Icon + message when no agent activity exists for the time window.
+
+**API types (`api.ts`):**
+```typescript
+interface AgentPerformanceMetrics {
+  agentId: string;
+  agentName: string;
+  totalRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  averageResponseTimeMs: number | null;
+  totalErrors: number;
+  recoverableErrors: number;
+  unrecoverableErrors: number;
+  tasksAssigned: number;
+  tasksCompleted: number;
+  tokenTrend: number[];  // 12 buckets
+}
+
+interface AgentAnalyticsSummary {
+  agents: AgentPerformanceMetrics[];
+  windowStart: string;
+  windowEnd: string;
+  totalRequests: number;
+  totalCost: number;
+  totalErrors: number;
+}
+```
+
+**Card selection:** Clicking an agent card toggles selection (highlighted border). Selected card expands an inline `AgentDetailView` below the grid.
+
+### Agent Detail View (`AgentDetailView.tsx`)
+
+Drill-down panel showing detailed per-agent analytics when a card is selected.
+
+**Data source:** `GET /api/analytics/agents/{agentId}?hoursBack={N}` → `AgentAnalyticsDetail`. Fetches on mount and when `agentId` or `hoursBack` changes. Stale-response protection via `fetchIdRef`.
+
+**Layout:**
+- Header: agent name/ID, refresh button, close button (×)
+- KPI row: 6 cards — requests, tokens, cost, avg response time, errors (red when > 0), tasks done
+- Activity trend: 24-bucket sparkline (wider than card sparklines, 400×40)
+- Model breakdown: responsive grid of cards showing per-model request count, tokens, cost, and proportional bar
+- Recent requests: scrollable table (time, model, tokens in/out, cost, duration)
+- Recent errors: table with error type badge (`errorTypeBadge` from `panelUtils`), truncated message with tooltip, recovery status badge
+- Tasks: list with title, status badge (color-coded), branch icon tooltip, PR number, creation date
+
+**Empty states:** Per-section "No X in this window" messages.
+
+**API types (`api.ts`):** `AgentAnalyticsDetail`, `AgentUsageRecord`, `AgentErrorRecord`, `AgentTaskRecord`, `AgentModelBreakdown`, `AgentActivityBucket`.
 
 ## Room-Centric Conversation (`ChatPanel.tsx`)
 
@@ -338,7 +414,7 @@ The sidebar Rooms section includes inline room creation:
 
 ## Settings Panel (`SettingsPanel.tsx`)
 
-The Settings panel is a full tabbed configuration page with five tabs:
+The Settings panel is a full tabbed configuration page with six tabs:
 
 ### Custom Agents Tab
 
@@ -372,6 +448,22 @@ Instruction template CRUD interface. Templates are reusable prompt fragments tha
 ### Notifications Tab
 
 Provider setup UI for notification integrations (Discord, Slack, etc.). Connect/disconnect controls per provider, with the `NotificationSetupWizard` handling provider-specific configuration.
+
+### GitHub Tab
+
+GitHub integration status and PR capability overview. Data loaded from `GET /api/github/status` (see §010).
+
+- **Status card**: Shows connected/not-connected status with refresh button, repository slug (monospace), and auth source badge.
+- **Auth source badge**: Color-coded — green for `oauth`, blue for `cli`, red for `none`.
+- **Auth source explanation**: Contextual guidance based on current auth method:
+  - `oauth`: Confirms PR operations are available through browser session.
+  - `cli`: Notes server-side authentication; suggests browser login for OAuth.
+  - `none`: Shows error state with "Login with GitHub" button linking to `/api/auth/login`.
+- **PR Capabilities grid**: 2×2 grid showing create/review/merge/status-sync capabilities. All enabled when `isConfigured = true`, all disabled otherwise.
+- **Error state**: Connection errors show error message with retry button.
+- **Loading state**: Spinner with "Checking GitHub status…" text.
+
+API type: `GitHubStatus { isConfigured: boolean; repository: string | null; authSource: "oauth" | "cli" | "none" }` — exported from `api.ts`.
 
 ### Advanced Tab
 
@@ -481,6 +573,79 @@ interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifa
 interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
 ```
 
+## Workspace Search (`SearchPanel.tsx`)
+
+Full-text search across workspace messages (room + breakout) and tasks. Powered by SQLite FTS5 virtual tables with BM25 ranking.
+
+### API
+
+- **Endpoint**: `GET /api/search?q=term&scope=all|messages|tasks&messageLimit=25&taskLimit=25`
+- **Backend**: `SearchService` (scoped) queries FTS5 tables `messages_fts`, `breakout_messages_fts`, `tasks_fts`
+- **Workspace-scoped**: Results filtered to the active workspace
+- **FTS5 safety**: Query terms are quoted and escaped (reuses `RecallHandler` pattern)
+- **LIKE fallback**: If FTS5 tables are unavailable, falls back to `LIKE` queries
+- **System messages excluded**: Only `Agent` and `User` messages are searched
+
+### UI
+
+- **Access**: 🔍 Search item in sidebar navigation, or press `/` to open
+- **Search bar**: Debounced input (300ms) with Fluent UI Input
+- **Scope filter**: All / Messages / Tasks toggle buttons
+- **Message results**: Sender name, role pill, room name, breakout badge, FTS5 snippet with `«highlighted»` terms, timestamp. Click navigates to the room.
+- **Task results**: Title, status badge, assigned agent, FTS5 snippet, created date. Click navigates to tasks tab.
+- **Status bar**: Shows total result count and query term
+- **Empty states**: Initial help text, and "no results" feedback
+
+### Data Flow
+
+```
+SearchPanel → searchWorkspace(q, {scope}) → GET /api/search?q=...
+  → SearchController → SearchService.SearchAsync()
+    → FTS5 MATCH on messages_fts / breakout_messages_fts / tasks_fts
+    → JOIN to entity tables for metadata
+    → snippet() for highlighted excerpts
+    → Merge room + breakout results, ordered by recency
+  → SearchResults { messages[], tasks[], totalCount, query }
+```
+
+### Types
+
+```typescript
+type SearchScope = "all" | "messages" | "tasks";
+interface MessageSearchResult {
+  messageId: string; roomId: string; roomName: string;
+  senderName: string; senderKind: MessageSenderKind; senderRole: string | null;
+  snippet: string; sentAt: string; sessionId: string | null; source: "room" | "breakout";
+}
+interface TaskSearchResult {
+  taskId: string; title: string; status: string;
+  assignedAgentName: string | null; snippet: string; createdAt: string; roomId: string | null;
+}
+interface SearchResults { messages: MessageSearchResult[]; tasks: TaskSearchResult[]; totalCount: number; query: string; }
+```
+
+## Keyboard Shortcuts (`KeyboardShortcutsDialog.tsx`)
+
+A help overlay listing all application keyboard shortcuts. Triggered by pressing `?` (when focus is not in an input/textarea/select).
+
+### Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘/Ctrl + K` | Open command palette |
+| `/` | Open search |
+| `?` | Toggle keyboard shortcuts overlay |
+| `Enter` | Send message in chat/DM |
+| `Shift + Enter` | New line in message |
+| `Esc` | Close settings / command palette |
+
+### Behavior
+
+- **Input guard**: All global shortcuts (`/`, `?`, `⌘K`) are suppressed when focus is in `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` elements.
+- **Platform-aware**: Displays `⌘` on macOS/iOS, `Ctrl` on other platforms (detected via `navigator.userAgent`).
+- **Toggle**: Pressing `?` again closes the dialog.
+- **Lazy-loaded**: Component is loaded via `React.lazy()` — zero cost until first open.
+
 ## Future Work
 
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
@@ -492,3 +657,50 @@ interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
 - ~~TaskStatePanel integration~~ **RESOLVED** — `TaskListPanel.tsx` now includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons (Approve/Request Changes/Reject/Merge) wired through `executeCommand` API.
 - ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **RESOLVED** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
 - ~~Session history / resume indicator~~ **RESOLVED** — `SessionHistoryPanel` in dashboard shows session stats, filterable session list with summaries. `ChatPanel` shows "Agents have context from a previous conversation session" banner when archived sessions exist for the current room.
+
+## Browser Desktop Notifications (`useDesktopNotifications.ts`)
+
+Alerts the human operator via the browser Notification API when the tab is hidden and important activity events occur.
+
+### Behavior
+
+- **Opt-in**: User enables via Settings → Advanced → Desktop Notifications toggle
+- **Permission**: Requested on first enable; handles denial and revocation gracefully
+- **Tab gating**: Notifications fire only when `document.hidden === true` (tab backgrounded)
+- **Deduplication**: Event IDs tracked in a capped `Set` to prevent replay on SSE reconnect
+- **Auto-close**: Notifications dismiss after 8 seconds
+- **Click-to-focus**: Clicking a notification calls `window.focus()` and closes it
+- **Persistence**: Preference stored in `localStorage` key `aa-desktop-notifications`
+
+### Trigger Events
+
+| Event Type | Notification Title |
+|------------|-------------------|
+| `DirectMessageSent` | "New message" |
+| `AgentErrorOccurred` | "Agent error" |
+| `SubagentFailed` | "Subagent failed" |
+| `SprintCompleted` | "Sprint completed" |
+| `SprintCancelled` | "Sprint cancelled" |
+| `TaskCreated` | "Task created" |
+
+### Integration
+
+```
+App.tsx (AppShell)
+  └── useDesktopNotifications() → { enabled, setEnabled, permission, supported, notify }
+      └── handleActivityToast callback → desktopNotif.notify(evt)
+  └── SettingsPanel (desktopNotifications prop)
+      └── Advanced tab → checkbox toggle with permission status display
+```
+
+### Types
+
+```typescript
+interface DesktopNotificationControls {
+  enabled: boolean;
+  setEnabled: (on: boolean) => void;
+  permission: NotificationPermission | "unsupported";
+  supported: boolean;
+  notify: (evt: ActivityEvent) => void;
+}
+```

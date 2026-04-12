@@ -639,8 +639,11 @@ export default function SprintPanel({
         fetchData();
         break;
 
-      case "SprintCompleted": {
-        const status = metadata.status as SprintStatus | undefined;
+      case "SprintCompleted":
+      case "SprintCancelled": {
+        const status: SprintStatus = type === "SprintCancelled"
+          ? "Cancelled"
+          : (metadata.status as SprintStatus | undefined) ?? "Completed";
         // Optimistically mark sprint as completed/cancelled
         setActiveSprint((prev) => {
           if (!prev || prev.sprint.id !== sprintId) return prev;
@@ -648,7 +651,7 @@ export default function SprintPanel({
             ...prev,
             sprint: {
               ...prev.sprint,
-              status: status ?? "Completed",
+              status,
               completedAt: new Date().toISOString(),
             },
           };
@@ -659,7 +662,7 @@ export default function SprintPanel({
             ...prev,
             sprint: {
               ...prev.sprint,
-              status: status ?? "Completed",
+              status,
               completedAt: new Date().toISOString(),
             },
           };
@@ -667,7 +670,7 @@ export default function SprintPanel({
         setHistory((prev) =>
           prev.map((snap) =>
             snap.id === sprintId
-              ? { ...snap, status: status ?? "Completed", completedAt: new Date().toISOString() }
+              ? { ...snap, status, completedAt: new Date().toISOString() }
               : snap,
           ),
         );
@@ -928,6 +931,12 @@ export default function SprintPanel({
             <strong>{detail.sprint.currentStage}</strong> to{" "}
             <strong>{detail.sprint.pendingStage}</strong>.
             Review the {detail.sprint.currentStage} artifacts and approve or reject.
+            {detail.sprint.signOffRequestedAt && (() => {
+              const elapsed = Date.now() - new Date(detail.sprint.signOffRequestedAt!).getTime();
+              const mins = Math.floor(elapsed / 60000);
+              const label = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+              return ` Waiting ${label}.`;
+            })()}
           </span>
         </div>
       )}

@@ -33,6 +33,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 | `DisplayName` | `string` | Human-readable name for UI |
 | `IsConfigured` | `bool` | Whether provider has been configured |
 | `IsConnected` | `bool` | Whether provider is actively connected |
+| `LastError` | `string?` | Most recent connection error message, or null if last connection succeeded. Default interface implementation returns `null`. Surfaced in the provider status API so the UI can explain why a configured provider is not connected. Cleared at the start of each connection attempt. |
 | `ConfigureAsync()` | `Task` | Apply provider-specific settings |
 | `ConnectAsync()` | `Task` | Establish connection |
 | `DisconnectAsync()` | `Task` | Tear down connection |
@@ -60,13 +61,33 @@ The `ConsoleNotificationProvider` serves as the reference implementation:
 - Cannot collect input (returns `null`)
 - Zero configuration fields
 
+### Connection Error Handling
+
+Providers surface connection failures through the `LastError` property so the frontend can display actionable error messages instead of generic "not connected" states.
+
+**Behavior contract:**
+- `LastError` is cleared (`null`) at the start of each `ConnectAsync()` call
+- On connection failure, `LastError` is set to a human-readable message explaining the cause
+- The `GET /providers` endpoint includes `LastError` in `ProviderStatusDto`, so the UI can display it when `IsConfigured == true && IsConnected == false`
+- The `POST /providers/{id}/connect` endpoint returns the provider's `LastError` (not the raw exception) in the error response body
+
+**Discord-specific error extraction:**
+The `DiscordNotificationProvider` parses known Discord gateway close codes and HTTP errors into actionable messages:
+- **4014 (Disallowed Intent)**: Missing privileged intents — instructs the user to enable Message Content Intent in the Developer Portal
+- **4004 (Auth Failed)**: Invalid token at the gateway level
+- **401 Unauthorized**: HTTP auth failure during login — typically an expired or malformed bot token
+- Other exceptions: fall back to the exception message
+
+**Frontend display:**
+When a provider has `IsConfigured == true`, `IsConnected == false`, and `LastError` is non-null, the Settings panel displays an error banner with the `LastError` text. The Notification Setup Wizard includes a step about enabling the Message Content Intent.
+
 ### REST API
 
 All endpoints under `/api/notifications`:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/providers` | List all providers with status |
+| `GET` | `/providers` | List all providers with status (returns `ProviderStatusDto[]` — see below) |
 | `GET` | `/providers/{id}/schema` | Get provider's config schema |
 | `POST` | `/providers/{id}/configure` | Apply configuration |
 | `POST` | `/providers/{id}/connect` | Connect provider |
@@ -85,6 +106,7 @@ Defined in `AgentAcademy.Shared.Models.Notifications`:
 - `UserResponse` — record: Content, SelectedChoice?, ProviderId
 - `ProviderConfigSchema` — record: ProviderId, DisplayName, Description, Fields
 - `ConfigField` — record: Key, Label, Type, Required, Description?, Placeholder?
+- `ProviderStatusDto` — record: ProviderId, DisplayName, IsConfigured, IsConnected, LastError?
 
 ### DI Registration
 
@@ -254,7 +276,7 @@ Each Agent Academy room gets a dedicated Discord channel under a project-specifi
   💬 main-collaboration-room                   ← legacy room
 ```
 
-**Project resolution**: When creating a channel for a room, the provider resolves the room's project name via `WorkspaceRuntime.GetProjectNameForRoomAsync(roomId)` which follows the chain: `roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName`. If `ProjectName` is null, falls back to the workspace directory basename.
+**Project resolution**: When creating a channel for a room, the provider resolves the room's project name via `RoomService.GetProjectNameForRoomAsync(roomId)` which follows the chain: `roomId → RoomEntity.WorkspacePath → WorkspaceEntity.ProjectName`. If `ProjectName` is null, falls back to the workspace directory basename.
 
 **Category naming**: Room categories are named `"{projectName} Rooms"` for workspace-scoped rooms. DM/message categories are named `"{projectName} Messages"`. Legacy rooms (no `WorkspacePath`) use the `"Rooms"` category. Categories are cached in memory keyed by project name.
 

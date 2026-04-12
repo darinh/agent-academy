@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
@@ -130,6 +131,32 @@ public sealed class CommandController : ControllerBase
         }
 
         var correlationId = $"cmd-{Guid.NewGuid():N}";
+
+        // Destructive confirmation gate (server-side, applies to human API too)
+        if (handler.IsDestructive && !CommandPipeline.HasConfirmFlag(normalizedArgs))
+        {
+            var response = new ExecuteCommandResponse(
+                Command: commandName,
+                Status: "confirmation_required",
+                Result: new Dictionary<string, object?>
+                {
+                    ["requiresConfirmation"] = true,
+                    ["command"] = commandName,
+                    ["warning"] = handler.DestructiveWarning,
+                    ["retryWith"] = "confirm=true"
+                },
+                Error: handler.DestructiveWarning + " Re-issue with confirm=true to proceed.",
+                ErrorCode: CommandErrorCode.ConfirmationRequired,
+                CorrelationId: correlationId,
+                Timestamp: DateTime.UtcNow,
+                ExecutedBy: HumanAgentId);
+
+            // Audit the confirmation-required attempt for traceability
+            await CreateConfirmationAuditAsync(commandName, normalizedArgs, correlationId);
+
+            return Ok(response);
+        }
+
         if (AsyncCommands.Contains(commandName))
         {
             await CreatePendingAuditAsync(commandName, normalizedArgs, correlationId);
@@ -271,6 +298,31 @@ public sealed class CommandController : ControllerBase
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
 
         db.CommandAudits.Add(CreateAuditEntity(envelope));
+        await db.SaveChangesAsync();
+    }
+
+    private async Task CreateConfirmationAuditAsync(
+        string commandName,
+        Dictionary<string, object?> args,
+        string correlationId)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        db.CommandAudits.Add(new CommandAuditEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            CorrelationId = correlationId,
+            AgentId = HumanAgentId,
+            Source = HumanUiSource,
+            Command = commandName,
+            ArgsJson = JsonSerializer.Serialize(args),
+            Status = nameof(CommandStatus.Denied),
+            ErrorCode = CommandErrorCode.ConfirmationRequired,
+            ErrorMessage = "Confirmation required for destructive command",
+            Timestamp = DateTime.UtcNow
+        });
+
         await db.SaveChangesAsync();
     }
 
@@ -507,7 +559,7 @@ public sealed class CommandController : ControllerBase
 }
 
 public sealed record ExecuteCommandRequest(
-    string Command,
+    [property: Required, MinLength(1), StringLength(10_000)] string Command,
     Dictionary<string, JsonElement>? Args);
 
 public sealed record ExecuteCommandResponse(

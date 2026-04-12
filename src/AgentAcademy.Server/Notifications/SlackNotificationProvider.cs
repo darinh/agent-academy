@@ -83,6 +83,9 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
     public bool IsConnected => _isConnected;
 
     /// <inheritdoc />
+    public string? LastError { get; private set; }
+
+    /// <inheritdoc />
     public Task ConfigureAsync(Dictionary<string, string> configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -110,6 +113,8 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
+            LastError = null; // Clear previous error on each connect attempt
+
             if (_isConnected)
             {
                 _logger.LogDebug("Slack provider is already connected");
@@ -129,16 +134,23 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
             var authResult = await _apiClient.AuthTestAsync(cancellationToken);
             if (!authResult.Ok)
             {
-                throw new InvalidOperationException($"Slack auth.test failed: {authResult.Error}");
+                LastError = $"Slack auth.test failed: {authResult.Error}";
+                throw new InvalidOperationException(LastError);
             }
 
             _botUserId = authResult.UserId;
             _isConnected = true;
+            LastError = null;
             _logger.LogInformation("Slack provider connected as {BotUser} (team: {Team})",
                 authResult.User, authResult.Team);
 
             // Rebuild channel mapping from existing Slack channels
             await RebuildChannelMappingAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LastError ??= ex.Message;
+            throw;
         }
         finally
         {
@@ -416,8 +428,8 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-                projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+                var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+                projectName = await roomService.GetProjectNameForRoomAsync(roomId);
             }
             catch (Exception ex)
             {

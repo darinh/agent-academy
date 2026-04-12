@@ -8,8 +8,9 @@ import {
   Spinner,
   Textarea,
 } from "@fluentui/react-components";
-import { PlayRegular } from "@fluentui/react-icons";
+import { PlayRegular, WarningRegular } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
+import ConfirmDialog from "./ConfirmDialog";
 import {
   executeCommand,
   getCommandExecution,
@@ -253,6 +254,18 @@ const useLocalStyles = makeStyles({
     fontSize: "13px",
     lineHeight: 1.65,
   },
+  destructiveWarning: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "10px",
+    color: "var(--aa-copper)",
+    border: "1px solid rgba(232, 160, 60, 0.22)",
+    backgroundColor: "rgba(232, 160, 60, 0.08)",
+    ...shorthands.borderRadius("6px"),
+    ...shorthands.padding("12px", "14px"),
+    fontSize: "13px",
+    lineHeight: 1.65,
+  },
   resultRail: {
     minHeight: 0,
     display: "grid",
@@ -392,6 +405,7 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
   const [history, setHistory] = useState<CommandHistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const fetchRef = useRef(0);
 
   useEffect(() => {
@@ -489,23 +503,12 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
     }));
   };
 
-  const handleExecute = async () => {
-    const errors = validateCommandDraft(definition, draft);
-    if (errors.length > 0) {
-      setPanelError(errors.join(" "));
-      return;
-    }
-
-    if (readOnly) {
-      setPanelError("Commands are paused while Copilot is degraded. Reconnect before running new work.");
-      return;
-    }
-
+  const submitCommand = async (confirm: boolean) => {
     setSubmitting(true);
     setPanelError(null);
 
     try {
-      const request = buildExecuteCommandRequest(definition, draft);
+      const request = buildExecuteCommandRequest(definition, draft, confirm ? { confirm: true } : undefined);
       const response = await executeCommand(request);
       const args = request.args
         ? Object.fromEntries(Object.entries(request.args).map(([key, value]) => [key, String(value)]))
@@ -520,6 +523,39 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleExecute = async () => {
+    const errors = validateCommandDraft(definition, draft);
+    if (errors.length > 0) {
+      setPanelError(errors.join(" "));
+      return;
+    }
+
+    if (readOnly) {
+      setPanelError("Commands are paused while Copilot is degraded. Reconnect before running new work.");
+      return;
+    }
+
+    if (definition.isDestructive) {
+      setConfirmOpen(true);
+      return;
+    }
+
+    await submitCommand(false);
+  };
+
+  const handleConfirm = () => {
+    setConfirmOpen(false);
+    if (readOnly) {
+      setPanelError("Commands are paused while Copilot is degraded. Reconnect before running new work.");
+      return;
+    }
+    void submitCommand(true);
+  };
+
+  const handleCancelConfirm = () => {
+    setConfirmOpen(false);
   };
 
   const latestResult = history[0];
@@ -564,9 +600,14 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
                   <V3Badge color={badgeColorForCategory(command.category)}>
                     {command.category}
                   </V3Badge>
-                  <V3Badge color={command.isAsync ? "warn" : "info"}>
-                    {command.isAsync ? "polling" : "instant"}
-                  </V3Badge>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                    {command.isDestructive && (
+                      <V3Badge color="err">destructive</V3Badge>
+                    )}
+                    <V3Badge color={command.isAsync ? "warn" : "info"}>
+                      {command.isAsync ? "polling" : "instant"}
+                    </V3Badge>
+                  </div>
                 </div>
                 <div className={s.commandTitle}>{command.title}</div>
                 <div className={s.commandDescription}>{command.description}</div>
@@ -628,6 +669,13 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
 
           {panelError && <div className={s.errorBox}>{panelError}</div>}
 
+          {definition.isDestructive && definition.destructiveWarning && (
+            <div className={s.destructiveWarning}>
+              <WarningRegular style={{ flexShrink: 0 }} />
+              <span>{definition.destructiveWarning}</span>
+            </div>
+          )}
+
           <div className={s.actionRow}>
             <span className={mergeClasses(s.helperText, readOnly && s.helperWarning)}>
               {readOnly
@@ -638,13 +686,24 @@ export default function CommandsPanel({ roomId, readOnly = false }: CommandsPane
             </span>
             <Button
               appearance="primary"
-              icon={submitting ? <Spinner size="tiny" /> : <PlayRegular />}
+              icon={submitting ? <Spinner size="tiny" /> : definition.isDestructive ? <WarningRegular /> : <PlayRegular />}
               disabled={submitting || readOnly}
               onClick={() => void handleExecute()}
             >
               {submitting ? "Running…" : `Run ${definition.title}`}
             </Button>
           </div>
+
+          <ConfirmDialog
+            open={confirmOpen}
+            onConfirm={handleConfirm}
+            onCancel={handleCancelConfirm}
+            title={`Confirm ${definition.title}`}
+            message={definition.destructiveWarning ?? `${definition.title} performs a destructive action. Are you sure?`}
+            confirmLabel="Yes, proceed"
+            confirmAppearance="primary"
+            cancelLabel="Cancel"
+          />
         </section>
       </div>
 

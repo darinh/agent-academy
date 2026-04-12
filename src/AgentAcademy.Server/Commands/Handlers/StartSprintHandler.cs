@@ -14,10 +14,10 @@ public sealed class StartSprintHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
         var sprintService = context.Services.GetRequiredService<SprintService>();
 
-        var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+        var workspacePath = await roomService.GetActiveWorkspacePathAsync();
         if (string.IsNullOrEmpty(workspacePath))
         {
             return command with

@@ -28,6 +28,10 @@ public sealed class RestartServerHandler : ICommandHandler
     /// <summary>Serializes restart check-and-act to prevent concurrent bypass.</summary>
     private static readonly SemaphoreSlim RestartGate = new(1, 1);
 
+    public string CommandName => "RESTART_SERVER";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "RESTART_SERVER will shut down and restart the server process. All in-flight agent rounds will be interrupted.";
+
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<RestartServerHandler> _logger;
 
@@ -38,8 +42,6 @@ public sealed class RestartServerHandler : ICommandHandler
         _lifetime = lifetime;
         _logger = logger;
     }
-
-    public string CommandName => "RESTART_SERVER";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -104,8 +106,9 @@ public sealed class RestartServerHandler : ICommandHandler
             // Post a system message so the restart is visible in chat history.
             try
             {
-                var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-                await runtime.PostSystemStatusAsync(runtime.DefaultRoomId,
+                var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+                await messages.PostSystemStatusAsync(catalog.DefaultRoomId,
                     $"🔄 **Server restarting**: {parsed.Reason} (requested by {context.AgentName})");
             }
             catch (Exception ex)

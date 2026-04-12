@@ -39,10 +39,29 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddSingleton(Substitute.For<IAgentExecutor>());
 
         // WorkspaceRuntime and its dependencies
-        services.AddScoped<WorkspaceRuntime>();
-        services.AddSingleton(typeof(ILogger<WorkspaceRuntime>), sp => NullLogger<WorkspaceRuntime>.Instance);
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
+        services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
+        services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
+        services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddSingleton(CreateTestCatalog());
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -145,7 +164,7 @@ public class SprintCommandHandlerTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
         var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
-        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", "doc content");
+        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         var handler = new AdvanceStageHandler();
         var result = await handler.ExecuteAsync(
@@ -180,7 +199,7 @@ public class SprintCommandHandlerTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
         var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
-        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", "doc content");
+        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         var handler = new AdvanceStageHandler();
         var result = await handler.ExecuteAsync(
@@ -219,7 +238,7 @@ public class SprintCommandHandlerTests : IDisposable
             MakeCommand("STORE_ARTIFACT", new Dictionary<string, object?>
             {
                 ["type"] = "RequirementsDocument",
-                ["content"] = "## Requirements\n- Feature A\n- Feature B"
+                ["content"] = TestArtifactContent.RequirementsDocument
             }),
             CreateContext(scope.ServiceProvider));
 
@@ -244,7 +263,7 @@ public class SprintCommandHandlerTests : IDisposable
                 ["sprintId"] = sprint.Id,
                 ["stage"] = "Intake",
                 ["type"] = "RequirementsDocument",
-                ["content"] = "doc content"
+                ["content"] = TestArtifactContent.RequirementsDocument
             }),
             CreateContext(scope.ServiceProvider));
 
@@ -395,7 +414,7 @@ public class SprintCommandHandlerTests : IDisposable
             MakeCommand("STORE_ARTIFACT", new Dictionary<string, object?>
             {
                 ["type"] = "RequirementsDocument",
-                ["content"] = "Requirements for sprint"
+                ["content"] = TestArtifactContent.RequirementsDocument
             }), ctx);
         Assert.Equal(CommandStatus.Success, storeResult.Status);
 

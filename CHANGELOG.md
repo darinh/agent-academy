@@ -3,10 +3,27 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
-## Unreleased (2026-04-10)
+## Unreleased (2026-04-12)
 
 ### Features
 
+- add keyboard shortcuts help overlay (? key)
+- add browser desktop notifications for backgrounded tab
+- add destructive command confirmation docs to all agent prompts
+- add confirmation dialog for destructive commands in CommandsPanel
+- add confirmation gate for destructive commands
+- add consultant identity in UI
+- add workspace-wide full-text search
+- add analytics CSV/JSON export endpoints
+- add agent analytics drill-down with detail endpoint and panel
+- add agent performance analytics dashboard
+- add DataAnnotations validation to all API request types
+- add GitHub integration status tab to Settings panel
+- bridge OAuth token to gh CLI for PR operations
+- add artifact content validation for sprint system
+- add sprint duration limits with auto-reject and auto-cancel
+- add sprint metrics aggregation endpoints
+- dedicated task panel with spec links, evidence ledger, gates, and assignment
 - sprint SignalR real-time updates with optimistic UI
 - agent quota UI in settings panel
 - per-agent resource quotas with request rate limiting
@@ -180,6 +197,15 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Fixes
 
+- resolve flaky agentConfigCard dialog test under parallel execution
+- remove double onCancel call in ConfirmDialog
+- remove unused imports in test files to unblock tsc -b build
+- resolve flaky dmPanel auto-scroll test
+- resolve flaky onboard dialog test with async findByRole
+- change MetricsEntry.Data from Dictionary<string,object> to Dictionary<string,JsonElement>
+- close 3 sprint known gaps — SprintCancelled event, stage-aware overflow, active uniqueness
+- adjust healthz smoke response
+- surface Discord connection errors in UI with actionable messages
 - resolve frontend type errors in test files after merge
 - align test factories with current API types
 - remove ExcludedTools blocklist and grant agents full CLI tool access
@@ -280,6 +306,21 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Documentation
 
+- add Program.cs decomposition to spec changelog
+- sync all specs after WorkspaceRuntime deletion
+- add keyboard shortcuts overlay to spec and changelog
+- add desktop notifications to spec and changelog
+- fix minor spec drift — export button and filename patterns
+- reconcile spec 005 with WorkspaceRuntime facade decomposition
+- add analytics spec to 012-consultant-api and 300-frontend-ui
+- reconcile spec 010 GitHub Integration with implementation
+- add changelog entry for GitHub status tab
+- add sprint system spec (013)
+- reconcile spec 006 with service extraction architecture
+- update workspace runtime spec with service extraction architecture
+- update SDK version in agent system spec to v0.2.2
+- add per-worktree CopilotClient to agent system spec
+- add LastError and connection error handling to notification spec
 - make handoff-over-task_complete explicit in instructions
 - enforce handoff command usage in copilot instructions
 - update spec §300 and changelog for quota UI
@@ -356,6 +397,43 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Refactoring
 
+- decompose App.tsx into hooks and components
+- decompose useStyles.ts into 6 domain-specific style modules
+- decompose api.ts into 11 domain modules
+- extract AddDomainServices() extension from Program.cs
+- decompose Program.cs into dedicated auth, middleware, and notification files
+- delete WorkspaceRuntime facade and migrate all tests to sub-services
+- remove WorkspaceRuntime from production code
+- eliminate WorkspaceRuntime facade from notification providers and Program.cs
+- eliminate WorkspaceRuntime facade from remaining service consumers
+- eliminate WorkspaceRuntime facade from service-layer consumers
+- eliminate WorkspaceRuntime facade from all controllers
+- eliminate WorkspaceRuntime facade from all command handlers
+- extract TaskAssignmentHandler from AgentOrchestrator
+- extract DiscordChannelManager from DiscordNotificationProvider
+- flatten WorkspaceRuntime facade — remove dead dependencies, convert async wrappers
+- remove dead GetRecentActivity/StreamActivity wrappers from WorkspaceRuntime
+- extract PublishThinking/FinishedAsync from WorkspaceRuntime to ActivityPublisher
+- extract TaskOrchestrationService from WorkspaceRuntime
+- code-split frontend bundle from 1,179kB to 33 chunks under 500kB
+- consolidate sprint context loading into LoadSprintContextAsync
+- extract AgentMemoryLoader from AgentOrchestrator and BreakoutLifecycleService
+- extract BreakoutLifecycleService from AgentOrchestrator
+- extract AgentResponseParser from AgentOrchestrator
+- extract PromptBuilder from AgentOrchestrator
+- remove dead code from WorkspaceRuntime after service extractions
+- extract InitializationService from WorkspaceRuntime
+- extract CrashRecoveryService from WorkspaceRuntime
+- extract PlanService from WorkspaceRuntime
+- extract AgentLocationService from WorkspaceRuntime
+- extract RoomService from WorkspaceRuntime
+- extract TaskItemService from WorkspaceRuntime
+- extract BreakoutRoomService from WorkspaceRuntime
+- extract MessageService from WorkspaceRuntime
+- extract ActivityPublisher from WorkspaceRuntime and TaskLifecycleService
+- extract CreateTask/CompleteTask/RejectTask mutations to TaskLifecycleService (phase 3)
+- extract TaskLifecycleService from WorkspaceRuntime (phase 2)
+- extract TaskQueryService from WorkspaceRuntime (phase 1)
 - delete 6 redundant command handlers and dead AgentPermissionHandler
 - extract command and notification DI into extension methods
 - remove Fluent typography components from ProjectSelectorPage
@@ -372,6 +450,24 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Tests
 
+- add 143 tests for 12 previously untested controllers
+- add 7 tests for consultant identity feature coverage
+- add 23 tests for destructive command confirmation features
+- add 91 interactive RTL tests for ErrorsPanel, AuditLogPanel, AgentConfigCard
+- add 37 interactive RTL tests for SprintPanel
+- add 75 interactive RTL tests for TaskListPanel
+- add 84 interactive RTL tests for CommandPalette and CommandsPanel
+- add 64 interactive RTL tests for SettingsPanel
+- add 30 interactive RTL tests for DmPanel
+- add 39 interactive RTL tests for ChatPanel
+- add @testing-library/react for interactive frontend tests
+- add 34 SSR tests for ProjectSelectorPage
+- add 26 controller-level tests for AnalyticsController
+- add tests for GitHub status endpoint and OAuth bridge edge cases
+- add 18 controller-level tests for sprint endpoints
+- add 17 endpoint tests for agent quota REST API (GET/PUT/DELETE)
+- add 57 component rendering tests for TaskListPanel
+- add 57 component rendering tests for ChatPanel
 - add 51 tests for sprint realtime event metadata and optimistic updates
 - add SSE activity stream tests and mark spec resolved
 - add 87 tests for DmPanel, PlanPanel, AgentSessionPanel, WorkspaceOverviewPanel

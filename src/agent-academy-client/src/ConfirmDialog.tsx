@@ -6,7 +6,6 @@ import {
   DialogContent,
   DialogSurface,
   DialogTitle,
-  DialogTrigger,
   makeStyles,
 } from "@fluentui/react-components";
 import type { ReactNode } from "react";
@@ -62,11 +61,9 @@ export default function ConfirmDialog({
           <DialogTitle className={s.title}>{title}</DialogTitle>
           <DialogContent className={s.content}>{message}</DialogContent>
           <DialogActions>
-            <DialogTrigger disableButtonEnhancement>
-              <Button appearance="subtle" onClick={onCancel}>
-                {cancelLabel}
-              </Button>
-            </DialogTrigger>
+            <Button appearance="subtle" onClick={onCancel}>
+              {cancelLabel}
+            </Button>
             <Button appearance={confirmAppearance} onClick={onConfirm}>
               {confirmLabel}
             </Button>

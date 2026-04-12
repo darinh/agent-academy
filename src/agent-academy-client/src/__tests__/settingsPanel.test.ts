@@ -3,6 +3,8 @@ import type {
   ProviderStatus,
   AgentDefinition,
   InstructionTemplate,
+  GitHubStatus,
+  GitHubAuthSource,
 } from "../api";
 
 vi.mock("../api", () => ({
@@ -14,6 +16,7 @@ vi.mock("../api", () => ({
   updateSystemSettings: vi.fn(),
   createCustomAgent: vi.fn(),
   deleteCustomAgent: vi.fn(),
+  getGitHubStatus: vi.fn(),
 }));
 
 import {
@@ -25,6 +28,7 @@ import {
   updateSystemSettings,
   createCustomAgent,
   deleteCustomAgent,
+  getGitHubStatus,
 } from "../api";
 
 const mockGetNotificationProviders = vi.mocked(getNotificationProviders);
@@ -35,6 +39,7 @@ const mockGetSystemSettings = vi.mocked(getSystemSettings);
 const mockUpdateSystemSettings = vi.mocked(updateSystemSettings);
 const mockCreateCustomAgent = vi.mocked(createCustomAgent);
 const mockDeleteCustomAgent = vi.mocked(deleteCustomAgent);
+const mockGetGitHubStatus = vi.mocked(getGitHubStatus);
 
 // ── Factories ──
 
@@ -44,6 +49,7 @@ function makeProvider(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
     displayName: "Discord",
     isConfigured: true,
     isConnected: true,
+    lastError: null,
     ...overrides,
   };
 }
@@ -75,7 +81,14 @@ function makeTemplate(overrides: Partial<InstructionTemplate> = {}): Instruction
   };
 }
 
-// ── Pure logic (mirrored from SettingsPanel.tsx) ──
+function makeGitHubStatus(overrides: Partial<GitHubStatus> = {}): GitHubStatus {
+  return {
+    isConfigured: true,
+    repository: "owner/repo",
+    authSource: "oauth",
+    ...overrides,
+  };
+}
 
 function toKebabCase(name: string): string {
   return name
@@ -146,11 +159,12 @@ describe("SettingsPanel", () => {
       { id: "built-in", label: "Built-in Agents" },
       { id: "templates", label: "Templates" },
       { id: "notifications", label: "Notifications" },
+      { id: "github", label: "GitHub" },
       { id: "advanced", label: "Advanced" },
     ];
 
-    it("has 5 tabs", () => {
-      expect(TABS).toHaveLength(5);
+    it("has 6 tabs", () => {
+      expect(TABS).toHaveLength(6);
     });
 
     it("default tab is custom-agents", () => {
@@ -160,6 +174,13 @@ describe("SettingsPanel", () => {
     it("all tabs have unique IDs", () => {
       const ids = TABS.map((t) => t.id);
       expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("github tab appears before advanced", () => {
+      const ghIndex = TABS.findIndex(t => t.id === "github");
+      const advIndex = TABS.findIndex(t => t.id === "advanced");
+      expect(ghIndex).toBeLessThan(advIndex);
+      expect(ghIndex).toBeGreaterThan(0);
     });
   });
 
@@ -354,6 +375,94 @@ describe("SettingsPanel", () => {
 
       expect(mainRoom).toBe("100");
       expect(breakout).toBe("30");
+    });
+  });
+
+  describe("GitHub status integration", () => {
+    it("getGitHubStatus returns full status with OAuth auth", async () => {
+      const status = makeGitHubStatus();
+      mockGetGitHubStatus.mockResolvedValue(status);
+      const result = await getGitHubStatus();
+      expect(result.isConfigured).toBe(true);
+      expect(result.repository).toBe("owner/repo");
+      expect(result.authSource).toBe("oauth");
+    });
+
+    it("getGitHubStatus returns CLI auth source", async () => {
+      mockGetGitHubStatus.mockResolvedValue(makeGitHubStatus({ authSource: "cli" }));
+      const result = await getGitHubStatus();
+      expect(result.authSource).toBe("cli");
+    });
+
+    it("getGitHubStatus returns none when not configured", async () => {
+      mockGetGitHubStatus.mockResolvedValue(makeGitHubStatus({
+        isConfigured: false,
+        repository: null,
+        authSource: "none",
+      }));
+      const result = await getGitHubStatus();
+      expect(result.isConfigured).toBe(false);
+      expect(result.repository).toBeNull();
+      expect(result.authSource).toBe("none");
+    });
+
+    it("getGitHubStatus propagates errors", async () => {
+      mockGetGitHubStatus.mockRejectedValue(new Error("Network error"));
+      await expect(getGitHubStatus()).rejects.toThrow("Network error");
+    });
+  });
+
+  describe("GitHub status display logic", () => {
+    function getAuthSourceTone(source: GitHubAuthSource): "good" | "info" | "critical" {
+      if (source === "oauth") return "good";
+      if (source === "cli") return "info";
+      return "critical";
+    }
+
+    function getCapabilities(isConfigured: boolean) {
+      return {
+        createPrs: isConfigured,
+        postReviews: isConfigured,
+        mergePrs: isConfigured,
+        statusSync: isConfigured,
+      };
+    }
+
+    it("maps oauth to good tone", () => {
+      expect(getAuthSourceTone("oauth")).toBe("good");
+    });
+
+    it("maps cli to info tone", () => {
+      expect(getAuthSourceTone("cli")).toBe("info");
+    });
+
+    it("maps none to critical tone", () => {
+      expect(getAuthSourceTone("none")).toBe("critical");
+    });
+
+    it("all capabilities enabled when configured", () => {
+      const caps = getCapabilities(true);
+      expect(Object.values(caps).every(Boolean)).toBe(true);
+    });
+
+    it("all capabilities disabled when not configured", () => {
+      const caps = getCapabilities(false);
+      expect(Object.values(caps).every(v => !v)).toBe(true);
+    });
+
+    it("factory produces valid GitHubStatus shape", () => {
+      const status = makeGitHubStatus();
+      expect(status).toHaveProperty("isConfigured");
+      expect(status).toHaveProperty("repository");
+      expect(status).toHaveProperty("authSource");
+      expect(["oauth", "cli", "none"]).toContain(status.authSource);
+    });
+
+    it("factory allows partial overrides", () => {
+      const status = makeGitHubStatus({ authSource: "cli", repository: "other/repo" });
+      expect(status.isConfigured).toBe(true); // default preserved
+      expect(status.authSource).toBe("cli");
+      expect(status.repository).toBe("other/repo");
     });
   });
 });

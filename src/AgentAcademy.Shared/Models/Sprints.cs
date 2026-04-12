@@ -39,6 +39,7 @@ public record SprintSnapshot(
     string? OverflowFromSprintId,
     bool AwaitingSignOff,
     SprintStage? PendingStage,
+    DateTime? SignOffRequestedAt,
     DateTime CreatedAt,
     DateTime? CompletedAt);
 
@@ -79,3 +80,72 @@ public record SprintReport(
     List<string> Delivered,
     List<string> Learnings,
     List<string>? OverflowRequirements);
+
+// ── Sprint Metrics ──────────────────────────────────────────
+
+/// <summary>
+/// Aggregated metrics for a single sprint: duration, stage timing,
+/// task and artifact counts.
+/// </summary>
+public record SprintMetrics(
+    string SprintId,
+    int SprintNumber,
+    SprintStatus Status,
+    double? DurationSeconds,
+    int StageTransitions,
+    int ArtifactCount,
+    int TaskCount,
+    int CompletedTaskCount,
+    Dictionary<string, double> TimePerStageSeconds,
+    DateTime CreatedAt,
+    DateTime? CompletedAt);
+
+/// <summary>
+/// Workspace-level rollup of sprint metrics across all sprints.
+/// </summary>
+public record SprintMetricsSummary(
+    int TotalSprints,
+    int CompletedSprints,
+    int CancelledSprints,
+    int ActiveSprints,
+    double? AverageDurationSeconds,
+    double AverageTaskCount,
+    double AverageArtifactCount,
+    Dictionary<string, double> AverageTimePerStageSeconds);
+
+/// <summary>
+/// Configuration for sprint timeout behavior. A background service
+/// periodically checks for stale sprints and auto-rejects or auto-cancels.
+/// </summary>
+public sealed class SprintTimeoutSettings
+{
+    public const string SectionName = "SprintTimeouts";
+
+    /// <summary>Whether timeout checking is enabled. Default: true.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Minutes a sprint can sit in AwaitingSignOff before auto-reject. Must be &gt; 0. Default: 240 (4 hours).</summary>
+    public int SignOffTimeoutMinutes { get; set; } = 240;
+
+    /// <summary>Hours before an active sprint is auto-cancelled. Must be &gt; 0. Default: 48.</summary>
+    public int MaxSprintDurationHours { get; set; } = 48;
+
+    /// <summary>Minutes between timeout checks. Must be &gt; 0. Default: 5.</summary>
+    public int CheckIntervalMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Validates settings at startup. Throws if values would cause dangerous behavior.
+    /// </summary>
+    public void Validate()
+    {
+        if (CheckIntervalMinutes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(CheckIntervalMinutes),
+                CheckIntervalMinutes, "Must be > 0.");
+        if (SignOffTimeoutMinutes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(SignOffTimeoutMinutes),
+                SignOffTimeoutMinutes, "Must be > 0.");
+        if (MaxSprintDurationHours <= 0)
+            throw new ArgumentOutOfRangeException(nameof(MaxSprintDurationHours),
+                MaxSprintDurationHours, "Must be > 0.");
+    }
+}

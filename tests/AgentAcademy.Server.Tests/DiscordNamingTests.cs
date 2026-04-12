@@ -44,7 +44,7 @@ public class DiscordNamingTests
     [InlineData("Rooms", "Rooms")]
     public void SanitizeCategoryName_PreservesValidNames(string input, string expected)
     {
-        var result = DiscordNotificationProvider.SanitizeCategoryName(input);
+        var result = DiscordChannelManager.SanitizeCategoryName(input);
         Assert.Equal(expected, result);
     }
 
@@ -52,21 +52,21 @@ public class DiscordNamingTests
     public void SanitizeCategoryName_TruncatesAt100Chars()
     {
         var longName = new string('A', 110) + " Rooms";
-        var result = DiscordNotificationProvider.SanitizeCategoryName(longName);
+        var result = DiscordChannelManager.SanitizeCategoryName(longName);
         Assert.Equal(100, result.Length);
     }
 
     [Fact]
     public void SanitizeCategoryName_EmptyInput_ReturnsFallback()
     {
-        var result = DiscordNotificationProvider.SanitizeCategoryName("");
+        var result = DiscordChannelManager.SanitizeCategoryName("");
         Assert.Equal("General", result);
     }
 
     [Fact]
     public void SanitizeCategoryName_WhitespaceOnly_ReturnsFallback()
     {
-        var result = DiscordNotificationProvider.SanitizeCategoryName("   ");
+        var result = DiscordChannelManager.SanitizeCategoryName("   ");
         Assert.Equal("General", result);
     }
 
@@ -79,7 +79,7 @@ public class DiscordNamingTests
     [InlineData("Agent Academy", "Agent Academy Rooms")]
     public void RoomCategoryName_IsPascalCaseWithRoomsSuffix(string projectName, string expected)
     {
-        var categoryName = DiscordNotificationProvider.SanitizeCategoryName(
+        var categoryName = DiscordChannelManager.SanitizeCategoryName(
             $"{ProjectScanner.HumanizeProjectName(projectName)} Rooms");
         Assert.Equal(expected, categoryName);
     }
@@ -91,7 +91,7 @@ public class DiscordNamingTests
     [InlineData("Agent Academy", "Agent Academy Messages")]
     public void MessageCategoryName_IsPascalCaseWithMessagesSuffix(string projectName, string expected)
     {
-        var categoryName = DiscordNotificationProvider.SanitizeCategoryName(
+        var categoryName = DiscordChannelManager.SanitizeCategoryName(
             $"{ProjectScanner.HumanizeProjectName(projectName)} Messages");
         Assert.Equal(expected, categoryName);
     }
@@ -104,7 +104,7 @@ public class DiscordNamingTests
     [InlineData("nonogram")]
     public void RoomCategoryName_NeverContainsAaPrefix(string projectName)
     {
-        var categoryName = DiscordNotificationProvider.SanitizeCategoryName(
+        var categoryName = DiscordChannelManager.SanitizeCategoryName(
             $"{ProjectScanner.HumanizeProjectName(projectName)} Rooms");
         Assert.DoesNotContain("AA:", categoryName);
         Assert.DoesNotContain("aa-", categoryName);
@@ -116,7 +116,7 @@ public class DiscordNamingTests
     [InlineData("nonogram")]
     public void MessageCategoryName_NeverContainsAaPrefix(string projectName)
     {
-        var categoryName = DiscordNotificationProvider.SanitizeCategoryName(
+        var categoryName = DiscordChannelManager.SanitizeCategoryName(
             $"{ProjectScanner.HumanizeProjectName(projectName)} Messages");
         Assert.DoesNotContain("AA:", categoryName);
         Assert.DoesNotContain("aa-", categoryName);
@@ -127,9 +127,9 @@ public class DiscordNamingTests
     [InlineData("my-cool-app")]
     public void CategoryName_NeverContainsKebabCase(string projectName)
     {
-        var rooms = DiscordNotificationProvider.SanitizeCategoryName(
+        var rooms = DiscordChannelManager.SanitizeCategoryName(
             $"{ProjectScanner.HumanizeProjectName(projectName)} Rooms");
-        var messages = DiscordNotificationProvider.SanitizeCategoryName(
+        var messages = DiscordChannelManager.SanitizeCategoryName(
             $"{ProjectScanner.HumanizeProjectName(projectName)} Messages");
 
         // The project portion should not contain hyphens (Pascal Case uses spaces)

@@ -925,6 +925,9 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Property<string>("PendingStage")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("SignOffRequestedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -940,7 +943,9 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.HasIndex("OverflowFromSprintId");
 
                     b.HasIndex("WorkspacePath")
-                        .HasDatabaseName("idx_sprints_workspace");
+                        .IsUnique()
+                        .HasDatabaseName("idx_sprints_one_active_per_workspace")
+                        .HasFilter("\"Status\" = 'Active'");
 
                     b.HasIndex("WorkspacePath", "Number")
                         .IsUnique()

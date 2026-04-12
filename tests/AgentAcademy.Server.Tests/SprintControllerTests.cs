@@ -17,7 +17,7 @@ public class SprintControllerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
     private readonly SprintController _controller;
 
     public SprintControllerTests()
@@ -36,18 +36,27 @@ public class SprintControllerTests : IDisposable
 
         var catalog = new AgentCatalogOptions("main", "Main Room", []);
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionService = new ConversationSessionService(
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
-        _runtime = new WorkspaceRuntime(
-            _db,
-            NullLogger<WorkspaceRuntime>.Instance,
-            catalog, activityBus, sessionService);
+        var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
+        var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+
+        _roomService = roomService;
 
         _controller = new SprintController(
-            _sprintService, _runtime,
+            _sprintService, _roomService,
             NullLogger<SprintController>.Instance);
     }
 
@@ -139,7 +148,7 @@ public class SprintControllerTests : IDisposable
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _sprintService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument",
-            "{\"title\":\"Test\"}", "agent-1");
+            TestArtifactContent.RequirementsDocument, "agent-1");
 
         var result = await _controller.GetActiveSprint();
 
@@ -187,10 +196,10 @@ public class SprintControllerTests : IDisposable
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _sprintService.StoreArtifactAsync(
-            sprint.Id, "Intake", "RequirementsDocument", "{}", "a1");
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
         await _sprintService.AdvanceStageAsync(sprint.Id);
         await _sprintService.StoreArtifactAsync(
-            sprint.Id, "Planning", "SprintPlan", "{}", "a1");
+            sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan, "a1");
 
         // All artifacts
         var allResult = await _controller.GetArtifacts(sprint.Id);
@@ -248,7 +257,7 @@ public class SprintControllerTests : IDisposable
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _sprintService.StoreArtifactAsync(
-            sprint.Id, "Intake", "RequirementsDocument", "{}", "a1");
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
 
         var result = await _controller.AdvanceSprint(sprint.Id);
 
@@ -322,5 +331,249 @@ public class SprintControllerTests : IDisposable
         var result = await _controller.CancelSprint(sprint.Id);
 
         Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    // ── ApproveAdvance ──────────────────────────────────────────
+
+    [Fact]
+    public async Task ApproveAdvance_Success_ReturnsNextStage()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+
+        var result = await _controller.ApproveAdvance(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(SprintStage.Planning, body.Sprint.CurrentStage);
+        Assert.False(body.Sprint.AwaitingSignOff);
+        Assert.Null(body.Sprint.PendingStage);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_NotAwaitingSignOff_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.ApproveAdvance(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.ApproveAdvance("nonexistent");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.ApproveAdvance(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    // ── RejectAdvance ───────────────────────────────────────────
+
+    [Fact]
+    public async Task RejectAdvance_Success_StaysAtCurrentStage()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+
+        var result = await _controller.RejectAdvance(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintSnapshot>(ok.Value);
+        Assert.Equal(SprintStage.Intake, body.CurrentStage);
+        Assert.False(body.AwaitingSignOff);
+        Assert.Null(body.PendingStage);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_NotAwaitingSignOff_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.RejectAdvance(sprint.Id);
+
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.RejectAdvance("nonexistent");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.RejectAdvance(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    // ── GetSprintMetrics ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSprintMetrics_Success_ReturnsMetrics()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetrics>(ok.Value);
+        Assert.Equal(sprint.Id, body.SprintId);
+        Assert.Equal(1, body.SprintNumber);
+        Assert.Equal(SprintStatus.Active, body.Status);
+        Assert.Null(body.DurationSeconds); // still active
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_NotFound_Returns404()
+    {
+        await ActivateWorkspace();
+
+        var result = await _controller.GetSprintMetrics("nonexistent");
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_NoWorkspace_ReturnsBadRequest()
+    {
+        var result = await _controller.GetSprintMetrics("any-id");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_WrongWorkspace_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_CompletedSprint_HasDuration()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CompleteSprintAsync(sprint.Id, force: true);
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetrics>(ok.Value);
+        Assert.NotNull(body.DurationSeconds);
+        Assert.Equal(SprintStatus.Completed, body.Status);
+    }
+
+    [Fact]
+    public async Task GetSprintMetrics_WithArtifacts_CountsThem()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _sprintService.StoreArtifactAsync(
+            sprint.Id, "Intake", "OverflowRequirements", TestArtifactContent.OverflowRequirements, "a1");
+
+        var result = await _controller.GetSprintMetrics(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetrics>(ok.Value);
+        Assert.Equal(2, body.ArtifactCount);
+        Assert.Equal(0, body.TaskCount);
+        Assert.Equal(0, body.CompletedTaskCount);
+    }
+
+    // ── GetMetricsSummary ───────────────────────────────────────
+
+    [Fact]
+    public async Task GetMetricsSummary_NoWorkspace_ReturnsEmptySummary()
+    {
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(0, body.TotalSprints);
+        Assert.Equal(0, body.CompletedSprints);
+        Assert.Equal(0, body.CancelledSprints);
+        Assert.Equal(0, body.ActiveSprints);
+        Assert.Null(body.AverageDurationSeconds);
+        Assert.Equal(0, body.AverageTaskCount);
+        Assert.Equal(0, body.AverageArtifactCount);
+        Assert.Empty(body.AverageTimePerStageSeconds);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummary_NoSprints_ReturnsZeros()
+    {
+        await ActivateWorkspace();
+
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(0, body.TotalSprints);
+        Assert.Equal(0, body.CompletedSprints);
+        Assert.Equal(0, body.ActiveSprints);
+        Assert.Null(body.AverageDurationSeconds);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummary_WithSprints_ReturnsCounts()
+    {
+        await ActivateWorkspace();
+        var s1 = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CompleteSprintAsync(s1.Id, force: true);
+        var s2 = await _sprintService.CreateSprintAsync(TestWorkspace);
+
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(2, body.TotalSprints);
+        Assert.Equal(1, body.CompletedSprints);
+        Assert.Equal(1, body.ActiveSprints);
+        Assert.NotNull(body.AverageDurationSeconds);
+    }
+
+    [Fact]
+    public async Task GetMetricsSummary_ScopedToActiveWorkspace()
+    {
+        await ActivateWorkspace();
+        await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.GetMetricsSummary();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
+        Assert.Equal(1, body.TotalSprints);
     }
 }

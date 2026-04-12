@@ -21,7 +21,10 @@ public sealed class RoomAgentEndpointTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly MessageService _messageService;
+    private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ConversationSessionService _sessionService;
     private readonly AgentConfigService _configService;
     private readonly AgentCatalogOptions _catalog;
@@ -55,13 +58,27 @@ public sealed class RoomAgentEndpointTests : IDisposable
             DefaultRoomName: "Main Collaboration Room",
             Agents: [TestAgent]);
 
-        var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
+
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         _sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _runtime = new WorkspaceRuntime(_db, logger, _catalog, activityBus, _sessionService);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
+        var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
+        var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, _sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, _sessionService, messageService);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        _roomService = roomService;
+        _agentLocationService = agentLocations;
+        _messageService = messageService;
+        _breakoutRoomService = breakouts;
         _configService = new AgentConfigService(_db);
 
         SeedMainRoom();
@@ -485,7 +502,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
-        return new RoomController(_runtime, _catalog, usageTracker, errorTracker, logger);
+        return new RoomController(_roomService, _agentLocationService, _messageService, _catalog, usageTracker, errorTracker, logger);
     }
 
     private AgentController CreateAgentController()
@@ -495,6 +512,6 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var quotaService = new AgentQuotaService(scopeFactory, usageTracker, NullLogger<AgentQuotaService>.Instance);
-        return new AgentController(_runtime, executor, _catalog, _configService, quotaService, logger);
+        return new AgentController(_agentLocationService, _breakoutRoomService, executor, _catalog, _configService, quotaService, logger);
     }
 }

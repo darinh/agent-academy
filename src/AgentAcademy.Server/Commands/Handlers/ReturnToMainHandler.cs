@@ -14,10 +14,12 @@ public sealed class ReturnToMainHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var mainRoomId = runtime.DefaultRoomId;
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var mainRoomId = catalog.DefaultRoomId;
 
-        var room = await runtime.GetRoomAsync(mainRoomId);
+        var room = await roomService.GetRoomAsync(mainRoomId);
         if (room is null)
         {
             return command with
@@ -29,7 +31,7 @@ public sealed class ReturnToMainHandler : ICommandHandler
         }
 
         // Check if already there
-        var location = await runtime.GetAgentLocationAsync(context.AgentId);
+        var location = await agentLocations.GetAgentLocationAsync(context.AgentId);
         if (location is not null && location.RoomId == mainRoomId
             && location.State != AgentState.Working)
         {
@@ -45,7 +47,7 @@ public sealed class ReturnToMainHandler : ICommandHandler
             };
         }
 
-        await runtime.MoveAgentAsync(context.AgentId, mainRoomId, AgentState.Idle);
+        await agentLocations.MoveAgentAsync(context.AgentId, mainRoomId, AgentState.Idle);
 
         return command with
         {

@@ -34,8 +34,8 @@ public sealed class ListTaskItemsHandler : ICommandHandler
             statusFilter = parsed;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var items = await runtime.GetTaskItemsAsync(roomId, statusFilter);
+        var taskItems = context.Services.GetRequiredService<TaskItemService>();
+        var items = await taskItems.GetTaskItemsAsync(roomId, statusFilter);
 
         var itemsList = items.Select(i => new Dictionary<string, object?>
         {

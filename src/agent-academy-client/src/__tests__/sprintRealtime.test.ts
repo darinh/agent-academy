@@ -42,6 +42,7 @@ function makeSprint(overrides: Partial<SprintSnapshot> = {}): SprintSnapshot {
     overflowFromSprintId: null,
     awaitingSignOff: false,
     pendingStage: null,
+    signOffRequestedAt: null,
     createdAt: "2026-04-01T00:00:00Z",
     completedAt: null,
     ...overrides,
@@ -501,11 +502,25 @@ describe("useWorkspace sprint event handling (pure logic)", () => {
         type: "SprintCompleted",
         metadata: {
           sprintId: "sprint-1",
+          status: "Completed",
+        },
+      });
+      const result = extractSprintEvent(activity);
+      expect(result).not.toBeNull();
+      expect(result!.metadata.status).toBe("Completed");
+    });
+
+    it("extracts SprintCancelled events", () => {
+      const activity = makeActivityEvent({
+        type: "SprintCancelled",
+        metadata: {
+          sprintId: "sprint-1",
           status: "Cancelled",
         },
       });
       const result = extractSprintEvent(activity);
       expect(result).not.toBeNull();
+      expect(result!.type).toBe("SprintCancelled");
       expect(result!.metadata.status).toBe("Cancelled");
     });
 
@@ -532,11 +547,12 @@ describe("useWorkspace sprint event handling (pure logic)", () => {
       "SprintStageAdvanced",
       "SprintArtifactStored",
       "SprintCompleted",
+      "SprintCancelled",
     ];
 
     it("sprint event types are a known finite set", () => {
       // Ensures we don't accidentally forget a new sprint event type
-      expect(sprintEventTypes).toHaveLength(4);
+      expect(sprintEventTypes).toHaveLength(5);
     });
 
     it("non-sprint event types are not in the sprint set", () => {

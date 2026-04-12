@@ -22,14 +22,14 @@ public sealed class AdvanceStageHandler : ICommandHandler
             sprintId = sid;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
         var sprintService = context.Services.GetRequiredService<SprintService>();
         var sessionService = context.Services.GetRequiredService<ConversationSessionService>();
 
         // If no explicit sprintId, resolve from active workspace
         if (string.IsNullOrEmpty(sprintId))
         {
-            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
             if (string.IsNullOrEmpty(workspacePath))
             {
                 return command with

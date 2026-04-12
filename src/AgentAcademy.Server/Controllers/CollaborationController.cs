@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -10,18 +11,30 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class CollaborationController : ControllerBase
 {
-    private readonly WorkspaceRuntime _runtime;
+    private readonly TaskOrchestrationService _taskOrchestration;
+    private readonly TaskQueryService _taskQueries;
+    private readonly MessageService _messageService;
+    private readonly RoomService _roomService;
+    private readonly AgentCatalogOptions _catalog;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly ILogger<CollaborationController> _logger;
 
     public CollaborationController(
-        WorkspaceRuntime runtime,
+        TaskOrchestrationService taskOrchestration,
+        TaskQueryService taskQueries,
+        MessageService messageService,
+        RoomService roomService,
+        AgentCatalogOptions catalog,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
         ILogger<CollaborationController> logger)
     {
-        _runtime = runtime;
+        _taskOrchestration = taskOrchestration;
+        _taskQueries = taskQueries;
+        _messageService = messageService;
+        _roomService = roomService;
+        _catalog = catalog;
         _orchestrator = orchestrator;
         _executor = executor;
         _logger = logger;
@@ -29,7 +42,7 @@ public class CollaborationController : ControllerBase
 
     /// <summary>
     /// POST /api/tasks — submit a new task.
-    /// Creates the task via WorkspaceRuntime and kicks off orchestration.
+    /// Creates the task and kicks off orchestration.
     /// </summary>
     [HttpPost("api/tasks")]
     public async Task<ActionResult<TaskAssignmentResult>> SubmitTask(
@@ -40,7 +53,7 @@ public class CollaborationController : ControllerBase
 
         try
         {
-            var result = await _runtime.CreateTaskAsync(request);
+            var result = await _taskOrchestration.CreateTaskAsync(request);
             _orchestrator.HandleHumanMessage(result.Room.Id);
             return StatusCode(201, result);
         }
@@ -67,7 +80,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var comments = await _runtime.GetTaskCommentsAsync(taskId);
+            var comments = await _taskQueries.GetTaskCommentsAsync(taskId);
             return Ok(comments);
         }
         catch (InvalidOperationException ex)
@@ -84,7 +97,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var links = await _runtime.GetSpecLinksForTaskAsync(taskId);
+            var links = await _taskQueries.GetSpecLinksForTaskAsync(taskId);
             return Ok(links);
         }
         catch (InvalidOperationException ex)
@@ -99,7 +112,7 @@ public class CollaborationController : ControllerBase
     [HttpGet("api/specs/{sectionId}/tasks")]
     public async Task<ActionResult<List<SpecTaskLink>>> GetSpecTaskLinks(string sectionId)
     {
-        var links = await _runtime.GetTasksForSpecAsync(sectionId);
+        var links = await _taskQueries.GetTasksForSpecAsync(sectionId);
         return Ok(links);
     }
 
@@ -118,7 +131,7 @@ public class CollaborationController : ControllerBase
         {
             // Override roomId from path, matching v1 behavior
             var adjusted = request with { RoomId = roomId };
-            var envelope = await _runtime.PostMessageAsync(adjusted);
+            var envelope = await _messageService.PostMessageAsync(adjusted);
             return Ok(envelope);
         }
         catch (ArgumentException ex)
@@ -148,21 +161,23 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            // Extract GitHub identity from authenticated user claims
+            // Extract identity from authenticated user claims
             string? userId = null;
             string? userName = null;
+            string? userRole = null;
             if (User.Identity?.IsAuthenticated == true)
             {
                 userId = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
                 userName = User.FindFirst("urn:github:name")?.Value ?? userId;
+                userRole = User.IsInRole("Consultant") ? "Consultant" : "Human";
             }
 
-            var envelope = await _runtime.PostHumanMessageAsync(roomId, request.Content, userId, userName);
+            var envelope = await _messageService.PostHumanMessageAsync(roomId, request.Content, userId, userName, userRole);
 
             // System status + orchestration are best-effort — don't fail the request
             try
             {
-                await _runtime.PostSystemStatusAsync(roomId, "Human message received — notifying agents.");
+                await _messageService.PostSystemStatusAsync(roomId, "Human message received — notifying agents.");
                 _orchestrator.HandleHumanMessage(roomId);
             }
             catch (Exception ex)
@@ -200,7 +215,7 @@ public class CollaborationController : ControllerBase
 
         try
         {
-            var snapshot = await _runtime.TransitionPhaseAsync(
+            var snapshot = await _roomService.TransitionPhaseAsync(
                 roomId, request.TargetPhase, request.Reason);
             return Ok(snapshot);
         }
@@ -230,7 +245,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var totalAgents = _runtime.GetConfiguredAgents().Count;
+            var totalAgents = _catalog.Agents.Count;
 
             if (_executor.IsFullyOperational)
             {
@@ -257,7 +272,7 @@ public class CollaborationController : ControllerBase
     [HttpGet("api/tasks")]
     public async Task<ActionResult<List<TaskSnapshot>>> ListTasks([FromQuery] string? sprintId = null)
     {
-        var tasks = await _runtime.GetTasksAsync(sprintId);
+        var tasks = await _taskQueries.GetTasksAsync(sprintId);
         return Ok(tasks);
     }
 
@@ -267,7 +282,7 @@ public class CollaborationController : ControllerBase
     [HttpGet("api/tasks/{taskId}")]
     public async Task<ActionResult<TaskSnapshot>> GetTask(string taskId)
     {
-        var task = await _runtime.GetTaskAsync(taskId);
+        var task = await _taskQueries.GetTaskAsync(taskId);
         return task is null ? NotFound() : Ok(task);
     }
 
@@ -280,7 +295,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var task = await _runtime.AssignTaskAsync(taskId, request.AgentId, request.AgentName);
+            var task = await _taskQueries.AssignTaskAsync(taskId, request.AgentId, request.AgentName);
             return Ok(task);
         }
         catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
@@ -295,7 +310,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var task = await _runtime.UpdateTaskStatusAsync(taskId, request.Status);
+            var task = await _taskQueries.UpdateTaskStatusAsync(taskId, request.Status);
             return Ok(task);
         }
         catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
@@ -310,7 +325,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var task = await _runtime.UpdateTaskBranchAsync(taskId, request.BranchName);
+            var task = await _taskQueries.UpdateTaskBranchAsync(taskId, request.BranchName);
             return Ok(task);
         }
         catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
@@ -325,7 +340,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var task = await _runtime.UpdateTaskPrAsync(taskId, request.Url, request.Number, request.Status);
+            var task = await _taskQueries.UpdateTaskPrAsync(taskId, request.Url, request.Number, request.Status);
             return Ok(task);
         }
         catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
@@ -340,7 +355,7 @@ public class CollaborationController : ControllerBase
     {
         try
         {
-            var task = await _runtime.CompleteTaskAsync(taskId, request.CommitCount, request.TestsCreated);
+            var task = await _taskOrchestration.CompleteTaskAsync(taskId, request.CommitCount, request.TestsCreated);
             return Ok(task);
         }
         catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
@@ -350,10 +365,17 @@ public class CollaborationController : ControllerBase
 /// <summary>
 /// Request body for human message endpoint.
 /// </summary>
-public record HumanMessageRequest(string Content);
+public record HumanMessageRequest([property: Required, MinLength(1), StringLength(50_000)] string Content);
 
-public record AssignTaskRequest(string AgentId, string AgentName);
-public record UpdateTaskStatusRequest(Shared.Models.TaskStatus Status);
-public record UpdateTaskBranchRequest(string BranchName);
-public record UpdateTaskPrRequest(string Url, int Number, Shared.Models.PullRequestStatus Status);
-public record CompleteTaskRequest(int CommitCount, List<string>? TestsCreated = null);
+public record AssignTaskRequest(
+    [property: Required, StringLength(100)] string AgentId,
+    [property: Required, StringLength(200)] string AgentName);
+public record UpdateTaskStatusRequest([property: EnumDataType(typeof(Shared.Models.TaskStatus))] Shared.Models.TaskStatus Status);
+public record UpdateTaskBranchRequest([property: Required, StringLength(300)] string BranchName);
+public record UpdateTaskPrRequest(
+    [property: Required, Url, StringLength(2000)] string Url,
+    [property: Range(1, int.MaxValue)] int Number,
+    [property: EnumDataType(typeof(Shared.Models.PullRequestStatus))] Shared.Models.PullRequestStatus Status);
+public record CompleteTaskRequest(
+    [property: Range(0, 100_000)] int CommitCount,
+    List<string>? TestsCreated = null);

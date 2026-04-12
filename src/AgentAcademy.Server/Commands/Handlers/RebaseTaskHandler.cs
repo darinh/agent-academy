@@ -39,10 +39,11 @@ public sealed class RebaseTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         // Validate task exists
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -95,14 +96,14 @@ public sealed class RebaseTaskHandler : ICommandHandler
 
         if (dryRun)
         {
-            return await HandleDryRunAsync(command, task, context.RoomId, runtime);
+            return await HandleDryRunAsync(command, task);
         }
 
-        return await HandleRebaseAsync(command, task, context.RoomId, runtime);
+        return await HandleRebaseAsync(command, task, context.RoomId, messages);
     }
 
     private async Task<CommandEnvelope> HandleDryRunAsync(
-        CommandEnvelope command, TaskSnapshot task, string? roomId, WorkspaceRuntime runtime)
+        CommandEnvelope command, TaskSnapshot task)
     {
         try
         {
@@ -149,7 +150,7 @@ public sealed class RebaseTaskHandler : ICommandHandler
     }
 
     private async Task<CommandEnvelope> HandleRebaseAsync(
-        CommandEnvelope command, TaskSnapshot task, string? roomId, WorkspaceRuntime runtime)
+        CommandEnvelope command, TaskSnapshot task, string? roomId, MessageService messages)
     {
         try
         {
@@ -158,7 +159,7 @@ public sealed class RebaseTaskHandler : ICommandHandler
             // Post success note to task room
             if (!string.IsNullOrWhiteSpace(roomId))
             {
-                await runtime.PostSystemStatusAsync(roomId,
+                await messages.PostSystemStatusAsync(roomId,
                     $"🔄 Branch \"{task.BranchName}\" rebased onto develop (HEAD: {newHead[..Math.Min(7, newHead.Length)]}).");
             }
 
@@ -179,7 +180,7 @@ public sealed class RebaseTaskHandler : ICommandHandler
             // Post conflict note to task room
             if (!string.IsNullOrWhiteSpace(roomId))
             {
-                await runtime.PostSystemStatusAsync(roomId,
+                await messages.PostSystemStatusAsync(roomId,
                     $"⚠️ Rebase conflict on \"{task.BranchName}\": {string.Join(", ", ex.ConflictingFiles)}. "
                     + "Manual conflict resolution needed.");
             }

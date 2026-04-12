@@ -30,11 +30,11 @@ public sealed class ReleaseTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
 
         try
         {
-            var task = await runtime.ReleaseTaskAsync(taskId, context.AgentId);
+            var task = await taskLifecycle.ReleaseTaskAsync(taskId, context.AgentId);
             return command with
             {
                 Status = CommandStatus.Success,

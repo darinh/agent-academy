@@ -52,13 +52,13 @@ public sealed class StoreArtifactHandler : ICommandHandler
             stage = stg;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
         var sprintService = context.Services.GetRequiredService<SprintService>();
 
         // Resolve sprint if not explicitly given
         if (string.IsNullOrEmpty(sprintId))
         {
-            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
             if (string.IsNullOrEmpty(workspacePath))
             {
                 return command with

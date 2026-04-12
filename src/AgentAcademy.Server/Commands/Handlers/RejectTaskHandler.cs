@@ -19,6 +19,8 @@ public sealed class RejectTaskHandler : ICommandHandler
     }
 
     public string CommandName => "REJECT_TASK";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "REJECT_TASK will revert the task status and may revert a merge commit on develop. The breakout room will be reopened.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -55,9 +57,10 @@ public sealed class RejectTaskHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -91,7 +94,7 @@ public sealed class RejectTaskHandler : ICommandHandler
             TaskSnapshot updated;
             try
             {
-                updated = await runtime.RejectTaskAsync(taskId, context.AgentId, reason, revertCommitSha);
+                updated = await taskOrchestration.RejectTaskAsync(taskId, context.AgentId, reason, revertCommitSha);
             }
             catch when (revertCommitSha is not null)
             {

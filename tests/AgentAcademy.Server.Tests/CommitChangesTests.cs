@@ -7,6 +7,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -58,8 +59,24 @@ public sealed class CommitChangesTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(options => options.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
-        services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
@@ -72,8 +89,8 @@ public sealed class CommitChangesTests : IDisposable
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         db.Database.EnsureCreated();
 
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        runtime.InitializeAsync().GetAwaiter().GetResult();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 
     public void Dispose()

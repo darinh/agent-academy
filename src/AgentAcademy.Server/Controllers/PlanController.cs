@@ -11,12 +11,20 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/rooms/{roomId}/plan")]
 public class PlanController : ControllerBase
 {
-    private readonly WorkspaceRuntime _runtime;
+    private readonly PlanService _planService;
+    private readonly RoomService _roomService;
+    private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ILogger<PlanController> _logger;
 
-    public PlanController(WorkspaceRuntime runtime, ILogger<PlanController> logger)
+    public PlanController(
+        PlanService planService,
+        RoomService roomService,
+        BreakoutRoomService breakoutRoomService,
+        ILogger<PlanController> logger)
     {
-        _runtime = runtime;
+        _planService = planService;
+        _roomService = roomService;
+        _breakoutRoomService = breakoutRoomService;
         _logger = logger;
     }
 
@@ -28,7 +36,7 @@ public class PlanController : ControllerBase
     {
         try
         {
-            var plan = await _runtime.GetPlanAsync(roomId);
+            var plan = await _planService.GetPlanAsync(roomId);
             if (plan is null)
                 return NotFound(new { error = $"No plan found for room '{roomId}'" });
 
@@ -53,12 +61,12 @@ public class PlanController : ControllerBase
         try
         {
             // Verify room or breakout exists before writing plan
-            var room = await _runtime.GetRoomAsync(roomId);
-            var breakout = room is null ? await _runtime.GetBreakoutRoomAsync(roomId) : null;
+            var room = await _roomService.GetRoomAsync(roomId);
+            var breakout = room is null ? await _breakoutRoomService.GetBreakoutRoomAsync(roomId) : null;
             if (room is null && breakout is null)
                 return NotFound(new { error = $"Room '{roomId}' not found" });
 
-            await _runtime.SetPlanAsync(roomId, plan.Content);
+            await _planService.SetPlanAsync(roomId, plan.Content);
             return Ok(new { status = "saved", roomId });
         }
         catch (Exception ex)
@@ -76,7 +84,7 @@ public class PlanController : ControllerBase
     {
         try
         {
-            var deleted = await _runtime.DeletePlanAsync(roomId);
+            var deleted = await _planService.DeletePlanAsync(roomId);
             if (!deleted)
                 return NotFound(new { error = $"No plan found for room '{roomId}'" });
 

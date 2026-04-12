@@ -20,7 +20,9 @@ public class DiscordNotificationProviderTests
         _logger = Substitute.For<ILogger<DiscordNotificationProvider>>();
         _scopeFactory = Substitute.For<IServiceScopeFactory>();
         var orchestrator = CreateMockOrchestrator();
-        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator);
+        var channelManagerLogger = Substitute.For<ILogger<DiscordChannelManager>>();
+        var channelManager = new DiscordChannelManager(channelManagerLogger, _scopeFactory);
+        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator, channelManager);
     }
 
     #region Properties
@@ -375,6 +377,7 @@ public class DiscordNotificationProviderTests
     private static AgentOrchestrator CreateMockOrchestrator()
     {
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var catalog = new AgentCatalogOptions("main", "Main", []);
         var executor = Substitute.For<IAgentExecutor>();
         var activityBus = new ActivityBroadcaster();
         var specManager = new SpecManager();
@@ -383,8 +386,14 @@ public class DiscordNotificationProviderTests
             Substitute.For<ILogger<Commands.CommandPipeline>>());
         var gitService = new GitService(Substitute.For<ILogger<GitService>>());
         var worktreeService = new WorktreeService(Substitute.For<ILogger<WorktreeService>>(), repositoryRoot: "/tmp/test-repo");
+        var memoryLoader = new AgentMemoryLoader(scopeFactory, Substitute.For<ILogger<AgentMemoryLoader>>());
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, catalog, executor, specManager, pipeline, gitService, worktreeService,
+            memoryLoader,
+            Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
-        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, gitService, worktreeService, logger);
+        var taskAssignmentHandler = new TaskAssignmentHandler(catalog, gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());
+        return new AgentOrchestrator(scopeFactory, catalog, executor, activityBus, specManager, pipeline, breakoutLifecycle, taskAssignmentHandler, memoryLoader, logger);
     }
 
     #endregion

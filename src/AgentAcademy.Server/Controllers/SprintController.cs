@@ -13,16 +13,16 @@ namespace AgentAcademy.Server.Controllers;
 public class SprintController : ControllerBase
 {
     private readonly SprintService _sprintService;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
         SprintService sprintService,
-        WorkspaceRuntime runtime,
+        RoomService roomService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
-        _runtime = runtime;
+        _roomService = roomService;
         _logger = logger;
     }
 
@@ -36,7 +36,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return Ok(new SprintListResponse([], 0));
 
@@ -60,7 +60,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return NoContent();
 
@@ -138,7 +138,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return BadRequest(new { error = "No active workspace." });
 
@@ -293,6 +293,52 @@ public class SprintController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// GET /api/sprints/{id}/metrics — aggregated metrics for a single sprint.
+    /// </summary>
+    [HttpGet("{id}/metrics")]
+    public async Task<IActionResult> GetSprintMetrics(string id)
+    {
+        try
+        {
+            var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+            if (ownerError is not null) return ownerError;
+
+            var metrics = await _sprintService.GetSprintMetricsAsync(id);
+            if (metrics is null) return NotFound();
+
+            return Ok(metrics);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get metrics for sprint {Id}", id);
+            return Problem("Failed to retrieve sprint metrics.");
+        }
+    }
+
+    /// <summary>
+    /// GET /api/sprints/metrics/summary — workspace-level rollup of sprint metrics.
+    /// </summary>
+    [HttpGet("metrics/summary")]
+    public async Task<IActionResult> GetMetricsSummary()
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return Ok(new SprintMetricsSummary(0, 0, 0, 0, null, 0, 0,
+                    new Dictionary<string, double>()));
+
+            var summary = await _sprintService.GetMetricsSummaryAsync(workspace);
+            return Ok(summary);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sprint metrics summary");
+            return Problem("Failed to retrieve sprint metrics summary.");
+        }
+    }
+
     private static SprintSnapshot ToSnapshot(Data.Entities.SprintEntity e)
     {
         _ = Enum.TryParse<SprintStatus>(e.Status, out var status);
@@ -301,7 +347,7 @@ public class SprintController : ControllerBase
         return new(e.Id, e.Number, status, stage,
             e.OverflowFromSprintId, e.AwaitingSignOff,
             e.PendingStage is not null ? pendingStage : null,
-            e.CreatedAt, e.CompletedAt);
+            e.SignOffRequestedAt, e.CreatedAt, e.CompletedAt);
     }
 
     /// <summary>
@@ -310,7 +356,7 @@ public class SprintController : ControllerBase
     /// </summary>
     private async Task<(Data.Entities.SprintEntity? Sprint, IActionResult? Error)> ValidateSprintOwnershipAsync(string id)
     {
-        var workspace = await _runtime.GetActiveWorkspacePathAsync();
+        var workspace = await _roomService.GetActiveWorkspacePathAsync();
         if (workspace is null)
             return (null, BadRequest(new { error = "No active workspace." }));
 

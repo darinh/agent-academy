@@ -157,6 +157,114 @@ Async commands (`RUN_BUILD`, `RUN_TESTS`, `CREATE_PR`, `MERGE_PR`) return `statu
 
 **Identity**: Commands execute with `agentId = "human"`, `agentRole = "Human"`. Role gates on handlers respect this (e.g., `APPROVE_TASK` accepts Human role).
 
+### Analytics
+
+```
+GET /api/analytics/agents?hoursBack={N}
+X-Consultant-Key: {secret}
+```
+
+Per-agent performance metrics aggregated over a time window. Returns `AgentAnalyticsSummary` with per-agent LLM usage (requests, tokens, cost, avg response time), errors (total, recoverable, unrecoverable), tasks (assigned, completed), and a 12-bucket token trend.
+
+- `hoursBack` (optional, 1–8760): Time window. Omit for all-time data.
+- Token trend is capped at 30 days max regardless of `hoursBack` to avoid unbounded materialization.
+- Agents sorted by total requests descending.
+
+Response:
+```json
+{
+  "agents": [{
+    "agentId": "string",
+    "agentName": "string",
+    "totalRequests": 0,
+    "totalInputTokens": 0,
+    "totalOutputTokens": 0,
+    "totalCost": 0.0,
+    "averageResponseTimeMs": null,
+    "totalErrors": 0,
+    "recoverableErrors": 0,
+    "unrecoverableErrors": 0,
+    "tasksAssigned": 0,
+    "tasksCompleted": 0,
+    "tokenTrend": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  }],
+  "windowStart": "ISO8601",
+  "windowEnd": "ISO8601",
+  "totalRequests": 0,
+  "totalCost": 0.0,
+  "totalErrors": 0
+}
+```
+
+#### Agent Detail
+
+```
+GET /api/analytics/agents/{agentId}?hoursBack={N}&requestLimit=50&errorLimit=20&taskLimit=50
+X-Consultant-Key: {secret}
+```
+
+Detailed analytics for a single agent: recent LLM requests, errors, tasks, model breakdown, and 24-bucket activity trend.
+
+- `hoursBack` (optional, 1–8760): Time window. Omit for all-time.
+- `requestLimit` (optional, 1–200, default 50): Max recent requests returned.
+- `errorLimit` (optional, 1–200, default 20): Max recent errors returned.
+- `taskLimit` (optional, 1–200, default 50): Max tasks returned.
+- Tasks are "active in window" — included if created OR completed within the time range.
+- Non-catalog agents (from telemetry) are accepted — agentId used as name fallback.
+- Always returns 200 with zeroed metrics if agent has no data.
+
+Response:
+```json
+{
+  "agent": { /* AgentPerformanceMetrics */ },
+  "windowStart": "ISO8601",
+  "windowEnd": "ISO8601",
+  "recentRequests": [{
+    "id": "string", "roomId": "string|null", "model": "string|null",
+    "inputTokens": 0, "outputTokens": 0, "cost": 0.0,
+    "durationMs": 0.0, "reasoningEffort": "string|null", "recordedAt": "ISO8601"
+  }],
+  "recentErrors": [{
+    "id": "string", "roomId": "string|null", "errorType": "string",
+    "message": "string", "recoverable": true, "retried": false, "occurredAt": "ISO8601"
+  }],
+  "tasks": [{
+    "id": "string", "title": "string", "status": "string",
+    "roomId": "string|null", "branchName": "string|null",
+    "pullRequestUrl": "string|null", "pullRequestNumber": null,
+    "createdAt": "ISO8601", "completedAt": "ISO8601|null"
+  }],
+  "modelBreakdown": [{
+    "model": "string", "requests": 0, "totalTokens": 0, "totalCost": 0.0
+  }],
+  "activityBuckets": [{
+    "bucketStart": "ISO8601", "bucketEnd": "ISO8601", "requests": 0, "tokens": 0
+  }]
+}
+```
+
+#### Analytics Export
+
+> **Source**: `src/AgentAcademy.Server/Controllers/ExportController.cs`, `src/AgentAcademy.Server/Services/CsvExportService.cs`
+
+Downloadable analytics data in CSV or JSON format.
+
+```
+GET /api/export/agents?hoursBack={N}&format=csv|json
+GET /api/export/usage?hoursBack={N}&agentId={id}&limit=10000&format=csv|json
+```
+
+**Agent summary export** returns one row per agent with flat metrics (no token trend). **Usage records export** returns individual LLM API call records with optional agent and time filters.
+
+- `format` (optional, default `csv`): `csv` or `json`. CSV uses RFC 4180 with CRLF line endings, InvariantCulture formatting, ISO 8601 timestamps, and formula injection protection (cells starting with `=`, `+`, `-`, `@` are prefixed with `'`).
+- `limit` (optional, 1–50000, default 10000): Max records for usage export. Server fetches `limit+1` to detect truncation accurately.
+- Response headers: `X-Record-Count` (actual count returned), `X-Truncated: true` (only when more records exist beyond limit).
+- Content-Disposition: `attachment; filename="agent-analytics-{timestamp}.{csv|json}"` (agents) or `"usage-records[-{agentId}]-{timestamp}.{csv|json}"` (usage). Triggers browser download.
+
+Frontend: Export CSV button on `AgentAnalyticsPanel` toolbar. Uses `downloadFile()` helper in `api.ts` which reads blob from fetch response and triggers download via temporary anchor element.
+
+> **Tests**: `CsvExportTests` (20 tests — formatting, escaping, formula injection, edge cases), `ExportControllerTests` (14 tests — validation, content types, truncation, time filtering, integration with real DB).
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
@@ -181,9 +289,9 @@ Wire into Program.cs:
 
 **Files:**
 - `src/AgentAcademy.Server/Controllers/RoomController.cs` (MODIFY — add GET messages action)
-- `src/AgentAcademy.Server/Services/WorkspaceRuntime.cs` (MODIFY — add GetRoomMessagesAsync with cursor)
+- `src/AgentAcademy.Server/Services/RoomService.cs` (already has GetRoomMessagesAsync with cursor)
 
-Add `GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit)` to WorkspaceRuntime:
+`RoomService.GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit)` returns paginated messages:
 ```csharp
 public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
     string roomId, string? afterMessageId = null, int limit = 50)
@@ -241,5 +349,6 @@ This handles:
 
 - **OAuth2 provider**: Replace shared secret with Entra ID or similar. The auth scheme abstraction makes this a swap.
 - **WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.
-- **Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.
+- ~~**Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.~~ — **Resolved**: Consultant messages now carry `SenderRole = "Consultant"` (derived from `User.IsInRole("Consultant")` claim). Frontend renders a copper-colored "Consultant" role pill in ChatPanel and SearchPanel. DmPanel shows consultant label + distinct bubble styling. DM service includes consultant messages in the human inbox via `HumanSideSenderIds` array. `DmMessage` model includes `SenderRole` field.
 - **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages.
+- ~~**Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records.~~ — **Resolved** (implemented previously).

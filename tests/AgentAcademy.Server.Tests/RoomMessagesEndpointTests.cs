@@ -17,7 +17,9 @@ public sealed class RoomMessagesEndpointTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly MessageService _messageService;
     private readonly AgentCatalogOptions _catalog;
     private readonly string _roomId = "test-room";
 
@@ -39,13 +41,26 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             Agents: []);
         _catalog = catalog;
 
-        var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
+
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _runtime = new WorkspaceRuntime(_db, logger, catalog, activityBus, sessionService);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
+        var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
+        var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        _roomService = roomService;
+        _agentLocationService = agentLocations;
+        _messageService = messageService;
 
         // Seed a room
         _db.Rooms.Add(new RoomEntity
@@ -69,7 +84,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
     [Fact]
     public async Task GetRoomMessages_ReturnsEmptyForEmptyRoom()
     {
-        var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(_roomId);
+        var (messages, hasMore) = await _roomService.GetRoomMessagesAsync(_roomId);
 
         Assert.Empty(messages);
         Assert.False(hasMore);
@@ -84,7 +99,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             ("m2", "World", baseTime.AddSeconds(2)),
             ("m3", "!", baseTime.AddSeconds(3)));
 
-        var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(_roomId);
+        var (messages, hasMore) = await _roomService.GetRoomMessagesAsync(_roomId);
 
         Assert.Equal(3, messages.Count);
         Assert.Equal("m1", messages[0].Id);
@@ -103,7 +118,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             ("m3", "C", baseTime.AddSeconds(3)),
             ("m4", "D", baseTime.AddSeconds(4)));
 
-        var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(_roomId, afterMessageId: "m2");
+        var (messages, hasMore) = await _roomService.GetRoomMessagesAsync(_roomId, afterMessageId: "m2");
 
         Assert.Equal(2, messages.Count);
         Assert.Equal("m3", messages[0].Id);
@@ -122,7 +137,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             ("m4", "D", baseTime.AddSeconds(4)),
             ("m5", "E", baseTime.AddSeconds(5)));
 
-        var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(_roomId, limit: 3);
+        var (messages, hasMore) = await _roomService.GetRoomMessagesAsync(_roomId, limit: 3);
 
         Assert.Equal(3, messages.Count);
         Assert.Equal("m1", messages[0].Id);
@@ -142,7 +157,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             ("m4", "D", baseTime.AddSeconds(4)),
             ("m5", "E", baseTime.AddSeconds(5)));
 
-        var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(_roomId, afterMessageId: "m1", limit: 2);
+        var (messages, hasMore) = await _roomService.GetRoomMessagesAsync(_roomId, afterMessageId: "m1", limit: 2);
 
         Assert.Equal(2, messages.Count);
         Assert.Equal("m2", messages[0].Id);
@@ -171,7 +186,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         });
         _db.SaveChanges();
 
-        var (messages, _) = await _runtime.GetRoomMessagesAsync(_roomId);
+        var (messages, _) = await _roomService.GetRoomMessagesAsync(_roomId);
 
         Assert.Single(messages);
         Assert.Equal("m1", messages[0].Id);
@@ -181,7 +196,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
     public async Task GetRoomMessages_NonExistentRoom_Throws()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.GetRoomMessagesAsync("nonexistent-room"));
+            () => _roomService.GetRoomMessagesAsync("nonexistent-room"));
     }
 
     [Fact]
@@ -192,7 +207,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         SeedMessages(("m1", "A", baseTime));
 
         // Should not throw — limit is clamped internally
-        var (messages, _) = await _runtime.GetRoomMessagesAsync(_roomId, limit: 500);
+        var (messages, _) = await _roomService.GetRoomMessagesAsync(_roomId, limit: 500);
 
         Assert.Single(messages);
     }
@@ -206,7 +221,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             ("m2", "B", baseTime.AddSeconds(2)));
 
         // Cursor points to a message that doesn't exist — returns all messages
-        var (messages, _) = await _runtime.GetRoomMessagesAsync(_roomId, afterMessageId: "nonexistent");
+        var (messages, _) = await _roomService.GetRoomMessagesAsync(_roomId, afterMessageId: "nonexistent");
 
         Assert.Equal(2, messages.Count);
     }
@@ -263,7 +278,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
-        return new RoomController(_runtime, _catalog, usageTracker, errorTracker, logger);
+        return new RoomController(_roomService, _agentLocationService, _messageService, _catalog, usageTracker, errorTracker, logger);
     }
 
     private void SeedMessages(params (string id, string content, DateTime sentAt)[] messages)

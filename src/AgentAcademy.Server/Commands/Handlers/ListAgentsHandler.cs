@@ -13,9 +13,10 @@ public sealed class ListAgentsHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var agents = runtime.GetConfiguredAgents();
-        var locations = await runtime.GetAgentLocationsAsync();
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var agents = catalog.Agents;
+        var locations = await agentLocations.GetAgentLocationsAsync();
         var locationMap = locations.ToDictionary(l => l.AgentId);
 
         var result = agents.Select(a =>

@@ -36,10 +36,11 @@ public sealed class CreatePrHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         // Load task
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -132,7 +133,7 @@ public sealed class CreatePrHandler : ICommandHandler
             // Update task with PR info — if this fails, include PR details in the error
             try
             {
-                await runtime.UpdateTaskPrAsync(
+                await taskQueries.UpdateTaskPrAsync(
                     taskId, pr.Url, pr.Number, PullRequestStatus.Open);
             }
             catch (Exception updateEx)
@@ -149,7 +150,7 @@ public sealed class CreatePrHandler : ICommandHandler
             // Post success note
             if (!string.IsNullOrWhiteSpace(context.RoomId))
             {
-                await runtime.PostSystemStatusAsync(context.RoomId,
+                await messages.PostSystemStatusAsync(context.RoomId,
                     $"🔗 PR #{pr.Number} created for task \"{task.Title}\": {pr.Url}");
             }
 

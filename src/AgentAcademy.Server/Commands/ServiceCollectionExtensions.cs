@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<NotificationDeliveryTracker>();
         services.AddSingleton<NotificationManager>();
         services.AddSingleton<ConsoleNotificationProvider>();
+        services.AddSingleton<DiscordChannelManager>();
         services.AddSingleton<DiscordNotificationProvider>();
         services.AddSingleton<SlackNotificationProvider>();
         services.AddHttpClient("Slack");

@@ -42,11 +42,11 @@ public sealed class QueryEvidenceHandler : ICommandHandler
             phase = parsed;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         try
         {
-            var evidence = await runtime.GetTaskEvidenceAsync(taskId, phase);
+            var evidence = await taskQueries.GetTaskEvidenceAsync(taskId, phase);
 
             var passedCount = evidence.Count(e => e.Passed);
             var failedCount = evidence.Count(e => !e.Passed);

@@ -38,9 +38,9 @@ public sealed class RoomHistoryHandler : ICommandHandler
                 count = Math.Min(countInt, MaxCount);
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
 
-        var room = await runtime.GetRoomAsync(roomId);
+        var room = await roomService.GetRoomAsync(roomId);
         if (room is null)
         {
             return command with

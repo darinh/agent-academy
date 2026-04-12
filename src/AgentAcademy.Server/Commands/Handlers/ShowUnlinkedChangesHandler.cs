@@ -14,9 +14,9 @@ public sealed class ShowUnlinkedChangesHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
-        var unlinkedTasks = await runtime.GetUnlinkedTasksAsync();
+        var unlinkedTasks = await taskQueries.GetUnlinkedTasksAsync();
 
         if (unlinkedTasks.Count == 0)
         {

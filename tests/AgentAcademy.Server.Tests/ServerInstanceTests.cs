@@ -18,7 +18,10 @@ public class ServerInstanceTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly AgentCatalogOptions _catalog;
+    private readonly CrashRecoveryService _crashRecovery;
+    private readonly RoomService _roomService;
+    private readonly InitializationService _initialization;
 
     public ServerInstanceTests()
     {
@@ -58,19 +61,25 @@ public class ServerInstanceTests : IDisposable
                     EnabledTools: ["chat", "code"],
                     AutoJoinDefaultRoom: true)
             ]);
+        _catalog = catalog;
 
         var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = NSubstitute.Substitute.For<IAgentExecutor>();
         var sessionLogger = NullLogger<ConversationSessionService>.Instance;
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
-        _runtime = new WorkspaceRuntime(
-            _db,
-            NullLogger<WorkspaceRuntime>.Instance,
-            catalog,
-            activityBus,
-            sessionService);
+        var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
+        _crashRecovery = crashRecovery;
+        _roomService = roomService;
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
     }
 
     public void Dispose()
@@ -82,7 +91,7 @@ public class ServerInstanceTests : IDisposable
     [Fact]
     public async Task InitializeAsync_CreatesServerInstance()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var instances = await _db.ServerInstances.ToListAsync();
         Assert.Single(instances);
@@ -99,9 +108,9 @@ public class ServerInstanceTests : IDisposable
     [Fact]
     public async Task InitializeAsync_SetsCurrentInstanceId()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        Assert.NotNull(WorkspaceRuntime.CurrentInstanceId);
+        Assert.NotNull(CrashRecoveryService.CurrentInstanceId);
     }
 
     [Fact]
@@ -117,7 +126,7 @@ public class ServerInstanceTests : IDisposable
         _db.ServerInstances.Add(orphan);
         await _db.SaveChangesAsync();
 
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var instances = await _db.ServerInstances
             .OrderBy(i => i.StartedAt)
@@ -150,7 +159,7 @@ public class ServerInstanceTests : IDisposable
         _db.ServerInstances.Add(previous);
         await _db.SaveChangesAsync();
 
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var instances = await _db.ServerInstances
             .OrderBy(i => i.StartedAt)
@@ -166,7 +175,7 @@ public class ServerInstanceTests : IDisposable
     [Fact]
     public void DefaultRoomId_ReturnsConfiguredValue()
     {
-        Assert.Equal("main", _runtime.DefaultRoomId);
+        Assert.Equal("main", _catalog.DefaultRoomId);
     }
 
     [Fact]
@@ -219,7 +228,7 @@ public class ServerInstanceTests : IDisposable
         });
 
         await _db.SaveChangesAsync();
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var breakoutBeforeRecovery = await _db.BreakoutRooms.FindAsync("breakout-1");
         Assert.NotNull(breakoutBeforeRecovery);
@@ -236,16 +245,19 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new GitService(NullLogger<GitService>.Instance),
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
 
         await orchestrator.HandleStartupRecoveryAsync("main");
@@ -297,23 +309,26 @@ public class ServerInstanceTests : IDisposable
         });
 
         await _db.SaveChangesAsync();
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var scope = Substitute.For<IServiceScope>();
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new GitService(NullLogger<GitService>.Instance),
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
 
         await orchestrator.HandleStartupRecoveryAsync("main");
@@ -348,7 +363,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Single(result);
         Assert.Equal("main", result[0]);
@@ -381,7 +396,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -420,7 +435,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -438,7 +453,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -477,7 +492,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Equal(2, result.Count);
         Assert.Contains("room-a", result);
@@ -511,7 +526,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -541,22 +556,24 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         // Use a stopped orchestrator so ProcessQueueAsync doesn't drain the queue
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new GitService(NullLogger<GitService>.Instance),
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
         orchestrator.Stop();
 
         Assert.Equal(0, orchestrator.QueueDepth);
-
         await orchestrator.ReconstructQueueAsync();
 
         Assert.Equal(1, orchestrator.QueueDepth);
@@ -594,16 +611,19 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new GitService(NullLogger<GitService>.Instance),
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
         orchestrator.Stop();
 
@@ -682,19 +702,25 @@ public class RestartHistoryApiTests : IDisposable
         var settings = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(
             _db, settings, executor, NullLogger<ConversationSessionService>.Instance);
-        var runtime = new WorkspaceRuntime(
-            _db,
-            NullLogger<WorkspaceRuntime>.Instance,
-            catalog,
-            new ActivityBroadcaster(),
-            sessionService);
-
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        var actBus = new ActivityBroadcaster();
+        var actPub = new ActivityPublisher(_db, actBus);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub);
+        var agentLocations = new AgentLocationService(_db, catalog, actPub);
+        var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, actPub, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, actPub);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService, messageService);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, actPub, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, roomService, agentLocations, messageService, breakouts);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
 
         _controller = new SystemController(
-            runtime, executor, catalog, _db, usageTracker, errorTracker,
+            roomService, agentLocations, breakouts, actPub,
+            executor, catalog, _db, usageTracker, errorTracker,
             NullLogger<SystemController>.Instance);
     }
 
@@ -702,6 +728,17 @@ public class RestartHistoryApiTests : IDisposable
     {
         _db.Dispose();
         _connection.Dispose();
+    }
+
+    [Fact]
+    public void GetHealth_ReturnsBackendHealthyMessage()
+    {
+        var result = _controller.GetHealth();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<HealthResult>(ok.Value);
+
+        Assert.Equal("Agent Academy backend is healthy.", payload.Message);
     }
 
     [Fact]

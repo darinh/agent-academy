@@ -18,7 +18,7 @@ namespace AgentAcademy.Server.Services;
 /// and passed to <see cref="GitHub.Copilot.SDK.SessionConfig.Tools"/>.
 ///
 /// Tool functions use <see cref="IServiceScopeFactory"/> to resolve scoped
-/// services (WorkspaceRuntime, DbContext) at invocation time.
+/// services (TaskQueryService, RoomService, etc.) at invocation time.
 ///
 /// Read-only tools (task-state, code) are agent-agnostic and created once.
 /// Write tools (task-write, memory) capture the calling agent's identity
@@ -27,13 +27,16 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentToolFunctions
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AgentCatalogOptions _catalog;
     private readonly ILogger<AgentToolFunctions> _logger;
 
     public AgentToolFunctions(
         IServiceScopeFactory scopeFactory,
+        AgentCatalogOptions catalog,
         ILogger<AgentToolFunctions> logger)
     {
         _scopeFactory = scopeFactory;
+        _catalog = catalog;
         _logger = logger;
     }
 
@@ -112,8 +115,8 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: list_tasks (status={Status})", status);
 
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var tasks = await runtime.GetTasksAsync();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var tasks = await taskQueries.GetTasksAsync();
 
         if (!string.IsNullOrWhiteSpace(status) &&
             Enum.TryParse<Shared.Models.TaskStatus>(status, ignoreCase: true, out var parsed))
@@ -140,8 +143,8 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: list_rooms (includeArchived={IncludeArchived})", includeArchived);
 
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var rooms = await runtime.GetRoomsAsync(includeArchived);
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var rooms = await roomService.GetRoomsAsync(includeArchived);
 
         if (rooms.Count == 0)
             return "No rooms found.";
@@ -160,20 +163,20 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: show_agents");
 
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var overview = await runtime.GetOverviewAsync();
+        var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var locations = await agentLocations.GetAgentLocationsAsync();
 
         var agentLines = new List<string>();
-        foreach (var agent in overview.ConfiguredAgents)
+        foreach (var agent in _catalog.Agents)
         {
-            var location = overview.AgentLocations.FirstOrDefault(l => l.AgentId == agent.Id);
+            var location = locations.FirstOrDefault(l => l.AgentId == agent.Id);
             var line = $"- {agent.Name} ({agent.Role})";
             if (location is not null)
                 line += $" in room {location.RoomId}, state: {location.State}";
             agentLines.Add(line);
         }
 
-        return $"Agents ({overview.ConfiguredAgents.Count}):\n{string.Join('\n', agentLines)}";
+        return $"Agents ({_catalog.Agents.Count}):\n{string.Join('\n', agentLines)}";
     }
 
     // ── Code tools ──────────────────────────────────────────────
@@ -425,7 +428,7 @@ public sealed class AgentToolFunctions
                 ?? new List<string>();
 
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
 
             try
             {
@@ -438,7 +441,7 @@ public sealed class AgentToolFunctions
                     Type: taskType
                 );
 
-                var result = await runtime.CreateTaskAsync(request);
+                var result = await taskOrchestration.CreateTaskAsync(request);
                 return $"Task created successfully.\n" +
                        $"- ID: {result.Task.Id}\n" +
                        $"- Title: {result.Task.Title}\n" +
@@ -478,11 +481,12 @@ public sealed class AgentToolFunctions
                 return $"Error: Invalid status '{status}'. Allowed: {string.Join(", ", AllowedTaskStatuses.Order())}";
 
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
 
             try
             {
-                var task = await runtime.GetTaskAsync(taskId);
+                var task = await taskQueries.GetTaskAsync(taskId);
                 if (task is null)
                     return $"Error: Task '{taskId}' not found.";
 
@@ -490,26 +494,26 @@ public sealed class AgentToolFunctions
 
                 if (hasBlocker)
                 {
-                    await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
-                    await runtime.PostTaskNoteAsync(taskId,
+                    await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
+                    await taskOrchestration.PostTaskNoteAsync(taskId,
                         $"🚫 Blocked by {_agentName}: {blocker}");
                     actions.Add($"status → Blocked (blocker: {blocker})");
                 }
                 else if (hasStatus)
                 {
                     var parsed = Enum.Parse<Shared.Models.TaskStatus>(status!, ignoreCase: true);
-                    await runtime.UpdateTaskStatusAsync(taskId, parsed);
+                    await taskQueries.UpdateTaskStatusAsync(taskId, parsed);
                     actions.Add($"status → {parsed}");
                 }
 
                 if (hasNote)
                 {
-                    await runtime.PostTaskNoteAsync(taskId,
+                    await taskOrchestration.PostTaskNoteAsync(taskId,
                         $"📝 Note from {_agentName}: {note}");
                     actions.Add("note posted");
                 }
 
-                var finalTask = await runtime.GetTaskAsync(taskId);
+                var finalTask = await taskQueries.GetTaskAsync(taskId);
                 var title = finalTask?.Title ?? task.Title;
                 return $"Task '{title}' updated: {string.Join("; ", actions)}\n" +
                        $"- ID: {taskId}\n" +
@@ -542,11 +546,11 @@ public sealed class AgentToolFunctions
             }
 
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
 
             try
             {
-                var comment = await runtime.AddTaskCommentAsync(
+                var comment = await taskLifecycle.AddTaskCommentAsync(
                     taskId, _agentId, _agentName, parsedType, content);
                 return $"Comment added to task '{taskId}'.\n" +
                        $"- Type: {parsedType}\n" +

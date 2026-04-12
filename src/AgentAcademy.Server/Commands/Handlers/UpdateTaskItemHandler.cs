@@ -50,9 +50,9 @@ public sealed class UpdateTaskItemHandler : ICommandHandler
         string? evidence = command.Args.TryGetValue("evidence", out var evObj)
             && evObj is string ev && !string.IsNullOrWhiteSpace(ev) ? ev : null;
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskItems = context.Services.GetRequiredService<TaskItemService>();
 
-        var item = await runtime.GetTaskItemAsync(taskItemId);
+        var item = await taskItems.GetTaskItemAsync(taskItemId);
         if (item is null)
         {
             return command with
@@ -80,7 +80,7 @@ public sealed class UpdateTaskItemHandler : ICommandHandler
 
         try
         {
-            await runtime.UpdateTaskItemStatusAsync(taskItemId, status, evidence);
+            await taskItems.UpdateTaskItemStatusAsync(taskItemId, status, evidence);
 
             return command with
             {

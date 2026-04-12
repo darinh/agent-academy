@@ -7,6 +7,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -55,8 +56,24 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
-        services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<AgentConfigService>();
@@ -104,19 +121,32 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         using (var scope = _serviceProvider.CreateScope())
         {
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            await runtime.InitializeAsync();
-            await runtime.PostHumanMessageAsync("main", "Assign the backend task.");
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            await initialization.InitializeAsync();
+            await messages.PostHumanMessageAsync("main", "Assign the backend task.");
         }
 
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, _catalog, _executor, new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            _gitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            memoryLoader,
+            NullLogger<BreakoutLifecycleService>.Instance);
+
         var orchestrator = new AgentOrchestrator(
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory,
+            _catalog,
             _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            _gitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            breakoutLifecycle,
+            new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance),
+            memoryLoader,
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");
@@ -126,7 +156,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         using var assertScope = _serviceProvider.CreateScope();
         var db = assertScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var runtimeAfter = assertScope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
 
         // Breakout room should have been created (may be closed by now if loop completed)
         var breakoutEntity = await db.BreakoutRooms.SingleAsync();
@@ -193,19 +222,32 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         using (var scope = _serviceProvider.CreateScope())
         {
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            await runtime.InitializeAsync();
-            await runtime.PostHumanMessageAsync("main", "Build the widget please.");
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            await initialization.InitializeAsync();
+            await messages.PostHumanMessageAsync("main", "Build the widget please.");
         }
 
+        var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var memoryLoader2 = new AgentMemoryLoader(scopeFactory2, NullLogger<AgentMemoryLoader>.Instance);
+        var breakoutLifecycle2 = new BreakoutLifecycleService(
+            scopeFactory2, _catalog, _executor, new SpecManager(),
+            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            mockGitService,
+            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            memoryLoader2,
+            NullLogger<BreakoutLifecycleService>.Instance);
+
         var orchestrator = new AgentOrchestrator(
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory2,
+            _catalog,
             _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            mockGitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
+            breakoutLifecycle2,
+            new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance),
+            memoryLoader2,
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");

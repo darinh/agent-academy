@@ -67,10 +67,13 @@ public sealed class InviteToRoomHandler : ICommandHandler
 
         roomId = roomId.Trim();
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
 
         // Resolve agent by name or ID
-        var allAgents = runtime.GetConfiguredAgents();
+        var allAgents = catalog.Agents;
         var agent = allAgents.FirstOrDefault(a =>
             a.Name.Equals(targetAgent, StringComparison.OrdinalIgnoreCase) ||
             a.Id.Equals(targetAgent, StringComparison.OrdinalIgnoreCase));
@@ -86,7 +89,7 @@ public sealed class InviteToRoomHandler : ICommandHandler
         }
 
         // Verify room exists
-        var room = await runtime.GetRoomAsync(roomId);
+        var room = await roomService.GetRoomAsync(roomId);
         if (room is null)
         {
             return command with
@@ -109,7 +112,7 @@ public sealed class InviteToRoomHandler : ICommandHandler
         }
 
         // Reject if agent is Working in a breakout
-        var location = await runtime.GetAgentLocationAsync(agent.Id);
+        var location = await agentLocations.GetAgentLocationAsync(agent.Id);
         if (location is not null && location.State == AgentState.Working
             && !string.IsNullOrEmpty(location.BreakoutRoomId))
         {
@@ -139,12 +142,12 @@ public sealed class InviteToRoomHandler : ICommandHandler
         }
 
         // Move the agent
-        await runtime.MoveAgentAsync(agent.Id, roomId, AgentState.Idle);
+        await agentLocations.MoveAgentAsync(agent.Id, roomId, AgentState.Idle);
 
         // Post system message in target room (best-effort — move already succeeded)
         try
         {
-            await runtime.PostSystemStatusAsync(roomId,
+            await messages.PostSystemStatusAsync(roomId,
                 $"📨 {agent.Name} has been invited to this room by {context.AgentName}.");
         }
         catch { /* move succeeded; message is informational */ }

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
@@ -12,20 +13,26 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/rooms")]
 public class RoomController : ControllerBase
 {
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly MessageService _messageService;
     private readonly AgentCatalogOptions _catalog;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly ILogger<RoomController> _logger;
 
     public RoomController(
-        WorkspaceRuntime runtime,
+        RoomService roomService,
+        AgentLocationService agentLocationService,
+        MessageService messageService,
         AgentCatalogOptions catalog,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
         ILogger<RoomController> logger)
     {
-        _runtime = runtime;
+        _roomService = roomService;
+        _agentLocationService = agentLocationService;
+        _messageService = messageService;
         _catalog = catalog;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
@@ -40,7 +47,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var rooms = await _runtime.GetRoomsAsync(includeArchived);
+            var rooms = await _roomService.GetRoomsAsync(includeArchived);
             return Ok(rooms);
         }
         catch (Exception ex)
@@ -58,7 +65,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var room = await _runtime.GetRoomAsync(roomId);
+            var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
@@ -80,7 +87,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var (messages, hasMore) = await _runtime.GetRoomMessagesAsync(roomId, after, limit, sessionId);
+            var (messages, hasMore) = await _roomService.GetRoomMessagesAsync(roomId, after, limit, sessionId);
             return Ok(new RoomMessagesResponse(messages, hasMore));
         }
         catch (InvalidOperationException ex)
@@ -206,7 +213,7 @@ public class RoomController : ControllerBase
 
         try
         {
-            var room = await _runtime.RenameRoomAsync(roomId, request.Name.Trim());
+            var room = await _roomService.RenameRoomAsync(roomId, request.Name.Trim());
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
@@ -227,7 +234,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var count = await _runtime.CleanupStaleRoomsAsync();
+            var count = await _roomService.CleanupStaleRoomsAsync();
             return Ok(new { archivedCount = count });
         }
         catch (Exception ex)
@@ -272,7 +279,7 @@ public class RoomController : ControllerBase
 
         try
         {
-            var room = await _runtime.CreateRoomAsync(request.Name.Trim(), request.Description?.Trim());
+            var room = await _roomService.CreateRoomAsync(request.Name.Trim(), request.Description?.Trim());
             return CreatedAtAction(nameof(GetRoom), new { roomId = room.Id }, room);
         }
         catch (Exception ex)
@@ -292,7 +299,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var room = await _runtime.GetRoomAsync(roomId);
+            var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
@@ -315,7 +322,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var room = await _runtime.GetRoomAsync(roomId);
+            var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
@@ -338,8 +345,8 @@ public class RoomController : ControllerBase
                 }
             }
 
-            var location = await _runtime.MoveAgentAsync(agentId, roomId, AgentState.Idle);
-            await _runtime.PostSystemMessageAsync(roomId, $"{agentName} joined the room.");
+            var location = await _agentLocationService.MoveAgentAsync(agentId, roomId, AgentState.Idle);
+            await _messageService.PostSystemMessageAsync(roomId, $"{agentName} joined the room.");
             return Ok(location);
         }
         catch (Exception ex)
@@ -358,7 +365,7 @@ public class RoomController : ControllerBase
     {
         try
         {
-            var room = await _runtime.GetRoomAsync(roomId);
+            var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
                 return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
 
@@ -380,8 +387,8 @@ public class RoomController : ControllerBase
                 }
             }
 
-            var location = await _runtime.MoveAgentAsync(agentId, _catalog.DefaultRoomId, AgentState.Idle);
-            await _runtime.PostSystemMessageAsync(roomId, $"{agentName} left the room.");
+            var location = await _agentLocationService.MoveAgentAsync(agentId, _catalog.DefaultRoomId, AgentState.Idle);
+            await _messageService.PostSystemMessageAsync(roomId, $"{agentName} left the room.");
             return Ok(location);
         }
         catch (Exception ex)
@@ -392,5 +399,7 @@ public class RoomController : ControllerBase
     }
 }
 
-public record RenameRoomRequest(string Name);
-public record CreateRoomRequest(string Name, string? Description = null);
+public record RenameRoomRequest([property: Required, StringLength(200)] string Name);
+public record CreateRoomRequest(
+    [property: Required, StringLength(200)] string Name,
+    [property: StringLength(1000)] string? Description = null);

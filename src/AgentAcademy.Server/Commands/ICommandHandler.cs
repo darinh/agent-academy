@@ -13,6 +13,18 @@ public interface ICommandHandler
     string CommandName { get; }
 
     /// <summary>
+    /// Whether this command performs a destructive or irreversible action.
+    /// Destructive commands require explicit <c>confirm=true</c> in args before execution.
+    /// </summary>
+    bool IsDestructive => false;
+
+    /// <summary>
+    /// Human-readable description of the destructive impact, shown when confirmation is required.
+    /// Only meaningful when <see cref="IsDestructive"/> is true.
+    /// </summary>
+    string DestructiveWarning => $"{CommandName} performs a destructive action.";
+
+    /// <summary>
     /// Execute the command and return the completed envelope.
     /// </summary>
     Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context);

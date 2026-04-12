@@ -143,6 +143,11 @@ const useLocalStyles = makeStyles({
     ...shorthands.borderColor("rgba(91, 141, 239, 0.3)"),
     color: "var(--aa-text)",
   },
+  msgBubbleConsultant: {
+    backgroundColor: "rgba(224, 151, 110, 0.15)",
+    ...shorthands.borderColor("rgba(224, 151, 110, 0.3)"),
+    color: "var(--aa-text)",
+  },
   msgMeta: {
     display: "flex",
     alignItems: "center",
@@ -391,6 +396,8 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       setInput("");
       void refreshMessages(selectedAgentId);
       void refreshThreads();
+    } catch {
+      // Send failed — input is preserved so the user can retry
     } finally {
       setSending(false);
     }
@@ -586,15 +593,40 @@ const DmMessageBubble = memo(function DmMessageBubble({
 }) {
   const s = useLocalStyles();
   const isHuman = message.isFromHuman;
+  const isConsultant = isHuman && message.senderRole === "Consultant";
+  const consultantColors = isConsultant ? roleColor("Consultant") : null;
 
   return (
     <div className={mergeClasses(s.msgRow, isHuman && s.msgRowHuman)}>
       <div>
-        <div className={mergeClasses(s.msgBubble, isHuman && s.msgBubbleHuman)}>
+        <div className={mergeClasses(
+          s.msgBubble,
+          isHuman && !isConsultant && s.msgBubbleHuman,
+          isConsultant && s.msgBubbleConsultant,
+        )}>
           {!isHuman && (
             <div className={s.msgMeta}>
               <span style={{ fontWeight: 600, fontSize: "13px" }}>
                 {message.senderName}
+              </span>
+            </div>
+          )}
+          {isConsultant && (
+            <div className={s.msgMeta}>
+              <span style={{ fontWeight: 600, fontSize: "13px" }}>
+                {message.senderName}
+              </span>
+              <span
+                style={{
+                  fontSize: "10px",
+                  fontWeight: 600,
+                  padding: "1px 6px",
+                  borderRadius: "4px",
+                  backgroundColor: consultantColors!.accent + "26",
+                  color: consultantColors!.accent,
+                }}
+              >
+                {formatRole("Consultant")}
               </span>
             </div>
           )}

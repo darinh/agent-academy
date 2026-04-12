@@ -215,10 +215,11 @@ public class AgentToolRegistryTests
     private static AgentToolRegistry CreateRegistry()
     {
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var catalog = new AgentCatalogOptions("main", "Main", []);
         var toolFunctions = new AgentToolFunctions(
             scopeFactory,
+            catalog,
             NullLogger<AgentToolFunctions>.Instance);
-        var catalog = new AgentCatalogOptions("main", "Main", []);
         return new AgentToolRegistry(
             toolFunctions,
             catalog,
@@ -240,6 +241,7 @@ public class AgentToolFunctionsTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(new AgentCatalogOptions(
             "main", "Main Room", new List<AgentDefinition>
             {
@@ -250,8 +252,26 @@ public class AgentToolFunctionsTests : IDisposable
                     "gpt-5", ["review"], ["chat", "task-state"],
                     true),
             }));
-        services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
+        services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
+        services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
+        services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
@@ -264,12 +284,14 @@ public class AgentToolFunctionsTests : IDisposable
         {
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            runtime.InitializeAsync().GetAwaiter().GetResult();
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
         _toolFunctions = new AgentToolFunctions(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            _serviceProvider.GetRequiredService<AgentCatalogOptions>(),
             NullLogger<AgentToolFunctions>.Instance);
     }
 
@@ -507,6 +529,7 @@ public class AgentWriteToolTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(new AgentCatalogOptions(
             "main", "Main Room", new List<AgentDefinition>
             {
@@ -517,8 +540,26 @@ public class AgentWriteToolTests : IDisposable
                     "gpt-5", ["review"], ["chat", "task-state", "task-write", "memory"],
                     true),
             }));
-        services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
+        services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
+        services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        services.AddScoped<MessageService>();
+        services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
@@ -530,12 +571,14 @@ public class AgentWriteToolTests : IDisposable
         {
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            runtime.InitializeAsync().GetAwaiter().GetResult();
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
         _toolFunctions = new AgentToolFunctions(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            _serviceProvider.GetRequiredService<AgentCatalogOptions>(),
             NullLogger<AgentToolFunctions>.Instance);
     }
 
@@ -1221,8 +1264,9 @@ public class AgentWriteToolTests : IDisposable
     private async Task<string> CreateTestTask()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var result = await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Test Task",
             Description: "Test task for write tool tests",
             SuccessCriteria: "Tests pass",

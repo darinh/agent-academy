@@ -19,6 +19,8 @@ public sealed class CancelTaskHandler : ICommandHandler
     }
 
     public string CommandName => "CANCEL_TASK";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "CANCEL_TASK will permanently cancel this task. The task branch may be deleted.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -64,9 +66,10 @@ public sealed class CancelTaskHandler : ICommandHandler
             _ = bool.TryParse(delStr, out deleteBranch);
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -90,7 +93,7 @@ public sealed class CancelTaskHandler : ICommandHandler
 
         try
         {
-            await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
+            await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
 
             // Clean up the task branch if requested (default: yes)
             string? deletedBranch = null;
@@ -110,7 +113,7 @@ public sealed class CancelTaskHandler : ICommandHandler
             if (!string.IsNullOrWhiteSpace(context.RoomId))
             {
                 var reasonText = !string.IsNullOrWhiteSpace(reason) ? $" Reason: {reason}" : "";
-                await runtime.PostSystemStatusAsync(context.RoomId,
+                await messages.PostSystemStatusAsync(context.RoomId,
                     $"🗑️ Task \"{task.Title}\" cancelled by {context.AgentName}.{reasonText}");
             }
 

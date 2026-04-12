@@ -11,7 +11,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [002](./002-development-workflow/spec.md) | Development Workflow | Implemented |
 | [003](./003-agent-system/spec.md) | Agent Execution System | Implemented |
 | [004](./004-notification-system/spec.md) | Notification System | Implemented |
-| [005](./005-workspace-runtime/spec.md) | Workspace Runtime | Implemented |
+| [005](./005-workspace-runtime/spec.md) | Domain Services Layer | Implemented |
 | [006](./006-orchestrator/spec.md) | Agent Orchestrator | Implemented |
 | [007](./007-agent-commands/spec.md) | Agent Command System | Implemented |
 | [008](./008-agent-memory/spec.md) | Agent Memory System | Implemented |
@@ -19,6 +19,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [010](./010-task-management/spec.md) | Task Management & Git Workflow | Implemented |
 | [011](./011-state-recovery/spec.md) | State Recovery and Supervised Restart | Implemented |
 | [012](./012-consultant-api/spec.md) | Consultant API | Implemented |
+| [013](./013-sprint-system/spec.md) | Sprint System | Implemented |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
 
 ## Conventions

@@ -50,7 +50,7 @@ public sealed class LinkTaskToSpecHandler : ICommandHandler
             note = n;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
         var specManager = context.Services.GetRequiredService<SpecManager>();
 
         // Validate the spec section exists on disk
@@ -67,7 +67,7 @@ public sealed class LinkTaskToSpecHandler : ICommandHandler
 
         try
         {
-            var link = await runtime.LinkTaskToSpecAsync(
+            var link = await taskLifecycle.LinkTaskToSpecAsync(
                 taskId, specSectionId, context.AgentId, context.AgentName, linkType, note);
 
             return command with

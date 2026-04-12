@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace AgentAcademy.Shared.Models;
 
 /// <summary>
@@ -33,7 +35,7 @@ public record MetricsEntry(
     int Round,
     string Phase,
     string Agent,
-    Dictionary<string, object> Data
+    Dictionary<string, JsonElement> Data
 );
 
 /// <summary>

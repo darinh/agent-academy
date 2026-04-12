@@ -84,10 +84,11 @@ public sealed class PostPrReviewHandler : ICommandHandler
             }
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         // Load task
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -134,7 +135,7 @@ public sealed class PostPrReviewHandler : ICommandHandler
             // Post system message
             if (!string.IsNullOrWhiteSpace(context.RoomId))
             {
-                await runtime.PostSystemStatusAsync(context.RoomId,
+                await messages.PostSystemStatusAsync(context.RoomId,
                     $"📝 {context.AgentName} {actionLabel} PR #{task.PullRequestNumber} for task \"{task.Title}\"");
             }
 

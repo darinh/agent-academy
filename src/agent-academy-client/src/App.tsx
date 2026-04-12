@@ -1,17 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   FluentProvider,
   webDarkTheme,
   mergeClasses,
-  Menu,
-  MenuTrigger,
-  MenuPopover,
-  MenuList,
-  MenuItemCheckbox,
-  MessageBar,
-  MessageBarBody,
-  MessageBarTitle,
+  Spinner,
   Toaster,
   useToastController,
   useId,
@@ -19,32 +12,27 @@ import {
   ToastTitle,
   ToastBody,
 } from "@fluentui/react-components";
-import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
-import { useStyles } from "./useStyles";
+import { useLayoutStyles, useWorkspaceStyles, useRecoveryStyles } from "./styles";
 import { useWorkspace } from "./useWorkspace";
-import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
-import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
-import ProjectSelectorPage from "./ProjectSelectorPage";
+import { useDesktopNotifications } from "./useDesktopNotifications";
+import { getActiveWorkspace, switchWorkspace, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
+import type { OnboardResult, WorkspaceMeta, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
 import { loadFilters, saveFilters } from "./chatUtils";
 import type { MessageFilter } from "./chatUtils";
-import PlanPanel from "./PlanPanel";
-import TimelinePanel from "./TimelinePanel";
-import DashboardPanel from "./DashboardPanel";
-import WorkspaceOverviewPanel from "./WorkspaceOverviewPanel";
-import TaskListPanel from "./TaskListPanel";
-import LoginPage from "./LoginPage";
-import SettingsPanel from "./SettingsPanel";
-import DmPanel from "./DmPanel";
-import AgentSessionPanel from "./AgentSessionPanel";
-import CommandsPanel from "./CommandsPanel";
-import SprintPanel from "./SprintPanel";
-import CommandPalette from "./CommandPalette";
-import RecoveryBanner from "./RecoveryBanner";
-import CircuitBreakerBanner from "./CircuitBreakerBanner";
 import ConfirmDialog from "./ConfirmDialog";
+import ChunkErrorBoundary from "./ChunkErrorBoundary";
+import StatusBanners from "./StatusBanners";
+import WorkspaceHeader from "./WorkspaceHeader";
+import type { HeaderModel } from "./WorkspaceHeader";
+import WorkspaceToolbar from "./WorkspaceToolbar";
+import type { ToolbarModel } from "./WorkspaceToolbar";
+import WorkspaceContent from "./WorkspaceContent";
+import { useAuth } from "./useAuth";
+import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useTaskData } from "./useTaskData";
 import { useCircuitBreakerPolling } from "./useCircuitBreakerPolling";
 import {
   getCopilotStatusCopy,
@@ -52,15 +40,14 @@ import {
   isWorkspaceLimited,
   shouldRenderWorkspace,
 } from "./authPresentation";
-import {
-  AUTH_STATUS_POLL_MS,
-  clearAutoReauthAttempt,
-  clearManualLogout,
-  getAuthTransitionEffect,
-  markAutoReauthAttempt,
-  markManualLogout,
-  shouldAttemptAutoReauth,
-} from "./authMonitor";
+
+// Lazy-loaded panels
+const ProjectSelectorPage = lazy(() => import("./ProjectSelectorPage"));
+const LoginPage = lazy(() => import("./LoginPage"));
+const SettingsPanel = lazy(() => import("./SettingsPanel"));
+const AgentSessionPanel = lazy(() => import("./AgentSessionPanel"));
+const CommandPalette = lazy(() => import("./CommandPalette"));
+const KeyboardShortcutsDialog = lazy(() => import("./KeyboardShortcutsDialog"));
 
 /** View title lookup for header bar. */
 const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
@@ -73,6 +60,7 @@ const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   dashboard: { title: "Metrics", meta: "System telemetry" },
   overview: { title: "Overview", meta: "Room state" },
   directMessages: { title: "Direct Messages", meta: "" },
+  search: { title: "Search", meta: "Find messages & tasks" },
 };
 
 const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
@@ -113,13 +101,24 @@ export default function App() {
 }
 
 function AppShell() {
-  const s = useStyles();
+  const s = { ...useLayoutStyles(), ...useWorkspaceStyles(), ...useRecoveryStyles() };
 
   const toasterId = useId("workspace-toaster");
   const { dispatchToast } = useToastController(toasterId);
-  const tabRef = useRef("chat");
 
-  /* Chat filter state (lifted here so it can render in the toolbar) */
+  /* ── Auth ── */
+  const { auth, loginUrl, logoutDialog } = useAuth({
+    onSessionWarning: useCallback(() => {
+      dispatchToast(
+        <Toast>
+          <ToastTitle>Session needs reconnection</ToastTitle>
+        </Toast>,
+        { intent: "warning", timeout: 5000 },
+      );
+    }, [dispatchToast]),
+  });
+
+  /* ── Chat filter state (lifted here so toolbar + content can share) ── */
   const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
   const chatFilterChecked = useMemo(() => {
     const visible: string[] = [];
@@ -136,9 +135,13 @@ function AppShell() {
     saveFilters(next);
   }, []);
 
-  const handleActivityToast = useCallback((evt: ActivityEvent) => {
-    if (!TOAST_EVENT_TYPES.has(evt.type)) return;
+  /* ── Desktop notifications ── */
+  const desktopNotif = useDesktopNotifications();
 
+  /* ── Activity toast handler ── */
+  const handleActivityToast = useCallback((evt: ActivityEvent) => {
+    desktopNotif.notify(evt);
+    if (!TOAST_EVENT_TYPES.has(evt.type)) return;
     const intent = toastIntent(evt);
     const timeout = intent === "error" ? 8000 : 4000;
     dispatchToast(
@@ -148,8 +151,9 @@ function AppShell() {
       </Toast>,
       { intent, timeout },
     );
-  }, [dispatchToast]);
+  }, [dispatchToast, desktopNotif]);
 
+  /* ── Workspace core ── */
   const {
     ov,
     room,
@@ -173,14 +177,24 @@ function AppShell() {
     handlePhaseTransition,
   } = useWorkspace({ onActivityEvent: handleActivityToast });
 
-  // Keep tabRef in sync and clear unseen counter when switching to timeline
-  useEffect(() => {
-    tabRef.current = tab;
-  }, [tab]);
-
   const { circuitBreakerState } = useCircuitBreakerPolling();
 
-  // Per-room thinking sets for sidebar; per-active-room set for other uses
+  /* ── Task data ── */
+  const [showProjectSelector, setShowProjectSelector] = useState(false);
+  const { allTasks, tasksLoading, tasksError, activeSprintId, refreshTasks } = useTaskData({
+    enabled: !showProjectSelector && tab === "tasks",
+  });
+
+  /* ── Keyboard shortcuts ── */
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  useKeyboardShortcuts({
+    onTogglePalette: useCallback(() => setPaletteOpen((prev) => !prev), []),
+    onSearch: useCallback(() => setTab("search"), [setTab]),
+    onToggleShortcuts: useCallback(() => setShortcutsOpen((prev) => !prev), []),
+  });
+
+  /* ── Per-room thinking sets for sidebar ── */
   const thinkingByRoomIds = useMemo(() => {
     const result = new Map<string, Set<string>>();
     for (const [rid, agentMap] of thinkingByRoom) {
@@ -189,121 +203,14 @@ function AppShell() {
     return result;
   }, [thinkingByRoom]);
 
+  /* ── Workspace / project selection state ── */
   const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
-  const [showProjectSelector, setShowProjectSelector] = useState(false);
   const [phaseTransitioning, setPhaseTransitioning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
-  const [allTasks, setAllTasks] = useState<TaskSnapshot[]>([]);
-  const [tasksError, setTasksError] = useState(false);
-  const [tasksLoading, setTasksLoading] = useState(false);
-  const [tasksFetchKey, setTasksFetchKey] = useState(0);
-  const [activeSprintId, setActiveSprintId] = useState<string | null>(null);
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-  const previousAuthRef = useRef<AuthStatus | null>(null);
-  const authRefreshInFlight = useRef(false);
-  const loginUrl = `${apiBaseUrl}/api/auth/login`;
-
-  const refreshAuthStatus = useCallback(async () => {
-    if (authRefreshInFlight.current) return;
-
-    authRefreshInFlight.current = true;
-    try {
-      const status = await getAuthStatus();
-      setAuth(status);
-    } finally {
-      authRefreshInFlight.current = false;
-    }
-  }, []);
-
-  // Check auth status on mount — retry if backend is still starting
-  useEffect(() => {
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    async function checkAuth(attempt: number) {
-      if (cancelled) return;
-      try {
-        const status = await getAuthStatus();
-        if (!cancelled) setAuth(status);
-      } catch {
-        if (cancelled) return;
-        if (attempt < 3) {
-          retryTimer = setTimeout(() => void checkAuth(attempt + 1), 2000);
-        } else {
-          setAuth({
-            authEnabled: false,
-            authenticated: false,
-            copilotStatus: "unavailable",
-          });
-        }
-      }
-    }
-    void checkAuth(0);
-    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
-  }, []);
-
-  useEffect(() => {
-    if (auth === null) return undefined;
-
-    const timer = window.setInterval(() => {
-      void refreshAuthStatus().catch(() => undefined);
-    }, AUTH_STATUS_POLL_MS);
-
-    return () => window.clearInterval(timer);
-  }, [auth, refreshAuthStatus]);
-
-  useEffect(() => {
-    if (!auth) return;
-
-    const transitionEffect = getAuthTransitionEffect(previousAuthRef.current, auth);
-
-    if (transitionEffect.clearAutoReauthAttempt) {
-      clearAutoReauthAttempt();
-    }
-
-    if (transitionEffect.clearManualLogoutSuppression) {
-      clearManualLogout();
-    }
-
-    if (transitionEffect.redirectToLogin) {
-      markAutoReauthAttempt();
-      window.location.assign(loginUrl);
-    } else if (
-      shouldAttemptAutoReauth(previousAuthRef.current, auth)
-      && !transitionEffect.redirectToLogin
-    ) {
-      // Auto-reauth was suppressed (already attempted or manual logout) — warn the user
-      dispatchToast(
-        <Toast>
-          <ToastTitle>Session needs reconnection</ToastTitle>
-        </Toast>,
-        { intent: "warning", timeout: 5000 },
-      );
-    }
-
-    previousAuthRef.current = auth;
-  }, [auth, dispatchToast, loginUrl]);
-
-  // Fetch tasks when workspace is active and tab is "tasks"
-  useEffect(() => {
-    if (showProjectSelector || tab !== "tasks") return;
-    let cancelled = false;
-    setTasksError(false);
-    setTasksLoading(true);
-    getTasks()
-      .then((tasks) => { if (!cancelled) setAllTasks(tasks); })
-      .catch(() => { if (!cancelled) { setAllTasks([]); setTasksError(true); } })
-      .finally(() => { if (!cancelled) setTasksLoading(false); });
-    getActiveSprint()
-      .then((detail) => { if (!cancelled) setActiveSprintId(detail?.sprint.id ?? null); })
-      .catch(() => { if (!cancelled) setActiveSprintId(null); });
-    return () => { cancelled = true; };
-  }, [showProjectSelector, tab, tasksFetchKey]);
 
   // On mount, check for active workspace — retry on failure (backend may still be starting)
   useEffect(() => {
@@ -337,21 +244,7 @@ function AppShell() {
     };
   }, []);
 
-  // Cmd+K / Ctrl+K to open command palette (skip when focus is in an input)
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        const tag = (e.target as HTMLElement)?.tagName;
-        const editable = (e.target as HTMLElement)?.isContentEditable;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || editable) return;
-        e.preventDefault();
-        setPaletteOpen((prev) => !prev);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
+  /* ── Callbacks ── */
   const handleProjectSelected = useCallback(
     async (workspacePath: string) => {
       if (switching) return;
@@ -407,13 +300,13 @@ function AppShell() {
   const handleCreateRoom = useCallback(
     async (name: string) => {
       try {
-        const room = await createRoom(name);
-        handleRoomSelect(room.id);
+        const newRoom = await createRoom(name);
+        handleRoomSelect(newRoom.id);
         setSelectedWorkspaceId(null);
         setTab("chat");
         handleManualRefresh();
-      } catch (err) {
-        console.error("Failed to create room:", err);
+      } catch (e) {
+        console.error("Failed to create room:", e);
       }
     },
     [handleRoomSelect, handleManualRefresh, setTab],
@@ -431,8 +324,8 @@ function AppShell() {
       try {
         await createRoomSession(roomId);
         handleManualRefresh();
-      } catch (err) {
-        console.error("Failed to create session:", err);
+      } catch (e) {
+        console.error("Failed to create session:", e);
       }
     },
     [handleManualRefresh],
@@ -447,39 +340,14 @@ function AppShell() {
           await addAgentToRoom(roomId, agentId);
         }
         handleManualRefresh();
-      } catch (err) {
-        console.error("Failed to toggle agent:", err);
+      } catch (e) {
+        console.error("Failed to toggle agent:", e);
       }
     },
     [handleManualRefresh],
   );
 
-  const doLogout = useCallback(async () => {
-    markManualLogout();
-    clearAutoReauthAttempt();
-
-    try {
-      await logout();
-      setAuth({
-        authEnabled: true,
-        authenticated: false,
-        copilotStatus: "unavailable",
-        user: null,
-      });
-    } catch {
-      clearManualLogout();
-    }
-  }, []);
-
-  const handleLogout = useCallback(() => {
-    setLogoutConfirmOpen(true);
-  }, []);
-
-  const confirmLogout = useCallback(() => {
-    setLogoutConfirmOpen(false);
-    void doLogout();
-  }, [doLogout]);
-
+  /* ── Document title ── */
   useEffect(() => {
     const roomName = room?.name ?? "Agent Academy";
     const phase = room?.currentPhase ?? "";
@@ -488,16 +356,16 @@ function AppShell() {
       : `${roomName} | Agent Academy`;
   }, [room?.name, room?.currentPhase]);
 
-  // Wait for auth check before rendering anything
+  /* ── Early returns ── */
   if (auth === null || loading) {
     return <div className={s.root} />;
   }
 
-  // Unavailable auth fail-closes to LoginPage; degraded stays visible in limited mode.
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
-    return <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />;
+    return <ChunkErrorBoundary><Suspense fallback={<div className={s.root} />}><LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} /></Suspense></ChunkErrorBoundary>;
   }
 
+  /* ── Derived state ── */
   const workspaceLimited = isWorkspaceLimited(auth);
   const degradedCopy = workspaceLimited ? getCopilotStatusCopy("degraded", auth.user ?? null) : null;
   const connectionDetail = connectionStatus === "disconnected"
@@ -519,45 +387,63 @@ function AppShell() {
     ? ov.configuredAgents.find((agent) => agent.id === selectedBreakout.assignedAgentId)
     : null;
 
+  /* ── Header model ── */
+  const headerModel: HeaderModel = {
+    title: sessionAgent
+      ? `${sessionAgent.name}'s Sessions`
+      : selectedBreakout
+        ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
+        : tab === "chat"
+          ? room?.name ?? "No active room"
+          : viewInfo.title,
+    meta: sessionAgent || selectedBreakout
+      ? null
+      : tab === "chat" && room
+        ? `${room.participants.length} agents · ${room.currentPhase}`
+        : tab !== "chat" && viewInfo.meta
+          ? viewInfo.meta
+          : null,
+    showPhasePill: !!(room && !sessionAgent && !selectedBreakout),
+    workspaceLimited,
+    degradedEyebrow: degradedCopy?.eyebrow ?? null,
+    circuitBreakerState,
+  };
+
+  /* ── Toolbar model ── */
+  const toolbarModel: ToolbarModel = {
+    tab,
+    chatToolbar: tab === "chat" && room ? {
+      currentPhase: room.currentPhase,
+      onPhaseChange: (phase: CollaborationPhase) => void wrappedPhaseTransition(phase),
+      disabled: workspaceLimited,
+      filterChecked: chatFilterChecked,
+      hiddenFilterCount: hiddenFilters.size,
+      onFilterChange: onChatFilterChange,
+    } : null,
+  };
+
   return (
     <div className={s.root}>
-      {(err || switchError) && (
-        <div className={s.errorBar}>
-          <MessageBar intent="error">
-            <MessageBarBody>
-              <MessageBarTitle>Error</MessageBarTitle>
-              {err || switchError}
-            </MessageBarBody>
-          </MessageBar>
-        </div>
-      )}
-
-      {recoveryBanner && (
-        <div className={s.recoveryBannerGlobal}>
-          <RecoveryBanner state={recoveryBanner} />
-        </div>
-      )}
-
-      <CircuitBreakerBanner state={circuitBreakerState} />
-
-      {connectionDetail && (
-        <div className={s.errorBar}>
-          <MessageBar intent="warning">
-            <MessageBarBody>
-              <MessageBarTitle>Offline</MessageBarTitle>
-              {connectionDetail}
-            </MessageBarBody>
-          </MessageBar>
-        </div>
-      )}
+      <StatusBanners
+        err={err}
+        switchError={switchError}
+        recoveryBanner={recoveryBanner}
+        circuitBreakerState={circuitBreakerState}
+        connectionDetail={connectionDetail}
+        styles={s}
+      />
 
       {showProjectSelector ? (
+        <ChunkErrorBoundary>
+        <Suspense fallback={<div className={s.root}><Spinner label="Loading…" /></div>}>
         <ProjectSelectorPage
           onProjectSelected={handleProjectSelected}
           onProjectOnboarded={handleProjectOnboarded}
           user={auth.user ?? null}
-          onLogout={handleLogout}
+          onLogout={logoutDialog.request}
         />
+        </Suspense>
+        </ChunkErrorBoundary>
       ) : (
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
           <SidebarPanel
@@ -584,242 +470,140 @@ function AppShell() {
             }
             onSwitchProject={() => setShowProjectSelector(true)}
             user={hasDisplayUser(auth.user) && auth.user ? auth.user : null}
-            onLogout={handleLogout}
+            onLogout={logoutDialog.request}
             onOpenSettings={() => setShowSettings(true)}
             sprintVersion={sprintVersion}
           />
 
           <main className={s.workspace} aria-label="Workspace content">
-            <>
-              {/* ─ Header bar (40px) ─ */}
-              <div className={s.workspaceHeader}>
-                <div className={s.workspaceHeaderBody}>
-                  <div className={s.workspaceHeaderTopRow}>
-                    <div className={s.workspaceTitle}>
-                      {sessionAgent
-                        ? `${sessionAgent.name}'s Sessions`
-                        : selectedBreakout
-                          ? `${selectedAgent?.name ?? "Agent"}'s Workspace`
-                          : tab === "chat"
-                            ? room?.name ?? "No active room"
-                            : viewInfo.title}
-                    </div>
-                    {tab === "chat" && room && !sessionAgent && !selectedBreakout && (<>
-                      <span className={s.headerDivider} />
-                      <span className={s.workspaceMetaText}>
-                        {room.participants.length} agents · {room.currentPhase}
-                      </span>
-                    </>)}
-                    {tab !== "chat" && viewInfo.meta && (<>
-                      <span className={s.headerDivider} />
-                      <span className={s.workspaceMetaText}>{viewInfo.meta}</span>
-                    </>)}
-                    <div style={{ flex: 1 }} />
-                    <div className={s.workspaceHeaderSignals}>
-                      {workspaceLimited && (
-                        <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
-                          {degradedCopy?.eyebrow ?? "Limited mode"}
-                        </div>
-                      )}
-                      {circuitBreakerState && circuitBreakerState !== "Closed" && (
-                        <div className={mergeClasses(s.workspaceSignal, s.workspaceSignalWarning)}>
-                          Circuit {circuitBreakerState === "Open" ? "open" : "probing"}
-                        </div>
-                      )}
-                      {room && !sessionAgent && !selectedBreakout && (
-                        <div className={s.phasePill}>
-                          <span className={s.phasePillDot} />
-                          Connected
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            <WorkspaceHeader model={headerModel} styles={s} />
+
+            {workspaceLimited && degradedCopy && (
+              <div className={s.limitedModeBanner} role="alert">
+                <div className={s.limitedModeBadge}>{degradedCopy.eyebrow}</div>
+                <div className={s.limitedModeTitle}>{degradedCopy.title}</div>
+                <div className={s.limitedModeDescription}>
+                  {degradedCopy.description}
                 </div>
+                <Button
+                  appearance="primary"
+                  size="small"
+                  onClick={() => window.location.assign(loginUrl)}
+                  style={{ marginTop: "8px", alignSelf: "flex-start" }}
+                >
+                  {degradedCopy.actionLabel}
+                </Button>
               </div>
+            )}
 
-              {workspaceLimited && degradedCopy && (
-                <div className={s.limitedModeBanner} role="alert">
-                  <div className={s.limitedModeBadge}>{degradedCopy.eyebrow}</div>
-                  <div className={s.limitedModeTitle}>{degradedCopy.title}</div>
-                  <div className={s.limitedModeDescription}>
-                    {degradedCopy.description}
-                  </div>
-                  <Button
-                    appearance="primary"
-                    size="small"
-                    onClick={() => window.location.assign(loginUrl)}
-                    style={{ marginTop: "8px", alignSelf: "flex-start" }}
-                  >
-                    {degradedCopy.actionLabel}
-                  </Button>
-                </div>
-              )}
+            {!sessionAgent && !selectedBreakout && (
+              <WorkspaceToolbar model={toolbarModel} styles={s} />
+            )}
 
-              {/* ─ Contextual Toolbar (34px) ─ */}
-              {!sessionAgent && !selectedBreakout && (
-                <div className={s.tabBar}>
-                  <div className={s.tabStrip}>
-                    {tab === "chat" && room && (<>
-                      <select
-                        className={s.toolbarSelect}
-                        value={room.currentPhase}
-                        onChange={(e) => void wrappedPhaseTransition(e.target.value as CollaborationPhase)}
-                        disabled={workspaceLimited}
-                        title="Change room phase"
-                      >
-                        <option value="Intake">Intake</option>
-                        <option value="Planning">Planning</option>
-                        <option value="Discussion">Discussion</option>
-                        <option value="Implementation">Implementation</option>
-                        <option value="Validation">Validation</option>
-                        <option value="FinalSynthesis">Final Synthesis</option>
-                      </select>
-                      <Menu checkedValues={chatFilterChecked} onCheckedValueChange={onChatFilterChange}>
-                        <MenuTrigger disableButtonEnhancement>
-                          <Button size="small" appearance="subtle" className={s.filterMenuButton}>
-                            ▾ Filter
-                            {hiddenFilters.size > 0 && (
-                              <V3Badge color="info" className={s.filterBadge}>
-                                {hiddenFilters.size}
-                              </V3Badge>
-                            )}
-                          </Button>
-                        </MenuTrigger>
-                        <MenuPopover>
-                          <MenuList>
-                            <MenuItemCheckbox name="show" value="system">System messages</MenuItemCheckbox>
-                            <MenuItemCheckbox name="show" value="commands">Command results</MenuItemCheckbox>
-                          </MenuList>
-                        </MenuPopover>
-                      </Menu>
-                    </>)}
-                    {tab === "tasks" && (
-                      <span className={s.workspaceMetaText}>Sorted by newest</span>
-                    )}
-                    {tab === "commands" && (
-                      <span className={s.workspaceMetaText}>Command Deck</span>
-                    )}
-                    {tab === "sprint" && (
-                      <span className={s.workspaceMetaText}>Active iteration</span>
-                    )}
-                    {tab === "timeline" && (
-                      <span className={s.workspaceMetaText}>All events</span>
-                    )}
-                    {tab === "dashboard" && (
-                      <span className={s.workspaceMetaText}>System telemetry</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ─ Content ─ */}
-              {sessionAgent ? (
-                <section className={s.tabContent}>
-                  <AgentSessionPanel
-                    agent={sessionAgent}
-                    location={sessionAgentLocation}
-                    thinkingAgents={thinkingAgentList}
-                    connectionStatus={connectionStatus}
-                    onSendMessage={handleSendMessage}
-                  />
-                </section>
-              ) : selectedBreakout ? (
-                <section className={s.tabContent}>
-                  <ChatPanel
-                    room={{
-                      id: selectedBreakout.id,
-                      name: selectedBreakout.name,
-                      status: selectedBreakout.status,
-                      currentPhase: "Implementation",
-                      activeTask: null,
-                      participants: [],
-                      recentMessages: selectedBreakout.recentMessages,
-                      createdAt: selectedBreakout.createdAt,
-                      updatedAt: selectedBreakout.updatedAt,
-                    }}
-                    thinkingAgents={thinkingAgentList}
-                    connectionStatus={connectionStatus}
-                    onSendMessage={handleSendMessage}
-                    readOnly
-                  />
-                </section>
-              ) : (
-                <section className={s.tabContent}>
-                  {tab === "chat" && (
-                    <ChatPanel
-                      room={room}
-                      loading={busy}
+            {/* ─ Content ─ */}
+            {sessionAgent ? (
+              <ChunkErrorBoundary>
+                <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
+                  <section className={s.tabContent}>
+                    <AgentSessionPanel
+                      agent={sessionAgent}
+                      location={sessionAgentLocation}
                       thinkingAgents={thinkingAgentList}
                       connectionStatus={connectionStatus}
                       onSendMessage={handleSendMessage}
-                      readOnly={workspaceLimited}
-                      hiddenFilters={hiddenFilters}
-                      agentLocations={ov.agentLocations ?? []}
-                      configuredAgents={ov.configuredAgents}
-                      onCreateSession={handleCreateSession}
-                      onToggleAgent={handleToggleAgent}
                     />
-                  )}
-                  {tab === "tasks" && (
-                    <TaskListPanel
-                      tasks={allTasks}
-                      loading={tasksLoading}
-                      error={tasksError}
-                      onRefresh={() => setTasksFetchKey((k) => k + 1)}
-                      activeSprintId={activeSprintId}
+                  </section>
+                </Suspense>
+              </ChunkErrorBoundary>
+            ) : selectedBreakout ? (
+              <ChunkErrorBoundary>
+                <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
+                  <section className={s.tabContent}>
+                    <ChatPanel
+                      room={{
+                        id: selectedBreakout.id,
+                        name: selectedBreakout.name,
+                        status: selectedBreakout.status,
+                        currentPhase: "Implementation",
+                        activeTask: null,
+                        participants: [],
+                        recentMessages: selectedBreakout.recentMessages,
+                        createdAt: selectedBreakout.createdAt,
+                        updatedAt: selectedBreakout.updatedAt,
+                      }}
+                      thinkingAgents={thinkingAgentList}
+                      connectionStatus={connectionStatus}
+                      onSendMessage={handleSendMessage}
+                      readOnly
                     />
-                  )}
-                  {tab === "plan" && (
-                    <PlanPanel key={room?.id ?? "no-room"} roomId={room?.id ?? null} />
-                  )}
-                  {tab === "commands" && (
-                    <CommandsPanel roomId={room?.id ?? null} readOnly={workspaceLimited} />
-                  )}
-                  {tab === "sprint" && <SprintPanel sprintVersion={sprintVersion} lastSprintEvent={lastSprintEvent} />}
-                  {tab === "timeline" && (
-                    <TimelinePanel activity={activity} loading={busy} />
-                  )}
-                  {tab === "dashboard" && (
-                    <DashboardPanel overview={ov} circuitBreakerState={circuitBreakerState} />
-                  )}
-                  {tab === "overview" && (
-                    <WorkspaceOverviewPanel
-                      overview={ov}
-                      room={room}
-                      onPhaseTransition={wrappedPhaseTransition}
-                      transitioning={phaseTransitioning}
-                      readOnly={workspaceLimited}
-                    />
-                  )}
-                  {tab === "directMessages" && (
-                    <DmPanel
-                      agents={ov.configuredAgents.map((a) => ({
-                        id: a.id,
-                        name: a.name,
-                        role: a.role,
-                      }))}
-                      readOnly={workspaceLimited}
-                    />
-                  )}
-                </section>
-              )}
-            </>
+                  </section>
+                </Suspense>
+              </ChunkErrorBoundary>
+            ) : (
+              <WorkspaceContent
+                tab={tab}
+                room={room}
+                busy={busy}
+                thinkingAgents={thinkingAgentList}
+                connectionStatus={connectionStatus}
+                workspaceLimited={workspaceLimited}
+                hiddenFilters={hiddenFilters}
+                agentLocations={ov.agentLocations ?? []}
+                configuredAgents={ov.configuredAgents}
+                onSendMessage={handleSendMessage}
+                onCreateSession={handleCreateSession}
+                onToggleAgent={handleToggleAgent}
+                allTasks={allTasks}
+                tasksLoading={tasksLoading}
+                tasksError={tasksError}
+                activeSprintId={activeSprintId}
+                onRefreshTasks={refreshTasks}
+                onPhaseTransition={wrappedPhaseTransition}
+                phaseTransitioning={phaseTransitioning}
+                overview={ov}
+                circuitBreakerState={circuitBreakerState}
+                sprintVersion={sprintVersion}
+                lastSprintEvent={lastSprintEvent}
+                activity={activity}
+                onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
+                onNavigateToTasks={() => setTab("tasks")}
+                styles={s}
+              />
+            )}
           </main>
         </div>
       )}
+
+      {/* ── Overlays ── */}
       {showSettings && (
-        <SettingsPanel onClose={() => setShowSettings(false)} />
+        <ChunkErrorBoundary>
+          <Suspense fallback={null}>
+            <SettingsPanel onClose={() => setShowSettings(false)} desktopNotifications={desktopNotif} />
+          </Suspense>
+        </ChunkErrorBoundary>
       )}
-      <CommandPalette
-        open={paletteOpen}
-        onDismiss={() => setPaletteOpen(false)}
-        roomId={room?.id ?? null}
-        readOnly={workspaceLimited}
-      />
+      <ChunkErrorBoundary>
+        <Suspense fallback={null}>
+          <CommandPalette
+            open={paletteOpen}
+            onDismiss={() => setPaletteOpen(false)}
+            roomId={room?.id ?? null}
+            readOnly={workspaceLimited}
+          />
+        </Suspense>
+      </ChunkErrorBoundary>
+      <ChunkErrorBoundary>
+        <Suspense fallback={null}>
+          <KeyboardShortcutsDialog
+            open={shortcutsOpen}
+            onClose={() => setShortcutsOpen(false)}
+          />
+        </Suspense>
+      </ChunkErrorBoundary>
       <ConfirmDialog
-        open={logoutConfirmOpen}
-        onConfirm={confirmLogout}
-        onCancel={() => setLogoutConfirmOpen(false)}
+        open={logoutDialog.open}
+        onConfirm={logoutDialog.confirm}
+        onCancel={logoutDialog.cancel}
         title="Sign out?"
         message="You'll lose live updates and need to sign in again to resume. Any unsaved draft messages are preserved locally."
         confirmLabel="Sign out"

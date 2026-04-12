@@ -42,8 +42,8 @@ public sealed class RoomTopicHandler : ICommandHandler
         else if (command.Args.TryGetValue("value", out var valObj) && valObj is string valStr)
             topic = valStr;
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var room = await runtime.GetRoomAsync(roomId);
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var room = await roomService.GetRoomAsync(roomId);
 
         if (room is null)
         {
@@ -67,7 +67,7 @@ public sealed class RoomTopicHandler : ICommandHandler
 
         try
         {
-            var updated = await runtime.SetRoomTopicAsync(roomId, topic);
+            var updated = await roomService.SetRoomTopicAsync(roomId, topic);
 
             return command with
             {

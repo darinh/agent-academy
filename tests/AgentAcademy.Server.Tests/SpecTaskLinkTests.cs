@@ -7,6 +7,8 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -50,8 +52,24 @@ public class SpecTaskLinkTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(catalog);
-        services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
@@ -79,9 +97,10 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var link = await runtime.LinkTaskToSpecAsync(
+        var link = await taskLifecycle.LinkTaskToSpecAsync(
             taskId, "003-agent-system", "engineer-1", "Hephaestus");
 
         Assert.Equal(taskId, link.TaskId);
@@ -96,9 +115,10 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var link = await runtime.LinkTaskToSpecAsync(
+        var link = await taskLifecycle.LinkTaskToSpecAsync(
             taskId, "001-domain-model", "engineer-1", "Hephaestus",
             linkType: "Modifies", note: "Added new field to TaskEntity");
 
@@ -112,10 +132,11 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus",
+            taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus",
                 linkType: "InvalidType"));
         Assert.Contains("Invalid link type", ex.Message);
     }
@@ -124,10 +145,11 @@ public class SpecTaskLinkTests : IDisposable
     public async Task LinkTaskToSpec_TaskNotFound_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            runtime.LinkTaskToSpecAsync("nonexistent", "003-agent-system", "engineer-1", "Hephaestus"));
+            taskLifecycle.LinkTaskToSpecAsync("nonexistent", "003-agent-system", "engineer-1", "Hephaestus"));
     }
 
     [Fact]
@@ -136,13 +158,14 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var link1 = await runtime.LinkTaskToSpecAsync(
+        var link1 = await taskLifecycle.LinkTaskToSpecAsync(
             taskId, "003-agent-system", "engineer-1", "Hephaestus",
             linkType: "Implements");
 
-        var link2 = await runtime.LinkTaskToSpecAsync(
+        var link2 = await taskLifecycle.LinkTaskToSpecAsync(
             taskId, "003-agent-system", "reviewer-1", "Socrates",
             linkType: "Fixes", note: "Corrected known gap");
 
@@ -159,13 +182,14 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        await runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
-        await runtime.LinkTaskToSpecAsync(taskId, "007-agent-commands", "engineer-1", "Hephaestus");
-        await runtime.LinkTaskToSpecAsync(taskId, "010-task-management", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "007-agent-commands", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "010-task-management", "engineer-1", "Hephaestus");
 
-        var links = await runtime.GetSpecLinksForTaskAsync(taskId);
+        var links = await taskQueries.GetSpecLinksForTaskAsync(taskId);
         Assert.Equal(3, links.Count);
     }
 
@@ -173,14 +197,15 @@ public class SpecTaskLinkTests : IDisposable
     public async Task LinkTaskToSpec_EmptyArgs_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            runtime.LinkTaskToSpecAsync("", "003-agent-system", "engineer-1", "Hephaestus"));
+            taskLifecycle.LinkTaskToSpecAsync("", "003-agent-system", "engineer-1", "Hephaestus"));
 
         var taskId = await CreateTestTask();
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            runtime.LinkTaskToSpecAsync(taskId, "", "engineer-1", "Hephaestus"));
+            taskLifecycle.LinkTaskToSpecAsync(taskId, "", "engineer-1", "Hephaestus"));
     }
 
     // ── WorkspaceRuntime.UnlinkTaskFromSpecAsync ──────────────
@@ -191,12 +216,13 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        await runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
-        await runtime.UnlinkTaskFromSpecAsync(taskId, "003-agent-system");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskQueries.UnlinkTaskFromSpecAsync(taskId, "003-agent-system");
 
-        var links = await runtime.GetSpecLinksForTaskAsync(taskId);
+        var links = await taskQueries.GetSpecLinksForTaskAsync(taskId);
         Assert.Empty(links);
     }
 
@@ -206,10 +232,11 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            runtime.UnlinkTaskFromSpecAsync(taskId, "003-agent-system"));
+            taskQueries.UnlinkTaskFromSpecAsync(taskId, "003-agent-system"));
     }
 
     // ── WorkspaceRuntime.GetSpecLinksForTaskAsync ─────────────
@@ -220,12 +247,13 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        await runtime.LinkTaskToSpecAsync(taskId, "010-task-management", "engineer-1", "Hephaestus");
-        await runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "010-task-management", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
 
-        var links = await runtime.GetSpecLinksForTaskAsync(taskId);
+        var links = await taskQueries.GetSpecLinksForTaskAsync(taskId);
         Assert.Equal("003-agent-system", links[0].SpecSectionId);
         Assert.Equal("010-task-management", links[1].SpecSectionId);
     }
@@ -236,9 +264,10 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var links = await runtime.GetSpecLinksForTaskAsync(taskId);
+        var links = await taskQueries.GetSpecLinksForTaskAsync(taskId);
         Assert.Empty(links);
     }
 
@@ -251,12 +280,13 @@ public class SpecTaskLinkTests : IDisposable
         var task2 = await CreateTestTask(title: "Task B");
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        await runtime.LinkTaskToSpecAsync(task1, "003-agent-system", "engineer-1", "Hephaestus");
-        await runtime.LinkTaskToSpecAsync(task2, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(task1, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(task2, "003-agent-system", "engineer-1", "Hephaestus");
 
-        var links = await runtime.GetTasksForSpecAsync("003-agent-system");
+        var links = await taskQueries.GetTasksForSpecAsync("003-agent-system");
         Assert.Equal(2, links.Count);
     }
 
@@ -264,9 +294,10 @@ public class SpecTaskLinkTests : IDisposable
     public async Task GetTasksForSpec_EmptyForUnlinkedSection()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var links = await runtime.GetTasksForSpecAsync("999-nonexistent");
+        var links = await taskQueries.GetTasksForSpecAsync("999-nonexistent");
         Assert.Empty(links);
     }
 
@@ -279,11 +310,12 @@ public class SpecTaskLinkTests : IDisposable
         var unlinked = await CreateTestTask(title: "Unlinked Task");
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        await runtime.LinkTaskToSpecAsync(linked, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(linked, "003-agent-system", "engineer-1", "Hephaestus");
 
-        var unlinkedTasks = await runtime.GetUnlinkedTasksAsync();
+        var unlinkedTasks = await taskQueries.GetUnlinkedTasksAsync();
         Assert.Single(unlinkedTasks);
         Assert.Equal("Unlinked Task", unlinkedTasks[0].Title);
     }
@@ -296,9 +328,10 @@ public class SpecTaskLinkTests : IDisposable
         var active = await CreateTestTask(title: "Active Unlinked");
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var unlinkedTasks = await runtime.GetUnlinkedTasksAsync();
+        var unlinkedTasks = await taskQueries.GetUnlinkedTasksAsync();
         Assert.Single(unlinkedTasks);
         Assert.Equal("Active Unlinked", unlinkedTasks[0].Title);
     }
@@ -431,8 +464,9 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        await runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
 
         var handler = new ShowUnlinkedChangesHandler();
         var (cmd, ctx) = MakeCommand("SHOW_UNLINKED_CHANGES", new());
@@ -534,7 +568,8 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var activityBus = scope.ServiceProvider.GetRequiredService<ActivityBroadcaster>();
 
         ActivityEvent? captured = null;
@@ -543,7 +578,7 @@ public class SpecTaskLinkTests : IDisposable
             if (e.Type == ActivityEventType.SpecTaskLinked) captured = e;
         });
 
-        await runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
 
         Assert.NotNull(captured);
         Assert.Contains("Hephaestus", captured!.Message);
@@ -562,9 +597,10 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var link = await runtime.LinkTaskToSpecAsync(
+        var link = await taskLifecycle.LinkTaskToSpecAsync(
             taskId, "003-agent-system", "engineer-1", "Hephaestus", linkType: linkType);
 
         var expectedEnum = Enum.Parse<SpecLinkType>(linkType);
@@ -579,10 +615,11 @@ public class SpecTaskLinkTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
 
-        await runtime.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        await taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus");
 
         // Delete the task
         var task = await db.Tasks.FindAsync(taskId);

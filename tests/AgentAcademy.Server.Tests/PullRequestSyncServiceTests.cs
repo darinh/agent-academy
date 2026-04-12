@@ -103,18 +103,37 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var sc = new ServiceCollection();
         sc.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         sc.AddSingleton<ActivityBroadcaster>();
+        sc.AddScoped<ActivityPublisher>();
         sc.AddSingleton(new AgentCatalogOptions("main", "Main Room",
             new List<AgentDefinition>
             {
                 new("eng-1", "Hephaestus", "SoftwareEngineer", "Engineer",
                     "You are an engineer.", null, ["impl"], ["code"], true)
             }));
-        sc.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
+        sc.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
+        sc.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         sc.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
         sc.AddScoped<ConversationSessionService>();
-        sc.AddScoped<WorkspaceRuntime>();
+        sc.AddScoped<TaskQueryService>();
+        sc.AddScoped<TaskLifecycleService>();
+        sc.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
+        sc.AddScoped<MessageService>();
+        sc.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
+        sc.AddScoped<AgentLocationService>();
+        sc.AddScoped<PlanService>();
+        sc.AddScoped<BreakoutRoomService>();
+        sc.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        sc.AddScoped<TaskItemService>();
+        sc.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        sc.AddScoped<RoomService>();
+        sc.AddScoped<CrashRecoveryService>();
+        sc.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        sc.AddScoped<InitializationService>();
+        sc.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        sc.AddScoped<TaskOrchestrationService>();
+        sc.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         sc.AddSingleton(_github);
 
         _services = sc.BuildServiceProvider();
@@ -123,8 +142,11 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         db.Database.EnsureCreated();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        runtime.InitializeAsync().GetAwaiter().GetResult();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 
     public async ValueTask DisposeAsync()
@@ -141,15 +163,18 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
     private async Task<string> CreateTaskWithPr(PullRequestStatus status = PullRequestStatus.Open, int prNumber = 42)
     {
         await using var scope = _services.CreateAsyncScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var result = await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: $"Test task PR#{prNumber}",
             Description: "Test description",
             SuccessCriteria: "Tests pass",
             RoomId: "main",
             PreferredRoles: new List<string> { "SoftwareEngineer" }));
-        await runtime.UpdateTaskBranchAsync(result.Task.Id, $"feat/test-{prNumber}");
-        await runtime.UpdateTaskPrAsync(result.Task.Id, $"https://github.com/test/repo/pull/{prNumber}", prNumber, status);
+        await taskQueries.UpdateTaskBranchAsync(result.Task.Id, $"feat/test-{prNumber}");
+        await taskQueries.UpdateTaskPrAsync(result.Task.Id, $"https://github.com/test/repo/pull/{prNumber}", prNumber, status);
         return result.Task.Id;
     }
 
@@ -346,17 +371,21 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
 }
 
 /// <summary>
-/// Tests for WorkspaceRuntime PR sync helper methods.
+/// Tests for PR sync helper methods on TaskQueryService / TaskLifecycleService.
 /// </summary>
 [Collection("WorkspaceRuntime")]
-public class WorkspaceRuntimePrSyncTests : IDisposable
+public class PrSyncHelperTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly InitializationService _initialization;
+    private readonly TaskOrchestrationService _taskOrchestration;
+    private readonly TaskQueryService _taskQueries;
+    private readonly TaskLifecycleService _taskLifecycle;
     private readonly ActivityBroadcaster _activityBus;
+    private readonly ActivityPublisher _activityPublisher;
 
-    public WorkspaceRuntimePrSyncTests()
+    public PrSyncHelperTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
@@ -376,12 +405,21 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
             });
 
         _activityBus = new ActivityBroadcaster();
+        _activityPublisher = new ActivityPublisher(_db, _activityBus);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _runtime = new WorkspaceRuntime(_db, NullLogger<WorkspaceRuntime>.Instance, catalog, _activityBus, sessionService);
-        _runtime.InitializeAsync().GetAwaiter().GetResult();
+        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
+        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
+        var agentLocations = new AgentLocationService(_db, catalog, _activityPublisher);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, _taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, _activityPublisher, sessionService, messageService);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        _initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 
     public void Dispose()
@@ -392,14 +430,14 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
 
     private async Task<string> CreateTaskWithPr(PullRequestStatus status, int prNumber = 42)
     {
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: $"Test task PR#{prNumber}",
             Description: "desc",
             SuccessCriteria: "Tests pass",
             RoomId: "main",
             PreferredRoles: new List<string> { "SoftwareEngineer" }));
-        await _runtime.UpdateTaskBranchAsync(result.Task.Id, $"feat/test-{prNumber}");
-        await _runtime.UpdateTaskPrAsync(result.Task.Id, $"url/{prNumber}", prNumber, status);
+        await _taskQueries.UpdateTaskBranchAsync(result.Task.Id, $"feat/test-{prNumber}");
+        await _taskQueries.UpdateTaskPrAsync(result.Task.Id, $"url/{prNumber}", prNumber, status);
         return result.Task.Id;
     }
 
@@ -408,7 +446,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     {
         var taskId = await CreateTaskWithPr(PullRequestStatus.Open);
 
-        var result = await _runtime.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Merged);
+        var result = await _taskLifecycle.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Merged);
 
         Assert.NotNull(result);
         Assert.Equal(PullRequestStatus.Merged, result!.PullRequestStatus);
@@ -419,7 +457,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     {
         var taskId = await CreateTaskWithPr(PullRequestStatus.Open);
 
-        var result = await _runtime.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Open);
+        var result = await _taskLifecycle.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Open);
 
         Assert.Null(result);
     }
@@ -431,7 +469,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var events = new List<ActivityEvent>();
         _activityBus.Subscribe(events.Add);
 
-        await _runtime.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Approved);
+        await _taskLifecycle.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Approved);
 
         Assert.Contains(events, e => e.Type == ActivityEventType.TaskPrStatusChanged);
         Assert.Contains(events, e => e.Message.Contains("Open → Approved"));
@@ -444,7 +482,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         var events = new List<ActivityEvent>();
         _activityBus.Subscribe(events.Add);
 
-        await _runtime.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Open);
+        await _taskLifecycle.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Open);
 
         Assert.DoesNotContain(events, e => e.Type == ActivityEventType.TaskPrStatusChanged);
     }
@@ -453,7 +491,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     public async Task SyncTaskPrStatusAsync_ThrowsOnMissingTask()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.SyncTaskPrStatusAsync("nonexistent", PullRequestStatus.Merged));
+            () => _taskLifecycle.SyncTaskPrStatusAsync("nonexistent", PullRequestStatus.Merged));
     }
 
     [Fact]
@@ -462,7 +500,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         await CreateTaskWithPr(PullRequestStatus.Open, 10);
         await CreateTaskWithPr(PullRequestStatus.Approved, 11);
 
-        var results = await _runtime.GetTasksWithActivePrsAsync();
+        var results = await _taskQueries.GetTasksWithActivePrsAsync();
 
         Assert.Equal(2, results.Count);
         Assert.Contains(results, r => r.PrNumber == 10);
@@ -476,7 +514,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
         await CreateTaskWithPr(PullRequestStatus.Closed, 21);
         await CreateTaskWithPr(PullRequestStatus.Open, 22);
 
-        var results = await _runtime.GetTasksWithActivePrsAsync();
+        var results = await _taskQueries.GetTasksWithActivePrsAsync();
 
         Assert.Single(results);
         Assert.Equal(22, results[0].PrNumber);
@@ -486,7 +524,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     public async Task GetTasksWithActivePrsAsync_ExcludesTasksWithoutPr()
     {
         // Task with no PR
-        await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "No PR task",
             Description: "desc",
             SuccessCriteria: "pass",
@@ -494,7 +532,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
             PreferredRoles: new List<string> { "SoftwareEngineer" }));
         await CreateTaskWithPr(PullRequestStatus.Open, 30);
 
-        var results = await _runtime.GetTasksWithActivePrsAsync();
+        var results = await _taskQueries.GetTasksWithActivePrsAsync();
 
         Assert.Single(results);
         Assert.Equal(30, results[0].PrNumber);
@@ -505,7 +543,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     {
         await CreateTaskWithPr(PullRequestStatus.ReviewRequested, 40);
 
-        var results = await _runtime.GetTasksWithActivePrsAsync();
+        var results = await _taskQueries.GetTasksWithActivePrsAsync();
 
         Assert.Single(results);
     }
@@ -515,7 +553,7 @@ public class WorkspaceRuntimePrSyncTests : IDisposable
     {
         await CreateTaskWithPr(PullRequestStatus.ChangesRequested, 41);
 
-        var results = await _runtime.GetTasksWithActivePrsAsync();
+        var results = await _taskQueries.GetTasksWithActivePrsAsync();
 
         Assert.Single(results);
     }

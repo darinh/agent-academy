@@ -220,7 +220,10 @@ public class ErrorApiEndpointTests : IDisposable
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentErrorTracker _errorTracker;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly BreakoutRoomService _breakoutRoomService;
+    private readonly ActivityPublisher _activityPublisher;
     private readonly AgentCatalogOptions _catalog;
 
     public ErrorApiEndpointTests()
@@ -245,9 +248,22 @@ public class ErrorApiEndpointTests : IDisposable
         var sessionService = new ConversationSessionService(
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
-        _runtime = new WorkspaceRuntime(
-            _db, NullLogger<WorkspaceRuntime>.Instance,
-            _catalog, new ActivityBroadcaster(), sessionService);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
+        var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
+        var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
+        var planService = new PlanService(_db);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService);
+        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries, agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService, messageService);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        _activityPublisher = activityPublisher;
+        _roomService = roomService;
+        _agentLocationService = agentLocations;
+        _breakoutRoomService = breakouts;
     }
 
     public void Dispose()
@@ -349,7 +365,11 @@ public class ErrorApiEndpointTests : IDisposable
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<LlmUsageTracker>.Instance);
         return new RoomController(
-            _runtime, _catalog, usageTracker, _errorTracker,
+            _roomService, _agentLocationService,
+            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher,
+                new ConversationSessionService(_db, new SystemSettingsService(_db),
+                    Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance)),
+            _catalog, usageTracker, _errorTracker,
             NullLogger<RoomController>.Instance);
     }
 
@@ -360,7 +380,8 @@ public class ErrorApiEndpointTests : IDisposable
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<LlmUsageTracker>.Instance);
         return new SystemController(
-            _runtime, executor, _catalog, _db, usageTracker, _errorTracker,
+            _roomService, _agentLocationService, _breakoutRoomService, _activityPublisher,
+            executor, _catalog, _db, usageTracker, _errorTracker,
             NullLogger<SystemController>.Instance);
     }
 }

@@ -34,11 +34,11 @@ public sealed class SetPlanHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var plans = context.Services.GetRequiredService<PlanService>();
 
         try
         {
-            await runtime.SetPlanAsync(roomId, parsed!.Content);
+            await plans.SetPlanAsync(roomId, parsed!.Content);
 
             return command with
             {

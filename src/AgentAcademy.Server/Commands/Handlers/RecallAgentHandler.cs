@@ -50,10 +50,13 @@ public sealed class RecallAgentHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var breakouts = context.Services.GetRequiredService<BreakoutRoomService>();
+        var messages = context.Services.GetRequiredService<MessageService>();
 
         // Resolve the agent by name or ID
-        var allAgents = runtime.GetConfiguredAgents();
+        var allAgents = catalog.Agents;
         var agent = allAgents.FirstOrDefault(a =>
             a.Name.Equals(targetAgent, StringComparison.OrdinalIgnoreCase) ||
             a.Id.Equals(targetAgent, StringComparison.OrdinalIgnoreCase));
@@ -69,7 +72,7 @@ public sealed class RecallAgentHandler : ICommandHandler
         }
 
         // Check the agent is actually in a breakout room
-        var location = await runtime.GetAgentLocationAsync(agent.Id);
+        var location = await agentLocations.GetAgentLocationAsync(agent.Id);
         if (location is null || location.State != AgentState.Working || string.IsNullOrEmpty(location.BreakoutRoomId))
         {
             return command with
@@ -83,18 +86,18 @@ public sealed class RecallAgentHandler : ICommandHandler
         try
         {
             var breakoutId = location.BreakoutRoomId;
-            var breakout = await runtime.GetBreakoutRoomAsync(breakoutId);
+            var breakout = await breakouts.GetBreakoutRoomAsync(breakoutId);
             var parentRoomId = breakout?.ParentRoomId ?? context.RoomId ?? "main";
 
             // Post recall notices
-            await runtime.PostBreakoutMessageAsync(
+            await messages.PostBreakoutMessageAsync(
                 breakoutId, "system", "LocalAgentHost", "System",
                 $"⏎ {agent.Name} has been recalled by {context.AgentName}.");
 
             // Close the breakout room (moves agent to idle in parent room)
-            await runtime.CloseBreakoutRoomAsync(breakoutId, BreakoutRoomCloseReason.Recalled);
+            await breakouts.CloseBreakoutRoomAsync(breakoutId, BreakoutRoomCloseReason.Recalled);
 
-            await runtime.PostSystemStatusAsync(parentRoomId,
+            await messages.PostSystemStatusAsync(parentRoomId,
                 $"⏎ {agent.Name} has been recalled from breakout by {context.AgentName} and returned to this room.");
 
             return command with

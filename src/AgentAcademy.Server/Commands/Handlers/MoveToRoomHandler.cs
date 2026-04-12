@@ -26,10 +26,11 @@ public sealed class MoveToRoomHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
 
         // Verify room exists
-        var room = await runtime.GetRoomAsync(roomId);
+        var room = await roomService.GetRoomAsync(roomId);
         if (room is null)
         {
             return command with
@@ -41,7 +42,7 @@ public sealed class MoveToRoomHandler : ICommandHandler
         }
 
         // Move the agent
-        await runtime.MoveAgentAsync(context.AgentId, roomId, AgentState.Idle);
+        await agentLocations.MoveAgentAsync(context.AgentId, roomId, AgentState.Idle);
 
         return command with
         {

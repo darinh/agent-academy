@@ -24,4 +24,6 @@ public sealed record HumanCommandMetadata(
     string Description,
     string Detail,
     bool IsAsync,
-    IReadOnlyList<HumanCommandFieldMetadata> Fields);
+    IReadOnlyList<HumanCommandFieldMetadata> Fields,
+    bool IsDestructive = false,
+    string? DestructiveWarning = null);

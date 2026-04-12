@@ -14,7 +14,10 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class SystemController : ControllerBase
 {
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly BreakoutRoomService _breakoutRoomService;
+    private readonly ActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentAcademyDbContext _db;
@@ -25,7 +28,10 @@ public class SystemController : ControllerBase
     private static readonly DateTime StartedAt = DateTime.UtcNow;
 
     public SystemController(
-        WorkspaceRuntime runtime,
+        RoomService roomService,
+        AgentLocationService agentLocationService,
+        BreakoutRoomService breakoutRoomService,
+        ActivityPublisher activity,
         IAgentExecutor executor,
         AgentCatalogOptions catalog,
         AgentAcademyDbContext db,
@@ -33,7 +39,10 @@ public class SystemController : ControllerBase
         AgentErrorTracker errorTracker,
         ILogger<SystemController> logger)
     {
-        _runtime = runtime;
+        _roomService = roomService;
+        _agentLocationService = agentLocationService;
+        _breakoutRoomService = breakoutRoomService;
+        _activity = activity;
         _executor = executor;
         _catalog = catalog;
         _db = db;
@@ -105,7 +114,8 @@ public class SystemController : ControllerBase
         return Ok(new HealthResult(
             Status: "healthy",
             Uptime: uptime.ToString(@"d\.hh\:mm\:ss"),
-            Timestamp: DateTime.UtcNow
+            Timestamp: DateTime.UtcNow,
+            Message: "Agent Academy backend is healthy."
         ));
     }
 
@@ -117,13 +127,13 @@ public class SystemController : ControllerBase
     [AllowAnonymous]
     public IActionResult GetInstanceHealth()
     {
-        var instanceId = WorkspaceRuntime.CurrentInstanceId ?? "unknown";
+        var instanceId = CrashRecoveryService.CurrentInstanceId ?? "unknown";
 
         return Ok(new InstanceHealthResult(
             InstanceId: instanceId,
             StartedAt: StartedAt,
             Version: typeof(SystemController).Assembly.GetName().Version?.ToString() ?? "0.0.0",
-            CrashDetected: WorkspaceRuntime.CurrentCrashDetected,
+            CrashDetected: CrashRecoveryService.CurrentCrashDetected,
             ExecutorOperational: _executor.IsFullyOperational,
             AuthFailed: _executor.IsAuthFailed,
             CircuitBreakerState: _executor.CircuitBreakerState.ToString()
@@ -138,7 +148,19 @@ public class SystemController : ControllerBase
     {
         try
         {
-            var overview = await _runtime.GetOverviewAsync();
+            var rooms = await _roomService.GetRoomsAsync();
+            var agentLocations = await _agentLocationService.GetAgentLocationsAsync();
+            var breakoutRooms = await _breakoutRoomService.GetAllBreakoutRoomsAsync();
+            var recentActivity = _activity.GetRecentActivity();
+
+            var overview = new WorkspaceOverview(
+                ConfiguredAgents: [.. _catalog.Agents],
+                Rooms: rooms,
+                RecentActivity: [.. recentActivity],
+                AgentLocations: agentLocations,
+                BreakoutRooms: breakoutRooms,
+                GeneratedAt: DateTime.UtcNow
+            );
             return Ok(overview);
         }
         catch (Exception ex)

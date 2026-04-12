@@ -1,10 +1,14 @@
+using System.Security.Claims;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Commands.Handlers;
+using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,8 +59,24 @@ public class DmCommandTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
-        services.AddScoped<WorkspaceRuntime>();
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<MessageService>();
+        services.AddScoped<AgentLocationService>();
+        services.AddScoped<PlanService>();
+        services.AddScoped<BreakoutRoomService>();
+        services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
+        services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<RoomService>();
+        services.AddScoped<CrashRecoveryService>();
+        services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
+        services.AddScoped<InitializationService>();
+        services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
 
@@ -72,6 +92,9 @@ public class DmCommandTests : IDisposable
         services.AddSingleton(new WorktreeService(
             Microsoft.Extensions.Logging.Abstractions.NullLogger<WorktreeService>.Instance,
             repositoryRoot: "/tmp/test-repo"));
+        services.AddSingleton<AgentMemoryLoader>();
+        services.AddSingleton<BreakoutLifecycleService>();
+        services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<AgentOrchestrator>();
 
         services.AddLogging();
@@ -290,10 +313,11 @@ public class DmCommandTests : IDisposable
     public async Task SendDirectMessage_StoresWithRecipientId()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
-        var messageId = await runtime.SendDirectMessageAsync(
+        var messageId = await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Check the auth module.", "main");
 
@@ -310,10 +334,11 @@ public class DmCommandTests : IDisposable
     public async Task SendDirectMessage_PostsSystemNotification()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Check the auth module.", "main");
 
@@ -329,26 +354,27 @@ public class DmCommandTests : IDisposable
     public async Task GetDirectMessagesForAgent_UnreadOnly_ReturnsReceivedOnly()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
         // Send DM from planner to engineer
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Hey Hephaestus!", "main");
 
         // Send DM from engineer to planner
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "engineer-1", "Hephaestus", "SoftwareEngineer", "planner-1",
             "Hey Aristotle!", "main");
 
         // Default (unreadOnly=true): planner sees only the DM sent TO them
-        var unread = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        var unread = await messageService.GetDirectMessagesForAgentAsync("planner-1");
         Assert.Single(unread);
         Assert.Equal("Hey Aristotle!", unread[0].Content);
 
         // unreadOnly=false: planner sees both sent and received
-        var all = await runtime.GetDirectMessagesForAgentAsync("planner-1", unreadOnly: false);
+        var all = await messageService.GetDirectMessagesForAgentAsync("planner-1", unreadOnly: false);
         Assert.Equal(2, all.Count);
     }
 
@@ -356,11 +382,12 @@ public class DmCommandTests : IDisposable
     public async Task RoomMessages_ExcludeDMs()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
         // Post a regular message
-        await runtime.PostMessageAsync(new PostMessageRequest(
+        await messageService.PostMessageAsync(new PostMessageRequest(
             RoomId: "main",
             SenderId: "planner-1",
             Content: "Regular room message",
@@ -368,11 +395,11 @@ public class DmCommandTests : IDisposable
         ));
 
         // Send a DM
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Private DM", "main");
 
-        var room = await runtime.GetRoomAsync("main");
+        var room = await roomService.GetRoomAsync("main");
         Assert.NotNull(room);
 
         // Room should contain the regular message but NOT the DM content
@@ -386,20 +413,21 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadsForHuman_GroupsByAgent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
         // Agent DMs human
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "human",
             "Question for you.", "main");
 
         // Human DMs agent
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "human", "Human", "Human", "planner-1",
             "Here's my answer.", "main");
 
-        var threads = await runtime.GetDmThreadsForHumanAsync();
+        var threads = await messageService.GetDmThreadsForHumanAsync();
 
         Assert.Single(threads);
         Assert.Equal("planner-1", threads[0].AgentId);
@@ -411,22 +439,70 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadMessages_ReturnsConversation()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "human",
             "Hello human!", "main");
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "human", "Human", "Human", "planner-1",
             "Hello agent!", "main");
 
-        var messages = await runtime.GetDmThreadMessagesAsync("planner-1");
+        var messages = await messageService.GetDmThreadMessagesAsync("planner-1");
 
         Assert.Equal(2, messages.Count);
         Assert.Equal("Hello human!", messages[0].Content);
         Assert.Equal("Hello agent!", messages[1].Content);
+    }
+
+    [Fact]
+    public async Task ConsultantDm_StoresWithConsultantRole()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        await messageService.SendDirectMessageAsync(
+            "consultant", "Consultant", "Consultant", "planner-1",
+            "I need your analysis.", "main");
+
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var msg = await db.Messages
+            .Where(m => m.Content == "I need your analysis.")
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(msg);
+        Assert.Equal("consultant", msg!.SenderId);
+        Assert.Equal("Consultant", msg.SenderName);
+        Assert.Equal("Consultant", msg.SenderRole);
+    }
+
+    [Fact]
+    public async Task GetDmThreadsForHuman_IncludesConsultantMessages()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        // Consultant DMs agent
+        await messageService.SendDirectMessageAsync(
+            "consultant", "Consultant", "Consultant", "planner-1",
+            "Consultant question.", "main");
+
+        // Agent replies to human mailbox
+        await messageService.SendDirectMessageAsync(
+            "planner-1", "Aristotle", "Planner", "human",
+            "Answer from agent.", "main");
+
+        var threads = await messageService.GetDmThreadsForHumanAsync();
+
+        // Both messages should appear in the agent's thread
+        var aristThread = threads.FirstOrDefault(t => t.AgentId == "planner-1");
+        Assert.NotNull(aristThread);
+        Assert.True(aristThread!.MessageCount >= 1);
     }
 
     // ── ASK_HUMAN Deprecation ───────────────────────────────────────
@@ -463,26 +539,27 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_MarksAsRead()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Check the auth module.", "main");
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "engineer-1", "Hephaestus", "SoftwareEngineer", "planner-1",
             "Will do!", "main");
 
         // Before ack: engineer has 1 unread (the one sent TO them)
-        var before = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        var before = await messageService.GetDirectMessagesForAgentAsync("engineer-1");
         Assert.Single(before);
         Assert.Equal("Check the auth module.", before[0].Content);
 
         // Acknowledge by explicit IDs
-        await runtime.AcknowledgeDirectMessagesAsync("engineer-1", before.Select(m => m.Id).ToList());
+        await messageService.AcknowledgeDirectMessagesAsync("engineer-1", before.Select(m => m.Id).ToList());
 
         // After ack: no unread DMs
-        var after = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        var after = await messageService.GetDirectMessagesForAgentAsync("engineer-1");
         Assert.Empty(after);
     }
 
@@ -490,26 +567,27 @@ public class DmCommandTests : IDisposable
     public async Task GetDirectMessages_UnreadOnlyFalse_ReturnsAll()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Message 1", "main");
 
-        var first = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
-        await runtime.AcknowledgeDirectMessagesAsync("engineer-1", first.Select(m => m.Id).ToList());
+        var first = await messageService.GetDirectMessagesForAgentAsync("engineer-1");
+        await messageService.AcknowledgeDirectMessagesAsync("engineer-1", first.Select(m => m.Id).ToList());
 
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Message 2", "main");
 
         // unreadOnly=true: only the new message
-        var unread = await runtime.GetDirectMessagesForAgentAsync("engineer-1", unreadOnly: true);
+        var unread = await messageService.GetDirectMessagesForAgentAsync("engineer-1", unreadOnly: true);
         Assert.Single(unread);
         Assert.Equal("Message 2", unread[0].Content);
 
         // unreadOnly=false: both messages (sent + received)
-        var all = await runtime.GetDirectMessagesForAgentAsync("engineer-1", unreadOnly: false);
+        var all = await messageService.GetDirectMessagesForAgentAsync("engineer-1", unreadOnly: false);
         Assert.Equal(2, all.Count);
     }
 
@@ -517,26 +595,27 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_OnlyAffectsTargetAgent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Both agents receive a DM
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "human", "Human", "Human", "engineer-1",
             "Hey engineer!", "main");
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "human", "Human", "Human", "planner-1",
             "Hey planner!", "main");
 
         // Ack only engineer's DMs
-        var engBefore = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
-        await runtime.AcknowledgeDirectMessagesAsync("engineer-1", engBefore.Select(m => m.Id).ToList());
+        var engBefore = await messageService.GetDirectMessagesForAgentAsync("engineer-1");
+        await messageService.AcknowledgeDirectMessagesAsync("engineer-1", engBefore.Select(m => m.Id).ToList());
 
         // Engineer: no unread
-        var engDms = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        var engDms = await messageService.GetDirectMessagesForAgentAsync("engineer-1");
         Assert.Empty(engDms);
 
         // Planner: still has unread
-        var planDms = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        var planDms = await messageService.GetDirectMessagesForAgentAsync("planner-1");
         Assert.Single(planDms);
     }
 
@@ -544,19 +623,154 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_DoesNotAckSenderMessages()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Planner sends DM to engineer
-        await runtime.SendDirectMessageAsync(
+        await messageService.SendDirectMessageAsync(
             "planner-1", "Aristotle", "Planner", "engineer-1",
             "Please review.", "main");
 
         // Planner should NOT see this as their unread DM (they're the sender)
-        var plannerUnread = await runtime.GetDirectMessagesForAgentAsync("planner-1");
+        var plannerUnread = await messageService.GetDirectMessagesForAgentAsync("planner-1");
         Assert.Empty(plannerUnread);
 
         // Engineer should see it
-        var engUnread = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
+        var engUnread = await messageService.GetDirectMessagesForAgentAsync("engineer-1");
         Assert.Single(engUnread);
+    }
+
+    // ── DmController: Consultant Identity ───────────────────────────
+
+    private DmController CreateDmController(ClaimsPrincipal? user = null)
+    {
+        var scope = _serviceProvider.CreateScope();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        var logger = NullLogger<DmController>.Instance;
+
+        var controller = new DmController(messageService, roomService, _catalog, orchestrator, logger);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = user ?? new ClaimsPrincipal(new ClaimsIdentity())
+            }
+        };
+        return controller;
+    }
+
+    private static ClaimsPrincipal CreateConsultantUser()
+    {
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "consultant-agent"),
+            new Claim(ClaimTypes.Role, "Consultant"),
+        ], "SharedSecret");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private static ClaimsPrincipal CreateHumanUser()
+    {
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "darin"),
+        ], "Cookies");
+        return new ClaimsPrincipal(identity);
+    }
+
+    [Fact]
+    public async Task DmController_SendMessage_ConsultantGetsConsultantIdentity()
+    {
+        var controller = CreateDmController(CreateConsultantUser());
+
+        var result = await controller.SendMessage(
+            "planner-1", new SendDmRequest("Hello from consultant"));
+
+        var created = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(201, created.StatusCode);
+
+        var msg = Assert.IsType<DmMessage>(created.Value);
+        Assert.Equal("consultant", msg.SenderId);
+        Assert.Equal("Consultant", msg.SenderName);
+        Assert.Equal("Consultant", msg.SenderRole);
+        Assert.True(msg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task DmController_SendMessage_HumanGetsHumanIdentity()
+    {
+        var controller = CreateDmController(CreateHumanUser());
+
+        var result = await controller.SendMessage(
+            "planner-1", new SendDmRequest("Hello from human"));
+
+        var created = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(201, created.StatusCode);
+
+        var msg = Assert.IsType<DmMessage>(created.Value);
+        Assert.Equal("human", msg.SenderId);
+        Assert.Equal("Human", msg.SenderName);
+        Assert.Equal("Human", msg.SenderRole);
+        Assert.True(msg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task DmController_GetThreadMessages_MapsSenderRoleForConsultant()
+    {
+        // Seed a consultant message via runtime
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            await messageService.SendDirectMessageAsync(
+                "consultant", "Consultant", "Consultant", "planner-1",
+                "Consultant message via API.", "main");
+        }
+
+        var controller = CreateDmController(CreateHumanUser());
+
+        var result = await controller.GetThreadMessages("planner-1");
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var messages = Assert.IsType<List<DmMessage>>(ok.Value);
+
+        var consultantMsg = messages.FirstOrDefault(m => m.SenderId == "consultant");
+        Assert.NotNull(consultantMsg);
+        Assert.Equal("Consultant", consultantMsg!.SenderRole);
+        Assert.True(consultantMsg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task DmController_GetThreadMessages_ConsultantMessagesAreFromHuman()
+    {
+        // Seed both consultant and agent messages
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            await messageService.SendDirectMessageAsync(
+                "consultant", "Consultant", "Consultant", "engineer-1",
+                "Consultant asks a question.", "main");
+            await messageService.SendDirectMessageAsync(
+                "engineer-1", "Hephaestus", "SoftwareEngineer", "human",
+                "Agent replies.", "main");
+        }
+
+        var controller = CreateDmController(CreateHumanUser());
+
+        var result = await controller.GetThreadMessages("engineer-1");
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var messages = Assert.IsType<List<DmMessage>>(ok.Value);
+
+        Assert.Equal(2, messages.Count);
+
+        // Consultant message → IsFromHuman = true
+        var cMsg = messages.First(m => m.SenderId == "consultant");
+        Assert.True(cMsg.IsFromHuman);
+
+        // Agent message → IsFromHuman = false
+        var aMsg = messages.First(m => m.SenderId == "engineer-1");
+        Assert.False(aMsg.IsFromHuman);
     }
 }

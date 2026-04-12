@@ -139,13 +139,13 @@ These formalize existing capabilities with audit trails and structured output.
 | `CLAIM_TASK` | `taskId` | Confirmation | Assigns agent, prevents duplicate work | `ClaimTaskHandler.cs` — validates no other claimant, assigns calling agent, auto-activates Queued tasks |
 | `RELEASE_TASK` | `taskId` | Confirmation | Unassigns agent | `ReleaseTaskHandler.cs` — validates calling agent is current assignee, clears assignment |
 | `UPDATE_TASK` | `taskId`, `status?`, `blocker?`, `note?` | Confirmation | Updates task state | `UpdateTaskHandler.cs` — validates allowed statuses (Active/Blocked/AwaitingValidation/InReview/Queued), handles blocker→Blocked shorthand, posts notes to task room |
-| `SET_PLAN` | `content` | Confirmation + target room ID | Writes markdown plan content for the caller's current room or breakout room | `SetPlanHandler.cs` — validates non-empty content and active room context, then calls `WorkspaceRuntime.SetPlanAsync` |
+| `SET_PLAN` | `content` | Confirmation + target room ID | Writes markdown plan content for the caller's current room or breakout room | `SetPlanHandler.cs` — validates non-empty content and active room context, then calls `PlanService.SetPlanAsync` |
 | `ADD_TASK_COMMENT` | `taskId`, `type?` (Comment\|Finding\|Evidence\|Blocker, default: Comment), `content` | Comment ID and confirmation | Validates task exists, caller is assignee/reviewer/planner. Creates `TaskCommentEntity`, posts activity event | |
-| `CREATE_TASK_ITEM` | `title`, `description?`, `assignedTo?` (ID or name, default: caller), `roomId?` (default: current room), `breakoutRoomId?` | Task item ID, title, status, assignedTo, roomId | Validates agent exists in catalog, room exists. Creates `TaskItemEntity` with Pending status. | `CreateTaskItemHandler.cs` + `WorkspaceRuntime.CreateTaskItemAsync()` |
-| `UPDATE_TASK_ITEM` | `taskItemId`, `status` (Pending\|Active\|Done\|Rejected), `evidence?` | Task item ID, title, status, evidence | Validates item exists, caller is assignee/Planner/Reviewer/Human. Updates status and optional evidence. | `UpdateTaskItemHandler.cs` + `WorkspaceRuntime.UpdateTaskItemStatusAsync()` |
-| `LIST_TASK_ITEMS` | `roomId?`, `status?` (Pending\|Active\|Done\|Rejected) | List of task items with count and applied filters | Scoped to active workspace when no room filter. Any agent can list. | `ListTaskItemsHandler.cs` + `WorkspaceRuntime.GetTaskItemsAsync()` |
+| `CREATE_TASK_ITEM` | `title`, `description?`, `assignedTo?` (ID or name, default: caller), `roomId?` (default: current room), `breakoutRoomId?` | Task item ID, title, status, assignedTo, roomId | Validates agent exists in catalog, room exists. Creates `TaskItemEntity` with Pending status. | `CreateTaskItemHandler.cs` + `TaskItemService.CreateTaskItemAsync()` |
+| `UPDATE_TASK_ITEM` | `taskItemId`, `status` (Pending\|Active\|Done\|Rejected), `evidence?` | Task item ID, title, status, evidence | Validates item exists, caller is assignee/Planner/Reviewer/Human. Updates status and optional evidence. | `UpdateTaskItemHandler.cs` + `TaskItemService.UpdateTaskItemStatusAsync()` |
+| `LIST_TASK_ITEMS` | `roomId?`, `status?` (Pending\|Active\|Done\|Rejected) | List of task items with count and applied filters | Scoped to active workspace when no room filter. Any agent can list. | `ListTaskItemsHandler.cs` + `TaskItemService.GetTaskItemsAsync()` |
 | `RECALL_AGENT` | `agentId` (name or ID) | Agent info and room transition details | Validates caller has Planner role, target agent is in Working state in a breakout room. Closes breakout room, moves agent to Idle in parent room. Posts recall notices to both breakout and parent rooms | |
-| `CLOSE_ROOM` | `roomId` | Room ID, room name, archived status | Validates caller has Planner or Human role, target room exists, target is not the workspace's main collaboration room, and the room has no active participants. Sets `RoomEntity.Status = Archived`, updates `UpdatedAt`, and publishes a `RoomClosed` activity event. Repeating the command against an already archived room is a no-op success. | `CloseRoomHandler.cs` + `WorkspaceRuntime.CloseRoomAsync()` |
+| `CLOSE_ROOM` | `roomId` | Room ID, room name, archived status | Validates caller has Planner or Human role, target room exists, target is not the workspace's main collaboration room, and the room has no active participants. Sets `RoomEntity.Status = Archived`, updates `UpdatedAt`, and publishes a `RoomClosed` activity event. Repeating the command against an already archived room is a no-op success. | `CloseRoomHandler.cs` + `RoomService.CloseRoomAsync()` |
 | `MERGE_TASK` | `taskId` | Task ID, title, branch, `mergeCommitSha` | Validates caller is Reviewer or Planner, task status is Approved, task has BranchName. Sets task to Merging status, squash-merges task branch to develop, runs `git add -A` to stage the full squash result, then commits using conventional-commit subject `{prefix}{task.Title}` where `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, and `Spike -> docs: `. On success: updates task to Completed, records merge commit SHA on TaskEntity, and returns it in the result. On conflict: aborts the merge, restores task status to Approved, and returns an error. Authorization enforced at handler level. | `MergeTaskHandler.cs` lines 25-31 — Planner/Reviewer role guard |
 
 #### Phase 1C: Verification — IMPLEMENTED
@@ -156,9 +156,9 @@ These formalize existing capabilities with audit trails and structured output.
 | `RUN_TESTS` | `scope?` (`all`, `frontend`, `backend`, `file:path`) | Test output, exit code | Runs test suite | `RunTestsHandler.cs` — routes frontend to `npm test`, backend to `dotnet test` |
 | `SHOW_DIFF` | `branch?` | Git diff output | Audit event | `ShowDiffHandler.cs` — `git diff --stat -p`, optional branch comparison |
 | `GIT_LOG` | `file?`, `since?`, `count?` | Commit history (sha + message) | Audit event | `GitLogHandler.cs` — `git log --oneline`, max 50 entries |
-| `RECORD_EVIDENCE` | `taskId`, `checkName`, `passed` (true/false), `phase?` (Baseline/After/Review, default: After), `tool?` (default: manual), `command?`, `exitCode?`, `output?` (max 500 chars) | Evidence ID, task ID, phase, check name, passed status, confirmation message | Records a `TaskEvidenceEntity` in the `task_evidence` table. Handler-level authorization: caller must be assignee, reviewer, planner, or human. | `RecordEvidenceHandler.cs` + `WorkspaceRuntime.RecordEvidenceAsync()` |
-| `QUERY_EVIDENCE` | `taskId`, `phase?` (Baseline/After/Review, default: all) | Task ID, phase filter, total/passed/failed counts, evidence list (id, phase, checkName, tool, command, exitCode, output, passed, agentName, createdAt) | Audit event (read-only) | `QueryEvidenceHandler.cs` + `WorkspaceRuntime.GetTaskEvidenceAsync()` |
-| `CHECK_GATES` | `taskId` | Task ID, currentPhase, targetPhase, met (bool), requiredChecks, passedChecks, missingChecks list, evidence summary | Evaluates gate requirements and publishes `GateChecked` activity event. Read-only — does not transition task status. | `CheckGatesHandler.cs` + `WorkspaceRuntime.CheckGatesAsync()` |
+| `RECORD_EVIDENCE` | `taskId`, `checkName`, `passed` (true/false), `phase?` (Baseline/After/Review, default: After), `tool?` (default: manual), `command?`, `exitCode?`, `output?` (max 500 chars) | Evidence ID, task ID, phase, check name, passed status, confirmation message | Records a `TaskEvidenceEntity` in the `task_evidence` table. Handler-level authorization: caller must be assignee, reviewer, planner, or human. | `RecordEvidenceHandler.cs` + `TaskLifecycleService.RecordEvidenceAsync()` |
+| `QUERY_EVIDENCE` | `taskId`, `phase?` (Baseline/After/Review, default: all) | Task ID, phase filter, total/passed/failed counts, evidence list (id, phase, checkName, tool, command, exitCode, output, passed, agentName, createdAt) | Audit event (read-only) | `QueryEvidenceHandler.cs` + `TaskQueryService.GetTaskEvidenceAsync()` |
+| `CHECK_GATES` | `taskId` | Task ID, currentPhase, targetPhase, met (bool), requiredChecks, passedChecks, missingChecks list, evidence summary | Evaluates gate requirements and publishes `GateChecked` activity event. Read-only — does not transition task status. | `CheckGatesHandler.cs` + `TaskLifecycleService.CheckGatesAsync()` |
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{RecordEvidence,QueryEvidence,CheckGates}Handler.cs` — committed in `42d4124` (2026-04-07).
 
@@ -180,10 +180,10 @@ These formalize existing capabilities with audit trails and structured output.
 
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
-| `CREATE_ROOM` | `name`, `description?` | Room ID, name, status | Creates a persistent collaboration room as a work context. Generates a slug-based ID. Posts a system welcome message with description. Publishes `RoomCreated` activity event. Planner or Human role required. | `CreateRoomHandler.cs` + `WorkspaceRuntime.CreateRoomAsync()` |
-| `REOPEN_ROOM` | `roomId` | Room ID, name, reopened status | Validates room is archived. Sets status to Idle. Publishes `RoomStatusChanged` activity event. Planner or Human role required. Exception-safe via try/catch for TOCTOU protection. | `ReopenRoomHandler.cs` + `WorkspaceRuntime.ReopenRoomAsync()` |
-| `INVITE_TO_ROOM` | `agentId` (name or ID), `roomId` | Agent ID/name, room ID/name, confirmation | Moves a specified agent to a specified room. Validates room exists and is not archived. Validates agent exists and is not Working in a breakout (use RECALL_AGENT first). No-op success if agent already in room. Posts system status message in target room. Planner or Human role required. | `InviteToRoomHandler.cs` + `WorkspaceRuntime.MoveAgentAsync()` |
-| `ROOM_TOPIC` | `roomId`, `topic` | Room ID, name, topic | Sets or clears the topic description for a room. Empty/whitespace topic clears it. Cannot set topic on archived rooms. Publishes `RoomStatusChanged` activity event. Any agent can set topic. | `RoomTopicHandler.cs` + `WorkspaceRuntime.SetRoomTopicAsync()` |
+| `CREATE_ROOM` | `name`, `description?` | Room ID, name, status | Creates a persistent collaboration room as a work context. Generates a slug-based ID. Posts a system welcome message with description. Publishes `RoomCreated` activity event. Planner or Human role required. | `CreateRoomHandler.cs` + `RoomService.CreateRoomAsync()` |
+| `REOPEN_ROOM` | `roomId` | Room ID, name, reopened status | Validates room is archived. Sets status to Idle. Publishes `RoomStatusChanged` activity event. Planner or Human role required. Exception-safe via try/catch for TOCTOU protection. | `ReopenRoomHandler.cs` + `RoomService.ReopenRoomAsync()` |
+| `INVITE_TO_ROOM` | `agentId` (name or ID), `roomId` | Agent ID/name, room ID/name, confirmation | Moves a specified agent to a specified room. Validates room exists and is not archived. Validates agent exists and is not Working in a breakout (use RECALL_AGENT first). No-op success if agent already in room. Posts system status message in target room. Planner or Human role required. | `InviteToRoomHandler.cs` + `AgentLocationService.MoveAgentAsync()` |
+| `ROOM_TOPIC` | `roomId`, `topic` | Room ID, name, topic | Sets or clears the topic description for a room. Empty/whitespace topic clears it. Cannot set topic on archived rooms. Publishes `RoomStatusChanged` activity event. Any agent can set topic. | `RoomTopicHandler.cs` + `RoomService.SetRoomTopicAsync()` |
 
 #### Phase 1F: System — IMPLEMENTED
 
@@ -540,7 +540,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 ### Implementation
 - **Handler**: `src/AgentAcademy.Server/Commands/Handlers/DmHandler.cs`
 - **Data model**: `MessageEntity.RecipientId` (nullable) — null = room message, non-null = DM. `MessageKind.DirectMessage`. `MessageEntity.AcknowledgedAt` (nullable) — set when the recipient has seen the DM in a prompt.
-- **Runtime methods**: `SendDirectMessageAsync`, `GetDirectMessagesForAgentAsync` (defaults `unreadOnly=true`, filtering to recipient-only unacknowledged DMs), `AcknowledgeDirectMessagesAsync` (takes explicit message IDs to prevent races), `GetDmThreadsForHumanAsync`, `GetDmThreadMessagesAsync` in `WorkspaceRuntime.cs`
+- **Runtime methods**: `SendDirectMessageAsync`, `GetDirectMessagesForAgentAsync` (defaults `unreadOnly=true`, filtering to recipient-only unacknowledged DMs), `AcknowledgeDirectMessagesAsync` (takes explicit message IDs to prevent races), `GetDmThreadsForHumanAsync`, `GetDmThreadMessagesAsync` in `MessageService.cs`
 - **Orchestrator**: `HandleDirectMessage(agentId)` triggers targeted agent round via extended `QueueItem(RoomId, TargetAgentId?)` queue. After building a prompt that includes DMs, all included message IDs are acknowledged so they don't repeat on the next round.
 - **Context injection**: DMs injected as `=== DIRECT MESSAGES ===` section in agent prompts. Only unacknowledged DMs are shown to prevent duplication across rounds.
 - **Breakout forwarding**: When a DM is sent to an agent in a breakout room, all unread DMs are posted as individual breakout messages and then acknowledged.
@@ -553,7 +553,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 
 ### Guardrails
 - **Dry-run mode**: Side-effecting commands support `dryRun: true` returning what would happen
-- **Confirmation**: Planned for destructive actions such as `CLOSE_ROOM`; current implementation relies on role gating plus hard validation (for example, refusing to archive the main collaboration room)
+- **Confirmation**: Destructive commands require explicit `confirm=true` in args before execution. Without the flag, the pipeline returns `Denied` status with `CONFIRMATION_REQUIRED` error code and a structured response containing the warning, command name, and retry hint. Destructive handlers self-declare via `ICommandHandler.IsDestructive` (default false). Confirmation check runs after authorization but before rate limiting (unconfirmed commands don't consume rate-limit budget). Applies to both agent pipeline and human/consultant API. Destructive commands: `CLOSE_ROOM`, `CLEANUP_ROOMS`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`. All agent `StartupPrompt` entries in `agents.json` document this flow with per-agent destructive command lists and the two-step `confirm=true` workflow.
 - **Secret redaction**: All command output is scanned for secrets/tokens before logging
 - **Idempotent mutations**: Write commands produce the same result when called twice with the same args
 
@@ -575,7 +575,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 
 **Modified files:**
 - `AgentOrchestrator.cs` — After receiving agent response, run through command parser before posting to room
-- `WorkspaceRuntime.cs` — Expose read methods needed by LIST_* commands
+- Domain service files — Expose read methods needed by LIST_* commands
 
 **New entities:**
 - `CommandAuditEntity` — Audit trail for every command execution
@@ -618,10 +618,21 @@ Keyboard-driven command search and execution overlay, opened with `Cmd+K` / `Ctr
 
 **Required for**: Discovery (knowing what commands exist), inspection (seeing what agents did), debugging (understanding command failures).
 
-### Task Panel (Dedicated) — PLANNED
-Review queue, spec links, task claims — purpose-built UI for structured state management.
+### Task Panel (Dedicated) — IMPLEMENTED
+Purpose-built UI for structured task state management, integrated into the existing `TaskListPanel`.
 
-**Required for**: Task-specific commands (APPROVE_TASK, REQUEST_CHANGES, CLAIM_TASK).
+**Features**:
+- Review queue filter (tasks in InReview, AwaitingValidation, Approved, ChangesRequested)
+- Spec links section in task detail: fetched from `GET /api/tasks/{taskId}/specs`, displays section ID, link type (Implements/Modifies/Fixes/References), linked-by agent, and optional note
+- Evidence ledger section: on-demand load via `QUERY_EVIDENCE` command, displays verification checks in a table with phase, check name, pass/fail, tool, and agent
+- Gate status check: on-demand via `CHECK_GATES` command for Active/AwaitingValidation/InReview tasks, shows met/unmet status with missing check names
+- Agent assignment for Queued tasks: agent picker using `PUT /api/tasks/{taskId}/assign`
+- Detail caching: spec links, evidence, gate results, and comments cached by task ID + updatedAt timestamp to avoid refetching on collapse/expand
+- Review actions: Approve, Request Changes, Reject, Merge (unchanged from prior implementation)
+
+**Evidence**: `src/agent-academy-client/src/TaskListPanel.tsx`, `src/agent-academy-client/src/api.ts` (types: `SpecTaskLink`, `TaskEvidence`, `GateCheckResult`; function: `getTaskSpecLinks`)
+
+**Required for**: Task-specific commands (APPROVE_TASK, REQUEST_CHANGES, CLAIM_TASK via agent assignment).
 
 ### Room Sidebar (Navigation) — EXISTS (enhanced planned)
 Agent workspaces and room navigation affordances exist. Command feedback integration planned.
@@ -649,7 +660,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - ~~**Error recovery**~~: **Partially resolved** — CopilotExecutor has exponential backoff retries (transient: 2s/4s/8s, 3 attempts; quota: 5s/15s/30s, 3 attempts) and a global circuit breaker (trips after 5 consecutive failures, 60s cooldown before probing). Structured error codes (`errorCode` field) enable agents to make programmatic retry/skip decisions. Remaining: no per-command retry at the command pipeline level (agents must re-issue failed commands manually).
 - **Rate limiting**: Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
-- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Partially resolved** — Commands tab implemented with dynamic catalog loading from `GET /api/commands/metadata`. Command palette (Cmd+K) implemented with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard shows execution stats (total, success, error, denied), breakdowns by agent and command, and paginated recent command records. Task panel enhancements still planned.
+- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Resolved** — Commands tab with dynamic catalog from `GET /api/commands/metadata`. Command palette (Cmd+K) with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard. Task panel enhanced with spec links, evidence ledger, gate status, and agent assignment UI.
 - **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
 
 ## Discord Agent Question Bridge
@@ -671,7 +682,7 @@ Discord Server
 2. `DmHandler` stores the DM, then delegates to `NotificationManager.SendAgentQuestionAsync`
 3. `DiscordNotificationProvider` lazily creates category → channel → thread
 4. Message posted as embed in the thread
-5. Persistent `MessageReceived` handler routes human replies back to the agent's room via `WorkspaceRuntime.PostHumanMessageAsync`
+5. Persistent `MessageReceived` handler routes human replies back to the agent's room via `MessageService.PostHumanMessageAsync`
 6. Agent sees reply as a human message in its next orchestration round
 7. Human can also reply via the frontend DM panel (`DmPanel.tsx`)
 
@@ -689,7 +700,7 @@ Discord Server
 | 2026-03-28 | Implemented Phase 1A: envelope, parser, pipeline, authorization, audit, read handlers (LIST_ROOMS, LIST_AGENTS, LIST_TASKS, READ_FILE, SEARCH_CODE), memory handlers (REMEMBER, RECALL, LIST_MEMORIES, FORGET) | command-system-phase1 | `63b596c` |
 | 2026-03-28 | Added command reference to agent startup prompts | command-discoverability | `6117b4e` |
 | 2026-03-28 | Reconciled frontend surface contradiction: Phase 1A shipped backend-only, no UI surfaces implemented. Documented 9 live commands with implementation evidence. Updated Known Gaps to reflect backend-only state. | spec-007-reconciliation | (this change) |
-| 2026-03-29 | Implemented ASK_HUMAN command: Discord agent-to-human question bridge with category-per-workspace, channel-per-agent, thread-per-question architecture. Persistent reply routing via WorkspaceRuntime. | ask-human-command | (this change) |
+| 2026-03-29 | Implemented ASK_HUMAN command: Discord agent-to-human question bridge with category-per-workspace, channel-per-agent, thread-per-question architecture. Persistent reply routing via MessageService. | ask-human-command | (this change) |
 | 2026-03-30 | Implemented DM command (Phase 1D), replacing ASK_HUMAN. Agent-to-agent and agent-to-human private messaging. MessageEntity.RecipientId + DirectMessage kind. Orchestrator HandleDirectMessage with targeted rounds. System notification in recipient's room. Frontend Telegram-style DM panel. DM API endpoints. 18 tests. | dm-command | (this change) |
 | 2026-03-30 | Implemented Phase 1C (RUN_BUILD, RUN_TESTS, SHOW_DIFF, GIT_LOG), ROOM_HISTORY (1D), MOVE_TO_ROOM (1E). All agent timeouts removed — no per-turn LLM timeout, no breakout round cap, no fix round cap. Breakout rooms are open-ended (agents work until WORK REPORT: COMPLETE). DMs delivered to agents in breakout rooms. Task workspace scoping fix. | commands-and-breakout-redesign | (this change) |
 | 2026-04-02 | Added Human Command Execution API: `POST /api/commands/execute` and `GET /api/commands/{correlationId}` for Week 1 allowlist (11 commands: all read-only + RUN_BUILD/RUN_TESTS). CommandController bypasses agent pipeline, uses controller-level allowlist + cookie auth. Async commands return 202 + polling. Added CommandAuditEntity.Source field. Build/test handlers serialized via SemaphoreSlim. | implement-frontend-command-execution-api | (this change) |

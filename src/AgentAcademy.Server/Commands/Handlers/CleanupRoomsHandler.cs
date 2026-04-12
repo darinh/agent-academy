@@ -11,6 +11,8 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class CleanupRoomsHandler : ICommandHandler
 {
     public string CommandName => "CLEANUP_ROOMS";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "CLEANUP_ROOMS will archive all stale rooms where tasks are complete. This affects multiple rooms.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -25,8 +27,8 @@ public sealed class CleanupRoomsHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var count = await runtime.CleanupStaleRoomsAsync();
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var count = await roomService.CleanupStaleRoomsAsync();
 
         return command with
         {

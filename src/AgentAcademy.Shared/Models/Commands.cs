@@ -52,6 +52,9 @@ public static class CommandErrorCode
     /// <summary>Agent exceeded the command rate limit. Retry after the indicated delay.</summary>
     public const string RateLimit = "RATE_LIMIT";
 
+    /// <summary>Destructive command requires explicit confirmation. Re-issue with confirm=true.</summary>
+    public const string ConfirmationRequired = "CONFIRMATION_REQUIRED";
+
     private static readonly HashSet<string> RetryableCodes = new(StringComparer.Ordinal)
     {
         RateLimit, Timeout, Internal

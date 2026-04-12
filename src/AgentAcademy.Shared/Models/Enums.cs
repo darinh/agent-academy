@@ -216,7 +216,8 @@ public enum ActivityEventType
     SprintStarted,
     SprintStageAdvanced,
     SprintArtifactStored,
-    SprintCompleted
+    SprintCompleted,
+    SprintCancelled
 }
 
 /// <summary>
