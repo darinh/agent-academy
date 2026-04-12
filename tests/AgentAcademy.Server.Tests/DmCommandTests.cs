@@ -1,10 +1,14 @@
+using System.Security.Claims;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Commands.Handlers;
+using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -623,5 +627,136 @@ public class DmCommandTests : IDisposable
         // Engineer should see it
         var engUnread = await runtime.GetDirectMessagesForAgentAsync("engineer-1");
         Assert.Single(engUnread);
+    }
+
+    // ── DmController: Consultant Identity ───────────────────────────
+
+    private DmController CreateDmController(ClaimsPrincipal? user = null)
+    {
+        var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        var logger = NullLogger<DmController>.Instance;
+
+        var controller = new DmController(runtime, orchestrator, logger);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = user ?? new ClaimsPrincipal(new ClaimsIdentity())
+            }
+        };
+        return controller;
+    }
+
+    private static ClaimsPrincipal CreateConsultantUser()
+    {
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "consultant-agent"),
+            new Claim(ClaimTypes.Role, "Consultant"),
+        ], "SharedSecret");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private static ClaimsPrincipal CreateHumanUser()
+    {
+        var identity = new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "darin"),
+        ], "Cookies");
+        return new ClaimsPrincipal(identity);
+    }
+
+    [Fact]
+    public async Task DmController_SendMessage_ConsultantGetsConsultantIdentity()
+    {
+        var controller = CreateDmController(CreateConsultantUser());
+
+        var result = await controller.SendMessage(
+            "planner-1", new SendDmRequest("Hello from consultant"));
+
+        var created = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(201, created.StatusCode);
+
+        var msg = Assert.IsType<DmMessage>(created.Value);
+        Assert.Equal("consultant", msg.SenderId);
+        Assert.Equal("Consultant", msg.SenderName);
+        Assert.Equal("Consultant", msg.SenderRole);
+        Assert.True(msg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task DmController_SendMessage_HumanGetsHumanIdentity()
+    {
+        var controller = CreateDmController(CreateHumanUser());
+
+        var result = await controller.SendMessage(
+            "planner-1", new SendDmRequest("Hello from human"));
+
+        var created = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(201, created.StatusCode);
+
+        var msg = Assert.IsType<DmMessage>(created.Value);
+        Assert.Equal("human", msg.SenderId);
+        Assert.Equal("Human", msg.SenderName);
+        Assert.Equal("Human", msg.SenderRole);
+        Assert.True(msg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task DmController_GetThreadMessages_MapsSenderRoleForConsultant()
+    {
+        // Seed a consultant message via runtime
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.SendDirectMessageAsync(
+                "consultant", "Consultant", "Consultant", "planner-1",
+                "Consultant message via API.", "main");
+        }
+
+        var controller = CreateDmController(CreateHumanUser());
+
+        var result = await controller.GetThreadMessages("planner-1");
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var messages = Assert.IsType<List<DmMessage>>(ok.Value);
+
+        var consultantMsg = messages.FirstOrDefault(m => m.SenderId == "consultant");
+        Assert.NotNull(consultantMsg);
+        Assert.Equal("Consultant", consultantMsg!.SenderRole);
+        Assert.True(consultantMsg.IsFromHuman);
+    }
+
+    [Fact]
+    public async Task DmController_GetThreadMessages_ConsultantMessagesAreFromHuman()
+    {
+        // Seed both consultant and agent messages
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            await runtime.SendDirectMessageAsync(
+                "consultant", "Consultant", "Consultant", "engineer-1",
+                "Consultant asks a question.", "main");
+            await runtime.SendDirectMessageAsync(
+                "engineer-1", "Hephaestus", "SoftwareEngineer", "human",
+                "Agent replies.", "main");
+        }
+
+        var controller = CreateDmController(CreateHumanUser());
+
+        var result = await controller.GetThreadMessages("engineer-1");
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var messages = Assert.IsType<List<DmMessage>>(ok.Value);
+
+        Assert.Equal(2, messages.Count);
+
+        // Consultant message → IsFromHuman = true
+        var cMsg = messages.First(m => m.SenderId == "consultant");
+        Assert.True(cMsg.IsFromHuman);
+
+        // Agent message → IsFromHuman = false
+        var aMsg = messages.First(m => m.SenderId == "engineer-1");
+        Assert.False(aMsg.IsFromHuman);
     }
 }

@@ -461,6 +461,125 @@ describe("DmPanel (interactive)", () => {
       ).not.toBeInTheDocument();
     });
 
+    it("renders consultant messages with sender name and role badge", async () => {
+      mockGetDmThreads.mockResolvedValue([makeThread()]);
+      mockGetDmThreadMessages.mockResolvedValue([
+        makeMsg({
+          id: "dm-c1",
+          senderId: "consultant",
+          senderName: "Consultant",
+          senderRole: "Consultant",
+          content: "I need a status update.",
+          isFromHuman: true,
+        }),
+      ]);
+      renderDm();
+
+      await waitFor(() => {
+        screen.getByText("Hephaestus").click();
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("I need a status update."),
+        ).toBeInTheDocument();
+      });
+
+      // Consultant messages render sender name AND role badge — both say "Consultant"
+      const messageLog = screen.getByRole("log", {
+        name: "Direct messages",
+      });
+      const consultantTexts = within(messageLog).getAllByText("Consultant");
+      // Name span + badge span = at least 2 elements
+      expect(consultantTexts.length).toBeGreaterThanOrEqual(2);
+
+      // The badge span has the role-specific background color
+      const badge = consultantTexts.find(
+        (el) => el.style.fontSize === "10px",
+      );
+      expect(badge).toBeDefined();
+      expect(badge!.style.color).toBe("rgb(224, 151, 110)");
+    });
+
+    it("consultant messages do not use human bubble styling", async () => {
+      mockGetDmThreads.mockResolvedValue([makeThread()]);
+      mockGetDmThreadMessages.mockResolvedValue([
+        makeMsg({
+          id: "dm-c2",
+          senderId: "consultant",
+          senderName: "Consultant",
+          senderRole: "Consultant",
+          content: "Consultant-styled message.",
+          isFromHuman: true,
+        }),
+        makeMsg({
+          id: "dm-h2",
+          senderId: "human",
+          senderName: "Human",
+          content: "Human-styled message.",
+          isFromHuman: true,
+        }),
+      ]);
+      renderDm();
+
+      await waitFor(() => {
+        screen.getByText("Hephaestus").click();
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Consultant-styled message."),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByText("Human-styled message."),
+        ).toBeInTheDocument();
+      });
+
+      // Consultant bubble: name is visible; human bubble: name is hidden
+      const messageLog = screen.getByRole("log", {
+        name: "Direct messages",
+      });
+      // Consultant shows its name (at least once)
+      const consultantTexts = within(messageLog).getAllByText("Consultant");
+      expect(consultantTexts.length).toBeGreaterThanOrEqual(1);
+      // Human name should not appear
+      expect(
+        within(messageLog).queryByText("Human"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("human messages without senderRole do not show consultant badge", async () => {
+      mockGetDmThreads.mockResolvedValue([makeThread()]);
+      mockGetDmThreadMessages.mockResolvedValue([
+        makeMsg({
+          id: "dm-h3",
+          senderId: "human",
+          senderName: "Darin",
+          content: "Regular human message.",
+          isFromHuman: true,
+        }),
+      ]);
+      renderDm();
+
+      await waitFor(() => {
+        screen.getByText("Hephaestus").click();
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Regular human message."),
+        ).toBeInTheDocument();
+      });
+
+      // Should NOT have any "Consultant" text or role badge
+      const messageLog = screen.getByRole("log", {
+        name: "Direct messages",
+      });
+      expect(
+        within(messageLog).queryByText("Consultant"),
+      ).not.toBeInTheDocument();
+    });
+
     it("shows empty state when thread has no messages", async () => {
       mockGetDmThreads.mockResolvedValue([makeThread()]);
       mockGetDmThreadMessages.mockResolvedValue([]);
