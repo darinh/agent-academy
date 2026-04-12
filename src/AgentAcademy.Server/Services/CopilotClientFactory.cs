@@ -178,6 +178,11 @@ public sealed class CopilotClientFactory : IAsyncDisposable
     /// Resolves the best available GitHub token.
     /// Priority: user OAuth token → config token → null (env/CLI fallback).
     /// </summary>
+    /// <remarks>
+    /// Intentionally returns null (not env vars) because the SDK handles
+    /// env-var fallback internally. CopilotAuthProbe.ResolveToken checks env
+    /// vars explicitly because it bypasses the SDK for raw HTTP probes.
+    /// </remarks>
     internal string? ResolveToken()
     {
         // 1. User's OAuth token (captured at login, survives background orchestration)

@@ -180,6 +180,12 @@ internal sealed class GitHubCopilotAuthProbe : ICopilotAuthProbe
         }
     }
 
+    /// <summary>
+    /// Resolves the best available GitHub token, including env vars.
+    /// Unlike CopilotClientFactory.ResolveToken (which returns null for SDK
+    /// fallback), this checks env vars directly because the probe makes raw
+    /// HTTP calls without the SDK.
+    /// </summary>
     private string? ResolveToken()
     {
         if (!string.IsNullOrWhiteSpace(_tokenProvider.Token))
