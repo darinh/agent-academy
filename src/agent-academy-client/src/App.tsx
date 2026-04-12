@@ -22,7 +22,7 @@ import {
 } from "@fluentui/react-components";
 import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
-import { useStyles } from "./useStyles";
+import { useLayoutStyles, useWorkspaceStyles, useRecoveryStyles } from "./styles";
 import { useWorkspace } from "./useWorkspace";
 import { useDesktopNotifications } from "./useDesktopNotifications";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
@@ -121,7 +121,7 @@ export default function App() {
 }
 
 function AppShell() {
-  const s = useStyles();
+  const s = { ...useLayoutStyles(), ...useWorkspaceStyles(), ...useRecoveryStyles() };
 
   const toasterId = useId("workspace-toaster");
   const { dispatchToast } = useToastController(toasterId);

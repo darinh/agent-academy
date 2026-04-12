@@ -6,7 +6,7 @@ import {
   Spinner,
   Tooltip,
 } from "@fluentui/react-components";
-import { useStyles } from "./useStyles";
+import { useSidebarStyles } from "./styles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
 import type { AgentDefinition, AgentLocation, AuthUser, BreakoutRoom, RoomSnapshot } from "./api";
@@ -57,7 +57,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onOpenSettings?: () => void;
   sprintVersion?: number;
 }) {
-  const s = useStyles();
+  const s = useSidebarStyles();
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
 

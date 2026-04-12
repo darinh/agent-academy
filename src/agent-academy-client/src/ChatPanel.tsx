@@ -14,7 +14,7 @@ import {
   PlugDisconnectedRegular,
   WifiSettingsRegular,
 } from "@fluentui/react-icons";
-import { useStyles } from "./useStyles";
+import { useChatStyles } from "./styles";
 import { formatRole, roleColor } from "./theme";
 import { formatTime } from "./utils";
 import type { ChatEnvelope, RoomSnapshot, AgentLocation, AgentDefinition, ConversationSessionSnapshot } from "./api";
@@ -39,7 +39,7 @@ import type { MessageFilter, ConnectionStatus } from "./chatUtils";
 const CommandResultBubble = memo(function CommandResultBubble(props: {
   message: ChatEnvelope;
 }) {
-  const s = useStyles();
+  const s = useChatStyles();
   const results = useMemo(() => parseCommandResults(props.message.content), [props.message.content]);
 
   if (results.length === 0) {
@@ -73,7 +73,7 @@ const MessageBubble = memo(function MessageBubble(props: {
   expanded: boolean;
   onToggle: (id: string) => void;
 }) {
-  const s = useStyles();
+  const s = useChatStyles();
 
   if (props.message.senderKind === "System") {
     if (isCommandResultMessage(props.message.content)) {
@@ -122,7 +122,7 @@ const MessageBubble = memo(function MessageBubble(props: {
 /* ── Thinking Bubble ────────────────────────────────────────────── */
 
 const ThinkingBubble = memo(function ThinkingBubble(props: { agent: ThinkingAgent }) {
-  const s = useStyles();
+  const s = useChatStyles();
   const colors = roleColor(props.agent.role);
 
   return (
@@ -162,7 +162,7 @@ const ChatPanel = memo(function ChatPanel(props: {
   onCreateSession?: (roomId: string) => void;
   onToggleAgent?: (roomId: string, agentId: string, present: boolean) => void;
 }) {
-  const s = useStyles();
+  const s = useChatStyles();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [humanMsg, setHumanMsg] = useState("");
   const [sending, setSending] = useState(false);
