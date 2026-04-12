@@ -676,10 +676,15 @@ public class CopilotExecutorAuthTransitionTests
                     NullLogger<CopilotClientFactory>.Instance,
                     new ConfigurationBuilder().Build(),
                     new CopilotTokenProvider()),
+                new CopilotSessionPool(NullLogger<CopilotSessionPool>.Instance),
+                new CopilotSdkSender(
+                    NullLogger<CopilotSdkSender>.Instance,
+                    new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
+                    new AgentErrorTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+                    new AgentQuotaService(serviceProvider.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance)),
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                 serviceProvider.GetRequiredService<NotificationManager>(),
                 NSubstitute.Substitute.For<IAgentToolRegistry>(),
-                new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
                 new AgentErrorTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
                 new AgentQuotaService(serviceProvider.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance),
                 serviceProvider.GetRequiredService<AgentCatalogOptions>());

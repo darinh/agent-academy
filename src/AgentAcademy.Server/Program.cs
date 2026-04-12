@@ -72,8 +72,12 @@ builder.Services.AddSingleton<AgentToolFunctions>();
 builder.Services.AddSingleton<IAgentToolRegistry, AgentToolRegistry>();
 
 // Agent execution — CopilotClientFactory manages client lifecycle;
-// CopilotExecutor handles sessions, retry, and auth-state.
+// CopilotSessionPool manages session caching with TTL and send serialization;
+// CopilotSdkSender handles retry logic and streamed response collection;
+// CopilotExecutor coordinates them and owns auth-state and circuit breaker.
 builder.Services.AddSingleton<CopilotClientFactory>();
+builder.Services.AddSingleton<CopilotSessionPool>();
+builder.Services.AddSingleton<CopilotSdkSender>();
 builder.Services.AddSingleton<CopilotExecutor>();
 builder.Services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
 

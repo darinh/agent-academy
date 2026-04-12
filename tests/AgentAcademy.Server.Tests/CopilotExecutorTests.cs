@@ -118,7 +118,7 @@ public class ErrorClassificationTests
     public void ClassifyError_AuthenticationError_ReturnsCopilotAuthException()
     {
         var err = CreateSessionErrorEvent("authentication", "Token expired");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthException>(ex);
         Assert.Contains("Token expired", ex.Message);
     }
@@ -127,7 +127,7 @@ public class ErrorClassificationTests
     public void ClassifyError_AuthorizationError_ReturnsCopilotAuthorizationException()
     {
         var err = CreateSessionErrorEvent("authorization", "Insufficient scope");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthorizationException>(ex);
     }
 
@@ -135,7 +135,7 @@ public class ErrorClassificationTests
     public void ClassifyError_QuotaError_ReturnsCopilotQuotaException()
     {
         var err = CreateSessionErrorEvent("quota", "Quota exceeded");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotQuotaException>(ex);
     }
 
@@ -143,7 +143,7 @@ public class ErrorClassificationTests
     public void ClassifyError_RateLimitError_ReturnsCopilotQuotaException()
     {
         var err = CreateSessionErrorEvent("rate_limit", "Too many requests");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotQuotaException>(ex);
     }
 
@@ -154,7 +154,7 @@ public class ErrorClassificationTests
     public void ClassifyError_OtherErrors_ReturnsCopilotTransientException(string errorType)
     {
         var err = CreateSessionErrorEvent(errorType, "Something went wrong");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotTransientException>(ex);
     }
 
@@ -162,7 +162,7 @@ public class ErrorClassificationTests
     public void ClassifyError_NullErrorType_ReturnsCopilotTransientException()
     {
         var err = CreateSessionErrorEvent(null, "Unknown error");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotTransientException>(ex);
     }
 
@@ -170,7 +170,7 @@ public class ErrorClassificationTests
     public void ClassifyError_CaseInsensitive()
     {
         var err = CreateSessionErrorEvent("AUTHENTICATION", "Token expired");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthException>(ex);
     }
 
@@ -178,7 +178,7 @@ public class ErrorClassificationTests
     public void ClassifyError_NullMessage_UsesDefault()
     {
         var err = CreateSessionErrorEvent("authentication", null);
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthException>(ex);
         Assert.Equal("Unknown Copilot session error", ex.Message);
     }
@@ -228,10 +228,15 @@ public class ErrorClassificationTests
                 NullLogger<CopilotClientFactory>.Instance,
                 new ConfigurationBuilder().Build(),
                 new CopilotTokenProvider()),
+            new CopilotSessionPool(NullLogger<CopilotSessionPool>.Instance),
+            new CopilotSdkSender(
+                NullLogger<CopilotSdkSender>.Instance,
+                new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
+                new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+                new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance)),
             sp.GetRequiredService<IServiceScopeFactory>(),
             new NotificationManager(NullLogger<NotificationManager>.Instance),
             NSubstitute.Substitute.For<IAgentToolRegistry>(),
-            new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
             new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance),
             new AgentCatalogOptions("main", "Main", []));

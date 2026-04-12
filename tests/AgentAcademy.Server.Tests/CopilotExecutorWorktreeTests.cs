@@ -77,12 +77,24 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
                 NullLogger<CopilotClientFactory>.Instance,
                 new ConfigurationBuilder().Build(),
                 new CopilotTokenProvider()),
+            new CopilotSessionPool(NullLogger<CopilotSessionPool>.Instance),
+            new CopilotSdkSender(
+                NullLogger<CopilotSdkSender>.Instance,
+                new LlmUsageTracker(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    NullLogger<LlmUsageTracker>.Instance),
+                new AgentErrorTracker(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    NullLogger<AgentErrorTracker>.Instance),
+                new AgentQuotaService(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    new LlmUsageTracker(
+                        _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                        NullLogger<LlmUsageTracker>.Instance),
+                    NullLogger<AgentQuotaService>.Instance)),
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _serviceProvider.GetRequiredService<NotificationManager>(),
             Substitute.For<IAgentToolRegistry>(),
-            new LlmUsageTracker(
-                _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                NullLogger<LlmUsageTracker>.Instance),
             new AgentErrorTracker(
                 _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                 NullLogger<AgentErrorTracker>.Instance),
