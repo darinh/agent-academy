@@ -3,7 +3,7 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
-## Unreleased (2026-04-12)
+## v2.0.1 (2026-04-12)
 
 ### Fixes
 
@@ -16,6 +16,7 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Documentation
 
+- regenerate changelog for v2.0.1 release prep
 - mark spec 007 phases 1B, 3, and 4 as IMPLEMENTED
 - sync specs for CopilotClientFactory and DiscordInputHandler extractions
 - document intentional ResolveToken divergence between Factory and Probe
