@@ -71,8 +71,9 @@ builder.Services.AddSingleton<AgentAnalyticsService>();
 builder.Services.AddSingleton<AgentToolFunctions>();
 builder.Services.AddSingleton<IAgentToolRegistry, AgentToolRegistry>();
 
-// Agent execution — CopilotExecutor falls back to StubExecutor internally
-// if the Copilot CLI is not available.
+// Agent execution — CopilotClientFactory manages client lifecycle;
+// CopilotExecutor handles sessions, retry, and auth-state.
+builder.Services.AddSingleton<CopilotClientFactory>();
 builder.Services.AddSingleton<CopilotExecutor>();
 builder.Services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
 

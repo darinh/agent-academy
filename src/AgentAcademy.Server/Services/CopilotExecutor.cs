@@ -4,7 +4,6 @@ using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Notifications;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -15,6 +14,10 @@ namespace AgentAcademy.Server.Services;
 /// <see cref="CopilotSession"/> per agent-per-room combination.
 /// Sessions are cached with a 10-minute sliding TTL and disposed on expiry.
 ///
+/// Client lifecycle (creation, token resolution, worktree clients) is
+/// delegated to <see cref="CopilotClientFactory"/>. This class owns
+/// session management, retry logic, and auth-state transitions.
+///
 /// Authentication (IMPORTANT — read before debugging "agent offline" issues):
 ///
 /// The primary auth mechanism is GitHub OAuth. When a user logs in via the
@@ -24,7 +27,7 @@ namespace AgentAcademy.Server.Services;
 /// is no HttpContext. After a server restart, the token is restored from
 /// the auth cookie on the first authenticated HTTP request.
 ///
-/// Token resolution chain (checked in order):
+/// Token resolution chain (handled by <see cref="CopilotClientFactory"/>):
 /// 1. User's OAuth token (from <see cref="CopilotTokenProvider"/> — captured at login)
 /// 2. Static config token (<c>Copilot:GitHubToken</c> — for non-OAuth deployments only)
 /// 3. Environment variables (<c>COPILOT_GITHUB_TOKEN</c>, <c>GH_TOKEN</c>, <c>GITHUB_TOKEN</c>)
@@ -60,7 +63,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     private readonly ILogger<CopilotExecutor> _logger;
     private readonly ILogger<StubExecutor> _stubLogger;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly CopilotClientFactory _clientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NotificationManager _notificationManager;
     private readonly IAgentToolRegistry _toolRegistry;
@@ -69,15 +72,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly AgentQuotaService _quotaService;
     private readonly AgentCatalogOptions _catalog;
     private readonly CopilotCircuitBreaker _circuitBreaker = new();
-    private readonly string? _configToken;
-    private readonly string? _cliPath;
     private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
-    private readonly SemaphoreSlim _clientLock = new(1, 1);
-    private CopilotClient? _client;
-    private readonly ConcurrentDictionary<string, CopilotClient> _worktreeClients = new();
-    private string? _activeToken;
-    private bool _clientFailed;
     private volatile bool _authFailed;
     private StubExecutor? _fallback;
     private Timer? _cleanupTimer;
@@ -87,8 +83,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     public CopilotExecutor(
         ILogger<CopilotExecutor> logger,
         ILogger<StubExecutor> stubLogger,
-        IConfiguration configuration,
-        CopilotTokenProvider tokenProvider,
+        CopilotClientFactory clientFactory,
         IServiceScopeFactory scopeFactory,
         NotificationManager notificationManager,
         IAgentToolRegistry toolRegistry,
@@ -99,9 +94,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     {
         _logger = logger;
         _stubLogger = stubLogger;
-        _configToken = configuration["Copilot:GitHubToken"];
-        _cliPath = configuration["Copilot:CliPath"];
-        _tokenProvider = tokenProvider;
+        _clientFactory = clientFactory;
         _scopeFactory = scopeFactory;
         _notificationManager = notificationManager;
         _toolRegistry = toolRegistry;
@@ -121,7 +114,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     /// started. False if initialization hasn't been attempted, or if
     /// it failed and we fell back to the stub.
     /// </summary>
-    public bool IsFullyOperational => _client is not null && !_clientFailed;
+    public bool IsFullyOperational => _clientFactory.IsDefaultClientOperational;
 
     /// <summary>
     /// True when the executor has encountered a definitive authentication
@@ -167,15 +160,38 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
 
-        var client = workspacePath is not null
-            ? await EnsureWorktreeClientAsync(workspacePath, ct)
-            : await EnsureClientAsync(ct);
-        if (client is null)
+        var result = workspacePath is not null
+            ? await _clientFactory.GetWorktreeClientAsync(workspacePath, ct)
+            : await _clientFactory.GetClientAsync(ct);
+
+        if (result.WasRecreated)
+        {
+            _circuitBreaker.Reset();
+
+            // Invalidate all sessions — they belong to the old client.
+            // NOTE: A narrow race exists where a concurrent request acquires
+            // the new client (WasRecreated=false) and reuses a stale cached
+            // session before this invalidation runs. The stale session will
+            // fail at SendAsync, be caught, invalidated, and retried — so the
+            // impact is one extra fallback-to-stub per token rotation, which
+            // self-heals. A generation counter would eliminate this but adds
+            // complexity disproportionate to the risk.
+            await InvalidateAllSessionsAsync();
+        }
+
+        if (result.Client is null)
         {
             _logger.LogDebug("Copilot client unavailable — delegating to StubExecutor");
             return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
         }
 
+        // Only clear auth failure after confirming the new client started
+        // successfully — a token change that fails to create a client should
+        // NOT mark auth as operational.
+        if (result.WasRecreated && _authFailed)
+            _ = MarkAuthOperationalAsync();
+
+        var client = result.Client;
         var sessionKey = workspacePath is not null
             ? $"wt:{Path.GetFullPath(workspacePath)}:{agent.Id}:{roomId ?? "default"}"
             : BuildKey(agent.Id, roomId);
@@ -342,158 +358,11 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 await DisposeSessionSafe(entry);
         }
 
-        if (_client is not null)
-        {
-            try
-            {
-                await _client.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error disposing CopilotClient");
-            }
-            _client = null;
-        }
-
-        // Dispose all worktree-scoped clients
-        foreach (var kvp in _worktreeClients)
-        {
-            if (_worktreeClients.TryRemove(kvp.Key, out var wtClient))
-            {
-                try { await wtClient.DisposeAsync(); }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error disposing worktree CopilotClient for {Path}", kvp.Key);
-                }
-            }
-        }
+        // Client disposal is handled by CopilotClientFactory.DisposeAsync
+        // (DI container disposes it separately).
     }
 
     // ── Internals ───────────────────────────────────────────────
-
-    private async Task<CopilotClient?> EnsureClientAsync(CancellationToken ct)
-    {
-        // All reads/writes to _client, _activeToken, and _clientFailed are
-        // serialized through _clientLock to prevent races where a concurrent
-        // token change disposes the client while another thread uses it.
-        await _clientLock.WaitAsync(ct);
-        try
-        {
-            var token = ResolveToken();
-
-            // Existing client with matching token — reuse.
-            if (_client is not null && !_clientFailed && _activeToken == token)
-                return _client;
-
-            // Token changed since last client creation — dispose old client
-            // and reset failure state so we try the new token.
-            if (_client is not null && _activeToken != token)
-            {
-                _logger.LogInformation(
-                    "Token changed — recreating CopilotClient (old source: {Old}, new source: {New})",
-                    DescribeTokenSource(_activeToken),
-                    DescribeTokenSource(token));
-
-                await DisposeClientSafe();
-                _circuitBreaker.Reset();
-            }
-
-            // If we already failed with this exact token, don't retry.
-            if (_clientFailed && _activeToken == token) return null;
-
-            // Reset failure state for new token attempts.
-            _clientFailed = false;
-            var wasAuthFailed = _authFailed;
-            _activeToken = token;
-
-            var hasToken = !string.IsNullOrWhiteSpace(token);
-            var hasCliPath = !string.IsNullOrWhiteSpace(_cliPath);
-            _logger.LogInformation(
-                "Starting CopilotClient (token source: {Source}, CLI: {Cli})...",
-                DescribeTokenSource(token),
-                hasCliPath ? _cliPath : "bundled");
-
-            var options = new CopilotClientOptions();
-            if (hasToken) options.GitHubToken = token;
-            if (hasCliPath) options.CliPath = _cliPath;
-            var client = new CopilotClient(options);
-            await client.StartAsync();
-            _client = client;
-            _logger.LogInformation("CopilotClient started successfully");
-
-            // Only clear auth failure and post recovery AFTER successful start.
-            if (wasAuthFailed)
-                _ = MarkAuthOperationalAsync();
-
-            return _client;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to start CopilotClient — falling back to StubExecutor");
-            _clientFailed = true;
-            return null;
-        }
-        finally
-        {
-            _clientLock.Release();
-        }
-    }
-
-    /// <summary>
-    /// Returns a CopilotClient whose CLI process runs in the given
-    /// worktree directory. Clients are cached by path and share the
-    /// same auth token as the default client.
-    /// </summary>
-    private async Task<CopilotClient?> EnsureWorktreeClientAsync(string workspacePath, CancellationToken ct)
-    {
-        var normalizedPath = Path.GetFullPath(workspacePath);
-
-        // Fast path — cached client.
-        if (_worktreeClients.TryGetValue(normalizedPath, out var existing))
-            return existing;
-
-        await _clientLock.WaitAsync(ct);
-        try
-        {
-            // Re-check after lock
-            if (_worktreeClients.TryGetValue(normalizedPath, out existing))
-                return existing;
-
-            var token = ResolveToken();
-            var hasToken = !string.IsNullOrWhiteSpace(token);
-            var hasCliPath = !string.IsNullOrWhiteSpace(_cliPath);
-
-            _logger.LogInformation(
-                "Starting worktree CopilotClient for {WorkspacePath} (token source: {Source})",
-                normalizedPath, DescribeTokenSource(token));
-
-            var options = new CopilotClientOptions { Cwd = normalizedPath };
-            if (hasToken) options.GitHubToken = token;
-            if (hasCliPath) options.CliPath = _cliPath;
-
-            var client = new CopilotClient(options);
-            await client.StartAsync();
-            _worktreeClients[normalizedPath] = client;
-
-            _logger.LogInformation(
-                "Worktree CopilotClient started for {WorkspacePath}", normalizedPath);
-            return client;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "Failed to start worktree CopilotClient for {WorkspacePath} — falling back to default client",
-                normalizedPath);
-            // Return null — caller (RunAsync) will fall back to stub.
-            // We do NOT call EnsureClientAsync here to avoid deadlock
-            // (it also acquires _clientLock).
-            return null;
-        }
-        finally
-        {
-            _clientLock.Release();
-        }
-    }
 
     /// <summary>
     /// Disposes a worktree-scoped client and all sessions that belong to it.
@@ -501,12 +370,11 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     /// </summary>
     public async Task DisposeWorktreeClientAsync(string workspacePath)
     {
-        var normalizedPath = Path.GetFullPath(workspacePath);
-        if (!_worktreeClients.TryRemove(normalizedPath, out var client))
+        var prefix = await _clientFactory.DisposeWorktreeClientAsync(workspacePath);
+        if (prefix is null)
             return;
 
         // Remove sessions that were created on this client
-        var prefix = $"wt:{normalizedPath}:";
         var keys = _sessions.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList();
         foreach (var key in keys)
         {
@@ -514,74 +382,6 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             {
                 _sessionLocks.TryRemove(key, out _);
                 await DisposeSessionSafe(entry);
-            }
-        }
-
-        try { await client.DisposeAsync(); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing worktree CopilotClient for {Path}", normalizedPath);
-        }
-
-        _logger.LogInformation("Disposed worktree CopilotClient for {WorkspacePath}", normalizedPath);
-    }
-
-    /// <summary>
-    /// Resolves the best available GitHub token.
-    /// Priority: user OAuth token → config token → null (env/CLI fallback).
-    /// </summary>
-    private string? ResolveToken()
-    {
-        // 1. User's OAuth token (captured at login, survives background orchestration)
-        var userToken = _tokenProvider.Token;
-        if (!string.IsNullOrWhiteSpace(userToken))
-            return userToken;
-
-        // 2. Static config token (Copilot:GitHubToken in appsettings / user-secrets)
-        if (!string.IsNullOrWhiteSpace(_configToken))
-            return _configToken;
-
-        // 3. null → SDK falls back to env vars or CLI login
-        return null;
-    }
-
-    private string DescribeTokenSource(string? token)
-    {
-        if (token is null) return "env/CLI login";
-        if (token == _tokenProvider.Token) return "user OAuth";
-        return "config";
-    }
-
-    private async Task DisposeClientSafe()
-    {
-        if (_client is not null)
-        {
-            var old = _client;
-            _client = null;
-            try { await old.DisposeAsync(); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Error disposing old CopilotClient"); }
-        }
-
-        // Clear all sessions — they belong to the old client.
-        foreach (var key in _sessions.Keys.ToList())
-        {
-            if (_sessions.TryRemove(key, out var entry))
-            {
-                _sessionLocks.TryRemove(key, out _);
-                await DisposeSessionSafe(entry);
-            }
-        }
-
-        // Also dispose all worktree clients — they used the old token.
-        foreach (var kvp in _worktreeClients.ToArray())
-        {
-            if (_worktreeClients.TryRemove(kvp.Key, out var wtClient))
-            {
-                try { await wtClient.DisposeAsync(); }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error disposing worktree CopilotClient for {Path} during token rotation", kvp.Key);
-                }
             }
         }
     }

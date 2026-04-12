@@ -73,8 +73,10 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         _executor = new CopilotExecutor(
             NullLogger<CopilotExecutor>.Instance,
             NullLogger<StubExecutor>.Instance,
-            new ConfigurationBuilder().Build(),
-            new CopilotTokenProvider(),
+            new CopilotClientFactory(
+                NullLogger<CopilotClientFactory>.Instance,
+                new ConfigurationBuilder().Build(),
+                new CopilotTokenProvider()),
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _serviceProvider.GetRequiredService<NotificationManager>(),
             Substitute.For<IAgentToolRegistry>(),
