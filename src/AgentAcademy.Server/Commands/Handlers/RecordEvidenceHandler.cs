@@ -91,7 +91,7 @@ public sealed class RecordEvidenceHandler : ICommandHandler
         if (command.Args.TryGetValue("output", out var outputObj) && outputObj is string outputStr)
             outputSnippet = outputStr;
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskEvidence = context.Services.GetRequiredService<TaskEvidenceService>();
         var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         try
@@ -123,7 +123,7 @@ public sealed class RecordEvidenceHandler : ICommandHandler
                 };
             }
 
-            var evidence = await taskLifecycle.RecordEvidenceAsync(
+            var evidence = await taskEvidence.RecordEvidenceAsync(
                 taskId, context.AgentId, context.AgentName,
                 phase, checkName, tool, cmd, exitCode, outputSnippet, passed);
 
