@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **300-frontend-ui**: Keyboard shortcuts help overlay (`KeyboardShortcutsDialog.tsx`). Press `?` to toggle a dialog listing all app shortcuts (⌘/Ctrl+K, /, ?, Enter, Shift+Enter, Esc). Platform-aware modifier display (⌘ on Mac, Ctrl elsewhere). Input-guarded, lazy-loaded, Fluent UI Dialog with `<kbd>` styling. 21 new tests (1498 frontend total).
 - **300-frontend-ui**: Browser desktop notifications (`useDesktopNotifications.ts`). Opt-in Notification API integration alerts operator when tab is backgrounded: DMs, agent errors, sprint events, task creation. Toggle in Settings > Advanced. Permission request on first enable, denial/revocation handling, event deduplication (SSE replay protection), 8s auto-close, click-to-focus. localStorage preference. 20 hook tests + 6 settings panel tests (1477 frontend total).
 - **300-frontend-ui**: Workspace Search (`SearchPanel.tsx`). FTS5-powered full-text search across room messages, breakout messages, and tasks. `GET /api/search?q=term&scope=all|messages|tasks` endpoint with `SearchService` (scoped), `SearchController`. FTS5 virtual tables (`messages_fts`, `breakout_messages_fts`, `tasks_fts`) with INSERT/UPDATE/DELETE triggers. LIKE fallback for pre-migration databases. Frontend: debounced search input, scope filters (All/Messages/Tasks), BM25-ranked results with highlighted snippets, breakout badge, room navigation on click. Keyboard shortcut `/` opens search. 27 backend + 29 frontend tests.
 

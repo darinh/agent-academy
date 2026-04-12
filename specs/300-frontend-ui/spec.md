@@ -43,6 +43,7 @@ App.tsx (FluentProvider + AppShell)
             ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, github, advanced)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
+            ├── KeyboardShortcutsDialog.tsx (? key shortcut help)
             ├── RecoveryBanner.tsx (crash recovery notification)
             └── CircuitBreakerBanner.tsx (auth degradation warning)
 ```
@@ -622,6 +623,28 @@ interface TaskSearchResult {
 }
 interface SearchResults { messages: MessageSearchResult[]; tasks: TaskSearchResult[]; totalCount: number; query: string; }
 ```
+
+## Keyboard Shortcuts (`KeyboardShortcutsDialog.tsx`)
+
+A help overlay listing all application keyboard shortcuts. Triggered by pressing `?` (when focus is not in an input/textarea/select).
+
+### Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘/Ctrl + K` | Open command palette |
+| `/` | Open search |
+| `?` | Toggle keyboard shortcuts overlay |
+| `Enter` | Send message in chat/DM |
+| `Shift + Enter` | New line in message |
+| `Esc` | Close settings / command palette |
+
+### Behavior
+
+- **Input guard**: All global shortcuts (`/`, `?`, `⌘K`) are suppressed when focus is in `INPUT`, `TEXTAREA`, `SELECT`, or `contentEditable` elements.
+- **Platform-aware**: Displays `⌘` on macOS/iOS, `Ctrl` on other platforms (detected via `navigator.userAgent`).
+- **Toggle**: Pressing `?` again closes the dialog.
+- **Lazy-loaded**: Component is loaded via `React.lazy()` — zero cost until first open.
 
 ## Future Work
 
