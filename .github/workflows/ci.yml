@@ -7,6 +7,18 @@ on:
     branches: [develop, main]
 
 jobs:
+  spec-drift:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for spec drift
+        run: scripts/check-spec-drift.sh
+
   commit-lint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
