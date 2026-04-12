@@ -137,9 +137,9 @@ If exceeded:
 
 ### Sprint Context Loading
 
-When an active sprint exists, `LoadSprintContextAsync()` (private to `AgentOrchestrator`) loads the sprint's stage, prior context, and overflow requirements. `SprintPreambles.BuildPreamble()` generates a preamble injected into all agent prompts for the round. Sprint stage also controls which agent roles participate via `SprintPreambles.IsRoleAllowedInStage()` and `SprintPreambles.FilterByStageRoster()`.
+When an active sprint exists, `LoadRoundContextAsync()` (private to `AgentOrchestrator`) consolidates all per-round context loading: spec context/version, session summary, and sprint preamble/stage. Each field is loaded independently with soft-fail to null and a logged warning, ensuring one failure cannot cascade to others. `LoadSprintContextAsync()` (also private) handles the sprint-specific portion — loading stage, prior context, overflow requirements, and building the preamble via `SprintPreambles.BuildPreamble()`. Sprint stage also controls which agent roles participate via `SprintPreambles.IsRoleAllowedInStage()` and `SprintPreambles.FilterByStageRoster()`.
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:LoadSprintContextAsync`, `src/AgentAcademy.Server/Services/SprintPreambles.cs`
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:LoadRoundContextAsync`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:LoadSprintContextAsync`, `src/AgentAcademy.Server/Services/SprintPreambles.cs`
 
 ### Response Parsing
 
