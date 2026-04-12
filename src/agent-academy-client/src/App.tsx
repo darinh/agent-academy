@@ -51,6 +51,7 @@ const CommandsPanel = lazy(() => import("./CommandsPanel"));
 const SprintPanel = lazy(() => import("./SprintPanel"));
 const CommandPalette = lazy(() => import("./CommandPalette"));
 const SearchPanel = lazy(() => import("./SearchPanel"));
+const KeyboardShortcutsDialog = lazy(() => import("./KeyboardShortcutsDialog"));
 import { useCircuitBreakerPolling } from "./useCircuitBreakerPolling";
 import {
   getCopilotStatusCopy,
@@ -216,6 +217,7 @@ function AppShell() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const previousAuthRef = useRef<AuthStatus | null>(null);
   const authRefreshInFlight = useRef(false);
@@ -364,6 +366,11 @@ function AppShell() {
       if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !inInput) {
         e.preventDefault();
         setTab("search");
+      }
+      // "?" to open keyboard shortcuts help (skip when focus is in an input)
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey && !inInput) {
+        e.preventDefault();
+        setShortcutsOpen((prev) => !prev);
       }
     };
     window.addEventListener("keydown", handler);
@@ -854,6 +861,14 @@ function AppShell() {
             onDismiss={() => setPaletteOpen(false)}
             roomId={room?.id ?? null}
             readOnly={workspaceLimited}
+          />
+        </Suspense>
+      </ChunkErrorBoundary>
+      <ChunkErrorBoundary>
+        <Suspense fallback={null}>
+          <KeyboardShortcutsDialog
+            open={shortcutsOpen}
+            onClose={() => setShortcutsOpen(false)}
           />
         </Suspense>
       </ChunkErrorBoundary>
