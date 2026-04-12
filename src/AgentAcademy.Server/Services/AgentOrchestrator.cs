@@ -207,13 +207,13 @@ public sealed class AgentOrchestrator
             var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
-            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
 
             // Check if conversation session needs rotation before this round
             if (round == 1)
             {
                 try
                 {
+                    var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
                     var rotated = await sessionService.CheckAndRotateAsync(roomId);
                     if (rotated)
                         _logger.LogInformation(
@@ -232,16 +232,7 @@ public sealed class AgentOrchestrator
                 "Conversation round {Round}/{MaxRounds} for room {RoomId}",
                 round, MaxRoundsPerTrigger, roomId);
 
-            // Load shared context for this round
-            var specContext = await _specManager.LoadSpecContextAsync();
-            var specVersionInfo = await _specManager.GetSpecVersionAsync();
-            var specVersion = specVersionInfo?.Version;
-            string? sessionSummary = null;
-            try { sessionSummary = await sessionService.GetSessionContextAsync(roomId); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId); }
-
-            var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
-            var activeSprintStage = sprintCtx.ActiveStage;
+            var ctx = await LoadRoundContextAsync(scope, roomId);
 
             // ── Planner phase ──
             var planner = FindPlanner();
@@ -250,12 +241,12 @@ public sealed class AgentOrchestrator
 
             var plannerId = planner?.Id;
 
-            if (planner is not null && activeSprintStage is not null
-                && !SprintPreambles.IsRoleAllowedInStage(planner.Role, activeSprintStage))
+            if (planner is not null && ctx.ActiveSprintStage is not null
+                && !SprintPreambles.IsRoleAllowedInStage(planner.Role, ctx.ActiveSprintStage))
             {
                 _logger.LogInformation(
                     "Planner {PlannerName} excluded from sprint stage {Stage}",
-                    planner.Name, activeSprintStage);
+                    planner.Name, ctx.ActiveSprintStage);
                 planner = null;
             }
 
@@ -272,7 +263,7 @@ public sealed class AgentOrchestrator
 
                 var (resolvedPlanner, plannerResponse, plannerIsNonPass) = await RunAgentTurnAsync(
                     planner, scope, messageService, configService, activity,
-                    freshRoom, roomId, specContext, taskItems, sessionSummary, sprintCtx.Preamble, plannerSuffix, specVersion);
+                    freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion);
 
                 if (plannerIsNonPass)
                 {
@@ -293,8 +284,8 @@ public sealed class AgentOrchestrator
                         .Take(3));
             }
 
-            if (activeSprintStage is not null)
-                agentsToRun = SprintPreambles.FilterByStageRoster(agentsToRun, activeSprintStage, a => a.Role);
+            if (ctx.ActiveSprintStage is not null)
+                agentsToRun = SprintPreambles.FilterByStageRoster(agentsToRun, ctx.ActiveSprintStage, a => a.Role);
 
             // ── Run agents sequentially so each sees prior responses ──
             foreach (var catalogAgent in agentsToRun)
@@ -309,8 +300,8 @@ public sealed class AgentOrchestrator
 
                 var (_, _, agentIsNonPass) = await RunAgentTurnAsync(
                     catalogAgent, scope, messageService, configService, activity,
-                    currentRoom, roomId, specContext,
-                    sessionSummary: sessionSummary, sprintPreamble: sprintCtx.Preamble, specVersion: specVersion);
+                    currentRoom, roomId, ctx.SpecContext,
+                    sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
 
                 if (agentIsNonPass) hadNonPassResponse = true;
             }
@@ -392,24 +383,12 @@ public sealed class AgentOrchestrator
         var room = await roomService.GetRoomAsync(roomId);
         if (room is null) return;
 
-        var specContext = await _specManager.LoadSpecContextAsync();
-        var specVersionInfo2 = await _specManager.GetSpecVersionAsync();
-        var specVersion2 = specVersionInfo2?.Version;
-        string? sessionSummary = null;
-        string? sprintPreamble = null;
-        try
-        {
-            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
-            sessionSummary = await sessionService.GetSessionContextAsync(roomId);
-            var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
-            sprintPreamble = sprintCtx.Preamble;
-        }
-        catch { /* non-critical */ }
+        var ctx = await LoadRoundContextAsync(scope, roomId);
 
         await RunAgentTurnAsync(
             catalogAgent, scope, messageService, configService, activity,
-            room, roomId, specContext,
-            sessionSummary: sessionSummary, sprintPreamble: sprintPreamble, specVersion: specVersion2);
+            room, roomId, ctx.SpecContext,
+            sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
     }
@@ -569,40 +548,94 @@ public sealed class AgentOrchestrator
         }
     }
 
-    private record SprintContext(string? Preamble, string? ActiveStage);
+    // ── ROUND CONTEXT ──────────────────────────────────────────
 
-    private async Task<SprintContext> LoadSprintContextAsync(
-        IServiceScope scope, RoomService roomService, ConversationSessionService sessionService)
+    /// <summary>
+    /// Immutable snapshot of shared per-round context. Data only — no services.
+    /// Each field soft-fails to null independently so one failure cannot cascade.
+    /// </summary>
+    private record RoundContext(
+        string? SpecContext,
+        string? SpecVersion,
+        string? SessionSummary,
+        string? SprintPreamble,
+        string? ActiveSprintStage);
+
+    /// <summary>
+    /// Loads the shared context needed by both conversation rounds and DM rounds.
+    /// Each field fails independently to null with a logged warning.
+    /// </summary>
+    private async Task<RoundContext> LoadRoundContextAsync(IServiceScope scope, string roomId)
     {
+        string? specContext = null;
+        string? specVersion = null;
+        string? sessionSummary = null;
+        string? sprintPreamble = null;
+        string? activeSprintStage = null;
+
         try
         {
-            var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
-            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
-            if (workspacePath is null) return new(null, null);
-
-            var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
-            if (sprint is null) return new(null, null);
-
-            var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
-
-            string? overflowContent = null;
-            if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
-            {
-                var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
-                var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
-                overflowContent = overflow?.Content;
-            }
-
-            var preamble = SprintPreambles.BuildPreamble(
-                sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
-
-            return new(preamble, sprint.CurrentStage);
+            specContext = await _specManager.LoadSpecContextAsync();
+            var versionInfo = await _specManager.GetSpecVersionAsync();
+            specVersion = versionInfo?.Version;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load sprint context");
-            return new(null, null);
+            _logger.LogWarning(ex, "Failed to load spec context for room {RoomId}", roomId);
         }
+
+        try
+        {
+            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+            sessionSummary = await sessionService.GetSessionContextAsync(roomId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId);
+        }
+
+        try
+        {
+            var (preamble, stage) = await LoadSprintContextAsync(scope);
+            sprintPreamble = preamble;
+            activeSprintStage = stage;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load sprint context for room {RoomId}", roomId);
+        }
+
+        return new(specContext, specVersion, sessionSummary, sprintPreamble, activeSprintStage);
+    }
+
+    private record SprintContext(string? Preamble, string? ActiveStage);
+
+    private async Task<SprintContext> LoadSprintContextAsync(IServiceScope scope)
+    {
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var workspacePath = await roomService.GetActiveWorkspacePathAsync();
+        if (workspacePath is null) return new(null, null);
+
+        var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
+        if (sprint is null) return new(null, null);
+
+        var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
+
+        string? overflowContent = null;
+        if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
+        {
+            var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
+            overflowContent = overflow?.Content;
+        }
+
+        var preamble = SprintPreambles.BuildPreamble(
+            sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
+
+        return new(preamble, sprint.CurrentStage);
     }
 
     private async Task PostAgentMessageAsync(
