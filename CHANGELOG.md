@@ -5,6 +5,16 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ## Unreleased (2026-04-12)
 
+### Fixes
+
+- changelog versioning — add --version flag and fix set -e abort
+
+### Documentation
+
+- mark resolved spec gaps in 007-agent-commands
+
+## v2.0.0 (2026-04-12)
+
 ### Features
 
 - add keyboard shortcuts help overlay (? key)

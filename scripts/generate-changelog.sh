@@ -2,9 +2,12 @@
 # Agent Academy — Generate release changelog from conventional commits
 #
 # Usage:
-#   ./scripts/generate-changelog.sh              # all commits since last tag
-#   ./scripts/generate-changelog.sh v0.1.0       # commits since specific tag
-#   ./scripts/generate-changelog.sh --all        # full history grouped by tag
+#   ./scripts/generate-changelog.sh                       # all commits since last tag
+#   ./scripts/generate-changelog.sh --version 2.1.0       # label unreleased commits as v2.1.0
+#
+# The --version flag is used by the version-bump CI workflow to label
+# the "unreleased" section with the new version number *before* the
+# git tag exists.
 #
 # Output: writes CHANGELOG.md to repo root
 
@@ -14,6 +17,19 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 OUTPUT="$REPO_ROOT/CHANGELOG.md"
+RELEASE_VERSION=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            RELEASE_VERSION="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # Collect tags in reverse chronological order
 mapfile -t TAGS < <(git tag --sort=-version:refname 2>/dev/null)
@@ -52,6 +68,7 @@ format_section() {
     [[ -n "$refactors" ]] && echo "### Refactoring" && echo "" && echo -n "$refactors" && echo ""
     [[ -n "$tests" ]] && echo "### Tests" && echo "" && echo -n "$tests" && echo ""
     [[ -n "$others" ]] && echo "### Other" && echo "" && echo -n "$others" && echo ""
+    return 0
 }
 
 {
@@ -66,11 +83,15 @@ format_section() {
         latest_date=$(git log -1 --format="%cd" --date=short 2>/dev/null || date +%Y-%m-%d)
         format_section "HEAD" "Unreleased" "$latest_date"
     else
-        # Unreleased section (commits since latest tag)
+        # Unreleased / current-release section (commits since latest tag)
         unreleased_count=$(git rev-list "${TAGS[0]}..HEAD" --count 2>/dev/null || echo "0")
         if [[ "$unreleased_count" -gt 0 ]]; then
             latest_date=$(git log -1 --format="%cd" --date=short)
-            format_section "${TAGS[0]}..HEAD" "Unreleased" "$latest_date"
+            if [[ -n "$RELEASE_VERSION" ]]; then
+                format_section "${TAGS[0]}..HEAD" "v${RELEASE_VERSION#v}" "$latest_date"
+            else
+                format_section "${TAGS[0]}..HEAD" "Unreleased" "$latest_date"
+            fi
         fi
 
         # Each tag

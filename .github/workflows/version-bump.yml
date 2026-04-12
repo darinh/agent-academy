@@ -80,7 +80,7 @@ jobs:
           npm version ${{ steps.new.outputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Generate changelog
-        run: ./scripts/generate-changelog.sh
+        run: ./scripts/generate-changelog.sh --version ${{ steps.new.outputs.version }}
 
       - name: Commit and tag
         run: |
