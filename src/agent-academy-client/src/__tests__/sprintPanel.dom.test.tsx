@@ -14,7 +14,6 @@ import {
   render,
   screen,
   waitFor,
-  act,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -724,7 +723,7 @@ describe("SprintPanel (interactive)", () => {
       setupActiveSprint({ currentStage: "Implementation" }, [
         makeArtifact({ id: 1, stage: "Intake", content: "Intake doc" }),
         makeArtifact({ id: 2, stage: "Planning", content: "Plan doc", type: "SprintPlan" }),
-        makeArtifact({ id: 3, stage: "Implementation", content: "Code artifact", type: "CodeChange" }),
+        makeArtifact({ id: 3, stage: "Implementation", content: "Code artifact", type: "SprintReport" }),
       ]);
       renderPanel();
       await waitFor(() => expect(screen.getByText("Sprint #1")).toBeInTheDocument());

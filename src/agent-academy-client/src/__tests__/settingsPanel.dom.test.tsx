@@ -16,8 +16,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
-  act,
   fireEvent,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -71,7 +69,7 @@ vi.mock("../TemplateCard", () => ({
     isNew,
     expanded,
     onToggle,
-    onCancelNew,
+    onCancelNew: _onCancelNew,
   }: {
     template?: { id: string; name: string };
     isNew?: boolean;
@@ -716,7 +714,7 @@ describe("SettingsPanel (interactive)", () => {
 
     it("shows error state with retry button on failure", async () => {
       mockGetGitHubStatus.mockRejectedValue(new Error("Network error"));
-      const { onClose } = renderPanel();
+      renderPanel();
       clickTab("GitHub");
 
       await waitFor(() => {

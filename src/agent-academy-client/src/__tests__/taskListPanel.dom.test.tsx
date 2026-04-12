@@ -14,8 +14,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
-  act,
   fireEvent,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -91,7 +89,6 @@ vi.mock("../SkeletonLoader", () => ({
 import TaskListPanel from "../TaskListPanel";
 import type {
   TaskSnapshot,
-  TaskStatus,
   AgentDefinition,
   TaskComment,
   SpecTaskLink,
