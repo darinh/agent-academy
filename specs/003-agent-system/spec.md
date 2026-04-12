@@ -326,7 +326,7 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 - Write tools capture `agentId` at session creation via closures — agents cannot impersonate other agents
 - Memory isolation: agents only see their own memories plus `shared` category memories from other agents
 
-**Implementation**: Read-only tools are created once and shared. Write tools use inner wrapper classes (`TaskWriteToolWrapper`, `MemoryToolWrapper`) that capture agent identity via closures. All tools use `IServiceScopeFactory` to resolve scoped services at invocation time.
+**Implementation**: Read-only tools are created once and shared. Write tools use dedicated wrapper classes (`TaskWriteToolWrapper`, `MemoryToolWrapper`, `CodeWriteToolWrapper`) in their own files that capture agent identity via constructor parameters. All tools use `IServiceScopeFactory` to resolve scoped services at invocation time.
 
 #### Registry
 
