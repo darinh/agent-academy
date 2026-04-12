@@ -722,7 +722,9 @@ describe("DmPanel (interactive)", () => {
         expect(screen.getByText("Message 3")).toBeInTheDocument();
       });
 
-      expect(Element.prototype.scrollTo).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(Element.prototype.scrollTo).toHaveBeenCalled();
+      });
     });
   });
 
