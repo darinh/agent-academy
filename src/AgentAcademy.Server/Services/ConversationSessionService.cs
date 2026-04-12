@@ -84,7 +84,7 @@ public sealed class ConversationSessionService
 
     /// <summary>
     /// Increments the message count for a session.
-    /// Called by WorkspaceRuntime when a message is posted.
+    /// Called by MessageService when a message is posted.
     /// </summary>
     public async Task IncrementMessageCountAsync(string sessionId)
     {

@@ -7,7 +7,6 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Manages room/breakout plan content: get, set (create/update), and delete.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class PlanService
 {

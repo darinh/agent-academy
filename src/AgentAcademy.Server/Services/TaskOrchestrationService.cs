@@ -8,8 +8,6 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Coordinates task operations that cross room, agent, and task boundaries.
-/// Extracted from WorkspaceRuntime to isolate the orchestration logic
-/// that attracted frequent fix commits when mixed with delegation boilerplate.
 /// </summary>
 public sealed class TaskOrchestrationService
 {

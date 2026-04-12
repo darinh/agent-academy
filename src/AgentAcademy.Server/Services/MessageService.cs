@@ -9,7 +9,6 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Handles all message operations: room messages (agent, human, system),
 /// direct messages, breakout room messages, and message trimming.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class MessageService
 {

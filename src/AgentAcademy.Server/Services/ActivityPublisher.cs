@@ -6,9 +6,8 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Creates, persists (via EF tracker), and broadcasts activity events.
-/// Extracted from WorkspaceRuntime and TaskLifecycleService to eliminate
-/// duplicated Publish() logic. Caller must call SaveChangesAsync on the
-/// DbContext to commit the persisted entity.
+/// Caller must call SaveChangesAsync on the DbContext to commit the
+/// persisted entity.
 /// </summary>
 public sealed class ActivityPublisher
 {
@@ -65,7 +64,6 @@ public sealed class ActivityPublisher
 
     /// <summary>
     /// Publishes an AgentThinking activity event and saves immediately.
-    /// Convenience method extracted from WorkspaceRuntime.
     /// </summary>
     public async Task PublishThinkingAsync(AgentDefinition agent, string roomId)
     {
@@ -76,7 +74,6 @@ public sealed class ActivityPublisher
 
     /// <summary>
     /// Publishes an AgentFinished activity event and saves immediately.
-    /// Convenience method extracted from WorkspaceRuntime.
     /// </summary>
     public async Task PublishFinishedAsync(AgentDefinition agent, string roomId)
     {

@@ -9,8 +9,6 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Handles task queries and low-coupling task mutations (no room/messaging/activity side-effects).
-/// Extracted from WorkspaceRuntime to reduce class complexity. Phase 1 of the refactor covers
-/// read operations and simple writes; phase 2 will extract lifecycle transitions.
 /// </summary>
 public sealed class TaskQueryService
 {

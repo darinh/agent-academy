@@ -10,7 +10,6 @@ namespace AgentAcademy.Server.Services;
 /// Handles one-time startup initialization: recording the server instance,
 /// ensuring the default room exists, seeding agent locations, and resolving
 /// the startup main room.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class InitializationService
 {

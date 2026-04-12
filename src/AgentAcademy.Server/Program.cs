@@ -193,10 +193,10 @@ builder.Services.AddDbContext<AgentAcademyDbContext>(options =>
 // Agent catalog (singleton — loaded from Config/agents.json)
 builder.Services.AddAgentCatalog();
 
-// Activity broadcaster (singleton — shared across scoped WorkspaceRuntime instances)
+// Activity broadcaster (singleton — shared across scoped service instances)
 builder.Services.AddSingleton<ActivityBroadcaster>();
 
-// Workspace runtime (scoped — one per request, uses scoped DbContext)
+// Domain services (scoped — one per request, uses scoped DbContext)
 builder.Services.AddScoped<ActivityPublisher>();
 builder.Services.AddScoped<TaskQueryService>();
 builder.Services.AddScoped<TaskLifecycleService>();
@@ -209,7 +209,6 @@ builder.Services.AddScoped<BreakoutRoomService>();
 builder.Services.AddScoped<TaskItemService>();
 builder.Services.AddScoped<RoomService>();
 builder.Services.AddScoped<TaskOrchestrationService>();
-builder.Services.AddScoped<WorkspaceRuntime>();
 
 // Agent config service (scoped — merges catalog defaults with DB overrides)
 builder.Services.AddScoped<AgentConfigService>();
@@ -304,16 +303,18 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
     db.Database.Migrate();
 
-    // Initialize workspace runtime (create default room + agent locations)
-    var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-    await runtime.InitializeAsync();
+    // Initialize startup state (create default room + agent locations)
+    var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+    await initialization.InitializeAsync();
 
     // If a workspace is already active, ensure it has a default room
-    var mainRoomId = runtime.DefaultRoomId;
-    var activeWorkspace = await runtime.GetActiveWorkspacePathAsync();
+    var catalog = scope.ServiceProvider.GetRequiredService<AgentCatalogOptions>();
+    var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
+    var mainRoomId = catalog.DefaultRoomId;
+    var activeWorkspace = await rooms.GetActiveWorkspacePathAsync();
     if (activeWorkspace is not null)
     {
-        mainRoomId = await runtime.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
+        mainRoomId = await rooms.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
     }
 
     // Re-enqueue rooms with unanswered human messages (covers crash and clean restart).

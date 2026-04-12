@@ -8,7 +8,6 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Manages agent presence tracking: querying locations, moving agents between rooms,
 /// and mapping between entities and domain models.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class AgentLocationService
 {

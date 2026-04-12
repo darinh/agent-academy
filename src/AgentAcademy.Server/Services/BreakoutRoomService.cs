@@ -9,7 +9,6 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Handles all breakout room operations: creation, closure, queries,
 /// task linking, agent session history, and breakout reopening.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class BreakoutRoomService
 {

@@ -4,7 +4,7 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Singleton in-memory buffer and broadcaster for activity events.
-/// Separated from the scoped WorkspaceRuntime so activity state
+/// Separated from scoped services so activity state
 /// persists across HTTP requests and subscribers survive request lifetimes.
 /// </summary>
 public sealed class ActivityBroadcaster

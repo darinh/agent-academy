@@ -10,7 +10,6 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Handles all room operations: CRUD, lifecycle (archive/reopen/cleanup),
 /// default room management, phase transitions, room messages, and room snapshots.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class RoomService
 {

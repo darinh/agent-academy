@@ -10,7 +10,6 @@ namespace AgentAcademy.Server.Services;
 /// Handles server instance lifecycle tracking and crash recovery:
 /// detecting unclean shutdowns, closing orphaned breakout rooms,
 /// resetting stuck agents, and resetting abandoned tasks.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class CrashRecoveryService
 {

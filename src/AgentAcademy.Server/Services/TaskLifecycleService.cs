@@ -9,10 +9,9 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Handles task lifecycle transitions that have side-effects (activity events, review messages).
-/// Extracted from WorkspaceRuntime to reduce class complexity.
-/// Phase 2: claim/release, review workflow, evidence, gates, spec linking.
-/// Phase 3: create/complete/reject task entity mutations — room/agent orchestration
-/// remains in WorkspaceRuntime which delegates here for the task-state changes.
+/// Covers claim/release, review workflow, evidence, gates, and spec linking.
+/// Task entity mutations for create/complete/reject are orchestrated by
+/// TaskOrchestrationService which delegates here for the task-state changes.
 /// </summary>
 public sealed class TaskLifecycleService
 {
@@ -625,7 +624,7 @@ public sealed class TaskLifecycleService
         Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
             $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
 
-        // NOTE: Does NOT call SaveChangesAsync — the caller (WorkspaceRuntime.RejectTaskAsync)
+        // NOTE: Does NOT call SaveChangesAsync — the caller (TaskOrchestrationService.RejectTaskAsync)
         // performs room/breakout reopen and saves everything in one atomic commit.
 
         return new RejectTaskResult(

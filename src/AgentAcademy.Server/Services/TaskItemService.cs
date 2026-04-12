@@ -8,7 +8,6 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Manages task item CRUD — the individual work items within a breakout room.
-/// Extracted from WorkspaceRuntime to reduce class complexity.
 /// </summary>
 public sealed class TaskItemService
 {
