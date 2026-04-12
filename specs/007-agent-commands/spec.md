@@ -125,7 +125,7 @@ These formalize existing capabilities with audit trails and structured output.
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ReadFile,SearchCode,ListRooms,ListAgents,ListTasks}Handler.cs` — committed in `63b596c` (2026-03-28).
 
-#### Phase 1B: Structured State Management
+#### Phase 1B: Structured State Management — IMPLEMENTED
 
 | Command | Args | Returns | Side Effects | Implementation |
 |---------|------|---------|-------------|----------------|
@@ -586,14 +586,15 @@ DM: recipient=@Human message=I need clarification on the database schema
 - Review workflow commands (APPROVE/REQUEST_CHANGES) — **IMPLEMENTED**
 - Task claiming (optimistic locking to prevent duplicate work) — **IMPLEMENTED**: `CLAIM_TASK` / `RELEASE_TASK` commands
 
-### Phase 3 — Verification + Communication (Tier 1C + 1D)
-- Build/test execution (sandboxed, with timeouts)
+### Phase 3 — Verification + Communication (Tier 1C + 1D) — IMPLEMENTED
+- Build/test execution — **IMPLEMENTED**: `RUN_BUILD`, `RUN_TESTS`, `SHOW_DIFF`, `GIT_LOG` handlers with workspace-scoped process execution
 - DM system — **IMPLEMENTED**: extends MessageEntity with RecipientId, adds DirectMessage kind, DmHandler, orchestrator integration, frontend DM panel
-- Room history read (existing data, new access pattern)
+- Room history read — **IMPLEMENTED**: `ROOM_HISTORY` handler returns paginated message history for any room
+- Evidence ledger — **IMPLEMENTED**: `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES` for structured verification tracking
 
-### Phase 4 — Navigation (Tier 1E)
-- Agent self-navigation between rooms
-- Room management commands
+### Phase 4 — Navigation + Room Management (Tier 1E + 1G) — IMPLEMENTED
+- Agent self-navigation — **IMPLEMENTED**: `MOVE_TO_ROOM`, `RETURN_TO_MAIN` handlers for agent room transitions
+- Room management — **IMPLEMENTED**: `CREATE_ROOM`, `ARCHIVE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `ROOM_TOPIC` handlers for full room lifecycle
 
 ### Post-MVP
 - Tier 2 & 3 rollout
