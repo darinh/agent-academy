@@ -399,7 +399,8 @@ public class DiscordNotificationProviderTests
             Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
         var taskAssignmentHandler = new TaskAssignmentHandler(catalog, gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());
-        return new AgentOrchestrator(scopeFactory, catalog, executor, activityBus, specManager, pipeline, breakoutLifecycle, taskAssignmentHandler, memoryLoader, logger);
+        var turnRunner = new AgentTurnRunner(executor, pipeline, taskAssignmentHandler, memoryLoader, scopeFactory, Substitute.For<ILogger<AgentTurnRunner>>());
+        return new AgentOrchestrator(scopeFactory, catalog, activityBus, specManager, breakoutLifecycle, turnRunner, logger);
     }
 
     #endregion

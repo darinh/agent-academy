@@ -95,6 +95,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<AgentMemoryLoader>();
         services.AddSingleton<BreakoutLifecycleService>();
         services.AddSingleton<TaskAssignmentHandler>();
+        services.AddSingleton<AgentTurnRunner>();
         services.AddSingleton<AgentOrchestrator>();
 
         services.AddLogging();

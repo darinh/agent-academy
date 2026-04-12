@@ -258,7 +258,7 @@ These are intentional safety constraints, not missing features:
 
 ### Genuine Gaps (Low Priority)
 
-- ~~**No per-agent resource quotas**~~ — **Resolved**: `AgentQuotaService` enforces per-agent resource limits configured in `agent_configs` (nullable `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` columns — null = unlimited). Request-rate limiting uses an authoritative in-memory sliding window (1-hour window). Token/cost checks are best-effort via DB aggregation against the `llm_usage` table (concurrent calls may slightly overshoot). Quota is checked in `CopilotExecutor.RunAsync` before the circuit breaker, and each retry attempt counts toward the request limit. Quota violations throw `AgentQuotaExceededException`, caught by `AgentOrchestrator.RunAgentAsync` which returns a system-style pause message. Configuration via `PUT /api/agents/{id}/quota`, status via `GET /api/agents/{id}/quota`. Cache invalidated on config change. Composite index `(AgentId, RecordedAt)` on `llm_usage` ensures efficient aggregation.
+- ~~**No per-agent resource quotas**~~ — **Resolved**: `AgentQuotaService` enforces per-agent resource limits configured in `agent_configs` (nullable `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` columns — null = unlimited). Request-rate limiting uses an authoritative in-memory sliding window (1-hour window). Token/cost checks are best-effort via DB aggregation against the `llm_usage` table (concurrent calls may slightly overshoot). Quota is checked in `CopilotExecutor.RunAsync` before the circuit breaker, and each retry attempt counts toward the request limit. Quota violations throw `AgentQuotaExceededException`, caught by `AgentTurnRunner.RunAgentAsync` which returns a system-style pause message. Configuration via `PUT /api/agents/{id}/quota`, status via `GET /api/agents/{id}/quota`. Cache invalidated on config change. Composite index `(AgentId, RecordedAt)` on `llm_usage` ensures efficient aggregation.
 - ~~**No prompt injection mitigation**~~ — **Resolved**: `PromptSanitizer` provides defense-in-depth for all user-supplied content interpolated into LLM prompts. Three layers: (1) **Boundary markers** — all user-content sections (messages, tasks, DMs, memories, work reports, session summaries) are enclosed in `[UNTRUSTED_CONTENT]`/`[/UNTRUSTED_CONTENT]` delimiters. (2) **Boundary instruction** — a security preamble in every prompt tells the LLM to treat marked content as conversation context, not system-level instructions. (3) **Metadata sanitization** — sender names, room names, and memory keys have newlines/control characters stripped to prevent prompt-structure injection via metadata fields. Marker sequences within content are escaped to prevent marker injection. Applied to all `PromptBuilder` methods (conversation, breakout, review) and `ConversationSessionService.GenerateSummaryAsync` (sender names sanitized via `SanitizeMetadata`, content escaped via `EscapeMarkers`, conversation block wrapped with `WrapBlock` boundary markers, `BoundaryInstruction` added to prompt). No remaining unsanitized LLM prompt surfaces.
 - ~~**No agent-level rate limiting**~~ — **Resolved**: `AgentQuotaService` includes per-agent LLM call-rate limiting via an in-memory sliding window. Each LLM attempt (including retries in `SendAndCollectWithRetryAsync`) is recorded. Configurable via `MaxRequestsPerHour` in `agent_configs`. See "No per-agent resource quotas" above for full details.
 
@@ -532,15 +532,15 @@ public sealed class AgentConfigService
 ### Orchestrator Integration
 
 **File**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
+**File**: `src/AgentAcademy.Server/Services/AgentTurnRunner.cs`
 
-The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFactory` and applies overrides before building prompts or calling the executor:
+The orchestrator manages the queue-based message processing loop and conversation round structure. Per-turn agent execution (config resolution, memory/DM loading, prompt building, LLM execution, command processing, message posting, and task assignments) is delegated to `AgentTurnRunner`.
 
-| Method | Change |
-|--------|--------|
-| `RunConversationRoundAsync` | Resolves effective agent for planner and each conversation participant |
-| `RunBreakoutLoopAsync` | Resolves effective agent before breakout rounds |
-| `HandleBreakoutCompleteAsync` | Resolves effective agent for presenting agent |
-| `RunReviewCycleAsync` | Resolves effective reviewer agent |
+| Component | Responsibility |
+|-----------|---------------|
+| `AgentOrchestrator` | Queue management, round orchestration, context loading, agent selection |
+| `AgentTurnRunner.RunAgentTurnAsync` | Single agent turn: resolve config → load memories/DMs → build prompt → execute → process commands → post message → handle task assignments |
+| `AgentTurnResult` | Immutable return type: resolved `AgentDefinition`, raw response, `IsNonPass` flag |
 
 The agent catalog (`AgentCatalogOptions`) is used by domain services for identity-only operations (location tracking, room assignment, task claims). Config overrides are not needed for these operations.
 

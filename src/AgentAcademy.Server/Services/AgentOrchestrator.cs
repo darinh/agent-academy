@@ -1,5 +1,3 @@
-using AgentAcademy.Server.Commands;
-using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -15,13 +13,10 @@ public sealed class AgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AgentCatalogOptions _catalog;
-    private readonly IAgentExecutor _executor;
     private readonly ActivityBroadcaster _activityBus;
     private readonly SpecManager _specManager;
-    private readonly CommandPipeline _commandPipeline;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
-    private readonly TaskAssignmentHandler _taskAssignmentHandler;
-    private readonly AgentMemoryLoader _memoryLoader;
+    private readonly AgentTurnRunner _turnRunner;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
@@ -37,24 +32,18 @@ public sealed class AgentOrchestrator
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
         AgentCatalogOptions catalog,
-        IAgentExecutor executor,
         ActivityBroadcaster activityBus,
         SpecManager specManager,
-        CommandPipeline commandPipeline,
         BreakoutLifecycleService breakoutLifecycle,
-        TaskAssignmentHandler taskAssignmentHandler,
-        AgentMemoryLoader memoryLoader,
+        AgentTurnRunner turnRunner,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
         _catalog = catalog;
-        _executor = executor;
         _activityBus = activityBus;
         _specManager = specManager;
-        _commandPipeline = commandPipeline;
         _breakoutLifecycle = breakoutLifecycle;
-        _taskAssignmentHandler = taskAssignmentHandler;
-        _memoryLoader = memoryLoader;
+        _turnRunner = turnRunner;
         _logger = logger;
     }
 
@@ -261,16 +250,16 @@ public sealed class AgentOrchestrator
                     + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
                     + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
 
-                var (resolvedPlanner, plannerResponse, plannerIsNonPass) = await RunAgentTurnAsync(
+                var plannerResult = await _turnRunner.RunAgentTurnAsync(
                     planner, scope, messageService, configService, activity,
                     freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion);
 
-                if (plannerIsNonPass)
+                if (plannerResult.IsNonPass)
                 {
                     hadNonPassResponse = true;
-                    foreach (var a in AgentResponseParser.ParseTaggedAgents(_catalog.Agents, plannerResponse))
+                    foreach (var a in AgentResponseParser.ParseTaggedAgents(_catalog.Agents, plannerResult.Response))
                     {
-                        if (a.Id != resolvedPlanner.Id) agentsToRun.Add(a);
+                        if (a.Id != plannerResult.Agent.Id) agentsToRun.Add(a);
                     }
                 }
             }
@@ -298,12 +287,12 @@ public sealed class AgentOrchestrator
                 var location = await agentLocationService.GetAgentLocationAsync(catalogAgent.Id);
                 if (location?.State == AgentState.Working) continue;
 
-                var (_, _, agentIsNonPass) = await RunAgentTurnAsync(
+                var result = await _turnRunner.RunAgentTurnAsync(
                     catalogAgent, scope, messageService, configService, activity,
                     currentRoom, roomId, ctx.SpecContext,
                     sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
 
-                if (agentIsNonPass) hadNonPassResponse = true;
+                if (result.IsNonPass) hadNonPassResponse = true;
             }
 
             _logger.LogInformation(
@@ -385,76 +374,12 @@ public sealed class AgentOrchestrator
 
         var ctx = await LoadRoundContextAsync(scope, roomId);
 
-        await RunAgentTurnAsync(
+        await _turnRunner.RunAgentTurnAsync(
             catalogAgent, scope, messageService, configService, activity,
             room, roomId, ctx.SpecContext,
             sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
-    }
-
-    // ── AGENT TURN HELPER ────────────────────────────────────────
-
-    /// <summary>
-    /// Runs a single agent turn: resolves effective config, loads memories and DMs,
-    /// builds the prompt, executes the agent, and processes the response (commands,
-    /// message posting, task assignments). Returns the effective agent, raw response,
-    /// and whether the response was substantive (non-pass/non-offline).
-    /// </summary>
-    private async Task<(AgentDefinition Agent, string Response, bool IsNonPass)> RunAgentTurnAsync(
-        AgentDefinition catalogAgent,
-        IServiceScope scope,
-        MessageService messageService,
-        AgentConfigService configService,
-        ActivityPublisher activity,
-        RoomSnapshot room,
-        string roomId,
-        string? specContext,
-        List<TaskItem>? taskItems = null,
-        string? sessionSummary = null,
-        string? sprintPreamble = null,
-        string? promptSuffix = null,
-        string? specVersion = null)
-    {
-        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
-
-        await activity.PublishThinkingAsync(agent, roomId);
-        string response;
-        try
-        {
-            var memories = await _memoryLoader.LoadAsync(agent.Id);
-            var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
-            if (dms.Count > 0)
-                await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
-
-            var prompt = PromptBuilder.BuildConversationPrompt(
-                agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble, specVersion);
-            if (promptSuffix is not null) prompt += promptSuffix;
-
-            response = await RunAgentAsync(agent, prompt, roomId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Agent {AgentName} failed", agent.Name);
-            response = "";
-        }
-        finally
-        {
-            await activity.PublishFinishedAsync(agent, roomId);
-        }
-
-        bool isNonPass = !string.IsNullOrWhiteSpace(response)
-            && !AgentResponseParser.IsPassResponse(response)
-            && !AgentResponseParser.IsStubOfflineResponse(response);
-
-        if (isNonPass)
-        {
-            await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
-            foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
-                await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
-        }
-
-        return (agent, response, isNonPass);
     }
 
     // ── AGENT HELPERS ───────────────────────────────────────────
@@ -479,73 +404,6 @@ public sealed class AgentOrchestrator
             }
         }
         return result;
-    }
-
-    private async Task<string> RunAgentAsync(
-        AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)
-    {
-        try
-        {
-            return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
-        }
-        catch (AgentQuotaExceededException ex)
-        {
-            _logger.LogWarning(
-                "Agent {AgentName} quota exceeded ({QuotaType}): {Message}",
-                agent.Name, ex.QuotaType, ex.Message);
-            return $"⚠️ **{agent.Name} is temporarily paused** — {ex.Message}";
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Agent {AgentName} was cancelled", agent.Name);
-            return "";
-        }
-    }
-
-    // ── MESSAGE POSTING ─────────────────────────────────────────
-
-    /// <summary>
-    /// Processes commands from an agent response, posts the remaining text,
-    /// and posts command results as a system message for context visibility.
-    /// </summary>
-    private async Task ProcessAndPostAgentResponseAsync(
-        MessageService messageService, AgentDefinition agent, string roomId, string response)
-    {
-        // Run response through command pipeline
-        var pipelineResult = await ProcessCommandsAsync(agent, response, roomId);
-
-        // Post the remaining text (with commands stripped) as the agent's message
-        var textToPost = pipelineResult.RemainingText;
-        if (!string.IsNullOrWhiteSpace(textToPost) && !AgentResponseParser.IsPassResponse(textToPost))
-        {
-            await PostAgentMessageAsync(messageService, agent, roomId, textToPost);
-        }
-
-        // Post command results as system message so subsequent prompts include them
-        var formattedResults = CommandPipeline.FormatResultsForContext(pipelineResult.Results);
-        if (!string.IsNullOrEmpty(formattedResults))
-        {
-            await messageService.PostSystemStatusAsync(roomId, formattedResults);
-        }
-    }
-
-    /// <summary>
-    /// Runs agent response text through the command pipeline within a new scope.
-    /// </summary>
-    private async Task<CommandPipelineResult> ProcessCommandsAsync(
-        AgentDefinition agent, string responseText, string roomId, string? workingDirectory = null)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            return await _commandPipeline.ProcessResponseAsync(
-                agent.Id, responseText, roomId, agent, scope.ServiceProvider, workingDirectory);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
-            return new CommandPipelineResult(new List<CommandEnvelope>(), responseText, ProcessingFailed: true);
-        }
     }
 
     // ── ROUND CONTEXT ──────────────────────────────────────────
@@ -636,22 +494,5 @@ public sealed class AgentOrchestrator
             sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
 
         return new(preamble, sprint.CurrentStage);
-    }
-
-    private async Task PostAgentMessageAsync(
-        MessageService messageService, AgentDefinition agent, string roomId, string content)
-    {
-        try
-        {
-            await messageService.PostMessageAsync(new PostMessageRequest(
-                RoomId: roomId,
-                SenderId: agent.Id,
-                Content: content,
-                Kind: AgentResponseParser.InferMessageKind(agent.Role)));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to post message for {AgentId}", agent.Id);
-        }
     }
 }

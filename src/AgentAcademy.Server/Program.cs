@@ -108,6 +108,7 @@ builder.Services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHub
 builder.Services.AddSingleton<AgentMemoryLoader>();
 builder.Services.AddSingleton<BreakoutLifecycleService>();
 builder.Services.AddSingleton<TaskAssignmentHandler>();
+builder.Services.AddSingleton<AgentTurnRunner>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 
 // Command system (auto-discovers all ICommandHandler implementations)

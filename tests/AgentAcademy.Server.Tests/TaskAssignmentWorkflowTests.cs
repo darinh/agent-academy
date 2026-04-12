@@ -137,16 +137,19 @@ public class TaskAssignmentWorkflowTests : IDisposable
             memoryLoader,
             NullLogger<BreakoutLifecycleService>.Instance);
 
+        var pipeline = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
+        var taskAssignment = new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance);
+        var turnRunner = new AgentTurnRunner(
+            _executor, pipeline, taskAssignment, memoryLoader,
+            scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
             _catalog,
-            _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
-            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             breakoutLifecycle,
-            new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance),
-            memoryLoader,
+            turnRunner,
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");
@@ -238,16 +241,19 @@ public class TaskAssignmentWorkflowTests : IDisposable
             memoryLoader2,
             NullLogger<BreakoutLifecycleService>.Instance);
 
+        var pipeline2 = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
+        var taskAssignment2 = new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance);
+        var turnRunner2 = new AgentTurnRunner(
+            _executor, pipeline2, taskAssignment2, memoryLoader2,
+            scopeFactory2, NullLogger<AgentTurnRunner>.Instance);
+
         var orchestrator = new AgentOrchestrator(
             scopeFactory2,
             _catalog,
-            _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
-            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             breakoutLifecycle2,
-            new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance),
-            memoryLoader2,
+            turnRunner2,
             NullLogger<AgentOrchestrator>.Instance);
 
         await InvokeConversationRoundAsync(orchestrator, "main");

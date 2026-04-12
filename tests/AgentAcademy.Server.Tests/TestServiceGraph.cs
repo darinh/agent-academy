@@ -121,9 +121,13 @@ internal sealed class TestServiceGraph : IDisposable
             Catalog, gitService, worktreeService, breakoutLifecycle,
             NullLogger<TaskAssignmentHandler>.Instance);
 
+        var turnRunner = new AgentTurnRunner(
+            Executor, pipeline, taskAssignment, memoryLoader,
+            scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+
         Orchestrator = new AgentOrchestrator(
-            scopeFactory, Catalog, Executor, ActivityBus, SpecManager,
-            pipeline, breakoutLifecycle, taskAssignment, memoryLoader,
+            scopeFactory, Catalog, ActivityBus, SpecManager,
+            breakoutLifecycle, turnRunner,
             NullLogger<AgentOrchestrator>.Instance);
     }
 

@@ -8,6 +8,7 @@ All changes to specifications are documented here.
 - **003-agent-system**: Summary prompt sanitization. `ConversationSessionService.GenerateSummaryAsync` now applies `PromptSanitizer` to all user-supplied content: sender names via `SanitizeMetadata`, message content via `EscapeMarkers`, conversation block via `WrapBlock` with boundary markers, and `BoundaryInstruction` added to the summarizer prompt. `BuildFallbackSummary` refactored to accept pre-collected sanitized sender names (eliminates brittle `Split(']')` parsing). 7 new tests. No remaining unsanitized LLM prompt surfaces. Residual gap from prompt injection mitigation resolved.
 
 ### Changed
+- **003-agent-system**: Extracted `AgentTurnRunner` from `AgentOrchestrator`. Per-turn execution (config resolution, memory/DM loading, prompt building, LLM execution, command processing, message posting, task assignments) now lives in a dedicated class. Orchestrator reduced from 657→498 lines. Quota exception reference updated from `AgentOrchestrator.RunAgentAsync` to `AgentTurnRunner.RunAgentAsync`.
 - **013-sprint-system**: Structural refactor — extracted `SprintMetricsCalculator` from `SprintService`. Metrics computation (per-sprint rollup and workspace-level summary) now in dedicated read-only class (289 lines). `SprintService` reduced from 1123→835 lines. `SprintController` injects both `SprintService` (lifecycle) and `SprintMetricsCalculator` (analytics). Registered as scoped in `ServiceRegistrationExtensions`. Zero behavioral changes. All 2391 tests pass.
 
 ### Changed
