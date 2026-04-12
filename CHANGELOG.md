@@ -7,11 +7,33 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Fixes
 
+- stabilize flaky Fluent UI Dialog portal tests
+- resolve 8 TypeScript errors in frontend test files
+- stabilize dialog portal timing in agentConfigCard and templateCard tests
+- stabilize flaky agentConfigCard reset dialog tests
+- stabilize flaky agentConfigCard dialog tests and resolve CS1998 warning
 - changelog versioning — add --version flag and fix set -e abort
 
 ### Documentation
 
+- mark spec 007 phases 1B, 3, and 4 as IMPLEMENTED
+- sync specs for CopilotClientFactory and DiscordInputHandler extractions
+- document intentional ResolveToken divergence between Factory and Probe
 - mark resolved spec gaps in 007-agent-commands
+
+### Refactoring
+
+- extract RunAgentTurnAsync to consolidate agent execution in orchestrator
+- extract DiscordInputHandler from DiscordNotificationProvider
+- extract CopilotClientFactory from CopilotExecutor
+
+### Tests
+
+- add 41 tests for 8 untested command handlers
+- add 26 tests for AgentAnalyticsPanel and AgentDetailView
+- add 93 tests for 11 untested frontend components
+- add 111 tests for 5 more untested frontend components
+- add 107 tests for 4 untested frontend components
 
 ## v2.0.0 (2026-04-12)
 
