@@ -7,7 +7,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Background service that periodically polls GitHub for PR status changes
 /// and updates task entities accordingly. Uses <see cref="IGitHubService"/>
-/// for GitHub API calls and <see cref="WorkspaceRuntime"/> for task updates.
+/// for GitHub API calls and scoped task services for updates.
 /// </summary>
 internal sealed class PullRequestSyncService : BackgroundService
 {
@@ -60,8 +60,8 @@ internal sealed class PullRequestSyncService : BackgroundService
             List<(string TaskId, int PrNumber)> activePrs;
             await using (var scope = _scopeFactory.CreateAsyncScope())
             {
-                var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-                activePrs = await runtime.GetTasksWithActivePrsAsync();
+                var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+                activePrs = await taskQueries.GetTasksWithActivePrsAsync();
             }
 
             if (activePrs.Count == 0)
@@ -101,9 +101,9 @@ internal sealed class PullRequestSyncService : BackgroundService
             var newStatus = MapToPrStatus(prInfo);
 
             await using var scope = _scopeFactory.CreateAsyncScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
 
-            var updated = await runtime.SyncTaskPrStatusAsync(taskId, newStatus);
+            var updated = await taskLifecycle.SyncTaskPrStatusAsync(taskId, newStatus);
             if (updated != null)
             {
                 _logger.LogInformation(

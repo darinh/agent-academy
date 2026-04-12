@@ -67,6 +67,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly AgentQuotaService _quotaService;
+    private readonly AgentCatalogOptions _catalog;
     private readonly CopilotCircuitBreaker _circuitBreaker = new();
     private readonly string? _configToken;
     private readonly string? _cliPath;
@@ -93,7 +94,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         IAgentToolRegistry toolRegistry,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
-        AgentQuotaService quotaService)
+        AgentQuotaService quotaService,
+        AgentCatalogOptions catalog)
     {
         _logger = logger;
         _stubLogger = stubLogger;
@@ -106,6 +108,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
         _quotaService = quotaService;
+        _catalog = catalog;
         _cleanupTimer = new Timer(
             _ => _ = CleanupExpiredSessionsAsync(),
             null,
@@ -912,9 +915,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
             _authFailed = degraded;
 
-            using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            var roomId = runtime.DefaultRoomId;
+            var roomId = _catalog.DefaultRoomId;
             var roomMessage = degraded
                 ? "⚠️ **Copilot SDK authentication failed.** The OAuth token has expired or been revoked. Please re-authenticate at `/api/auth/login` to restore agent functionality."
                 : "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online.";
@@ -930,7 +931,9 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     Body: "Copilot access is healthy again. Agents are coming back online.",
                     RoomId: roomId);
 
-            await runtime.PostSystemStatusAsync(roomId, roomMessage);
+            using var scope = _scopeFactory.CreateScope();
+            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            await messageService.PostSystemStatusAsync(roomId, roomMessage);
             await _notificationManager.SendToAllAsync(notification, ct);
 
             if (degraded)

@@ -215,10 +215,11 @@ public class AgentToolRegistryTests
     private static AgentToolRegistry CreateRegistry()
     {
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var catalog = new AgentCatalogOptions("main", "Main", []);
         var toolFunctions = new AgentToolFunctions(
             scopeFactory,
+            catalog,
             NullLogger<AgentToolFunctions>.Instance);
-        var catalog = new AgentCatalogOptions("main", "Main", []);
         return new AgentToolRegistry(
             toolFunctions,
             catalog,
@@ -291,6 +292,7 @@ public class AgentToolFunctionsTests : IDisposable
 
         _toolFunctions = new AgentToolFunctions(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            _serviceProvider.GetRequiredService<AgentCatalogOptions>(),
             NullLogger<AgentToolFunctions>.Instance);
     }
 
@@ -578,6 +580,7 @@ public class AgentWriteToolTests : IDisposable
 
         _toolFunctions = new AgentToolFunctions(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            _serviceProvider.GetRequiredService<AgentCatalogOptions>(),
             NullLogger<AgentToolFunctions>.Instance);
     }
 
