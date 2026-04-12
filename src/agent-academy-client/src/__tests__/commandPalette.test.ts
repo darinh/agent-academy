@@ -41,6 +41,8 @@ describe("CommandPalette logic", () => {
       description: "Read a file",
       detail: "Detail",
       isAsync: false,
+      isDestructive: false,
+      destructiveWarning: null,
       fields: [
         { name: "path", label: "Path", kind: "text", description: "File path", required: true },
         { name: "startLine", label: "Start", kind: "number", description: "Line" },
@@ -53,6 +55,8 @@ describe("CommandPalette logic", () => {
       description: "Run build",
       detail: "Detail",
       isAsync: true,
+      isDestructive: false,
+      destructiveWarning: null,
       fields: [],
     },
     {
@@ -62,6 +66,8 @@ describe("CommandPalette logic", () => {
       description: "List rooms",
       detail: "Detail",
       isAsync: false,
+      isDestructive: false,
+      destructiveWarning: null,
       fields: [],
     },
   ];

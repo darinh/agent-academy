@@ -764,6 +764,8 @@ export interface CommandMetadata {
   detail: string;
   isAsync: boolean;
   fields: CommandFieldMetadata[];
+  isDestructive?: boolean;
+  destructiveWarning?: string;
 }
 
 export function getCommandMetadata(): Promise<CommandMetadata[]> {

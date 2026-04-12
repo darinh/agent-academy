@@ -21,6 +21,8 @@ export interface HumanCommandDefinition {
   detail: string;
   isAsync: boolean;
   fields: readonly CommandFieldDefinition[];
+  isDestructive: boolean;
+  destructiveWarning: string | null;
 }
 
 /**
@@ -36,6 +38,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Inspect a repository file with optional line windows.",
     detail: "Best for source spelunking, spec checks, and quick spot reads without leaving the workspace.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "path",
@@ -68,6 +72,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Run a focused repository text search.",
     detail: "Supports optional subpath and glob filters for tighter scans without exposing raw shell access.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "query",
@@ -100,6 +106,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Snapshot active rooms, phases, status, and participant counts.",
     detail: "Useful when triaging the collaboration state before jumping into a room.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [],
   },
   {
@@ -109,6 +117,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Inspect agent locations, roles, and current state.",
     detail: "Shows where the team is parked without needing planner-only tooling.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [],
   },
   {
@@ -118,6 +128,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Review all tasks, or filter by status or assignee.",
     detail: "The fastest way to check the queue from the UI before diving into a branch or room.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "status",
@@ -142,6 +154,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Inspect uncommitted changes or diff against a branch.",
     detail: "Returns a trimmed git diff summary so humans can review work without opening a terminal.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "branch",
@@ -159,6 +173,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Browse recent commits with optional file or date filtering.",
     detail: "Good for reconstructing recent moves before asking an agent to continue the work.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "count",
@@ -190,6 +206,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "See tasks waiting on review or validation.",
     detail: "A fast reviewer-focused queue without exposing task mutation commands.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [],
   },
   {
@@ -199,6 +217,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Load recent messages from any room without navigating there.",
     detail: "Use this to grab context before entering a room or to review archived conversations.",
     isAsync: false,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "roomId",
@@ -224,6 +244,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Kick off a backend build and poll for the result.",
     detail: "Async on purpose so the UI stays responsive while the server serializes build access.",
     isAsync: true,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [],
   },
   {
@@ -233,6 +255,8 @@ export const WEEK1_COMMANDS: readonly HumanCommandDefinition[] = [
     description: "Launch the test suite with an optional scope hint.",
     detail: "Supports all, backend, frontend, or custom file filters with the backend polling contract.",
     isAsync: true,
+    isDestructive: false,
+    destructiveWarning: null,
     fields: [
       {
         name: "scope",
@@ -282,6 +306,7 @@ export function validateCommandDraft(
 export function buildExecuteCommandRequest(
   definition: HumanCommandDefinition,
   draft: Record<string, string>,
+  options?: { confirm?: boolean },
 ): ExecuteCommandRequest {
   const args: Record<string, string> = {};
 
@@ -293,6 +318,10 @@ export function buildExecuteCommandRequest(
     }
 
     args[field.name] = trimmedValue;
+  }
+
+  if (options?.confirm) {
+    args.confirm = "true";
   }
 
   return {
@@ -310,6 +339,8 @@ export function fromServerMetadata(items: readonly CommandMetadata[]): HumanComm
     description: item.description,
     detail: item.detail,
     isAsync: item.isAsync,
+    isDestructive: item.isDestructive ?? false,
+    destructiveWarning: item.destructiveWarning ?? null,
     fields: (item.fields ?? []).map((f) => ({
       name: f.name,
       label: f.label,

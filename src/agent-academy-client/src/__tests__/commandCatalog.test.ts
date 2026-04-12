@@ -66,6 +66,8 @@ describe("command catalog", () => {
         description: "A custom command",
         detail: "Detail text",
         isAsync: false,
+        isDestructive: false,
+        destructiveWarning: null,
         fields: [
           { name: "input", label: "Input", kind: "text" as const, description: "Some input", defaultValue: "hello" },
         ],
@@ -134,5 +136,64 @@ describe("command catalog", () => {
     expect(result[0].fields[0].required).toBe(false);
     expect(result[0].fields[0].defaultValue).toBeUndefined();
     expect(result[0].fields[0].placeholder).toBeUndefined();
+  });
+
+  it("maps isDestructive and destructiveWarning from server metadata", () => {
+    const serverData: CommandMetadata[] = [
+      {
+        command: "CLOSE_ROOM",
+        title: "Close room",
+        category: "operations",
+        description: "Archive a room.",
+        detail: "Permanent.",
+        isAsync: false,
+        isDestructive: true,
+        destructiveWarning: "This archives the room permanently.",
+        fields: [],
+      },
+      {
+        command: "LIST_ROOMS",
+        title: "List rooms",
+        category: "workspace",
+        description: "List rooms.",
+        detail: "Safe.",
+        isAsync: false,
+        fields: [],
+      },
+    ];
+
+    const result = fromServerMetadata(serverData);
+    expect(result[0].isDestructive).toBe(true);
+    expect(result[0].destructiveWarning).toBe("This archives the room permanently.");
+    expect(result[1].isDestructive).toBe(false);
+    expect(result[1].destructiveWarning).toBeNull();
+  });
+
+  it("includes confirm=true in args when confirm option is set", () => {
+    const definition = getCommandDefinition("LIST_ROOMS");
+
+    const withoutConfirm = buildExecuteCommandRequest(definition, {});
+    expect(withoutConfirm.args).toBeUndefined();
+
+    const withConfirm = buildExecuteCommandRequest(definition, {}, { confirm: true });
+    expect(withConfirm.args).toEqual({ confirm: "true" });
+  });
+
+  it("merges confirm flag with existing args", () => {
+    const definition = getCommandDefinition("READ_FILE");
+
+    const result = buildExecuteCommandRequest(
+      definition,
+      { path: "test.ts" },
+      { confirm: true },
+    );
+    expect(result.args).toEqual({ path: "test.ts", confirm: "true" });
+  });
+
+  it("includes isDestructive in WEEK1_COMMANDS entries", () => {
+    for (const cmd of WEEK1_COMMANDS) {
+      expect(cmd.isDestructive).toBe(false);
+      expect(cmd.destructiveWarning).toBeNull();
+    }
   });
 });
