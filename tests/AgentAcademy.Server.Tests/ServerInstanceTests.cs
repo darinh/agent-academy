@@ -21,7 +21,7 @@ public class ServerInstanceTests : IDisposable
     private readonly AgentCatalogOptions _catalog;
     private readonly CrashRecoveryService _crashRecovery;
     private readonly RoomService _roomService;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly InitializationService _initialization;
 
     public ServerInstanceTests()
     {
@@ -73,31 +73,13 @@ public class ServerInstanceTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
 
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
-        var planService = new PlanService(_db);
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
         _crashRecovery = crashRecovery;
         _roomService = roomService;
-        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
-
-        _runtime = new WorkspaceRuntime(
-            catalog,
-            activityPublisher,
-            taskQueries,
-            taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations),
-            new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
-            new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)),
-            agentLocations,
-            planService,
-            crashRecovery,
-            initializationService,
-            taskOrchestration);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
     }
 
     public void Dispose()
@@ -109,7 +91,7 @@ public class ServerInstanceTests : IDisposable
     [Fact]
     public async Task InitializeAsync_CreatesServerInstance()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var instances = await _db.ServerInstances.ToListAsync();
         Assert.Single(instances);
@@ -126,9 +108,9 @@ public class ServerInstanceTests : IDisposable
     [Fact]
     public async Task InitializeAsync_SetsCurrentInstanceId()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        Assert.NotNull(WorkspaceRuntime.CurrentInstanceId);
+        Assert.NotNull(CrashRecoveryService.CurrentInstanceId);
     }
 
     [Fact]
@@ -144,7 +126,7 @@ public class ServerInstanceTests : IDisposable
         _db.ServerInstances.Add(orphan);
         await _db.SaveChangesAsync();
 
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var instances = await _db.ServerInstances
             .OrderBy(i => i.StartedAt)
@@ -177,7 +159,7 @@ public class ServerInstanceTests : IDisposable
         _db.ServerInstances.Add(previous);
         await _db.SaveChangesAsync();
 
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var instances = await _db.ServerInstances
             .OrderBy(i => i.StartedAt)
@@ -193,7 +175,7 @@ public class ServerInstanceTests : IDisposable
     [Fact]
     public void DefaultRoomId_ReturnsConfiguredValue()
     {
-        Assert.Equal("main", _runtime.DefaultRoomId);
+        Assert.Equal("main", _catalog.DefaultRoomId);
     }
 
     [Fact]
@@ -246,7 +228,7 @@ public class ServerInstanceTests : IDisposable
         });
 
         await _db.SaveChangesAsync();
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var breakoutBeforeRecovery = await _db.BreakoutRooms.FindAsync("breakout-1");
         Assert.NotNull(breakoutBeforeRecovery);
@@ -327,7 +309,7 @@ public class ServerInstanceTests : IDisposable
         });
 
         await _db.SaveChangesAsync();
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var scope = Substitute.For<IServiceScope>();
@@ -381,7 +363,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Single(result);
         Assert.Equal("main", result[0]);
@@ -414,7 +396,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -453,7 +435,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -471,7 +453,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }
@@ -510,7 +492,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Equal(2, result.Count);
         Assert.Contains("room-a", result);
@@ -544,7 +526,7 @@ public class ServerInstanceTests : IDisposable
 
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var result = await _roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         Assert.Empty(result);
     }

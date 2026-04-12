@@ -68,7 +68,6 @@ public class TaskItemCommandTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
@@ -391,8 +390,8 @@ public class TaskItemCommandTests : IDisposable
         // Mark one as Done
         using (var scope = _serviceProvider.CreateScope())
         {
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            await runtime.UpdateTaskItemStatusAsync(id1, TaskItemStatus.Done);
+            var taskItems = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+            await taskItems.UpdateTaskItemStatusAsync(id1, TaskItemStatus.Done);
         }
 
         var handler = new ListTaskItemsHandler();
@@ -524,8 +523,8 @@ public class TaskItemCommandTests : IDisposable
         string assignedTo, string title = "Test Item", string roomId = "room-1")
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var item = await runtime.CreateTaskItemAsync(title, "Test description", assignedTo, roomId, null);
+        var taskItems = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+        var item = await taskItems.CreateTaskItemAsync(title, "Test description", assignedTo, roomId, null);
         return item.Id;
     }
 

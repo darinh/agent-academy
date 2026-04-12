@@ -57,10 +57,8 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
-        services.AddSingleton(typeof(ILogger<WorkspaceRuntime>), sp => NullLogger<WorkspaceRuntime>.Instance);
         services.AddSingleton(CreateTestCatalog());
         services.AddSingleton<ActivityBroadcaster>();
         services.AddScoped<ActivityPublisher>();

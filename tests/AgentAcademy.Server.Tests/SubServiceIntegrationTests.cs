@@ -11,20 +11,28 @@ using NSubstitute;
 namespace AgentAcademy.Server.Tests;
 
 /// <summary>
-/// Tests for WorkspaceRuntime — the central state manager.
+/// Integration tests for sub-services (formerly WorkspaceRuntime facade tests).
 /// Uses in-memory SQLite for isolation.
 /// </summary>
 [Collection("WorkspaceRuntime")]
-public class WorkspaceRuntimeTests : IDisposable
+public class SubServiceIntegrationTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityBroadcaster _activityBus;
     private readonly ActivityPublisher _activityPublisher;
+    private readonly InitializationService _initialization;
+    private readonly RoomService _rooms;
+    private readonly TaskOrchestrationService _taskOrchestration;
+    private readonly TaskQueryService _taskQueries;
+    private readonly TaskLifecycleService _taskLifecycle;
+    private readonly MessageService _messages;
+    private readonly AgentLocationService _agentLocations;
+    private readonly BreakoutRoomService _breakouts;
+    private readonly PlanService _plans;
 
-    public WorkspaceRuntimeTests()
+    public SubServiceIntegrationTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
@@ -74,34 +82,22 @@ public class WorkspaceRuntimeTests : IDisposable
             ]
         );
 
-        var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
         _activityBus = new ActivityBroadcaster();
         _activityPublisher = new ActivityPublisher(_db, _activityBus);
         var settingsService = new SystemSettingsService(_db);
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher);
-        var agentLocations = new AgentLocationService(_db, _catalog, _activityPublisher);
-        var planService = new PlanService(_db);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService);
-        var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, taskQueries, agentLocations);
-        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService, messageService);
-        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, roomService);
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
-        _runtime = new WorkspaceRuntime(_catalog, _activityPublisher, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, taskQueries, agentLocations),
-            new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
-            new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService)),
-            agentLocations,
-            planService,
-            crashRecovery,
-            initializationService,
-            taskOrchestration);
+        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
+        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher);
+        _agentLocations = new AgentLocationService(_db, _catalog, _activityPublisher);
+        _plans = new PlanService(_db);
+        _messages = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService);
+        _breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, _taskQueries, _agentLocations);
+        var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, _breakouts, _agentLocations, _messages, _activityPublisher);
+        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService, _messages);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _rooms, _agentLocations, _messages, _breakouts);
     }
 
     public void Dispose()
@@ -115,9 +111,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task Initialize_CreatesDefaultRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         Assert.Equal("Main Collaboration Room", room.Name);
         Assert.Equal(RoomStatus.Idle, room.Status);
@@ -127,9 +123,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task Initialize_CreatesAgentLocations()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var locations = await _runtime.GetAgentLocationsAsync();
+        var locations = await _agentLocations.GetAgentLocationsAsync();
         Assert.Equal(3, locations.Count);
         Assert.All(locations, loc =>
         {
@@ -141,19 +137,19 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task Initialize_IsIdempotent()
     {
-        await _runtime.InitializeAsync();
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.Single(rooms);
     }
 
     [Fact]
     public async Task Initialize_AddsWelcomeMessage()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         Assert.NotEmpty(room.RecentMessages);
         Assert.Contains(room.RecentMessages,
@@ -165,9 +161,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRooms_ReturnsAllRooms()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.Single(rooms);
         Assert.Equal("main", rooms[0].Id);
     }
@@ -175,7 +171,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRooms_DefaultRoomAlwaysFirst()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create a task room whose name sorts alphabetically before "Main"
         var task = new TaskAssignmentRequest(
@@ -184,9 +180,9 @@ public class WorkspaceRuntimeTests : IDisposable
             SuccessCriteria: "Room exists",
             RoomId: null,
             PreferredRoles: []);
-        await _runtime.CreateTaskAsync(task);
+        await _taskOrchestration.CreateTaskAsync(task);
 
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.True(rooms.Count >= 2);
         // The default main room must be first regardless of alphabetical order
         Assert.Contains("Main", rooms[0].Name);
@@ -206,7 +202,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         // Create a task room in the same workspace that alphabetically sorts before main
         var now = DateTime.UtcNow;
@@ -222,7 +218,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.True(rooms.Count >= 2);
         Assert.Equal(defaultRoomId, rooms[0].Id);
         Assert.Contains("Main", rooms[0].Name);
@@ -231,7 +227,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRooms_FilteredByActiveWorkspace()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create two workspaces
         _db.Workspaces.Add(new WorkspaceEntity
@@ -243,7 +239,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        await _runtime.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
+        await _rooms.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
 
         // Add a room for a different workspace
         var now = DateTime.UtcNow;
@@ -259,7 +255,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         // Should see Project A's room AND legacy rooms (null workspace), but not Project B's
         Assert.All(rooms, r =>
         {
@@ -273,16 +269,16 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRoom_ReturnsNullForMissing()
     {
-        var room = await _runtime.GetRoomAsync("nonexistent");
+        var room = await _rooms.GetRoomAsync("nonexistent");
         Assert.Null(room);
     }
 
     [Fact]
     public async Task GetRoom_IncludesParticipants()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         // All agents get location entries in the default room at init
         Assert.Equal(3, room.Participants.Count);
@@ -294,10 +290,10 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRoom_ParticipantsReflectAgentLocations()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create a task room — AutoJoinDefaultRoom agents get moved there
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Test Task",
             Description: "Testing participant locations",
             SuccessCriteria: "Participants reflect actual locations",
@@ -306,13 +302,13 @@ public class WorkspaceRuntimeTests : IDisposable
         ));
 
         // Task room should have the moved agents
-        var taskRoom = await _runtime.GetRoomAsync(result.Room.Id);
+        var taskRoom = await _rooms.GetRoomAsync(result.Room.Id);
         Assert.NotNull(taskRoom);
         Assert.Contains(taskRoom.Participants, p => p.AgentId == "planner-1");
         Assert.Contains(taskRoom.Participants, p => p.AgentId == "engineer-1");
 
         // Default room should only have agents NOT moved (reviewer-1 has AutoJoinDefaultRoom=false)
-        var mainRoom = await _runtime.GetRoomAsync("main");
+        var mainRoom = await _rooms.GetRoomAsync("main");
         Assert.NotNull(mainRoom);
         Assert.Contains(mainRoom.Participants, p => p.AgentId == "reviewer-1");
         Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "planner-1");
@@ -324,7 +320,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PostMessage_CreatesAgentMessage()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var request = new PostMessageRequest(
             RoomId: "main",
@@ -332,7 +328,7 @@ public class WorkspaceRuntimeTests : IDisposable
             Content: "Let's start planning."
         );
 
-        var envelope = await _runtime.PostMessageAsync(request);
+        var envelope = await _messages.PostMessageAsync(request);
 
         Assert.Equal("main", envelope.RoomId);
         Assert.Equal("planner-1", envelope.SenderId);
@@ -344,7 +340,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PostMessage_ThrowsForUnknownAgent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var request = new PostMessageRequest(
             RoomId: "main",
@@ -353,7 +349,7 @@ public class WorkspaceRuntimeTests : IDisposable
         );
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.PostMessageAsync(request));
+            () => _messages.PostMessageAsync(request));
     }
 
     [Fact]
@@ -366,15 +362,15 @@ public class WorkspaceRuntimeTests : IDisposable
         );
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.PostMessageAsync(request));
+            () => _messages.PostMessageAsync(request));
     }
 
     [Fact]
     public async Task PostHumanMessage_CreatesUserMessage()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var envelope = await _runtime.PostHumanMessageAsync("main", "Hello team!");
+        var envelope = await _messages.PostHumanMessageAsync("main", "Hello team!");
 
         Assert.Equal("human", envelope.SenderId);
         Assert.Equal("Human", envelope.SenderName);
@@ -385,9 +381,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PostHumanMessage_UsesGitHubIdentity_WhenProvided()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var envelope = await _runtime.PostHumanMessageAsync("main", "Hello team!", "darinious", "Darin");
+        var envelope = await _messages.PostHumanMessageAsync("main", "Hello team!", "darinious", "Darin");
 
         Assert.Equal("darinious", envelope.SenderId);
         Assert.Equal("Darin", envelope.SenderName);
@@ -398,9 +394,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PostHumanMessage_UsesConsultantRole_WhenProvided()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var envelope = await _runtime.PostHumanMessageAsync(
+        var envelope = await _messages.PostHumanMessageAsync(
             "main", "Agent review needed", "consultant", "Consultant", "Consultant");
 
         Assert.Equal("consultant", envelope.SenderId);
@@ -412,9 +408,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PostHumanMessage_DefaultsToHumanRole_WhenRoleOmitted()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var envelope = await _runtime.PostHumanMessageAsync(
+        var envelope = await _messages.PostHumanMessageAsync(
             "main", "Hello team!", "darinious", "Darin");
 
         Assert.Equal("Human", envelope.SenderRole);
@@ -423,15 +419,15 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PostMessage_TrimsToMaxMessages()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Post 210 messages (exceeds the 200 limit)
         for (int i = 0; i < 210; i++)
         {
-            await _runtime.PostHumanMessageAsync("main", $"Message {i}");
+            await _messages.PostHumanMessageAsync("main", $"Message {i}");
         }
 
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         // Should have at most 200 messages
         Assert.True(room.RecentMessages.Count <= 200);
@@ -442,7 +438,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CreateTask_CreatesTaskAndRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var request = new TaskAssignmentRequest(
             Title: "Build auth system",
@@ -453,7 +449,7 @@ public class WorkspaceRuntimeTests : IDisposable
             CorrelationId: "test-correlation"
         );
 
-        var result = await _runtime.CreateTaskAsync(request);
+        var result = await _taskOrchestration.CreateTaskAsync(request);
 
         Assert.Equal("test-correlation", result.CorrelationId);
         Assert.NotNull(result.Task);
@@ -470,7 +466,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CreateTask_InExistingRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var request = new TaskAssignmentRequest(
             Title: "Fix bug",
@@ -480,7 +476,7 @@ public class WorkspaceRuntimeTests : IDisposable
             PreferredRoles: []
         );
 
-        var result = await _runtime.CreateTaskAsync(request);
+        var result = await _taskOrchestration.CreateTaskAsync(request);
 
         Assert.Equal("main", result.Room.Id);
         Assert.Equal(RoomStatus.Active, result.Room.Status);
@@ -489,9 +485,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CreateTask_UsesExplicitCurrentPlan()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Planful Task",
             Description: "Task with explicit plan",
             SuccessCriteria: "Plan persists",
@@ -502,7 +498,7 @@ public class WorkspaceRuntimeTests : IDisposable
 
         Assert.Equal("# Custom Plan\n\n- Investigate\n- Implement", result.Task.CurrentPlan);
 
-        var persisted = await _runtime.GetTaskAsync(result.Task.Id);
+        var persisted = await _taskQueries.GetTaskAsync(result.Task.Id);
         Assert.NotNull(persisted);
         Assert.Equal(result.Task.CurrentPlan, persisted!.CurrentPlan);
     }
@@ -519,20 +515,20 @@ public class WorkspaceRuntimeTests : IDisposable
         );
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _runtime.CreateTaskAsync(request));
+            () => _taskOrchestration.CreateTaskAsync(request));
     }
 
     [Fact]
     public async Task GetTasks_ReturnsAll()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Task 1", "Desc 1", "Criteria", "main", []));
-        await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Task 2", "Desc 2", "Criteria", null, []));
 
-        var tasks = await _runtime.GetTasksAsync();
+        var tasks = await _taskQueries.GetTasksAsync();
         Assert.Equal(2, tasks.Count);
     }
 
@@ -640,7 +636,7 @@ public class WorkspaceRuntimeTests : IDisposable
             });
         await _db.SaveChangesAsync();
 
-        var tasks = await _runtime.GetTasksAsync();
+        var tasks = await _taskQueries.GetTasksAsync();
 
         Assert.Collection(tasks,
             task => Assert.Equal("unbackfilled-workspace-task", task.Id),
@@ -650,12 +646,12 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetTask_ReturnsSingleTask()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Task 1", "Desc 1", "Criteria", "main", []));
 
-        var task = await _runtime.GetTaskAsync(result.Task.Id);
+        var task = await _taskQueries.GetTaskAsync(result.Task.Id);
         Assert.NotNull(task);
         Assert.Equal("Task 1", task.Title);
     }
@@ -663,19 +659,19 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task TransitionBreakoutTaskToInReview_UpdatesLinkedTask()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var taskResult = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var taskResult = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Reviewable Task", "Needs review", "Reach InReview", "main", []));
-        var breakout = await _runtime.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Reviewable Task");
-        await _runtime.SetBreakoutTaskIdAsync(breakout.Id, taskResult.Task.Id);
+        var breakout = await _breakouts.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Reviewable Task");
+        await _breakouts.SetBreakoutTaskIdAsync(breakout.Id, taskResult.Task.Id);
 
-        var updatedTask = await _runtime.TransitionBreakoutTaskToInReviewAsync(breakout.Id);
+        var updatedTask = await _breakouts.TransitionBreakoutTaskToInReviewAsync(breakout.Id);
 
         Assert.NotNull(updatedTask);
         Assert.Equal(Shared.Models.TaskStatus.InReview, updatedTask!.Status);
 
-        var persistedTask = await _runtime.GetTaskAsync(taskResult.Task.Id);
+        var persistedTask = await _taskQueries.GetTaskAsync(taskResult.Task.Id);
         Assert.NotNull(persistedTask);
         Assert.Equal(Shared.Models.TaskStatus.InReview, persistedTask!.Status);
     }
@@ -683,12 +679,12 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task SetPlanAsync_AllowsBreakoutRoomPlans()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var breakout = await _runtime.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Plan Test");
-        await _runtime.SetPlanAsync(breakout.Id, "# Breakout Plan\n\n- Do work");
+        var breakout = await _breakouts.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Plan Test");
+        await _plans.SetPlanAsync(breakout.Id, "# Breakout Plan\n\n- Do work");
 
-        var plan = await _runtime.GetPlanAsync(breakout.Id);
+        var plan = await _plans.GetPlanAsync(breakout.Id);
 
         Assert.NotNull(plan);
         Assert.Contains("Breakout Plan", plan!.Content);
@@ -697,12 +693,12 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_PersistsMergeCommitSha()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var taskResult = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var taskResult = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Mergeable Task", "Needs merge metadata", "Persist merge SHA", "main", []));
 
-        var completedTask = await _runtime.CompleteTaskAsync(
+        var completedTask = await _taskOrchestration.CompleteTaskAsync(
             taskResult.Task.Id,
             commitCount: 1,
             mergeCommitSha: "abc123def456");
@@ -710,7 +706,7 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Equal(Shared.Models.TaskStatus.Completed, completedTask.Status);
         Assert.Equal("abc123def456", completedTask.MergeCommitSha);
 
-        var persistedTask = await _runtime.GetTaskAsync(taskResult.Task.Id);
+        var persistedTask = await _taskQueries.GetTaskAsync(taskResult.Task.Id);
         Assert.NotNull(persistedTask);
         Assert.Equal("abc123def456", persistedTask!.MergeCommitSha);
     }
@@ -720,20 +716,20 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task TransitionPhase_UpdatesRoomAndTask()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create a task first (so there's an active task)
-        await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Test task", "Testing phases", "Pass", "main", []));
 
-        var room = await _runtime.TransitionPhaseAsync(
+        var room = await _rooms.TransitionPhaseAsync(
             "main", CollaborationPhase.Discussion, "Ready to discuss");
 
         Assert.Equal(CollaborationPhase.Discussion, room.CurrentPhase);
         Assert.Equal(RoomStatus.Active, room.Status);
 
         // Check the task was updated too
-        var tasks = await _runtime.GetTasksAsync();
+        var tasks = await _taskQueries.GetTasksAsync();
         var activeTask = tasks.FirstOrDefault(t => t.Status == Shared.Models.TaskStatus.Active);
         Assert.NotNull(activeTask);
         Assert.Equal(CollaborationPhase.Discussion, activeTask.CurrentPhase);
@@ -742,9 +738,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task TransitionPhase_FinalSynthesisCompletesRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var room = await _runtime.TransitionPhaseAsync(
+        var room = await _rooms.TransitionPhaseAsync(
             "main", CollaborationPhase.FinalSynthesis);
 
         Assert.Equal(RoomStatus.Completed, room.Status);
@@ -754,10 +750,10 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task TransitionPhase_NoOpForSamePhase()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Default phase is Intake
-        var room = await _runtime.TransitionPhaseAsync(
+        var room = await _rooms.TransitionPhaseAsync(
             "main", CollaborationPhase.Intake);
 
         Assert.Equal(CollaborationPhase.Intake, room.CurrentPhase);
@@ -767,18 +763,18 @@ public class WorkspaceRuntimeTests : IDisposable
     public async Task TransitionPhase_ThrowsForMissingRoom()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.TransitionPhaseAsync("nonexistent", CollaborationPhase.Planning));
+            () => _rooms.TransitionPhaseAsync("nonexistent", CollaborationPhase.Planning));
     }
 
     [Fact]
     public async Task TransitionPhase_AddsCoordinationMessage()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        await _runtime.TransitionPhaseAsync(
+        await _rooms.TransitionPhaseAsync(
             "main", CollaborationPhase.Planning, "Let's plan");
 
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         Assert.Contains(room.RecentMessages,
             m => m.Content.Contains("Phase changed from Intake to Planning")
@@ -790,9 +786,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task MoveAgent_UpdatesLocation()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var loc = await _runtime.MoveAgentAsync(
+        var loc = await _agentLocations.MoveAgentAsync(
             "planner-1", "main", AgentState.Working);
 
         Assert.Equal("main", loc.RoomId);
@@ -804,15 +800,15 @@ public class WorkspaceRuntimeTests : IDisposable
     public async Task MoveAgent_ThrowsForUnknownAgent()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.MoveAgentAsync("unknown", "main", AgentState.Idle));
+            () => _agentLocations.MoveAgentAsync("unknown", "main", AgentState.Idle));
     }
 
     [Fact]
     public async Task GetAgentLocation_ReturnsSingle()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var loc = await _runtime.GetAgentLocationAsync("planner-1");
+        var loc = await _agentLocations.GetAgentLocationAsync("planner-1");
         Assert.NotNull(loc);
         Assert.Equal("main", loc.RoomId);
     }
@@ -822,9 +818,9 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CreateBreakoutRoom_CreatesAndMovesAgent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var breakout = await _runtime.CreateBreakoutRoomAsync(
+        var breakout = await _breakouts.CreateBreakoutRoomAsync(
             "main", "engineer-1", "Auth Implementation");
 
         Assert.Equal("main", breakout.ParentRoomId);
@@ -833,13 +829,13 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Equal(RoomStatus.Active, breakout.Status);
 
         // Agent should be in "Working" state
-        var loc = await _runtime.GetAgentLocationAsync("engineer-1");
+        var loc = await _agentLocations.GetAgentLocationAsync("engineer-1");
         Assert.NotNull(loc);
         Assert.Equal(AgentState.Working, loc.State);
         Assert.Equal(breakout.Id, loc.BreakoutRoomId);
 
         // Agent in breakout should NOT appear in parent room participants
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         Assert.DoesNotContain(room.Participants, p => p.AgentId == "engineer-1");
     }
@@ -847,25 +843,25 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CloseBreakoutRoom_MovesAgentBackToIdle()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var breakout = await _runtime.CreateBreakoutRoomAsync(
+        var breakout = await _breakouts.CreateBreakoutRoomAsync(
             "main", "engineer-1", "Auth Implementation");
 
-        await _runtime.CloseBreakoutRoomAsync(breakout.Id);
+        await _breakouts.CloseBreakoutRoomAsync(breakout.Id);
 
         // Agent should be back to idle
-        var loc = await _runtime.GetAgentLocationAsync("engineer-1");
+        var loc = await _agentLocations.GetAgentLocationAsync("engineer-1");
         Assert.NotNull(loc);
         Assert.Equal(AgentState.Idle, loc.State);
         Assert.Null(loc.BreakoutRoomId);
 
         // Breakout room should be archived (not visible in active list)
-        var breakouts = await _runtime.GetBreakoutRoomsAsync("main");
+        var breakouts = await _breakouts.GetBreakoutRoomsAsync("main");
         Assert.Empty(breakouts);
 
         // But still retrievable by ID (soft-deleted, not hard-deleted)
-        var archived = await _runtime.GetBreakoutRoomAsync(breakout.Id);
+        var archived = await _breakouts.GetBreakoutRoomAsync(breakout.Id);
         Assert.NotNull(archived);
         Assert.Equal(RoomStatus.Archived, archived.Status);
 
@@ -877,12 +873,12 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetBreakoutRooms_ReturnsForParent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        await _runtime.CreateBreakoutRoomAsync("main", "engineer-1", "Breakout 1");
-        await _runtime.CreateBreakoutRoomAsync("main", "planner-1", "Breakout 2");
+        await _breakouts.CreateBreakoutRoomAsync("main", "engineer-1", "Breakout 1");
+        await _breakouts.CreateBreakoutRoomAsync("main", "planner-1", "Breakout 2");
 
-        var breakouts = await _runtime.GetBreakoutRoomsAsync("main");
+        var breakouts = await _breakouts.GetBreakoutRoomsAsync("main");
         Assert.Equal(2, breakouts.Count);
     }
 
@@ -890,16 +886,16 @@ public class WorkspaceRuntimeTests : IDisposable
     public async Task CreateBreakoutRoom_ThrowsForMissingRoom()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.CreateBreakoutRoomAsync("nonexistent", "engineer-1", "Test"));
+            () => _breakouts.CreateBreakoutRoomAsync("nonexistent", "engineer-1", "Test"));
     }
 
     [Fact]
     public async Task CreateBreakoutRoom_ThrowsForUnknownAgent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _runtime.CreateBreakoutRoomAsync("main", "unknown-agent", "Test"));
+            () => _breakouts.CreateBreakoutRoomAsync("main", "unknown-agent", "Test"));
     }
 
     // ── Plan Management ─────────────────────────────────────────
@@ -907,32 +903,32 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PlanLifecycle_SetGetDelete()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Initially no plan
-        var plan = await _runtime.GetPlanAsync("main");
+        var plan = await _plans.GetPlanAsync("main");
         Assert.Null(plan);
 
         // Set plan
-        await _runtime.SetPlanAsync("main", "Step 1: Design\nStep 2: Build");
-        plan = await _runtime.GetPlanAsync("main");
+        await _plans.SetPlanAsync("main", "Step 1: Design\nStep 2: Build");
+        plan = await _plans.GetPlanAsync("main");
         Assert.NotNull(plan);
         Assert.Contains("Step 1", plan.Content);
 
         // Update plan
-        await _runtime.SetPlanAsync("main", "Updated plan");
-        plan = await _runtime.GetPlanAsync("main");
+        await _plans.SetPlanAsync("main", "Updated plan");
+        plan = await _plans.GetPlanAsync("main");
         Assert.Equal("Updated plan", plan!.Content);
 
         // Delete plan
-        var deleted = await _runtime.DeletePlanAsync("main");
+        var deleted = await _plans.DeletePlanAsync("main");
         Assert.True(deleted);
 
-        plan = await _runtime.GetPlanAsync("main");
+        plan = await _plans.GetPlanAsync("main");
         Assert.Null(plan);
 
         // Delete again returns false
-        deleted = await _runtime.DeletePlanAsync("main");
+        deleted = await _plans.DeletePlanAsync("main");
         Assert.False(deleted);
     }
 
@@ -941,7 +937,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PublishThinking_EmitsEvent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         ActivityEvent? received = null;
         _activityBus.Subscribe(evt => received = evt);
@@ -957,7 +953,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task PublishFinished_EmitsEvent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         ActivityEvent? received = null;
         _activityBus.Subscribe(evt => received = evt);
@@ -973,7 +969,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRecentActivity_ReturnsBufferedEvents()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Initialize generates several events
         var activity = _activityBus.GetRecentActivity();
@@ -984,7 +980,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task StreamActivity_Unsubscribe()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var count = 0;
         var unsub = _activityBus.Subscribe(_ => count++);
@@ -1002,9 +998,19 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetOverview_ReturnsFullState()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var overview = await _runtime.GetOverviewAsync();
+        var roomList = await _rooms.GetRoomsAsync();
+        var agentLocs = await _agentLocations.GetAgentLocationsAsync();
+        var breakoutList = await _breakouts.GetAllBreakoutRoomsAsync();
+        var recentActivity = _activityPublisher.GetRecentActivity();
+        var overview = new WorkspaceOverview(
+            ConfiguredAgents: [.. _catalog.Agents],
+            Rooms: roomList,
+            RecentActivity: [.. recentActivity],
+            AgentLocations: agentLocs,
+            BreakoutRooms: breakoutList,
+            GeneratedAt: DateTime.UtcNow);
 
         Assert.Equal(3, overview.ConfiguredAgents.Count);
         Assert.Single(overview.Rooms);
@@ -1017,7 +1023,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public void GetConfiguredAgents_ReturnsCatalogAgents()
     {
-        var agents = _runtime.GetConfiguredAgents();
+        var agents = _catalog.Agents;
         Assert.Equal(3, agents.Count);
         Assert.Equal("Aristotle", agents[0].Name);
     }
@@ -1047,7 +1053,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetProjectNameForRoomAsync("room-1");
+        var result = await _rooms.GetProjectNameForRoomAsync("room-1");
         Assert.Equal("My Project", result);
     }
 
@@ -1067,14 +1073,14 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetProjectNameForRoomAsync("legacy-room");
+        var result = await _rooms.GetProjectNameForRoomAsync("legacy-room");
         Assert.Null(result);
     }
 
     [Fact]
     public async Task GetProjectNameForRoom_ReturnsNull_WhenRoomDoesNotExist()
     {
-        var result = await _runtime.GetProjectNameForRoomAsync("nonexistent-room");
+        var result = await _rooms.GetProjectNameForRoomAsync("nonexistent-room");
         Assert.Null(result);
     }
 
@@ -1101,7 +1107,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetProjectNameForRoomAsync("room-no-name");
+        var result = await _rooms.GetProjectNameForRoomAsync("room-no-name");
         Assert.Equal("Cool App", result);
     }
 
@@ -1121,7 +1127,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _runtime.GetProjectNameForRoomAsync("orphan-room");
+        var result = await _rooms.GetProjectNameForRoomAsync("orphan-room");
         Assert.Null(result);
     }
 
@@ -1154,7 +1160,7 @@ public class WorkspaceRuntimeTests : IDisposable
         await _db.SaveChangesAsync();
 
         // This should create a workspace default room AND retire the legacy one
-        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         Assert.NotEqual("main", defaultRoomId);
 
@@ -1164,7 +1170,7 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Null(legacyRoom!.WorkspacePath);
 
         // Only the workspace default room should appear in room list
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.Single(rooms);
         Assert.Equal(defaultRoomId, rooms[0].Id);
     }
@@ -1209,13 +1215,13 @@ public class WorkspaceRuntimeTests : IDisposable
         await _db.SaveChangesAsync();
 
         // Should find existing workspace room and retire legacy
-        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
         Assert.Equal("my-project-main", defaultRoomId);
 
         var legacyRoom = await _db.Rooms.FindAsync("main");
         Assert.Null(legacyRoom!.WorkspacePath);
 
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.Single(rooms);
         Assert.Equal("my-project-main", rooms[0].Id);
     }
@@ -1246,7 +1252,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         // Legacy room should still have null WorkspacePath (unchanged)
         var legacyRoom = await _db.Rooms.FindAsync("main");
@@ -1277,7 +1283,7 @@ public class WorkspaceRuntimeTests : IDisposable
                 capturedEvent = evt;
         });
 
-        var result = await _runtime.RenameRoomAsync("room-to-rename", "New Name");
+        var result = await _rooms.RenameRoomAsync("room-to-rename", "New Name");
 
         Assert.NotNull(result);
         Assert.Equal("New Name", result!.Name);
@@ -1295,7 +1301,7 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task RenameRoom_ReturnsNull_WhenRoomDoesNotExist()
     {
-        var result = await _runtime.RenameRoomAsync("nonexistent", "New Name");
+        var result = await _rooms.RenameRoomAsync("nonexistent", "New Name");
         Assert.Null(result);
     }
 
@@ -1312,7 +1318,7 @@ public class WorkspaceRuntimeTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var defaultRoomId = await _runtime.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
         var room = await _db.Rooms.FindAsync(defaultRoomId);
 
         Assert.Equal(_catalog.DefaultRoomName, room!.Name);
@@ -1323,20 +1329,20 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_AutoArchivesRoomWhenAllTasksTerminal()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create a task in a new room (not main)
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Auto-archive test", "Test room cleanup", "Room gets archived", null, []));
 
         var roomId = result.Room.Id;
         Assert.NotEqual("main", roomId);
 
         // Complete the task
-        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result.Task.Id, commitCount: 1);
 
         // Room should now be archived
-        var room = await _runtime.GetRoomAsync(roomId);
+        var room = await _rooms.GetRoomAsync(roomId);
         Assert.NotNull(room);
         Assert.Equal(RoomStatus.Archived, room!.Status);
     }
@@ -1344,21 +1350,21 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_DoesNotArchiveRoomWithActiveTask()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create two tasks in the same room
-        var result1 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result1 = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "First task", "Desc", "Criteria", null, []));
         var roomId = result1.Room.Id;
 
-        var result2 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result2 = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Second task", "Desc", "Criteria", roomId, []));
 
         // Complete only the first task
-        await _runtime.CompleteTaskAsync(result1.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result1.Task.Id, commitCount: 1);
 
         // Room should still be active (second task remains)
-        var room = await _runtime.GetRoomAsync(roomId);
+        var room = await _rooms.GetRoomAsync(roomId);
         Assert.NotNull(room);
         Assert.NotEqual(RoomStatus.Archived, room!.Status);
     }
@@ -1366,13 +1372,13 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_ArchivesRoomWhenAllTasksCancelledOrCompleted()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var result1 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result1 = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Task one", "Desc", "Criteria", null, []));
         var roomId = result1.Room.Id;
 
-        var result2 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result2 = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Task two", "Desc", "Criteria", roomId, []));
 
         // Cancel task 2 via direct DB update (simulating CancelTaskHandler)
@@ -1381,9 +1387,9 @@ public class WorkspaceRuntimeTests : IDisposable
         await _db.SaveChangesAsync();
 
         // Complete task 1 — now both tasks are terminal
-        await _runtime.CompleteTaskAsync(result1.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result1.Task.Id, commitCount: 1);
 
-        var room = await _runtime.GetRoomAsync(roomId);
+        var room = await _rooms.GetRoomAsync(roomId);
         Assert.NotNull(room);
         Assert.Equal(RoomStatus.Archived, room!.Status);
     }
@@ -1391,17 +1397,17 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_DoesNotArchiveMainRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create task in main room
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Main room task", "Desc", "Criteria", "main", []));
 
         // Complete the task
-        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result.Task.Id, commitCount: 1);
 
         // Main room should NOT be archived
-        var room = await _runtime.GetRoomAsync("main");
+        var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
         Assert.NotEqual(RoomStatus.Archived, room!.Status);
     }
@@ -1409,20 +1415,20 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_EvacuatesAgentsOnArchive()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Evacuation test", "Desc", "Criteria", null, []));
         var roomId = result.Room.Id;
 
         // Move an agent into the task room
-        await _runtime.MoveAgentAsync("engineer-1", roomId, AgentState.InRoom);
+        await _agentLocations.MoveAgentAsync("engineer-1", roomId, AgentState.InRoom);
 
         // Complete the task
-        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result.Task.Id, commitCount: 1);
 
         // Agent should have been moved back to the default room
-        var location = await _runtime.GetAgentLocationAsync("engineer-1");
+        var location = await _agentLocations.GetAgentLocationAsync("engineer-1");
         Assert.NotNull(location);
         Assert.Equal("main", location!.RoomId);
         Assert.Equal(AgentState.Idle, location.State);
@@ -1431,30 +1437,30 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task GetRoomsAsync_ExcludesArchivedByDefault()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create and auto-archive a room
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Archived room test", "Desc", "Criteria", null, []));
         var roomId = result.Room.Id;
-        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result.Task.Id, commitCount: 1);
 
         // Default query should not include archived room
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _rooms.GetRoomsAsync();
         Assert.DoesNotContain(rooms, r => r.Id == roomId);
 
         // With includeArchived should include it
-        var allRooms = await _runtime.GetRoomsAsync(includeArchived: true);
+        var allRooms = await _rooms.GetRoomsAsync(includeArchived: true);
         Assert.Contains(allRooms, r => r.Id == roomId);
     }
 
     [Fact]
     public async Task RejectTask_ReopensAutoArchivedRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create task, approve, complete (auto-archive)
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Reject test", "Desc", "Criteria", null, []));
         var roomId = result.Room.Id;
 
@@ -1462,16 +1468,16 @@ public class WorkspaceRuntimeTests : IDisposable
         taskEntity!.Status = nameof(Shared.Models.TaskStatus.Approved);
         await _db.SaveChangesAsync();
 
-        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result.Task.Id, commitCount: 1);
 
         // Verify room is archived
-        var archivedRoom = await _runtime.GetRoomAsync(roomId);
+        var archivedRoom = await _rooms.GetRoomAsync(roomId);
         Assert.Equal(RoomStatus.Archived, archivedRoom!.Status);
 
         // Reject the task — should reopen the room
-        await _runtime.RejectTaskAsync(result.Task.Id, "reviewer-1", "Needs more tests");
+        await _taskOrchestration.RejectTaskAsync(result.Task.Id, "reviewer-1", "Needs more tests");
 
-        var reopenedRoom = await _runtime.GetRoomAsync(roomId);
+        var reopenedRoom = await _rooms.GetRoomAsync(roomId);
         Assert.NotNull(reopenedRoom);
         Assert.Equal(RoomStatus.Active, reopenedRoom!.Status);
     }
@@ -1479,11 +1485,11 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CleanupStaleRooms_ArchivesStaleRooms()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create a task and manually complete it (without triggering auto-archive by
         // directly updating the DB, simulating a pre-existing stale room)
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Stale room", "Desc", "Criteria", null, []));
         var roomId = result.Room.Id;
 
@@ -1498,7 +1504,7 @@ public class WorkspaceRuntimeTests : IDisposable
         Assert.Equal(nameof(RoomStatus.Active), room!.Status);
 
         // Run cleanup
-        var count = await _runtime.CleanupStaleRoomsAsync();
+        var count = await _rooms.CleanupStaleRoomsAsync();
 
         Assert.Equal(1, count);
         var cleaned = await _db.Rooms.FindAsync(roomId);
@@ -1508,12 +1514,12 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CleanupStaleRooms_SkipsRoomsWithNoTasks()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create an empty room (no tasks)
-        var room = await _runtime.CreateRoomAsync("Empty Room");
+        var room = await _rooms.CreateRoomAsync("Empty Room");
 
-        var count = await _runtime.CleanupStaleRoomsAsync();
+        var count = await _rooms.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
         var entity = await _db.Rooms.FindAsync(room.Id);
@@ -1523,10 +1529,10 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CleanupStaleRooms_SkipsMainRoom()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         // Create task in main room and complete it
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Main task", "Desc", "Criteria", "main", []));
 
         var entity = await _db.Tasks.FindAsync(result.Task.Id);
@@ -1534,7 +1540,7 @@ public class WorkspaceRuntimeTests : IDisposable
         entity.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var count = await _runtime.CleanupStaleRoomsAsync();
+        var count = await _rooms.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
         var mainRoom = await _db.Rooms.FindAsync("main");
@@ -1544,13 +1550,13 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CleanupStaleRooms_SkipsRoomsWithActiveTasks()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
-        var result1 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result1 = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Done task", "Desc", "Criteria", null, []));
         var roomId = result1.Room.Id;
 
-        var result2 = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result2 = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Active task", "Desc", "Criteria", roomId, []));
 
         // Complete only first task
@@ -1559,7 +1565,7 @@ public class WorkspaceRuntimeTests : IDisposable
         entity.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var count = await _runtime.CleanupStaleRoomsAsync();
+        var count = await _rooms.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
     }
@@ -1567,16 +1573,16 @@ public class WorkspaceRuntimeTests : IDisposable
     [Fact]
     public async Task CompleteTask_PublishesAutoArchiveActivityEvent()
     {
-        await _runtime.InitializeAsync();
+        await _initialization.InitializeAsync();
 
         var events = new List<ActivityEvent>();
         _activityBus.Subscribe(e => events.Add(e));
 
-        var result = await _runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var result = await _taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             "Activity test", "Desc", "Criteria", null, []));
 
         events.Clear();
-        await _runtime.CompleteTaskAsync(result.Task.Id, commitCount: 1);
+        await _taskOrchestration.CompleteTaskAsync(result.Task.Id, commitCount: 1);
 
         var archiveEvent = events.FirstOrDefault(e =>
             e.Type == ActivityEventType.RoomClosed &&

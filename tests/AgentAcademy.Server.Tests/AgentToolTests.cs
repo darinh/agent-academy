@@ -254,7 +254,6 @@ public class AgentToolFunctionsTests : IDisposable
             }));
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
-        services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
@@ -273,7 +272,6 @@ public class AgentToolFunctionsTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
@@ -286,8 +284,9 @@ public class AgentToolFunctionsTests : IDisposable
         {
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            runtime.InitializeAsync().GetAwaiter().GetResult();
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
         _toolFunctions = new AgentToolFunctions(
@@ -543,7 +542,6 @@ public class AgentWriteToolTests : IDisposable
             }));
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
-        services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
@@ -562,7 +560,6 @@ public class AgentWriteToolTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
@@ -574,8 +571,9 @@ public class AgentWriteToolTests : IDisposable
         {
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            runtime.InitializeAsync().GetAwaiter().GetResult();
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
         _toolFunctions = new AgentToolFunctions(
@@ -1266,8 +1264,9 @@ public class AgentWriteToolTests : IDisposable
     private async Task<string> CreateTestTask()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var result = await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Test Task",
             Description: "Test task for write tool tests",
             SuccessCriteria: "Tests pass",

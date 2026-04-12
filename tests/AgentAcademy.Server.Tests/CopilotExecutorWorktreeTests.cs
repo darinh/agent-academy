@@ -37,7 +37,6 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
-        services.AddSingleton<ILogger<WorkspaceRuntime>>(NullLogger<WorkspaceRuntime>.Instance);
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
@@ -57,7 +56,6 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
@@ -68,7 +66,7 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         {
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
-            scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>()
+            scope.ServiceProvider.GetRequiredService<InitializationService>()
                 .InitializeAsync().GetAwaiter().GetResult();
         }
 

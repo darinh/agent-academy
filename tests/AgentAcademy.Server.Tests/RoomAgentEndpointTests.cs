@@ -58,7 +58,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
             DefaultRoomName: "Main Collaboration Room",
             Agents: [TestAgent]);
 
-        var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
+
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);

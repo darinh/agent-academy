@@ -74,7 +74,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<AgentConfigService>();
@@ -122,9 +121,10 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         using (var scope = _serviceProvider.CreateScope())
         {
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            await runtime.InitializeAsync();
-            await runtime.PostHumanMessageAsync("main", "Assign the backend task.");
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            await initialization.InitializeAsync();
+            await messages.PostHumanMessageAsync("main", "Assign the backend task.");
         }
 
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
@@ -156,7 +156,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         using var assertScope = _serviceProvider.CreateScope();
         var db = assertScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var runtimeAfter = assertScope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
 
         // Breakout room should have been created (may be closed by now if loop completed)
         var breakoutEntity = await db.BreakoutRooms.SingleAsync();
@@ -223,9 +222,10 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         using (var scope = _serviceProvider.CreateScope())
         {
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            await runtime.InitializeAsync();
-            await runtime.PostHumanMessageAsync("main", "Build the widget please.");
+            var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            await initialization.InitializeAsync();
+            await messages.PostHumanMessageAsync("main", "Build the widget please.");
         }
 
         var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();

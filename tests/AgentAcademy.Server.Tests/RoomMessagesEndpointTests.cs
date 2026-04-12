@@ -41,7 +41,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
             Agents: []);
         _catalog = catalog;
 
-        var logger = Substitute.For<ILogger<WorkspaceRuntime>>();
+
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);
         var settingsService = new SystemSettingsService(_db);

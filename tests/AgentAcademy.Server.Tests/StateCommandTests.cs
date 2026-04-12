@@ -69,7 +69,6 @@ public class StateCommandTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
@@ -765,8 +764,8 @@ public class StateCommandTests : IDisposable
     private async Task ClaimTaskForAgent(string taskId, string agentId, string agentName)
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        await runtime.ClaimTaskAsync(taskId, agentId, agentName);
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        await taskLifecycle.ClaimTaskAsync(taskId, agentId, agentName);
     }
 
     private (CommandEnvelope command, CommandContext context) MakeCommand(

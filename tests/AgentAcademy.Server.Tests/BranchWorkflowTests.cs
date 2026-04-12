@@ -83,7 +83,6 @@ public class BranchWorkflowTests : IDisposable
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
-        services.AddScoped<WorkspaceRuntime>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
@@ -266,8 +265,12 @@ public class BranchWorkflowTests : IDisposable
         Assert.Equal(mergeCommitSha, RunGitInRepo("rev-parse", "HEAD"));
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var task = await runtime.GetTaskAsync(taskId);
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var task = await taskQueries.GetTaskAsync(taskId);
 
         Assert.NotNull(task);
         Assert.Equal(TaskStatus.Completed, task!.Status);
@@ -342,8 +345,12 @@ public class BranchWorkflowTests : IDisposable
         Assert.Contains("Merge failed", result.Error!);
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var task = await runtime.GetTaskAsync(taskId);
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var task = await taskQueries.GetTaskAsync(taskId);
 
         Assert.NotNull(task);
         Assert.Equal(TaskStatus.Approved, task!.Status);
@@ -357,27 +364,31 @@ public class BranchWorkflowTests : IDisposable
         CreateFeatureBranchWithCommit(branchName, "workflow.txt", "full workflow change");
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        await runtime.InitializeAsync();
+        await initialization.InitializeAsync();
         await EnsureRoom(db, "room-1");
 
-        var taskResult = await runtime.CreateTaskAsync(new TaskAssignmentRequest(
+        var taskResult = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Full Workflow Task",
             Description: "Exercise branch workflow end to end",
             SuccessCriteria: "Transitions through review and merge",
             RoomId: "main",
             PreferredRoles: []));
-        await runtime.UpdateTaskBranchAsync(taskResult.Task.Id, branchName);
+        await taskQueries.UpdateTaskBranchAsync(taskResult.Task.Id, branchName);
 
-        var breakout = await runtime.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Full Workflow Task");
-        await runtime.SetBreakoutTaskIdAsync(breakout.Id, taskResult.Task.Id);
+        var breakout = await breakouts.CreateBreakoutRoomAsync("main", "engineer-1", "BR: Full Workflow Task");
+        await breakouts.SetBreakoutTaskIdAsync(breakout.Id, taskResult.Task.Id);
 
-        var inReviewTask = await runtime.TransitionBreakoutTaskToInReviewAsync(breakout.Id);
+        var inReviewTask = await breakouts.TransitionBreakoutTaskToInReviewAsync(breakout.Id);
         Assert.NotNull(inReviewTask);
         Assert.Equal(TaskStatus.InReview, inReviewTask!.Status);
 
-        var approvedTask = await runtime.ApproveTaskAsync(taskResult.Task.Id, "reviewer-1", "Looks good.");
+        var approvedTask = await taskLifecycle.ApproveTaskAsync(taskResult.Task.Id, "reviewer-1", "Looks good.");
         Assert.Equal(TaskStatus.Approved, approvedTask.Status);
 
         var handler = new MergeTaskHandler(_gitService);
@@ -391,8 +402,8 @@ public class BranchWorkflowTests : IDisposable
             $"MERGE_TASK failed: {mergeResult.Error}");
 
         using var verificationScope = _serviceProvider.CreateScope();
-        var verificationRuntime = verificationScope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var mergedTask = await verificationRuntime.GetTaskAsync(taskResult.Task.Id);
+        var verificationTaskQueries = verificationScope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var mergedTask = await verificationTaskQueries.GetTaskAsync(taskResult.Task.Id);
         Assert.NotNull(mergedTask);
         Assert.Equal(TaskStatus.Completed, mergedTask!.Status);
         Assert.False(string.IsNullOrWhiteSpace(mergedTask.MergeCommitSha));
@@ -571,32 +582,40 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_CreatesAndLinksTaskForBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
-        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
+        var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
 
-        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+        var taskId = await breakouts.EnsureTaskForBreakoutAsync(
             breakout.Id, "Fix Login Bug", "desc", "engineer-1", "room-1");
 
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         Assert.NotNull(task);
         Assert.Equal("Fix Login Bug", task.Title);
-        Assert.Equal(taskId, await runtime.GetBreakoutTaskIdAsync(breakout.Id));
+        Assert.Equal(taskId, await breakouts.GetBreakoutTaskIdAsync(breakout.Id));
     }
 
     [Fact]
     public async Task EnsureTaskForBreakout_ReturnsExistingLinkedTaskForSameBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
-        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
+        var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
 
-        var firstTaskId = await runtime.EnsureTaskForBreakoutAsync(
+        var firstTaskId = await breakouts.EnsureTaskForBreakoutAsync(
             breakout.Id, "Fix Login Bug", "desc", "engineer-1", "room-1");
-        var secondTaskId = await runtime.EnsureTaskForBreakoutAsync(
+        var secondTaskId = await breakouts.EnsureTaskForBreakoutAsync(
             breakout.Id, "Different Title", "different desc", "engineer-1", "room-1");
 
         Assert.Equal(firstTaskId, secondTaskId);
@@ -606,47 +625,55 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_OverlappingBreakoutsGetDistinctTasksAndBranches()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         await EnsureRoom(db, "room-2");
-        var breakoutOne = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Task One");
-        var breakoutTwo = await runtime.CreateBreakoutRoomAsync("room-2", "engineer-1", "BR: Task Two");
+        var breakoutOne = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Task One");
+        var breakoutTwo = await breakouts.CreateBreakoutRoomAsync("room-2", "engineer-1", "BR: Task Two");
 
-        var taskOneId = await runtime.EnsureTaskForBreakoutAsync(
+        var taskOneId = await breakouts.EnsureTaskForBreakoutAsync(
             breakoutOne.Id, "Task One", "description one", "engineer-1", "room-1");
 
         // Simulate overlapping setup: task one exists but has not yet been assigned a branch.
-        var taskTwoId = await runtime.EnsureTaskForBreakoutAsync(
+        var taskTwoId = await breakouts.EnsureTaskForBreakoutAsync(
             breakoutTwo.Id, "Task Two", "description two", "engineer-1", "room-2");
 
         Assert.NotEqual(taskOneId, taskTwoId);
 
-        await runtime.UpdateTaskBranchAsync(taskOneId, "task/task-one-abc123");
-        await runtime.UpdateTaskBranchAsync(taskTwoId, "task/task-two-def456");
+        await taskQueries.UpdateTaskBranchAsync(taskOneId, "task/task-one-abc123");
+        await taskQueries.UpdateTaskBranchAsync(taskTwoId, "task/task-two-def456");
 
-        var taskOne = await runtime.GetTaskAsync(taskOneId);
-        var taskTwo = await runtime.GetTaskAsync(taskTwoId);
+        var taskOne = await taskQueries.GetTaskAsync(taskOneId);
+        var taskTwo = await taskQueries.GetTaskAsync(taskTwoId);
         Assert.Equal("task/task-one-abc123", taskOne!.BranchName);
         Assert.Equal("task/task-two-def456", taskTwo!.BranchName);
-        Assert.Equal(taskOneId, await runtime.GetBreakoutTaskIdAsync(breakoutOne.Id));
-        Assert.Equal(taskTwoId, await runtime.GetBreakoutTaskIdAsync(breakoutTwo.Id));
+        Assert.Equal(taskOneId, await breakouts.GetBreakoutTaskIdAsync(breakoutOne.Id));
+        Assert.Equal(taskTwoId, await breakouts.GetBreakoutTaskIdAsync(breakoutTwo.Id));
     }
 
     [Fact]
     public async Task EnsureTaskForBreakout_WithBranchName_PersistsBranchAtomically()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
-        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Atomic Task");
+        var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Atomic Task");
 
-        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+        var taskId = await breakouts.EnsureTaskForBreakoutAsync(
             breakout.Id, "Atomic Task", "desc", "engineer-1", "room-1",
             branchName: "task/atomic-task-abc123");
 
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         Assert.NotNull(task);
         Assert.Equal("task/atomic-task-abc123", task.BranchName);
         Assert.Equal("Atomic Task", task.Title);
@@ -656,15 +683,19 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_WithoutBranchName_LeavesNullBranch()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
-        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: No Branch");
+        var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: No Branch");
 
-        var taskId = await runtime.EnsureTaskForBreakoutAsync(
+        var taskId = await breakouts.EnsureTaskForBreakoutAsync(
             breakout.Id, "No Branch Task", "desc", "engineer-1", "room-1");
 
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         Assert.NotNull(task);
         Assert.Null(task.BranchName);
     }
@@ -673,14 +704,18 @@ public class BranchWorkflowTests : IDisposable
     public async Task SetBreakoutTaskId_PersistsLink()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
 
-        var br = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Test");
-        await runtime.SetBreakoutTaskIdAsync(br.Id, "task-123");
+        var br = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Test");
+        await breakouts.SetBreakoutTaskIdAsync(br.Id, "task-123");
 
-        var storedId = await runtime.GetBreakoutTaskIdAsync(br.Id);
+        var storedId = await breakouts.GetBreakoutTaskIdAsync(br.Id);
         Assert.Equal("task-123", storedId);
     }
 
@@ -688,15 +723,19 @@ public class BranchWorkflowTests : IDisposable
     public async Task SetBreakoutTaskId_DifferentExistingLink_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
 
-        var breakout = await runtime.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Test");
-        await runtime.SetBreakoutTaskIdAsync(breakout.Id, "task-123");
+        var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Test");
+        await breakouts.SetBreakoutTaskIdAsync(breakout.Id, "task-123");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            runtime.SetBreakoutTaskIdAsync(breakout.Id, "task-456"));
+            breakouts.SetBreakoutTaskIdAsync(breakout.Id, "task-456"));
 
         Assert.Contains("already linked", ex.Message);
     }
@@ -707,12 +746,16 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active), branchName: null);
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        await runtime.UpdateTaskBranchAsync(taskId, "task/original-abc123");
+        await taskQueries.UpdateTaskBranchAsync(taskId, "task/original-abc123");
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            runtime.UpdateTaskBranchAsync(taskId, "task/reassigned-def456"));
+            taskQueries.UpdateTaskBranchAsync(taskId, "task/reassigned-def456"));
 
         Assert.Contains("cannot be reassigned", ex.Message);
     }
@@ -723,9 +766,13 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Approved));
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-        var result = await runtime.CompleteTaskAsync(
+        var result = await taskOrchestration.CompleteTaskAsync(
             taskId, commitCount: 1, mergeCommitSha: "abc123def456");
 
         Assert.Equal(TaskStatus.Completed, result.Status);
@@ -741,10 +788,14 @@ public class BranchWorkflowTests : IDisposable
             branchName: "task/test-branch-abc123");
 
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
         // Simulate what MergeTaskHandler does after merge: complete with SHA
-        var result = await runtime.CompleteTaskAsync(
+        var result = await taskOrchestration.CompleteTaskAsync(
             taskId, commitCount: 1, mergeCommitSha: "deadbeef12345678");
 
         Assert.Equal("deadbeef12345678", result.MergeCommitSha);
@@ -762,8 +813,12 @@ public class BranchWorkflowTests : IDisposable
 
         // APPROVE_TASK should work on InReview tasks
         using var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var approved = await runtime.ApproveTaskAsync(taskId, "reviewer-1", null);
+        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var approved = await taskLifecycle.ApproveTaskAsync(taskId, "reviewer-1", null);
 
         Assert.Equal(TaskStatus.Approved, approved.Status);
     }
