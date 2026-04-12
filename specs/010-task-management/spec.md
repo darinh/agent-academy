@@ -56,9 +56,9 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 | `UsedFleet` | `bool` | Whether a fleet/subagent swarm was used |
 | `FleetModels` | `List<string>` | Models used in the fleet (if any) |
 | `BranchName` | `string?` | Local task branch: `task/{slug}-{suffix}` |
-| `PullRequestUrl` | `string?` | GitHub PR URL (planned — not used) |
-| `PullRequestNumber` | `int?` | GitHub PR number (planned — not used) |
-| `PullRequestStatus` | `PullRequestStatus?` | PR status (planned — not used) |
+| `PullRequestUrl` | `string?` | GitHub PR URL (set by `CREATE_PR` command) |
+| `PullRequestNumber` | `int?` | GitHub PR number (set by `CREATE_PR` command) |
+| `PullRequestStatus` | `PullRequestStatus?` | PR review status (synced by `PullRequestSyncService`) |
 | `ReviewerAgentId` | `string?` | Always `reviewer-1` (Socrates) unless overridden |
 | `ReviewRounds` | `int` | Number of review iterations (incremented on approve and request-changes) |
 | `TestsCreated` | `List<string>` | Test files/names created to prove the work |

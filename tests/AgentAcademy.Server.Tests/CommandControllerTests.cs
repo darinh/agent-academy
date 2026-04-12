@@ -558,4 +558,114 @@ public sealed class CommandControllerTests : IDisposable
             };
         }
     }
+
+    private sealed class DestructiveCapturingHandler(string commandName) : ICommandHandler
+    {
+        public string CommandName => commandName;
+        public bool IsDestructive => true;
+        public string DestructiveWarning => $"{commandName} is a destructive test command.";
+        public CommandEnvelope? LastEnvelope { get; private set; }
+
+        public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
+        {
+            LastEnvelope = command;
+            return Task.FromResult(command with
+            {
+                Result = new Dictionary<string, object?>
+                {
+                    ["executed"] = true
+                }
+            });
+        }
+    }
+
+    [Fact]
+    public async Task Execute_DestructiveCommand_WithoutConfirm_ReturnsConfirmationRequired()
+    {
+        var handler = new DestructiveCapturingHandler("CLOSE_ROOM");
+        var controller = CreateController(handler);
+
+        var result = await controller.Execute(new ExecuteCommandRequest(
+            Command: "CLOSE_ROOM",
+            Args: ParseArgs("""{"roomId":"room-123"}""")));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<ExecuteCommandResponse>(ok.Value);
+
+        Assert.Equal("confirmation_required", payload.Status);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, payload.ErrorCode);
+        Assert.NotNull(payload.Error);
+        Assert.Contains("destructive", payload.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(handler.LastEnvelope); // handler was NOT called
+    }
+
+    [Fact]
+    public async Task Execute_DestructiveCommand_WithConfirmTrue_ExecutesNormally()
+    {
+        var handler = new DestructiveCapturingHandler("CLOSE_ROOM");
+        var controller = CreateController(handler);
+
+        var result = await controller.Execute(new ExecuteCommandRequest(
+            Command: "CLOSE_ROOM",
+            Args: ParseArgs("""{"roomId":"room-123","confirm":"true"}""")));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<ExecuteCommandResponse>(ok.Value);
+
+        Assert.Equal("completed", payload.Status);
+        Assert.NotNull(handler.LastEnvelope); // handler WAS called
+    }
+
+    [Fact]
+    public async Task Execute_NonDestructiveCommand_ExecutesWithoutConfirm()
+    {
+        var handler = new CapturingHandler("LIST_ROOMS");
+        var controller = CreateController(handler);
+
+        var result = await controller.Execute(new ExecuteCommandRequest(
+            Command: "LIST_ROOMS",
+            Args: null));
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<ExecuteCommandResponse>(ok.Value);
+
+        Assert.Equal("completed", payload.Status);
+        Assert.NotNull(handler.LastEnvelope);
+    }
+
+    [Fact]
+    public async Task Execute_DestructiveCommand_ConfirmationIsAudited()
+    {
+        var handler = new DestructiveCapturingHandler("CANCEL_TASK");
+        var controller = CreateController(handler);
+
+        await controller.Execute(new ExecuteCommandRequest(
+            Command: "CANCEL_TASK",
+            Args: ParseArgs("""{"taskId":"task-1"}""")));
+
+        // Confirmation-required responses ARE audited for traceability
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var audits = await db.CommandAudits.Where(a => a.Command == "CANCEL_TASK").ToListAsync();
+        Assert.Single(audits);
+        Assert.Equal("Denied", audits[0].Status);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, audits[0].ErrorCode);
+        Assert.Equal("human-ui", audits[0].Source);
+    }
+
+    [Fact]
+    public async Task GetMetadata_IncludesDestructiveFlags()
+    {
+        var handler = new DestructiveCapturingHandler("CLOSE_ROOM");
+        var controller = CreateController(handler);
+
+        var result = controller.GetMetadata();
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var metadata = Assert.IsAssignableFrom<IEnumerable<HumanCommandMetadata>>(ok.Value);
+
+        var closeRoom = metadata.FirstOrDefault(m => m.Command == "CLOSE_ROOM");
+        Assert.NotNull(closeRoom);
+        Assert.True(closeRoom.IsDestructive);
+        Assert.NotNull(closeRoom.DestructiveWarning);
+    }
 }

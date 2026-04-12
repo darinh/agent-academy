@@ -3,6 +3,12 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
+## Unreleased (2026-04-12)
+
+### Features
+
+- **add confirmation for destructive commands** — Destructive commands (`CLOSE_ROOM`, `CLEANUP_ROOMS`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`) now require explicit `confirm=true` in args before execution. Without the flag, pipeline returns `CONFIRMATION_REQUIRED` error code with structured warning and retry hint. `ICommandHandler.IsDestructive` interface property lets handlers self-declare. Confirmation gate runs after authorization but before rate limiting. Applies to both agent pipeline and human/consultant API. `HumanCommandMetadata` includes `IsDestructive` and `DestructiveWarning` for frontend confirmation dialogs. 20 new tests (2087 total).
+
 ## Unreleased (2026-04-11)
 
 ### Features

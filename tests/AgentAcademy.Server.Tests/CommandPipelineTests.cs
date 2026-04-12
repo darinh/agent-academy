@@ -220,4 +220,160 @@ public class CommandPipelineTests : IDisposable
     {
         Assert.Equal(expected, CommandErrorCode.IsRetryable(code));
     }
+
+    [Fact]
+    public async Task ProcessResponse_DestructiveCommand_WithoutConfirm_ReturnsConfirmationRequired()
+    {
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "FORGET" },
+            Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await _pipeline.ProcessResponseAsync(
+            "test-1", "FORGET:\n  key: some-memory", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Denied, result.Results[0].Status);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, result.Results[0].ErrorCode);
+        Assert.NotNull(result.Results[0].Result);
+        Assert.Equal(true, result.Results[0].Result!["requiresConfirmation"]);
+        Assert.Equal("confirm=true", result.Results[0].Result!["retryWith"]?.ToString());
+    }
+
+    [Fact]
+    public async Task ProcessResponse_DestructiveCommand_WithConfirmTrue_Executes()
+    {
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "FORGET" },
+            Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+
+        // First remember something so FORGET has something to delete
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "test-1",
+            Key = "test-key",
+            Value = "test-value",
+            Category = "lesson",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await _pipeline.ProcessResponseAsync(
+            "test-1", "FORGET:\n  key: test-key\n  confirm: true", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Success, result.Results[0].Status);
+        Assert.Equal("deleted", result.Results[0].Result?["action"]?.ToString());
+    }
+
+    [Fact]
+    public async Task ProcessResponse_NonDestructiveCommand_ExecutesWithoutConfirm()
+    {
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "REMEMBER" },
+            Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await _pipeline.ProcessResponseAsync(
+            "test-1",
+            "REMEMBER:\n  Category: lesson\n  Key: no-confirm\n  Value: works without confirm",
+            "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Success, result.Results[0].Status);
+    }
+
+    [Fact]
+    public async Task ProcessResponse_DestructiveCommand_WithConfirmFalse_StillRequiresConfirmation()
+    {
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "FORGET" },
+            Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await _pipeline.ProcessResponseAsync(
+            "test-1", "FORGET:\n  key: test-key\n  confirm: false", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Denied, result.Results[0].Status);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, result.Results[0].ErrorCode);
+    }
+
+    [Fact]
+    public async Task ProcessResponse_DestructiveCommand_DoesNotConsumeRateLimit()
+    {
+        // Create pipeline with a tight rate limiter
+        var rateLimiter = new CommandRateLimiter(maxCommands: 1, windowSeconds: 60);
+        var pipeline = new CommandPipeline(
+            new ICommandHandler[] { new ForgetHandler() },
+            NullLogger<CommandPipeline>.Instance,
+            rateLimiter);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "FORGET" },
+            Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+
+        // First call: confirmation required (should NOT consume rate limit)
+        var result1 = await pipeline.ProcessResponseAsync(
+            "test-1", "FORGET:\n  key: k1", "room-1", agent, scope.ServiceProvider);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, result1.Results[0].ErrorCode);
+
+        // Second call: confirmation required again (rate limit should still be available)
+        var result2 = await pipeline.ProcessResponseAsync(
+            "test-1", "FORGET:\n  key: k2", "room-1", agent, scope.ServiceProvider);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, result2.Results[0].ErrorCode);
+    }
+
+    [Fact]
+    public async Task ProcessResponse_DestructiveConfirmation_IsAudited()
+    {
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "FORGET" },
+            Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        await _pipeline.ProcessResponseAsync(
+            "test-1", "FORGET:\n  key: some-memory", "room-1", agent, scope.ServiceProvider);
+
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var audits = await db.CommandAudits.Where(a => a.Command == "FORGET").ToListAsync();
+        Assert.Single(audits);
+        Assert.Equal("Denied", audits[0].Status);
+        Assert.Equal(CommandErrorCode.ConfirmationRequired, audits[0].ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("True", true)]
+    [InlineData("TRUE", true)]
+    [InlineData("false", false)]
+    [InlineData("False", false)]
+    [InlineData("no", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void HasConfirmFlag_ParsesCorrectly(string? value, bool expected)
+    {
+        var args = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (value != null)
+            args["confirm"] = value;
+
+        Assert.Equal(expected, CommandPipeline.HasConfirmFlag(args));
+    }
+
+    [Fact]
+    public void HasConfirmFlag_MissingKey_ReturnsFalse()
+    {
+        var args = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["key"] = "some-value"
+        };
+
+        Assert.False(CommandPipeline.HasConfirmFlag(args));
+    }
 }

@@ -11,6 +11,8 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class CloseRoomHandler : ICommandHandler
 {
     public string CommandName => "CLOSE_ROOM";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "CLOSE_ROOM will archive this room permanently. Agents in the room will be moved out.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

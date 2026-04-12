@@ -10,6 +10,8 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ForgetHandler : ICommandHandler
 {
     public string CommandName => "FORGET";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "FORGET permanently deletes a memory entry. This cannot be undone.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

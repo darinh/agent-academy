@@ -19,6 +19,8 @@ public sealed class CancelTaskHandler : ICommandHandler
     }
 
     public string CommandName => "CANCEL_TASK";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "CANCEL_TASK will permanently cancel this task. The task branch may be deleted.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

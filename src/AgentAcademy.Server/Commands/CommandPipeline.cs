@@ -94,6 +94,44 @@ public sealed class CommandPipeline
                 continue;
             }
 
+            // Handler lookup (before rate limit and confirmation — don't waste budget on unknown commands)
+            if (!_handlers.TryGetValue(parsed.Command, out var handler))
+            {
+                var unknown = envelope with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.NotFound,
+                    Error = $"Unknown command: {parsed.Command}"
+                };
+                await AuditAsync(unknown, roomId, scopedServices);
+                results.Add(unknown);
+                continue;
+            }
+
+            // Destructive confirmation gate (before rate limiting — don't consume budget)
+            if (handler.IsDestructive && !HasConfirmFlag(envelope.Args))
+            {
+                var confirmRequired = envelope with
+                {
+                    Status = CommandStatus.Denied,
+                    ErrorCode = CommandErrorCode.ConfirmationRequired,
+                    Error = handler.DestructiveWarning + " Re-issue with confirm=true to proceed.",
+                    Result = new Dictionary<string, object?>
+                    {
+                        ["requiresConfirmation"] = true,
+                        ["command"] = parsed.Command,
+                        ["warning"] = handler.DestructiveWarning,
+                        ["retryWith"] = "confirm=true"
+                    }
+                };
+                _logger.LogInformation(
+                    "Destructive command {Command} by {AgentId} requires confirmation",
+                    parsed.Command, agentId);
+                await AuditAsync(confirmRequired, roomId, scopedServices);
+                results.Add(confirmRequired);
+                continue;
+            }
+
             // Rate limit
             if (!_rateLimiter.TryAcquire(agentId, out var retryAfterSeconds))
             {
@@ -112,19 +150,6 @@ public sealed class CommandPipeline
             }
 
             // Execute
-            if (!_handlers.TryGetValue(parsed.Command, out var handler))
-            {
-                var unknown = envelope with
-                {
-                    Status = CommandStatus.Error,
-                    ErrorCode = CommandErrorCode.NotFound,
-                    Error = $"Unknown command: {parsed.Command}"
-                };
-                await AuditAsync(unknown, roomId, scopedServices);
-                results.Add(unknown);
-                continue;
-            }
-
             try
             {
                 var result = await handler.ExecuteAsync(envelope, context);
@@ -203,6 +228,23 @@ public sealed class CommandPipeline
         });
 
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Check whether the command args include an explicit confirmation flag.
+    /// Agents must include <c>confirm=true</c> to execute destructive commands.
+    /// </summary>
+    internal static bool HasConfirmFlag(IReadOnlyDictionary<string, object?> args)
+    {
+        if (!args.TryGetValue("confirm", out var value))
+            return false;
+
+        return value switch
+        {
+            bool b => b,
+            string s => s.Equals("true", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
     }
 }
 
