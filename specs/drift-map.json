@@ -112,6 +112,11 @@
       "note": "Sprint system services"
     },
     {
+      "pattern": "src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs",
+      "specs": ["013"],
+      "note": "Sprint metrics computation"
+    },
+    {
       "pattern": "src/AgentAcademy.Server/Services/*Memory*",
       "specs": ["008"],
       "note": "Agent memory system"

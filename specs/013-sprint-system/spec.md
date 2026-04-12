@@ -177,11 +177,13 @@ public record SprintReport(string Summary, List<string> Delivered,
 
 ## Service Layer
 
-> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs` (626 lines)
+> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs` (835 lines), `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs` (289 lines)
 
 ### SprintService
 
 Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintService>`.
+
+Owns sprint lifecycle: creation, stage advancement, artifact storage, sign-off gates, completion, cancellation, and timeout handling. Read-only metrics are handled by `SprintMetricsCalculator`.
 
 #### Constants
 
@@ -220,6 +222,19 @@ Every state change queues an `ActivityEvent` which is persisted to the `activity
 | Advance stage | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff |
 | Complete sprint | `SprintCompleted` | sprintId, status (Completed) |
 | Cancel sprint | `SprintCancelled` | sprintId, status (Cancelled) |
+
+### SprintMetricsCalculator
+
+Registered as scoped. Dependencies: `AgentAcademyDbContext`.
+
+Read-only analytics over sprint lifecycle events. Extracted from `SprintService` to separate mutation (lifecycle) from observation (metrics).
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `GetSprintMetricsAsync(sprintId)` | `SprintMetrics?` | Per-sprint rollup: duration, stage timing, task/artifact counts, stage transitions. |
+| `GetMetricsSummaryAsync(workspacePath)` | `SprintMetricsSummary` | Workspace-level averages across all sprints: counts, durations, time per stage. |
+
+Stage timing is derived from `SprintStageAdvanced` events in the activity log. For active sprints, the current stage uses `DateTime.UtcNow` as the end boundary. Events are loaded in a single query per sprint (or batched for the summary) to avoid N+1 patterns.
 
 ## Stage Preambles & Role Roster
 
@@ -495,6 +510,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-12 | Structural refactor — extracted `SprintMetricsCalculator` (289 lines) from `SprintService` (1123→835 lines). Read-only metrics computation now in dedicated class. `SprintController` injects both services. Zero behavioral changes. | develop |
 | 2026-04-11 | Initial spec — documenting implemented sprint system | — |
 | 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |
 | 2026-04-11 | Sprint metrics aggregation: per-sprint and workspace-level rollup endpoints with 15 tests | develop |

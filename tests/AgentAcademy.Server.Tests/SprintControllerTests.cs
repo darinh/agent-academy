@@ -17,6 +17,7 @@ public class SprintControllerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
+    private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
     private readonly SprintController _controller;
 
@@ -33,6 +34,7 @@ public class SprintControllerTests : IDisposable
         _db.Database.EnsureCreated();
 
         _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _metricsCalculator = new SprintMetricsCalculator(_db);
 
         var catalog = new AgentCatalogOptions("main", "Main Room", []);
         var activityBus = new ActivityBroadcaster();
@@ -56,7 +58,7 @@ public class SprintControllerTests : IDisposable
         _roomService = roomService;
 
         _controller = new SprintController(
-            _sprintService, _roomService,
+            _sprintService, _metricsCalculator, _roomService,
             NullLogger<SprintController>.Instance);
     }
 

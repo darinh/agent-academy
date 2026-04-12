@@ -17,6 +17,7 @@ public class SprintMetricsTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _service;
+    private readonly SprintMetricsCalculator _calculator;
 
     public SprintMetricsTests()
     {
@@ -31,6 +32,7 @@ public class SprintMetricsTests : IDisposable
         _db.Database.EnsureCreated();
 
         _service = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _calculator = new SprintMetricsCalculator(_db);
     }
 
     public void Dispose()
@@ -44,7 +46,7 @@ public class SprintMetricsTests : IDisposable
     [Fact]
     public async Task GetSprintMetrics_NotFound_ReturnsNull()
     {
-        var result = await _service.GetSprintMetricsAsync("nonexistent");
+        var result = await _calculator.GetSprintMetricsAsync("nonexistent");
         Assert.Null(result);
     }
 
@@ -53,7 +55,7 @@ public class SprintMetricsTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         Assert.Equal(sprint.Id, metrics.SprintId);
@@ -70,7 +72,7 @@ public class SprintMetricsTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         await _service.CompleteSprintAsync(sprint.Id, force: true);
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         Assert.Equal(SprintStatus.Completed, metrics.Status);
@@ -84,7 +86,7 @@ public class SprintMetricsTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         await _service.CancelSprintAsync(sprint.Id);
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         Assert.Equal(SprintStatus.Cancelled, metrics.Status);
@@ -101,7 +103,7 @@ public class SprintMetricsTests : IDisposable
         await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
             """{"Summary":"S","Phases":[]}""");
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         Assert.Equal(2, metrics.ArtifactCount);
@@ -130,7 +132,7 @@ public class SprintMetricsTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         Assert.Equal(2, metrics.TaskCount);
@@ -155,7 +157,7 @@ public class SprintMetricsTests : IDisposable
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.ApproveAdvanceAsync(sprint.Id);
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         // Two actual transitions: Intake→Planning, Planning→Discussion
@@ -174,7 +176,7 @@ public class SprintMetricsTests : IDisposable
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.ApproveAdvanceAsync(sprint.Id);
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         // Should have timing for at least Intake (completed stage) and Planning (current)
@@ -189,7 +191,7 @@ public class SprintMetricsTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
-        var metrics = await _service.GetSprintMetricsAsync(sprint.Id);
+        var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
         Assert.NotNull(metrics);
         // Active sprint should have time for the current stage (Intake)
@@ -203,7 +205,7 @@ public class SprintMetricsTests : IDisposable
     [Fact]
     public async Task GetMetricsSummary_NoSprints_ReturnsZeros()
     {
-        var summary = await _service.GetMetricsSummaryAsync(TestWorkspace);
+        var summary = await _calculator.GetMetricsSummaryAsync(TestWorkspace);
 
         Assert.Equal(0, summary.TotalSprints);
         Assert.Equal(0, summary.CompletedSprints);
@@ -227,7 +229,7 @@ public class SprintMetricsTests : IDisposable
 
         var s3 = await _service.CreateSprintAsync(TestWorkspace);
 
-        var summary = await _service.GetMetricsSummaryAsync(TestWorkspace);
+        var summary = await _calculator.GetMetricsSummaryAsync(TestWorkspace);
 
         Assert.Equal(3, summary.TotalSprints);
         Assert.Equal(1, summary.CompletedSprints);
@@ -244,7 +246,7 @@ public class SprintMetricsTests : IDisposable
         // Active sprint should not affect average duration
         var s2 = await _service.CreateSprintAsync(TestWorkspace);
 
-        var summary = await _service.GetMetricsSummaryAsync(TestWorkspace);
+        var summary = await _calculator.GetMetricsSummaryAsync(TestWorkspace);
 
         Assert.NotNull(summary.AverageDurationSeconds);
         Assert.True(summary.AverageDurationSeconds >= 0);
@@ -273,7 +275,7 @@ public class SprintMetricsTests : IDisposable
 
         var s2 = await _service.CreateSprintAsync(TestWorkspace);
 
-        var summary = await _service.GetMetricsSummaryAsync(TestWorkspace);
+        var summary = await _calculator.GetMetricsSummaryAsync(TestWorkspace);
 
         // 2 sprints, 1 artifact total → avg 0.5
         Assert.Equal(0.5, summary.AverageArtifactCount);
@@ -290,7 +292,7 @@ public class SprintMetricsTests : IDisposable
         // Sprint in a different workspace
         var s2 = await _service.CreateSprintAsync("/tmp/other-workspace");
 
-        var summary = await _service.GetMetricsSummaryAsync(TestWorkspace);
+        var summary = await _calculator.GetMetricsSummaryAsync(TestWorkspace);
 
         Assert.Equal(1, summary.TotalSprints);
         Assert.Equal(1, summary.CompletedSprints);
@@ -305,7 +307,7 @@ public class SprintMetricsTests : IDisposable
         var s2 = await _service.CreateSprintAsync(TestWorkspace);
         await _service.CompleteSprintAsync(s2.Id, force: true);
 
-        var summary = await _service.GetMetricsSummaryAsync(TestWorkspace);
+        var summary = await _calculator.GetMetricsSummaryAsync(TestWorkspace);
 
         // Both sprints spent time in at least Intake (initial stage)
         Assert.True(summary.AverageTimePerStageSeconds.Count >= 1,

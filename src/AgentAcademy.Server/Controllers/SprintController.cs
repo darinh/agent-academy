@@ -13,15 +13,18 @@ namespace AgentAcademy.Server.Controllers;
 public class SprintController : ControllerBase
 {
     private readonly SprintService _sprintService;
+    private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
         SprintService sprintService,
+        SprintMetricsCalculator metricsCalculator,
         RoomService roomService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
+        _metricsCalculator = metricsCalculator;
         _roomService = roomService;
         _logger = logger;
     }
@@ -304,7 +307,7 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var metrics = await _sprintService.GetSprintMetricsAsync(id);
+            var metrics = await _metricsCalculator.GetSprintMetricsAsync(id);
             if (metrics is null) return NotFound();
 
             return Ok(metrics);
@@ -329,7 +332,7 @@ public class SprintController : ControllerBase
                 return Ok(new SprintMetricsSummary(0, 0, 0, 0, null, 0, 0,
                     new Dictionary<string, double>()));
 
-            var summary = await _sprintService.GetMetricsSummaryAsync(workspace);
+            var summary = await _metricsCalculator.GetMetricsSummaryAsync(workspace);
             return Ok(summary);
         }
         catch (Exception ex)
