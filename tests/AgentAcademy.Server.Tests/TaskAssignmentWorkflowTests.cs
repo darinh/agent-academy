@@ -143,9 +143,8 @@ public class TaskAssignmentWorkflowTests : IDisposable
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            _gitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             breakoutLifecycle,
+            new TaskAssignmentHandler(_gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance),
             memoryLoader,
             NullLogger<AgentOrchestrator>.Instance);
 
@@ -244,9 +243,8 @@ public class TaskAssignmentWorkflowTests : IDisposable
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            mockGitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             breakoutLifecycle2,
+            new TaskAssignmentHandler(mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance),
             memoryLoader2,
             NullLogger<AgentOrchestrator>.Instance);
 
