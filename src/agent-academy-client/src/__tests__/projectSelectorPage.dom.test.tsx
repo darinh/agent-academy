@@ -287,7 +287,7 @@ describe("ProjectSelectorPage (interactive)", () => {
       });
 
       // Confirm onboarding in dialog
-      const dialog = screen.getByRole("dialog");
+      const dialog = await screen.findByRole("dialog");
       const confirmBtn = within(dialog).getByRole("button", { name: /^onboard$/i });
       await user.click(confirmBtn);
 
