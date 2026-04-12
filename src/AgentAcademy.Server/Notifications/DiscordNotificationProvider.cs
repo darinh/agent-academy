@@ -18,8 +18,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AgentOrchestrator _orchestrator;
     private readonly DiscordChannelManager _channelManager;
+    private readonly DiscordInputHandler _inputHandler;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
-    private readonly SemaphoreSlim _inputLock = new(1, 1);
 
     private DiscordSocketClient? _client;
     private string? _botToken;
@@ -33,12 +33,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         ILogger<DiscordNotificationProvider> logger,
         IServiceScopeFactory scopeFactory,
         AgentOrchestrator orchestrator,
-        DiscordChannelManager channelManager)
+        DiscordChannelManager channelManager,
+        DiscordInputHandler inputHandler)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
         _channelManager = channelManager ?? throw new ArgumentNullException(nameof(channelManager));
+        _inputHandler = inputHandler ?? throw new ArgumentNullException(nameof(inputHandler));
     }
 
     private string? _lastError;
@@ -387,12 +389,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
             if (request.Choices is { Count: > 0 })
             {
-                return await RequestChoiceInputAsync(channel, embed, request.Choices, cancellationToken);
+                return await _inputHandler.RequestChoiceInputAsync(
+                    _client, channel, embed, request.Choices, ProviderId, cancellationToken);
             }
 
             if (request.AllowFreeform)
             {
-                return await RequestFreeformInputAsync(channel, embed, cancellationToken);
+                return await _inputHandler.RequestFreeformInputAsync(
+                    _client, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
             }
 
             _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
@@ -428,7 +432,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         await DisposeClientAsync();
         _connectLock.Dispose();
-        _inputLock.Dispose();
     }
 
     /// <summary>
@@ -704,113 +707,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
 
         return builder.Build();
-    }
-
-    private async Task<UserResponse?> RequestChoiceInputAsync(
-        IMessageChannel channel,
-        EmbedBuilder embed,
-        List<string> choices,
-        CancellationToken cancellationToken)
-    {
-        embed.AddField("Choices", string.Join(" | ", choices.Select((c, i) => $"`{i + 1}` {c}")));
-
-        var components = new ComponentBuilder();
-        for (var i = 0; i < choices.Count; i++)
-        {
-            components.WithButton(choices[i], $"input-choice:{i}", ButtonStyle.Primary);
-        }
-
-        var sentMessage = await channel.SendMessageAsync(embed: embed.Build(), components: components.Build());
-
-        var tcs = new TaskCompletionSource<UserResponse?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        Task OnInteractionCreated(SocketInteraction interaction)
-        {
-            if (interaction is not SocketMessageComponent component)
-                return Task.CompletedTask;
-
-            if (component.Message.Id != sentMessage.Id)
-                return Task.CompletedTask;
-
-            if (!component.Data.CustomId.StartsWith("input-choice:"))
-                return Task.CompletedTask;
-
-            var indexStr = component.Data.CustomId["input-choice:".Length..];
-            if (!int.TryParse(indexStr, out var choiceIndex) || choiceIndex < 0 || choiceIndex >= choices.Count)
-                return Task.CompletedTask;
-
-            var selected = choices[choiceIndex];
-            tcs.TrySetResult(new UserResponse(selected, selected, ProviderId));
-
-            _ = component.DeferAsync();
-            return Task.CompletedTask;
-        }
-
-        _client!.InteractionCreated += OnInteractionCreated;
-        try
-        {
-            var result = await tcs.Task.WaitAsync(cancellationToken);
-            return result;
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogDebug("Input request timed out waiting for Discord choice selection");
-            return null;
-        }
-        finally
-        {
-            _client!.InteractionCreated -= OnInteractionCreated;
-        }
-    }
-
-    private async Task<UserResponse?> RequestFreeformInputAsync(
-        IMessageChannel channel,
-        EmbedBuilder embed,
-        CancellationToken cancellationToken)
-    {
-        await _inputLock.WaitAsync(cancellationToken);
-        try
-        {
-            embed.WithFooter("Reply in this channel to respond");
-            await channel.SendMessageAsync(embed: embed.Build());
-
-            var tcs = new TaskCompletionSource<UserResponse?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            Task OnMessageReceived(SocketMessage msg)
-            {
-                if (msg.Channel.Id != _channelId)
-                    return Task.CompletedTask;
-
-                if (msg.Author.IsBot)
-                    return Task.CompletedTask;
-
-                if (_ownerId.HasValue && msg.Author.Id != _ownerId.Value)
-                    return Task.CompletedTask;
-
-                tcs.TrySetResult(new UserResponse(msg.Content, ProviderId: ProviderId));
-                return Task.CompletedTask;
-            }
-
-            _client!.MessageReceived += OnMessageReceived;
-            try
-            {
-                var result = await tcs.Task.WaitAsync(cancellationToken);
-                return result;
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogDebug("Input request timed out waiting for Discord freeform reply");
-                return null;
-            }
-            finally
-            {
-                _client!.MessageReceived -= OnMessageReceived;
-            }
-        }
-        finally
-        {
-            _inputLock.Release();
-        }
     }
 
     private Task OnDiscordLog(LogMessage logMessage)
