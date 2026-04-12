@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **005-domain-services**: No spec changes needed — `Program.cs` decomposed into `Auth/AppAuthSetup.cs`, `Auth/AuthenticationExtensions.cs`, `Auth/CopilotTokenRefreshMiddleware.cs`, and `Notifications/NotificationRestoreService.cs`. Domain service registrations (the spec's focus) remain in `Program.cs`. Pure structural refactor (531→264 lines), zero behavioral changes.
 - **005-workspace-runtime → 005-domain-services**: `WorkspaceRuntime` facade fully deleted from codebase. Spec rewritten as "Domain Services Layer" — documents the 13 focused services that controllers and command handlers inject directly. All behavioral documentation preserved; source references updated to actual service files. `GetOverviewAsync` inlined in `SystemController`. Zero behavioral changes.
 - **000-system-overview**: Architecture diagram and component table updated — "WorkspaceRuntime" → "Domain Services Layer".
 - **003-agent-system**: Updated agent catalog reference from WorkspaceRuntime to domain services.
