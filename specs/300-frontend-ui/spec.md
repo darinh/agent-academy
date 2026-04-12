@@ -634,3 +634,50 @@ interface SearchResults { messages: MessageSearchResult[]; tasks: TaskSearchResu
 - ~~TaskStatePanel integration~~ **RESOLVED** — `TaskListPanel.tsx` now includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons (Approve/Request Changes/Reject/Merge) wired through `executeCommand` API.
 - ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **RESOLVED** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
 - ~~Session history / resume indicator~~ **RESOLVED** — `SessionHistoryPanel` in dashboard shows session stats, filterable session list with summaries. `ChatPanel` shows "Agents have context from a previous conversation session" banner when archived sessions exist for the current room.
+
+## Browser Desktop Notifications (`useDesktopNotifications.ts`)
+
+Alerts the human operator via the browser Notification API when the tab is hidden and important activity events occur.
+
+### Behavior
+
+- **Opt-in**: User enables via Settings → Advanced → Desktop Notifications toggle
+- **Permission**: Requested on first enable; handles denial and revocation gracefully
+- **Tab gating**: Notifications fire only when `document.hidden === true` (tab backgrounded)
+- **Deduplication**: Event IDs tracked in a capped `Set` to prevent replay on SSE reconnect
+- **Auto-close**: Notifications dismiss after 8 seconds
+- **Click-to-focus**: Clicking a notification calls `window.focus()` and closes it
+- **Persistence**: Preference stored in `localStorage` key `aa-desktop-notifications`
+
+### Trigger Events
+
+| Event Type | Notification Title |
+|------------|-------------------|
+| `DirectMessageSent` | "New message" |
+| `AgentErrorOccurred` | "Agent error" |
+| `SubagentFailed` | "Subagent failed" |
+| `SprintCompleted` | "Sprint completed" |
+| `SprintCancelled` | "Sprint cancelled" |
+| `TaskCreated` | "Task created" |
+
+### Integration
+
+```
+App.tsx (AppShell)
+  └── useDesktopNotifications() → { enabled, setEnabled, permission, supported, notify }
+      └── handleActivityToast callback → desktopNotif.notify(evt)
+  └── SettingsPanel (desktopNotifications prop)
+      └── Advanced tab → checkbox toggle with permission status display
+```
+
+### Types
+
+```typescript
+interface DesktopNotificationControls {
+  enabled: boolean;
+  setEnabled: (on: boolean) => void;
+  permission: NotificationPermission | "unsupported";
+  supported: boolean;
+  notify: (evt: ActivityEvent) => void;
+}
+```
