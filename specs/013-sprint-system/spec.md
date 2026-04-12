@@ -177,13 +177,13 @@ public record SprintReport(string Summary, List<string> Delivered,
 
 ## Service Layer
 
-> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs` (835 lines), `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs` (289 lines)
+> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs` (635 lines), `src/AgentAcademy.Server/Services/SprintArtifactService.cs` (265 lines), `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs` (289 lines)
 
 ### SprintService
 
 Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintService>`.
 
-Owns sprint lifecycle: creation, stage advancement, artifact storage, sign-off gates, completion, cancellation, and timeout handling. Read-only metrics are handled by `SprintMetricsCalculator`.
+Owns sprint lifecycle: creation, stage advancement, sign-off gates, completion, cancellation, and timeout handling. Artifact management is handled by `SprintArtifactService`. Read-only metrics are handled by `SprintMetricsCalculator`.
 
 #### Constants
 
@@ -201,8 +201,6 @@ Owns sprint lifecycle: creation, stage advancement, artifact storage, sign-off g
 | `GetActiveSprintAsync(workspacePath)` | `SprintEntity?` | Returns the active sprint for a workspace. |
 | `GetSprintByIdAsync(sprintId)` | `SprintEntity?` | Lookup by ID. |
 | `GetSprintsForWorkspaceAsync(workspace, limit, offset)` | `(List<SprintEntity>, int)` | Paginated list, ordered by number descending. |
-| `StoreArtifactAsync(sprintId, stage, type, content, agentId?)` | `SprintArtifactEntity` | Upserts artifact. Validates sprint is active and stage is valid. |
-| `GetSprintArtifactsAsync(sprintId, stage?)` | `List<SprintArtifactEntity>` | Returns artifacts, optionally filtered by stage. |
 | `AdvanceStageAsync(sprintId)` | `SprintEntity` | Advances to next stage. Checks artifact gate and sign-off requirement. |
 | `ApproveAdvanceAsync(sprintId)` | `SprintEntity` | Approves pending sign-off. Moves to the pending stage. |
 | `RejectAdvanceAsync(sprintId)` | `SprintEntity` | Rejects pending sign-off. Clears AwaitingSignOff without advancing. |
@@ -211,17 +209,29 @@ Owns sprint lifecycle: creation, stage advancement, artifact storage, sign-off g
 | `GetStageIndex(stage)` | `int` | Returns index of stage in the sequence (-1 if invalid). Static. |
 | `GetNextStage(stage)` | `string?` | Returns the stage after the given one, or null if last. Static. |
 
+### SprintArtifactService
+
+Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintArtifactService>`.
+
+Manages sprint artifact storage, retrieval, and validation. Extracted from `SprintService` to separate artifact concerns from sprint lifecycle.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `StoreArtifactAsync(sprintId, stage, type, content, agentId?)` | `SprintArtifactEntity` | Upserts artifact. Validates sprint is active, stage is valid, and content matches schema. |
+| `GetSprintArtifactsAsync(sprintId, stage?)` | `List<SprintArtifactEntity>` | Returns artifacts, optionally filtered by stage. |
+| `ValidateArtifactContent(type, content)` | `void` | Internal static. Validates JSON content against artifact type schema. |
+
 #### Event Broadcasting
 
-Every state change queues an `ActivityEvent` which is persisted to the `activity_events` table and broadcast via `ActivityBroadcaster` after `SaveChangesAsync`. Events use these types:
+Every state change is persisted to the `activity_events` table and broadcast via `ActivityBroadcaster` after `SaveChangesAsync`. `SprintService` emits lifecycle events; `SprintArtifactService` emits artifact events. Event types:
 
-| Operation | ActivityEventType | Metadata Keys |
-|-----------|-------------------|---------------|
-| Create sprint | `SprintStarted` | sprintId, sprintNumber, status, currentStage |
-| Store artifact | `SprintArtifactStored` | sprintId, artifactId (if update), stage, artifactType, createdByAgentId, isUpdate |
-| Advance stage | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff |
-| Complete sprint | `SprintCompleted` | sprintId, status (Completed) |
-| Cancel sprint | `SprintCancelled` | sprintId, status (Cancelled) |
+| Operation | Service | ActivityEventType | Metadata Keys |
+|-----------|---------|-------------------|---------------|
+| Create sprint | SprintService | `SprintStarted` | sprintId, sprintNumber, status, currentStage |
+| Store artifact | SprintArtifactService | `SprintArtifactStored` | sprintId, artifactId (if update), stage, artifactType, createdByAgentId, isUpdate |
+| Advance stage | SprintService | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff |
+| Complete sprint | SprintService | `SprintCompleted` | sprintId, status (Completed) |
+| Cancel sprint | SprintService | `SprintCancelled` | sprintId, status (Cancelled) |
 
 ### SprintMetricsCalculator
 
@@ -510,6 +520,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-12 | Structural refactor — extracted `SprintArtifactService` (265 lines) from `SprintService` (835→635 lines). Artifact storage, retrieval, and validation now in dedicated class. `SprintController` and `StoreArtifactHandler` inject the new service. Zero behavioral changes. | develop |
 | 2026-04-12 | Structural refactor — extracted `SprintMetricsCalculator` (289 lines) from `SprintService` (1123→835 lines). Read-only metrics computation now in dedicated class. `SprintController` injects both services. Zero behavioral changes. | develop |
 | 2026-04-11 | Initial spec — documenting implemented sprint system | — |
 | 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |

@@ -7,6 +7,7 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Refactoring
 
+- extract SprintArtifactService from SprintService (835→635 lines)
 - extract RoomLifecycleService from RoomService (887→679 lines)
 
 ### Fixes
