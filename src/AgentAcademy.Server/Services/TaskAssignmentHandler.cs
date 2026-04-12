@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -16,17 +17,20 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class TaskAssignmentHandler
 {
+    private readonly AgentCatalogOptions _catalog;
     private readonly GitService _gitService;
     private readonly WorktreeService _worktreeService;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<TaskAssignmentHandler> _logger;
 
     public TaskAssignmentHandler(
+        AgentCatalogOptions catalog,
         GitService gitService,
         WorktreeService worktreeService,
         BreakoutLifecycleService breakoutLifecycle,
         ILogger<TaskAssignmentHandler> logger)
     {
+        _catalog = catalog;
         _gitService = gitService;
         _worktreeService = worktreeService;
         _breakoutLifecycle = breakoutLifecycle;
@@ -39,13 +43,14 @@ public sealed class TaskAssignmentHandler
     /// (other types are converted into a proposal posted to the room).
     /// </summary>
     internal async Task ProcessAssignmentAsync(
-        WorkspaceRuntime runtime, AgentDefinition requestedBy, string roomId,
+        IServiceScope scope, AgentDefinition requestedBy, string roomId,
         ParsedTaskAssignment assignment)
     {
-        if (!await TryGateAssignmentAsync(runtime, requestedBy, roomId, assignment))
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        if (!await TryGateAssignmentAsync(messageService, requestedBy, roomId, assignment))
             return;
 
-        await HandleAssignmentAsync(runtime, roomId, assignment);
+        await HandleAssignmentAsync(scope, roomId, assignment);
     }
 
     // ── GATING ──────────────────────────────────────────────────
@@ -56,7 +61,7 @@ public sealed class TaskAssignmentHandler
     /// proposal message posted to the room. Returns true if the assignment should proceed.
     /// </summary>
     private async Task<bool> TryGateAssignmentAsync(
-        WorkspaceRuntime runtime, AgentDefinition agent, string roomId,
+        MessageService messageService, AgentDefinition agent, string roomId,
         ParsedTaskAssignment assignment)
     {
         if (string.Equals(agent.Role, "Planner", StringComparison.OrdinalIgnoreCase))
@@ -69,7 +74,7 @@ public sealed class TaskAssignmentHandler
             "Agent {AgentName} ({Role}) proposed task '{Title}' — only planners can create non-bug tasks",
             agent.Name, agent.Role, assignment.Title);
 
-        await runtime.PostSystemStatusAsync(roomId,
+        await messageService.PostSystemStatusAsync(roomId,
             $"💡 **Task proposal from {agent.Name}**: \"{assignment.Title}\"\n" +
             $"{assignment.Description}\n\n" +
             $"_Only planners can create tasks. Aristotle, please review and assign if appropriate._");
@@ -80,10 +85,17 @@ public sealed class TaskAssignmentHandler
     // ── ASSIGNMENT FLOW ─────────────────────────────────────────
 
     private async Task HandleAssignmentAsync(
-        WorkspaceRuntime runtime, string roomId, ParsedTaskAssignment assignment)
+        IServiceScope scope, string roomId, ParsedTaskAssignment assignment)
     {
-        var allAgents = runtime.GetConfiguredAgents();
-        var agent = allAgents.FirstOrDefault(a =>
+        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+        var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var planService = scope.ServiceProvider.GetRequiredService<PlanService>();
+
+        var agent = _catalog.Agents.FirstOrDefault(a =>
             a.Name.Equals(assignment.Agent, StringComparison.OrdinalIgnoreCase) ||
             a.Id.Equals(assignment.Agent, StringComparison.OrdinalIgnoreCase));
 
@@ -94,13 +106,13 @@ public sealed class TaskAssignmentHandler
         }
 
         // Prevent concurrent breakout rooms for the same agent
-        var location = await runtime.GetAgentLocationAsync(agent.Id);
+        var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
         if (location?.State == AgentState.Working)
         {
             _logger.LogWarning(
                 "Agent {AgentName} is already in breakout room {BreakoutId} — skipping assignment '{Title}'",
                 agent.Name, location.BreakoutRoomId, assignment.Title);
-            await runtime.PostSystemStatusAsync(roomId,
+            await messageService.PostSystemStatusAsync(roomId,
                 $"⚠️ {agent.Name} is already working on a task. Assignment \"{assignment.Title}\" will wait until they finish.");
             return;
         }
@@ -111,7 +123,7 @@ public sealed class TaskAssignmentHandler
                 : "");
 
         var brName = $"BR: {assignment.Title}";
-        var br = await runtime.CreateBreakoutRoomAsync(roomId, agent.Id, brName);
+        var br = await breakoutRoomService.CreateBreakoutRoomAsync(roomId, agent.Id, brName);
 
         string? taskBranch = null;
         string? taskId = null;
@@ -127,7 +139,7 @@ public sealed class TaskAssignmentHandler
             await _gitService.ReturnToDevelopAsync(taskBranch);
 
             // Create a worktree for isolated work when a workspace is available
-            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
             if (workspacePath is not null && taskBranch is not null)
             {
                 try
@@ -146,28 +158,30 @@ public sealed class TaskAssignmentHandler
                 }
             }
 
-            taskItem = await runtime.CreateTaskItemAsync(
+            taskItem = await taskItemService.CreateTaskItemAsync(
                 assignment.Title, descriptionWithCriteria,
                 agent.Id, roomId, br.Id);
 
-            taskId = await runtime.EnsureTaskForBreakoutAsync(
+            taskId = await breakoutRoomService.EnsureTaskForBreakoutAsync(
                 br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
                 PromptBuilder.BuildAssignmentPlanContent(assignment), taskBranch);
 
-            var task = await runtime.GetTaskAsync(taskId);
+            var task = await taskQueryService.GetTaskAsync(taskId);
             var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
                 ? task.CurrentPlan
                 : PromptBuilder.BuildAssignmentPlanContent(assignment);
-            await runtime.SetPlanAsync(br.Id, planContent);
+            await planService.SetPlanAsync(br.Id, planContent);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to create task branch for {Title} — cleaning up", assignment.Title);
-            await CleanupFailedAssignmentAsync(br.Id, taskId, taskItem, taskBranch, worktreePath, roomId, assignment.Title, runtime);
+            await CleanupFailedAssignmentAsync(
+                br.Id, taskId, taskItem, taskBranch, worktreePath, roomId, assignment.Title,
+                breakoutRoomService, messageService, taskQueryService, taskItemService);
             return;
         }
 
-        await runtime.PostSystemStatusAsync(roomId,
+        await messageService.PostSystemStatusAsync(roomId,
             $"📋 {agent.Name} has been assigned \"{assignment.Title}\" and is heading to breakout room \"{brName}\" on branch `{taskBranch}`.");
 
         _ = Task.Run(() => _breakoutLifecycle.RunBreakoutLifecycleAsync(
@@ -183,11 +197,12 @@ public sealed class TaskAssignmentHandler
     private async Task CleanupFailedAssignmentAsync(
         string breakoutRoomId, string? taskId, TaskItem? taskItem,
         string? taskBranch, string? worktreePath, string roomId, string title,
-        WorkspaceRuntime runtime)
+        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        TaskQueryService taskQueryService, TaskItemService taskItemService)
     {
         try
         {
-            await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Cancelled);
+            await breakoutRoomService.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Cancelled);
         }
         catch (Exception closeEx)
         {
@@ -198,7 +213,7 @@ public sealed class TaskAssignmentHandler
         {
             try
             {
-                await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
+                await taskQueryService.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
             }
             catch (Exception cancelEx)
             {
@@ -210,7 +225,7 @@ public sealed class TaskAssignmentHandler
         {
             try
             {
-                await runtime.UpdateTaskItemStatusAsync(taskItem.Id, Shared.Models.TaskItemStatus.Rejected);
+                await taskItemService.UpdateTaskItemStatusAsync(taskItem.Id, Shared.Models.TaskItemStatus.Rejected);
             }
             catch (Exception itemEx)
             {
@@ -250,7 +265,7 @@ public sealed class TaskAssignmentHandler
 
         try
         {
-            await runtime.PostSystemStatusAsync(roomId,
+            await messageService.PostSystemStatusAsync(roomId,
                 $"⚠️ Failed to set up branch for \"{title}\". Breakout cancelled.");
         }
         catch { /* best-effort notification */ }

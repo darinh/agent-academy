@@ -377,6 +377,7 @@ public class DiscordNotificationProviderTests
     private static AgentOrchestrator CreateMockOrchestrator()
     {
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        var catalog = new AgentCatalogOptions("main", "Main", []);
         var executor = Substitute.For<IAgentExecutor>();
         var activityBus = new ActivityBroadcaster();
         var specManager = new SpecManager();
@@ -387,12 +388,12 @@ public class DiscordNotificationProviderTests
         var worktreeService = new WorktreeService(Substitute.For<ILogger<WorktreeService>>(), repositoryRoot: "/tmp/test-repo");
         var memoryLoader = new AgentMemoryLoader(scopeFactory, Substitute.For<ILogger<AgentMemoryLoader>>());
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, executor, specManager, pipeline, gitService, worktreeService,
+            scopeFactory, catalog, executor, specManager, pipeline, gitService, worktreeService,
             memoryLoader,
             Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
-        var taskAssignmentHandler = new TaskAssignmentHandler(gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());
-        return new AgentOrchestrator(scopeFactory, executor, activityBus, specManager, pipeline, breakoutLifecycle, taskAssignmentHandler, memoryLoader, logger);
+        var taskAssignmentHandler = new TaskAssignmentHandler(catalog, gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());
+        return new AgentOrchestrator(scopeFactory, catalog, executor, activityBus, specManager, pipeline, breakoutLifecycle, taskAssignmentHandler, memoryLoader, logger);
     }
 
     #endregion

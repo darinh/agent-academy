@@ -18,6 +18,9 @@ public class ServerInstanceTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
+    private readonly AgentCatalogOptions _catalog;
+    private readonly CrashRecoveryService _crashRecovery;
+    private readonly RoomService _roomService;
     private readonly WorkspaceRuntime _runtime;
 
     public ServerInstanceTests()
@@ -58,6 +61,7 @@ public class ServerInstanceTests : IDisposable
                     EnabledTools: ["chat", "code"],
                     AutoJoinDefaultRoom: true)
             ]);
+        _catalog = catalog;
 
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);
@@ -74,6 +78,8 @@ public class ServerInstanceTests : IDisposable
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
+        _crashRecovery = crashRecovery;
+        _roomService = roomService;
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
 
@@ -257,16 +263,18 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
-            new TaskAssignmentHandler(new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
             new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
 
@@ -326,16 +334,18 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
-            new TaskAssignmentHandler(new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
             new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
 
@@ -564,17 +574,19 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         // Use a stopped orchestrator so ProcessQueueAsync doesn't drain the queue
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
-            new TaskAssignmentHandler(new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
             new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
         orchestrator.Stop();
@@ -617,16 +629,18 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(WorkspaceRuntime)).Returns(_runtime);
+        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             Substitute.For<IAgentExecutor>(),
             new ActivityBroadcaster(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
-            new TaskAssignmentHandler(new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
+            new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance),
+            new TaskAssignmentHandler(_catalog, new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new BreakoutLifecycleService(scopeFactory, _catalog, Substitute.For<IAgentExecutor>(), new SpecManager(), new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance), new GitService(NullLogger<GitService>.Instance), new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance), NullLogger<BreakoutLifecycleService>.Instance), NullLogger<TaskAssignmentHandler>.Instance),
             new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance),
             NullLogger<AgentOrchestrator>.Instance);
         orchestrator.Stop();

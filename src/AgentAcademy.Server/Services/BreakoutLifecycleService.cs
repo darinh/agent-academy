@@ -28,6 +28,7 @@ public sealed class BreakoutLifecycleService
     internal const int MaxBreakoutRounds = 200;
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AgentCatalogOptions _catalog;
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
@@ -40,6 +41,7 @@ public sealed class BreakoutLifecycleService
 
     public BreakoutLifecycleService(
         IServiceScopeFactory scopeFactory,
+        AgentCatalogOptions catalog,
         IAgentExecutor executor,
         SpecManager specManager,
         CommandPipeline commandPipeline,
@@ -49,6 +51,7 @@ public sealed class BreakoutLifecycleService
         ILogger<BreakoutLifecycleService> logger)
     {
         _scopeFactory = scopeFactory;
+        _catalog = catalog;
         _executor = executor;
         _specManager = specManager;
         _commandPipeline = commandPipeline;
@@ -111,22 +114,27 @@ public sealed class BreakoutLifecycleService
         string? taskBranch, string? worktreePath)
     {
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+        var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
-        var catalogAgent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == agentId);
+        var catalogAgent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
         if (catalogAgent is null) return;
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
-        var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
+        var br = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
         if (br is null) return;
 
         _logger.LogInformation("Starting breakout loop for {AgentName} in {BreakoutName}", agent.Name, br.Name);
 
-        var tasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
-        await runtime.PostBreakoutMessageAsync(
+        var tasks = await taskItemService.GetBreakoutTaskItemsAsync(breakoutRoomId);
+        await messageService.PostBreakoutMessageAsync(
             breakoutRoomId, "system", "LocalAgentHost", "System",
             PromptBuilder.BuildTaskBrief(agent, tasks, taskBranch));
 
@@ -146,7 +154,7 @@ public sealed class BreakoutLifecycleService
                     "Session rotation check failed for breakout {BreakoutId}", breakoutRoomId);
             }
 
-            var currentBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
+            var currentBr = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
             if (currentBr is null || currentBr.Status != RoomStatus.Active) break;
 
             if (round > MaxBreakoutRounds)
@@ -155,7 +163,8 @@ public sealed class BreakoutLifecycleService
                     "Agent {AgentName} hit max breakout rounds ({MaxRounds}) in {BreakoutId}",
                     agent.Name, MaxBreakoutRounds, breakoutRoomId);
                 await HandleStuckDetectedAsync(
-                    runtime, breakoutRoomId, br.ParentRoomId, agent,
+                    breakoutRoomService, messageService, taskQueryService,
+                    breakoutRoomId, br.ParentRoomId, agent,
                     $"reached maximum round limit ({MaxBreakoutRounds})");
                 return;
             }
@@ -179,18 +188,18 @@ public sealed class BreakoutLifecycleService
                 try
                 {
                     var breakoutMemories = await _memoryLoader.LoadAsync(agent.Id);
-                    var breakoutDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                    var breakoutDms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
                     if (breakoutDms.Count > 0)
-                        await runtime.AcknowledgeDirectMessagesAsync(agent.Id, breakoutDms.Select(m => m.Id).ToList());
+                        await messageService.AcknowledgeDirectMessagesAsync(agent.Id, breakoutDms.Select(m => m.Id).ToList());
                     var breakoutSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
 
                     string? breakoutSpecContext = null;
-                    var breakoutTaskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+                    var breakoutTaskId = await breakoutRoomService.GetBreakoutTaskIdAsync(breakoutRoomId);
                     if (breakoutTaskId is not null)
                     {
                         try
                         {
-                            var specLinks = await runtime.GetSpecLinksForTaskAsync(breakoutTaskId);
+                            var specLinks = await taskQueryService.GetSpecLinksForTaskAsync(breakoutTaskId);
                             var linkedSectionIds = specLinks.Select(l => l.SpecSectionId);
                             breakoutSpecContext = await _specManager.LoadSpecContextForTaskAsync(linkedSectionIds);
                         }
@@ -232,7 +241,7 @@ public sealed class BreakoutLifecycleService
                 _logger.LogWarning(
                     "Agent {AgentName} returned stub offline notice in breakout — aborting loop",
                     agent.Name);
-                await runtime.PostBreakoutMessageAsync(
+                await messageService.PostBreakoutMessageAsync(
                     breakoutRoomId, "system", "LocalAgentHost", "System",
                     $"⚠️ {agent.Name} is offline. Breakout suspended until the Copilot SDK is reconnected.");
                 return;
@@ -240,20 +249,23 @@ public sealed class BreakoutLifecycleService
 
             if (!string.IsNullOrWhiteSpace(response))
             {
-                await runtime.PostBreakoutMessageAsync(
+                await messageService.PostBreakoutMessageAsync(
                     breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
             }
 
             var report = AgentResponseParser.ParseWorkReport(response);
             if (report is not null && Regex.IsMatch(report.Status, @"complete", RegexOptions.IgnoreCase))
             {
-                var latestTasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
+                var latestTasks = await taskItemService.GetBreakoutTaskItemsAsync(breakoutRoomId);
                 foreach (var task in latestTasks)
                 {
-                    try { await runtime.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
+                    try { await taskItemService.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
                     catch { /* ok */ }
                 }
-                await HandleBreakoutCompleteAsync(runtime, activity, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
+                await HandleBreakoutCompleteAsync(
+                    breakoutRoomService, messageService, taskItemService, taskQueryService,
+                    agentLocationService, roomService, activity, configService,
+                    breakoutRoomId, br.ParentRoomId, worktreePath);
                 return;
             }
 
@@ -271,7 +283,8 @@ public sealed class BreakoutLifecycleService
                     "Agent {AgentName} stuck in {BreakoutId}: {IdleRounds} consecutive rounds with no commands",
                     agent.Name, breakoutRoomId, consecutiveIdleRounds);
                 await HandleStuckDetectedAsync(
-                    runtime, breakoutRoomId, br.ParentRoomId, agent,
+                    breakoutRoomService, messageService, taskQueryService,
+                    breakoutRoomId, br.ParentRoomId, agent,
                     $"no commands for {MaxConsecutiveIdleRounds} consecutive rounds");
                 return;
             }
@@ -279,36 +292,41 @@ public sealed class BreakoutLifecycleService
 
         _logger.LogInformation("Breakout loop ended for {AgentName}", agent.Name);
 
-        var finalBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
+        var finalBr = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
         if (finalBr is null || finalBr.Status != RoomStatus.Active)
         {
             _logger.LogInformation("Breakout {BreakoutId} was recalled or archived — skipping completion flow", breakoutRoomId);
             return;
         }
 
-        await HandleBreakoutCompleteAsync(runtime, activity, configService, breakoutRoomId, br.ParentRoomId, worktreePath);
+        await HandleBreakoutCompleteAsync(
+            breakoutRoomService, messageService, taskItemService, taskQueryService,
+            agentLocationService, roomService, activity, configService,
+            breakoutRoomId, br.ParentRoomId, worktreePath);
     }
 
     // ── STUCK DETECTION ────────────────────────────────────────
 
     private async Task HandleStuckDetectedAsync(
-        WorkspaceRuntime runtime,
+        BreakoutRoomService breakoutRoomService,
+        MessageService messageService,
+        TaskQueryService taskQueryService,
         string breakoutRoomId, string parentRoomId,
         AgentDefinition agent, string reason)
     {
-        var breakoutName = (await runtime.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
+        var breakoutName = (await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
 
-        await runtime.PostBreakoutMessageAsync(
+        await messageService.PostBreakoutMessageAsync(
             breakoutRoomId, "system", "LocalAgentHost", "System",
             $"🔴 Stuck detection triggered for {agent.Name}: {reason}. Closing breakout.");
 
         var taskBlocked = false;
-        var taskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+        var taskId = await breakoutRoomService.GetBreakoutTaskIdAsync(breakoutRoomId);
         if (taskId is not null)
         {
             try
             {
-                await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
+                await taskQueryService.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
                 taskBlocked = true;
             }
             catch (Exception ex)
@@ -318,11 +336,11 @@ public sealed class BreakoutLifecycleService
             }
         }
 
-        await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.StuckDetected);
+        await breakoutRoomService.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.StuckDetected);
 
         var taskNote = taskBlocked ? "Task marked as blocked." : taskId is not null
             ? "Failed to update task status." : "No linked task.";
-        await runtime.PostSystemStatusAsync(parentRoomId,
+        await messageService.PostSystemStatusAsync(parentRoomId,
             $"🔴 {agent.Name} was stuck in breakout \"{breakoutName}\": {reason}. " +
             $"Breakout closed. {taskNote} Agent returned to idle.");
     }
@@ -336,18 +354,20 @@ public sealed class BreakoutLifecycleService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
 
-            var breakoutName = (await runtime.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
+            var breakoutName = (await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
 
             // Mark the linked task as Blocked (worktree cleanup is handled by the
             // caller's finally block — this method focuses on room/task state only)
-            var taskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+            var taskId = await breakoutRoomService.GetBreakoutTaskIdAsync(breakoutRoomId);
             if (taskId is not null)
             {
                 try
                 {
-                    await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
+                    await taskQueryService.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
                 }
                 catch (Exception taskEx)
                 {
@@ -356,9 +376,9 @@ public sealed class BreakoutLifecycleService
                 }
             }
 
-            await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Failed);
+            await breakoutRoomService.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Failed);
 
-            await runtime.PostSystemStatusAsync(parentRoomId,
+            await messageService.PostSystemStatusAsync(parentRoomId,
                 $"🔴 {agent.Name} encountered an error in breakout \"{breakoutName}\": {ex.Message}. " +
                 $"Breakout closed. Agent returned to idle.");
         }
@@ -373,20 +393,23 @@ public sealed class BreakoutLifecycleService
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
 
     private async Task HandleBreakoutCompleteAsync(
-        WorkspaceRuntime runtime, ActivityPublisher activity, AgentConfigService configService,
+        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        TaskItemService taskItemService, TaskQueryService taskQueryService,
+        AgentLocationService agentLocationService, RoomService roomService,
+        ActivityPublisher activity, AgentConfigService configService,
         string breakoutRoomId, string parentRoomId, string? worktreePath = null)
     {
-        var br = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
+        var br = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
         if (br is null) return;
 
-        var catalogAgent = runtime.GetConfiguredAgents().FirstOrDefault(a => a.Id == br.AssignedAgentId);
+        var catalogAgent = _catalog.Agents.FirstOrDefault(a => a.Id == br.AssignedAgentId);
         if (catalogAgent is null) return;
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
         _logger.LogInformation("Breakout complete: {AgentName} returning from {BreakoutName}", agent.Name, br.Name);
 
-        await runtime.MoveAgentAsync(agent.Id, parentRoomId, AgentState.Presenting);
-        await runtime.PostSystemStatusAsync(parentRoomId,
+        await agentLocationService.MoveAgentAsync(agent.Id, parentRoomId, AgentState.Presenting);
+        await messageService.PostSystemStatusAsync(parentRoomId,
             $"🎯 {agent.Name} has completed work in \"{br.Name}\" and is presenting results.");
 
         var agentMessages = br.RecentMessages.Where(m => m.SenderId == agent.Id).ToList();
@@ -395,7 +418,7 @@ public sealed class BreakoutLifecycleService
         {
             try
             {
-                await runtime.PostMessageAsync(new PostMessageRequest(
+                await messageService.PostMessageAsync(new PostMessageRequest(
                     RoomId: parentRoomId,
                     SenderId: agent.Id,
                     Content: lastMessage.Content,
@@ -407,38 +430,45 @@ public sealed class BreakoutLifecycleService
             }
         }
 
-        var reviewTask = await runtime.TransitionBreakoutTaskToInReviewAsync(breakoutRoomId);
+        var reviewTask = await breakoutRoomService.TransitionBreakoutTaskToInReviewAsync(breakoutRoomId);
 
         if (reviewTask?.BranchName is not null)
         {
-            await runtime.PostSystemStatusAsync(parentRoomId,
+            await messageService.PostSystemStatusAsync(parentRoomId,
                 $"📋 Task \"{reviewTask.Title}\" is now **InReview** on branch `{reviewTask.BranchName}`. " +
                 $"Use APPROVE_TASK to approve, then MERGE_TASK to merge into develop.");
-            await FinalizeBreakoutAsync(runtime, breakoutRoomId);
+            await FinalizeBreakoutAsync(breakoutRoomService, breakoutRoomId);
         }
         else
         {
-            var verdict = await RunReviewCycleAsync(runtime, activity, configService, parentRoomId, agent, lastMessage?.Content ?? "");
+            var verdict = await RunReviewCycleAsync(
+                breakoutRoomService, messageService, roomService,
+                activity, configService, parentRoomId, agent, lastMessage?.Content ?? "");
 
             var isApproved = verdict is null ||
                 Regex.IsMatch(verdict.Verdict, @"^\s*APPROVED", RegexOptions.IgnoreCase);
 
             if (!isApproved)
             {
-                await HandleReviewRejectionAsync(runtime, breakoutRoomId, parentRoomId, agent, br, worktreePath);
+                await HandleReviewRejectionAsync(
+                    breakoutRoomService, messageService, taskItemService, taskQueryService,
+                    agentLocationService, roomService,
+                    breakoutRoomId, parentRoomId, agent, br, worktreePath);
             }
             else
             {
-                await FinalizeBreakoutAsync(runtime, breakoutRoomId);
+                await FinalizeBreakoutAsync(breakoutRoomService, breakoutRoomId);
             }
         }
     }
 
     private async Task<ParsedReviewVerdict?> RunReviewCycleAsync(
-        WorkspaceRuntime runtime, ActivityPublisher activity, AgentConfigService configService,
+        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        RoomService roomService,
+        ActivityPublisher activity, AgentConfigService configService,
         string parentRoomId, AgentDefinition presentingAgent, string workReport)
     {
-        var catalogReviewer = FindReviewer(runtime);
+        var catalogReviewer = FindReviewer();
         if (catalogReviewer is null) return null;
         var reviewer = await configService.GetEffectiveAgentAsync(catalogReviewer);
 
@@ -446,7 +476,7 @@ public sealed class BreakoutLifecycleService
         var reviewResponse = "";
         try
         {
-            var room = await runtime.GetRoomAsync(parentRoomId);
+            var room = await roomService.GetRoomAsync(parentRoomId);
             if (room is null) return null;
             var prompt = PromptBuilder.BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
                 await _specManager.LoadSpecContextAsync());
@@ -473,7 +503,7 @@ public sealed class BreakoutLifecycleService
 
         try
         {
-            await runtime.PostMessageAsync(new PostMessageRequest(
+            await messageService.PostMessageAsync(new PostMessageRequest(
                 RoomId: parentRoomId,
                 SenderId: reviewer.Id,
                 Content: reviewResponse,
@@ -488,24 +518,27 @@ public sealed class BreakoutLifecycleService
     }
 
     private async Task HandleReviewRejectionAsync(
-        WorkspaceRuntime runtime, string breakoutRoomId, string parentRoomId,
+        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        TaskItemService taskItemService, TaskQueryService taskQueryService,
+        AgentLocationService agentLocationService, RoomService roomService,
+        string breakoutRoomId, string parentRoomId,
         AgentDefinition agent, BreakoutRoom br, string? worktreePath = null)
     {
         using var fixScope = _scopeFactory.CreateScope();
         var sessionService = fixScope.ServiceProvider.GetRequiredService<ConversationSessionService>();
 
-        await runtime.PostSystemStatusAsync(parentRoomId,
+        await messageService.PostSystemStatusAsync(parentRoomId,
             $"🔄 {agent.Name} is returning to \"{br.Name}\" to address review feedback.");
-        await runtime.MoveAgentAsync(agent.Id, parentRoomId, AgentState.Working, breakoutRoomId);
+        await agentLocationService.MoveAgentAsync(agent.Id, parentRoomId, AgentState.Working, breakoutRoomId);
 
-        var room = await runtime.GetRoomAsync(parentRoomId);
+        var room = await roomService.GetRoomAsync(parentRoomId);
         var reviewMessage = room?.RecentMessages
             .Where(m => m.Kind == MessageKind.Review)
             .LastOrDefault();
 
         if (reviewMessage is not null)
         {
-            await runtime.PostBreakoutMessageAsync(
+            await messageService.PostBreakoutMessageAsync(
                 breakoutRoomId, "system", "LocalAgentHost", "System",
                 $"Review feedback:\n{reviewMessage.Content}\n\nPlease address the findings and produce an updated WORK REPORT.");
         }
@@ -513,25 +546,25 @@ public sealed class BreakoutLifecycleService
         for (var round = 1; ; round++)
         {
             if (_stopped) break;
-            var updatedBr = await runtime.GetBreakoutRoomAsync(breakoutRoomId);
+            var updatedBr = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
             if (updatedBr is null || updatedBr.Status != RoomStatus.Active) break;
 
             var response = "";
             try
             {
                 var fixMemories = await _memoryLoader.LoadAsync(agent.Id);
-                var fixDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                var fixDms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
                 if (fixDms.Count > 0)
-                    await runtime.AcknowledgeDirectMessagesAsync(agent.Id, fixDms.Select(m => m.Id).ToList());
+                    await messageService.AcknowledgeDirectMessagesAsync(agent.Id, fixDms.Select(m => m.Id).ToList());
                 var fixSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
 
                 string? fixSpecContext = null;
-                var fixTaskId = await runtime.GetBreakoutTaskIdAsync(breakoutRoomId);
+                var fixTaskId = await breakoutRoomService.GetBreakoutTaskIdAsync(breakoutRoomId);
                 if (fixTaskId is not null)
                 {
                     try
                     {
-                        var fixSpecLinks = await runtime.GetSpecLinksForTaskAsync(fixTaskId);
+                        var fixSpecLinks = await taskQueryService.GetSpecLinksForTaskAsync(fixTaskId);
                         fixSpecContext = await _specManager.LoadSpecContextForTaskAsync(
                             fixSpecLinks.Select(l => l.SpecSectionId));
                     }
@@ -555,7 +588,7 @@ public sealed class BreakoutLifecycleService
                     return;
                 }
 
-                await runtime.PostBreakoutMessageAsync(
+                await messageService.PostBreakoutMessageAsync(
                     breakoutRoomId, agent.Id, agent.Name, agent.Role, response);
 
                 await ProcessCommandsAsync(agent, response, breakoutRoomId, worktreePath);
@@ -564,24 +597,24 @@ public sealed class BreakoutLifecycleService
             var report = AgentResponseParser.ParseWorkReport(response);
             if (report is not null && Regex.IsMatch(report.Status, @"complete", RegexOptions.IgnoreCase))
             {
-                var latestTasks = await runtime.GetBreakoutTaskItemsAsync(breakoutRoomId);
+                var latestTasks = await taskItemService.GetBreakoutTaskItemsAsync(breakoutRoomId);
                 foreach (var task in latestTasks)
                 {
-                    try { await runtime.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
+                    try { await taskItemService.UpdateTaskItemStatusAsync(task.Id, TaskItemStatus.Done, report.Evidence); }
                     catch { /* ok */ }
                 }
                 break;
             }
         }
 
-        await FinalizeBreakoutAsync(runtime, breakoutRoomId);
+        await FinalizeBreakoutAsync(breakoutRoomService, breakoutRoomId);
     }
 
-    private async Task FinalizeBreakoutAsync(WorkspaceRuntime runtime, string breakoutRoomId)
+    private async Task FinalizeBreakoutAsync(BreakoutRoomService breakoutRoomService, string breakoutRoomId)
     {
         try
         {
-            await runtime.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Completed);
+            await breakoutRoomService.CloseBreakoutRoomAsync(breakoutRoomId, BreakoutRoomCloseReason.Completed);
         }
         catch (Exception ex)
         {
@@ -591,8 +624,8 @@ public sealed class BreakoutLifecycleService
 
     // ── HELPERS ─────────────────────────────────────────────────
 
-    private static AgentDefinition? FindReviewer(WorkspaceRuntime runtime) =>
-        runtime.GetConfiguredAgents().FirstOrDefault(a => a.Role == "Reviewer");
+    private AgentDefinition? FindReviewer() =>
+        _catalog.Agents.FirstOrDefault(a => a.Role == "Reviewer");
 
     private async Task<string> RunAgentAsync(
         AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)

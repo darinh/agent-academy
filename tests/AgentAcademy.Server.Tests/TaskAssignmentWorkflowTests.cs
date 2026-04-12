@@ -130,7 +130,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, _executor, new SpecManager(),
+            scopeFactory, _catalog, _executor, new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             _gitService,
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
@@ -139,12 +139,13 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory,
+            _catalog,
             _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             breakoutLifecycle,
-            new TaskAssignmentHandler(_gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance),
+            new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance),
             memoryLoader,
             NullLogger<AgentOrchestrator>.Instance);
 
@@ -230,7 +231,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader2 = new AgentMemoryLoader(scopeFactory2, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutLifecycle2 = new BreakoutLifecycleService(
-            scopeFactory2, _executor, new SpecManager(),
+            scopeFactory2, _catalog, _executor, new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             mockGitService,
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
@@ -239,12 +240,13 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         var orchestrator = new AgentOrchestrator(
             scopeFactory2,
+            _catalog,
             _executor,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
             new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
             breakoutLifecycle2,
-            new TaskAssignmentHandler(mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance),
+            new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance),
             memoryLoader2,
             NullLogger<AgentOrchestrator>.Instance);
 

@@ -14,6 +14,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AgentCatalogOptions _catalog;
     private readonly IAgentExecutor _executor;
     private readonly ActivityBroadcaster _activityBus;
     private readonly SpecManager _specManager;
@@ -35,6 +36,7 @@ public sealed class AgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
+        AgentCatalogOptions catalog,
         IAgentExecutor executor,
         ActivityBroadcaster activityBus,
         SpecManager specManager,
@@ -45,6 +47,7 @@ public sealed class AgentOrchestrator
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
+        _catalog = catalog;
         _executor = executor;
         _activityBus = activityBus;
         _specManager = specManager;
@@ -64,14 +67,14 @@ public sealed class AgentOrchestrator
 
     public async Task HandleStartupRecoveryAsync(string mainRoomId)
     {
-        if (!WorkspaceRuntime.CurrentCrashDetected)
+        if (!CrashRecoveryService.CurrentCrashDetected)
         {
             return;
         }
 
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var result = await runtime.RecoverFromCrashAsync(mainRoomId);
+        var crashRecovery = scope.ServiceProvider.GetRequiredService<CrashRecoveryService>();
+        var result = await crashRecovery.RecoverFromCrashAsync(mainRoomId);
 
         _logger.LogWarning(
             "Startup crash recovery ran for main room {RoomId}: {BreakoutCount} breakouts closed, {AgentCount} lingering agents reset",
@@ -85,8 +88,8 @@ public sealed class AgentOrchestrator
     public async Task ReconstructQueueAsync()
     {
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-        var pendingRoomIds = await runtime.GetRoomsWithPendingHumanMessagesAsync();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var pendingRoomIds = await roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         if (pendingRoomIds.Count == 0)
         {
@@ -198,7 +201,10 @@ public sealed class AgentOrchestrator
             bool hadNonPassResponse = false;
 
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+            var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
             var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
@@ -219,7 +225,7 @@ public sealed class AgentOrchestrator
                 }
             }
 
-            var room = await runtime.GetRoomAsync(roomId);
+            var room = await roomService.GetRoomAsync(roomId);
             if (room is null) return;
 
             _logger.LogInformation(
@@ -241,11 +247,11 @@ public sealed class AgentOrchestrator
             }
 
             // Load active sprint context (if any) for stage-aware prompts and roster filtering
-            var sprintCtx = await LoadSprintContextAsync(scope, runtime, sessionService);
+            var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
             var sprintPreamble = sprintCtx.Preamble;
             var activeSprintStage = sprintCtx.ActiveStage;
 
-            var planner = FindPlanner(runtime);
+            var planner = FindPlanner();
             if (planner is not null)
                 planner = await configService.GetEffectiveAgentAsync(planner);
 
@@ -272,12 +278,12 @@ public sealed class AgentOrchestrator
                 var plannerResponse = "";
                 try
                 {
-                    var freshRoom = await runtime.GetRoomAsync(roomId) ?? room;
-                    var taskItems = await runtime.GetActiveTaskItemsAsync();
+                    var freshRoom = await roomService.GetRoomAsync(roomId) ?? room;
+                    var taskItems = await taskItemService.GetActiveTaskItemsAsync();
                     var plannerMemories = await _memoryLoader.LoadAsync(planner.Id);
-                    var plannerDms = await runtime.GetDirectMessagesForAgentAsync(planner.Id);
+                    var plannerDms = await messageService.GetDirectMessagesForAgentAsync(planner.Id);
                     if (plannerDms.Count > 0)
-                        await runtime.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
+                        await messageService.AcknowledgeDirectMessagesAsync(planner.Id, plannerDms.Select(m => m.Id).ToList());
                     var prompt = PromptBuilder.BuildConversationPrompt(planner, freshRoom, specContext, taskItems, plannerMemories, plannerDms, sessionSummary, sprintPreamble)
                         + "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
                         + "by name if they should respond (e.g., '@Archimedes should review').\n"
@@ -300,10 +306,10 @@ public sealed class AgentOrchestrator
                     hadNonPassResponse = true;
 
                     // Process commands and post remaining text
-                    await ProcessAndPostAgentResponseAsync(runtime, planner, roomId, plannerResponse);
+                    await ProcessAndPostAgentResponseAsync(messageService, planner, roomId, plannerResponse);
 
                     // Collect @-mentioned agents for the next step
-                    foreach (var a in AgentResponseParser.ParseTaggedAgents(runtime.GetConfiguredAgents(), plannerResponse))
+                    foreach (var a in AgentResponseParser.ParseTaggedAgents(_catalog.Agents, plannerResponse))
                     {
                         if (a.Id != planner.Id) agentsToRun.Add(a);
                     }
@@ -311,7 +317,7 @@ public sealed class AgentOrchestrator
                     // Detect and handle task assignments
                     foreach (var assignment in AgentResponseParser.ParseTaskAssignments(plannerResponse))
                     {
-                        await _taskAssignmentHandler.ProcessAssignmentAsync(runtime, planner, roomId, assignment);
+                        await _taskAssignmentHandler.ProcessAssignmentAsync(scope, planner, roomId, assignment);
                     }
                 }
             }
@@ -320,7 +326,7 @@ public sealed class AgentOrchestrator
             if (agentsToRun.Count == 0)
             {
                 agentsToRun.AddRange(
-                    (await GetIdleAgentsInRoomAsync(runtime, roomId))
+                    (await GetIdleAgentsInRoomAsync(agentLocationService, roomId))
                         .Where(a => a.Id != plannerId)
                         .Take(3));
             }
@@ -337,13 +343,13 @@ public sealed class AgentOrchestrator
             {
                 if (_stopped) break;
 
-                var currentRoom = await runtime.GetRoomAsync(roomId);
+                var currentRoom = await roomService.GetRoomAsync(roomId);
                 if (currentRoom is null) break;
 
                 var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
                 // Skip agents that are already working in a breakout room
-                var location = await runtime.GetAgentLocationAsync(agent.Id);
+                var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
                 if (location?.State == AgentState.Working) continue;
 
                 await activity.PublishThinkingAsync(agent, roomId);
@@ -351,9 +357,9 @@ public sealed class AgentOrchestrator
                 try
                 {
                     var agentMemories = await _memoryLoader.LoadAsync(agent.Id);
-                    var agentDms = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+                    var agentDms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
                     if (agentDms.Count > 0)
-                        await runtime.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
+                        await messageService.AcknowledgeDirectMessagesAsync(agent.Id, agentDms.Select(m => m.Id).ToList());
                     var prompt = PromptBuilder.BuildConversationPrompt(agent, currentRoom, specContext, memories: agentMemories, directMessages: agentDms, sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
                     response = await RunAgentAsync(agent, prompt, roomId);
                 }
@@ -372,11 +378,11 @@ public sealed class AgentOrchestrator
                     hadNonPassResponse = true;
 
                     // Process commands and post remaining text
-                    await ProcessAndPostAgentResponseAsync(runtime, agent, roomId, response);
+                    await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
 
                     foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
                     {
-                        await _taskAssignmentHandler.ProcessAssignmentAsync(runtime, agent, roomId, assignment);
+                        await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
                     }
                 }
             }
@@ -390,7 +396,7 @@ public sealed class AgentOrchestrator
             // 3. We haven't hit the cap
             if (!hadNonPassResponse || _stopped) break;
 
-            var updatedRoom = await runtime.GetRoomAsync(roomId);
+            var updatedRoom = await roomService.GetRoomAsync(roomId);
             if (updatedRoom?.ActiveTask is null) break;
 
             if (round < MaxRoundsPerTrigger)
@@ -413,13 +419,14 @@ public sealed class AgentOrchestrator
         _logger.LogInformation("DM round for agent {AgentId}", recipientAgentId);
 
         using var scope = _scopeFactory.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
 
         // Find the recipient agent in catalog
-        var agents = runtime.GetConfiguredAgents();
-        var catalogAgent = agents.FirstOrDefault(
+        var catalogAgent = _catalog.Agents.FirstOrDefault(
             a => string.Equals(a.Id, recipientAgentId, StringComparison.OrdinalIgnoreCase));
 
         if (catalogAgent is null)
@@ -431,21 +438,21 @@ public sealed class AgentOrchestrator
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
         // Find the agent's current room
-        var location = await runtime.GetAgentLocationAsync(agent.Id);
+        var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
         if (location?.State == AgentState.Working && location.BreakoutRoomId is not null)
         {
             // Agent is in a breakout room — post all unread DMs as breakout messages
-            var dms = await runtime.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
+            var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
             if (dms.Count > 0)
             {
                 foreach (var dm in dms)
                 {
-                    await runtime.PostBreakoutMessageAsync(
+                    await messageService.PostBreakoutMessageAsync(
                         location.BreakoutRoomId,
                         "system", "System", "System",
                         $"📩 Direct message from {dm.SenderName}: {dm.Content}");
                 }
-                await runtime.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
+                await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
             }
             _logger.LogInformation(
                 "DM round: agent {AgentName} is in breakout room. DM posted to breakout context.",
@@ -456,25 +463,25 @@ public sealed class AgentOrchestrator
         var roomId = location?.RoomId;
         if (roomId is null)
         {
-            var rooms = await runtime.GetRoomsAsync();
+            var rooms = await roomService.GetRoomsAsync();
             roomId = rooms.FirstOrDefault()?.Id ?? "main";
         }
 
-        var room = await runtime.GetRoomAsync(roomId);
+        var room = await roomService.GetRoomAsync(roomId);
         if (room is null) return;
 
         var specContext = await _specManager.LoadSpecContextAsync();
         var agentMemories = await _memoryLoader.LoadAsync(agent.Id);
-        var directMessages = await runtime.GetDirectMessagesForAgentAsync(agent.Id);
+        var directMessages = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
         if (directMessages.Count > 0)
-            await runtime.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
+            await messageService.AcknowledgeDirectMessagesAsync(agent.Id, directMessages.Select(m => m.Id).ToList());
         string? dmSessionSummary = null;
         string? dmSprintPreamble = null;
         try
         {
             var dmSessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
             dmSessionSummary = await dmSessionService.GetSessionContextAsync(roomId);
-            var dmSprintCtx = await LoadSprintContextAsync(scope, runtime, dmSessionService);
+            var dmSprintCtx = await LoadSprintContextAsync(scope, roomService, dmSessionService);
             dmSprintPreamble = dmSprintCtx.Preamble;
         }
         catch { /* non-critical */ }
@@ -500,11 +507,11 @@ public sealed class AgentOrchestrator
         if (!string.IsNullOrWhiteSpace(response) && !AgentResponseParser.IsPassResponse(response)
             && !AgentResponseParser.IsStubOfflineResponse(response))
         {
-            await ProcessAndPostAgentResponseAsync(runtime, agent, roomId, response);
+            await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
 
             foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
             {
-                await _taskAssignmentHandler.ProcessAssignmentAsync(runtime, agent, roomId, assignment);
+                await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
             }
         }
 
@@ -513,16 +520,16 @@ public sealed class AgentOrchestrator
 
     // ── AGENT HELPERS ───────────────────────────────────────────
 
-    private static AgentDefinition? FindPlanner(WorkspaceRuntime runtime) =>
-        runtime.GetConfiguredAgents().FirstOrDefault(a => a.Role == "Planner");
+    private AgentDefinition? FindPlanner() =>
+        _catalog.Agents.FirstOrDefault(a => a.Role == "Planner");
 
-    private static async Task<List<AgentDefinition>> GetIdleAgentsInRoomAsync(
-        WorkspaceRuntime runtime, string roomId)
+    private async Task<List<AgentDefinition>> GetIdleAgentsInRoomAsync(
+        AgentLocationService agentLocationService, string roomId)
     {
         var result = new List<AgentDefinition>();
-        foreach (var agent in runtime.GetConfiguredAgents())
+        foreach (var agent in _catalog.Agents)
         {
-            var loc = await runtime.GetAgentLocationAsync(agent.Id);
+            var loc = await agentLocationService.GetAgentLocationAsync(agent.Id);
             if (loc is not null &&
                 loc.RoomId == roomId &&
                 (loc.State == AgentState.Idle ||
@@ -563,7 +570,7 @@ public sealed class AgentOrchestrator
     /// and posts command results as a system message for context visibility.
     /// </summary>
     private async Task ProcessAndPostAgentResponseAsync(
-        WorkspaceRuntime runtime, AgentDefinition agent, string roomId, string response)
+        MessageService messageService, AgentDefinition agent, string roomId, string response)
     {
         // Run response through command pipeline
         var pipelineResult = await ProcessCommandsAsync(agent, response, roomId);
@@ -572,14 +579,14 @@ public sealed class AgentOrchestrator
         var textToPost = pipelineResult.RemainingText;
         if (!string.IsNullOrWhiteSpace(textToPost) && !AgentResponseParser.IsPassResponse(textToPost))
         {
-            await PostAgentMessageAsync(runtime, agent, roomId, textToPost);
+            await PostAgentMessageAsync(messageService, agent, roomId, textToPost);
         }
 
         // Post command results as system message so subsequent prompts include them
         var formattedResults = CommandPipeline.FormatResultsForContext(pipelineResult.Results);
         if (!string.IsNullOrEmpty(formattedResults))
         {
-            await runtime.PostSystemStatusAsync(roomId, formattedResults);
+            await messageService.PostSystemStatusAsync(roomId, formattedResults);
         }
     }
 
@@ -605,12 +612,12 @@ public sealed class AgentOrchestrator
     private record SprintContext(string? Preamble, string? ActiveStage);
 
     private async Task<SprintContext> LoadSprintContextAsync(
-        IServiceScope scope, WorkspaceRuntime runtime, ConversationSessionService sessionService)
+        IServiceScope scope, RoomService roomService, ConversationSessionService sessionService)
     {
         try
         {
             var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
-            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
+            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
             if (workspacePath is null) return new(null, null);
 
             var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
@@ -639,11 +646,11 @@ public sealed class AgentOrchestrator
     }
 
     private async Task PostAgentMessageAsync(
-        WorkspaceRuntime runtime, AgentDefinition agent, string roomId, string content)
+        MessageService messageService, AgentDefinition agent, string roomId, string content)
     {
         try
         {
-            await runtime.PostMessageAsync(new PostMessageRequest(
+            await messageService.PostMessageAsync(new PostMessageRequest(
                 RoomId: roomId,
                 SenderId: agent.Id,
                 Content: content,
