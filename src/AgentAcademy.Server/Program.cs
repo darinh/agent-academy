@@ -269,6 +269,7 @@ builder.Services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHub
 // Orchestrator (singleton — drives multi-agent conversation lifecycle)
 builder.Services.AddSingleton<AgentMemoryLoader>();
 builder.Services.AddSingleton<BreakoutLifecycleService>();
+builder.Services.AddSingleton<TaskAssignmentHandler>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 
 // Command system (auto-discovers all ICommandHandler implementations)

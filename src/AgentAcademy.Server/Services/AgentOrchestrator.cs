@@ -18,9 +18,8 @@ public sealed class AgentOrchestrator
     private readonly ActivityBroadcaster _activityBus;
     private readonly SpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
-    private readonly GitService _gitService;
-    private readonly WorktreeService _worktreeService;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
+    private readonly TaskAssignmentHandler _taskAssignmentHandler;
     private readonly AgentMemoryLoader _memoryLoader;
     private readonly ILogger<AgentOrchestrator> _logger;
 
@@ -40,9 +39,8 @@ public sealed class AgentOrchestrator
         ActivityBroadcaster activityBus,
         SpecManager specManager,
         CommandPipeline commandPipeline,
-        GitService gitService,
-        WorktreeService worktreeService,
         BreakoutLifecycleService breakoutLifecycle,
+        TaskAssignmentHandler taskAssignmentHandler,
         AgentMemoryLoader memoryLoader,
         ILogger<AgentOrchestrator> logger)
     {
@@ -51,9 +49,8 @@ public sealed class AgentOrchestrator
         _activityBus = activityBus;
         _specManager = specManager;
         _commandPipeline = commandPipeline;
-        _gitService = gitService;
-        _worktreeService = worktreeService;
         _breakoutLifecycle = breakoutLifecycle;
+        _taskAssignmentHandler = taskAssignmentHandler;
         _memoryLoader = memoryLoader;
         _logger = logger;
     }
@@ -314,7 +311,7 @@ public sealed class AgentOrchestrator
                     // Detect and handle task assignments
                     foreach (var assignment in AgentResponseParser.ParseTaskAssignments(plannerResponse))
                     {
-                        await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                        await _taskAssignmentHandler.ProcessAssignmentAsync(runtime, planner, roomId, assignment);
                     }
                 }
             }
@@ -379,8 +376,7 @@ public sealed class AgentOrchestrator
 
                     foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
                     {
-                        if (await TryHandleTaskAssignmentWithGatingAsync(runtime, agent, roomId, assignment))
-                            await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                        await _taskAssignmentHandler.ProcessAssignmentAsync(runtime, agent, roomId, assignment);
                     }
                 }
             }
@@ -508,215 +504,11 @@ public sealed class AgentOrchestrator
 
             foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
             {
-                if (await TryHandleTaskAssignmentWithGatingAsync(runtime, agent, roomId, assignment))
-                    await HandleTaskAssignmentAsync(runtime, roomId, assignment);
+                await _taskAssignmentHandler.ProcessAssignmentAsync(runtime, agent, roomId, assignment);
             }
         }
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
-    }
-
-    // ── TASK ASSIGNMENT GATING ──────────────────────────────────
-
-    /// <summary>
-    /// Checks whether an agent is allowed to create a task of the given type.
-    /// Non-planners can only create Bug tasks. Other types are converted into a
-    /// proposal message posted to the room. Returns true if the assignment should proceed.
-    /// </summary>
-    private async Task<bool> TryHandleTaskAssignmentWithGatingAsync(
-        WorkspaceRuntime runtime, AgentDefinition agent, string roomId, ParsedTaskAssignment assignment)
-    {
-        // Planners can create any task type
-        if (string.Equals(agent.Role, "Planner", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // Non-planners can file bug reports
-        if (assignment.Type == TaskType.Bug)
-            return true;
-
-        // Non-planners: convert to a proposal instead
-        _logger.LogInformation(
-            "Agent {AgentName} ({Role}) proposed task '{Title}' — only planners can create non-bug tasks",
-            agent.Name, agent.Role, assignment.Title);
-
-        await runtime.PostSystemStatusAsync(roomId,
-            $"💡 **Task proposal from {agent.Name}**: \"{assignment.Title}\"\n" +
-            $"{assignment.Description}\n\n" +
-            $"_Only planners can create tasks. Aristotle, please review and assign if appropriate._");
-
-        return false;
-    }
-
-    // ── TASK ASSIGNMENT PARSING ─────────────────────────────────
-    private async Task HandleTaskAssignmentAsync(
-        WorkspaceRuntime runtime, string roomId, ParsedTaskAssignment assignment)
-    {
-        var allAgents = runtime.GetConfiguredAgents();
-        var agent = allAgents.FirstOrDefault(a =>
-            a.Name.Equals(assignment.Agent, StringComparison.OrdinalIgnoreCase) ||
-            a.Id.Equals(assignment.Agent, StringComparison.OrdinalIgnoreCase));
-
-        if (agent is null)
-        {
-            _logger.LogWarning("Task assignment references unknown agent: {Agent}", assignment.Agent);
-            return;
-        }
-
-        // Prevent concurrent breakout rooms for the same agent
-        var location = await runtime.GetAgentLocationAsync(agent.Id);
-        if (location?.State == AgentState.Working)
-        {
-            _logger.LogWarning(
-                "Agent {AgentName} is already in breakout room {BreakoutId} — skipping assignment '{Title}'",
-                agent.Name, location.BreakoutRoomId, assignment.Title);
-            await runtime.PostSystemStatusAsync(roomId,
-                $"⚠️ {agent.Name} is already working on a task. Assignment \"{assignment.Title}\" will wait until they finish.");
-            return;
-        }
-
-        var descriptionWithCriteria = assignment.Description
-            + (assignment.Criteria.Count > 0
-                ? "\n\nAcceptance Criteria:\n" + string.Join("\n", assignment.Criteria.Select(c => $"- {c}"))
-                : "");
-
-        var brName = $"BR: {assignment.Title}";
-        var br = await runtime.CreateBreakoutRoomAsync(roomId, agent.Id, brName);
-
-        string? taskBranch = null;
-        string? taskId = null;
-        TaskItem? taskItem = null;
-        string? worktreePath = null;
-        try
-        {
-            taskBranch = await _gitService.CreateTaskBranchAsync(assignment.Title);
-
-            if (!await _gitService.BranchExistsAsync(taskBranch))
-                throw new InvalidOperationException($"Branch '{taskBranch}' was not created");
-
-            await _gitService.ReturnToDevelopAsync(taskBranch);
-
-            // Create a worktree for isolated work when a workspace is available
-            var workspacePath = await runtime.GetActiveWorkspacePathAsync();
-            if (workspacePath is not null && taskBranch is not null)
-            {
-                try
-                {
-                    var worktree = await _worktreeService.CreateWorktreeAsync(taskBranch);
-                    worktreePath = worktree.Path;
-                    _logger.LogInformation(
-                        "Created worktree for task branch {Branch} at {Path}",
-                        taskBranch, worktree.Path);
-                }
-                catch (Exception wtEx)
-                {
-                    _logger.LogWarning(wtEx,
-                        "Failed to create worktree for {Branch} — agent will work on shared checkout",
-                        taskBranch);
-                }
-            }
-
-            taskItem = await runtime.CreateTaskItemAsync(
-                assignment.Title, descriptionWithCriteria,
-                agent.Id, roomId, br.Id);
-
-            taskId = await runtime.EnsureTaskForBreakoutAsync(
-                br.Id, assignment.Title, descriptionWithCriteria, agent.Id, roomId,
-                PromptBuilder.BuildAssignmentPlanContent(assignment), taskBranch);
-
-            var task = await runtime.GetTaskAsync(taskId);
-            var planContent = !string.IsNullOrWhiteSpace(task?.CurrentPlan)
-                ? task.CurrentPlan
-                : PromptBuilder.BuildAssignmentPlanContent(assignment);
-            await runtime.SetPlanAsync(br.Id, planContent);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create task branch for {Title} — cleaning up", assignment.Title);
-
-            // Each cleanup step is independent — one failure must not prevent the others
-            try
-            {
-                await runtime.CloseBreakoutRoomAsync(br.Id, BreakoutRoomCloseReason.Cancelled);
-            }
-            catch (Exception closeEx)
-            {
-                _logger.LogWarning(closeEx, "Failed to close breakout room {BreakoutId}", br.Id);
-            }
-
-            // Clean up the orphaned task if it was created before the failure
-            if (taskId is not null)
-            {
-                try
-                {
-                    await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
-                }
-                catch (Exception cancelEx)
-                {
-                    _logger.LogWarning(cancelEx, "Failed to cancel orphaned task {TaskId}", taskId);
-                }
-            }
-
-            // Clean up the orphaned task item if it was created before the failure
-            if (taskItem is not null)
-            {
-                try
-                {
-                    await runtime.UpdateTaskItemStatusAsync(taskItem.Id, Shared.Models.TaskItemStatus.Rejected);
-                }
-                catch (Exception itemEx)
-                {
-                    _logger.LogWarning(itemEx, "Failed to cancel orphaned task item {TaskItemId}", taskItem.Id);
-                }
-            }
-
-            // Clean up the git branch if it was created before the failure.
-            // ReturnToDevelopAsync may have failed, leaving us on the task branch —
-            // must checkout develop first since git can't delete the checked-out branch.
-            if (taskBranch is not null)
-            {
-                // Remove worktree first — git can't delete a branch checked out in a worktree
-                if (worktreePath is not null)
-                {
-                    try
-                    {
-                        await _worktreeService.RemoveWorktreeAsync(taskBranch);
-                    }
-                    catch (Exception wtEx)
-                    {
-                        _logger.LogWarning(wtEx, "Failed to remove worktree for orphaned branch {Branch}", taskBranch);
-                    }
-                }
-
-                try
-                {
-                    await _gitService.ReturnToDevelopAsync(taskBranch);
-                }
-                catch { /* best-effort — may already be on develop */ }
-
-                try
-                {
-                    await _gitService.DeleteBranchAsync(taskBranch);
-                }
-                catch (Exception branchEx)
-                {
-                    _logger.LogWarning(branchEx, "Failed to delete orphaned branch {Branch}", taskBranch);
-                }
-            }
-
-            try
-            {
-                await runtime.PostSystemStatusAsync(roomId,
-                    $"⚠️ Failed to set up branch for \"{assignment.Title}\". Breakout cancelled.");
-            }
-            catch { /* best-effort notification */ }
-            return;
-        }
-
-        await runtime.PostSystemStatusAsync(roomId,
-            $"📋 {agent.Name} has been assigned \"{assignment.Title}\" and is heading to breakout room \"{brName}\" on branch `{taskBranch}`.");
-
-        _ = Task.Run(() => _breakoutLifecycle.RunBreakoutLifecycleAsync(
-            br.Id, agent.Id, roomId, agent, taskBranch, worktreePath));
     }
 
     // ── AGENT HELPERS ───────────────────────────────────────────

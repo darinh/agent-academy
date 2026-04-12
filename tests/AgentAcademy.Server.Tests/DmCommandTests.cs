@@ -91,6 +91,7 @@ public class DmCommandTests : IDisposable
             repositoryRoot: "/tmp/test-repo"));
         services.AddSingleton<AgentMemoryLoader>();
         services.AddSingleton<BreakoutLifecycleService>();
+        services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<AgentOrchestrator>();
 
         services.AddLogging();
