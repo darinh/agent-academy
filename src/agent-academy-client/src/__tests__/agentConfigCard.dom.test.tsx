@@ -440,8 +440,8 @@ describe("AgentConfigCard (interactive)", () => {
       await waitFor(() => {
         expect(screen.getByText(/Reset Athena's Configuration/)).toBeInTheDocument();
       });
-      // Cancel is unambiguous — only appears in the dialog
-      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      // Cancel is unambiguous — only appears in the dialog; use findByRole for portal timing
+      await user.click(await screen.findByRole("button", { name: "Cancel" }));
       expect(mockResetConfig).not.toHaveBeenCalled();
     });
   });
