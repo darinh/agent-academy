@@ -28,6 +28,10 @@ public sealed class RestartServerHandler : ICommandHandler
     /// <summary>Serializes restart check-and-act to prevent concurrent bypass.</summary>
     private static readonly SemaphoreSlim RestartGate = new(1, 1);
 
+    public string CommandName => "RESTART_SERVER";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "RESTART_SERVER will shut down and restart the server process. All in-flight agent rounds will be interrupted.";
+
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<RestartServerHandler> _logger;
 
@@ -38,8 +42,6 @@ public sealed class RestartServerHandler : ICommandHandler
         _lifetime = lifetime;
         _logger = logger;
     }
-
-    public string CommandName => "RESTART_SERVER";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

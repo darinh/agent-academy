@@ -19,6 +19,8 @@ public sealed class MergeTaskHandler : ICommandHandler
     }
 
     public string CommandName => "MERGE_TASK";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "MERGE_TASK will squash-merge the task branch into develop. This is irreversible without a revert commit.";
 
     private static string BuildCommitMessage(TaskType taskType, string title)
         => $"{GetConventionalCommitPrefix(taskType)}{title}";

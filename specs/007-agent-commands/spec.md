@@ -553,7 +553,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 
 ### Guardrails
 - **Dry-run mode**: Side-effecting commands support `dryRun: true` returning what would happen
-- **Confirmation**: Planned for destructive actions such as `CLOSE_ROOM`; current implementation relies on role gating plus hard validation (for example, refusing to archive the main collaboration room)
+- **Confirmation**: Destructive commands require explicit `confirm=true` in args before execution. Without the flag, the pipeline returns `Denied` status with `CONFIRMATION_REQUIRED` error code and a structured response containing the warning, command name, and retry hint. Destructive handlers self-declare via `ICommandHandler.IsDestructive` (default false). Confirmation check runs after authorization but before rate limiting (unconfirmed commands don't consume rate-limit budget). Applies to both agent pipeline and human/consultant API. Destructive commands: `CLOSE_ROOM`, `CLEANUP_ROOMS`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`.
 - **Secret redaction**: All command output is scanned for secrets/tokens before logging
 - **Idempotent mutations**: Write commands produce the same result when called twice with the same args
 

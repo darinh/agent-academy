@@ -149,12 +149,16 @@ public static class HumanCommandRegistry
             [
                 new("roomId", "Room ID", "text", "Identifier of the room to archive.",
                     Required: true),
-            ]),
+            ],
+            IsDestructive: true,
+            DestructiveWarning: "This will archive the room permanently. Agents in the room will be moved out."),
 
         new("CLEANUP_ROOMS", "Cleanup rooms", "operations",
             "Archive all stale rooms where every task is complete.",
             "Batch cleanup for rooms that have no remaining active work. Keeps the workspace tidy.",
-            IsAsync: false, Fields: []),
+            IsAsync: false, Fields: [],
+            IsDestructive: true,
+            DestructiveWarning: "This will archive all stale rooms where tasks are complete. Multiple rooms may be affected."),
 
         new("INVITE_TO_ROOM", "Invite to room", "workspace",
             "Move another agent to a specified room.",
@@ -347,7 +351,9 @@ public static class HumanCommandRegistry
                     Placeholder: "Work completed via alternate path"),
                 new("deleteBranch", "Delete branch", "text", "Set to 'false' to keep the branch.",
                     Placeholder: "true"),
-            ]),
+            ],
+            IsDestructive: true,
+            DestructiveWarning: "This will permanently cancel the task. The task branch may be deleted."),
 
         new("APPROVE_TASK", "Approve task", "workspace",
             "Approve a task after review.",

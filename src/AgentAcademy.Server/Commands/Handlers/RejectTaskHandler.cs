@@ -19,6 +19,8 @@ public sealed class RejectTaskHandler : ICommandHandler
     }
 
     public string CommandName => "REJECT_TASK";
+    public bool IsDestructive => true;
+    public string DestructiveWarning => "REJECT_TASK will revert the task status and may revert a merge commit on develop. The breakout room will be reopened.";
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
