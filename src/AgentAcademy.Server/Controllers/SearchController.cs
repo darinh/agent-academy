@@ -12,12 +12,12 @@ namespace AgentAcademy.Server.Controllers;
 public class SearchController : ControllerBase
 {
     private readonly SearchService _search;
-    private readonly WorkspaceRuntime _workspace;
+    private readonly RoomService _roomService;
 
-    public SearchController(SearchService search, WorkspaceRuntime workspace)
+    public SearchController(SearchService search, RoomService roomService)
     {
         _search = search;
-        _workspace = workspace;
+        _roomService = roomService;
     }
 
     /// <summary>
@@ -48,7 +48,7 @@ public class SearchController : ControllerBase
         if (taskLimit is < 1 or > 100)
             return BadRequest(new { code = "invalid_limit", message = "taskLimit must be between 1 and 100." });
 
-        var workspacePath = await _workspace.GetActiveWorkspacePathAsync();
+        var workspacePath = await _roomService.GetActiveWorkspacePathAsync();
 
         var results = await _search.SearchAsync(q, scope, messageLimit, taskLimit, workspacePath, ct);
         return Ok(results);

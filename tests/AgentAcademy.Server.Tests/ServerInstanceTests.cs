@@ -718,28 +718,13 @@ public class RestartHistoryApiTests : IDisposable
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, actPub, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, roomService, agentLocations, messageService, breakouts);
-        var runtime = new WorkspaceRuntime(
-            catalog,
-            actPub,
-            taskQueries,
-            taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, actPub, sessionService, taskQueries, agentLocations),
-            new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
-            new RoomService(_db, NullLogger<RoomService>.Instance, catalog, actPub, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService)),
-            agentLocations,
-            planService,
-            crashRecovery,
-            initializationService,
-            taskOrchestration);
-
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
 
         _controller = new SystemController(
-            runtime, executor, catalog, _db, usageTracker, errorTracker,
+            roomService, agentLocations, breakouts, actPub,
+            executor, catalog, _db, usageTracker, errorTracker,
             NullLogger<SystemController>.Instance);
     }
 

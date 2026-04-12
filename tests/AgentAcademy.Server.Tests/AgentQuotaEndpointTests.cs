@@ -75,7 +75,8 @@ public sealed class AgentQuotaEndpointTests : IDisposable
             _controllerScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>());
 
         var controller = new AgentController(
-            runtime: null!,  // Not needed for quota endpoints
+            agentLocationService: null!,  // Not needed for quota endpoints
+            breakoutRoomService: null!,   // Not needed for quota endpoints
             executor,
             _catalog,
             configService,

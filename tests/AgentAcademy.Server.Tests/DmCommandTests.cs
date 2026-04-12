@@ -634,11 +634,12 @@ public class DmCommandTests : IDisposable
     private DmController CreateDmController(ClaimsPrincipal? user = null)
     {
         var scope = _serviceProvider.CreateScope();
-        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
         var logger = NullLogger<DmController>.Instance;
 
-        var controller = new DmController(runtime, orchestrator, logger);
+        var controller = new DmController(messageService, roomService, _catalog, orchestrator, logger);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

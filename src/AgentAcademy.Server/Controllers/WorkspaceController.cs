@@ -16,7 +16,9 @@ namespace AgentAcademy.Server.Controllers;
 public class WorkspaceController : ControllerBase
 {
     private readonly ProjectScanner _scanner;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly TaskOrchestrationService _taskOrchestration;
+    private readonly TaskQueryService _taskQueries;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly ConversationSessionService _sessionService;
@@ -25,7 +27,9 @@ public class WorkspaceController : ControllerBase
 
     public WorkspaceController(
         ProjectScanner scanner,
-        WorkspaceRuntime runtime,
+        RoomService roomService,
+        TaskOrchestrationService taskOrchestration,
+        TaskQueryService taskQueries,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
         ConversationSessionService sessionService,
@@ -33,7 +37,9 @@ public class WorkspaceController : ControllerBase
         ILogger<WorkspaceController> logger)
     {
         _scanner = scanner;
-        _runtime = runtime;
+        _roomService = roomService;
+        _taskOrchestration = taskOrchestration;
+        _taskQueries = taskQueries;
         _orchestrator = orchestrator;
         _executor = executor;
         _sessionService = sessionService;
@@ -78,7 +84,7 @@ public class WorkspaceController : ControllerBase
 
         try
         {
-            var previousWorkspace = await _runtime.GetActiveWorkspacePathAsync();
+            var previousWorkspace = await _roomService.GetActiveWorkspacePathAsync();
             var scan = _scanner.ScanProject(resolved);
             var meta = await UpsertWorkspaceAsync(scan);
 
@@ -101,7 +107,7 @@ public class WorkspaceController : ControllerBase
                 }
 
                 await _executor.InvalidateAllSessionsAsync();
-                await _runtime.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
+                await _roomService.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
                 _logger.LogInformation(
                     "Switched workspace from '{Previous}' to '{Current}' — sessions archived and cleared, default room ensured",
                     previousWorkspace ?? "(none)", scan.Path);
@@ -168,13 +174,13 @@ public class WorkspaceController : ControllerBase
             var meta = await UpsertWorkspaceAsync(scan);
 
             // Ensure the workspace has a default room with agents
-            await _runtime.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
+            await _roomService.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
 
             // Auto-create spec generation task when project has no specs
             if (!scan.HasSpecs)
             {
                 // Check if a spec task already exists to avoid duplicates on repeated onboards
-                var existingSpecTask = await _runtime.FindTaskByTitleAsync("Generate Project Specification");
+                var existingSpecTask = await _taskQueries.FindTaskByTitleAsync("Generate Project Specification");
                 if (existingSpecTask is null)
                 {
                     var taskRequest = new TaskAssignmentRequest(
@@ -193,7 +199,7 @@ public class WorkspaceController : ControllerBase
 
                 try
                 {
-                    var taskResult = await _runtime.CreateTaskAsync(taskRequest);
+                    var taskResult = await _taskOrchestration.CreateTaskAsync(taskRequest);
                     _orchestrator.HandleHumanMessage(taskResult.Room.Id);
 
                     return StatusCode(201, new OnboardResult(

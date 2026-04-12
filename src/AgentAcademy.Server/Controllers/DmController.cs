@@ -12,16 +12,22 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class DmController : ControllerBase
 {
-    private readonly WorkspaceRuntime _runtime;
+    private readonly MessageService _messageService;
+    private readonly RoomService _roomService;
+    private readonly AgentCatalogOptions _catalog;
     private readonly AgentOrchestrator _orchestrator;
     private readonly ILogger<DmController> _logger;
 
     public DmController(
-        WorkspaceRuntime runtime,
+        MessageService messageService,
+        RoomService roomService,
+        AgentCatalogOptions catalog,
         AgentOrchestrator orchestrator,
         ILogger<DmController> logger)
     {
-        _runtime = runtime;
+        _messageService = messageService;
+        _roomService = roomService;
+        _catalog = catalog;
         _orchestrator = orchestrator;
         _logger = logger;
     }
@@ -32,7 +38,7 @@ public class DmController : ControllerBase
     [HttpGet("api/dm/threads")]
     public async Task<ActionResult<List<DmThreadSummary>>> GetThreads()
     {
-        var threads = await _runtime.GetDmThreadsForHumanAsync();
+        var threads = await _messageService.GetDmThreadsForHumanAsync();
         return Ok(threads);
     }
 
@@ -42,14 +48,14 @@ public class DmController : ControllerBase
     [HttpGet("api/dm/threads/{agentId}")]
     public async Task<ActionResult<List<DmMessage>>> GetThreadMessages(string agentId)
     {
-        var agents = _runtime.GetConfiguredAgents();
+        var agents = _catalog.Agents;
         var agent = agents.FirstOrDefault(
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (agent is null)
             return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found." });
 
-        var messages = await _runtime.GetDmThreadMessagesAsync(agent.Id);
+        var messages = await _messageService.GetDmThreadMessagesAsync(agent.Id);
 
         var result = messages.Select(m => new DmMessage(
             Id: m.Id,
@@ -74,7 +80,7 @@ public class DmController : ControllerBase
         if (request is null || string.IsNullOrWhiteSpace(request.Message))
             return BadRequest(new { code = "invalid_message", message = "Message content is required." });
 
-        var agents = _runtime.GetConfiguredAgents();
+        var agents = _catalog.Agents;
         var agent = agents.FirstOrDefault(
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
@@ -88,11 +94,11 @@ public class DmController : ControllerBase
         var senderRole = isConsultant ? "Consultant" : "Human";
 
         // Find the default room for context
-        var rooms = await _runtime.GetRoomsAsync();
+        var rooms = await _roomService.GetRoomsAsync();
         var defaultRoom = rooms.FirstOrDefault();
         var roomId = defaultRoom?.Id ?? "main";
 
-        var messageId = await _runtime.SendDirectMessageAsync(
+        var messageId = await _messageService.SendDirectMessageAsync(
             senderId: senderId,
             senderName: senderName,
             senderRole: senderRole,

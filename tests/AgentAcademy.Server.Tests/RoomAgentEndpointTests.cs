@@ -21,7 +21,10 @@ public sealed class RoomAgentEndpointTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly MessageService _messageService;
+    private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ConversationSessionService _sessionService;
     private readonly AgentConfigService _configService;
     private readonly AgentCatalogOptions _catalog;
@@ -72,17 +75,10 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, _sessionService, messageService);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
-        _runtime = new WorkspaceRuntime(_catalog, activityPublisher, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, _sessionService, taskQueries, agentLocations),
-            new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
-            new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, _sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService)),
-            agentLocations,
-            planService,
-            crashRecovery,
-            initializationService,
-            taskOrchestration);
+        _roomService = roomService;
+        _agentLocationService = agentLocations;
+        _messageService = messageService;
+        _breakoutRoomService = breakouts;
         _configService = new AgentConfigService(_db);
 
         SeedMainRoom();
@@ -506,7 +502,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
-        return new RoomController(_runtime, _catalog, usageTracker, errorTracker, logger);
+        return new RoomController(_roomService, _agentLocationService, _messageService, _catalog, usageTracker, errorTracker, logger);
     }
 
     private AgentController CreateAgentController()
@@ -516,6 +512,6 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var quotaService = new AgentQuotaService(scopeFactory, usageTracker, NullLogger<AgentQuotaService>.Instance);
-        return new AgentController(_runtime, executor, _catalog, _configService, quotaService, logger);
+        return new AgentController(_agentLocationService, _breakoutRoomService, executor, _catalog, _configService, quotaService, logger);
     }
 }

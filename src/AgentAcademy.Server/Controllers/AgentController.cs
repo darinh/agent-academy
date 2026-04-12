@@ -13,7 +13,8 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/agents")]
 public class AgentController : ControllerBase
 {
-    private readonly WorkspaceRuntime _runtime;
+    private readonly AgentLocationService _agentLocationService;
+    private readonly BreakoutRoomService _breakoutRoomService;
     private readonly IAgentExecutor _executor;
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentConfigService _configService;
@@ -21,14 +22,16 @@ public class AgentController : ControllerBase
     private readonly ILogger<AgentController> _logger;
 
     public AgentController(
-        WorkspaceRuntime runtime,
+        AgentLocationService agentLocationService,
+        BreakoutRoomService breakoutRoomService,
         IAgentExecutor executor,
         AgentCatalogOptions catalog,
         AgentConfigService configService,
         AgentQuotaService quotaService,
         ILogger<AgentController> logger)
     {
-        _runtime = runtime;
+        _agentLocationService = agentLocationService;
+        _breakoutRoomService = breakoutRoomService;
         _executor = executor;
         _catalog = catalog;
         _configService = configService;
@@ -44,7 +47,7 @@ public class AgentController : ControllerBase
     {
         try
         {
-            var locations = await _runtime.GetAgentLocationsAsync();
+            var locations = await _agentLocationService.GetAgentLocationsAsync();
             return Ok(locations);
         }
         catch (Exception ex)
@@ -64,7 +67,7 @@ public class AgentController : ControllerBase
     {
         try
         {
-            var location = await _runtime.MoveAgentAsync(
+            var location = await _agentLocationService.MoveAgentAsync(
                 agentId, request.RoomId, request.State, request.BreakoutRoomId);
             return Ok(location);
         }
@@ -305,7 +308,7 @@ public class AgentController : ControllerBase
 
         try
         {
-            var sessions = await _runtime.GetAgentSessionsAsync(catalogAgent.Id);
+            var sessions = await _breakoutRoomService.GetAgentSessionsAsync(catalogAgent.Id);
             return Ok(sessions);
         }
         catch (Exception ex)

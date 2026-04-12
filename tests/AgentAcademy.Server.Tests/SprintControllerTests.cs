@@ -17,7 +17,7 @@ public class SprintControllerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
     private readonly SprintController _controller;
 
     public SprintControllerTests()
@@ -53,21 +53,10 @@ public class SprintControllerTests : IDisposable
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
         var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
 
-        _runtime = new WorkspaceRuntime(
-            catalog, activityPublisher, taskQueries, taskLifecycle,
-            new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService),
-            new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations),
-            new TaskItemService(_db, NullLogger<TaskItemService>.Instance),
-            new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService,
-                new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService)),
-            agentLocations,
-            planService,
-            crashRecovery,
-            initializationService,
-            taskOrchestration);
+        _roomService = roomService;
 
         _controller = new SprintController(
-            _sprintService, _runtime,
+            _sprintService, _roomService,
             NullLogger<SprintController>.Instance);
     }
 

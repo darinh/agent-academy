@@ -13,16 +13,16 @@ namespace AgentAcademy.Server.Controllers;
 public class SprintController : ControllerBase
 {
     private readonly SprintService _sprintService;
-    private readonly WorkspaceRuntime _runtime;
+    private readonly RoomService _roomService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
         SprintService sprintService,
-        WorkspaceRuntime runtime,
+        RoomService roomService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
-        _runtime = runtime;
+        _roomService = roomService;
         _logger = logger;
     }
 
@@ -36,7 +36,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return Ok(new SprintListResponse([], 0));
 
@@ -60,7 +60,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return NoContent();
 
@@ -138,7 +138,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return BadRequest(new { error = "No active workspace." });
 
@@ -324,7 +324,7 @@ public class SprintController : ControllerBase
     {
         try
         {
-            var workspace = await _runtime.GetActiveWorkspacePathAsync();
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
                 return Ok(new SprintMetricsSummary(0, 0, 0, 0, null, 0, 0,
                     new Dictionary<string, double>()));
@@ -356,7 +356,7 @@ public class SprintController : ControllerBase
     /// </summary>
     private async Task<(Data.Entities.SprintEntity? Sprint, IActionResult? Error)> ValidateSprintOwnershipAsync(string id)
     {
-        var workspace = await _runtime.GetActiveWorkspacePathAsync();
+        var workspace = await _roomService.GetActiveWorkspacePathAsync();
         if (workspace is null)
             return (null, BadRequest(new { error = "No active workspace." }));
 
