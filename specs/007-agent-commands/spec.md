@@ -602,7 +602,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 
 ## Frontend Surfaces
 
-**Status**: NOT IMPLEMENTED. Phase 1A shipped backend-only. Command execution is invisible to users — results are posted as system messages in agent conversation history.
+**Status**: IMPLEMENTED. Command Palette (`Cmd+K`), Commands tab, audit log panel, and task panel all provide frontend access to the command system.
 
 ### Command Palette (Primary) — IMPLEMENTED
 Keyboard-driven command search and execution overlay, opened with `Cmd+K` / `Ctrl+K`.
@@ -659,9 +659,9 @@ Minimal surfaces should ship with the commands they support — not as a separat
 
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
 - ~~**Error recovery**~~: **Partially resolved** — CopilotExecutor has exponential backoff retries (transient: 2s/4s/8s, 3 attempts; quota: 5s/15s/30s, 3 attempts) and a global circuit breaker (trips after 5 consecutive failures, 60s cooldown before probing). Structured error codes (`errorCode` field) enable agents to make programmatic retry/skip decisions. Remaining: no per-command retry at the command pipeline level (agents must re-issue failed commands manually).
-- **Rate limiting**: Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
-- **Frontend surfaces**: ~~Phase 1A shipped backend-only.~~ **Resolved** — Commands tab with dynamic catalog from `GET /api/commands/metadata`. Command palette (Cmd+K) with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard. Task panel enhanced with spec links, evidence ledger, gate status, and agent assignment UI.
-- **Tier 2 room commands**: All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
+- ~~**Rate limiting**~~: **Resolved** — Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
+- ~~**Frontend surfaces**~~: **Resolved** — Commands tab with dynamic catalog from `GET /api/commands/metadata`. Command palette (Cmd+K) with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard. Task panel enhanced with spec links, evidence ledger, gate status, and agent assignment UI.
+- ~~**Tier 2 room commands**~~: **Resolved** — All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
 
 ## Discord Agent Question Bridge
 
