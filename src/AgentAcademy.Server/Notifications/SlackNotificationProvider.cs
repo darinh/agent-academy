@@ -428,8 +428,8 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-                projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+                var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+                projectName = await roomService.GetProjectNameForRoomAsync(roomId);
             }
             catch (Exception ex)
             {

@@ -127,13 +127,13 @@ public class SystemController : ControllerBase
     [AllowAnonymous]
     public IActionResult GetInstanceHealth()
     {
-        var instanceId = WorkspaceRuntime.CurrentInstanceId ?? "unknown";
+        var instanceId = CrashRecoveryService.CurrentInstanceId ?? "unknown";
 
         return Ok(new InstanceHealthResult(
             InstanceId: instanceId,
             StartedAt: StartedAt,
             Version: typeof(SystemController).Assembly.GetName().Version?.ToString() ?? "0.0.0",
-            CrashDetected: WorkspaceRuntime.CurrentCrashDetected,
+            CrashDetected: CrashRecoveryService.CurrentCrashDetected,
             ExecutorOperational: _executor.IsFullyOperational,
             AuthFailed: _executor.IsAuthFailed,
             CircuitBreakerState: _executor.CircuitBreakerState.ToString()

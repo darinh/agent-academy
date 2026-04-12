@@ -324,7 +324,7 @@ using (var scope = app.Services.CreateScope())
         await orchestrator.ReconstructQueueAsync();
     }
 
-    if (WorkspaceRuntime.CurrentCrashDetected)
+    if (CrashRecoveryService.CurrentCrashDetected)
     {
         var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
         await orchestrator.HandleStartupRecoveryAsync(mainRoomId);
@@ -350,7 +350,7 @@ lifetime.ApplicationStopping.Register(() =>
     {
         using var shutdownScope = app.Services.CreateScope();
         var db = shutdownScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var instanceId = WorkspaceRuntime.CurrentInstanceId;
+        var instanceId = CrashRecoveryService.CurrentInstanceId;
         if (instanceId is not null)
         {
             var instance = db.ServerInstances.Find(instanceId);

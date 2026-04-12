@@ -536,7 +536,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     /// <summary>
     /// Persistent handler for messages in agent channels and room channels.
-    /// Routes human replies back to the correct Agent Academy room via WorkspaceRuntime.
+    /// Routes human replies back to the correct Agent Academy room via MessageService.
     /// </summary>
     private async Task OnAgentChannelMessageReceived(SocketMessage message)
     {
@@ -572,8 +572,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-                await runtime.PostHumanMessageAsync(roomId, message.Content);
+                var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+                await messageService.PostHumanMessageAsync(roomId, message.Content);
                 _orchestrator.HandleHumanMessage(roomId);
 
                 await message.AddReactionAsync(new Emoji("✅"));
@@ -598,8 +598,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            await runtime.PostHumanMessageAsync(agentInfo.RoomId, message.Content);
+            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            await messageService.PostHumanMessageAsync(agentInfo.RoomId, message.Content);
             _orchestrator.HandleHumanMessage(agentInfo.RoomId);
 
             await message.Channel.SendMessageAsync("✅ Reply received — sent to **" + agentInfo.AgentName + "**");

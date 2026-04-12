@@ -443,11 +443,11 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            projectName = await roomService.GetProjectNameForRoomAsync(roomId);
 
             if (projectName is null)
-                projectName = await runtime.GetActiveProjectNameAsync();
+                projectName = await roomService.GetActiveProjectNameAsync();
         }
         catch { /* fall back to room name */ }
 
@@ -557,14 +557,14 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
-            var room = await runtime.GetRoomAsync(roomId);
+            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var room = await roomService.GetRoomAsync(roomId);
             if (room is not null)
                 roomName = room.Name;
-            projectName = await runtime.GetProjectNameForRoomAsync(roomId);
+            projectName = await roomService.GetProjectNameForRoomAsync(roomId);
 
             if (projectName is null)
-                projectName = await runtime.GetActiveProjectNameAsync();
+                projectName = await roomService.GetActiveProjectNameAsync();
         }
         catch { /* fall back to roomId, no project scoping */ }
 
