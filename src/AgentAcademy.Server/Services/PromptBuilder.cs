@@ -20,7 +20,8 @@ internal static class PromptBuilder
         List<AgentMemory>? memories = null,
         List<MessageEntity>? directMessages = null,
         string? sessionSummary = null,
-        string? sprintPreamble = null)
+        string? sprintPreamble = null,
+        string? specVersion = null)
     {
         var lines = new List<string> { PromptSanitizer.BoundaryInstruction, "" };
 
@@ -68,8 +69,9 @@ internal static class PromptBuilder
 
         if (specContext is not null)
         {
+            var versionTag = specVersion is not null ? $" (v{specVersion})" : "";
             lines.Add("");
-            lines.Add("=== PROJECT SPECIFICATION ===");
+            lines.Add($"=== PROJECT SPECIFICATION{versionTag} ===");
             lines.Add("The project maintains a living spec in specs/. Relevant sections:");
             lines.Add(specContext);
         }
@@ -106,7 +108,8 @@ internal static class PromptBuilder
         List<AgentMemory>? memories = null,
         List<MessageEntity>? directMessages = null,
         string? sessionSummary = null,
-        string? specContext = null)
+        string? specContext = null,
+        string? specVersion = null)
     {
         var lines = new List<string> { PromptSanitizer.BoundaryInstruction, "" };
 
@@ -124,8 +127,9 @@ internal static class PromptBuilder
 
         if (specContext is not null)
         {
+            var versionTag = specVersion is not null ? $" (v{specVersion})" : "";
             lines.Add("");
-            lines.Add("=== PROJECT SPECIFICATIONS ===");
+            lines.Add($"=== PROJECT SPECIFICATIONS{versionTag} ===");
             lines.Add("Sections marked with ★ are linked to your current task.");
             lines.Add(specContext);
         }
@@ -176,7 +180,7 @@ internal static class PromptBuilder
     /// this DOES include the reviewer's StartupPrompt.
     /// </summary>
     internal static string BuildReviewPrompt(
-        AgentDefinition reviewer, string agentName, string workReport, string? specContext)
+        AgentDefinition reviewer, string agentName, string workReport, string? specContext, string? specVersion = null)
     {
         var lines = new List<string> { reviewer.StartupPrompt, "", PromptSanitizer.BoundaryInstruction, "" };
         lines.Add("=== REVIEW REQUEST ===");
@@ -187,8 +191,9 @@ internal static class PromptBuilder
 
         if (specContext is not null)
         {
+            var versionTag = specVersion is not null ? $" (v{specVersion})" : "";
             lines.Add("");
-            lines.Add("=== SPEC SECTIONS (verify accuracy against delivered work) ===");
+            lines.Add($"=== SPEC SECTIONS{versionTag} (verify accuracy against delivered work) ===");
             lines.Add(specContext);
         }
 

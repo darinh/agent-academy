@@ -234,6 +234,8 @@ public sealed class AgentOrchestrator
 
             // Load shared context for this round
             var specContext = await _specManager.LoadSpecContextAsync();
+            var specVersionInfo = await _specManager.GetSpecVersionAsync();
+            var specVersion = specVersionInfo?.Version;
             string? sessionSummary = null;
             try { sessionSummary = await sessionService.GetSessionContextAsync(roomId); }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId); }
@@ -270,7 +272,7 @@ public sealed class AgentOrchestrator
 
                 var (resolvedPlanner, plannerResponse, plannerIsNonPass) = await RunAgentTurnAsync(
                     planner, scope, messageService, configService, activity,
-                    freshRoom, roomId, specContext, taskItems, sessionSummary, sprintCtx.Preamble, plannerSuffix);
+                    freshRoom, roomId, specContext, taskItems, sessionSummary, sprintCtx.Preamble, plannerSuffix, specVersion);
 
                 if (plannerIsNonPass)
                 {
@@ -308,7 +310,7 @@ public sealed class AgentOrchestrator
                 var (_, _, agentIsNonPass) = await RunAgentTurnAsync(
                     catalogAgent, scope, messageService, configService, activity,
                     currentRoom, roomId, specContext,
-                    sessionSummary: sessionSummary, sprintPreamble: sprintCtx.Preamble);
+                    sessionSummary: sessionSummary, sprintPreamble: sprintCtx.Preamble, specVersion: specVersion);
 
                 if (agentIsNonPass) hadNonPassResponse = true;
             }
@@ -391,6 +393,8 @@ public sealed class AgentOrchestrator
         if (room is null) return;
 
         var specContext = await _specManager.LoadSpecContextAsync();
+        var specVersionInfo2 = await _specManager.GetSpecVersionAsync();
+        var specVersion2 = specVersionInfo2?.Version;
         string? sessionSummary = null;
         string? sprintPreamble = null;
         try
@@ -405,7 +409,7 @@ public sealed class AgentOrchestrator
         await RunAgentTurnAsync(
             catalogAgent, scope, messageService, configService, activity,
             room, roomId, specContext,
-            sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
+            sessionSummary: sessionSummary, sprintPreamble: sprintPreamble, specVersion: specVersion2);
 
         _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
     }
@@ -430,7 +434,8 @@ public sealed class AgentOrchestrator
         List<TaskItem>? taskItems = null,
         string? sessionSummary = null,
         string? sprintPreamble = null,
-        string? promptSuffix = null)
+        string? promptSuffix = null,
+        string? specVersion = null)
     {
         var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
 
@@ -444,7 +449,7 @@ public sealed class AgentOrchestrator
                 await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
 
             var prompt = PromptBuilder.BuildConversationPrompt(
-                agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble);
+                agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble, specVersion);
             if (promptSuffix is not null) prompt += promptSuffix;
 
             response = await RunAgentAsync(agent, prompt, roomId);

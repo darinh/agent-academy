@@ -698,4 +698,78 @@ public class PromptBuilderTests
 
         Assert.True(PromptBuilder.IsMemoryStale(memory));
     }
+
+    // ── Spec Version in Headers ────────────────────────────────
+
+    [Fact]
+    public void BuildConversationPrompt_IncludesSpecVersion_WhenProvided()
+    {
+        var agent = MakeAgent();
+        var room = MakeRoom();
+        var prompt = PromptBuilder.BuildConversationPrompt(agent, room,
+            "- specs/000-overview/spec.md: Overview", specVersion: "2.1.0");
+
+        Assert.Contains("=== PROJECT SPECIFICATION (v2.1.0) ===", prompt);
+    }
+
+    [Fact]
+    public void BuildConversationPrompt_OmitsVersionTag_WhenNull()
+    {
+        var agent = MakeAgent();
+        var room = MakeRoom();
+        var prompt = PromptBuilder.BuildConversationPrompt(agent, room,
+            "- specs/000-overview/spec.md: Overview");
+
+        Assert.Contains("=== PROJECT SPECIFICATION ===", prompt);
+        Assert.DoesNotContain("(v", prompt);
+    }
+
+    [Fact]
+    public void BuildBreakoutPrompt_IncludesSpecVersion_WhenProvided()
+    {
+        var agent = MakeAgent();
+        var br = MakeBreakout();
+
+        var prompt = PromptBuilder.BuildBreakoutPrompt(agent, br, 1,
+            specContext: "- specs/000/spec.md: Test", specVersion: "3.0.0");
+
+        Assert.Contains("=== PROJECT SPECIFICATIONS (v3.0.0) ===", prompt);
+    }
+
+    [Fact]
+    public void BuildBreakoutPrompt_OmitsVersionTag_WhenNull()
+    {
+        var agent = MakeAgent();
+        var br = MakeBreakout();
+
+        var prompt = PromptBuilder.BuildBreakoutPrompt(agent, br, 1,
+            specContext: "- specs/000/spec.md: Test");
+
+        Assert.Contains("=== PROJECT SPECIFICATIONS ===", prompt);
+        Assert.DoesNotContain("(v", prompt);
+    }
+
+    [Fact]
+    public void BuildReviewPrompt_IncludesSpecVersion_WhenProvided()
+    {
+        var reviewer = MakeAgent(id: "reviewer-1", name: "Socrates", role: "Reviewer");
+
+        var prompt = PromptBuilder.BuildReviewPrompt(reviewer, "Agent1",
+            "Work done.", "- specs/000/spec.md: Test", specVersion: "1.2.3");
+
+        Assert.Contains("=== SPEC SECTIONS (v1.2.3) (verify accuracy against delivered work) ===", prompt);
+    }
+
+    [Fact]
+    public void BuildReviewPrompt_OmitsVersionTag_WhenNull()
+    {
+        var reviewer = MakeAgent(id: "reviewer-1", name: "Socrates", role: "Reviewer");
+
+        var prompt = PromptBuilder.BuildReviewPrompt(reviewer, "Agent1",
+            "Work done.", "- specs/000/spec.md: Test");
+
+        Assert.Contains("=== SPEC SECTIONS (verify accuracy against delivered work) ===", prompt);
+        // Should not contain a version tag like (v1.2.3) — but (verify...) is expected
+        Assert.DoesNotMatch(@"\(v\d+\.\d+\.\d+\)", prompt);
+    }
 }

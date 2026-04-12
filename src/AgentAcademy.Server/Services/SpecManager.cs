@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace AgentAcademy.Server.Services;
@@ -5,7 +8,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Manages the living project specification that lives in the specs/ directory.
 /// Provides methods to load spec context for prompt injection, list spec sections,
-/// and read individual spec content.
+/// read individual spec content, and track spec versioning.
 /// </summary>
 public sealed class SpecManager
 {
@@ -14,15 +17,27 @@ public sealed class SpecManager
     /// </summary>
     public record SpecSection(string Id, string Heading, string Summary, string FilePath);
 
+    /// <summary>
+    /// Version information for the spec corpus, read from specs/spec-version.json.
+    /// </summary>
+    public record SpecVersionInfo(string Version, string LastUpdated, string ContentHash, int SectionCount);
+
     private readonly string _specsDir;
+    private readonly ILogger<SpecManager>? _logger;
+
+    // Cached content hash to avoid recomputing on every call
+    private string? _cachedContentHash;
+    private DateTime _cacheTimestamp;
+    private int _cacheFileCount;
 
     /// <summary>
     /// Creates a SpecManager that reads from the given specs directory.
     /// Defaults to "specs" relative to the current working directory.
     /// </summary>
-    public SpecManager(string? specsDir = null)
+    public SpecManager(string? specsDir = null, ILogger<SpecManager>? logger = null)
     {
         _specsDir = specsDir ?? Path.Combine(Directory.GetCurrentDirectory(), "specs");
+        _logger = logger;
     }
 
     /// <summary>
@@ -178,5 +193,129 @@ public sealed class SpecManager
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Returns version information for the spec corpus.
+    /// Reads declared version from specs/spec-version.json and computes a content hash
+    /// of all spec section files (specs/*/spec.md) for freshness detection.
+    /// Returns null if no specs directory exists.
+    /// </summary>
+    public async Task<SpecVersionInfo?> GetSpecVersionAsync()
+    {
+        if (!Directory.Exists(_specsDir)) return null;
+
+        var (version, lastUpdated) = await ReadVersionFileAsync();
+        var contentHash = await ComputeContentHashAsync();
+        var sectionCount = CountSpecSections();
+
+        return new SpecVersionInfo(
+            Version: version ?? "0.0.0",
+            LastUpdated: lastUpdated ?? "unknown",
+            ContentHash: contentHash,
+            SectionCount: sectionCount);
+    }
+
+    /// <summary>
+    /// Computes a SHA256 hash of all spec section files (specs/*/spec.md) for freshness detection.
+    /// Uses sorted paths and normalized line endings for deterministic output.
+    /// Result is cached in memory and invalidated when any spec file's write time changes.
+    /// </summary>
+    public async Task<string> ComputeContentHashAsync()
+    {
+        if (!Directory.Exists(_specsDir)) return "";
+
+        // Check if cache is still valid (file count + newest write time unchanged)
+        var (newestWrite, fileCount) = GetSpecFileMetadata();
+        if (_cachedContentHash is not null && newestWrite == _cacheTimestamp && fileCount == _cacheFileCount)
+            return _cachedContentHash;
+
+        try
+        {
+            using var sha256 = SHA256.Create();
+            using var stream = new MemoryStream();
+
+            var specFiles = Directory.GetDirectories(_specsDir)
+                .OrderBy(d => d, StringComparer.Ordinal)
+                .Select(d => Path.Combine(d, "spec.md"))
+                .Where(File.Exists);
+
+            foreach (var file in specFiles)
+            {
+                var relativePath = Path.GetRelativePath(_specsDir, file);
+                var pathBytes = Encoding.UTF8.GetBytes(relativePath + "\n");
+                await stream.WriteAsync(pathBytes);
+
+                var content = await File.ReadAllTextAsync(file);
+                var normalized = content.Replace("\r\n", "\n");
+                var contentBytes = Encoding.UTF8.GetBytes(normalized);
+                await stream.WriteAsync(contentBytes);
+            }
+
+            stream.Position = 0;
+            var hashBytes = await sha256.ComputeHashAsync(stream);
+            var hash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant()[..12];
+
+            _cachedContentHash = hash;
+            _cacheTimestamp = newestWrite;
+            _cacheFileCount = fileCount;
+            return hash;
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private async Task<(string? Version, string? LastUpdated)> ReadVersionFileAsync()
+    {
+        var versionFile = Path.Combine(_specsDir, "spec-version.json");
+        if (!File.Exists(versionFile)) return (null, null);
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(versionFile);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var version = root.TryGetProperty("version", out var v) ? v.GetString() : null;
+            var lastUpdated = root.TryGetProperty("lastUpdated", out var lu) ? lu.GetString() : null;
+
+            return (version, lastUpdated);
+        }
+        catch (JsonException ex)
+        {
+            _logger?.LogWarning(ex, "Malformed spec-version.json — ignoring declared version");
+            return (null, null);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
+    private int CountSpecSections()
+    {
+        if (!Directory.Exists(_specsDir)) return 0;
+
+        return Directory.GetDirectories(_specsDir)
+            .Count(d => File.Exists(Path.Combine(d, "spec.md")));
+    }
+
+    private (DateTime NewestWrite, int FileCount) GetSpecFileMetadata()
+    {
+        if (!Directory.Exists(_specsDir)) return (DateTime.MinValue, 0);
+
+        var newest = DateTime.MinValue;
+        var count = 0;
+        foreach (var dir in Directory.GetDirectories(_specsDir))
+        {
+            var specFile = Path.Combine(dir, "spec.md");
+            if (!File.Exists(specFile)) continue;
+            count++;
+            var writeTime = File.GetLastWriteTimeUtc(specFile);
+            if (writeTime > newest) newest = writeTime;
+        }
+        return (newest, count);
     }
 }
