@@ -10,6 +10,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ShowReviewQueueHandler : ICommandHandler
 {
     public string CommandName => "SHOW_REVIEW_QUEUE";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

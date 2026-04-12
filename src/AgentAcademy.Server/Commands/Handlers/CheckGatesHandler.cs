@@ -12,6 +12,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class CheckGatesHandler : ICommandHandler
 {
     public string CommandName => "CHECK_GATES";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

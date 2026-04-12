@@ -18,6 +18,7 @@ public sealed class GetPrReviewsHandler : ICommandHandler
     }
 
     public string CommandName => "GET_PR_REVIEWS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

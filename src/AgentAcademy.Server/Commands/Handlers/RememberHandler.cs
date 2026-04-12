@@ -13,6 +13,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class RememberHandler : ICommandHandler
 {
     public string CommandName => "REMEMBER";
+    public bool IsRetrySafe => true;
 
     internal static readonly HashSet<string> ValidCategories = new(StringComparer.OrdinalIgnoreCase)
     {

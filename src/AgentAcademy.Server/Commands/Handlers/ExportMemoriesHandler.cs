@@ -13,6 +13,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ExportMemoriesHandler : ICommandHandler
 {
     public string CommandName => "EXPORT_MEMORIES";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

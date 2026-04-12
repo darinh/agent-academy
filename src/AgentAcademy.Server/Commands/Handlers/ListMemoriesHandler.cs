@@ -12,6 +12,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListMemoriesHandler : ICommandHandler
 {
     public string CommandName => "LIST_MEMORIES";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

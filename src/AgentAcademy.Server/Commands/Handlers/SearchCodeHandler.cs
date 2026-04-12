@@ -11,6 +11,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class SearchCodeHandler : ICommandHandler
 {
     public string CommandName => "SEARCH_CODE";
+    public bool IsRetrySafe => true;
 
     private const int MaxResults = 50;
 

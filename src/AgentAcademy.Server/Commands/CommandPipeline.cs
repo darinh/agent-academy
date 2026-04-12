@@ -13,6 +13,18 @@ namespace AgentAcademy.Server.Commands;
 /// </summary>
 public sealed class CommandPipeline
 {
+    private const int MaxRetries = 2;
+    private const int RetryBaseDelayMs = 1000;
+
+    /// <summary>
+    /// Error codes the pipeline will auto-retry (excludes RATE_LIMIT — that's a policy, not transient).
+    /// </summary>
+    private static readonly HashSet<string> PipelineRetryableCodes = new(StringComparer.Ordinal)
+    {
+        CommandErrorCode.Timeout,
+        CommandErrorCode.Internal
+    };
+
     private readonly CommandParser _parser = new();
     private readonly CommandAuthorizer _authorizer = new();
     private readonly CommandRateLimiter _rateLimiter;
@@ -149,15 +161,16 @@ public sealed class CommandPipeline
                 continue;
             }
 
-            // Execute
+            // Execute (with optional pipeline-level retry for safe commands)
             try
             {
-                var result = await handler.ExecuteAsync(envelope, context);
+                var result = await ExecuteWithRetryAsync(handler, envelope, context, parsed.Command, agentId);
                 await AuditAsync(result, roomId, scopedServices);
                 results.Add(result);
 
-                _logger.LogInformation("Command {Command} executed by {AgentId}: {Status}",
-                    parsed.Command, agentId, result.Status);
+                _logger.LogInformation("Command {Command} executed by {AgentId}: {Status}{Retries}",
+                    parsed.Command, agentId, result.Status,
+                    result.RetryCount > 0 ? $" (after {result.RetryCount} retries)" : "");
             }
             catch (Exception ex)
             {
@@ -188,6 +201,8 @@ public sealed class CommandPipeline
         foreach (var r in results)
         {
             lines.Add($"[{r.Status}] {r.Command} ({r.CorrelationId})");
+            if (r.RetryCount > 0)
+                lines.Add($"  Retries: {r.RetryCount}");
             if (r.ErrorCode != null)
             {
                 var retryHint = CommandErrorCode.IsRetryable(r.ErrorCode) ? " (retryable)" : " (not retryable)";
@@ -206,6 +221,78 @@ public sealed class CommandPipeline
         }
         lines.Add("=== END COMMAND RESULTS ===");
         return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Execute a command, retrying on transient failures if the handler opts in via <see cref="ICommandHandler.IsRetrySafe"/>.
+    /// Non-retry-safe handlers are called exactly once.
+    /// </summary>
+    private async Task<CommandEnvelope> ExecuteWithRetryAsync(
+        ICommandHandler handler,
+        CommandEnvelope envelope,
+        CommandContext context,
+        string commandName,
+        string agentId)
+    {
+        var maxAttempts = handler.IsRetrySafe ? MaxRetries + 1 : 1;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            CommandEnvelope result;
+            try
+            {
+                result = await handler.ExecuteAsync(envelope, context);
+            }
+            catch (Exception ex)
+            {
+                // Last attempt — propagate as Internal error
+                if (attempt >= maxAttempts - 1)
+                {
+                    return envelope with
+                    {
+                        Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Internal,
+                        Error = $"Command execution failed after {attempt + 1} attempt(s): {ex.Message}",
+                        RetryCount = attempt
+                    };
+                }
+
+                // Transient exception — retry
+                var delay = RetryBaseDelayMs * (int)Math.Pow(2, attempt);
+                _logger.LogWarning(ex,
+                    "Command {Command} threw on attempt {Attempt}/{MaxAttempts} for agent {AgentId}, retrying in {Delay}ms",
+                    commandName, attempt + 1, maxAttempts, agentId, delay);
+                await Task.Delay(delay);
+                continue;
+            }
+
+            // Success — return with retry count
+            if (result.Status == CommandStatus.Success)
+                return result with { RetryCount = attempt };
+
+            // Non-retryable error — return immediately
+            if (!PipelineRetryableCodes.Contains(result.ErrorCode ?? ""))
+                return result with { RetryCount = attempt };
+
+            // Retryable error on last attempt — return the failure
+            if (attempt >= maxAttempts - 1)
+                return result with { RetryCount = attempt };
+
+            // Retryable error — retry
+            var retryDelay = RetryBaseDelayMs * (int)Math.Pow(2, attempt);
+            _logger.LogWarning(
+                "Command {Command} returned {ErrorCode} on attempt {Attempt}/{MaxAttempts} for agent {AgentId}, retrying in {Delay}ms",
+                commandName, result.ErrorCode, attempt + 1, maxAttempts, agentId, retryDelay);
+            await Task.Delay(retryDelay);
+        }
+
+        // Should not reach here, but safety net
+        return envelope with
+        {
+            Status = CommandStatus.Error,
+            ErrorCode = CommandErrorCode.Internal,
+            Error = "Retry loop exited unexpectedly"
+        };
     }
 
     private static async Task AuditAsync(CommandEnvelope envelope, string? roomId, IServiceProvider services)

@@ -10,6 +10,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ShowDiffHandler : ICommandHandler
 {
     public string CommandName => "SHOW_DIFF";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

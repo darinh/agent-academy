@@ -16,6 +16,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class RecallHandler : ICommandHandler
 {
     public string CommandName => "RECALL";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

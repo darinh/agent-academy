@@ -10,6 +10,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListTasksHandler : ICommandHandler
 {
     public string CommandName => "LIST_TASKS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

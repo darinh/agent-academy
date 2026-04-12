@@ -11,6 +11,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class QueryEvidenceHandler : ICommandHandler
 {
     public string CommandName => "QUERY_EVIDENCE";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
