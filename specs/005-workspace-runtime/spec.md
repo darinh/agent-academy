@@ -19,6 +19,7 @@ Controllers and command handlers inject focused domain services directly via con
 | `InitializationService` | Startup room/agent seeding, server instance tracking | Scoped | `Services/InitializationService.cs` |
 | `CrashRecoveryService` | Crash detection, breakout/agent/task recovery | Scoped | `Services/CrashRecoveryService.cs` |
 | `RoomService` | Room CRUD, snapshots, phase transitions, workspace scoping | Scoped | `Services/RoomService.cs` |
+| `RoomLifecycleService` | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped | `Services/RoomLifecycleService.cs` |
 | `MessageService` | Room/DM/breakout messaging, message trimming | Scoped | `Services/MessageService.cs` |
 | `TaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped | `Services/TaskQueryService.cs` |
 | `TaskLifecycleService` | Task creation staging, claim/release/approve/reject, evidence writes | Scoped | `Services/TaskLifecycleService.cs` |
@@ -71,7 +72,11 @@ Configured agents (v1 port):
 - `RoomService.CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
 - `RoomService.EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
 - `RoomService.GetProjectNameForRoomAsync(roomId)` → resolves `roomId → WorkspacePath → ProjectName` (falls back to directory basename)
-- `RoomService.CleanupStaleRoomsAsync()` → scans for non-main rooms where all tasks are terminal (Completed/Cancelled), evacuates agents to default room, archives the rooms. Returns count of rooms cleaned up.
+- `RoomLifecycleService.CleanupStaleRoomsAsync()` → scans for non-main rooms where all tasks are terminal (Completed/Cancelled), evacuates agents to default room, archives the rooms. Returns count of rooms cleaned up.
+- `RoomLifecycleService.CloseRoomAsync(roomId)` → archives a non-main room (guards against main room, non-empty rooms)
+- `RoomLifecycleService.ReopenRoomAsync(roomId)` → restores an archived room to Idle status
+- `RoomLifecycleService.TryAutoArchiveRoomAsync(roomId)` → auto-archives when all tasks are terminal
+- `RoomLifecycleService.IsMainCollaborationRoomAsync(roomId)` → returns true for the main collaboration room (lifecycle guard)
 
 **Room rename API**: `PUT /api/rooms/{roomId}/name` with `{ "name": "..." }` body. Returns updated `RoomSnapshot`. Frontend: double-click room name in sidebar to edit inline.
 
@@ -270,6 +275,7 @@ builder.Services.AddScoped<InitializationService>();
 builder.Services.AddScoped<BreakoutRoomService>();
 builder.Services.AddScoped<TaskItemService>();
 builder.Services.AddScoped<RoomService>();
+builder.Services.AddScoped<RoomLifecycleService>();
 builder.Services.AddScoped<TaskOrchestrationService>();
 builder.Services.AddScoped<AgentConfigService>();
 builder.Services.AddScoped<SystemSettingsService>();

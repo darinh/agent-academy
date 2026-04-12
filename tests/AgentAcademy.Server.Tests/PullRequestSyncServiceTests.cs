@@ -128,6 +128,8 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<TaskItemService>();
         sc.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         sc.AddScoped<RoomService>();
+        sc.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        sc.AddScoped<RoomLifecycleService>();
         sc.AddScoped<CrashRecoveryService>();
         sc.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         sc.AddScoped<InitializationService>();
@@ -417,8 +419,9 @@ public class PrSyncHelperTests : IDisposable
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, _taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, _activityPublisher, sessionService, messageService);
+        var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, _activityPublisher);
         _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, roomLifecycle, agentLocations, messageService, breakouts);
         _initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 

@@ -31,6 +31,7 @@ internal sealed class TestServiceGraph : IDisposable
     public TaskLifecycleService TaskLifecycleService { get; }
     public BreakoutRoomService BreakoutRoomService { get; }
     public RoomService RoomService { get; }
+    public RoomLifecycleService RoomLifecycleService { get; }
     public PlanService PlanService { get; }
     public SearchService SearchService { get; }
     public AgentConfigService AgentConfigService { get; }
@@ -84,6 +85,9 @@ internal sealed class TestServiceGraph : IDisposable
             Db, NullLogger<RoomService>.Instance, Catalog,
             ActivityPublisher, SessionService, MessageService);
 
+        RoomLifecycleService = new RoomLifecycleService(
+            Db, NullLogger<RoomLifecycleService>.Instance, Catalog, ActivityPublisher);
+
         PlanService = new PlanService(Db);
         SearchService = new SearchService(Db, NullLogger<SearchService>.Instance);
         AgentConfigService = new AgentConfigService(Db);
@@ -98,7 +102,7 @@ internal sealed class TestServiceGraph : IDisposable
         TaskOrchestrationService = new TaskOrchestrationService(
             Db, NullLogger<TaskOrchestrationService>.Instance, Catalog,
             ActivityPublisher, TaskLifecycleService, RoomService,
-            AgentLocationService, MessageService, BreakoutRoomService);
+            RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService);
 
         ProjectScanner = new ProjectScanner();
 

@@ -71,6 +71,8 @@ public class TaskSystemTests : IDisposable
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
         services.AddScoped<RoomService>();
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
         services.AddScoped<CrashRecoveryService>();
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
@@ -1608,10 +1610,11 @@ public class TaskSystemTests : IDisposable
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var lifecycle = scope.ServiceProvider.GetRequiredService<RoomLifecycleService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
             var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
-            await rooms.CloseRoomAsync("room-2");
+            await lifecycle.CloseRoomAsync("room-2");
         }
 
         var handler = new RoomTopicHandler();

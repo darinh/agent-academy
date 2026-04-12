@@ -24,6 +24,7 @@ public class SubServiceIntegrationTests : IDisposable
     private readonly ActivityPublisher _activityPublisher;
     private readonly InitializationService _initialization;
     private readonly RoomService _rooms;
+    private readonly RoomLifecycleService _roomLifecycle;
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
     private readonly TaskLifecycleService _taskLifecycle;
@@ -96,8 +97,9 @@ public class SubServiceIntegrationTests : IDisposable
         _breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, _taskQueries, _agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, _breakouts, _agentLocations, _messages, _activityPublisher);
         _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService, _messages);
+        _roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, _activityPublisher);
         _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _rooms, _agentLocations, _messages, _breakouts);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _rooms, _roomLifecycle, _agentLocations, _messages, _breakouts);
     }
 
     public void Dispose()
@@ -1504,7 +1506,7 @@ public class SubServiceIntegrationTests : IDisposable
         Assert.Equal(nameof(RoomStatus.Active), room!.Status);
 
         // Run cleanup
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(1, count);
         var cleaned = await _db.Rooms.FindAsync(roomId);
@@ -1519,7 +1521,7 @@ public class SubServiceIntegrationTests : IDisposable
         // Create an empty room (no tasks)
         var room = await _rooms.CreateRoomAsync("Empty Room");
 
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
         var entity = await _db.Rooms.FindAsync(room.Id);
@@ -1540,7 +1542,7 @@ public class SubServiceIntegrationTests : IDisposable
         entity.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
         var mainRoom = await _db.Rooms.FindAsync("main");
@@ -1565,7 +1567,7 @@ public class SubServiceIntegrationTests : IDisposable
         entity.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
     }

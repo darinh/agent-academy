@@ -36,6 +36,7 @@ public sealed class ReopenRoomHandler : ICommandHandler
         }
 
         var roomService = context.Services.GetRequiredService<RoomService>();
+        var lifecycle = context.Services.GetRequiredService<RoomLifecycleService>();
         var room = await roomService.GetRoomAsync(roomId);
 
         if (room is null)
@@ -60,7 +61,8 @@ public sealed class ReopenRoomHandler : ICommandHandler
 
         try
         {
-            var reopened = await roomService.ReopenRoomAsync(roomId);
+            await lifecycle.ReopenRoomAsync(roomId);
+            var reopened = (await roomService.GetRoomAsync(roomId))!;
 
             return command with
             {

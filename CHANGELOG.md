@@ -5,6 +5,10 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ## v2.0.1 (2026-04-12)
 
+### Refactoring
+
+- extract RoomLifecycleService from RoomService (887→679 lines)
+
 ### Fixes
 
 - stabilize flaky Fluent UI Dialog portal tests

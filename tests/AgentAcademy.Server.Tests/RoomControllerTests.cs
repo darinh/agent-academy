@@ -154,7 +154,7 @@ public sealed class RoomControllerTests : IDisposable
     [Fact]
     public async Task CleanupStaleRooms_ReturnsOk()
     {
-        var result = await _controller.CleanupStaleRooms();
+        var result = await _controller.CleanupStaleRooms(_svc.RoomLifecycleService);
         var ok = Assert.IsType<OkObjectResult>(result);
         var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
         Assert.Contains("archivedCount", json);

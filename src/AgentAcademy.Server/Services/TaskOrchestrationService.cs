@@ -17,6 +17,7 @@ public sealed class TaskOrchestrationService
     private readonly ActivityPublisher _activity;
     private readonly TaskLifecycleService _taskLifecycle;
     private readonly RoomService _rooms;
+    private readonly RoomLifecycleService _roomLifecycle;
     private readonly AgentLocationService _agentLocations;
     private readonly MessageService _messages;
     private readonly BreakoutRoomService _breakouts;
@@ -28,6 +29,7 @@ public sealed class TaskOrchestrationService
         ActivityPublisher activity,
         TaskLifecycleService taskLifecycle,
         RoomService rooms,
+        RoomLifecycleService roomLifecycle,
         AgentLocationService agentLocations,
         MessageService messages,
         BreakoutRoomService breakouts)
@@ -38,6 +40,7 @@ public sealed class TaskOrchestrationService
         _activity = activity;
         _taskLifecycle = taskLifecycle;
         _rooms = rooms;
+        _roomLifecycle = roomLifecycle;
         _agentLocations = agentLocations;
         _messages = messages;
         _breakouts = breakouts;
@@ -139,7 +142,7 @@ public sealed class TaskOrchestrationService
 
         if (!string.IsNullOrEmpty(roomId))
         {
-            await _rooms.TryAutoArchiveRoomAsync(roomId);
+            await _roomLifecycle.TryAutoArchiveRoomAsync(roomId);
         }
 
         return snapshot;
