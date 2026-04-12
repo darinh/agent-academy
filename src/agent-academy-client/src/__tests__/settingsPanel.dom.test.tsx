@@ -879,10 +879,12 @@ describe("SettingsPanel (interactive)", () => {
       await renderPanelAndWait();
       clickTab("Advanced");
 
-      const inputs = screen.getAllByRole("spinbutton");
-      expect(inputs).toHaveLength(2);
-      expect(inputs[0]).toHaveValue(75);
-      expect(inputs[1]).toHaveValue(40);
+      await waitFor(() => {
+        const inputs = screen.getAllByRole("spinbutton");
+        expect(inputs).toHaveLength(2);
+        expect(inputs[0]).toHaveValue(75);
+        expect(inputs[1]).toHaveValue(40);
+      });
     });
 
     it("uses default values when API returns empty", async () => {
