@@ -338,7 +338,8 @@ Creates a dedicated Discord structure for agent questions with threaded replies.
   - 🟣 Purple — SpecReview
 - Action buttons rendered as Discord button components
 
-**Input collection** (`RequestInputAsync`):
+**Input collection** (`RequestInputAsync` — delegated to `DiscordInputHandler`):
+- `DiscordInputHandler` is a stateless helper that receives `DiscordSocketClient`, channel ID, and owner ID as method parameters (no mutable state or `Configure()`).
 - **Choice mode**: Sends buttons for each choice, waits for `InteractionCreated` event on the sent message
 - **Freeform mode**: Sends prompt embed, waits for next non-bot text message in the channel
 - Returns `null` on timeout or cancellation
@@ -448,7 +449,8 @@ Questions are posted to the room channel with Block Kit formatting (header, sect
 | `src/AgentAcademy.Server/Notifications/INotificationProvider.cs` | Provider interface |
 | `src/AgentAcademy.Server/Notifications/NotificationManager.cs` | Provider orchestrator |
 | `src/AgentAcademy.Server/Notifications/ConsoleNotificationProvider.cs` | Reference provider |
-| `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs` | Discord bot provider |
+| `src/AgentAcademy.Server/Notifications/DiscordNotificationProvider.cs` | Discord bot provider (notification delivery, connection lifecycle) |
+| `src/AgentAcademy.Server/Notifications/DiscordInputHandler.cs` | Discord input collection (choice buttons, freeform text) |
 | `src/AgentAcademy.Server/Notifications/SlackApiClient.cs` | Slack Web API HTTP wrapper |
 | `src/AgentAcademy.Server/Notifications/SlackNotificationProvider.cs` | Slack notification provider |
 | `src/AgentAcademy.Server/Notifications/ActivityNotificationBroadcaster.cs` | Activity event → notification bridge |
@@ -549,6 +551,8 @@ Every outbound notification attempt is persisted to the `notification_deliveries
 - ~~Room channels are not cleaned up when rooms are archived/completed~~ — **resolved**: `OnRoomClosedAsync` deletes Discord channel, clears webhook/mapping caches. `ActivityNotificationBroadcaster` routes `RoomClosed` events to providers.
 
 ## Revision History
+
+- **2026-04-12**: Structural refactor — extracted `DiscordInputHandler` from `DiscordNotificationProvider`. Stateless handler receives `DiscordSocketClient`, channel ID, and owner ID as method parameters (no mutable state). `DiscordNotificationProvider` retains notification delivery, connection lifecycle, and channel management. Zero behavioral changes.
 
 - **2026-04-05**: Multi-provider setup wizard — `NotificationSetupWizard` refactored from Discord-only to accept `providerId` prop. Fetches config schema from `GET /api/notifications/providers/{id}/schema`. Provider-specific instructions for Discord (Developer Portal, invite URL generator) and Slack (app creation, OAuth scopes). Generic fallback for unknown providers. Dynamic credential form from schema fields. Settings panel now routes any provider to the wizard. 19 new frontend tests (138 total vitest).
 

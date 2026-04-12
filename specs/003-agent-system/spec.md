@@ -18,10 +18,15 @@ Defines how Agent Academy sends prompts to LLM providers and receives responses.
                ▼
 ┌──────────────────────────────────┐
 │        CopilotExecutor           │
-│  • Manages CopilotClient        │
+│  • Delegates to ClientFactory   │
 │  • Caches sessions per agent    │
 │  • Streams & collects response  │
 │  • Falls back to StubExecutor   │
+├──────────────────────────────────┤
+│      CopilotClientFactory        │
+│  • Token resolution chain       │
+│  • Client creation & caching    │
+│  • Worktree-scoped clients      │
 └──────────────┬───────────────────┘
                │ (on failure)
                ▼
@@ -66,19 +71,21 @@ public interface IAgentExecutor
 | `InvalidateAllSessionsAsync` | Disposes all sessions across all rooms and agents |
 | `DisposeAsync` | Releases all resources |
 
-### Implementation: `CopilotExecutor`
+### Implementation: `CopilotExecutor` + `CopilotClientFactory`
 
-**File**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`
+**Files**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`, `src/AgentAcademy.Server/Services/CopilotClientFactory.cs`
 **NuGet**: `GitHub.Copilot.SDK` v0.2.2
 
+`CopilotClientFactory` owns client lifecycle (token resolution, client creation, worktree clients). `CopilotExecutor` owns session management, retry logic, error classification, and circuit breaker.
+
 Key behaviors:
-- **Lazy client initialization**: `CopilotClient` is created on first use and cached.
-- **Token resolution chain**: Resolved in priority order via `ResolveToken()`:
+- **Lazy client initialization** *(CopilotClientFactory)*: `CopilotClient` is created on first use and cached.
+- **Token resolution chain** *(CopilotClientFactory)*: Resolved in priority order via `ResolveToken()`:
   1. **User OAuth token** — from `CopilotTokenProvider` (captured during GitHub OAuth login)
   2. **Config token** — `Copilot:GitHubToken` from `IConfiguration` (appsettings / user-secrets)
   3. **Environment / CLI** — `null` passed to SDK, which checks `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, or copilot CLI login state
 - **CLI path configuration**: `Copilot:CliPath` in `appsettings.json` controls which copilot binary the SDK uses. Must be set to `"copilot"` (system PATH) or an explicit path to an already-authenticated copilot CLI. The SDK's bundled binary (at `runtimes/linux-x64/native/copilot`) ships with no auth state and will fail to connect. The system copilot CLI (e.g., `~/.local/bin/copilot`) uses existing `copilot auth login` credentials.
-- **Token-change awareness**: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt. If the executor was in an auth-failed state, a recovery message is posted to the main room.
+- **Token-change awareness** *(CopilotClientFactory)*: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt. If the executor was in an auth-failed state, a recovery message is posted to the main room.
 - **Error classification**: `SessionErrorEvent.Data.ErrorType` is classified into typed exceptions:
   - `authentication` → `CopilotAuthException` (definitive — no retry, triggers auth failure notification)
   - `authorization` → `CopilotAuthorizationException` (no retry — token lacks required permissions)
@@ -88,7 +95,7 @@ Key behaviors:
 - **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state. Before probing, the monitor checks if the token is expiring soon (within 30 minutes); if so, it proactively refreshes via `ICopilotAuthProbe.RefreshTokenAsync()`. On auth failure, a refresh is attempted before degrading the system.
 - **Permission handling**: Sessions use `AgentPermissionHandler.Create()` which approves tool calls for the registered tools. When no tools are registered for an agent, all permissions are approved (same as `PermissionHandler.ApproveAll`). The handler logs all permission requests for diagnostics.
 - **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`. Worktree-scoped sessions use the key `{worktreePath}:{agentId}:{roomId}`.
-- **Per-worktree CopilotClient**: When an agent works in a git worktree (breakout room), a dedicated `CopilotClient` is created with `Cwd` set to the worktree directory, ensuring the CLI's built-in tools operate in the correct filesystem location. Worktree clients are stored in a `ConcurrentDictionary<string, CopilotClient>` keyed by path. Lifecycle: created on first use per worktree path, disposed when the breakout room closes, and all worktree clients are disposed on token rotation. `EnsureWorktreeClientAsync` avoids deadlocks by returning `null` (caller falls back to the default client) rather than calling `EnsureClientAsync` while holding the lock.
+- **Per-worktree CopilotClient** *(CopilotClientFactory)*: When an agent works in a git worktree (breakout room), a dedicated `CopilotClient` is created with `Cwd` set to the worktree directory, ensuring the CLI's built-in tools operate in the correct filesystem location. Worktree clients are stored in a `ConcurrentDictionary<string, CopilotClient>` keyed by path. Lifecycle: created on first use per worktree path, disposed when the breakout room closes, and all worktree clients are disposed on token rotation. `EnsureWorktreeClientAsync` avoids deadlocks by returning `null` (caller falls back to the default client) rather than calling `EnsureClientAsync` while holding the lock.
 - **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity. The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
 - **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
@@ -130,10 +137,12 @@ Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
                                                           │ Token
                                                           ▼
 ┌──────────────────┐     ┌───────────────────┐   ┌──────────────────┐
-│  Agent           │────▶│  CopilotExecutor  │──▶│  CopilotClient   │
-│  Orchestrator    │     │  ResolveToken()   │   │  (SDK CLI proc)  │
-│  (background)    │     └───────────────────┘   └──────────────────┘
-└──────────────────┘
+│  Agent           │────▶│  CopilotExecutor  │──▶│ CopilotClient    │
+│  Orchestrator    │     │  (sessions, retry)│   │ Factory          │
+│  (background)    │     └───────────────────┘   │  ResolveToken()  │
+└──────────────────┘                             │  → CopilotClient │
+                                                 │  (SDK CLI proc)  │
+                                                 └──────────────────┘
 
          ┌──────────────────────────────────────────────────┐
          │  CopilotAuthMonitorService (every 5 min)         │
@@ -183,10 +192,11 @@ The message includes the agent's name and role so users can identify which agent
 **File**: `src/AgentAcademy.Server/Program.cs`
 
 ```csharp
+builder.Services.AddSingleton<CopilotClientFactory>();
 builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 ```
 
-`CopilotExecutor` is registered as a singleton. It internally creates and manages a `StubExecutor` fallback — consumers only depend on `IAgentExecutor`.
+`CopilotClientFactory` is registered as a singleton. `CopilotExecutor` takes it as a constructor dependency and is registered as `IAgentExecutor`. It internally creates and manages a `StubExecutor` fallback — consumers only depend on `IAgentExecutor`.
 
 ### Tests
 
@@ -726,3 +736,4 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-04-05 | Agent write tools — 5 new tools in 2 groups: `task-write` (create_task, update_task_status, add_task_comment) and `memory` (remember, recall). Inner wrapper classes capture agent identity via closures. `IAgentToolRegistry` extended with agentId/agentName parameters for contextual groups. Reuses `RememberHandler.ValidCategories` and `RecallHandler.SearchWithFts5Async`. All 6 agents updated. 35 new tests (1154 total). | agent-write-tools |
 | 2026-04-05 | Session history UI — `ConversationSessionService` extended with `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync` query methods with pagination, status filtering, and `hoursBack` time window. New `SessionController` (`GET /api/sessions`, `GET /api/sessions/stats`), room sessions endpoint (`GET /api/rooms/{roomId}/sessions`). Frontend: `SessionHistoryPanel` in dashboard with stats cards, filter tabs, expandable summaries, pagination. `ChatPanel` session resume indicator shows when agents have archived context. 21 new backend tests (1319 total), 16 new frontend tests (218 total). | session-history |
 | 2026-04-05 | OAuth refresh token — `CopilotTokenProvider` extended with `RefreshToken`, `ExpiresAtUtc`, `IsTokenExpiringSoon`, `CanRefresh`, cookie write-back flag. `ICopilotAuthProbe.RefreshTokenAsync()` exchanges refresh tokens at GitHub's OAuth endpoint. `CopilotAuthMonitorService` proactively refreshes 30 min before expiry and attempts refresh before degrading on auth failure. `Program.cs` captures refresh token in OAuth callback, restores from cookie on restart, merges refreshed tokens into cookie. Access tokens auto-renew for up to 6 months without re-authentication. 21 new tests (1343 total). Adversarial review (GPT-5.2, Claude Sonnet 4, Claude Haiku 4.5): timeout handling, token clobbering, and cookie error handling fixed. | token-refresh |
+| 2026-04-12 | Structural refactor — extracted `CopilotClientFactory` from `CopilotExecutor` (client lifecycle, token resolution, worktree clients). `CopilotExecutor` retains session management, retry logic, error classification, circuit breaker. Zero behavioral changes. `ResolveToken()` divergence between Factory (returns null for SDK fallback) and `CopilotAuthProbe` (checks env vars for raw HTTP probes) documented as intentional. | copilot-client-factory |
