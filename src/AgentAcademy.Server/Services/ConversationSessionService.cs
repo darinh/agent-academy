@@ -480,8 +480,8 @@ public sealed class ConversationSessionService
     {
         try
         {
-            // Load messages from this session
             List<string> messageLines;
+            List<string> senderNames;
 
             if (roomType == "Breakout")
             {
@@ -490,8 +490,13 @@ public sealed class ConversationSessionService
                     .OrderBy(m => m.SentAt)
                     .ToListAsync();
 
+                senderNames = messages
+                    .Select(m => PromptSanitizer.SanitizeMetadata(m.SenderName))
+                    .Distinct().ToList();
                 messageLines = messages
-                    .Select(m => $"[{m.SenderName}]: {m.Content}")
+                    .Select(m =>
+                        $"[{PromptSanitizer.SanitizeMetadata(m.SenderName)}]: " +
+                        PromptSanitizer.EscapeMarkers(m.Content))
                     .ToList();
             }
             else
@@ -501,8 +506,13 @@ public sealed class ConversationSessionService
                     .OrderBy(m => m.SentAt)
                     .ToListAsync();
 
+                senderNames = messages
+                    .Select(m => PromptSanitizer.SanitizeMetadata(m.SenderName))
+                    .Distinct().ToList();
                 messageLines = messages
-                    .Select(m => $"[{m.SenderName}]: {m.Content}")
+                    .Select(m =>
+                        $"[{PromptSanitizer.SanitizeMetadata(m.SenderName)}]: " +
+                        PromptSanitizer.EscapeMarkers(m.Content))
                     .ToList();
             }
 
@@ -512,6 +522,8 @@ public sealed class ConversationSessionService
             var conversationText = string.Join("\n", messageLines);
             var prompt =
                 $"""
+                {PromptSanitizer.BoundaryInstruction}
+
                 Summarize this team conversation concisely. Capture:
                 - Key decisions made
                 - Tasks created or assigned (with agent names)
@@ -522,13 +534,13 @@ public sealed class ConversationSessionService
                 Keep it under 500 words. Be factual, not narrative. Use bullet points.
 
                 === CONVERSATION ===
-                {conversationText}
+                {PromptSanitizer.WrapBlock(conversationText)}
                 """;
 
             if (!_executor.IsFullyOperational)
             {
                 _logger.LogWarning("Executor not operational — using fallback summary");
-                return BuildFallbackSummary(messageLines);
+                return BuildFallbackSummary(messageLines.Count, senderNames);
             }
 
             var summary = await _executor.RunAsync(SummarizerAgent, prompt, null);
@@ -546,16 +558,12 @@ public sealed class ConversationSessionService
         }
     }
 
-    private static string BuildFallbackSummary(List<string> messageLines)
+    private static string BuildFallbackSummary(int messageCount, List<string> senderNames)
     {
-        var count = messageLines.Count;
-        var senders = messageLines
-            .Select(l => l.Split(']')[0].TrimStart('['))
-            .Distinct()
-            .Take(10);
+        var participants = senderNames.Take(10);
 
-        return $"Previous conversation archived ({count} messages). " +
-               $"Participants: {string.Join(", ", senders)}. " +
+        return $"Previous conversation archived ({messageCount} messages). " +
+               $"Participants: {string.Join(", ", participants)}. " +
                "No LLM summary available — Copilot was offline during rotation.";
     }
 
