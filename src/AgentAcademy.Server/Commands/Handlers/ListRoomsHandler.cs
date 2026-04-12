@@ -11,6 +11,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListRoomsHandler : ICommandHandler
 {
     public string CommandName => "LIST_ROOMS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

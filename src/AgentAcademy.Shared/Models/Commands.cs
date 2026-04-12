@@ -20,6 +20,12 @@ public record CommandEnvelope(
     /// Null when Status is Success. See <see cref="CommandErrorCode"/> for known values.
     /// </summary>
     public string? ErrorCode { get; init; }
+
+    /// <summary>
+    /// Number of automatic retry attempts made by the pipeline before producing this result.
+    /// 0 means the command succeeded (or failed) on the first attempt.
+    /// </summary>
+    public int RetryCount { get; init; }
 }
 
 /// <summary>

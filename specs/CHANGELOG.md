@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **009-spec-management**: Automated spec drift detection. CI job (`spec-drift`) warns on PRs when source code changes lack corresponding spec updates. `specs/drift-map.json` maps source file patterns to spec sections. `scripts/check-spec-drift.sh` + `scripts/check-spec-drift.js` perform the analysis. Supports `spec-exempt:` marker for intentional exemptions. Reports unmapped source files. Known gap #1 resolved.
+- **007-agent-commands**: Pipeline-level retry for safe commands. `CommandPipeline.ExecuteWithRetryAsync` retries commands that opt in via `ICommandHandler.IsRetrySafe` (up to 3 attempts, 1s/2s exponential backoff). Only `TIMEOUT`/`INTERNAL` errors trigger retry — `RATE_LIMIT` excluded. 19 read-only/idempotent handlers marked retry-safe. `CommandEnvelope.RetryCount` surfaces attempt count to agents. 9 tests. Known gap resolved.
 
 ### Changed
 - **003-agent-system**: Structural refactor — extracted `CopilotClientFactory` from `CopilotExecutor`. Updated architecture diagram, implementation section (now "CopilotExecutor + CopilotClientFactory"), auth flow diagram, and DI registration to reflect split. Client lifecycle (token resolution, client creation, worktree clients) now owned by `CopilotClientFactory`; session management, retry, error classification, circuit breaker remain in `CopilotExecutor`. `ResolveToken()` divergence between Factory (returns null for SDK fallback) and `CopilotAuthProbe` (checks env vars for raw HTTP probes) documented as intentional.

@@ -376,4 +376,233 @@ public class CommandPipelineTests : IDisposable
 
         Assert.False(CommandPipeline.HasConfirmFlag(args));
     }
+
+    // --- Retry tests ---
+
+    /// <summary>
+    /// Fake handler whose failure behavior is configurable per test.
+    /// </summary>
+    private sealed class FakeHandler : ICommandHandler
+    {
+        private readonly Queue<Func<CommandEnvelope, Task<CommandEnvelope>>> _behaviors = new();
+
+        public string CommandName { get; init; } = "LIST_ROOMS";
+        public bool IsRetrySafe { get; init; }
+        public int CallCount { get; private set; }
+
+        public FakeHandler Throws(Exception ex)
+        {
+            _behaviors.Enqueue(_ => throw ex);
+            return this;
+        }
+
+        public FakeHandler Succeeds()
+        {
+            _behaviors.Enqueue(cmd => Task.FromResult(cmd with { Status = CommandStatus.Success }));
+            return this;
+        }
+
+        public FakeHandler ReturnsError(string errorCode, string message)
+        {
+            _behaviors.Enqueue(cmd => Task.FromResult(cmd with
+            {
+                Status = CommandStatus.Error,
+                ErrorCode = errorCode,
+                Error = message
+            }));
+            return this;
+        }
+
+        public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
+        {
+            CallCount++;
+            if (_behaviors.Count > 0)
+                return _behaviors.Dequeue()(command);
+            return Task.FromResult(command with { Status = CommandStatus.Success });
+        }
+    }
+
+    private CommandPipeline PipelineWith(params ICommandHandler[] handlers)
+    {
+        return new CommandPipeline(handlers, NullLogger<CommandPipeline>.Instance);
+    }
+
+    [Fact]
+    public async Task Retry_RetrySafeHandler_ThrowsOnceThenSucceeds_ReturnsSuccess()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = true };
+        handler.Throws(new InvalidOperationException("transient")).Succeeds();
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Success, result.Results[0].Status);
+        Assert.Equal(1, result.Results[0].RetryCount);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Retry_RetrySafeHandler_ThrowsAllAttempts_ReturnsFinalError()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = true };
+        handler
+            .Throws(new InvalidOperationException("fail 1"))
+            .Throws(new InvalidOperationException("fail 2"))
+            .Throws(new InvalidOperationException("fail 3"));
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Error, result.Results[0].Status);
+        Assert.Equal(CommandErrorCode.Internal, result.Results[0].ErrorCode);
+        Assert.Contains("3 attempt(s)", result.Results[0].Error);
+        Assert.Equal(2, result.Results[0].RetryCount);
+        Assert.Equal(3, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Retry_RetrySafeHandler_ReturnsRetryableErrorThenSucceeds()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = true };
+        handler
+            .ReturnsError(CommandErrorCode.Timeout, "timed out")
+            .Succeeds();
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Success, result.Results[0].Status);
+        Assert.Equal(1, result.Results[0].RetryCount);
+    }
+
+    [Fact]
+    public async Task Retry_RetrySafeHandler_NonRetryableError_NoRetry()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = true };
+        handler.ReturnsError(CommandErrorCode.Validation, "bad args");
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Error, result.Results[0].Status);
+        Assert.Equal(CommandErrorCode.Validation, result.Results[0].ErrorCode);
+        Assert.Equal(0, result.Results[0].RetryCount);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Retry_NonRetrySafeHandler_Throws_NoRetry()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = false };
+        handler.Throws(new InvalidOperationException("transient"));
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Error, result.Results[0].Status);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Retry_HandlerReturnedRateLimit_NotRetriedByPipeline()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = true };
+        handler.ReturnsError(CommandErrorCode.RateLimit, "quota exceeded");
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        var result = await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        Assert.Single(result.Results);
+        Assert.Equal(CommandStatus.Error, result.Results[0].Status);
+        Assert.Equal(CommandErrorCode.RateLimit, result.Results[0].ErrorCode);
+        Assert.Equal(0, result.Results[0].RetryCount);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Retry_OnlyFinalResultAudited()
+    {
+        var handler = new FakeHandler { CommandName = "LIST_ROOMS", IsRetrySafe = true };
+        handler
+            .Throws(new InvalidOperationException("transient"))
+            .Succeeds();
+        var pipeline = PipelineWith(handler);
+
+        var agent = TestAgent(new CommandPermissionSet(
+            Allowed: new List<string> { "LIST_ROOMS" }, Denied: new List<string>()));
+
+        using var scope = _serviceProvider.CreateScope();
+        await pipeline.ProcessResponseAsync(
+            "test-1", "LIST_ROOMS:", "room-1", agent, scope.ServiceProvider);
+
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var audits = await db.CommandAudits.Where(a => a.Command == "LIST_ROOMS").ToListAsync();
+        Assert.Single(audits);
+        Assert.Equal("Success", audits[0].Status);
+    }
+
+    [Fact]
+    public void FormatResultsForContext_IncludesRetryCount()
+    {
+        var envelope = new CommandEnvelope(
+            "READ_FILE",
+            new Dictionary<string, object?>(),
+            CommandStatus.Success,
+            new Dictionary<string, object?> { ["content"] = "hello" },
+            null, "cmd-retry", DateTime.UtcNow, "test-1")
+        { RetryCount = 2 };
+
+        var result = CommandPipeline.FormatResultsForContext(new List<CommandEnvelope> { envelope });
+
+        Assert.Contains("Retries: 2", result);
+    }
+
+    [Fact]
+    public void FormatResultsForContext_OmitsRetryCountWhenZero()
+    {
+        var envelope = new CommandEnvelope(
+            "LIST_ROOMS",
+            new Dictionary<string, object?>(),
+            CommandStatus.Success,
+            null, null, "cmd-no-retry", DateTime.UtcNow, "test-1");
+
+        var result = CommandPipeline.FormatResultsForContext(new List<CommandEnvelope> { envelope });
+
+        Assert.DoesNotContain("Retries:", result);
+    }
 }

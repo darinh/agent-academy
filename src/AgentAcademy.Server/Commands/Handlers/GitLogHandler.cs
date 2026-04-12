@@ -10,6 +10,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class GitLogHandler : ICommandHandler
 {
     public string CommandName => "GIT_LOG";
+    public bool IsRetrySafe => true;
 
     private const int DefaultCount = 20;
     private const int MaxCount = 50;

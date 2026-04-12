@@ -12,6 +12,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListCommandsHandler : ICommandHandler
 {
     public string CommandName => "LIST_COMMANDS";
+    public bool IsRetrySafe => true;
 
     private static readonly Dictionary<string, string> CommandDescriptions = new(StringComparer.OrdinalIgnoreCase)
     {
