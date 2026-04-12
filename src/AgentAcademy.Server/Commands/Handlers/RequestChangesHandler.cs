@@ -48,11 +48,11 @@ public sealed class RequestChangesHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
 
         try
         {
-            var task = await runtime.RequestChangesAsync(taskId, context.AgentId, findings);
+            var task = await taskLifecycle.RequestChangesAsync(taskId, context.AgentId, findings);
             return command with
             {
                 Status = CommandStatus.Success,

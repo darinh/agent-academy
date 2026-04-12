@@ -68,10 +68,13 @@ public sealed class MergePrHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         // Validate task exists
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -121,7 +124,7 @@ public sealed class MergePrHandler : ICommandHandler
             && string.Equals(deleteStr, "true", StringComparison.OrdinalIgnoreCase);
 
         // Set task to Merging status before git ops
-        await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
+        await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
 
         // Phase 1: Attempt the GitHub merge
         PrMergeResult result;
@@ -137,8 +140,8 @@ public sealed class MergePrHandler : ICommandHandler
             // PR was merged externally — finalize locally instead of failing
             try
             {
-                await runtime.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Merged);
-                await runtime.CompleteTaskAsync(taskId, commitCount: 1);
+                await taskLifecycle.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Merged);
+                await taskOrchestration.CompleteTaskAsync(taskId, commitCount: 1);
 
                 return command with
                 {
@@ -169,7 +172,7 @@ public sealed class MergePrHandler : ICommandHandler
             // Merge failed — revert task to Approved
             try
             {
-                await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Approved);
+                await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Approved);
             }
             catch (Exception recoveryEx)
             {
@@ -193,8 +196,8 @@ public sealed class MergePrHandler : ICommandHandler
         // Do NOT rollback to Approved here — the PR is already merged
         try
         {
-            await runtime.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Merged);
-            await runtime.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: result.MergeCommitSha);
+            await taskLifecycle.SyncTaskPrStatusAsync(taskId, PullRequestStatus.Merged);
+            await taskOrchestration.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: result.MergeCommitSha);
         }
         catch (Exception ex)
         {
@@ -212,7 +215,7 @@ public sealed class MergePrHandler : ICommandHandler
         {
             try
             {
-                await runtime.PostSystemStatusAsync(context.RoomId,
+                await messages.PostSystemStatusAsync(context.RoomId,
                     $"✅ PR #{task.PullRequestNumber} for task \"{task.Title}\" merged via GitHub.");
             }
             catch

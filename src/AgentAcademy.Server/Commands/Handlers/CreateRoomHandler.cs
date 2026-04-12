@@ -39,8 +39,8 @@ public sealed class CreateRoomHandler : ICommandHandler
         var description = command.Args.TryGetValue("description", out var descObj) && descObj is string desc
             ? desc : null;
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var room = await runtime.CreateRoomAsync(name.Trim(), description?.Trim());
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var room = await roomService.CreateRoomAsync(name.Trim(), description?.Trim());
 
         return command with
         {

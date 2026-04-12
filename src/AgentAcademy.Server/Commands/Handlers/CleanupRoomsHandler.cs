@@ -27,8 +27,8 @@ public sealed class CleanupRoomsHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var count = await runtime.CleanupStaleRoomsAsync();
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var count = await roomService.CleanupStaleRoomsAsync();
 
         return command with
         {

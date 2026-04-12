@@ -13,8 +13,8 @@ public sealed class ListTasksHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var tasks = await runtime.GetTasksAsync();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var tasks = await taskQueries.GetTasksAsync();
 
         // Apply optional filters from args
         if (command.Args.TryGetValue("status", out var statusObj) && statusObj is string statusFilter)

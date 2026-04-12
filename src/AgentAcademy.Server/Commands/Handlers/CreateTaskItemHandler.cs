@@ -50,10 +50,12 @@ public sealed class CreateTaskItemHandler : ICommandHandler
             && brObj is string br && !string.IsNullOrWhiteSpace(br)
             ? br : context.BreakoutRoomId;
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var taskItems = context.Services.GetRequiredService<TaskItemService>();
 
         // Resolve assignee: accept agent ID or name, normalize to ID
-        var agents = runtime.GetConfiguredAgents();
+        var agents = catalog.Agents;
         var resolvedAgent = agents.FirstOrDefault(a =>
             string.Equals(a.Id, assignedToRaw, StringComparison.OrdinalIgnoreCase)
             || string.Equals(a.Name, assignedToRaw, StringComparison.OrdinalIgnoreCase));
@@ -71,7 +73,7 @@ public sealed class CreateTaskItemHandler : ICommandHandler
         var assignedTo = resolvedAgent.Id;
 
         // Validate room exists
-        var roomSnapshot = await runtime.GetRoomAsync(roomId);
+        var roomSnapshot = await roomService.GetRoomAsync(roomId);
         if (roomSnapshot is null)
         {
             return command with
@@ -84,7 +86,7 @@ public sealed class CreateTaskItemHandler : ICommandHandler
 
         try
         {
-            var item = await runtime.CreateTaskItemAsync(
+            var item = await taskItems.CreateTaskItemAsync(
                 title, description, assignedTo, roomId, breakoutRoomId);
 
             return command with

@@ -52,12 +52,13 @@ public sealed class UpdateTaskHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         try
         {
             // Verify task exists first
-            _ = await runtime.GetTaskAsync(taskId)
+            _ = await taskQueries.GetTaskAsync(taskId)
                 ?? throw new InvalidOperationException($"Task '{taskId}' not found");
 
             var actions = new List<string>();
@@ -75,8 +76,8 @@ public sealed class UpdateTaskHandler : ICommandHandler
                     };
                 }
 
-                await runtime.UpdateTaskStatusAsync(taskId, TaskStatus.Blocked);
-                await runtime.PostTaskNoteAsync(taskId,
+                await taskQueries.UpdateTaskStatusAsync(taskId, TaskStatus.Blocked);
+                await taskOrchestration.PostTaskNoteAsync(taskId,
                     $"🚫 Blocked by {context.AgentName}: {(string)blockerObj!}");
                 actions.Add($"status → Blocked (blocker: {(string)blockerObj!})");
             }
@@ -103,20 +104,20 @@ public sealed class UpdateTaskHandler : ICommandHandler
                     };
                 }
 
-                await runtime.UpdateTaskStatusAsync(taskId, parsed);
+                await taskQueries.UpdateTaskStatusAsync(taskId, parsed);
                 actions.Add($"status → {parsed}");
             }
 
             // Handle note — post as system message to the task's room
             if (hasNote)
             {
-                await runtime.PostTaskNoteAsync(taskId,
+                await taskOrchestration.PostTaskNoteAsync(taskId,
                     $"📝 Note from {context.AgentName}: {(string)noteObj!}");
                 actions.Add("note posted");
             }
 
             // Fetch final state
-            var finalTask = await runtime.GetTaskAsync(taskId)
+            var finalTask = await taskQueries.GetTaskAsync(taskId)
                 ?? throw new InvalidOperationException($"Task '{taskId}' not found after update");
 
             return command with

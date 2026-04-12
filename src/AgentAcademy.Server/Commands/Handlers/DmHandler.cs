@@ -54,13 +54,15 @@ public sealed class DmHandler : ICommandHandler
     private static async Task<CommandEnvelope> SendToHumanAsync(
         CommandEnvelope command, CommandContext context, string message)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
         var notificationManager = context.Services.GetRequiredService<NotificationManager>();
 
         var roomId = context.RoomId ?? "main";
 
         // Store the DM
-        await runtime.SendDirectMessageAsync(
+        await messages.SendDirectMessageAsync(
             context.AgentId, context.AgentName ?? context.AgentId,
             context.AgentRole ?? "Agent", "human", message, roomId);
 
@@ -68,7 +70,7 @@ public sealed class DmHandler : ICommandHandler
         var roomName = roomId;
         try
         {
-            var rooms = await runtime.GetRoomsAsync();
+            var rooms = await roomService.GetRoomsAsync();
             var room = rooms.FirstOrDefault(r => r.Id == context.RoomId);
             if (room is not null)
                 roomName = room.Name;
@@ -119,10 +121,12 @@ public sealed class DmHandler : ICommandHandler
     private static async Task<CommandEnvelope> SendToAgentAsync(
         CommandEnvelope command, CommandContext context, string recipientId, string message)
     {
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var roomService = context.Services.GetRequiredService<RoomService>();
 
         // Validate agent exists (case-insensitive, use canonical ID)
-        var agents = runtime.GetConfiguredAgents();
+        var agents = catalog.Agents;
         var targetAgent = agents.FirstOrDefault(
             a => string.Equals(a.Id, recipientId, StringComparison.OrdinalIgnoreCase)
                  || string.Equals(a.Name, recipientId, StringComparison.OrdinalIgnoreCase));
@@ -152,7 +156,7 @@ public sealed class DmHandler : ICommandHandler
         var roomId = context.RoomId ?? "main";
 
         // Store the DM
-        await runtime.SendDirectMessageAsync(
+        await messages.SendDirectMessageAsync(
             context.AgentId, context.AgentName ?? context.AgentId,
             context.AgentRole ?? "Agent", targetAgent.Id, message, roomId);
 
@@ -161,7 +165,7 @@ public sealed class DmHandler : ICommandHandler
         var roomName = roomId;
         try
         {
-            var rooms = await runtime.GetRoomsAsync();
+            var rooms = await roomService.GetRoomsAsync();
             var room = rooms.FirstOrDefault(r => r.Id == context.RoomId);
             if (room is not null) roomName = room.Name;
         }

@@ -51,12 +51,13 @@ public sealed class AddTaskCommentHandler : ICommandHandler
             }
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         try
         {
             // Validate agent can comment on this task
-            var task = await runtime.GetTaskAsync(taskId);
+            var task = await taskQueries.GetTaskAsync(taskId);
             if (task is null)
             {
                 return command with
@@ -81,7 +82,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
                 };
             }
 
-            var comment = await runtime.AddTaskCommentAsync(
+            var comment = await taskLifecycle.AddTaskCommentAsync(
                 taskId, context.AgentId, context.AgentName, commentType, content);
 
             return command with

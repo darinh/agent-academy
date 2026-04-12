@@ -91,12 +91,13 @@ public sealed class RecordEvidenceHandler : ICommandHandler
         if (command.Args.TryGetValue("output", out var outputObj) && outputObj is string outputStr)
             outputSnippet = outputStr;
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         try
         {
             // Validate agent can record evidence on this task
-            var task = await runtime.GetTaskAsync(taskId);
+            var task = await taskQueries.GetTaskAsync(taskId);
             if (task is null)
             {
                 return command with
@@ -122,7 +123,7 @@ public sealed class RecordEvidenceHandler : ICommandHandler
                 };
             }
 
-            var evidence = await runtime.RecordEvidenceAsync(
+            var evidence = await taskLifecycle.RecordEvidenceAsync(
                 taskId, context.AgentId, context.AgentName,
                 phase, checkName, tool, cmd, exitCode, outputSnippet, passed);
 

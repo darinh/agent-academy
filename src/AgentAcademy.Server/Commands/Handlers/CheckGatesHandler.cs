@@ -26,11 +26,11 @@ public sealed class CheckGatesHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
 
         try
         {
-            var result = await runtime.CheckGatesAsync(taskId);
+            var result = await taskLifecycle.CheckGatesAsync(taskId);
 
             var evidenceSummary = result.Evidence
                 .Select(e => new Dictionary<string, object?>

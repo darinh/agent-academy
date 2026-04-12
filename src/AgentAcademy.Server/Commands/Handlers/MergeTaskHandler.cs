@@ -88,10 +88,12 @@ public sealed class MergeTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var messages = context.Services.GetRequiredService<MessageService>();
+        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         // Validate task exists
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with
@@ -127,16 +129,16 @@ public sealed class MergeTaskHandler : ICommandHandler
         try
         {
             // Set task to Merging status before git ops
-            await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
+            await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
 
             var commitMessage = BuildCommitMessage(task.Type, task.Title);
             var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage, context.GitIdentity);
-            await runtime.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: mergeCommitSha);
+            await taskOrchestration.CompleteTaskAsync(taskId, commitCount: 1, mergeCommitSha: mergeCommitSha);
 
             // Post success note to task room
             if (!string.IsNullOrWhiteSpace(context.RoomId))
             {
-                await runtime.PostSystemStatusAsync(context.RoomId,
+                await messages.PostSystemStatusAsync(context.RoomId,
                     $"✅ Task \"{task.Title}\" merged from {task.BranchName} into develop.");
             }
 
@@ -157,7 +159,7 @@ public sealed class MergeTaskHandler : ICommandHandler
         {
             try
             {
-                await runtime.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Approved);
+                await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Approved);
             }
             catch (Exception recoveryEx)
             {

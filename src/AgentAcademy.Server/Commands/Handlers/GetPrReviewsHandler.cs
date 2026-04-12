@@ -33,10 +33,10 @@ public sealed class GetPrReviewsHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
 
         // Load task
-        var task = await runtime.GetTaskAsync(taskId);
+        var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
         {
             return command with

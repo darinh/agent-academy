@@ -31,11 +31,11 @@ public sealed class ClaimTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
+        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
 
         try
         {
-            var task = await runtime.ClaimTaskAsync(taskId, context.AgentId, context.AgentName);
+            var task = await taskLifecycle.ClaimTaskAsync(taskId, context.AgentId, context.AgentName);
             return command with
             {
                 Status = CommandStatus.Success,

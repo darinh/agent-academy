@@ -37,8 +37,8 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        var runtime = context.Services.GetRequiredService<WorkspaceRuntime>();
-        var room = await runtime.GetRoomAsync(roomId);
+        var roomService = context.Services.GetRequiredService<RoomService>();
+        var room = await roomService.GetRoomAsync(roomId);
         if (room is null)
         {
             return command with
@@ -49,7 +49,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        if (await runtime.IsMainCollaborationRoomAsync(roomId))
+        if (await roomService.IsMainCollaborationRoomAsync(roomId))
         {
             return command with
             {
@@ -69,7 +69,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        await runtime.CloseRoomAsync(roomId);
+        await roomService.CloseRoomAsync(roomId);
 
         return command with
         {
