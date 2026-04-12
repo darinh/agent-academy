@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Spinner, mergeClasses } from "@fluentui/react-components";
-import { useStyles } from "./useStyles";
+import { useRecoveryStyles } from "./styles";
 
 export interface RecoveryBannerState {
   tone: "syncing" | "reconnecting" | "crash" | "error";
@@ -22,7 +22,7 @@ const TONE_CONFIG: Record<RecoveryBannerState["tone"], {
 const RecoveryBanner = memo(function RecoveryBanner(props: {
   state: RecoveryBannerState;
 }) {
-  const s = useStyles();
+  const s = useRecoveryStyles();
   const config = TONE_CONFIG[props.state.tone];
 
   return (
