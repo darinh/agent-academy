@@ -18,6 +18,7 @@ public class CollaborationController : ControllerBase
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
+    private readonly SpecManager _specManager;
     private readonly ILogger<CollaborationController> _logger;
 
     public CollaborationController(
@@ -28,6 +29,7 @@ public class CollaborationController : ControllerBase
         AgentCatalogOptions catalog,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
+        SpecManager specManager,
         ILogger<CollaborationController> logger)
     {
         _taskOrchestration = taskOrchestration;
@@ -37,6 +39,7 @@ public class CollaborationController : ControllerBase
         _catalog = catalog;
         _orchestrator = orchestrator;
         _executor = executor;
+        _specManager = specManager;
         _logger = logger;
     }
 
@@ -114,6 +117,18 @@ public class CollaborationController : ControllerBase
     {
         var links = await _taskQueries.GetTasksForSpecAsync(sectionId);
         return Ok(links);
+    }
+
+    /// <summary>
+    /// GET /api/specs/version — get current spec corpus version, content hash, and section count.
+    /// </summary>
+    [HttpGet("api/specs/version")]
+    public async Task<ActionResult> GetSpecVersion()
+    {
+        var version = await _specManager.GetSpecVersionAsync();
+        if (version is null)
+            return NotFound(new { code = "no_specs", message = "No specification directory found." });
+        return Ok(version);
     }
 
     /// <summary>

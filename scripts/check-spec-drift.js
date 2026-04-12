@@ -130,4 +130,17 @@ if (missingSpecs.length > 0) {
   console.log('✅ No spec drift detected.');
 }
 
+// Check if spec content files changed but spec-version.json was not bumped
+const specContentChanged = changedFiles.some(f => /^specs\/\d{3}-.*\/spec\.md$/.test(f));
+const versionFileChanged = changedFiles.includes('specs/spec-version.json');
+
+if (specContentChanged && !versionFileChanged) {
+  console.log('');
+  console.log('⚠️  Spec content changed but specs/spec-version.json was not updated.');
+  console.log('   Run: scripts/bump-spec-version.sh [patch|minor|major]');
+  if (process.env.GITHUB_ACTIONS) {
+    console.log('::warning title=Spec version not bumped::Spec content files changed but specs/spec-version.json was not updated. Run scripts/bump-spec-version.sh to bump the version.');
+  }
+}
+
 console.log('');

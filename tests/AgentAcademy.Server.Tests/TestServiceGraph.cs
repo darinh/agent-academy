@@ -40,6 +40,7 @@ internal sealed class TestServiceGraph : IDisposable
     public IServiceScopeFactory ScopeFactory { get; }
     public LlmUsageTracker UsageTracker { get; }
     public AgentErrorTracker ErrorTracker { get; }
+    public SpecManager SpecManager { get; }
 
     public TestServiceGraph(List<AgentDefinition>? agents = null)
     {
@@ -104,7 +105,7 @@ internal sealed class TestServiceGraph : IDisposable
         UsageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         ErrorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
 
-        var specManager = new SpecManager();
+        SpecManager = new SpecManager();
         var pipeline = new CommandPipeline(
             Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
         var gitService = new GitService(NullLogger<GitService>.Instance);
@@ -113,7 +114,7 @@ internal sealed class TestServiceGraph : IDisposable
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, Catalog, Executor, specManager, pipeline,
+            scopeFactory, Catalog, Executor, SpecManager, pipeline,
             gitService, worktreeService, memoryLoader,
             NullLogger<BreakoutLifecycleService>.Instance);
         var taskAssignment = new TaskAssignmentHandler(
@@ -121,7 +122,7 @@ internal sealed class TestServiceGraph : IDisposable
             NullLogger<TaskAssignmentHandler>.Instance);
 
         Orchestrator = new AgentOrchestrator(
-            scopeFactory, Catalog, Executor, ActivityBus, specManager,
+            scopeFactory, Catalog, Executor, ActivityBus, SpecManager,
             pipeline, breakoutLifecycle, taskAssignment, memoryLoader,
             NullLogger<AgentOrchestrator>.Instance);
     }

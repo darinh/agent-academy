@@ -207,7 +207,9 @@ public sealed class BreakoutLifecycleService
                     }
                     breakoutSpecContext ??= await _specManager.LoadSpecContextAsync();
 
-                    var prompt = PromptBuilder.BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext);
+                    var breakoutVersionInfo = await _specManager.GetSpecVersionAsync();
+                    var breakoutSpecVersion = breakoutVersionInfo?.Version;
+                    var prompt = PromptBuilder.BuildBreakoutPrompt(agent, currentBr, round, breakoutMemories, breakoutDms, breakoutSummary, breakoutSpecContext, breakoutSpecVersion);
                     response = await RunAgentAsync(agent, prompt, breakoutRoomId, worktreePath);
                 }
                 catch (Exception ex)
@@ -478,8 +480,9 @@ public sealed class BreakoutLifecycleService
         {
             var room = await roomService.GetRoomAsync(parentRoomId);
             if (room is null) return null;
+            var reviewVersionInfo = await _specManager.GetSpecVersionAsync();
             var prompt = PromptBuilder.BuildReviewPrompt(reviewer, presentingAgent.Name, workReport,
-                await _specManager.LoadSpecContextAsync());
+                await _specManager.LoadSpecContextAsync(), reviewVersionInfo?.Version);
             reviewResponse = await RunAgentAsync(reviewer, prompt, parentRoomId);
         }
         catch (Exception ex)
@@ -572,8 +575,9 @@ public sealed class BreakoutLifecycleService
                 }
                 fixSpecContext ??= await _specManager.LoadSpecContextAsync();
 
+                var fixVersionInfo = await _specManager.GetSpecVersionAsync();
                 response = await RunAgentAsync(
-                    agent, PromptBuilder.BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary, fixSpecContext),
+                    agent, PromptBuilder.BuildBreakoutPrompt(agent, updatedBr, round, fixMemories, fixDms, fixSummary, fixSpecContext, fixVersionInfo?.Version),
                     breakoutRoomId);
             }
             catch { continue; }

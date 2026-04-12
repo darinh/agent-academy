@@ -175,15 +175,19 @@ All agents have spec awareness built into their startup prompts:
 public sealed class SpecManager
 {
     public record SpecSection(string Id, string Heading, string Summary, string FilePath);
+    public record SpecVersionInfo(string Version, string LastUpdated, string ContentHash, int SectionCount);
 
-    public SpecManager(string? specsDir = null);
-    public string? LoadSpecContext();
-    public List<SpecSection> GetSpecSections();
-    public string? GetSpecContent(string sectionId);
+    public SpecManager(string? specsDir = null, ILogger<SpecManager>? logger = null);
+    public Task<string?> LoadSpecContextAsync();
+    public Task<string?> LoadSpecContextForTaskAsync(IEnumerable<string> linkedSectionIds);
+    public Task<List<SpecSection>> GetSpecSectionsAsync();
+    public Task<string?> GetSpecContentAsync(string sectionId);
+    public Task<SpecVersionInfo?> GetSpecVersionAsync();
+    public Task<string> ComputeContentHashAsync();
 }
 ```
 
-Registered as singleton in DI. Injected into `AgentOrchestrator`.
+Registered as singleton in DI. Injected into `AgentOrchestrator`, `BreakoutLifecycleService`, and `CollaborationController`.
 
 ### MessageKind Extension
 
@@ -191,7 +195,7 @@ The `SpecChangeProposal` message kind (defined in `AgentAcademy.Shared.Models.Me
 
 ### Spec Context in Prompts
 
-When specs exist, the orchestrator injects a `=== PROJECT SPECIFICATION ===` section into conversation prompts listing all spec sections with their headings and purpose summaries.
+When specs exist, the orchestrator injects a `=== PROJECT SPECIFICATION (vX.Y.Z) ===` section into conversation prompts listing all spec sections with their headings and purpose summaries. The version tag is included when `spec-version.json` exists.
 
 ### Review Verdict Extension
 
@@ -251,7 +255,32 @@ This suppresses all drift warnings for the PR.
 
 1. ~~**No automated spec drift detection**~~: **Resolved** — `scripts/check-spec-drift.sh` runs as a CI job on PRs (`.github/workflows/ci.yml`, `spec-drift` job). Uses `specs/drift-map.json` to map source file path patterns to spec sections. Detects when code changes lack corresponding spec updates and produces GitHub Actions warnings. Supports `spec-exempt:` marker in PR body or commit messages to suppress false positives. Reports unmapped source files that need mapping additions. Warning-only (non-blocking) posture for initial rollout. Analysis engine in `scripts/check-spec-drift.js` (Node.js).
 2. ~~**No spec search**: `LoadSpecContext()` loads all spec section headings. There is no semantic search or filtering by relevance to the current task — all sections are included.~~ **Partially resolved**: `SpecManager.LoadSpecContextForTaskAsync` accepts a list of linked spec section IDs and marks linked sections with ★ in the spec context. `LINK_TASK_TO_SPEC` command creates traceability links. Full semantic search is not yet implemented, but task-scoped filtering is available.
-3. **No spec versioning beyond git**: Spec changes are tracked in CHANGELOG.md and git history, but there's no formal versioning scheme for the spec itself.
+3. ~~**No spec versioning beyond git**~~: **Resolved** — `specs/spec-version.json` tracks the spec corpus version (semver) and `lastUpdated` date. `SpecManager.GetSpecVersionAsync()` reads the manifest and computes a SHA256 content hash of all `specs/*/spec.md` files for freshness detection (cached in memory, invalidated by file write-time changes). Version is included in agent prompt headers (`=== PROJECT SPECIFICATION (vX.Y.Z) ===`) via the `specVersion` parameter on `PromptBuilder.BuildConversationPrompt`, `BuildBreakoutPrompt`, and `BuildReviewPrompt`. `GET /api/specs/version` endpoint returns `SpecVersionInfo` (version, lastUpdated, contentHash, sectionCount). `scripts/bump-spec-version.sh` bumps major/minor/patch. `check-spec-drift.js` warns in CI when spec content files change but `spec-version.json` is not updated.
+
+### Spec Versioning
+
+**Manifest**: `specs/spec-version.json`
+```json
+{
+  "version": "2.1.0",
+  "lastUpdated": "2026-04-12"
+}
+```
+
+**Bump semantics** (semver for the spec corpus):
+- **patch**: Wording/clarification only — no behavioral changes
+- **minor**: Additive requirement or process change — new sections, expanded behavior
+- **major**: Breaking behavioral or contract change — existing spec claims invalidated
+
+**Bump command**: `scripts/bump-spec-version.sh [major|minor|patch]` (defaults to patch)
+
+**Content hash**: `SpecManager.ComputeContentHashAsync()` computes a truncated SHA256 (12 hex chars) of all `specs/*/spec.md` files. Sorted paths and normalized line endings ensure deterministic output across platforms. Cached in memory and invalidated when any spec file's `LastWriteTimeUtc` changes. Non-spec files (`README.md`, `CHANGELOG.md`, `drift-map.json`, `spec-version.json`) are excluded from the hash.
+
+**Freshness detection**: Compare the content hash from `GET /api/specs/version` against a previously stored hash to detect if spec content has changed since last read.
+
+**Prompt integration**: All three prompt types include the version in their spec section header when available. Version is loaded once per conversation/breakout round in the orchestrator and passed through to `PromptBuilder`. Agents see which spec version they are working against.
+
+**CI enforcement**: `check-spec-drift.js` warns when spec content files (`specs/NNN-*/spec.md`) change in a PR but `specs/spec-version.json` was not updated.
 
 ## Revision History
 
@@ -260,3 +289,4 @@ This suppresses all drift warnings for the PR.
 | 2025-07-25 | Port spec system | Created SpecManager service, integrated with orchestrator, added agent spec awareness |
 | 2026-04-05 | spec-task-linking | Added `LoadSpecContextForTaskAsync` to SpecManager for task-filtered spec loading. Updated known gap #2. |
 | 2026-04-12 | spec-drift-detection | Added automated spec drift detection CI job. `scripts/check-spec-drift.sh` + `scripts/check-spec-drift.js` + `specs/drift-map.json`. Integrated into `.github/workflows/ci.yml`. Known gap #1 resolved. |
+| 2026-04-12 | spec-versioning | Added `specs/spec-version.json` manifest, `SpecManager.GetSpecVersionAsync()` and `ComputeContentHashAsync()`, version tags in prompt headers, `GET /api/specs/version` endpoint, `scripts/bump-spec-version.sh`, CI enforcement in `check-spec-drift.js`. Known gap #3 resolved. |
