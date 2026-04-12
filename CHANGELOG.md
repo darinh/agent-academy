@@ -7,31 +7,61 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Features
 
-- **add confirmation for destructive commands** — Destructive commands (`CLOSE_ROOM`, `CLEANUP_ROOMS`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`) now require explicit `confirm=true` in args before execution. Without the flag, pipeline returns `CONFIRMATION_REQUIRED` error code with structured warning and retry hint. `ICommandHandler.IsDestructive` interface property lets handlers self-declare. Confirmation gate runs after authorization but before rate limiting. Applies to both agent pipeline and human/consultant API. `HumanCommandMetadata` includes `IsDestructive` and `DestructiveWarning` for frontend confirmation dialogs. 20 new tests (2087 total).
-
-## Unreleased (2026-04-11)
-
-### Features
-
-- **add analytics CSV/JSON export** — `GET /api/export/agents` and `GET /api/export/usage` endpoints with downloadable CSV (RFC 4180, formula injection protection) and JSON formats. Truncation detection via `X-Truncated` header. Frontend export button on agent analytics panel.
+- add keyboard shortcuts help overlay (? key)
+- add browser desktop notifications for backgrounded tab
+- add destructive command confirmation docs to all agent prompts
+- add confirmation dialog for destructive commands in CommandsPanel
+- add confirmation gate for destructive commands
+- add consultant identity in UI
+- add workspace-wide full-text search
+- add analytics CSV/JSON export endpoints
+- add agent analytics drill-down with detail endpoint and panel
+- add agent performance analytics dashboard
+- add DataAnnotations validation to all API request types
 - add GitHub integration status tab to Settings panel
 - bridge OAuth token to gh CLI for PR operations
-- **add DataAnnotations validation to all API request types** — enforces string length limits, required fields, and range constraints on 20+ request records. Invalid requests now return 400 + ProblemDetails.
-
-### Tests
-
-- add 31 request validation tests (RequestValidationTests.cs)
-- add 18 controller-level tests for sprint endpoints
-
-### Docs
-
-- add changelog entry for GitHub status tab
-- close spec 001 validation known gap with validation rules table
-
-## 2026-04-07
-
-### Features
-
+- add artifact content validation for sprint system
+- add sprint duration limits with auto-reject and auto-cancel
+- add sprint metrics aggregation endpoints
+- dedicated task panel with spec links, evidence ledger, gates, and assignment
+- sprint SignalR real-time updates with optimistic UI
+- agent quota UI in settings panel
+- per-agent resource quotas with request rate limiting
+- upgrade GitHub.Copilot.SDK 0.2.1 → 0.2.2
+- per-worktree CopilotClient for agent workspace isolation
+- add sprint panel metrics — stage timing and word counts
+- tabbed settings page with custom agent creation
+- room-centric conversation UI
+- workspace isolation phase 2 — worktree-aware orchestrator and command handlers
+- workspace isolation phase 1 — git metadata, agent worktrees, directory-aware GitService
+- PR workflow for sprint Implementation stage
+- add user sign-off gates for Intake and Planning stages
+- add task-sprint scoping with filter support
+- auto-inject overflow requirements into next sprint's intake
+- add FK constraints for Sprint associations
+- sprint write endpoints, frontend controls, and SprintPanel fixes
+- reorder sidebar navigation and display project name
+- render sprint artifacts as markdown
+- add SignalR real-time updates to sprint panel
+- add sprint frontend panel with REST API
+- add WorkspacePath to TaskEntity and ConversationSessionEntity
+- add WorktreeService for task-level git worktree isolation
+- add sprint command handlers (START_SPRINT, ADVANCE_STAGE, STORE_ARTIFACT, COMPLETE_SPRINT)
+- add sprint stage preambles, roster filtering, and orchestrator integration
+- add sprint-scoped session management with stage boundaries
+- add SprintService with lifecycle management, artifact gates, and 51 tests
+- add sprint entity layer — database schema for sprint workflow
+- v3 UI redesign
+- add V3Badge component and v3 global CSS primitives
+- add phase selector dropdown and filter to chat toolbar
+- implement v3 UI redesign — Matrix dark theme
+- add commit_changes SDK tool for SoftwareEngineer agents
+- add COMMIT_CHANGES command for SoftwareEngineer agents
+- add ToolAuditEntry record for tool usage audit
+- add write_file tool for SoftwareEngineer agents
+- add evidence ledger commands (RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES)
+- add agent activity bar, dashboard hover effects, and UI polish (#20)
+- add automated changelog generation from conventional commits (#10)
 - add branch protection configuration script (#8)
 - add tab overflow menu to reduce information density (#32)
 - register 11 missing commands in HumanCommandRegistry (#17)
@@ -167,6 +197,37 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Fixes
 
+- resolve flaky agentConfigCard dialog test under parallel execution
+- remove double onCancel call in ConfirmDialog
+- remove unused imports in test files to unblock tsc -b build
+- resolve flaky dmPanel auto-scroll test
+- resolve flaky onboard dialog test with async findByRole
+- change MetricsEntry.Data from Dictionary<string,object> to Dictionary<string,JsonElement>
+- close 3 sprint known gaps — SprintCancelled event, stage-aware overflow, active uniqueness
+- adjust healthz smoke response
+- surface Discord connection errors in UI with actionable messages
+- resolve frontend type errors in test files after merge
+- align test factories with current API types
+- remove ExcludedTools blocklist and grant agents full CLI tool access
+- add revert commit type to all three validators
+- resolve flaky ETXTBSY race in GitHubService tests
+- resolve frontend TypeScript build errors
+- remove dangerous grandparent directory cleanup from WorktreeServiceTests
+- always show sessions dropdown, left-align all toolbar controls
+- preserve original CreatedByAgentId on artifact update
+- change default agent model from gpt-5 to claude-opus-4.6
+- enforce conventional commit format in breakout rooms
+- dashboard overflow and DM thread list cleanup
+- restyle Tasks, Timeline, Plan, Commands, DM to match v3 mockup
+- adjust role pill padding to 3px/2px for 4px optical gap
+- optically center role badge text
+- add explicit line-height:1 to msg-name and msg-role
+- vertically center role badges next to agent names
+- user badge to sidebar, add toolbar, fix line-height, restyle all panels
+- polish chat/header to match v3 mockup
+- suppress built-in CLI tools from agent sessions
+- prevent orphaned tasks on branch creation failure
+- resolve all TypeScript build errors for clean tsc -b
 - scope Discord freeform input to configured owner user (#13)
 - show legacy rooms with null WorkspacePath in active workspace (#16)
 - align client package.json version to 0.1.0 (#4)
@@ -245,6 +306,43 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Documentation
 
+- add Program.cs decomposition to spec changelog
+- sync all specs after WorkspaceRuntime deletion
+- add keyboard shortcuts overlay to spec and changelog
+- add desktop notifications to spec and changelog
+- fix minor spec drift — export button and filename patterns
+- reconcile spec 005 with WorkspaceRuntime facade decomposition
+- add analytics spec to 012-consultant-api and 300-frontend-ui
+- reconcile spec 010 GitHub Integration with implementation
+- add changelog entry for GitHub status tab
+- add sprint system spec (013)
+- reconcile spec 006 with service extraction architecture
+- update workspace runtime spec with service extraction architecture
+- update SDK version in agent system spec to v0.2.2
+- add per-worktree CopilotClient to agent system spec
+- add LastError and connection error handling to notification spec
+- make handoff-over-task_complete explicit in instructions
+- enforce handoff command usage in copilot instructions
+- update spec §300 and changelog for quota UI
+- sync specs for workspace isolation, sign-off gates, and sprint metrics
+- add health gates, stabilization protocol, and pre-commit checklist
+- mark sprint metrics as resolved in frontend spec
+- update Vite version from 6 to 8 in copilot instructions
+- update handoff instructions to use handoff command
+- mark sprint markdown rendering as resolved in spec
+- update frontend spec for room-centric UI and settings panel
+- add Sprint Panel to frontend UI spec
+- update specs for project-scoping changes
+- add comprehensive task-based user guide with gap analysis
+- v3 full-fidelity with separate header/toolbar and complete dashboard
+- add v2 with contextual toolbars and all 7 screens
+- add v1 Matrix-style UI mockup for iteration
+- add write_file tool documentation to SoftwareEngineer prompts
+- document RecoverFromCrashAsync in spec 005
+- add evidence ledger documentation to specs 007 and 010
+- add Invariant #9 to spec 010 — git-DB transaction ordering
+- fix TBD commit reference in spec 007 human command section
+- update architecture diagram to reflect actual subsystems (#5)
 - audit and resolve known gaps across 6 specs (#19)
 - triage 14 known gaps in spec 003 agent system (#11)
 - add setup script for git hooks and dependencies (#9)
@@ -299,6 +397,51 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Refactoring
 
+- decompose App.tsx into hooks and components
+- decompose useStyles.ts into 6 domain-specific style modules
+- decompose api.ts into 11 domain modules
+- extract AddDomainServices() extension from Program.cs
+- decompose Program.cs into dedicated auth, middleware, and notification files
+- delete WorkspaceRuntime facade and migrate all tests to sub-services
+- remove WorkspaceRuntime from production code
+- eliminate WorkspaceRuntime facade from notification providers and Program.cs
+- eliminate WorkspaceRuntime facade from remaining service consumers
+- eliminate WorkspaceRuntime facade from service-layer consumers
+- eliminate WorkspaceRuntime facade from all controllers
+- eliminate WorkspaceRuntime facade from all command handlers
+- extract TaskAssignmentHandler from AgentOrchestrator
+- extract DiscordChannelManager from DiscordNotificationProvider
+- flatten WorkspaceRuntime facade — remove dead dependencies, convert async wrappers
+- remove dead GetRecentActivity/StreamActivity wrappers from WorkspaceRuntime
+- extract PublishThinking/FinishedAsync from WorkspaceRuntime to ActivityPublisher
+- extract TaskOrchestrationService from WorkspaceRuntime
+- code-split frontend bundle from 1,179kB to 33 chunks under 500kB
+- consolidate sprint context loading into LoadSprintContextAsync
+- extract AgentMemoryLoader from AgentOrchestrator and BreakoutLifecycleService
+- extract BreakoutLifecycleService from AgentOrchestrator
+- extract AgentResponseParser from AgentOrchestrator
+- extract PromptBuilder from AgentOrchestrator
+- remove dead code from WorkspaceRuntime after service extractions
+- extract InitializationService from WorkspaceRuntime
+- extract CrashRecoveryService from WorkspaceRuntime
+- extract PlanService from WorkspaceRuntime
+- extract AgentLocationService from WorkspaceRuntime
+- extract RoomService from WorkspaceRuntime
+- extract TaskItemService from WorkspaceRuntime
+- extract BreakoutRoomService from WorkspaceRuntime
+- extract MessageService from WorkspaceRuntime
+- extract ActivityPublisher from WorkspaceRuntime and TaskLifecycleService
+- extract CreateTask/CompleteTask/RejectTask mutations to TaskLifecycleService (phase 3)
+- extract TaskLifecycleService from WorkspaceRuntime (phase 2)
+- extract TaskQueryService from WorkspaceRuntime (phase 1)
+- delete 6 redundant command handlers and dead AgentPermissionHandler
+- extract command and notification DI into extension methods
+- remove Fluent typography components from ProjectSelectorPage
+- migrate Fluent Badge to V3Badge across all sub-panels
+- compact workspace UI for demo readiness
+- rename formatDuration to formatLatency in UsagePanel
+- consolidate formatDuration into shared formatElapsed
+- consolidate duplicated panel utilities into shared panelUtils.ts
 - convert SpecManager to async file I/O
 - move crash recovery trigger to bootstrap, consolidate close reasons
 - extract portable conventions to user-level copilot-instructions
@@ -307,6 +450,39 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Tests
 
+- add 143 tests for 12 previously untested controllers
+- add 7 tests for consultant identity feature coverage
+- add 23 tests for destructive command confirmation features
+- add 91 interactive RTL tests for ErrorsPanel, AuditLogPanel, AgentConfigCard
+- add 37 interactive RTL tests for SprintPanel
+- add 75 interactive RTL tests for TaskListPanel
+- add 84 interactive RTL tests for CommandPalette and CommandsPanel
+- add 64 interactive RTL tests for SettingsPanel
+- add 30 interactive RTL tests for DmPanel
+- add 39 interactive RTL tests for ChatPanel
+- add @testing-library/react for interactive frontend tests
+- add 34 SSR tests for ProjectSelectorPage
+- add 26 controller-level tests for AnalyticsController
+- add tests for GitHub status endpoint and OAuth bridge edge cases
+- add 18 controller-level tests for sprint endpoints
+- add 17 endpoint tests for agent quota REST API (GET/PUT/DELETE)
+- add 57 component rendering tests for TaskListPanel
+- add 57 component rendering tests for ChatPanel
+- add 51 tests for sprint realtime event metadata and optimistic updates
+- add SSE activity stream tests and mark spec resolved
+- add 87 tests for DmPanel, PlanPanel, AgentSessionPanel, WorkspaceOverviewPanel
+- add worktree CopilotClient lifecycle tests
+- add 87 tests for SprintPanel and SettingsPanel
+- add 54 tests for ProjectScanner
+- add 37 tests for ConventionalCommitMessage validation
+- add 29 tests for room management and custom agent endpoints
+- add SessionHistoryPanel test suite (15 tests) + extract utils
+- add TimelinePanel test suite (16 tests) + extract timelinePanelUtils.ts
+- add TaskStatePanel test suite (25 tests) + extract taskStatePanelUtils.ts
+- add CommandsPanel test suite (53 tests) + extract commandsPanelUtils.ts
+- add SidebarPanel test suite and extract sidebar utilities
+- add ChatPanel test suite and extract chat utilities
+- add DashboardPanel test suite and extract shared utils
 - add Human role coverage for CancelTaskHandler
 - add E2E tests for circuit breaker banner, sparklines, and fix flaky command palette
 - E2E tests for audit log panel
@@ -318,6 +494,15 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Other
 
+- ci: allow merge: commit type in linting
+- ci: skip merge commits in conventional commit lint
+- build: update GitHub.Copilot.SDK 0.2.0→0.2.1, NSubstitute 5.1.0→5.3.0
+- build: update frontend dependencies to latest patch versions
+- style(frontend): v3 audit — all screens aligned to design system
+- style(frontend): v3 audit — tasks page, task state panel, sidebar fix
+- style: eliminate remaining v1/v2 visual remnants across all views
+- style: align dashboard/overview sub-panels with v3 mockup
+- Merge task: ITimeProvider by Hephaestus + fix commands tab UI
 - style: unify visual hierarchy and component consistency across workspace panels
 - ci: enhance pipeline with caching, commit validation, and CODEOWNERS
 - ci: add branching strategy, CI, versioning, hooks, and PR templates
