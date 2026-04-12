@@ -49,6 +49,7 @@ const AgentSessionPanel = lazy(() => import("./AgentSessionPanel"));
 const CommandsPanel = lazy(() => import("./CommandsPanel"));
 const SprintPanel = lazy(() => import("./SprintPanel"));
 const CommandPalette = lazy(() => import("./CommandPalette"));
+const SearchPanel = lazy(() => import("./SearchPanel"));
 import { useCircuitBreakerPolling } from "./useCircuitBreakerPolling";
 import {
   getCopilotStatusCopy,
@@ -77,6 +78,7 @@ const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   dashboard: { title: "Metrics", meta: "System telemetry" },
   overview: { title: "Overview", meta: "Room state" },
   directMessages: { title: "Direct Messages", meta: "" },
+  search: { title: "Search", meta: "Find messages & tasks" },
 };
 
 const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
@@ -344,12 +346,18 @@ function AppShell() {
   // Cmd+K / Ctrl+K to open command palette (skip when focus is in an input)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const editable = (e.target as HTMLElement)?.isContentEditable;
+      const inInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || editable;
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        const tag = (e.target as HTMLElement)?.tagName;
-        const editable = (e.target as HTMLElement)?.isContentEditable;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || editable) return;
+        if (inInput) return;
         e.preventDefault();
         setPaletteOpen((prev) => !prev);
+      }
+      // "/" to open search (skip when focus is in an input)
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !inInput) {
+        e.preventDefault();
+        setTab("search");
       }
     };
     window.addEventListener("keydown", handler);
@@ -810,6 +818,12 @@ function AppShell() {
                         role: a.role,
                       }))}
                       readOnly={workspaceLimited}
+                    />
+                  )}
+                  {tab === "search" && (
+                    <SearchPanel
+                      onNavigateToRoom={(roomId) => { handleRoomSelect(roomId); setTab("chat"); }}
+                      onNavigateToTasks={() => setTab("tasks")}
                     />
                   )}
                 </section>

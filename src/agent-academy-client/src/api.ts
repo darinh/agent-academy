@@ -1598,3 +1598,48 @@ export function exportUsageRecords(
   if (options?.limit != null) params.set("limit", String(options.limit));
   return downloadFile(apiUrl(`/api/export/usage?${params}`), `usage-records.${format}`);
 }
+
+// ── Workspace Search ────────────────────────────────────────────────────
+
+export type SearchScope = "all" | "messages" | "tasks";
+
+export interface MessageSearchResult {
+  messageId: string;
+  roomId: string;
+  roomName: string;
+  senderName: string;
+  senderKind: MessageSenderKind;
+  senderRole: string | null;
+  snippet: string;
+  sentAt: string;
+  sessionId: string | null;
+  source: "room" | "breakout";
+}
+
+export interface TaskSearchResult {
+  taskId: string;
+  title: string;
+  status: string;
+  assignedAgentName: string | null;
+  snippet: string;
+  createdAt: string;
+  roomId: string | null;
+}
+
+export interface SearchResults {
+  messages: MessageSearchResult[];
+  tasks: TaskSearchResult[];
+  totalCount: number;
+  query: string;
+}
+
+export function searchWorkspace(
+  query: string,
+  options?: { scope?: SearchScope; messageLimit?: number; taskLimit?: number },
+): Promise<SearchResults> {
+  const params = new URLSearchParams({ q: query });
+  if (options?.scope) params.set("scope", options.scope);
+  if (options?.messageLimit != null) params.set("messageLimit", String(options.messageLimit));
+  if (options?.taskLimit != null) params.set("taskLimit", String(options.taskLimit));
+  return request<SearchResults>(apiUrl(`/api/search?${params}`));
+}
