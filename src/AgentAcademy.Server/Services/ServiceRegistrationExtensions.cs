@@ -39,6 +39,7 @@ public static class ServiceRegistrationExtensions
 
         // Sprint lifecycle management (creation, stage advancement, artifacts)
         services.AddScoped<SprintService>();
+        services.AddScoped<SprintArtifactService>();
         services.AddScoped<SprintMetricsCalculator>();
 
         return services;

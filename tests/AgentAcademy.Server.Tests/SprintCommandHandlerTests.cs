@@ -30,8 +30,10 @@ public class SprintCommandHandlerTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddScoped<SprintService>();
+        services.AddScoped<SprintArtifactService>();
         services.AddSingleton(NullLogger<SprintService>.Instance)
             .AddSingleton(typeof(ILogger<SprintService>), sp => NullLogger<SprintService>.Instance);
+        services.AddSingleton(typeof(ILogger<SprintArtifactService>), sp => NullLogger<SprintArtifactService>.Instance);
         services.AddScoped<ConversationSessionService>();
         services.AddSingleton(typeof(ILogger<ConversationSessionService>), sp => NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<SystemSettingsService>();
@@ -165,8 +167,9 @@ public class SprintCommandHandlerTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
         var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
-        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         var handler = new AdvanceStageHandler();
         var result = await handler.ExecuteAsync(
@@ -200,8 +203,9 @@ public class SprintCommandHandlerTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
         var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
-        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         var handler = new AdvanceStageHandler();
         var result = await handler.ExecuteAsync(

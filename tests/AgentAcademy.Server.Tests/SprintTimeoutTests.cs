@@ -21,6 +21,7 @@ public class SprintTimeoutTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
+    private readonly SprintArtifactService _artifactService;
 
     public SprintTimeoutTests()
     {
@@ -35,6 +36,7 @@ public class SprintTimeoutTests : IDisposable
         _db.Database.EnsureCreated();
 
         _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
     }
 
     public void Dispose()
@@ -48,7 +50,7 @@ public class SprintTimeoutTests : IDisposable
     private async Task<SprintEntity> CreateSprintInSignOff()
     {
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
         await _sprintService.AdvanceStageAsync(sprint.Id);
         // Sprint is now AwaitingSignOff with PendingStage = Planning

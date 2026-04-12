@@ -16,6 +16,7 @@ public class SprintServiceTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _service;
+    private readonly SprintArtifactService _artifactService;
 
     public SprintServiceTests()
     {
@@ -29,7 +30,9 @@ public class SprintServiceTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _service = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        var broadcaster = new ActivityBroadcaster();
+        _service = new SprintService(_db, broadcaster, NullLogger<SprintService>.Instance);
+        _artifactService = new SprintArtifactService(_db, broadcaster, NullLogger<SprintArtifactService>.Instance);
     }
 
     public void Dispose()
@@ -81,7 +84,7 @@ public class SprintServiceTests : IDisposable
         var first = await _service.CreateSprintAsync(TestWorkspace);
 
         // Store overflow artifact on first sprint
-        await _service.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             first.Id, "FinalSynthesis", "OverflowRequirements",
             """{"items": ["leftover task"]}""", "aristotle");
 
@@ -92,7 +95,7 @@ public class SprintServiceTests : IDisposable
         Assert.Equal(first.Id, second.OverflowFromSprintId);
 
         // Verify overflow content was auto-injected into the new sprint's Intake
-        var artifacts = await _service.GetSprintArtifactsAsync(second.Id);
+        var artifacts = await _artifactService.GetSprintArtifactsAsync(second.Id);
         var injected = artifacts.SingleOrDefault(a => a.Type == "OverflowRequirements");
         Assert.NotNull(injected);
         Assert.Equal("Intake", injected!.Stage);
@@ -110,7 +113,7 @@ public class SprintServiceTests : IDisposable
 
         Assert.Null(second.OverflowFromSprintId);
 
-        var artifacts = await _service.GetSprintArtifactsAsync(second.Id);
+        var artifacts = await _artifactService.GetSprintArtifactsAsync(second.Id);
         Assert.Empty(artifacts);
     }
 
@@ -120,7 +123,7 @@ public class SprintServiceTests : IDisposable
         var first = await _service.CreateSprintAsync(TestWorkspace);
 
         // Store overflow in Intake (e.g. auto-injected from a previous sprint)
-        await _service.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             first.Id, "Intake", "OverflowRequirements",
             """{"items": ["stale task"]}""", "aristotle");
 
@@ -130,7 +133,7 @@ public class SprintServiceTests : IDisposable
 
         // Should NOT carry forward overflow from Intake stage
         Assert.Null(second.OverflowFromSprintId);
-        var artifacts = await _service.GetSprintArtifactsAsync(second.Id);
+        var artifacts = await _artifactService.GetSprintArtifactsAsync(second.Id);
         Assert.Empty(artifacts);
     }
 
@@ -261,7 +264,7 @@ public class SprintServiceTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
-        var artifact = await _service.StoreArtifactAsync(
+        var artifact = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument",
             TestArtifactContent.RequirementsDocument, "aristotle");
 
@@ -280,10 +283,10 @@ public class SprintServiceTests : IDisposable
         var v1 = TestArtifactContent.RequirementsDocument;
         var v2 = """{"Title":"Updated","Description":"Revised","InScope":["a"],"OutOfScope":["b"],"AcceptanceCriteria":["c"]}""";
 
-        var first = await _service.StoreArtifactAsync(
+        var first = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", v1, "aristotle");
 
-        var updated = await _service.StoreArtifactAsync(
+        var updated = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", v2, "archimedes");
 
         Assert.Equal(first.Id, updated.Id);
@@ -296,7 +299,7 @@ public class SprintServiceTests : IDisposable
     public async Task StoreArtifact_ThrowsForMissingSprint()
     {
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 "nonexistent", "Intake", "RequirementsDocument", "content"));
         Assert.Contains("not found", ex.Message);
     }
@@ -308,7 +311,7 @@ public class SprintServiceTests : IDisposable
         await _service.CompleteSprintAsync(sprint.Id, force: true);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Intake", "RequirementsDocument", "content"));
         Assert.Contains("status is Completed", ex.Message);
     }
@@ -319,7 +322,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "InvalidStage", "RequirementsDocument", "content"));
     }
 
@@ -329,7 +332,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         await Assert.ThrowsAnyAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Intake", "RequirementsDocument", null!));
     }
 
@@ -341,7 +344,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Intake", "NotARealType", "{}"));
         Assert.Contains("Unknown artifact type", ex.Message);
     }
@@ -353,7 +356,7 @@ public class SprintServiceTests : IDisposable
 
         // Enum.TryParse accepts numeric strings — verify we reject them
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Intake", "999", "{}"));
         Assert.Contains("Unknown artifact type", ex.Message);
     }
@@ -364,7 +367,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Intake", "RequirementsDocument", "not json at all"));
         Assert.Contains("Invalid JSON", ex.Message);
     }
@@ -376,7 +379,7 @@ public class SprintServiceTests : IDisposable
 
         // Missing Title and Description
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Intake", "RequirementsDocument", "{}"));
         Assert.Contains("Title", ex.Message);
     }
@@ -387,7 +390,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Planning", "SprintPlan", "{}"));
         Assert.Contains("Summary", ex.Message);
     }
@@ -398,7 +401,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Validation", "ValidationReport", "{}"));
         Assert.Contains("Verdict", ex.Message);
     }
@@ -409,7 +412,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "FinalSynthesis", "SprintReport", "{}"));
         Assert.Contains("Summary", ex.Message);
     }
@@ -422,7 +425,7 @@ public class SprintServiceTests : IDisposable
         // Phase with empty Name
         var content = """{"Summary":"S","Phases":[{"Name":"","Description":"D","Deliverables":[]}]}""";
         var ex = await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.StoreArtifactAsync(
+            () => _artifactService.StoreArtifactAsync(
                 sprint.Id, "Planning", "SprintPlan", content));
         Assert.Contains("Phases[0].Name", ex.Message);
     }
@@ -433,7 +436,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // OverflowRequirements is free-form — any content is valid
-        var artifact = await _service.StoreArtifactAsync(
+        var artifact = await _artifactService.StoreArtifactAsync(
             sprint.Id, "FinalSynthesis", "OverflowRequirements",
             "arbitrary content that is not even json");
 
@@ -445,7 +448,7 @@ public class SprintServiceTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
-        var artifact = await _service.StoreArtifactAsync(
+        var artifact = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument",
             TestArtifactContent.RequirementsDocument, "test-agent");
 
@@ -460,7 +463,7 @@ public class SprintServiceTests : IDisposable
 
         // Extra field "Priority" not in the schema — should be ignored, not rejected
         var content = """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[],"Priority":"High"}""";
-        var artifact = await _service.StoreArtifactAsync(
+        var artifact = await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", content);
 
         Assert.Equal("RequirementsDocument", artifact.Type);
@@ -472,10 +475,10 @@ public class SprintServiceTests : IDisposable
     public async Task GetArtifacts_ReturnsAll()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
 
-        var artifacts = await _service.GetSprintArtifactsAsync(sprint.Id);
+        var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
 
         Assert.Equal(2, artifacts.Count);
     }
@@ -484,10 +487,10 @@ public class SprintServiceTests : IDisposable
     public async Task GetArtifacts_FiltersByStage()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
 
-        var artifacts = await _service.GetSprintArtifactsAsync(sprint.Id, "Intake");
+        var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id, "Intake");
 
         Assert.Single(artifacts);
         Assert.Equal("RequirementsDocument", artifacts[0].Type);
@@ -498,7 +501,7 @@ public class SprintServiceTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
-        var artifacts = await _service.GetSprintArtifactsAsync(sprint.Id, "Validation");
+        var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id, "Validation");
 
         Assert.Empty(artifacts);
     }
@@ -509,7 +512,7 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => _service.GetSprintArtifactsAsync(sprint.Id, "NotAStage"));
+            () => _artifactService.GetSprintArtifactsAsync(sprint.Id, "NotAStage"));
     }
 
     // ── AdvanceStageAsync ────────────────────────────────────────
@@ -529,7 +532,7 @@ public class SprintServiceTests : IDisposable
     public async Task AdvanceStage_MovesFromIntakeToPlanning()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         // Intake requires sign-off
         var advanced = await _service.AdvanceStageAsync(sprint.Id);
@@ -549,12 +552,12 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Intake → Planning (requires RequirementsDocument + sign-off)
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         sprint = await AdvanceWithApprovalAsync(sprint.Id);
         Assert.Equal("Planning", sprint.CurrentStage);
 
         // Planning → Discussion (requires SprintPlan + sign-off)
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         sprint = await AdvanceWithApprovalAsync(sprint.Id);
         Assert.Equal("Discussion", sprint.CurrentStage);
 
@@ -563,7 +566,7 @@ public class SprintServiceTests : IDisposable
         Assert.Equal("Validation", sprint.CurrentStage);
 
         // Validation → Implementation (requires ValidationReport, no sign-off)
-        await _service.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         sprint = await _service.AdvanceStageAsync(sprint.Id);
         Assert.Equal("Implementation", sprint.CurrentStage);
 
@@ -589,12 +592,12 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Fast-forward to FinalSynthesis
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         await AdvanceWithApprovalAsync(sprint.Id);
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id);
         await _service.AdvanceStageAsync(sprint.Id); // Discussion → Validation
-        await _service.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         await _service.AdvanceStageAsync(sprint.Id); // Validation → Implementation
         await _service.AdvanceStageAsync(sprint.Id); // Implementation → FinalSynthesis
 
@@ -625,7 +628,7 @@ public class SprintServiceTests : IDisposable
     public async Task AdvanceStage_ThrowsWhenAlreadyAwaitingSignOff()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         await _service.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -637,7 +640,7 @@ public class SprintServiceTests : IDisposable
     public async Task RejectAdvance_ClearsSignOffAndStaysAtCurrentStage()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         await _service.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var rejected = await _service.RejectAdvanceAsync(sprint.Id);
@@ -651,9 +654,9 @@ public class SprintServiceTests : IDisposable
     public async Task DiscussionStage_DoesNotRequireSignOff()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         await AdvanceWithApprovalAsync(sprint.Id); // Intake → Planning
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id); // Planning → Discussion
 
         // Discussion → Validation: no sign-off required
@@ -691,12 +694,12 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Advance to FinalSynthesis
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         await AdvanceWithApprovalAsync(sprint.Id);
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id);
         await _service.AdvanceStageAsync(sprint.Id);
-        await _service.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.AdvanceStageAsync(sprint.Id);
 
@@ -712,17 +715,17 @@ public class SprintServiceTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Advance to FinalSynthesis
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         await AdvanceWithApprovalAsync(sprint.Id);
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id);
         await _service.AdvanceStageAsync(sprint.Id);
-        await _service.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.AdvanceStageAsync(sprint.Id);
 
         // Store SprintReport then complete
-        await _service.StoreArtifactAsync(sprint.Id, "FinalSynthesis", "SprintReport", TestArtifactContent.SprintReport);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "FinalSynthesis", "SprintReport", TestArtifactContent.SprintReport);
         var completed = await _service.CompleteSprintAsync(sprint.Id);
 
         Assert.Equal("Completed", completed.Status);

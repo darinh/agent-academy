@@ -473,6 +473,7 @@ public sealed class AgentOrchestrator
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
 
         var workspacePath = await roomService.GetActiveWorkspacePathAsync();
         if (workspacePath is null) return new(null, null);
@@ -485,7 +486,7 @@ public sealed class AgentOrchestrator
         string? overflowContent = null;
         if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
         {
-            var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var overflowArtifacts = await artifactService.GetSprintArtifactsAsync(sprint.Id);
             var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
             overflowContent = overflow?.Content;
         }

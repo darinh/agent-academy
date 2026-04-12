@@ -13,17 +13,20 @@ namespace AgentAcademy.Server.Controllers;
 public class SprintController : ControllerBase
 {
     private readonly SprintService _sprintService;
+    private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
         SprintService sprintService,
+        SprintArtifactService artifactService,
         SprintMetricsCalculator metricsCalculator,
         RoomService roomService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
+        _artifactService = artifactService;
         _metricsCalculator = metricsCalculator;
         _roomService = roomService;
         _logger = logger;
@@ -71,7 +74,7 @@ public class SprintController : ControllerBase
             if (sprint is null)
                 return NoContent();
 
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
@@ -96,7 +99,7 @@ public class SprintController : ControllerBase
             if (sprint is null)
                 return NotFound();
 
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
@@ -121,7 +124,7 @@ public class SprintController : ControllerBase
             if (sprint is null)
                 return NotFound();
 
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(id, stage);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(id, stage);
             return Ok(artifacts.Select(ToArtifactSnapshot).ToList());
         }
         catch (Exception ex)
@@ -146,7 +149,7 @@ public class SprintController : ControllerBase
                 return BadRequest(new { error = "No active workspace." });
 
             var sprint = await _sprintService.CreateSprintAsync(workspace);
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
@@ -175,7 +178,7 @@ public class SprintController : ControllerBase
             if (ownerError is not null) return ownerError;
 
             var sprint = await _sprintService.AdvanceStageAsync(id);
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
@@ -256,7 +259,7 @@ public class SprintController : ControllerBase
             var sprint = await _sprintService.ApproveAdvanceAsync(id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
-                (await _sprintService.GetSprintArtifactsAsync(sprint.Id))
+                (await _artifactService.GetSprintArtifactsAsync(sprint.Id))
                     .Select(ToArtifactSnapshot).ToList(),
                 SprintService.Stages.ToList()));
         }

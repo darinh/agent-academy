@@ -17,6 +17,7 @@ public class SprintMetricsTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _service;
+    private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _calculator;
 
     public SprintMetricsTests()
@@ -32,6 +33,7 @@ public class SprintMetricsTests : IDisposable
         _db.Database.EnsureCreated();
 
         _service = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
         _calculator = new SprintMetricsCalculator(_db);
     }
 
@@ -98,9 +100,9 @@ public class SprintMetricsTests : IDisposable
     public async Task GetSprintMetrics_CountsArtifacts()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
             """{"Summary":"S","Phases":[]}""");
 
         var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
@@ -145,14 +147,14 @@ public class SprintMetricsTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Store required artifact then advance
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
         // Intake requires sign-off, so approve it
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.ApproveAdvanceAsync(sprint.Id);
 
         // Now at Planning — store artifact and advance
-        await _service.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
             """{"Summary":"S","Phases":[]}""");
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.ApproveAdvanceAsync(sprint.Id);
@@ -171,7 +173,7 @@ public class SprintMetricsTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
 
         // Store artifact and advance from Intake through sign-off
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
         await _service.AdvanceStageAsync(sprint.Id);
         await _service.ApproveAdvanceAsync(sprint.Id);
@@ -256,7 +258,7 @@ public class SprintMetricsTests : IDisposable
     public async Task GetMetricsSummary_AveragesArtifactsAndTasks()
     {
         var s1 = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(s1.Id, "Intake", "RequirementsDocument",
+        await _artifactService.StoreArtifactAsync(s1.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
 
         _db.Tasks.Add(new TaskEntity

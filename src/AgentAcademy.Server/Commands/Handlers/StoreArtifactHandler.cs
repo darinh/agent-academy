@@ -54,6 +54,7 @@ public sealed class StoreArtifactHandler : ICommandHandler
 
         var roomService = context.Services.GetRequiredService<RoomService>();
         var sprintService = context.Services.GetRequiredService<SprintService>();
+        var artifactService = context.Services.GetRequiredService<SprintArtifactService>();
 
         // Resolve sprint if not explicitly given
         if (string.IsNullOrEmpty(sprintId))
@@ -102,7 +103,7 @@ public sealed class StoreArtifactHandler : ICommandHandler
 
         try
         {
-            var artifact = await sprintService.StoreArtifactAsync(
+            var artifact = await artifactService.StoreArtifactAsync(
                 sprintId, stage, artifactType, content, context.AgentId);
 
             return command with
