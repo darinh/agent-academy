@@ -8,7 +8,7 @@
  * agent list with thinking/working state, and navigation items.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
@@ -86,21 +86,6 @@ function makeAgentLocation(overrides: Partial<AgentLocation> = {}): AgentLocatio
     roomId: "room-1",
     state: "Idle",
     breakoutRoomId: null,
-    updatedAt: "2026-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-function makeBreakoutRoom(overrides: Partial<BreakoutRoom> = {}): BreakoutRoom {
-  return {
-    id: "br-1",
-    name: "BR: Sub-task",
-    parentRoomId: "room-1",
-    assignedAgentId: "agent-1",
-    tasks: [],
-    status: "Active",
-    recentMessages: [],
-    createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };

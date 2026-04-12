@@ -65,7 +65,6 @@ import type {
   RoomSnapshot,
   AgentDefinition,
   ActivityEvent,
-  CollaborationPhase,
 } from "../api";
 import type { CircuitBreakerState } from "../useCircuitBreakerPolling";
 import { TIME_RANGE_KEY } from "../dashboardUtils";

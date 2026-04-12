@@ -268,7 +268,7 @@ describe("PlanPanel", () => {
       });
 
       // The dialog has its own Delete button — find it inside the dialog surface
-      const dialog = screen.getByText("Delete plan?").closest("[role='dialog']")!;
+      const dialog = screen.getByText("Delete plan?").closest("[role='dialog']") as HTMLElement;
       const confirmBtn = within(dialog).getAllByText("Delete")
         .map((el) => el.closest("button"))
         .filter(Boolean)
@@ -291,7 +291,7 @@ describe("PlanPanel", () => {
         fireEvent.click(getToolbarButton("Delete"));
       });
 
-      const dialog = screen.getByText("Delete plan?").closest("[role='dialog']")!;
+      const dialog = screen.getByText("Delete plan?").closest("[role='dialog']") as HTMLElement;
       const confirmBtn = within(dialog).getAllByText("Delete")
         .map((el) => el.closest("button"))
         .filter(Boolean)
