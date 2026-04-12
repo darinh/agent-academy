@@ -190,19 +190,21 @@ function setupDefaultMocks() {
   mockGetGitHubStatus.mockResolvedValue(makeGitHubStatus());
 }
 
-function renderPanel(onClose = vi.fn()) {
+import type { DesktopNotificationControls } from "../useDesktopNotifications";
+
+function renderPanel(onClose = vi.fn(), desktopNotifications?: DesktopNotificationControls) {
   const result = render(
     createElement(
       FluentProvider,
       { theme: webDarkTheme },
-      createElement(SettingsPanel, { onClose }),
+      createElement(SettingsPanel, { onClose, desktopNotifications }),
     ),
   );
   return { ...result, onClose };
 }
 
-async function renderPanelAndWait(onClose = vi.fn()) {
-  const result = renderPanel(onClose);
+async function renderPanelAndWait(onClose = vi.fn(), desktopNotifications?: DesktopNotificationControls) {
+  const result = renderPanel(onClose, desktopNotifications);
   // Wait for initial data loads to settle
   await waitFor(() => {
     expect(mockGetAgents).toHaveBeenCalled();
@@ -933,6 +935,83 @@ describe("SettingsPanel (interactive)", () => {
       await waitFor(() => {
         expect(screen.getByText("✓ Saved")).toBeInTheDocument();
       });
+    });
+
+    it("shows desktop notifications toggle when controls provided", async () => {
+      const controls: DesktopNotificationControls = {
+        enabled: false,
+        setEnabled: vi.fn(),
+        permission: "default",
+        supported: true,
+        notify: vi.fn(),
+      };
+      await renderPanelAndWait(vi.fn(), controls);
+      clickTab("Advanced");
+      expect(screen.getByText("Desktop Notifications")).toBeInTheDocument();
+      expect(screen.getByText("Enable desktop notifications")).toBeInTheDocument();
+    });
+
+    it("shows blocked message when permission denied", async () => {
+      const controls: DesktopNotificationControls = {
+        enabled: false,
+        setEnabled: vi.fn(),
+        permission: "denied",
+        supported: true,
+        notify: vi.fn(),
+      };
+      await renderPanelAndWait(vi.fn(), controls);
+      clickTab("Advanced");
+      expect(screen.getByText(/Blocked by browser/)).toBeInTheDocument();
+    });
+
+    it("shows unsupported message when not supported", async () => {
+      const controls: DesktopNotificationControls = {
+        enabled: false,
+        setEnabled: vi.fn(),
+        permission: "unsupported",
+        supported: false,
+        notify: vi.fn(),
+      };
+      await renderPanelAndWait(vi.fn(), controls);
+      clickTab("Advanced");
+      expect(screen.getByText(/Not supported in this browser/)).toBeInTheDocument();
+    });
+
+    it("checkbox reflects enabled state", async () => {
+      const controls: DesktopNotificationControls = {
+        enabled: true,
+        setEnabled: vi.fn(),
+        permission: "granted",
+        supported: true,
+        notify: vi.fn(),
+      };
+      await renderPanelAndWait(vi.fn(), controls);
+      clickTab("Advanced");
+      const checkbox = screen.getByRole("checkbox", { name: /desktop notifications/i });
+      expect(checkbox).toBeChecked();
+    });
+
+    it("calls setEnabled when checkbox toggled", async () => {
+      const setEnabled = vi.fn();
+      const controls: DesktopNotificationControls = {
+        enabled: false,
+        setEnabled,
+        permission: "granted",
+        supported: true,
+        notify: vi.fn(),
+      };
+      await renderPanelAndWait(vi.fn(), controls);
+      clickTab("Advanced");
+      const checkbox = screen.getByRole("checkbox", { name: /desktop notifications/i });
+      await userEvent.click(checkbox);
+      expect(setEnabled).toHaveBeenCalledWith(true);
+    });
+
+    it("shows fallback when no controls provided", async () => {
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      expect(screen.getByText("Desktop Notifications")).toBeInTheDocument();
+      expect(screen.getByText("Not available")).toBeInTheDocument();
     });
   });
 });

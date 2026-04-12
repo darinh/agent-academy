@@ -24,6 +24,7 @@ import V3Badge from "./V3Badge";
 import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useStyles } from "./useStyles";
 import { useWorkspace } from "./useWorkspace";
+import { useDesktopNotifications } from "./useDesktopNotifications";
 import { apiBaseUrl, getActiveWorkspace, switchWorkspace, getTasks, getActiveSprint, getAuthStatus, logout, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
 import type { OnboardResult, WorkspaceMeta, TaskSnapshot, AuthStatus, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
 import SidebarPanel from "./SidebarPanel";
@@ -142,7 +143,12 @@ function AppShell() {
     saveFilters(next);
   }, []);
 
+  const desktopNotif = useDesktopNotifications();
+
   const handleActivityToast = useCallback((evt: ActivityEvent) => {
+    // Desktop notification (fires only when tab is hidden + user opted in)
+    desktopNotif.notify(evt);
+
     if (!TOAST_EVENT_TYPES.has(evt.type)) return;
 
     const intent = toastIntent(evt);
@@ -154,7 +160,7 @@ function AppShell() {
       </Toast>,
       { intent, timeout },
     );
-  }, [dispatchToast]);
+  }, [dispatchToast, desktopNotif]);
 
   const {
     ov,
@@ -837,7 +843,7 @@ function AppShell() {
       {showSettings && (
         <ChunkErrorBoundary>
           <Suspense fallback={null}>
-            <SettingsPanel onClose={() => setShowSettings(false)} />
+            <SettingsPanel onClose={() => setShowSettings(false)} desktopNotifications={desktopNotif} />
           </Suspense>
         </ChunkErrorBoundary>
       )}

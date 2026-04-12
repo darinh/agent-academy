@@ -293,11 +293,14 @@ function toKebabCase(name: string): string {
 
 // ── Component ───────────────────────────────────────────────────────────
 
+import type { DesktopNotificationControls } from "./useDesktopNotifications";
+
 interface SettingsPanelProps {
   onClose: () => void;
+  desktopNotifications?: DesktopNotificationControls;
 }
 
-export default function SettingsPanel({ onClose }: SettingsPanelProps) {
+export default function SettingsPanel({ onClose, desktopNotifications }: SettingsPanelProps) {
   const s = useLocalStyles();
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -916,6 +919,36 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                   </Button>
                   {settingsSaved && <span style={{ color: "#4ade80", fontSize: 13 }}>✓ Saved</span>}
                 </div>
+
+                {/* ── Desktop Notifications ──────────── */}
+                <div style={{ fontWeight: 600, marginTop: 28, marginBottom: 10, color: "#e2e8f0", fontSize: 14 }}>
+                  Desktop Notifications
+                </div>
+                <div style={{ marginBottom: 14, color: "rgba(148,163,184,0.6)", fontSize: 13, lineHeight: 1.5 }}>
+                  Show browser notifications for agent messages, errors, and sprint events when the tab is in the background.
+                </div>
+                {desktopNotifications ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={desktopNotifications.enabled}
+                        onChange={(e) => desktopNotifications.setEnabled(e.target.checked)}
+                        disabled={desktopNotifications.permission === "denied" && !desktopNotifications.enabled}
+                        style={{ accentColor: "#818cf8", width: 16, height: 16 }}
+                      />
+                      <span style={{ color: "#e2e8f0", fontSize: 13 }}>Enable desktop notifications</span>
+                    </label>
+                    {desktopNotifications.permission === "denied" && (
+                      <span style={{ color: "#f87171", fontSize: 12 }}>Blocked by browser — reset in site settings</span>
+                    )}
+                    {desktopNotifications.permission === "unsupported" && (
+                      <span style={{ color: "rgba(148,163,184,0.6)", fontSize: 12 }}>Not supported in this browser</span>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ color: "rgba(148,163,184,0.4)", fontSize: 13 }}>Not available</div>
+                )}
               </>
             )}
 
