@@ -449,6 +449,51 @@ public class DmCommandTests : IDisposable
         Assert.Equal("Hello agent!", messages[1].Content);
     }
 
+    [Fact]
+    public async Task ConsultantDm_StoresWithConsultantRole()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        await runtime.SendDirectMessageAsync(
+            "consultant", "Consultant", "Consultant", "planner-1",
+            "I need your analysis.", "main");
+
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var msg = await db.Messages
+            .Where(m => m.Content == "I need your analysis.")
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(msg);
+        Assert.Equal("consultant", msg!.SenderId);
+        Assert.Equal("Consultant", msg.SenderName);
+        Assert.Equal("Consultant", msg.SenderRole);
+    }
+
+    [Fact]
+    public async Task GetDmThreadsForHuman_IncludesConsultantMessages()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<WorkspaceRuntime>();
+
+        // Consultant DMs agent
+        await runtime.SendDirectMessageAsync(
+            "consultant", "Consultant", "Consultant", "planner-1",
+            "Consultant question.", "main");
+
+        // Agent replies to human mailbox
+        await runtime.SendDirectMessageAsync(
+            "planner-1", "Aristotle", "Planner", "human",
+            "Answer from agent.", "main");
+
+        var threads = await runtime.GetDmThreadsForHumanAsync();
+
+        // Both messages should appear in the agent's thread
+        var aristThread = threads.FirstOrDefault(t => t.AgentId == "planner-1");
+        Assert.NotNull(aristThread);
+        Assert.True(aristThread!.MessageCount >= 1);
+    }
+
     // ── ASK_HUMAN Deprecation ───────────────────────────────────────
 
     [Fact]

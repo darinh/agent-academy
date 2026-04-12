@@ -391,8 +391,9 @@ public sealed class WorkspaceRuntime
     /// </summary>
     public Task<ChatEnvelope> PostHumanMessageAsync(
         string roomId, string content,
-        string? userId = null, string? userName = null)
-        => _messages.PostHumanMessageAsync(roomId, content, userId, userName);
+        string? userId = null, string? userName = null,
+        string? userRole = null)
+        => _messages.PostHumanMessageAsync(roomId, content, userId, userName, userRole);
 
     /// <summary>
     /// Posts a system message to a room (e.g. "Agent X joined the room.").

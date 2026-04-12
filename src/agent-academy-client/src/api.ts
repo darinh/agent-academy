@@ -1155,6 +1155,7 @@ export interface DmMessage {
   id: string;
   senderId: string;
   senderName: string;
+  senderRole?: string | null;
   content: string;
   sentAt: string;
   isFromHuman: boolean;

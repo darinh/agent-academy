@@ -19,6 +19,7 @@ public record DmMessage(
     string Id,
     string SenderId,
     string SenderName,
+    string? SenderRole,
     string Content,
     DateTime SentAt,
     bool IsFromHuman

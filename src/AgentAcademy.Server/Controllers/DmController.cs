@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace AgentAcademy.Server.Controllers;
 
 /// <summary>
-/// Direct messaging endpoints for the human DM UI.
-/// Allows the human to view DM threads and send messages to agents.
+/// Direct messaging endpoints for the DM UI.
+/// Allows the human or consultant to view DM threads and send messages to agents.
 /// </summary>
 [ApiController]
 public class DmController : ControllerBase
@@ -55,16 +55,17 @@ public class DmController : ControllerBase
             Id: m.Id,
             SenderId: m.SenderId,
             SenderName: m.SenderName,
+            SenderRole: m.SenderRole,
             Content: m.Content,
             SentAt: m.SentAt,
-            IsFromHuman: m.SenderId == "human"
+            IsFromHuman: m.SenderId == "human" || m.SenderId == "consultant"
         )).ToList();
 
         return Ok(result);
     }
 
     /// <summary>
-    /// POST /api/dm/threads/{agentId} — human sends a DM to an agent.
+    /// POST /api/dm/threads/{agentId} — human or consultant sends a DM to an agent.
     /// </summary>
     [HttpPost("api/dm/threads/{agentId}")]
     public async Task<ActionResult<DmMessage>> SendMessage(
@@ -80,15 +81,21 @@ public class DmController : ControllerBase
         if (agent is null)
             return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found." });
 
+        // Derive identity from authenticated claims
+        var isConsultant = User.IsInRole("Consultant");
+        var senderId = isConsultant ? "consultant" : "human";
+        var senderName = isConsultant ? "Consultant" : "Human";
+        var senderRole = isConsultant ? "Consultant" : "Human";
+
         // Find the default room for context
         var rooms = await _runtime.GetRoomsAsync();
         var defaultRoom = rooms.FirstOrDefault();
         var roomId = defaultRoom?.Id ?? "main";
 
         var messageId = await _runtime.SendDirectMessageAsync(
-            senderId: "human",
-            senderName: "Human",
-            senderRole: "Human",
+            senderId: senderId,
+            senderName: senderName,
+            senderRole: senderRole,
             recipientId: agent.Id,
             message: request.Message,
             currentRoomId: roomId);
@@ -96,13 +103,14 @@ public class DmController : ControllerBase
         // Trigger agent to respond promptly
         _orchestrator.HandleDirectMessage(agent.Id);
 
-        _logger.LogInformation("Human sent DM to {AgentName}: {Preview}",
-            agent.Name, request.Message.Length > 50 ? request.Message[..50] + "…" : request.Message);
+        _logger.LogInformation("{SenderRole} sent DM to {AgentName}: {Preview}",
+            senderRole, agent.Name, request.Message.Length > 50 ? request.Message[..50] + "…" : request.Message);
 
         return StatusCode(201, new DmMessage(
             Id: messageId,
-            SenderId: "human",
-            SenderName: "Human",
+            SenderId: senderId,
+            SenderName: senderName,
+            SenderRole: senderRole,
             Content: request.Message,
             SentAt: DateTime.UtcNow,
             IsFromHuman: true
