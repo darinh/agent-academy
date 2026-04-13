@@ -73,7 +73,7 @@ public sealed class HumanCommandRegistryTests
             Assert.False(string.IsNullOrWhiteSpace(cmd.Command), $"Command name is empty");
             Assert.False(string.IsNullOrWhiteSpace(cmd.Title), $"{cmd.Command} has empty title");
             Assert.False(string.IsNullOrWhiteSpace(cmd.Category), $"{cmd.Command} has empty category");
-            Assert.Contains(cmd.Category, new[] { "workspace", "code", "git", "operations" });
+            Assert.Contains(cmd.Category, new[] { "workspace", "code", "git", "operations", "analytics" });
             Assert.False(string.IsNullOrWhiteSpace(cmd.Description), $"{cmd.Command} has empty description");
             Assert.False(string.IsNullOrWhiteSpace(cmd.Detail), $"{cmd.Command} has empty detail");
             Assert.NotNull(cmd.Fields);

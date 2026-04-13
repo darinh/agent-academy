@@ -160,6 +160,20 @@ public static class HumanCommandRegistry
             IsDestructive: true,
             DestructiveWarning: "This will archive all stale rooms where tasks are complete. Multiple rooms may be affected."),
 
+        new("LIST_AGENT_STATS", "Agent stats", "analytics",
+            "Per-agent task effectiveness metrics.",
+            "Returns completion rate, cycle time, review rounds, first-pass approval rate, and rework rate for each agent. Useful for data-driven task assignments.",
+            IsAsync: false,
+            Fields:
+            [
+                new("hoursBack", "Time window (hours)", "number",
+                    "Limit metrics to the last N hours (1-8760). Omit for all-time.",
+                    Required: false),
+                new("agentId", "Agent filter", "text",
+                    "Filter to a single agent by ID or name.",
+                    Required: false),
+            ]),
+
         new("LIST_WORKTREES", "List worktrees", "workspace",
             "Show all active worktrees with task and agent info.",
             "Returns branch, path, created time, and linked task/agent enrichment for every active worktree.",

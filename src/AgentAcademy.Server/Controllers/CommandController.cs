@@ -54,6 +54,7 @@ public sealed class CommandController : ControllerBase
         "REMOVE_TASK_DEPENDENCY",
         "SCHEDULE_SPRINT",
         "LIST_WORKTREES",
+        "LIST_AGENT_STATS",
         "CLEANUP_WORKTREES",
     };
 

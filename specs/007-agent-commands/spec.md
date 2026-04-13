@@ -206,8 +206,9 @@ These formalize existing capabilities with audit trails and structured output.
 |---------|------|---------|-------------|----------------|
 | `LIST_WORKTREES` | `status?` | All active worktrees: branch, relative path, created time, linked task info (id, title, status, agent). Optional `status` filter matches on task status. | Audit event | `ListWorktreesHandler.cs` — queries WorktreeService + DB task enrichment; read-only, retry-safe |
 | `CLEANUP_WORKTREES` | `includeOrphans?`, `confirm` | Count and list of removed branches | Removes worktrees linked to completed/cancelled tasks. With `includeOrphans=true`, also removes worktrees with no linked task. | `CleanupWorktreesHandler.cs` — Planner/Human-only; destructive (requires `confirm=true`) |
+| `LIST_AGENT_STATS` | `hoursBack?`, `agentId?` | Per-agent task effectiveness: completion rate, cycle time, review rounds, first-pass approval rate, rework rate, commits per task. Overview totals included. | Audit event | `ListAgentStatsHandler.cs` — delegates to `TaskAnalyticsService`; read-only, retry-safe. Agent filter matches by ID or name (case-insensitive). |
 
-**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ListWorktrees,CleanupWorktrees}Handler.cs` — 17 tests in `WorktreeCommandHandlerTests.cs`.
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ListWorktrees,CleanupWorktrees,ListAgentStats}Handler.cs` — 17 tests in `WorktreeCommandHandlerTests.cs`, 16 tests in `ListAgentStatsHandlerTests.cs`.
 
 ### Tier 2 — Full Autonomy
 
@@ -353,7 +354,7 @@ Expose a subset of platform commands to authenticated human users via HTTP REST 
 
 | Tier | Commands | Risk | Human Access |
 |------|----------|------|--------------|
-| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `LIST_WORKTREES`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
+| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `LIST_WORKTREES`, `LIST_AGENT_STATS`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
 | **Side effects** | `RUN_BUILD`, `RUN_TESTS` | Compute cost, long-running | ✅ Allowed |
 | **Room management** | `CREATE_ROOM`, `REOPEN_ROOM`, `CLOSE_ROOM`, `INVITE_TO_ROOM` | State mutation | ✅ Allowed |
 | **Dangerous** | `SHELL`, `RESTART_SERVER`, `MERGE_TASK`, `RECALL_AGENT` | State mutation, git ops | ❌ Denied |
@@ -731,3 +732,4 @@ Discord Server
 | 2026-04-05 | Spec-task linking (Phase 2): `SpecTaskLinkEntity` junction table, `LINK_TASK_TO_SPEC` and `SHOW_UNLINKED_CHANGES` commands, `SpecManager.LoadSpecContextForTaskAsync` for task-filtered spec loading, REST endpoints `GET /api/tasks/{id}/specs` and `GET /api/specs/{sectionId}/tasks`, cascade delete, unique constraint, `SpecTaskLinked` activity event. 36 new tests. | spec-task-linking | (this change) |
 | 2026-04-12 | Pipeline-level command retry: `ExecuteWithRetryAsync` retries retry-safe commands on `TIMEOUT`/`INTERNAL` errors (up to 3 attempts, 1s/2s exponential backoff). `ICommandHandler.IsRetrySafe` opt-in property. 19 read-only/idempotent handlers marked safe. `CommandEnvelope.RetryCount` added. `FormatResultsForContext` includes retry count. `RATE_LIMIT` intentionally excluded from pipeline retry. Error recovery known gap resolved. 9 new tests. | pipeline-retry | (this change) |
 | 2026-04-13 | Worktree management commands (Phase 1H): `LIST_WORKTREES` (read-only, retry-safe) returns active worktrees with task/agent enrichment and optional `status` filter. `CLEANUP_WORKTREES` (destructive, Planner/Human-only) removes stale worktrees for completed/cancelled tasks, with `includeOrphans` option. Added to destructive commands list and read-only allowlist. 17 new tests. | worktree-agent-commands | (this change) |
+| 2026-04-13 | Agent stats command + reviewer capabilities: `LIST_AGENT_STATS` (read-only, retry-safe) surfaces per-agent task effectiveness metrics (completion rate, cycle time, review rounds, first-pass approval, rework rate) for data-driven task assignments. Filters by `agentId` (name or ID) and `hoursBack`. Added to human/consultant allowlist and HumanCommandRegistry (analytics category). Reviewer agent (Socrates) granted `code` SDK tool group + `READ_FILE`, `SHOW_DIFF`, `SEARCH_CODE`, `GIT_LOG`, `RUN_BUILD`, `RUN_TESTS` command permissions — fixes gap where startup prompt documented commands the reviewer couldn't execute. Engineer prompts updated with worktree awareness. Planner prompt updated with `LIST_AGENT_STATS` documentation. 16 new tests. | agent-stats-command | (this change) |
