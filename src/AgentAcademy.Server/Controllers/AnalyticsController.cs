@@ -12,10 +12,12 @@ namespace AgentAcademy.Server.Controllers;
 public class AnalyticsController : ControllerBase
 {
     private readonly AgentAnalyticsService _analytics;
+    private readonly TaskAnalyticsService _taskAnalytics;
 
-    public AnalyticsController(AgentAnalyticsService analytics)
+    public AnalyticsController(AgentAnalyticsService analytics, TaskAnalyticsService taskAnalytics)
     {
         _analytics = analytics;
+        _taskAnalytics = taskAnalytics;
     }
 
     /// <summary>
@@ -56,6 +58,21 @@ public class AnalyticsController : ControllerBase
             return BadRequest(new { code = "invalid_limit", message = "taskLimit must be between 1 and 200" });
 
         var result = await _analytics.GetAgentDetailAsync(agentId, hoursBack, requestLimit, errorLimit, taskLimit, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Task cycle analytics — effectiveness metrics, cycle times, throughput, and per-agent breakdown.
+    /// </summary>
+    [HttpGet("tasks")]
+    public async Task<ActionResult<TaskCycleAnalytics>> GetTaskAnalytics(
+        [FromQuery] int? hoursBack = null,
+        CancellationToken ct = default)
+    {
+        if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
+            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+
+        var result = await _taskAnalytics.GetTaskCycleAnalyticsAsync(hoursBack, ct);
         return Ok(result);
     }
 }

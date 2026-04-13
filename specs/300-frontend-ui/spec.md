@@ -381,6 +381,26 @@ Drill-down panel showing detailed per-agent analytics when a card is selected.
 
 **API types (`api.ts`):** `AgentAnalyticsDetail`, `AgentUsageRecord`, `AgentErrorRecord`, `AgentTaskRecord`, `AgentModelBreakdown`, `AgentActivityBucket`.
 
+### Task Analytics Panel (`TaskAnalyticsPanel.tsx`)
+
+Task cycle effectiveness dashboard showing completion rates, cycle times, review effort, and per-agent breakdown over a configurable time window.
+
+**Data source:** `GET /api/analytics/tasks?hoursBack={N}` → `TaskCycleAnalytics`. Receives `hoursBack` prop from the shared `DashboardPanel` time range selector.
+
+**Summary row:** Six KPI cards — completion rate (%), avg cycle time, avg queue time, avg review rounds, rework rate (%), total commits. Time values formatted adaptively (minutes/hours/days).
+
+**Status badges:** Non-zero status counts rendered as colored `V3Badge` chips (Active=blue, InReview=gold, Completed=green, Blocked=warn, Cancelled=muted, etc.).
+
+**Throughput sparkline:** 12-bucket sparkline of completed tasks over time. Hidden when all buckets are zero.
+
+**Type breakdown:** Chip row showing task counts by type (Feature, Bug, Chore, Spike). Zero-count types are hidden.
+
+**Agent effectiveness table:** Sortable table with columns: Agent (name + assigned count), Done, Rate, Cycle, 1st Pass, Rework. Click column headers to sort (toggle asc/desc). Default sort: completed count descending.
+
+**Refresh behavior:** Auto-refreshes every 60 seconds. Stale-response protection via `seqRef` counter. Manual refresh button in toolbar.
+
+**Dashboard integration:** Rendered in `DashboardPanel` between Agent Performance and LLM Usage sections.
+
 ## Room-Centric Conversation (`ChatPanel.tsx`)
 
 The Conversation panel provides the primary chat interface, centered on the selected room. Rather than being a standalone tab, it renders as the main content area when a room is selected in the sidebar.

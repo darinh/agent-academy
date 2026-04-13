@@ -46,6 +46,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<SprintStageService>();
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<SprintMetricsCalculator>();
+        services.AddScoped<TaskAnalyticsService>();
 
         return services;
     }
