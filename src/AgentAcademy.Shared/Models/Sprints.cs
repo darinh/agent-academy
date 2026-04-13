@@ -149,3 +149,41 @@ public sealed class SprintTimeoutSettings
                 MaxSprintDurationHours, "Must be > 0.");
     }
 }
+
+public sealed class SprintSchedulerSettings
+{
+    public const string SectionName = "SprintScheduler";
+
+    /// <summary>Whether the scheduler background service is enabled. Default: true.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Seconds between schedule evaluation passes. Must be &gt; 0. Default: 60.</summary>
+    public int CheckIntervalSeconds { get; set; } = 60;
+
+    public void Validate()
+    {
+        if (CheckIntervalSeconds <= 0)
+            throw new ArgumentOutOfRangeException(nameof(CheckIntervalSeconds),
+                CheckIntervalSeconds, "Must be > 0.");
+    }
+}
+
+/// <summary>REST API model for creating/updating a sprint schedule.</summary>
+public sealed record SprintScheduleRequest(
+    string CronExpression,
+    string TimeZoneId = "UTC",
+    bool Enabled = true);
+
+/// <summary>REST API model returned for sprint schedule queries.</summary>
+public sealed record SprintScheduleResponse(
+    string Id,
+    string WorkspacePath,
+    string CronExpression,
+    string TimeZoneId,
+    bool Enabled,
+    DateTime? NextRunAtUtc,
+    DateTime? LastTriggeredAt,
+    DateTime? LastEvaluatedAt,
+    string? LastOutcome,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);

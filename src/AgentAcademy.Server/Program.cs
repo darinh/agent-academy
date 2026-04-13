@@ -179,6 +179,11 @@ builder.Services.Configure<SprintTimeoutSettings>(
     builder.Configuration.GetSection(SprintTimeoutSettings.SectionName));
 builder.Services.AddHostedService<SprintTimeoutService>();
 
+// Sprint scheduler (cron-based periodic sprint creation)
+builder.Services.Configure<SprintSchedulerSettings>(
+    builder.Configuration.GetSection(SprintSchedulerSettings.SectionName));
+builder.Services.AddHostedService<SprintSchedulerService>();
+
 var app = builder.Build();
 
 // Auto-migrate database on startup

@@ -69,6 +69,47 @@ Cancelling a sprint does **not** trigger auto-start — only successful completi
 **Setting**: `sprint.autoStartOnCompletion` via `SystemSettingsService` / `PUT /api/settings`.
 **Frontend**: Toggle in Settings → Advanced → Sprint Automation.
 
+### Scheduled Sprints (Cron)
+
+Sprints can be created on a recurring schedule using standard 5-field cron expressions (minute, hour, day-of-month, month, day-of-week). Each workspace may have **at most one schedule** (enforced by unique index on `WorkspacePath`).
+
+**Background service**: `SprintSchedulerService` (`BackgroundService`) polls every 60 seconds (configurable via `SprintScheduler:CheckIntervalSeconds`). On each tick it queries enabled schedules whose `NextRunAtUtc` has passed and attempts to create a sprint via `CreateSprintAsync(workspace, trigger: "scheduled")`.
+
+**Timezone support**: Each schedule stores an IANA timezone ID (e.g., `"America/New_York"`). The cron expression is evaluated in that timezone, and the next occurrence is stored as UTC in `NextRunAtUtc`. This ensures DST transitions are handled correctly.
+
+**Misfire policy**: No catch-up. If the server was down when a schedule was due, it evaluates on the next tick and creates at most one sprint. Since only one active sprint is allowed per workspace, missed runs do not accumulate.
+
+**Outcome tracking**: Each evaluation records:
+- `LastEvaluatedAt` — when the schedule was last checked
+- `LastTriggeredAt` — when a sprint was last *successfully* created
+- `LastOutcome` — `"started"`, `"skipped_active"` (active sprint exists), or `"error"`
+
+**Interaction with auto-start**: Both triggers can coexist. If auto-start-on-completion creates a sprint before the schedule fires, the scheduler detects the active sprint and records `skipped_active`. No conflict or double-creation.
+
+**REST API**:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/sprints/schedule` | GET | Get schedule for active workspace (404 if none) |
+| `/api/sprints/schedule` | PUT | Create/update schedule (upsert). Body: `SprintScheduleRequest` |
+| `/api/sprints/schedule` | DELETE | Remove schedule for active workspace |
+
+**Request model** (`SprintScheduleRequest`):
+```json
+{
+  "cronExpression": "0 9 * * 1",
+  "timeZoneId": "America/New_York",
+  "enabled": true
+}
+```
+
+**Validation**:
+- Cron expression must parse as valid 5-field format (seconds-based 6-field is rejected)
+- Timezone must resolve via `TimeZoneInfo.FindSystemTimeZoneById`
+- Workspace must exist (active workspace check)
+
+**Source**: `SprintSchedulerService.cs`, `SprintScheduleEntity.cs`
+**Config section**: `SprintScheduler` (settings: `Enabled`, `CheckIntervalSeconds`)
+
 ## Entities
 
 > **Source**: `src/AgentAcademy.Server/Data/Entities/SprintEntity.cs`, `SprintArtifactEntity.cs`
@@ -120,6 +161,29 @@ Cancelling a sprint does **not** trigger auto-start — only successful completi
 - `idx_sprint_artifacts_sprint_stage_type_unique` on `(SprintId, Stage, Type)` — unique
 
 **Constraint**: One artifact of each type per stage per sprint (enforced by unique index). Storing the same type again for the same stage upserts the content.
+
+### SprintScheduleEntity
+
+> **Source**: `src/AgentAcademy.Server/Data/Entities/SprintScheduleEntity.cs`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Id` | `string` | GUID primary key |
+| `WorkspacePath` | `string` | Owning workspace path |
+| `CronExpression` | `string` | 5-field cron expression |
+| `TimeZoneId` | `string` | IANA timezone ID (default: `"UTC"`) |
+| `Enabled` | `bool` | Whether the schedule is active |
+| `NextRunAtUtc` | `DateTime?` | Precomputed next evaluation time (UTC) |
+| `LastTriggeredAt` | `DateTime?` | Last successful sprint creation (UTC) |
+| `LastEvaluatedAt` | `DateTime?` | Last evaluation attempt (UTC) |
+| `LastOutcome` | `string?` | `"started"` / `"skipped_active"` / `"error"` |
+| `CreatedAt` | `DateTime` | UTC creation timestamp |
+| `UpdatedAt` | `DateTime` | UTC last-modified timestamp |
+
+**Table**: `sprint_schedules`
+**Indexes**:
+- `idx_sprint_schedules_workspace_unique` on `WorkspacePath` — unique (one schedule per workspace)
+- `idx_sprint_schedules_enabled_next_run` on `(Enabled, NextRunAtUtc)` — for efficient scheduler queries
 
 ## Shared Models
 
@@ -536,10 +600,11 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 | `SprintServiceEventTests.cs` | Activity event emission | 17 tests |
 | `SprintMetricsTests.cs` | Per-sprint metrics and workspace-level summary | 15 tests |
 | `SprintTimeoutTests.cs` | Sign-off/duration timeout + background service | 19 tests |
+| `SprintSchedulerServiceTests.cs` | Cron scheduler: evaluation, outcomes, timezone, validation | 23 tests |
 | `sprintPanel.test.ts` | Frontend panel rendering and interactions | 53 tests |
 | `sprintRealtime.test.ts` | Real-time event handling | 34 tests |
 
-**Total: 249 tests** across backend and frontend.
+**Total: 272 tests** across backend and frontend.
 
 ## Known Gaps
 
@@ -551,6 +616,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-13 | Cron-scheduled sprints — `SprintSchedulerService` background service evaluates cron expressions on a 60s timer. `SprintScheduleEntity` stores per-workspace schedules with IANA timezone, outcome tracking (`started`/`skipped_active`/`error`). REST: `GET/PUT/DELETE /api/sprints/schedule` scoped to active workspace. Cronos 0.8.4 for cron parsing. 23 new tests. | feat/scheduled-sprints |
 | 2026-04-13 | Sprint auto-start on completion — `sprint.autoStartOnCompletion` system setting. `CompleteSprintAsync` auto-creates next sprint when enabled. `CreateSprintAsync` gains optional `trigger` param for event metadata. Frontend toggle in Settings → Advanced. 8 backend + 5 frontend tests. | feat/sprint-auto-start |
 | 2026-04-13 | Stage prerequisites — Implementation stage requires all sprint tasks to be Completed/Cancelled before advancement. Force flag skips prerequisites (not artifact gates or sign-off). `AdvanceStageAsync(sprintId, force)`, `PrerequisiteResult` record, reuses `RoomLifecycleService.TerminalTaskStatuses`. REST: `?force=true`. Command: `Force: true`. Forced events include `forced=true` in metadata. 12 new tests. | feat/stage-prerequisites |
 | 2026-04-13 | Spec sync — documented `SprintStageService` (341 lines) extracted from `SprintService` (635→380 lines). Stage state machine (advancement, sign-off, approval/rejection, timeout) now in dedicated class. Updated service layer, methods, constants, and event broadcasting tables. | develop |

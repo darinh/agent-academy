@@ -41,6 +41,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<TaskEvidenceEntity> TaskEvidence => Set<TaskEvidenceEntity>();
     public DbSet<SprintEntity> Sprints => Set<SprintEntity>();
     public DbSet<SprintArtifactEntity> SprintArtifacts => Set<SprintArtifactEntity>();
+    public DbSet<SprintScheduleEntity> SprintSchedules => Set<SprintScheduleEntity>();
     public DbSet<TaskDependencyEntity> TaskDependencies => Set<TaskDependencyEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -569,6 +570,24 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => new { e.SprintId, e.Stage, e.Type })
                 .IsUnique()
                 .HasDatabaseName("idx_sprint_artifacts_sprint_stage_type_unique");
+        });
+
+        modelBuilder.Entity<SprintScheduleEntity>(entity =>
+        {
+            entity.ToTable("sprint_schedules");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.WorkspacePath).IsRequired();
+            entity.Property(e => e.CronExpression).IsRequired();
+            entity.Property(e => e.TimeZoneId).IsRequired().HasDefaultValue("UTC");
+            entity.Property(e => e.Enabled).HasDefaultValue(false);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt).IsRequired();
+
+            entity.HasIndex(e => e.WorkspacePath)
+                .IsUnique()
+                .HasDatabaseName("idx_sprint_schedules_workspace_unique");
+            entity.HasIndex(e => new { e.Enabled, e.NextRunAtUtc })
+                .HasDatabaseName("idx_sprint_schedules_enabled_next_run");
         });
     }
 }

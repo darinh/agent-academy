@@ -1,6 +1,9 @@
+using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -17,6 +20,7 @@ public class SprintController : ControllerBase
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
+    private readonly AgentAcademyDbContext _db;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
@@ -25,6 +29,7 @@ public class SprintController : ControllerBase
         SprintArtifactService artifactService,
         SprintMetricsCalculator metricsCalculator,
         RoomService roomService,
+        AgentAcademyDbContext db,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
@@ -32,6 +37,7 @@ public class SprintController : ControllerBase
         _artifactService = artifactService;
         _metricsCalculator = metricsCalculator;
         _roomService = roomService;
+        _db = db;
         _logger = logger;
     }
 
@@ -347,6 +353,144 @@ public class SprintController : ControllerBase
             return Problem("Failed to retrieve sprint metrics summary.");
         }
     }
+
+    // ── Schedule CRUD ──────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/sprints/schedule — get the sprint schedule for the active workspace.
+    /// </summary>
+    [HttpGet("schedule")]
+    public async Task<IActionResult> GetSchedule()
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return BadRequest(new { error = "No active workspace." });
+
+            var entity = await _db.SprintSchedules
+                .FirstOrDefaultAsync(s => s.WorkspacePath == workspace);
+            if (entity is null)
+                return NotFound();
+
+            return Ok(ToScheduleResponse(entity));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sprint schedule");
+            return Problem("Failed to retrieve sprint schedule.");
+        }
+    }
+
+    /// <summary>
+    /// PUT /api/sprints/schedule — create or update the sprint schedule for the active workspace.
+    /// </summary>
+    [HttpPut("schedule")]
+    public async Task<IActionResult> UpsertSchedule([FromBody] SprintScheduleRequest request)
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return BadRequest(new { error = "No active workspace." });
+
+            if (!SprintSchedulerService.IsValidCron(request.CronExpression))
+                return BadRequest(new { error = "Invalid cron expression. Use standard 5-field format (minute hour day month weekday)." });
+
+            TimeZoneInfo tz;
+            try
+            {
+                tz = TimeZoneInfo.FindSystemTimeZoneById(request.TimeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return BadRequest(new { error = $"Unknown timezone: {request.TimeZoneId}" });
+            }
+
+            var now = DateTime.UtcNow;
+            var entity = await _db.SprintSchedules
+                .FirstOrDefaultAsync(s => s.WorkspacePath == workspace);
+
+            if (entity is null)
+            {
+                entity = new SprintScheduleEntity
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    WorkspacePath = workspace,
+                    CreatedAt = now,
+                };
+                _db.SprintSchedules.Add(entity);
+            }
+
+            entity.CronExpression = request.CronExpression;
+            entity.TimeZoneId = request.TimeZoneId;
+            entity.Enabled = request.Enabled;
+            entity.NextRunAtUtc = request.Enabled
+                ? SprintSchedulerService.ComputeNextRun(request.CronExpression, request.TimeZoneId, now)
+                : null;
+            entity.UpdatedAt = now;
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException) when (entity.CreatedAt == now)
+            {
+                // Concurrent insert race — reload and update
+                _db.ChangeTracker.Clear();
+                entity = await _db.SprintSchedules
+                    .FirstAsync(s => s.WorkspacePath == workspace);
+                entity.CronExpression = request.CronExpression;
+                entity.TimeZoneId = request.TimeZoneId;
+                entity.Enabled = request.Enabled;
+                entity.NextRunAtUtc = request.Enabled
+                    ? SprintSchedulerService.ComputeNextRun(request.CronExpression, request.TimeZoneId, now)
+                    : null;
+                entity.UpdatedAt = now;
+                await _db.SaveChangesAsync();
+            }
+
+            return Ok(ToScheduleResponse(entity));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upsert sprint schedule");
+            return Problem("Failed to save sprint schedule.");
+        }
+    }
+
+    /// <summary>
+    /// DELETE /api/sprints/schedule — remove the sprint schedule for the active workspace.
+    /// </summary>
+    [HttpDelete("schedule")]
+    public async Task<IActionResult> DeleteSchedule()
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return BadRequest(new { error = "No active workspace." });
+
+            var entity = await _db.SprintSchedules
+                .FirstOrDefaultAsync(s => s.WorkspacePath == workspace);
+            if (entity is null)
+                return NotFound();
+
+            _db.SprintSchedules.Remove(entity);
+            await _db.SaveChangesAsync();
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete sprint schedule");
+            return Problem("Failed to delete sprint schedule.");
+        }
+    }
+
+    private static SprintScheduleResponse ToScheduleResponse(SprintScheduleEntity e) => new(
+        e.Id, e.WorkspacePath, e.CronExpression, e.TimeZoneId, e.Enabled,
+        e.NextRunAtUtc, e.LastTriggeredAt, e.LastEvaluatedAt, e.LastOutcome,
+        e.CreatedAt, e.UpdatedAt);
 
     private static SprintSnapshot ToSnapshot(Data.Entities.SprintEntity e)
     {

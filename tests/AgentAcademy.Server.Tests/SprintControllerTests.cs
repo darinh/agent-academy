@@ -65,6 +65,7 @@ public class SprintControllerTests : IDisposable
 
         _controller = new SprintController(
             _sprintService, _sprintStageService, _artifactService, _metricsCalculator, _roomService,
+            _db,
             NullLogger<SprintController>.Instance);
     }
 
