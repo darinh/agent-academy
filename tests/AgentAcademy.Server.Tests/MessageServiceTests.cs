@@ -41,6 +41,7 @@ public class MessageServiceTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
         services.AddScoped<MessageService>();
@@ -754,5 +755,111 @@ public class MessageServiceTests : IDisposable
 
         Assert.Null(entity.CorrelationId);
         Assert.Equal(nameof(MessageKind.Coordination), entity.Kind);
+    }
+
+    // ── Broadcast Integration ─────────────────────────────────
+
+    [Fact]
+    public async Task PostMessageAsync_BroadcastsToSubscriber()
+    {
+        await SeedRoomAsync("room-1");
+        var broadcaster = _serviceProvider.GetRequiredService<MessageBroadcaster>();
+        ChatEnvelope? received = null;
+        var unsub = broadcaster.Subscribe("room-1", msg => received = msg);
+
+        try
+        {
+            var svc = CreateService();
+            await svc.PostMessageAsync(new PostMessageRequest(
+                "room-1", "planner-1", "Hello from agent", MessageKind.Response));
+
+            Assert.NotNull(received);
+            Assert.Equal("room-1", received.RoomId);
+            Assert.Equal("planner-1", received.SenderId);
+            Assert.Equal("Hello from agent", received.Content);
+        }
+        finally { unsub(); }
+    }
+
+    [Fact]
+    public async Task PostHumanMessageAsync_BroadcastsToSubscriber()
+    {
+        await SeedRoomAsync("room-1");
+        var broadcaster = _serviceProvider.GetRequiredService<MessageBroadcaster>();
+        ChatEnvelope? received = null;
+        var unsub = broadcaster.Subscribe("room-1", msg => received = msg);
+
+        try
+        {
+            var svc = CreateService();
+            await svc.PostHumanMessageAsync("room-1", "Hello from human");
+
+            Assert.NotNull(received);
+            Assert.Equal("room-1", received.RoomId);
+            Assert.Equal(MessageSenderKind.User, received.SenderKind);
+            Assert.Equal("Hello from human", received.Content);
+        }
+        finally { unsub(); }
+    }
+
+    [Fact]
+    public async Task PostSystemMessageAsync_BroadcastsToSubscriber()
+    {
+        await SeedRoomAsync("room-1");
+        var broadcaster = _serviceProvider.GetRequiredService<MessageBroadcaster>();
+        ChatEnvelope? received = null;
+        var unsub = broadcaster.Subscribe("room-1", msg => received = msg);
+
+        try
+        {
+            var svc = CreateService();
+            await svc.PostSystemMessageAsync("room-1", "System notification");
+
+            Assert.NotNull(received);
+            Assert.Equal("room-1", received.RoomId);
+            Assert.Equal(MessageSenderKind.System, received.SenderKind);
+            Assert.Equal("System notification", received.Content);
+        }
+        finally { unsub(); }
+    }
+
+    [Fact]
+    public async Task PostSystemStatusAsync_BroadcastsToSubscriber()
+    {
+        await SeedRoomAsync("room-1");
+        var broadcaster = _serviceProvider.GetRequiredService<MessageBroadcaster>();
+        ChatEnvelope? received = null;
+        var unsub = broadcaster.Subscribe("room-1", msg => received = msg);
+
+        try
+        {
+            var svc = CreateService();
+            await svc.PostSystemStatusAsync("room-1", "Status update");
+
+            Assert.NotNull(received);
+            Assert.Equal("room-1", received.RoomId);
+            Assert.Equal("Status update", received.Content);
+        }
+        finally { unsub(); }
+    }
+
+    [Fact]
+    public async Task PostMessageAsync_DoesNotBroadcastToOtherRooms()
+    {
+        await SeedRoomAsync("room-1");
+        await SeedRoomAsync("room-2");
+        var broadcaster = _serviceProvider.GetRequiredService<MessageBroadcaster>();
+        ChatEnvelope? received = null;
+        var unsub = broadcaster.Subscribe("room-2", msg => received = msg);
+
+        try
+        {
+            var svc = CreateService();
+            await svc.PostMessageAsync(new PostMessageRequest(
+                "room-1", "planner-1", "To room 1 only", MessageKind.Response));
+
+            Assert.Null(received);
+        }
+        finally { unsub(); }
     }
 }

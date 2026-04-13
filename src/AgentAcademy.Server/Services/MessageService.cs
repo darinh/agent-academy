@@ -25,19 +25,22 @@ public sealed class MessageService
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
+    private readonly MessageBroadcaster _messageBroadcaster;
 
     public MessageService(
         AgentAcademyDbContext db,
         ILogger<MessageService> logger,
         AgentCatalogOptions catalog,
         ActivityPublisher activity,
-        ConversationSessionService sessionService)
+        ConversationSessionService sessionService,
+        MessageBroadcaster messageBroadcaster)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
         _activity = activity;
         _sessionService = sessionService;
+        _messageBroadcaster = messageBroadcaster;
     }
 
     // ── Room Messages ───────────────────────────────────────────
@@ -104,11 +107,10 @@ public sealed class MessageService
 
         await _db.SaveChangesAsync();
 
+        _messageBroadcaster.Broadcast(request.RoomId, envelope);
+
         return envelope;
     }
-
-    /// <summary>
-    /// Posts a human message to a room.
     /// When identity parameters are provided, the message is attributed to that user.
     /// Otherwise falls back to generic "Human" identity.
     /// </summary>
@@ -170,6 +172,8 @@ public sealed class MessageService
 
         await _db.SaveChangesAsync();
 
+        _messageBroadcaster.Broadcast(roomId, envelope);
+
         return envelope;
     }
 
@@ -201,6 +205,10 @@ public sealed class MessageService
 
         room.UpdatedAt = now;
         await _db.SaveChangesAsync();
+
+        _messageBroadcaster.Broadcast(roomId, new ChatEnvelope(
+            msgEntity.Id, roomId, "system", "System", null,
+            MessageSenderKind.System, MessageKind.System, content, now));
     }
 
     /// <summary>
@@ -220,6 +228,10 @@ public sealed class MessageService
             $"System: {Truncate(message, 100)}");
 
         await _db.SaveChangesAsync();
+
+        _messageBroadcaster.Broadcast(roomId, new ChatEnvelope(
+            entity.Id, roomId, "system", "System", null,
+            MessageSenderKind.System, MessageKind.System, message, now));
     }
 
     // ── Direct Messaging ────────────────────────────────────────
@@ -249,6 +261,10 @@ public sealed class MessageService
         };
         _db.Messages.Add(msgEntity);
 
+        string? dmNotifyRoomId = null;
+        string? dmNotifyMsgId = null;
+        string? dmNotifyContent = null;
+
         if (recipientId != "human")
         {
             var recipientLocation = await _db.AgentLocations.FindAsync(recipientId);
@@ -256,6 +272,7 @@ public sealed class MessageService
             var notifyRoom = await _db.Rooms.FindAsync(notifyRoomId);
             if (notifyRoom is not null)
             {
+                var sysMsgContent = $"📩 {senderName} sent a direct message to {recipientId}.";
                 var sysMsg = new MessageEntity
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -264,11 +281,15 @@ public sealed class MessageService
                     SenderName = "System",
                     SenderKind = nameof(MessageSenderKind.System),
                     Kind = nameof(MessageKind.System),
-                    Content = $"📩 {senderName} sent a direct message to {recipientId}.",
+                    Content = sysMsgContent,
                     SentAt = now
                 };
                 _db.Messages.Add(sysMsg);
                 notifyRoom.UpdatedAt = now;
+
+                dmNotifyRoomId = notifyRoomId;
+                dmNotifyMsgId = sysMsg.Id;
+                dmNotifyContent = sysMsgContent;
             }
         }
 
@@ -276,6 +297,15 @@ public sealed class MessageService
             $"DM from {senderName} to {recipientId}");
 
         await _db.SaveChangesAsync();
+
+        // Broadcast room-visible DM notification AFTER commit to avoid ghost messages
+        if (dmNotifyRoomId is not null)
+        {
+            _messageBroadcaster.Broadcast(dmNotifyRoomId, new ChatEnvelope(
+                dmNotifyMsgId!, dmNotifyRoomId, "system", "System", null,
+                MessageSenderKind.System, MessageKind.System, dmNotifyContent!, now));
+        }
+
         return messageId;
     }
 

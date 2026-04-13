@@ -38,6 +38,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
 
         services.AddSingleton(_catalog);
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddLogging(b => b.ClearProviders());
         services.AddSingleton(Substitute.For<IAgentExecutor>());

@@ -51,7 +51,7 @@ public sealed class InitializationServiceTests : IDisposable
             NullLogger<ConversationSessionService>.Instance);
         var messageService = new MessageService(
             _db, NullLogger<MessageService>.Instance, _catalog,
-            _activity, session);
+            _activity, session, new MessageBroadcaster());
         var agentLocations = new AgentLocationService(_db, _catalog, _activity);
         var taskQueries = new TaskQueryService(
             _db, NullLogger<TaskQueryService>.Instance, _catalog);

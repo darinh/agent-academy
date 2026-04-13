@@ -70,6 +70,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddSingleton(CreateTestCatalog());
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
 
         _serviceProvider = services.BuildServiceProvider();

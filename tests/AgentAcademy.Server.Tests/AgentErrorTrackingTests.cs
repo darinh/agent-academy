@@ -254,7 +254,7 @@ public class ErrorApiEndpointTests : IDisposable
         var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
         var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
         var planService = new PlanService(_db);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, activityPublisher, messageService, new RoomSnapshotBuilder(_db, _catalog));
@@ -369,8 +369,8 @@ public class ErrorApiEndpointTests : IDisposable
             _roomService, _agentLocationService,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher,
                 new ConversationSessionService(_db, new SystemSettingsService(_db),
-                    Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance)),
-            _catalog, usageTracker, _errorTracker,
+                    Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance), new MessageBroadcaster()),
+            new MessageBroadcaster(), _catalog, usageTracker, _errorTracker,
             NullLogger<RoomController>.Instance);
     }
 

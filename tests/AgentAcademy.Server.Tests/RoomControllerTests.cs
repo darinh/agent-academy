@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Controllers;
+using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,7 +27,7 @@ public sealed class RoomControllerTests : IDisposable
         _svc = new TestServiceGraph([TestAgent]);
         _controller = new RoomController(
             _svc.RoomService, _svc.AgentLocationService, _svc.MessageService,
-            _svc.Catalog, _svc.UsageTracker, _svc.ErrorTracker,
+            new MessageBroadcaster(), _svc.Catalog, _svc.UsageTracker, _svc.ErrorTracker,
             NullLogger<RoomController>.Instance);
     }
 

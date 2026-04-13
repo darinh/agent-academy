@@ -91,6 +91,9 @@ builder.Services.AddAgentCatalog();
 // Activity broadcaster (singleton — shared across scoped service instances)
 builder.Services.AddSingleton<ActivityBroadcaster>();
 
+// Message broadcaster (singleton — SSE room message streaming for consultant API)
+builder.Services.AddSingleton<MessageBroadcaster>();
+
 // Domain services (scoped — one per request, uses scoped DbContext)
 builder.Services.AddDomainServices();
 

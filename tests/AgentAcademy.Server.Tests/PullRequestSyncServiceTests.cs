@@ -103,6 +103,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var sc = new ServiceCollection();
         sc.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         sc.AddSingleton<ActivityBroadcaster>();
+        sc.AddSingleton<MessageBroadcaster>();
         sc.AddScoped<ActivityPublisher>();
         sc.AddSingleton(new AgentCatalogOptions("main", "Main Room",
             new List<AgentDefinition>
@@ -418,7 +419,7 @@ public class PrSyncHelperTests : IDisposable
         _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
         var agentLocations = new AgentLocationService(_db, catalog, _activityPublisher);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, _taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, messageService, new RoomSnapshotBuilder(_db, catalog));

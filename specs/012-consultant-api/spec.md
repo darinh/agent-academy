@@ -95,6 +95,42 @@ Returns:
 
 Messages are ordered chronologically (oldest first). This endpoint includes sessionless messages and messages with `SenderKind = User` from any session, so consultant/human messages are always visible regardless of session boundaries.
 
+#### Stream Room Messages (SSE)
+
+```
+GET /api/rooms/{roomId}/messages/stream?after={messageId}
+X-Consultant-Key: {secret}
+```
+
+Server-Sent Events stream delivering room messages in real-time. Replaces polling for the primary consultant workflow.
+
+**Query parameters:**
+- `after` (optional): Cursor — only replay messages after this ID, then stream live
+
+**SSE event format:**
+```
+id: {messageId}
+event: message
+data: {full ChatEnvelope JSON}
+
+```
+
+**Overflow handling:** If the client falls behind (internal buffer full), the server emits a `resync` event with the last successfully sent message ID, then closes the connection. Client should reconnect with `after={lastId}`.
+
+```
+event: resync
+data: {"lastId": "{messageId}"}
+```
+
+**Delivery semantics:** At-least-once. Messages that arrive during the replay window may be delivered both in the replay batch and as a live event. Clients should deduplicate by message ID.
+
+**Coverage:** Streams messages posted via `MessageService` methods (agent messages, human messages, system messages, system status messages, DM room notifications). Messages inserted directly by other services (e.g., task lifecycle review messages) are not streamed but are available via the REST endpoint on reconnect.
+
+**Implementation:**
+- `MessageBroadcaster` (singleton, `src/AgentAcademy.Server/Services/MessageBroadcaster.cs`): Per-room pub/sub for live message delivery. No buffer — the SSE endpoint handles replay from DB.
+- SSE endpoint on `RoomController` (`src/AgentAcademy.Server/Controllers/RoomController.cs`): Subscribe-first pattern (avoids race window between DB replay and subscription).
+- `MessageService` broadcasts to `MessageBroadcaster` after `SaveChangesAsync` in all message-posting methods.
+
 #### List Rooms
 
 ```
@@ -337,7 +373,9 @@ Test cases:
 
 ## Polling Strategy (for CLI consumer)
 
-The CLI agent should follow this pattern when consulting:
+**Preferred: SSE streaming** — connect to `GET /api/rooms/{roomId}/messages/stream` for real-time delivery. See "Stream Room Messages (SSE)" above.
+
+**Fallback: polling** — use when SSE is unavailable (proxy limitations, etc.):
 
 ```
 1. GET /api/rooms → find main room ID
@@ -416,7 +454,7 @@ This ensures user claims are available for the role check, and rate-limited requ
 ## Future Considerations (Not in scope)
 
 - **OAuth2 provider**: Replace shared secret with Entra ID or similar. The auth scheme abstraction makes this a swap.
-- **WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.
+- ~~**WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.~~ — **Resolved**: `GET /api/rooms/{roomId}/messages/stream` SSE endpoint streams room messages in real-time. `MessageBroadcaster` (singleton) provides per-room pub/sub. Subscribe-first pattern avoids race conditions. Overflow detection emits `resync` event and closes connection. At-least-once delivery with client-side dedup by message ID. Covers all `MessageService` message-posting methods. 18 tests (13 MessageBroadcaster + 5 MessageService broadcast integration).
 - ~~**Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.~~ — **Resolved**: Consultant messages now carry `SenderRole = "Consultant"` (derived from `User.IsInRole("Consultant")` claim). Frontend renders a copper-colored "Consultant" role pill in ChatPanel and SearchPanel. DmPanel shows consultant label + distinct bubble styling. DM service includes consultant messages in the human inbox via `HumanSideSenderIds` array. `DmMessage` model includes `SenderRole` field.
 - **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages. **Resolved**: ASP.NET Core built-in rate limiting middleware with `PartitionedRateLimiter`. Separate sliding window buckets for write operations (POST/PUT/DELETE/PATCH: 20/min default) and read operations (GET/HEAD/OPTIONS: 60/min default). Only applies to consultant-authenticated requests — regular users and cookie-auth pass through unthrottled. Returns 429 with `Retry-After` header and ProblemDetails-style JSON body. Configurable via `ConsultantApi:RateLimiting` section (`Enabled`, `WritePermitLimit`, `ReadPermitLimit`, `WindowSeconds`, `SegmentsPerWindow`). Middleware placed between `UseAuthentication()` and `UseAuthorization()` so user claims are available for role check. 15 tests.
 - ~~**Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records.~~ — **Resolved** (implemented previously).

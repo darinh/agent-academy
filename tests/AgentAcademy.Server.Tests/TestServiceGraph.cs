@@ -69,7 +69,7 @@ internal sealed class TestServiceGraph : IDisposable
 
         MessageService = new MessageService(
             Db, NullLogger<MessageService>.Instance, Catalog,
-            ActivityPublisher, SessionService);
+            ActivityPublisher, SessionService, new MessageBroadcaster());
 
         AgentLocationService = new AgentLocationService(Db, Catalog, ActivityPublisher);
 

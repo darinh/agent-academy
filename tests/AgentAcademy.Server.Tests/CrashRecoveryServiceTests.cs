@@ -74,7 +74,7 @@ public class CrashRecoveryServiceTests : IDisposable
 
         _messages = new MessageService(
             _db, NullLogger<MessageService>.Instance, _catalog,
-            _activityPublisher, sessionService);
+            _activityPublisher, sessionService, new MessageBroadcaster());
 
         var taskQueries = new TaskQueryService(
             _db, NullLogger<TaskQueryService>.Instance, _catalog);

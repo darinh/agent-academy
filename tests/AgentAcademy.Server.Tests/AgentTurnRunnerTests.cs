@@ -65,7 +65,7 @@ public class AgentTurnRunnerTests : IDisposable
 
         _messageService = new MessageService(
             _db, NullLogger<MessageService>.Instance, _catalog,
-            _activityPublisher, _sessionService);
+            _activityPublisher, _sessionService, new MessageBroadcaster());
 
         _configService = new AgentConfigService(_db);
 

@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Threading.Channels;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
@@ -16,15 +18,22 @@ public class RoomController : ControllerBase
     private readonly RoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
     private readonly MessageService _messageService;
+    private readonly MessageBroadcaster _messageBroadcaster;
     private readonly AgentCatalogOptions _catalog;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly ILogger<RoomController> _logger;
 
+    private static readonly JsonSerializerOptions SseJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public RoomController(
         RoomService roomService,
         AgentLocationService agentLocationService,
         MessageService messageService,
+        MessageBroadcaster messageBroadcaster,
         AgentCatalogOptions catalog,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
@@ -33,6 +42,7 @@ public class RoomController : ControllerBase
         _roomService = roomService;
         _agentLocationService = agentLocationService;
         _messageService = messageService;
+        _messageBroadcaster = messageBroadcaster;
         _catalog = catalog;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
@@ -396,6 +406,100 @@ public class RoomController : ControllerBase
             _logger.LogError(ex, "Failed to remove agent '{AgentId}' from room '{RoomId}'", agentId, roomId);
             return Problem("Failed to remove agent from room.");
         }
+    }
+    /// <summary>
+    /// GET /api/rooms/{roomId}/messages/stream — SSE stream of room messages.
+    /// Replays messages after the optional <paramref name="after"/> cursor,
+    /// then streams live messages. Uses subscribe-first to avoid race conditions.
+    /// Delivery is at-least-once: clients must deduplicate by message ID on reconnect overlap.
+    /// If the client falls behind (channel overflow), emits a <c>resync</c> event and closes.
+    /// </summary>
+    [HttpGet("{roomId}/messages/stream")]
+    public async Task GetMessageStream(
+        string roomId,
+        [FromQuery] string? after = null,
+        CancellationToken ct = default)
+    {
+        Response.Headers.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Connection = "keep-alive";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        var channel = Channel.CreateBounded<ChatEnvelope>(
+            new BoundedChannelOptions(256)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+
+        var replayedIds = new HashSet<string>();
+        var lastId = after;
+        var overflowed = false;
+
+        // Subscribe BEFORE replaying to avoid a race where messages posted
+        // between the DB query and subscription are silently dropped.
+        var unsubscribe = _messageBroadcaster.Subscribe(roomId, msg =>
+        {
+            if (!channel.Writer.TryWrite(msg))
+            {
+                overflowed = true;
+                channel.Writer.TryComplete();
+            }
+        });
+
+        try
+        {
+            // Replay messages from DB after the cursor
+            var (replayMessages, _) = await _roomService.GetRoomMessagesAsync(roomId, after, limit: 200);
+            foreach (var msg in replayMessages)
+            {
+                replayedIds.Add(msg.Id);
+                lastId = msg.Id;
+                await WriteSseEventAsync(Response, "message", msg, ct);
+            }
+            await Response.Body.FlushAsync(ct);
+
+            // Stream live messages
+            await foreach (var msg in channel.Reader.ReadAllAsync(ct))
+            {
+                // Skip messages already sent during replay (dedup)
+                if (replayedIds.Contains(msg.Id))
+                    continue;
+                replayedIds.Clear(); // No longer needed after first live message
+
+                lastId = msg.Id;
+                await WriteSseEventAsync(Response, "message", msg, ct);
+                await Response.Body.FlushAsync(ct);
+            }
+
+            // If we exited the loop because of overflow, emit resync event
+            if (overflowed)
+            {
+                var resyncData = JsonSerializer.Serialize(new { lastId }, SseJsonOptions);
+                await Response.WriteAsync($"event: resync\ndata: {resyncData}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — normal shutdown.
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+        {
+            Response.StatusCode = 404;
+        }
+        finally
+        {
+            unsubscribe();
+            channel.Writer.TryComplete();
+        }
+    }
+
+    private static async Task WriteSseEventAsync(HttpResponse response, string eventName, ChatEnvelope msg, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(msg, SseJsonOptions);
+        await response.WriteAsync($"id: {msg.Id}\nevent: {eventName}\ndata: {json}\n\n", ct);
     }
 }
 
