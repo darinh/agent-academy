@@ -19,7 +19,7 @@ public sealed class CollaborationControllerTests : IDisposable
         _svc = new TestServiceGraph();
         _controller = new CollaborationController(
             _svc.TaskOrchestrationService, _svc.TaskQueryService,
-            _svc.MessageService, _svc.RoomService, _svc.Catalog,
+            _svc.TaskDependencyService, _svc.MessageService, _svc.RoomService, _svc.Catalog,
             _svc.Orchestrator, _svc.Executor, _svc.SpecManager,
             NullLogger<CollaborationController>.Instance);
 

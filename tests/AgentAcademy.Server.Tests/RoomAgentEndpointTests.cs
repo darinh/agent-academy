@@ -65,8 +65,9 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         _sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher, taskDeps);
         var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
         var planService = new PlanService(_db);
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService, new MessageBroadcaster());

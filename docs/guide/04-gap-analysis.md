@@ -211,9 +211,9 @@ UI shows priority badges, allows sorting, and includes priority selector when cr
 
 ---
 
-### 2.2 No Task Dependencies
+### 2.2 ~~No Task Dependencies~~ — RESOLVED
 
-**Severity**: High
+**Severity**: ~~High~~ Resolved
 
 **Impact**: Task B can't formally depend on Task A completing first. For example, "implement API endpoint" should block "add UI that calls endpoint," but this relationship isn't expressible. Agents may attempt Task B before Task A is done, leading to failures or wasted work.
 

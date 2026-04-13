@@ -69,8 +69,9 @@ public class ServerInstanceTests : IDisposable
         var executor = NSubstitute.Substitute.For<IAgentExecutor>();
         var sessionLogger = NullLogger<ConversationSessionService>.Instance;
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher, taskDeps);
 
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService, new MessageBroadcaster());
@@ -688,10 +689,11 @@ public class RestartHistoryApiTests : IDisposable
         var settings = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(
             _db, settings, executor, NullLogger<ConversationSessionService>.Instance);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
         var actBus = new ActivityBroadcaster();
         var actPub = new ActivityPublisher(_db, actBus);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, actPub);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, actPub, taskDeps);
         var agentLocations = new AgentLocationService(_db, catalog, actPub);
         var planService = new PlanService(_db);
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, actPub, sessionService, new MessageBroadcaster());

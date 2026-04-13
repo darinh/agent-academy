@@ -47,6 +47,8 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
+        services.AddScoped<TaskDependencyService>();
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<RoomService>();

@@ -30,6 +30,7 @@ internal sealed class TestServiceGraph : IDisposable
     public AgentLocationService AgentLocationService { get; }
     public TaskQueryService TaskQueryService { get; }
     public TaskLifecycleService TaskLifecycleService { get; }
+    public TaskDependencyService TaskDependencyService { get; }
     public BreakoutRoomService BreakoutRoomService { get; }
     public RoomService RoomService { get; }
     public RoomSnapshotBuilder RoomSnapshotBuilder { get; }
@@ -75,11 +76,14 @@ internal sealed class TestServiceGraph : IDisposable
 
         AgentLocationService = new AgentLocationService(Db, Catalog, ActivityPublisher);
 
+        TaskDependencyService = new TaskDependencyService(
+            Db, NullLogger<TaskDependencyService>.Instance, ActivityPublisher);
+
         TaskQueryService = new TaskQueryService(
-            Db, NullLogger<TaskQueryService>.Instance, Catalog);
+            Db, NullLogger<TaskQueryService>.Instance, Catalog, TaskDependencyService);
 
         TaskLifecycleService = new TaskLifecycleService(
-            Db, NullLogger<TaskLifecycleService>.Instance, Catalog, ActivityPublisher);
+            Db, NullLogger<TaskLifecycleService>.Instance, Catalog, ActivityPublisher, TaskDependencyService);
 
         BreakoutRoomService = new BreakoutRoomService(
             Db, NullLogger<BreakoutRoomService>.Instance, Catalog,

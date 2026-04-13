@@ -6,8 +6,9 @@ import type {
   SpecTaskLink,
   EvidenceRow,
   GateCheckResult,
+  TaskDependencySummary,
 } from "../api";
-import { executeCommand, getTaskComments, getTaskSpecLinks, assignTask } from "../api";
+import { executeCommand, getTaskComments, getTaskSpecLinks, getTaskDependencies, assignTask } from "../api";
 import type { AgentDefinition } from "../api";
 import {
   type TaskAction,
@@ -24,6 +25,10 @@ export interface UseTaskDetailResult {
 
   specLinks: SpecTaskLink[];
   specLinksLoading: boolean;
+
+  dependsOn: TaskDependencySummary[];
+  dependedOnBy: TaskDependencySummary[];
+  depsLoading: boolean;
 
   evidence: EvidenceRow[];
   evidenceLoading: boolean;
@@ -61,6 +66,10 @@ export function useTaskDetail(task: TaskSnapshot, onRefresh: () => void): UseTas
 
   const [specLinks, setSpecLinks] = useState<SpecTaskLink[]>(cached.specLinks ?? []);
   const [specLinksLoading, setSpecLinksLoading] = useState(!cached.specLinks);
+
+  const [dependsOn, setDependsOn] = useState<TaskDependencySummary[]>([]);
+  const [dependedOnBy, setDependedOnBy] = useState<TaskDependencySummary[]>([]);
+  const [depsLoading, setDepsLoading] = useState(true);
 
   const [evidence, setEvidence] = useState<EvidenceRow[]>(cached.evidence ?? []);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -116,9 +125,28 @@ export function useTaskDetail(task: TaskSnapshot, onRefresh: () => void): UseTas
       .finally(() => { if (mountedRef.current && fetchVersionRef.current === version) setSpecLinksLoading(false); });
   }, [task.id, task.updatedAt]);
 
+  const fetchDeps = useCallback(() => {
+    const version = fetchVersionRef.current;
+    setDepsLoading(true);
+    getTaskDependencies(task.id)
+      .then((info) => {
+        if (!mountedRef.current || fetchVersionRef.current !== version) return;
+        setDependsOn(info.dependsOn);
+        setDependedOnBy(info.dependedOnBy);
+      })
+      .catch(() => {
+        if (mountedRef.current && fetchVersionRef.current === version) {
+          setDependsOn([]);
+          setDependedOnBy([]);
+        }
+      })
+      .finally(() => { if (mountedRef.current && fetchVersionRef.current === version) setDepsLoading(false); });
+  }, [task.id, task.updatedAt]);
+
   useEffect(() => {
     if (!cached.comments) fetchComments();
     if (!cached.specLinks) fetchSpecLinks();
+    fetchDeps();
   }, [task.id, task.updatedAt]);
 
   const fetchEvidence = useCallback(() => {
@@ -236,6 +264,7 @@ export function useTaskDetail(task: TaskSnapshot, onRefresh: () => void): UseTas
   return {
     comments, commentsLoading, commentsError, fetchComments,
     specLinks, specLinksLoading,
+    dependsOn, dependedOnBy, depsLoading,
     evidence, evidenceLoading, evidenceLoaded, fetchEvidence,
     gate, gateLoading, checkGates,
     actions, actionPending, actionResult,

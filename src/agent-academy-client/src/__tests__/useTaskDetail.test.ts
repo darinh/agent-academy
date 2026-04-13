@@ -12,15 +12,17 @@ vi.mock("../api", () => ({
   executeCommand: vi.fn(),
   getTaskComments: vi.fn(),
   getTaskSpecLinks: vi.fn(),
+  getTaskDependencies: vi.fn(),
   assignTask: vi.fn(),
 }));
 
-import { executeCommand, getTaskComments, getTaskSpecLinks, assignTask } from "../api";
+import { executeCommand, getTaskComments, getTaskSpecLinks, getTaskDependencies, assignTask } from "../api";
 import { useTaskDetail } from "../taskList/useTaskDetail";
 
 const mockExecuteCommand = vi.mocked(executeCommand);
 const mockGetTaskComments = vi.mocked(getTaskComments);
 const mockGetTaskSpecLinks = vi.mocked(getTaskSpecLinks);
+const mockGetTaskDependencies = vi.mocked(getTaskDependencies);
 const mockAssignTask = vi.mocked(assignTask);
 
 // ── Factories ──
@@ -93,6 +95,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetTaskComments.mockResolvedValue([]);
   mockGetTaskSpecLinks.mockResolvedValue([]);
+  mockGetTaskDependencies.mockResolvedValue({ taskId: "task-1", dependsOn: [], dependedOnBy: [] });
 });
 
 describe("useTaskDetail", () => {

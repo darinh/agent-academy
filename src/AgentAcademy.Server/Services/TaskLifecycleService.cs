@@ -19,17 +19,20 @@ public sealed partial class TaskLifecycleService
     private readonly ILogger<TaskLifecycleService> _logger;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityPublisher _activity;
+    private readonly TaskDependencyService _dependencies;
 
     public TaskLifecycleService(
         AgentAcademyDbContext db,
         ILogger<TaskLifecycleService> logger,
         AgentCatalogOptions catalog,
-        ActivityPublisher activity)
+        ActivityPublisher activity,
+        TaskDependencyService dependencies)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
         _activity = activity;
+        _dependencies = dependencies;
     }
 
     // ── Task State Transitions ──────────────────────────────────
@@ -42,6 +45,15 @@ public sealed partial class TaskLifecycleService
     {
         var entity = await _db.Tasks.FindAsync(taskId)
             ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        // Block claiming tasks with unmet dependencies
+        var blockers = await _dependencies.GetBlockingTasksAsync(taskId);
+        if (blockers.Count > 0)
+        {
+            var blockerList = string.Join(", ", blockers.Select(b => $"'{b.Title}' ({b.Status})"));
+            throw new InvalidOperationException(
+                $"Task '{taskId}' has unmet dependencies: {blockerList}. Complete them first.");
+        }
 
         if (!string.IsNullOrEmpty(entity.AssignedAgentId) && entity.AssignedAgentId != agentId)
             throw new InvalidOperationException(

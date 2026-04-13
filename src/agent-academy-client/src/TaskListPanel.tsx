@@ -241,6 +241,9 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
                 <V3Badge color={sizeBadgeColor(task.size)}>{task.size}</V3Badge>
               )}
               <V3Badge color={statusBadgeColor(task.status)}>{task.status}</V3Badge>
+              {task.blockingTaskIds && task.blockingTaskIds.length > 0 && (
+                <V3Badge color="err">🔗 {task.blockingTaskIds.length} blocked</V3Badge>
+              )}
               {task.type && task.type !== "Feature" && (
                 <V3Badge color={typeBadgeColor(task.type)}>{task.type}</V3Badge>
               )}

@@ -17,6 +17,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<TaskEvidenceService>();
+        services.AddScoped<TaskDependencyService>();
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
