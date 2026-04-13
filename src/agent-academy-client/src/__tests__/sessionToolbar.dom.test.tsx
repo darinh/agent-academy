@@ -12,6 +12,7 @@ function makeSession(overrides: Partial<ConversationSessionSnapshot> = {}): Conv
     roomType: "Main",
     sequenceNumber: 1,
     status: "Archived",
+    summary: null,
     messageCount: 12,
     createdAt: "2026-04-01T00:00:00Z",
     archivedAt: "2026-04-01T01:00:00Z",

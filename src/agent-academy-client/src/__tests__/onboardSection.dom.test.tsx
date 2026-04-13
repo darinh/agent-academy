@@ -19,8 +19,8 @@ vi.mock("@fluentui/react-components", () => ({
   DialogActions: ({ children }: any) => <div data-testid="dialog-actions">{children}</div>,
   DialogBody: ({ children }: any) => <div>{children}</div>,
   DialogContent: ({ children }: any) => <div>{children}</div>,
-  DialogSurface: ({ children, className }: any) => <div>{children}</div>,
-  DialogTitle: ({ children, className }: any) => <div data-testid="dialog-title">{children}</div>,
+  DialogSurface: ({ children }: any) => <div>{children}</div>,
+  DialogTitle: ({ children }: any) => <div data-testid="dialog-title">{children}</div>,
   Input: ({ value, onChange, onKeyDown, placeholder, contentAfter, ...rest }: any) => (
     <div>
       <input

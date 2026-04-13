@@ -3,7 +3,6 @@ import type {
   SprintDetailResponse,
   SprintSnapshot,
   SprintArtifact,
-  SprintStage,
   SprintStatus,
 } from "../api";
 import { STAGE_META, ALL_STAGES, statusBadgeColor, artifactTypeLabel } from "../sprint/sprintConstants";
