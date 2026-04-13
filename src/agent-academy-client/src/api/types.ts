@@ -942,6 +942,28 @@ export interface SprintRealtimeEvent {
   receivedAt: number;
 }
 
+// ── Sprint Schedule ────────────────────────────────────────────────────
+
+export interface SprintScheduleRequest {
+  cronExpression: string;
+  timeZoneId: string;
+  enabled: boolean;
+}
+
+export interface SprintScheduleResponse {
+  id: string;
+  workspacePath: string;
+  cronExpression: string;
+  timeZoneId: string;
+  enabled: boolean;
+  nextRunAtUtc: string | null;
+  lastTriggeredAt: string | null;
+  lastEvaluatedAt: string | null;
+  lastOutcome: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Search ─────────────────────────────────────────────────────────────
 
 export type SearchScope = "all" | "messages" | "tasks";

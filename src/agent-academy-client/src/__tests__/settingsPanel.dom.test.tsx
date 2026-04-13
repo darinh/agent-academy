@@ -35,6 +35,9 @@ vi.mock("../api", () => ({
   createCustomAgent: vi.fn(),
   deleteCustomAgent: vi.fn(),
   getGitHubStatus: vi.fn(),
+  getSprintSchedule: vi.fn(),
+  upsertSprintSchedule: vi.fn(),
+  deleteSprintSchedule: vi.fn(),
 }));
 
 vi.mock("../NotificationSetupWizard", () => ({
@@ -103,6 +106,7 @@ import {
   createCustomAgent,
   deleteCustomAgent,
   getGitHubStatus,
+  getSprintSchedule,
 } from "../api";
 import type {
   ProviderStatus,
@@ -120,6 +124,7 @@ const mockUpdateSettings = vi.mocked(updateSystemSettings);
 const mockCreateAgent = vi.mocked(createCustomAgent);
 const mockDeleteAgent = vi.mocked(deleteCustomAgent);
 const mockGetGitHubStatus = vi.mocked(getGitHubStatus);
+const mockGetSchedule = vi.mocked(getSprintSchedule);
 
 // ── Factories ──────────────────────────────────────────────────────────
 
@@ -188,6 +193,7 @@ function setupDefaultMocks() {
   mockGetTemplates.mockResolvedValue([]);
   mockGetSettings.mockResolvedValue({});
   mockGetGitHubStatus.mockResolvedValue(makeGitHubStatus());
+  mockGetSchedule.mockResolvedValue(null);
 }
 
 import type { DesktopNotificationControls } from "../useDesktopNotifications";
