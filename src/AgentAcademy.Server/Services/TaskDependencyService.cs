@@ -219,6 +219,49 @@ public sealed class TaskDependencyService
         return result;
     }
 
+    /// <summary>
+    /// Returns downstream tasks that would become fully unblocked if the given task
+    /// were marked as Completed. Treats completedTaskId as already satisfied so
+    /// it can be called before SaveChangesAsync in the same unit of work.
+    /// Only returns non-terminal tasks (excludes Completed and Cancelled).
+    /// </summary>
+    public async Task<List<(string TaskId, string Title, string? RoomId)>> GetTasksUnblockedByCompletionAsync(
+        string completedTaskId)
+    {
+        // Step 1: find downstream task IDs (those that depend on the completing task)
+        var downstreamTaskIds = await _db.TaskDependencies
+            .Where(d => d.DependsOnTaskId == completedTaskId)
+            .Select(d => d.TaskId)
+            .ToListAsync();
+
+        if (downstreamTaskIds.Count == 0)
+            return [];
+
+        // Step 2: for each downstream task, check if it has any OTHER unmet dependencies
+        var result = new List<(string TaskId, string Title, string? RoomId)>();
+        foreach (var taskId in downstreamTaskIds)
+        {
+            var task = await _db.Tasks.FindAsync(taskId);
+            if (task is null) continue;
+
+            // Skip terminal tasks — they can't be "unblocked"
+            if (task.Status is nameof(Shared.Models.TaskStatus.Completed)
+                             or nameof(Shared.Models.TaskStatus.Cancelled))
+                continue;
+
+            // Check for other unmet dependencies (excluding the completing task)
+            var hasOtherBlockers = await _db.TaskDependencies
+                .Where(d => d.TaskId == taskId && d.DependsOnTaskId != completedTaskId)
+                .Join(_db.Tasks, d => d.DependsOnTaskId, t => t.Id, (d, t) => t.Status)
+                .AnyAsync(status => status != nameof(Shared.Models.TaskStatus.Completed));
+
+            if (!hasOtherBlockers)
+                result.Add((task.Id, task.Title, task.RoomId));
+        }
+
+        return result;
+    }
+
     // ── Cycle Detection ─────────────────────────────────────────
 
     /// <summary>

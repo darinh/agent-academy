@@ -299,6 +299,15 @@ public sealed partial class TaskLifecycleService
         entity.MergeCommitSha = mergeCommitSha;
         entity.UpdatedAt = now;
 
+        // Before saving, compute which downstream tasks become unblocked.
+        // The query treats this task as already satisfied (not yet persisted).
+        var unblockedTasks = await _dependencies.GetTasksUnblockedByCompletionAsync(taskId);
+        foreach (var (unblockedTaskId, title, unblockedRoomId) in unblockedTasks)
+        {
+            Publish(ActivityEventType.TaskUnblocked, unblockedRoomId, null, unblockedTaskId,
+                $"Task unblocked: \"{Truncate(title, 80)}\" — all dependencies now satisfied");
+        }
+
         await _db.SaveChangesAsync();
         return (TaskQueryService.BuildTaskSnapshot(entity), entity.RoomId);
     }

@@ -440,4 +440,162 @@ public class TaskDependencyServiceTests : IDisposable
         await _db.Entry(taskB).ReloadAsync();
         Assert.True(taskB.UpdatedAt > before);
     }
+
+    // ── GetTasksUnblockedByCompletionAsync ──────────────────────
+
+    [Fact]
+    public async Task GetUnblocked_SingleDownstreamFullyUnblocked()
+    {
+        await CreateTask("upstream", "Upstream", "Active");
+        await CreateTask("downstream", "Downstream", "Active");
+        await _sut.AddDependencyAsync("downstream", "upstream");
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Single(unblocked);
+        Assert.Equal("downstream", unblocked[0].TaskId);
+        Assert.Equal("Downstream", unblocked[0].Title);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_DownstreamWithOtherUnmetDep_NotReturned()
+    {
+        await CreateTask("upstream-a", "Upstream A", "Active");
+        await CreateTask("upstream-b", "Upstream B", "Active");
+        await CreateTask("downstream", "Downstream", "Active");
+        await _sut.AddDependencyAsync("downstream", "upstream-a");
+        await _sut.AddDependencyAsync("downstream", "upstream-b");
+
+        // Only upstream-a completes; upstream-b is still Active
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream-a");
+
+        Assert.Empty(unblocked);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_DownstreamWithAllOtherDepsCompleted_Returned()
+    {
+        await CreateTask("upstream-a", "Upstream A", "Active");
+        var upB = await CreateTask("upstream-b", "Upstream B", "Active");
+        await CreateTask("downstream", "Downstream", "Active");
+        await _sut.AddDependencyAsync("downstream", "upstream-a");
+        await _sut.AddDependencyAsync("downstream", "upstream-b");
+
+        // Complete upstream-b first
+        upB.Status = nameof(Shared.Models.TaskStatus.Completed);
+        await _db.SaveChangesAsync();
+
+        // Now upstream-a completes — downstream should be unblocked
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream-a");
+
+        Assert.Single(unblocked);
+        Assert.Equal("downstream", unblocked[0].TaskId);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_CompletedDownstream_Excluded()
+    {
+        await CreateTask("upstream", "Upstream", "Active");
+        await CreateTask("downstream", "Downstream", "Completed");
+        await _db.TaskDependencies.AddAsync(new TaskDependencyEntity
+        {
+            TaskId = "downstream", DependsOnTaskId = "upstream", CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Empty(unblocked);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_CancelledDownstream_Excluded()
+    {
+        await CreateTask("upstream", "Upstream", "Active");
+        await CreateTask("downstream", "Downstream", "Cancelled");
+        await _db.TaskDependencies.AddAsync(new TaskDependencyEntity
+        {
+            TaskId = "downstream", DependsOnTaskId = "upstream", CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Empty(unblocked);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_QueuedDownstream_Included()
+    {
+        await CreateTask("upstream", "Upstream", "Active");
+        await CreateTask("downstream", "Downstream", "Queued");
+        await _sut.AddDependencyAsync("downstream", "upstream");
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Single(unblocked);
+        Assert.Equal("downstream", unblocked[0].TaskId);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_NoDownstream_ReturnsEmpty()
+    {
+        await CreateTask("upstream", "Upstream", "Active");
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Empty(unblocked);
+    }
+
+    [Fact]
+    public async Task GetUnblocked_MultipleDownstream_ReturnsAllUnblocked()
+    {
+        await CreateTask("upstream", "Upstream", "Active");
+        await CreateTask("down-a", "Down A", "Active");
+        await CreateTask("down-b", "Down B", "Active");
+        await CreateTask("down-c", "Down C", "Active");
+        await _sut.AddDependencyAsync("down-a", "upstream");
+        await _sut.AddDependencyAsync("down-b", "upstream");
+        await _sut.AddDependencyAsync("down-c", "upstream");
+
+        // down-c also depends on another unmet dep
+        await CreateTask("other", "Other Dep", "Active");
+        await _sut.AddDependencyAsync("down-c", "other");
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Equal(2, unblocked.Count);
+        Assert.Contains(unblocked, u => u.TaskId == "down-a");
+        Assert.Contains(unblocked, u => u.TaskId == "down-b");
+        Assert.DoesNotContain(unblocked, u => u.TaskId == "down-c");
+    }
+
+    [Fact]
+    public async Task GetUnblocked_CrossRoom_ReturnsCorrectRoomId()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-a", Name = "Room A", Status = "Active",
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-b", Name = "Room B", Status = "Active",
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var upstream = await CreateTask("upstream", "Upstream", "Active");
+        upstream.RoomId = "room-a";
+        var downstream = await CreateTask("downstream", "Downstream", "Active");
+        downstream.RoomId = "room-b";
+        await _db.SaveChangesAsync();
+
+        await _sut.AddDependencyAsync("downstream", "upstream");
+
+        var unblocked = await _sut.GetTasksUnblockedByCompletionAsync("upstream");
+
+        Assert.Single(unblocked);
+        Assert.Equal("room-b", unblocked[0].RoomId);
+    }
 }
