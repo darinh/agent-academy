@@ -186,6 +186,24 @@ data: {"id":"...","senderId":"...","senderName":"...","senderRole":"...","conten
 - `SendDirectMessageAsync` broadcasts `DmMessage` after commit, covering both human→agent and agent→human directions.
 - Returns 404 if agent ID is not found in catalog.
 
+#### Stream DM Thread List (SSE)
+
+```
+GET /api/dm/threads/stream
+```
+
+Server-Sent Events stream for DM thread list invalidation. Notifies when any DM message is posted in any thread, allowing the client to refresh the thread list in real-time instead of polling.
+
+**SSE events:**
+- `connected` — stream is live. Client should refetch thread list on (re)connect.
+- `thread-updated` — a DM was posted. Data: `{"agentId":"...","messageId":"..."}`. Client should debounce and refetch `GET /api/dm/threads`.
+- `resync` — channel overflow. Client should refetch.
+
+**Implementation:**
+- `MessageBroadcaster.SubscribeAllDm` provides a global DM subscription that fires on ALL DM messages regardless of agent thread. `BroadcastDm` fires global subscribers even when no per-thread subscribers exist.
+- Bounded channel (256 capacity) with overflow → resync pattern (same as per-thread SSE).
+- Frontend `useDmThreadSSE` hook connects, triggers `onInvalidate` callback on all three events, with 500ms debounce in DmPanel to collapse bursts.
+
 ### Command Execution
 
 The consultant can execute commands through the human command API:

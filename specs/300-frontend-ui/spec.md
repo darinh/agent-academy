@@ -430,7 +430,7 @@ Telegram-style DM interface for human-to-agent private conversations, accessible
 
 ### Thread Sidebar
 
-Left column lists all agents with DM threads. Selecting an agent loads the conversation. Thread list shows agent name, last message preview, and timestamp. Sidebar polls for updates on a 10-second interval.
+Left column lists all agents with DM threads. Selecting an agent loads the conversation. Thread list shows agent name, last message preview, and timestamp. Thread list updates in real-time via `useDmThreadSSE` hook — connects to `GET /api/dm/threads/stream` SSE endpoint and triggers a debounced (500ms) refetch of `GET /api/dm/threads` on `thread-updated`, `resync`, and `connected` events. Refetch on `connected` ensures missed updates during disconnects are caught. Read-only mode disables the SSE connection.
 
 ### Chat Area
 
