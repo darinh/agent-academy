@@ -24,9 +24,9 @@ public sealed class RoomSnapshotBuilder
     };
 
     private readonly AgentAcademyDbContext _db;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
 
-    public RoomSnapshotBuilder(AgentAcademyDbContext db, AgentCatalogOptions catalog)
+    public RoomSnapshotBuilder(AgentAcademyDbContext db, IAgentCatalog catalog)
     {
         _db = db;
         _catalog = catalog;

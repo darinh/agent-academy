@@ -22,12 +22,12 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentToolFunctions
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ILogger<AgentToolFunctions> _logger;
 
     public AgentToolFunctions(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ILogger<AgentToolFunctions> logger)
     {
         _scopeFactory = scopeFactory;

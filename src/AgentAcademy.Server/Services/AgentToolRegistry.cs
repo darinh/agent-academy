@@ -22,7 +22,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentToolRegistry : IAgentToolRegistry
 {
     private readonly AgentToolFunctions _toolFunctions;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly Dictionary<string, IReadOnlyList<AIFunction>> _staticGroups;
     private readonly IReadOnlyList<string> _allToolNames;
     private readonly ILogger<AgentToolRegistry> _logger;
@@ -33,7 +33,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
 
     public AgentToolRegistry(
         AgentToolFunctions toolFunctions,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ILogger<AgentToolRegistry> logger)
     {
         _toolFunctions = toolFunctions;
@@ -136,7 +136,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
             "task-write" => _toolFunctions.CreateTaskWriteTools(agentId, agentName),
             "memory" => _toolFunctions.CreateMemoryTools(agentId),
             "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName,
-                _catalog.Agents.Find(a => a.Id == agentId)?.GitIdentity),
+                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity),
             _ => []
         };
     }

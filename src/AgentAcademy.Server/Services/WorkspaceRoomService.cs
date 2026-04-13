@@ -16,13 +16,13 @@ public sealed class WorkspaceRoomService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceRoomService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
 
     public WorkspaceRoomService(
         AgentAcademyDbContext db,
         ILogger<WorkspaceRoomService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity)
     {
         _db = db;

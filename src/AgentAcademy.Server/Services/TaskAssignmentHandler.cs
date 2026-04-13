@@ -17,14 +17,14 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class TaskAssignmentHandler
 {
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly GitService _gitService;
     private readonly WorktreeService _worktreeService;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<TaskAssignmentHandler> _logger;
 
     public TaskAssignmentHandler(
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         GitService gitService,
         WorktreeService worktreeService,
         BreakoutLifecycleService breakoutLifecycle,

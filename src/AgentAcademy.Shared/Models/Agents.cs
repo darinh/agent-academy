@@ -64,10 +64,26 @@ public record AgentLocation(
 
 /// <summary>
 /// Configuration options for loading an agent catalog into a workspace,
-/// including the default room assignment.
+/// including the default room assignment. Implements <see cref="IAgentCatalog"/>
+/// so test code can pass catalog options directly where the interface is expected.
 /// </summary>
 public record AgentCatalogOptions(
     string DefaultRoomId,
     string DefaultRoomName,
     List<AgentDefinition> Agents
-);
+) : IAgentCatalog
+{
+    IReadOnlyList<AgentDefinition> IAgentCatalog.Agents => Agents;
+}
+
+/// <summary>
+/// Read-only view of the agent catalog. Consumers inject this interface
+/// to get the current agent list. The underlying data may be swapped
+/// at runtime when the catalog is hot-reloaded.
+/// </summary>
+public interface IAgentCatalog
+{
+    string DefaultRoomId { get; }
+    string DefaultRoomName { get; }
+    IReadOnlyList<AgentDefinition> Agents { get; }
+}

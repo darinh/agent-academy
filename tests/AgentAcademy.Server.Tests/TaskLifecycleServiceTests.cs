@@ -50,6 +50,7 @@ public class TaskLifecycleServiceTests : IDisposable
         services.AddSingleton<ActivityBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<TaskDependencyService>();
         services.AddScoped<TaskQueryService>();

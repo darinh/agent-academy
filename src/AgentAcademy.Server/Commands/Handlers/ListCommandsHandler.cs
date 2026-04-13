@@ -75,7 +75,7 @@ public sealed class ListCommandsHandler : ICommandHandler
         // Resolve handlers at execution time to avoid circular DI dependency
         var allHandlers = context.Services.GetServices<ICommandHandler>();
         var authorizer = new CommandAuthorizer();
-        var agentDef = context.Services.GetRequiredService<AgentCatalogOptions>()
+        var agentDef = context.Services.GetRequiredService<IAgentCatalog>()
             .Agents
             .FirstOrDefault(a => a.Id == context.AgentId);
 

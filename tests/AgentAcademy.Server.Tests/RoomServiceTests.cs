@@ -45,6 +45,7 @@ public class RoomServiceTests : IDisposable
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<MessageService>();
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<SystemSettingsService>();

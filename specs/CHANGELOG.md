@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **003-agent-system**: Agent catalog hot-reload — `AgentCatalogWatcher` monitors `agents.json` via `FileSystemWatcher` + SHA256 hash polling. On change: diff, swap volatile reference, reconcile DB, invalidate Copilot sessions, broadcast event. `IAgentCatalog` interface decouples all consumers. `POST /api/system/reload-catalog` manual trigger. `AgentState.Offline` for removed agents. 20 tests.
 - **008-agent-memory**: Memory browser — `GET /api/memories/browse` (FTS5 search, category filter, expired exclusion, agent-scoped), `GET /api/memories/stats` (per-category counts), `DELETE /api/memories?agentId&key` (individual delete). Frontend `MemoryBrowserPanel` in sidebar with agent selector, search, category chips, stats badges, delete. 17 backend + 14 frontend tests.
 - **010-task-management**: Auto-unblock behavior for task dependencies. When a task completes, `GetTasksUnblockedByCompletionAsync` queries downstream tasks whose dependencies are all now satisfied and publishes `TaskUnblocked` activity events (before `SaveChangesAsync`, treating the completing task as already satisfied). Non-terminal tasks only.
 - **300-frontend-ui**: `TaskUnblocked` added to desktop notification trigger events table (title: "Task unblocked").

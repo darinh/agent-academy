@@ -17,7 +17,7 @@ public class DmController : ControllerBase
     private readonly MessageService _messageService;
     private readonly RoomService _roomService;
     private readonly MessageBroadcaster _messageBroadcaster;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly AgentOrchestrator _orchestrator;
     private readonly ILogger<DmController> _logger;
 
@@ -30,7 +30,7 @@ public class DmController : ControllerBase
         MessageService messageService,
         RoomService roomService,
         MessageBroadcaster messageBroadcaster,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         AgentOrchestrator orchestrator,
         ILogger<DmController> logger)
     {

@@ -22,6 +22,7 @@ public sealed class RoundContextLoaderTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton(new AgentCatalogOptions("main", "Main Room", []));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton<MessageBroadcaster>();
         services.AddSingleton<SpecManager>();

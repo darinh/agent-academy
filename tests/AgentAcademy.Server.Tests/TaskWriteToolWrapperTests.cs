@@ -37,6 +37,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
             opt.UseSqlite(_connection));
 
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();

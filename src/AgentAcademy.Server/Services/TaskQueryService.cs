@@ -14,13 +14,13 @@ public sealed class TaskQueryService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskQueryService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly TaskDependencyService _dependencies;
 
     public TaskQueryService(
         AgentAcademyDbContext db,
         ILogger<TaskQueryService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         TaskDependencyService dependencies)
     {
         _db = db;

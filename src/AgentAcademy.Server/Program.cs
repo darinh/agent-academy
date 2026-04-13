@@ -192,7 +192,7 @@ using (var scope = app.Services.CreateScope())
     await initialization.InitializeAsync();
 
     // If a workspace is already active, ensure it has a default room
-    var catalog = scope.ServiceProvider.GetRequiredService<AgentCatalogOptions>();
+    var catalog = scope.ServiceProvider.GetRequiredService<IAgentCatalog>();
     var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
     var workspaceRooms = scope.ServiceProvider.GetRequiredService<WorkspaceRoomService>();
     var mainRoomId = catalog.DefaultRoomId;

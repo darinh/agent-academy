@@ -38,6 +38,7 @@ public class AgentToolFunctionsTests : IDisposable
                     "gpt-5", ["review"], ["chat", "task-state"],
                     true),
             }));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddScoped<TaskDependencyService>();
@@ -334,6 +335,7 @@ public class AgentWriteToolTests : IDisposable
                     "gpt-5", ["review"], ["chat", "task-state", "task-write", "memory"],
                     true),
             }));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddScoped<TaskDependencyService>();

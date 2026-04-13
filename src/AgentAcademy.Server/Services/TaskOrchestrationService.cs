@@ -13,7 +13,7 @@ public sealed class TaskOrchestrationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskOrchestrationService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly TaskLifecycleService _taskLifecycle;
     private readonly RoomService _rooms;
@@ -26,7 +26,7 @@ public sealed class TaskOrchestrationService
     public TaskOrchestrationService(
         AgentAcademyDbContext db,
         ILogger<TaskOrchestrationService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity,
         TaskLifecycleService taskLifecycle,
         RoomService rooms,

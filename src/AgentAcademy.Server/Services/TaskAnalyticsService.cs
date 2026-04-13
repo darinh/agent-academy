@@ -11,13 +11,13 @@ namespace AgentAcademy.Server.Services;
 public sealed class TaskAnalyticsService
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
 
     private const int ThroughputBuckets = 12;
 
     public TaskAnalyticsService(
         AgentAcademyDbContext db,
-        AgentCatalogOptions catalog)
+        IAgentCatalog catalog)
     {
         _db = db;
         _catalog = catalog;

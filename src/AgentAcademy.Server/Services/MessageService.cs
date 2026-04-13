@@ -22,7 +22,7 @@ public sealed class MessageService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<MessageService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
     private readonly MessageBroadcaster _messageBroadcaster;
@@ -30,7 +30,7 @@ public sealed class MessageService
     public MessageService(
         AgentAcademyDbContext db,
         ILogger<MessageService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity,
         ConversationSessionService sessionService,
         MessageBroadcaster messageBroadcaster)

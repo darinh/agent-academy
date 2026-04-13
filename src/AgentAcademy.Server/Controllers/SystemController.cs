@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Commands.Handlers;
+using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
@@ -19,7 +20,7 @@ public class SystemController : ControllerBase
     private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly AgentAcademyDbContext _db;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
@@ -33,7 +34,7 @@ public class SystemController : ControllerBase
         BreakoutRoomService breakoutRoomService,
         ActivityPublisher activity,
         IAgentExecutor executor,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         AgentAcademyDbContext db,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
@@ -407,6 +408,34 @@ public class SystemController : ControllerBase
             _logger.LogError(ex, "Failed to get global error records");
             return Problem("Failed to retrieve error records.");
         }
+    }
+
+    /// <summary>
+    /// Triggers a manual reload of the agent catalog from agents.json.
+    /// </summary>
+    [HttpPost("/api/system/reload-catalog")]
+    public async Task<IActionResult> ReloadCatalog(
+        [FromServices] AgentCatalogWatcher watcher,
+        CancellationToken ct)
+    {
+        var result = await watcher.TriggerReloadAsync(ct);
+
+        if (result.Error is not null)
+            return Problem(result.Error, statusCode: 500);
+
+        if (result.WasSkipped)
+            return Ok(new { reloaded = false, reason = "Reload already in progress" });
+
+        if (result.Diff is null)
+            return Ok(new { reloaded = false, reason = "No changes detected" });
+
+        return Ok(new
+        {
+            reloaded = true,
+            added = result.Diff.Added.Select(a => new { a.Id, a.Name, a.Role }),
+            removed = result.Diff.Removed.Select(a => new { a.Id, a.Name, a.Role }),
+            modified = result.Diff.Modified.Select(a => new { a.Id, a.Name, a.Role })
+        });
     }
 }
 
