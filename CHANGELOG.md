@@ -3,6 +3,12 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
+## Unreleased
+
+### Features
+
+- **008-agent-memory**: `GENERATE_DIGEST` command for manual/admin learning digest triggering. Optional `force` arg bypasses retrospective threshold. Added to planner permissions, human command allowlist (async execution), and planner startup prompt. 12 new tests (4362 total).
+
 ## v2.0.1 (2026-04-12)
 
 ### Refactoring

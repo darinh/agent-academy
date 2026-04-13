@@ -595,6 +595,17 @@ public static class HumanCommandRegistry
                 new("taskId", "Task ID", "text", "The task to check gates for.",
                     Required: true),
             ]),
+
+        new("GENERATE_DIGEST", "Generate digest", "operations",
+            "Manually trigger learning digest generation.",
+            "Synthesizes accumulated retrospective summaries into cross-cutting shared memories via the planner agent. Use force=true to bypass the threshold check.",
+            IsAsync: true,
+            Fields:
+            [
+                new("force", "Force", "text",
+                    "Set to 'true' to bypass the retrospective threshold and generate immediately.",
+                    Required: false),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

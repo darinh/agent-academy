@@ -56,12 +56,14 @@ public sealed class CommandController : ControllerBase
         "LIST_WORKTREES",
         "LIST_AGENT_STATS",
         "CLEANUP_WORKTREES",
+        "GENERATE_DIGEST",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "CREATE_PR",
         "MERGE_PR",
+        "GENERATE_DIGEST",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;
