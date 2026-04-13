@@ -62,6 +62,7 @@ public class MergePrHandlerTests : IDisposable
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(catalog);
+        services.AddSingleton<IAgentCatalog>(catalog);
         services.AddScoped<TaskDependencyService>();
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();

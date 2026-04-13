@@ -111,6 +111,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
                 new("eng-1", "Hephaestus", "SoftwareEngineer", "Engineer",
                     "You are an engineer.", null, ["impl"], ["code"], true)
             }));
+        sc.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         sc.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         sc.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         sc.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);

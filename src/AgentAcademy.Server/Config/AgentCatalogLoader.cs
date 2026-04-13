@@ -4,8 +4,8 @@ using AgentAcademy.Shared.Models;
 namespace AgentAcademy.Server.Config;
 
 /// <summary>
-/// Loads the agent catalog from agents.json and registers it as a singleton
-/// <see cref="AgentCatalogOptions"/> in the DI container.
+/// Loads the agent catalog from agents.json and registers it as
+/// <see cref="IAgentCatalog"/> in the DI container.
 /// </summary>
 public static class AgentCatalogLoader
 {
@@ -56,13 +56,18 @@ public static class AgentCatalogLoader
 
     /// <summary>
     /// Registers the agent catalog as a singleton in the DI container.
+    /// Both <see cref="AgentCatalog"/> (concrete, for the watcher) and
+    /// <see cref="IAgentCatalog"/> (interface, for consumers) resolve
+    /// to the same instance.
     /// </summary>
     public static IServiceCollection AddAgentCatalog(
         this IServiceCollection services,
         string? basePath = null)
     {
-        var catalog = Load(basePath);
+        var options = Load(basePath);
+        var catalog = new AgentCatalog(options);
         services.AddSingleton(catalog);
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalog>());
         return services;
     }
 

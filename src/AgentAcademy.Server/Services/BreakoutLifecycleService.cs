@@ -27,7 +27,7 @@ public sealed class BreakoutLifecycleService
     internal const int MaxBreakoutRounds = 200;
 
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
     private readonly GitService _gitService;
@@ -40,7 +40,7 @@ public sealed class BreakoutLifecycleService
 
     public BreakoutLifecycleService(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         IAgentExecutor executor,
         SpecManager specManager,
         GitService gitService,

@@ -71,6 +71,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddSingleton(CreateTestCatalog());
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();

@@ -54,7 +54,7 @@ public sealed class DmHandler : ICommandHandler
     private static async Task<CommandEnvelope> SendToHumanAsync(
         CommandEnvelope command, CommandContext context, string message)
     {
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<MessageService>();
         var roomService = context.Services.GetRequiredService<RoomService>();
         var notificationManager = context.Services.GetRequiredService<NotificationManager>();
@@ -121,7 +121,7 @@ public sealed class DmHandler : ICommandHandler
     private static async Task<CommandEnvelope> SendToAgentAsync(
         CommandEnvelope command, CommandContext context, string recipientId, string message)
     {
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<MessageService>();
         var roomService = context.Services.GetRequiredService<RoomService>();
 

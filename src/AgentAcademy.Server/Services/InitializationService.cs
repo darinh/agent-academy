@@ -15,7 +15,7 @@ public sealed class InitializationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<InitializationService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly CrashRecoveryService _crashRecovery;
     private readonly RoomService _rooms;
@@ -24,7 +24,7 @@ public sealed class InitializationService
     public InitializationService(
         AgentAcademyDbContext db,
         ILogger<InitializationService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity,
         CrashRecoveryService crashRecovery,
         RoomService rooms,

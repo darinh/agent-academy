@@ -43,6 +43,7 @@ public class RoomLifecycleServiceTests : IDisposable
         services.AddSingleton<ActivityBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<RoomLifecycleService>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();

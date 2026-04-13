@@ -106,7 +106,7 @@ public sealed class RestartServerHandler : ICommandHandler
             // Post a system message so the restart is visible in chat history.
             try
             {
-                var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+                var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<MessageService>();
                 await messages.PostSystemStatusAsync(catalog.DefaultRoomId,
                     $"🔄 **Server restarting**: {parsed.Reason} (requested by {context.AgentName})");

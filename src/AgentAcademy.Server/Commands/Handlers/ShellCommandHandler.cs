@@ -222,7 +222,7 @@ public sealed class ShellCommandHandler : ICommandHandler
 
         try
         {
-            var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+            var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<MessageService>();
             await messages.PostSystemStatusAsync(catalog.DefaultRoomId,
                 $"🔄 **Server restarting**: {parsed.Reason} (requested by {context.AgentName} via SHELL)");

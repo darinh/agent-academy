@@ -19,7 +19,7 @@ public class SystemController : ControllerBase
     private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly AgentAcademyDbContext _db;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
@@ -33,7 +33,7 @@ public class SystemController : ControllerBase
         BreakoutRoomService breakoutRoomService,
         ActivityPublisher activity,
         IAgentExecutor executor,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         AgentAcademyDbContext db,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,

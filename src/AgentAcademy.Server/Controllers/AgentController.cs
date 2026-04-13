@@ -17,7 +17,7 @@ public class AgentController : ControllerBase
     private readonly AgentLocationService _agentLocationService;
     private readonly BreakoutRoomService _breakoutRoomService;
     private readonly IAgentExecutor _executor;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly AgentQuotaService _quotaService;
     private readonly ILogger<AgentController> _logger;
 
@@ -25,7 +25,7 @@ public class AgentController : ControllerBase
         AgentLocationService agentLocationService,
         BreakoutRoomService breakoutRoomService,
         IAgentExecutor executor,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         AgentQuotaService quotaService,
         ILogger<AgentController> logger)
     {

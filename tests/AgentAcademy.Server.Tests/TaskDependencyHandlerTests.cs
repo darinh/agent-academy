@@ -44,6 +44,7 @@ public sealed class TaskDependencyHandlerTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton(catalog);
+        services.AddSingleton<IAgentCatalog>(catalog);
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();

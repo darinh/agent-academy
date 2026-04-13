@@ -14,12 +14,12 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/agents")]
 public class AgentConfigController : ControllerBase
 {
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly AgentConfigService _configService;
     private readonly ILogger<AgentConfigController> _logger;
 
     public AgentConfigController(
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         AgentConfigService configService,
         ILogger<AgentConfigController> logger)
     {

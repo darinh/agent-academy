@@ -11,14 +11,14 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentAnalyticsService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ILogger<AgentAnalyticsService> _logger;
 
     private const int TrendBuckets = 12;
 
     public AgentAnalyticsService(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ILogger<AgentAnalyticsService> logger)
     {
         _scopeFactory = scopeFactory;

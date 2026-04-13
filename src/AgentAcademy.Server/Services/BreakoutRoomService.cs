@@ -20,7 +20,7 @@ public sealed class BreakoutRoomService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<BreakoutRoomService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
     private readonly TaskQueryService _taskQueries;
@@ -29,7 +29,7 @@ public sealed class BreakoutRoomService
     public BreakoutRoomService(
         AgentAcademyDbContext db,
         ILogger<BreakoutRoomService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity,
         ConversationSessionService sessionService,
         TaskQueryService taskQueries,

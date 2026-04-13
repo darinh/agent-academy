@@ -50,7 +50,7 @@ public sealed class CreateTaskItemHandler : ICommandHandler
             && brObj is string br && !string.IsNullOrWhiteSpace(br)
             ? br : context.BreakoutRoomId;
 
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var roomService = context.Services.GetRequiredService<RoomService>();
         var taskItems = context.Services.GetRequiredService<TaskItemService>();
 

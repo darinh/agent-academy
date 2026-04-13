@@ -15,7 +15,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class BreakoutCompletionService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
@@ -24,7 +24,7 @@ public sealed class BreakoutCompletionService
 
     public BreakoutCompletionService(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         IAgentExecutor executor,
         SpecManager specManager,
         CommandPipeline commandPipeline,

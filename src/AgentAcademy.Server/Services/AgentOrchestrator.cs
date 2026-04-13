@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityBroadcaster _activityBus;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
     private readonly AgentTurnRunner _turnRunner;
@@ -30,7 +30,7 @@ public sealed class AgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityBroadcaster activityBus,
         BreakoutLifecycleService breakoutLifecycle,
         AgentTurnRunner turnRunner,

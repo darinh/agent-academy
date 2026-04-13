@@ -21,13 +21,13 @@ public sealed class RoomLifecycleService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<RoomLifecycleService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
 
     public RoomLifecycleService(
         AgentAcademyDbContext db,
         ILogger<RoomLifecycleService> logger,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity)
     {
         _db = db;

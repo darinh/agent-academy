@@ -12,12 +12,12 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentLocationService
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
 
     public AgentLocationService(
         AgentAcademyDbContext db,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ActivityPublisher activity)
     {
         _db = db;
