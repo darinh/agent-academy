@@ -19,6 +19,7 @@ const CommandsPanel = lazy(() => import("./CommandsPanel"));
 const SprintPanel = lazy(() => import("./SprintPanel"));
 const SearchPanel = lazy(() => import("./SearchPanel"));
 const MemoryBrowserPanel = lazy(() => import("./MemoryBrowserPanel"));
+const DigestPanel = lazy(() => import("./DigestPanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -123,6 +124,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
           {tab === "memories" && (
             <MemoryBrowserPanel agents={props.configuredAgents} />
           )}
+          {tab === "digests" && <DigestPanel />}
         </section>
       </Suspense>
     </ChunkErrorBoundary>
