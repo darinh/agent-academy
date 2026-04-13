@@ -215,4 +215,135 @@ public sealed class CollaborationControllerTests : IDisposable
         Assert.IsType<OkObjectResult>(result);
         await _svc.Executor.Received(1).InvalidateRoomSessionsAsync("main");
     }
+
+    // ── Task Dependency Endpoints ──────────────────────────────
+
+    private TaskEntity SeedTaskEntity(string id, string title, string status = "Active")
+    {
+        var entity = new TaskEntity
+        {
+            Id = id, Title = title, Status = status,
+            RoomId = "main", AssignedAgentId = "engineer-1",
+            SuccessCriteria = "Done",
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        };
+        _svc.Db.Tasks.Add(entity);
+        _svc.Db.SaveChanges();
+        return entity;
+    }
+
+    [Fact]
+    public async Task AddDependency_Valid_Returns201()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+        SeedTaskEntity("dep-b", "Task B");
+
+        var result = await _controller.AddDependency("dep-a", new AddDependencyRequest("dep-b"));
+
+        var created = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(201, created.StatusCode);
+        var info = Assert.IsType<TaskDependencyInfo>(created.Value);
+        Assert.Single(info.DependsOn);
+        Assert.Equal("dep-b", info.DependsOn[0].TaskId);
+    }
+
+    [Fact]
+    public async Task AddDependency_SelfDep_ReturnsBadRequest()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+
+        var result = await _controller.AddDependency("dep-a", new AddDependencyRequest("dep-a"));
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task AddDependency_TaskNotFound_ReturnsBadRequest()
+    {
+        SeedTaskEntity("dep-b", "Task B");
+
+        var result = await _controller.AddDependency("nonexistent", new AddDependencyRequest("dep-b"));
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task RemoveDependency_Valid_ReturnsOk()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+        SeedTaskEntity("dep-b", "Task B");
+
+        // Add first
+        await _controller.AddDependency("dep-a", new AddDependencyRequest("dep-b"));
+
+        // Remove
+        var result = await _controller.RemoveDependency("dep-a", "dep-b");
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var info = Assert.IsType<TaskDependencyInfo>(ok.Value);
+        Assert.Empty(info.DependsOn);
+    }
+
+    [Fact]
+    public async Task RemoveDependency_NotFound_ReturnsNotFound()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+        SeedTaskEntity("dep-b", "Task B");
+
+        var result = await _controller.RemoveDependency("dep-a", "dep-b");
+
+        Assert.IsType<NotFoundObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task GetDependencies_ExistingTask_ReturnsOk()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+        SeedTaskEntity("dep-b", "Task B");
+
+        await _controller.AddDependency("dep-a", new AddDependencyRequest("dep-b"));
+
+        var result = await _controller.GetDependencies("dep-a");
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var info = Assert.IsType<TaskDependencyInfo>(ok.Value);
+        Assert.Single(info.DependsOn);
+    }
+
+    [Fact]
+    public async Task GetDependencies_UnknownTask_ReturnsNotFound()
+    {
+        var result = await _controller.GetDependencies("nonexistent");
+
+        Assert.IsType<NotFoundObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task GetDependencies_NoDeps_ReturnsEmptyLists()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+
+        var result = await _controller.GetDependencies("dep-a");
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var info = Assert.IsType<TaskDependencyInfo>(ok.Value);
+        Assert.Empty(info.DependsOn);
+        Assert.Empty(info.DependedOnBy);
+    }
+
+    [Fact]
+    public async Task GetDependencies_ReturnsBothDirections()
+    {
+        SeedTaskEntity("dep-a", "Task A");
+        SeedTaskEntity("dep-b", "Task B");
+
+        await _controller.AddDependency("dep-a", new AddDependencyRequest("dep-b"));
+
+        // A depends on B → B is depended-on-by A
+        var resultB = await _controller.GetDependencies("dep-b");
+        var okB = Assert.IsType<OkObjectResult>(resultB.Result);
+        var infoB = Assert.IsType<TaskDependencyInfo>(okB.Value);
+        Assert.Single(infoB.DependedOnBy);
+        Assert.Equal("dep-a", infoB.DependedOnBy[0].TaskId);
+    }
 }
