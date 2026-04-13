@@ -52,6 +52,7 @@ public sealed class CommandController : ControllerBase
         "CHECK_GATES",
         "ADD_TASK_DEPENDENCY",
         "REMOVE_TASK_DEPENDENCY",
+        "SCHEDULE_SPRINT",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
