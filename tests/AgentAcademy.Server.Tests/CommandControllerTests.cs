@@ -204,7 +204,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditLog_ReturnsEmptyWhenNoAudits()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog();
 
@@ -217,10 +217,10 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditLog_ReturnsRecordsAfterCommandExecution()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var cmdController = CreateController(new CapturingHandler("LIST_ROOMS"));
+        await cmdController.Execute(new ExecuteCommandRequest("LIST_ROOMS", null));
 
-        await controller.Execute(new ExecuteCommandRequest("LIST_ROOMS", null));
-
+        var controller = CreateAuditController();
         var result = await controller.GetAuditLog();
 
         var ok = Assert.IsType<OkObjectResult>(result);
@@ -236,7 +236,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_FiltersbyAgentId()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(agentId: "architect");
 
@@ -250,7 +250,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_FiltersByCommand()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(command: "READ_FILE");
 
@@ -263,7 +263,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_FiltersByStatus()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(status: "Error");
 
@@ -276,7 +276,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_StatusFilterIsCaseInsensitive()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(status: "error");
 
@@ -290,7 +290,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_FiltersByHoursBack()
     {
         await SeedAuditRecords(includeOld: true);
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(hoursBack: 1);
 
@@ -305,7 +305,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_PaginatesCorrectly()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(limit: 2, offset: 0);
 
@@ -320,7 +320,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditLog_InvalidHoursBack_ReturnsBadRequest()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog(hoursBack: 0);
 
@@ -330,7 +330,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditLog_WhenUnauthenticated_ReturnsUnauthorized()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"), authenticated: false);
+        var controller = CreateAuditController(authenticated: false);
 
         var result = await controller.GetAuditLog();
 
@@ -341,7 +341,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditLog_OrdersNewestFirst()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditLog();
 
@@ -359,7 +359,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditStats_ReturnsZerosWhenEmpty()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditStats();
 
@@ -375,7 +375,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditStats_ReturnsCorrectAggregates()
     {
         await SeedAuditRecords();
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditStats();
 
@@ -391,7 +391,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetAuditStats_FiltersByHoursBack()
     {
         await SeedAuditRecords(includeOld: true);
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var resultAll = await controller.GetAuditStats();
         var resultRecent = await controller.GetAuditStats(hoursBack: 1);
@@ -408,7 +408,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditStats_WhenUnauthenticated_ReturnsUnauthorized()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"), authenticated: false);
+        var controller = CreateAuditController(authenticated: false);
 
         var result = await controller.GetAuditStats();
 
@@ -418,7 +418,7 @@ public sealed class CommandControllerTests : IDisposable
     [Fact]
     public async Task GetAuditStats_InvalidHoursBack_ReturnsBadRequest()
     {
-        var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
+        var controller = CreateAuditController();
 
         var result = await controller.GetAuditStats(hoursBack: -5);
 
@@ -490,6 +490,22 @@ public sealed class CommandControllerTests : IDisposable
             handlers,
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<CommandController>.Instance);
+
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = authenticated ? CreateAuthenticatedUser() : new ClaimsPrincipal(new ClaimsIdentity())
+            }
+        };
+
+        return controller;
+    }
+
+    private CommandAuditController CreateAuditController(bool authenticated = true)
+    {
+        var controller = new CommandAuditController(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>());
 
         controller.ControllerContext = new ControllerContext
         {
