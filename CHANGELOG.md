@@ -13,6 +13,10 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 - **300-frontend-ui**: Document DigestPanel (learning digest history tab with stats, paginated list, detail with source retrospectives, race condition guards) and WorktreeStatusPanel (live worktree health widget in dashboard with auto-refresh, diff stats, dirty file preview).
 
+### Features
+
+- **008-agent-memory**: Retrospective history REST API. `RetrospectiveController` exposes read-only endpoints at `/api/retrospectives`: paginated list with agent filter, single retrospective with task metadata, and aggregate statistics (total, per-agent breakdown, average content length, latest timestamp). 21 new tests (4426 total).
+
 ## v2.0.1 (2026-04-12)
 
 ### Refactoring

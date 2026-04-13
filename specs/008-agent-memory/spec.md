@@ -289,6 +289,33 @@ learning_digest_sources
 | `src/AgentAcademy.Server/Controllers/DigestController.cs` | REST endpoints for digest history |
 | `tests/AgentAcademy.Server.Tests/DigestControllerTests.cs` | 18 tests |
 
+### Retrospective History REST API
+
+> **Status: Implemented** — Read-only REST endpoints for retrospective history at `/api/retrospectives`.
+
+`RetrospectiveController` exposes retrospective comments (created by `RetrospectiveService` after task merge) as a read-only REST API:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/retrospectives` | Paginated list (default 20, max 100). Optional `agentId` filter. Returns `RetrospectiveListItem[]` with truncated content preview (200 chars). |
+| `GET /api/retrospectives/{commentId}` | Single retrospective with full content and current task metadata (title, status, completedAt). Returns 404 if comment doesn't exist or isn't a retrospective. |
+| `GET /api/retrospectives/stats` | Aggregate statistics: total count, per-agent breakdown (ordered by count), average content length, latest retrospective timestamp. |
+
+**Implementation notes:**
+- Queries `TaskCommentEntity` filtered by `CommentType == nameof(TaskCommentType.Retrospective)`.
+- Detail endpoint joins to `TaskEntity` for current task metadata (not historical snapshot — task fields may change after retrospective creation).
+- Stats uses client-side aggregation (lightweight projection loaded first) because SQLite provider can't translate `GroupBy` on anonymous types.
+- All endpoints require authentication.
+- Content preview truncation uses `Substring(0, 200)` with "…" suffix.
+
+**Files:**
+
+| File | Purpose |
+|------|---------|
+| `src/AgentAcademy.Server/Controllers/RetrospectiveController.cs` | REST endpoints + DTOs |
+| `tests/AgentAcademy.Server.Tests/RetrospectiveControllerTests.cs` | 21 tests |
+| `src/agent-academy-client/src/api/retrospectives.ts` | Frontend API client |
+
 ## Known Gaps
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
