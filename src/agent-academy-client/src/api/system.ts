@@ -8,6 +8,7 @@ import type {
   DmMessage,
   SearchResults,
   SearchScope,
+  WorktreeStatusSnapshot,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
 
@@ -96,4 +97,10 @@ export function exportDmMessages(agentId: string, format: "json" | "markdown" = 
   const params = new URLSearchParams({ format });
   const ext = format === "markdown" ? "md" : "json";
   return downloadFile(apiUrl(`/api/export/dm/${encodeURIComponent(agentId)}/messages?${params}`), `dm-export.${ext}`);
+}
+
+// ── Worktrees ────────────────────────────────────────────────────────────
+
+export function getWorktreeStatus(): Promise<WorktreeStatusSnapshot[]> {
+  return request<WorktreeStatusSnapshot[]>(apiUrl("/api/worktrees"));
 }

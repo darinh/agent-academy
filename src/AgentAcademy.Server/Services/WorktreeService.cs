@@ -406,6 +406,142 @@ public class WorktreeService : IDisposable
         return entries.AsReadOnly();
     }
 
+    /// <summary>
+    /// Collects git status for a worktree: dirty files, diff stats, and last commit.
+    /// Returns null fields gracefully if any git command fails.
+    /// </summary>
+    public async Task<WorktreeGitStatus> GetWorktreeGitStatusAsync(
+        string worktreePath, CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(worktreePath))
+            return WorktreeGitStatus.Unavailable("Worktree directory does not exist");
+
+        var dirtyFiles = new List<string>();
+        int totalDirty = 0, filesChanged = 0, insertions = 0, deletions = 0;
+        string? commitSha = null, commitMessage = null, commitAuthor = null;
+        DateTimeOffset? commitDate = null;
+
+        // Dirty files via git status
+        try
+        {
+            var statusOutput = await RunGitInDirectoryAsync(worktreePath, cancellationToken, "status", "--porcelain=v1");
+            if (!string.IsNullOrEmpty(statusOutput))
+            {
+                var lines = statusOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                totalDirty = lines.Length;
+                const int previewCap = 10;
+                foreach (var line in lines.Take(previewCap))
+                {
+                    // Porcelain v1: first 2 chars are status, then space, then path
+                    var path = line.Length > 3 ? line[3..].Trim() : line.Trim();
+                    if (!string.IsNullOrEmpty(path))
+                        dirtyFiles.Add(path);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get git status for worktree {Path}", worktreePath);
+        }
+
+        // Diff stats (staged + unstaged vs HEAD)
+        try
+        {
+            var diffOutput = await RunGitInDirectoryAsync(worktreePath, cancellationToken, "diff", "--shortstat", "HEAD", "--");
+            if (!string.IsNullOrEmpty(diffOutput))
+                ParseShortStat(diffOutput, out filesChanged, out insertions, out deletions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to get diff stats for worktree {Path}", worktreePath);
+        }
+
+        // Last commit
+        try
+        {
+            // NUL-separated: sha\0subject\0author\0date
+            var logOutput = await RunGitInDirectoryAsync(worktreePath, cancellationToken,
+                "log", "-1", "--format=%H%x00%s%x00%an%x00%aI");
+            if (!string.IsNullOrEmpty(logOutput))
+            {
+                var parts = logOutput.Split('\0');
+                if (parts.Length >= 4)
+                {
+                    commitSha = parts[0];
+                    commitMessage = parts[1];
+                    commitAuthor = parts[2];
+                    if (DateTimeOffset.TryParse(parts[3], out var parsed))
+                        commitDate = parsed;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to get last commit for worktree {Path}", worktreePath);
+        }
+
+        return new WorktreeGitStatus(
+            StatusAvailable: true,
+            Error: null,
+            TotalDirtyFiles: totalDirty,
+            DirtyFilesPreview: dirtyFiles,
+            FilesChanged: filesChanged,
+            Insertions: insertions,
+            Deletions: deletions,
+            LastCommitSha: commitSha,
+            LastCommitMessage: commitMessage,
+            LastCommitAuthor: commitAuthor,
+            LastCommitDate: commitDate
+        );
+    }
+
+    /// <summary>Repository root path used to derive relative worktree paths.</summary>
+    public string RepositoryRoot => _repositoryRoot;
+
+    private static void ParseShortStat(string output, out int files, out int ins, out int del)
+    {
+        files = ins = del = 0;
+        // Example: " 3 files changed, 12 insertions(+), 5 deletions(-)"
+        var match = Regex.Match(output, @"(\d+) files? changed");
+        if (match.Success) files = int.Parse(match.Groups[1].Value);
+        match = Regex.Match(output, @"(\d+) insertions?");
+        if (match.Success) ins = int.Parse(match.Groups[1].Value);
+        match = Regex.Match(output, @"(\d+) deletions?");
+        if (match.Success) del = int.Parse(match.Groups[1].Value);
+    }
+
+    private async Task<string> RunGitInDirectoryAsync(
+        string workingDirectory, CancellationToken cancellationToken, params string[] args)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = _gitExecutable,
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start git process");
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(cancellationToken));
+
+        if (process.ExitCode != 0)
+        {
+            var message = $"git {string.Join(" ", args)} failed (exit {process.ExitCode}): {stderrTask.Result.Trim()}";
+            throw new InvalidOperationException(message);
+        }
+
+        return stdoutTask.Result.Trim();
+    }
+
     private async Task<string> RunGitAsync(params string[] args)
     {
         var psi = new ProcessStartInfo
@@ -473,3 +609,34 @@ public record WorktreeInfo(string Branch, string Path, DateTimeOffset CreatedAt)
 /// Represents a worktree entry as reported by <c>git worktree list --porcelain</c>.
 /// </summary>
 public record GitWorktreeEntry(string Path, string? Head, string? Branch, bool Bare);
+
+/// <summary>
+/// Git-level status for a single worktree: dirty files, diff stats, and last commit.
+/// </summary>
+public record WorktreeGitStatus(
+    bool StatusAvailable,
+    string? Error,
+    int TotalDirtyFiles,
+    List<string> DirtyFilesPreview,
+    int FilesChanged,
+    int Insertions,
+    int Deletions,
+    string? LastCommitSha,
+    string? LastCommitMessage,
+    string? LastCommitAuthor,
+    DateTimeOffset? LastCommitDate)
+{
+    public static WorktreeGitStatus Unavailable(string error) => new(
+        StatusAvailable: false,
+        Error: error,
+        TotalDirtyFiles: 0,
+        DirtyFilesPreview: [],
+        FilesChanged: 0,
+        Insertions: 0,
+        Deletions: 0,
+        LastCommitSha: null,
+        LastCommitMessage: null,
+        LastCommitAuthor: null,
+        LastCommitDate: null
+    );
+}
