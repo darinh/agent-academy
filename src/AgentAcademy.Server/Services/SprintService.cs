@@ -19,12 +19,18 @@ public sealed class SprintService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ActivityBroadcaster _activityBus;
+    private readonly SystemSettingsService _settings;
     private readonly ILogger<SprintService> _logger;
 
-    public SprintService(AgentAcademyDbContext db, ActivityBroadcaster activityBus, ILogger<SprintService> logger)
+    public SprintService(
+        AgentAcademyDbContext db,
+        ActivityBroadcaster activityBus,
+        SystemSettingsService settings,
+        ILogger<SprintService> logger)
     {
         _db = db;
         _activityBus = activityBus;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -35,7 +41,9 @@ public sealed class SprintService
     /// has overflow artifacts, they are linked via <see cref="SprintEntity.OverflowFromSprintId"/>.
     /// Throws if there is already an active sprint for this workspace.
     /// </summary>
-    public async Task<SprintEntity> CreateSprintAsync(string workspacePath)
+    /// <param name="workspacePath">Absolute path to the workspace.</param>
+    /// <param name="trigger">Optional trigger label included in the SprintStarted event metadata (e.g. "auto").</param>
+    public async Task<SprintEntity> CreateSprintAsync(string workspacePath, string? trigger = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
 
@@ -100,6 +108,7 @@ public sealed class SprintService
                 ["sprintNumber"] = sprint.Number,
                 ["status"] = "Active",
                 ["currentStage"] = Stages[0],
+                ["trigger"] = trigger, // null when manually started, "auto" when auto-started
             });
 
         try
@@ -229,7 +238,41 @@ public sealed class SprintService
             "Completed sprint #{Number} ({Id}) for workspace {Workspace}",
             sprint.Number, sprint.Id, sprint.WorkspacePath);
 
+        // Auto-start the next sprint if configured
+        await TryAutoStartNextSprintAsync(sprint);
+
         return sprint;
+    }
+
+    /// <summary>
+    /// If the <c>sprint.autoStartOnCompletion</c> setting is enabled,
+    /// creates the next sprint for the same workspace.
+    /// Failures are logged as warnings — they never fail the completion itself.
+    /// </summary>
+    private async Task TryAutoStartNextSprintAsync(SprintEntity completedSprint)
+    {
+        try
+        {
+            var autoStart = await _settings.GetSprintAutoStartAsync();
+            if (!autoStart)
+                return;
+
+            _logger.LogInformation(
+                "Auto-start enabled — creating next sprint for workspace {Workspace}",
+                completedSprint.WorkspacePath);
+
+            var next = await CreateSprintAsync(completedSprint.WorkspacePath, trigger: "auto");
+
+            _logger.LogInformation(
+                "Auto-started sprint #{Number} ({Id}) after completion of sprint #{PrevNumber}",
+                next.Number, next.Id, completedSprint.Number);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Auto-start failed after sprint #{Number} completion for workspace {Workspace}",
+                completedSprint.Number, completedSprint.WorkspacePath);
+        }
     }
 
     /// <summary>

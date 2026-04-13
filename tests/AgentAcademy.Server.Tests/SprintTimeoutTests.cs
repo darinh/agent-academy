@@ -36,7 +36,7 @@ public class SprintTimeoutTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _sprintService = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
         _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
     }
@@ -372,10 +372,12 @@ public class SprintTimeoutTests : IDisposable
         services.AddSingleton<ActivityBroadcaster>();
         services.AddSingleton<ILogger<SprintService>>(NullLogger<SprintService>.Instance);
         services.AddSingleton<ILogger<SprintStageService>>(NullLogger<SprintStageService>.Instance);
+        services.AddScoped<SystemSettingsService>();
         services.AddScoped<SprintService>(sp =>
             new SprintService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),
                 sp.GetRequiredService<ActivityBroadcaster>(),
+                sp.GetRequiredService<SystemSettingsService>(),
                 sp.GetRequiredService<ILogger<SprintService>>()));
         services.AddScoped<SprintStageService>(sp =>
             new SprintStageService(

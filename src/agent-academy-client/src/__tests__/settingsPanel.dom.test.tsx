@@ -924,6 +924,7 @@ describe("SettingsPanel (interactive)", () => {
         expect(mockUpdateSettings).toHaveBeenCalledWith({
           "conversation.mainRoomEpochSize": "100",
           "conversation.breakoutEpochSize": "30",
+          "sprint.autoStartOnCompletion": "false",
         });
       });
     });
@@ -1015,6 +1016,62 @@ describe("SettingsPanel (interactive)", () => {
       clickTab("Advanced");
       expect(screen.getByText("Desktop Notifications")).toBeInTheDocument();
       expect(screen.getByText("Not available")).toBeInTheDocument();
+    });
+
+    it("shows sprint automation section", async () => {
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      expect(screen.getByText("Sprint Automation")).toBeInTheDocument();
+      expect(screen.getByText("Auto-start next sprint on completion")).toBeInTheDocument();
+    });
+
+    it("sprint auto-start defaults to unchecked", async () => {
+      mockGetSettings.mockResolvedValue({});
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it("sprint auto-start reflects API value", async () => {
+      mockGetSettings.mockResolvedValue({
+        "sprint.autoStartOnCompletion": "True",
+      });
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      await waitFor(() => {
+        const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+        expect(checkbox).toBeChecked();
+      });
+    });
+
+    it("toggling sprint auto-start updates state", async () => {
+      mockGetSettings.mockResolvedValue({});
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+      expect(checkbox).not.toBeChecked();
+      await userEvent.click(checkbox);
+      expect(checkbox).toBeChecked();
+    });
+
+    it("saves sprint auto-start setting", async () => {
+      mockUpdateSettings.mockResolvedValue({});
+      mockGetSettings.mockResolvedValue({});
+      await renderPanelAndWait();
+      clickTab("Advanced");
+
+      const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+      await userEvent.click(checkbox);
+      await userEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith(
+          expect.objectContaining({
+            "sprint.autoStartOnCompletion": "true",
+          }),
+        );
+      });
     });
   });
 });

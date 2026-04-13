@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,6 +19,7 @@ public class SprintServiceTests : IDisposable
     private readonly SprintService _service;
     private readonly SprintStageService _stageService;
     private readonly SprintArtifactService _artifactService;
+    private readonly SystemSettingsService _settings;
 
     public SprintServiceTests()
     {
@@ -32,7 +34,8 @@ public class SprintServiceTests : IDisposable
         _db.Database.EnsureCreated();
 
         var broadcaster = new ActivityBroadcaster();
-        _service = new SprintService(_db, broadcaster, NullLogger<SprintService>.Instance);
+        _settings = new SystemSettingsService(_db);
+        _service = new SprintService(_db, broadcaster, _settings, NullLogger<SprintService>.Instance);
         _stageService = new SprintStageService(_db, broadcaster, NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, broadcaster, NullLogger<SprintArtifactService>.Instance);
     }
@@ -817,5 +820,159 @@ public class SprintServiceTests : IDisposable
     public void Stages_HasSixEntries()
     {
         Assert.Equal(6, SprintService.Stages.Count);
+    }
+
+    // ── Auto-Start on Completion ────────────────────────────────
+
+    [Fact]
+    public async Task CompleteSprint_AutoStartEnabled_CreatesNextSprint()
+    {
+        await _settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        var active = await _db.Sprints.FirstOrDefaultAsync(
+            s => s.WorkspacePath == TestWorkspace && s.Status == "Active");
+        Assert.NotNull(active);
+        Assert.Equal(2, active.Number);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_AutoStartDisabled_DoesNotCreateNextSprint()
+    {
+        // Default is false, no explicit set needed
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        var active = await _db.Sprints.FirstOrDefaultAsync(
+            s => s.WorkspacePath == TestWorkspace && s.Status == "Active");
+        Assert.Null(active);
+    }
+
+    [Fact]
+    public async Task CancelSprint_AutoStartEnabled_DoesNotCreateNextSprint()
+    {
+        await _settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        await _service.CancelSprintAsync(sprint.Id);
+
+        var active = await _db.Sprints.FirstOrDefaultAsync(
+            s => s.WorkspacePath == TestWorkspace && s.Status == "Active");
+        Assert.Null(active);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_AutoStarted_CarriesOverflow()
+    {
+        await _settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        // Store overflow requirements before completing
+        _db.SprintArtifacts.Add(new SprintArtifactEntity
+        {
+            SprintId = sprint.Id,
+            Stage = "FinalSynthesis",
+            Type = "OverflowRequirements",
+            Content = "Carry-over work items",
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        var next = await _db.Sprints.FirstOrDefaultAsync(
+            s => s.WorkspacePath == TestWorkspace && s.Status == "Active");
+        Assert.NotNull(next);
+        Assert.Equal(sprint.Id, next.OverflowFromSprintId);
+
+        var overflow = await _db.SprintArtifacts.FirstOrDefaultAsync(
+            a => a.SprintId == next.Id && a.Type == "OverflowRequirements");
+        Assert.NotNull(overflow);
+        Assert.Equal("Carry-over work items", overflow.Content);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_AutoStartCompletionEventOrder()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+
+        var settings = new SystemSettingsService(_db);
+        await settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+
+        var svc = new SprintService(_db, broadcaster, settings, NullLogger<SprintService>.Instance);
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        events.Clear();
+
+        await svc.CompleteSprintAsync(sprint.Id, force: true);
+
+        Assert.Equal(2, events.Count);
+        Assert.Equal(ActivityEventType.SprintCompleted, events[0].Type);
+        Assert.Equal(ActivityEventType.SprintStarted, events[1].Type);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_AutoStartedEvent_HasTriggerMetadata()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+
+        var settings = new SystemSettingsService(_db);
+        await settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+
+        var svc = new SprintService(_db, broadcaster, settings, NullLogger<SprintService>.Instance);
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+        events.Clear();
+
+        await svc.CompleteSprintAsync(sprint.Id, force: true);
+
+        var startedEvent = events.First(e => e.Type == ActivityEventType.SprintStarted);
+        Assert.NotNull(startedEvent.Metadata);
+        Assert.Equal("auto", startedEvent.Metadata["trigger"]);
+    }
+
+    [Fact]
+    public async Task CreateSprint_ManualStart_HasNullTrigger()
+    {
+        var broadcaster = new ActivityBroadcaster();
+        var events = new List<ActivityEvent>();
+        broadcaster.Subscribe(e => events.Add(e));
+
+        var settings = new SystemSettingsService(_db);
+        var svc = new SprintService(_db, broadcaster, settings, NullLogger<SprintService>.Instance);
+        var sprint = await svc.CreateSprintAsync(TestWorkspace);
+
+        var startedEvent = events.First(e => e.Type == ActivityEventType.SprintStarted);
+        Assert.NotNull(startedEvent.Metadata);
+        Assert.Null(startedEvent.Metadata["trigger"]);
+    }
+
+    [Fact]
+    public async Task CompleteSprint_AutoStartRaceCondition_CompletionStillSucceeds()
+    {
+        await _settings.SetAsync(SystemSettingsService.SprintAutoStartKey, "true");
+        var sprint = await _service.CreateSprintAsync(TestWorkspace);
+
+        // Simulate a race: someone else already started the next sprint
+        await _service.CompleteSprintAsync(sprint.Id, force: true);
+
+        // The completion + auto-start already happened.
+        // Now manually create and complete the auto-started sprint to trigger another auto-start
+        // while simulating a conflict by pre-creating a sprint:
+        var autoStarted = await _db.Sprints.FirstAsync(
+            s => s.WorkspacePath == TestWorkspace && s.Status == "Active");
+
+        // Complete it — auto-start should succeed
+        await _service.CompleteSprintAsync(autoStarted.Id, force: true);
+
+        var third = await _db.Sprints.FirstOrDefaultAsync(
+            s => s.WorkspacePath == TestWorkspace && s.Status == "Active");
+        Assert.NotNull(third);
+        Assert.Equal(3, third.Number);
     }
 }

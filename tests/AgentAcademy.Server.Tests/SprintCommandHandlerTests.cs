@@ -32,6 +32,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddScoped<SprintService>();
         services.AddScoped<SprintStageService>();
         services.AddScoped<SprintArtifactService>();
+        services.AddScoped<SystemSettingsService>();
         services.AddSingleton(NullLogger<SprintService>.Instance)
             .AddSingleton(typeof(ILogger<SprintService>), sp => NullLogger<SprintService>.Instance);
         services.AddSingleton(typeof(ILogger<SprintStageService>), sp => NullLogger<SprintStageService>.Instance);

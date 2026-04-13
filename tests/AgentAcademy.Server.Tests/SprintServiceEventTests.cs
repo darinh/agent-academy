@@ -38,7 +38,7 @@ public class SprintServiceEventTests : IDisposable
         _broadcaster = new ActivityBroadcaster();
         _broadcaster.Subscribe(evt => _capturedEvents.Add(evt));
 
-        _service = new SprintService(_db, _broadcaster, NullLogger<SprintService>.Instance);
+        _service = new SprintService(_db, _broadcaster, new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
         _stageService = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, _broadcaster, NullLogger<SprintArtifactService>.Instance);
     }
