@@ -570,4 +570,175 @@ public sealed class MemoryControllerTests : IDisposable
         Assert.Single(remaining);
         Assert.Equal("keep", remaining[0].Key);
     }
+
+    // ── Browse Edge Cases ────────────────────────────────────────
+
+    [Fact]
+    public async Task Browse_DoesNotReturnOtherAgentMemories()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "mine", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a2", Key = "theirs", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a3", Key = "other", Category = "lesson", Value = "v", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: null, search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+
+        Assert.Equal(1, response.Total);
+        Assert.All(response.Memories, m => Assert.Equal("a1", m.AgentId));
+    }
+
+    [Fact]
+    public async Task Browse_CategoryFilterWithExpiredCombined()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "active-decision", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "expired-decision", Category = "decision", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(-1) },
+            new AgentMemoryEntity { AgentId = "a1", Key = "active-lesson", Category = "lesson", Value = "v", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: "decision", search: null, includeExpired: false);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+
+        Assert.Single(response.Memories);
+        Assert.Equal("active-decision", response.Memories[0].Key);
+    }
+
+    [Fact]
+    public async Task Browse_CategoryFilterIsCaseInsensitive()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "k1", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k2", Category = "lesson", Value = "v", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: "DECISION", search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+
+        Assert.Single(response.Memories);
+        Assert.Equal("decision", response.Memories[0].Category);
+        Assert.Equal("k1", response.Memories[0].Key);
+    }
+
+    [Fact]
+    public async Task Browse_MapsDtoFieldsCorrectly()
+    {
+        var now = DateTime.UtcNow;
+        var accessed = now.AddMinutes(-5);
+        var expires = now.AddHours(24);
+        _db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "a1", Key = "mapped", Category = "pattern", Value = "test-value",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = accessed, ExpiresAt = expires
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: null, search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        var dto = Assert.Single(response.Memories);
+
+        Assert.Equal("a1", dto.AgentId);
+        Assert.Equal("mapped", dto.Key);
+        Assert.Equal("pattern", dto.Category);
+        Assert.Equal("test-value", dto.Value);
+        Assert.NotNull(dto.UpdatedAt);
+        Assert.NotNull(dto.LastAccessedAt);
+        Assert.NotNull(dto.ExpiresAt);
+    }
+
+    // ── Stats Edge Cases ─────────────────────────────────────────
+
+    [Fact]
+    public async Task Stats_EmptyDb_ReturnsZeroCounts()
+    {
+        var result = await _controller.Stats(agentId: "empty-agent");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.StatsResponse>(ok.Value);
+
+        Assert.Equal("empty-agent", response.AgentId);
+        Assert.Equal(0, response.TotalMemories);
+        Assert.Equal(0, response.ActiveMemories);
+        Assert.Equal(0, response.ExpiredMemories);
+        Assert.Empty(response.Categories);
+    }
+
+    [Fact]
+    public async Task Stats_DoesNotIncludeOtherAgents()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "k1", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a2", Key = "k2", Category = "decision", Value = "v", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Stats(agentId: "a1");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.StatsResponse>(ok.Value);
+
+        Assert.Equal(1, response.TotalMemories);
+    }
+
+    [Fact]
+    public async Task Stats_CategoriesOrderedByActiveCountDescending()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "k1", Category = "few", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k2", Category = "many", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k3", Category = "many", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k4", Category = "many", Value = "v", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Stats(agentId: "a1");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.StatsResponse>(ok.Value);
+
+        Assert.Equal(2, response.Categories.Count);
+        Assert.Equal("many", response.Categories[0].Category);
+        Assert.Equal("few", response.Categories[1].Category);
+    }
+
+    // ── CleanupExpired Edge Cases ────────────────────────────────
+
+    [Fact]
+    public async Task CleanupExpired_DoesNotAffectOtherAgents()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "expired-a1", Category = "c", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(-1) },
+            new AgentMemoryEntity { AgentId = "a2", Key = "expired-a2", Category = "c", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(-1) });
+        await _db.SaveChangesAsync();
+
+        await _controller.CleanupExpired(agentId: "a1");
+
+        var a2Memory = await _db.AgentMemories.FindAsync("a2", "expired-a2");
+        Assert.NotNull(a2Memory);
+    }
+
+    [Fact]
+    public async Task CleanupExpired_ZeroExpired_ReturnsZeroRemoved()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "a1", Key = "active", Category = "c", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(24)
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.CleanupExpired(agentId: "a1");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("\"removed\":0", json);
+
+        var remaining = await _db.AgentMemories.CountAsync(m => m.AgentId == "a1");
+        Assert.Equal(1, remaining);
+    }
 }
