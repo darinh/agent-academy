@@ -110,6 +110,19 @@ Sprints can be created on a recurring schedule using standard 5-field cron expre
 **Source**: `SprintSchedulerService.cs`, `SprintScheduleEntity.cs`
 **Config section**: `SprintScheduler` (settings: `Enabled`, `CheckIntervalSeconds`)
 
+**Frontend UI** (Settings → Advanced → Sprint Schedule):
+
+The schedule management form lives in `AdvancedTab.tsx` below the Sprint Automation section. It provides:
+- **Cron expression input**: Text field with monospace font. Client-side hint when field count ≠ 5; server performs authoritative validation.
+- **Timezone selector**: Dropdown of ~30 common IANA timezones plus the browser's detected timezone. If the saved schedule uses a timezone outside this list, it is dynamically added to prevent data loss on edit.
+- **Enable/disable toggle**: Checkbox. Disabled schedules remain stored but are not evaluated by the background service.
+- **Read-only metadata**: Next run (displayed in schedule timezone + UTC), last triggered time, and last outcome.
+- **Save**: `PUT /api/sprints/schedule` — creates or updates. Server validation errors displayed inline.
+- **Delete**: Two-click confirmation (first click shows "Confirm Delete?" for 3 seconds, second click executes). Calls `DELETE /api/sprints/schedule`.
+- **Mutual exclusion**: Save and Delete buttons are disabled while either operation is in-flight.
+
+**Source**: `settings/AdvancedTab.tsx`, `api/sprints.ts` (`getSprintSchedule`, `upsertSprintSchedule`, `deleteSprintSchedule`)
+
 ## Entities
 
 > **Source**: `src/AgentAcademy.Server/Data/Entities/SprintEntity.cs`, `SprintArtifactEntity.cs`
