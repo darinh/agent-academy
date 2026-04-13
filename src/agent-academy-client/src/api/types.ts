@@ -143,7 +143,8 @@ export type ActivityEventType =
   | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
   | "DirectMessageSent" | "TaskPrStatusChanged"
   | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled"
-  | "TaskUnblocked";
+  | "TaskUnblocked"
+  | "TaskRetrospectiveCompleted";
 
 export interface ActivityEvent {
   id: string;
@@ -318,7 +319,7 @@ export interface TaskSnapshot {
   blockingTaskIds?: string[] | null;
 }
 
-export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker";
+export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker" | "Retrospective";
 
 export interface TaskComment {
   id: string;

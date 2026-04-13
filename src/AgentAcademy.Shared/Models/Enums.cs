@@ -111,7 +111,8 @@ public enum TaskCommentType
     Comment,
     Finding,
     Evidence,
-    Blocker
+    Blocker,
+    Retrospective
 }
 
 /// <summary>
@@ -219,7 +220,8 @@ public enum ActivityEventType
     SprintArtifactStored,
     SprintCompleted,
     SprintCancelled,
-    TaskUnblocked
+    TaskUnblocked,
+    TaskRetrospectiveCompleted
 }
 
 /// <summary>

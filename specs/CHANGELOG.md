@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **008-agent-memory**: Post-task retrospectives. `RetrospectiveService` (singleton) runs an automated retrospective after every `MERGE_TASK`. Assigned agent reflects on the completed task with restricted permissions (REMEMBER only, no tools), stores 2-5 learnings as memories, and produces a summary saved as a `TaskCommentType.Retrospective` comment. Fire-and-forget from `MergeTaskHandler` with `Task.Run`. Synthetic session (`retrospective:{taskId}`) with guaranteed cleanup via `finally` block. Context includes task metrics (cycle time, review rounds, commit count), latest 20 review messages (descending fetch, chronological display), and notable task comments. Idempotency guard skips if retrospective comment exists. `ActivityEventType.TaskRetrospectiveCompleted` published on completion. Frontend: `TaskCommentType` union updated with `"Retrospective"`, badge color `"info"`, `ActivityEventType` union updated with `"TaskRetrospectiveCompleted"`. 24 new tests (4302 total).
+
+### Previous
 - **007-agent-commands**: `LIST_AGENT_STATS` command. Per-agent task effectiveness metrics (completion rate, cycle time, review rounds, first-pass approval rate, rework rate, commits per task) with overview totals. Filters by `agentId` (name or ID, case-insensitive) and `hoursBack` (1-8760). Read-only, retry-safe, auto-authorized via `LIST_*` wildcard. Added to `HumanCommandRegistry` (analytics category) and `CommandController` allowlist. Planner prompt updated with `LIST_AGENT_STATS` documentation for data-driven task assignments. 16 new tests (4278 total).
 
 ### Fixed

@@ -179,7 +179,7 @@ internal sealed class TaskWriteToolWrapper
         if (!string.IsNullOrWhiteSpace(commentType) &&
             !Enum.TryParse<TaskCommentType>(commentType, ignoreCase: true, out parsedType))
         {
-            return $"Error: Invalid comment type '{commentType}'. Valid: Comment, Finding, Evidence, Blocker";
+            return $"Error: Invalid comment type '{commentType}'. Valid: Comment, Finding, Evidence, Blocker, Retrospective";
         }
 
         using var scope = _scopeFactory.CreateScope();

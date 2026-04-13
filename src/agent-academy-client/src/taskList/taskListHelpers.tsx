@@ -81,6 +81,7 @@ export function commentTypeBadge(type: TaskCommentType): BadgeColor {
     case "Finding":  return "warn";
     case "Blocker":  return "err";
     case "Evidence": return "ok";
+    case "Retrospective": return "info";
     case "Comment": default: return "muted";
   }
 }
