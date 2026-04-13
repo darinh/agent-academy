@@ -247,6 +247,18 @@ The `GENERATE_DIGEST` command wraps `LearningDigestService.TryGenerateDigestAsyn
 
 **Not retry-safe:** Digest generation runs the planner agent and creates persistent state. Not idempotent.
 
+### REST API
+
+> **Status: Implemented** — Read-only REST endpoints for digest history at `/api/digests`.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/digests` | GET | Paginated digest list. Query params: `status` (Pending/Completed/Failed), `limit` (1-100, default 20), `offset` (default 0). Returns `{ digests, total, limit, offset }`. |
+| `/api/digests/{id}` | GET | Single digest with source retrospective details. Returns digest fields + `sources[]` (commentId, taskId, agentId, content, createdAt). Returns 404 if not found. |
+| `/api/digests/stats` | GET | Aggregate statistics: totalDigests, byStatus, totalMemoriesCreated, totalRetrospectivesProcessed, undigestedRetrospectives, lastCompletedAt. Undigested count excludes retrospectives claimed by Completed digests only (Failed digest claims don't count). |
+
+All endpoints require authentication. Status filter is case-insensitive; invalid values return 400.
+
 ### Data Model
 
 ```
@@ -274,6 +286,8 @@ learning_digest_sources
 | `src/AgentAcademy.Server/Commands/Handlers/GenerateDigestHandler.cs` | `GENERATE_DIGEST` command handler |
 | `tests/AgentAcademy.Server.Tests/LearningDigestServiceTests.cs` | 19 tests |
 | `tests/AgentAcademy.Server.Tests/GenerateDigestHandlerTests.cs` | 12 tests |
+| `src/AgentAcademy.Server/Controllers/DigestController.cs` | REST endpoints for digest history |
+| `tests/AgentAcademy.Server.Tests/DigestControllerTests.cs` | 18 tests |
 
 ## Known Gaps
 
