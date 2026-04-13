@@ -719,6 +719,7 @@ Alerts the human operator via the browser Notification API when the tab is hidde
 | `SprintCompleted` | "Sprint completed" |
 | `SprintCancelled` | "Sprint cancelled" |
 | `TaskCreated` | "Task created" |
+| `TaskUnblocked` | "Task unblocked" |
 
 ### Integration
 
