@@ -28,6 +28,8 @@ const mockGetTaskComments = vi.fn();
 const mockGetTaskSpecLinks = vi.fn();
 const mockGetTaskDependencies = vi.fn();
 const mockAssignTask = vi.fn();
+const mockBulkUpdateStatus = vi.fn();
+const mockBulkAssign = vi.fn();
 
 vi.mock("../api", () => ({
   executeCommand: (...args: unknown[]) => mockExecuteCommand(...args),
@@ -35,6 +37,8 @@ vi.mock("../api", () => ({
   getTaskSpecLinks: (...args: unknown[]) => mockGetTaskSpecLinks(...args),
   getTaskDependencies: (...args: unknown[]) => mockGetTaskDependencies(...args),
   assignTask: (...args: unknown[]) => mockAssignTask(...args),
+  bulkUpdateStatus: (...args: unknown[]) => mockBulkUpdateStatus(...args),
+  bulkAssign: (...args: unknown[]) => mockBulkAssign(...args),
 }));
 
 vi.mock("../V3Badge", () => ({
@@ -288,10 +292,14 @@ describe("TaskListPanel (interactive)", () => {
       makeTask({ id: "f5", status: "Approved", title: "Approved Task", updatedAt: "2026-04-01T08:00:00Z" }),
     ];
 
-    // Filter chips are <button> elements; status badges are <span>s from V3Badge mock.
-    // Use getByRole("button") to target filter chips exclusively.
+    // Filter chips are <button> elements in the filter bar; status badges are <span>s from V3Badge mock.
+    // Checkbox buttons have names starting with "Select" or "Deselect" — exclude them.
     function filterBtn(name: RegExp) {
-      return screen.getByRole("button", { name });
+      const buttons = screen.getAllByRole("button", { name });
+      const chip = buttons.find(b => !b.getAttribute("aria-label")?.startsWith("Select")
+        && !b.getAttribute("aria-label")?.startsWith("Deselect"));
+      if (!chip) throw new Error(`No filter chip button matching ${name}`);
+      return chip;
     }
 
     it("renders all four filter chips", () => {
@@ -1339,6 +1347,182 @@ describe("TaskListPanel (interactive)", () => {
       renderPanel({ tasks });
       expect(screen.getByText("Task 0")).toBeInTheDocument();
       expect(screen.getByText("Task 29")).toBeInTheDocument();
+    });
+  });
+
+  // ── Bulk operations ──────────────────────────────────────────────────
+
+  describe("bulk operations", () => {
+    const multiTasks = [
+      makeTask({ id: "t1", title: "Task Alpha", status: "Active", updatedAt: "2026-04-01T10:00:00Z" }),
+      makeTask({ id: "t2", title: "Task Beta", status: "Queued", updatedAt: "2026-04-01T11:00:00Z" }),
+      makeTask({ id: "t3", title: "Task Gamma", status: "InReview", updatedAt: "2026-04-01T12:00:00Z" }),
+    ];
+
+    it("shows checkboxes on task cards", () => {
+      renderPanel({ tasks: multiTasks });
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      expect(checkboxes.length).toBe(3);
+    });
+
+    it("toggles selection on checkbox click", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+    });
+
+    it("shows bulk action bar when tasks are selected", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      await user.click(checkboxes[1]);
+
+      expect(screen.getByText("2 selected")).toBeInTheDocument();
+      expect(screen.getByText("Set status…")).toBeInTheDocument();
+    });
+
+    it("select all / deselect all toggles", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const selectAll = screen.getByText("Select all");
+      await user.click(selectAll);
+      expect(screen.getByText("3 selected")).toBeInTheDocument();
+
+      const deselectAll = screen.getByText("Deselect all");
+      await user.click(deselectAll);
+      expect(screen.queryByText("3 selected")).not.toBeInTheDocument();
+    });
+
+    it("clears selection on Escape", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+    });
+
+    it("clears selection via Clear button", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+      await user.click(screen.getByText("Clear"));
+      expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+    });
+
+    it("calls bulkUpdateStatus and shows result", async () => {
+      const user = userEvent.setup();
+      const onRefresh = vi.fn();
+      mockBulkUpdateStatus.mockResolvedValueOnce({
+        requested: 2, succeeded: 2, failed: 0,
+        updated: multiTasks.slice(0, 2), errors: [],
+      });
+
+      renderPanel({ tasks: multiTasks, onRefresh });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      await user.click(checkboxes[1]);
+
+      // Use the status dropdown
+      const statusSelect = screen.getByDisplayValue("Set status…");
+      fireEvent.change(statusSelect, { target: { value: "Blocked" } });
+
+      await waitFor(() => {
+        expect(mockBulkUpdateStatus).toHaveBeenCalledWith(
+          expect.arrayContaining(["t3", "t2"]),
+          "Blocked",
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/2 updated/)).toBeInTheDocument();
+      });
+
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it("calls bulkAssign with selected agent", async () => {
+      const user = userEvent.setup();
+      const onRefresh = vi.fn();
+      const agents = [
+        makeAgent({ id: "a1", name: "Agent One" }),
+        makeAgent({ id: "a2", name: "Agent Two" }),
+      ];
+
+      mockBulkAssign.mockResolvedValueOnce({
+        requested: 1, succeeded: 1, failed: 0,
+        updated: [multiTasks[0]], errors: [],
+      });
+
+      renderPanel({ tasks: multiTasks, onRefresh, agents });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+
+      const assignSelect = screen.getByDisplayValue("Assign to…");
+      fireEvent.change(assignSelect, { target: { value: "a1" } });
+
+      await waitFor(() => {
+        expect(mockBulkAssign).toHaveBeenCalledWith(
+          expect.arrayContaining(["t3"]),
+          "a1",
+          "Agent One",
+        );
+      });
+
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it("keeps failed tasks selected after partial failure", async () => {
+      const user = userEvent.setup();
+      mockBulkUpdateStatus.mockResolvedValueOnce({
+        requested: 2, succeeded: 1, failed: 1,
+        updated: [multiTasks[0]],
+        errors: [{ taskId: "t2", code: "VALIDATION", error: "Dependency blocked" }],
+      });
+
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      await user.click(checkboxes[1]);
+
+      const statusSelect = screen.getByDisplayValue("Set status…");
+      fireEvent.change(statusSelect, { target: { value: "Active" } });
+
+      await waitFor(() => {
+        expect(screen.getByText(/1 updated.*1 failed/)).toBeInTheDocument();
+      });
+
+      // Only the failed task should remain selected
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+    });
+
+    it("checkbox click does not expand task card", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+
+      // Card should not expand — no detail section visible
+      expect(screen.queryByText("Description")).not.toBeInTheDocument();
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
     });
   });
 });

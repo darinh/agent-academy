@@ -356,6 +356,22 @@ export interface TaskDependencyInfo {
   dependedOnBy: TaskDependencySummary[];
 }
 
+// ── Bulk Operations ────────────────────────────────────────────────────
+
+export interface BulkOperationResult {
+  requested: number;
+  succeeded: number;
+  failed: number;
+  updated: TaskSnapshot[];
+  errors: BulkOperationError[];
+}
+
+export interface BulkOperationError {
+  taskId: string;
+  code: string;
+  error: string;
+}
+
 export type EvidencePhase = "Baseline" | "After" | "Review";
 
 export interface EvidenceRow {

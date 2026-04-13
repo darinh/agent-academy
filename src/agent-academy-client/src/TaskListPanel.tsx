@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   makeStyles,
   mergeClasses,
@@ -8,12 +8,15 @@ import {
   TaskListLtrRegular,
   ChevronDownRegular,
   ChevronRightRegular,
+  CheckmarkRegular,
+  DismissRegular,
 } from "@fluentui/react-icons";
 import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
 import SkeletonLoader from "./SkeletonLoader";
 import { formatElapsed } from "./panelUtils";
-import type { TaskSnapshot, AgentDefinition } from "./api";
+import type { TaskSnapshot, AgentDefinition, TaskStatus, BulkOperationResult } from "./api";
+import { bulkUpdateStatus, bulkAssign } from "./api";
 import V3Badge from "./V3Badge";
 import {
   TaskDetail,
@@ -125,7 +128,101 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     color: "var(--aa-soft)",
   },
+  checkbox: {
+    width: "16px",
+    height: "16px",
+    ...shorthands.borderRadius("3px"),
+    border: "1.5px solid var(--aa-border-strong)",
+    background: "transparent",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    transitionProperty: "background, border-color",
+    transitionDuration: "0.15s",
+    ":hover": {
+      ...shorthands.borderColor("rgba(91, 141, 239, 0.6)"),
+    },
+  },
+  checkboxChecked: {
+    background: "rgba(91, 141, 239, 0.8)",
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.8)"),
+  },
+  cardSelected: {
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.4)"),
+    background: "rgba(91, 141, 239, 0.05)",
+  },
+  bulkBar: {
+    position: "sticky",
+    bottom: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    ...shorthands.padding("10px", "14px"),
+    ...shorthands.borderRadius("8px"),
+    background: "var(--aa-panel)",
+    border: "1px solid rgba(91, 141, 239, 0.3)",
+    boxShadow: "0 -2px 12px rgba(0,0,0,0.3)",
+    marginTop: "8px",
+    flexWrap: "wrap",
+  },
+  bulkCount: {
+    fontSize: "12px",
+    fontWeight: 600,
+    color: "var(--aa-text-strong)",
+    whiteSpace: "nowrap",
+  },
+  bulkSelect: {
+    fontSize: "11px",
+    ...shorthands.padding("4px", "8px"),
+    ...shorthands.borderRadius("4px"),
+    background: "transparent",
+    border: "1px solid var(--aa-border)",
+    color: "var(--aa-text-strong)",
+    cursor: "pointer",
+  },
+  bulkBtn: {
+    fontSize: "11px",
+    fontWeight: 600,
+    ...shorthands.padding("5px", "10px"),
+    ...shorthands.borderRadius("4px"),
+    background: "rgba(91, 141, 239, 0.15)",
+    border: "1px solid rgba(91, 141, 239, 0.3)",
+    color: "var(--aa-text-strong)",
+    cursor: "pointer",
+    ":hover": {
+      background: "rgba(91, 141, 239, 0.25)",
+    },
+    ":disabled": {
+      opacity: 0.4,
+      cursor: "default",
+    },
+  },
+  bulkClear: {
+    marginLeft: "auto",
+    fontSize: "11px",
+    ...shorthands.padding("4px", "8px"),
+    ...shorthands.borderRadius("4px"),
+    background: "transparent",
+    border: "1px solid var(--aa-border)",
+    color: "var(--aa-soft)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+  },
+  bulkResult: {
+    fontSize: "11px",
+    color: "var(--aa-soft)",
+  },
 });
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+const BULK_SAFE_STATUSES: TaskStatus[] = [
+  "Queued", "Active", "Blocked", "AwaitingValidation", "InReview",
+];
 
 // ── Main Component ──────────────────────────────────────────────────────
 
@@ -143,6 +240,10 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sprintOnly, setSprintOnly] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkOperationResult | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const baseTasks = sprintOnly && activeSprintId
     ? tasks.filter((t) => t.sprintId === activeSprintId)
@@ -151,6 +252,89 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
   const sortedTasks = [...filterTasks(baseTasks, filter)].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
+
+  const visibleIds = new Set(sortedTasks.map((t) => t.id));
+
+  // Prune selection when filter or task list changes (remove hidden/deleted tasks)
+  const visibleIdKey = sortedTasks.map((t) => t.id).join(",");
+  useEffect(() => {
+    setSelected((prev) => {
+      const pruned = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return pruned.size === prev.size ? prev : pruned;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, sprintOnly, activeSprintId, visibleIdKey]);
+
+  // Escape to clear selection (only when no input is focused)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selected.size > 0) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        setSelected(new Set());
+        setBulkResult(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selected.size]);
+
+  const toggleSelect = useCallback((taskId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+    setBulkResult(null);
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelected(new Set(sortedTasks.map((t) => t.id)));
+    setBulkResult(null);
+  }, [sortedTasks]);
+
+  const clearSelection = useCallback(() => {
+    setSelected(new Set());
+    setBulkResult(null);
+  }, []);
+
+  const handleBulkStatus = useCallback(async (status: TaskStatus) => {
+    if (selected.size === 0) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    setBulkError(null);
+    try {
+      const result = await bulkUpdateStatus([...selected], status);
+      setBulkResult(result);
+      // Remove successfully updated tasks from selection
+      const failedIds = new Set(result.errors.map((e) => e.taskId));
+      setSelected(failedIds);
+      onRefresh?.();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Bulk status update failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selected, onRefresh]);
+
+  const handleBulkAssign = useCallback(async (agentId: string, agentName: string) => {
+    if (selected.size === 0) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    setBulkError(null);
+    try {
+      const result = await bulkAssign([...selected], agentId, agentName);
+      setBulkResult(result);
+      const failedIds = new Set(result.errors.map((e) => e.taskId));
+      setSelected(failedIds);
+      onRefresh?.();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Bulk assign failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selected, onRefresh]);
 
   const handleRefresh = useCallback(() => {
     onRefresh?.();
@@ -209,6 +393,17 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
             </button>
           </>
         )}
+        {sortedTasks.length > 0 && (
+          <>
+            <span style={{ borderLeft: "1px solid #333", height: "16px", margin: "0 4px" }} />
+            <button
+              className={s.filterChip}
+              onClick={() => selected.size === sortedTasks.length ? clearSelection() : selectAllVisible()}
+            >
+              {selected.size === sortedTasks.length && sortedTasks.length > 0 ? "Deselect all" : "Select all"}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Task list */}
@@ -220,13 +415,28 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
 
       {sortedTasks.map((task) => {
         const isExpanded = expandedId === task.id;
+        const isSelected = selected.has(task.id);
         return (
           <div
             key={task.id}
-            className={mergeClasses(s.card, isExpanded && s.cardExpanded)}
+            className={mergeClasses(
+              s.card,
+              isExpanded && s.cardExpanded,
+              isSelected && !isExpanded && s.cardSelected,
+            )}
             onClick={() => !isExpanded && setExpandedId(task.id)}
           >
             <div className={s.cardHeader}>
+              <button
+                className={mergeClasses(s.checkbox, isSelected && s.checkboxChecked)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSelect(task.id);
+                }}
+                aria-label={isSelected ? `Deselect ${task.title}` : `Select ${task.title}`}
+              >
+                {isSelected && <CheckmarkRegular fontSize={11} style={{ color: "#fff" }} />}
+              </button>
               <span
                 className={s.cardTitle}
                 onClick={(e) => {
@@ -276,6 +486,71 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
           </div>
         );
       })}
+
+      {/* Bulk action bar */}
+      {(selected.size > 0 || bulkResult !== null || bulkError !== null) && (
+        <div className={s.bulkBar}>
+          {selected.size > 0 && (
+            <span className={s.bulkCount}>{selected.size} selected</span>
+          )}
+
+          {selected.size > 0 && (
+            <select
+              className={s.bulkSelect}
+              defaultValue=""
+              disabled={bulkBusy}
+              onChange={(e) => {
+                if (e.target.value) handleBulkStatus(e.target.value as TaskStatus);
+                e.target.value = "";
+              }}
+            >
+              <option value="" disabled>Set status…</option>
+              {BULK_SAFE_STATUSES.map((st) => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
+          )}
+
+          {selected.size > 0 && agents.length > 0 && (
+            <select
+              className={s.bulkSelect}
+              defaultValue=""
+              disabled={bulkBusy}
+              onChange={(e) => {
+                const agent = agents.find((a) => a.id === e.target.value);
+                if (agent) handleBulkAssign(agent.id, agent.name);
+                e.target.value = "";
+              }}
+            >
+              <option value="" disabled>Assign to…</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          )}
+
+          {bulkResult && (
+            <span className={s.bulkResult}>
+              ✓ {bulkResult.succeeded} updated
+              {bulkResult.failed > 0 && `, ${bulkResult.failed} failed`}
+            </span>
+          )}
+
+          {bulkError && (
+            <span className={s.bulkResult} style={{ color: "var(--aa-err, #f44)" }}>
+              ✗ {bulkError}
+            </span>
+          )}
+
+          <button
+            className={s.bulkClear}
+            onClick={() => { clearSelection(); setBulkResult(null); setBulkError(null); }}
+            disabled={bulkBusy}
+          >
+            <DismissRegular fontSize={11} /> {(bulkResult || bulkError) && selected.size === 0 ? "Dismiss" : "Clear"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

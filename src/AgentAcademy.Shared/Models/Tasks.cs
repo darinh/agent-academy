@@ -165,3 +165,36 @@ public record TaskDependencySummary(
     TaskStatus Status,
     bool IsSatisfied
 );
+
+// ── Bulk Operation Models ───────────────────────────────────────────
+
+/// <summary>
+/// Request to update the status of multiple tasks at once.
+/// Only safe statuses allowed: Queued, Active, Blocked, AwaitingValidation, InReview.
+/// </summary>
+public record BulkUpdateStatusRequest(
+    [property: Required, MinLength(1)] List<string> TaskIds,
+    [property: Required] TaskStatus Status);
+
+/// <summary>
+/// Request to assign multiple tasks to a single agent.
+/// </summary>
+public record BulkAssignRequest(
+    [property: Required, MinLength(1)] List<string> TaskIds,
+    [property: Required, StringLength(100, MinimumLength = 1)] string AgentId,
+    [property: StringLength(200)] string? AgentName = null);
+
+/// <summary>
+/// Result of a bulk task operation. Contains successfully updated tasks and per-item errors.
+/// </summary>
+public record BulkOperationResult(
+    int Requested,
+    int Succeeded,
+    int Failed,
+    List<TaskSnapshot> Updated,
+    List<BulkOperationError> Errors);
+
+/// <summary>
+/// Per-task error from a bulk operation.
+/// </summary>
+public record BulkOperationError(string TaskId, string Code, string Error);
