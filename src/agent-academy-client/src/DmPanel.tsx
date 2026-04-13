@@ -23,6 +23,7 @@ import {
   sendDmToAgent,
 } from "./api";
 import { DmMessageBubble, useDmPanelStyles } from "./dm";
+import { useMessageSSE } from "./useMessageSSE";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     };
   }, [readOnly, refreshThreads]);
 
-  // Load messages when thread selected
+  // Load messages when thread selected (initial fetch only — SSE handles live updates)
   const refreshMessages = useCallback(async (agentId: string) => {
     try {
       const data = await getDmThreadMessages(agentId);
@@ -101,16 +102,34 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     }
   }, []);
 
+  // SSE live message stream
+  const handleSseMessage = useCallback((msg: DmMessage) => {
+    setMessages((prev) => {
+      // Deduplicate: at-least-once delivery means we may see messages
+      // that were already fetched in the initial REST load.
+      if (prev.some((m) => m.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
+    // Refresh thread list sidebar so lastMessage/timestamp update
+    void refreshThreads();
+  }, [refreshThreads]);
+
+  const handleResync = useCallback(() => {
+    // Channel overflow — do a full reload of the current thread
+    if (selectedAgentId) void refreshMessages(selectedAgentId);
+  }, [selectedAgentId, refreshMessages]);
+
+  useMessageSSE(
+    selectedAgentId,
+    handleSseMessage,
+    handleResync,
+    !readOnly,
+  );
+
   useEffect(() => {
     if (!selectedAgentId) return;
     void refreshMessages(selectedAgentId);
-    if (readOnly) {
-      return;
-    }
-
-    const interval = setInterval(() => void refreshMessages(selectedAgentId), 3000);
-    return () => clearInterval(interval);
-  }, [readOnly, selectedAgentId, refreshMessages]);
+  }, [selectedAgentId, refreshMessages]);
 
   // Auto-scroll
   useEffect(() => {
