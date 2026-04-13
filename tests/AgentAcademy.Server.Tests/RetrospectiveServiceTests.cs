@@ -487,6 +487,128 @@ public class RetrospectiveServiceTests : IDisposable
         await _executor.Received(1).InvalidateSessionAsync("engineer-1", $"retrospective:{taskId}");
     }
 
+    // ── Edge-case tests (test backfill) ────────────────────────
+
+    [Fact]
+    public async Task RunRetrospective_WhitespaceAgentId_SkipsSilently()
+    {
+        await _service.RunRetrospectiveAsync("some-task", "   ");
+        await _executor.DidNotReceive().RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunRetrospective_OnlyRememberCommands_NoCommentSaved()
+    {
+        var taskId = await CreateTestTask();
+
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns("""
+                REMEMBER:
+                  category: lesson
+                  key: edge-case-only-commands
+                  value: Testing that only-command responses produce no comment.
+                """);
+
+        await _service.RunRetrospectiveAsync(taskId, "engineer-1");
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        // Memory should be stored
+        var memory = await db.AgentMemories
+            .FirstOrDefaultAsync(m => m.Key == "edge-case-only-commands");
+        Assert.NotNull(memory);
+
+        // But no comment should be saved (only whitespace remains after command stripping)
+        var commentCount = await db.TaskComments
+            .CountAsync(c => c.TaskId == taskId && c.CommentType == nameof(TaskCommentType.Retrospective));
+        Assert.Equal(0, commentCount);
+    }
+
+    [Fact]
+    public async Task RunRetrospective_OnlyRememberCommands_StillInvalidatesSession()
+    {
+        var taskId = await CreateTestTask();
+
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns("""
+                REMEMBER:
+                  category: lesson
+                  key: session-invalidation-test
+                  value: Testing session invalidation on command-only response.
+                """);
+
+        await _service.RunRetrospectiveAsync(taskId, "engineer-1");
+
+        await _executor.Received(1).InvalidateSessionAsync("engineer-1", $"retrospective:{taskId}");
+    }
+
+    [Fact]
+    public async Task RunRetrospective_MultipleRememberCommands_AllProcessed()
+    {
+        var taskId = await CreateTestTask();
+
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns("""
+                REMEMBER:
+                  category: lesson
+                  key: multi-remember-first
+                  value: First learning from retrospective.
+
+                REMEMBER:
+                  category: gotcha
+                  key: multi-remember-second
+                  value: Second learning — a gotcha discovered.
+
+                The retrospective revealed two key insights.
+                """);
+
+        await _service.RunRetrospectiveAsync(taskId, "engineer-1");
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var memories = await db.AgentMemories
+            .Where(m => m.AgentId == "engineer-1" && m.Key.StartsWith("multi-remember"))
+            .ToListAsync();
+
+        Assert.Equal(2, memories.Count);
+    }
+
+    [Fact]
+    public async Task RunRetrospective_NonRetroComments_DoNotBlockNew()
+    {
+        var taskId = await CreateTestTask();
+
+        // Pre-seed a non-retrospective comment (Finding type)
+        await AddTaskComment(taskId, "Finding", "Some finding comment");
+
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns("Retrospective summary here.");
+
+        await _service.RunRetrospectiveAsync(taskId, "engineer-1");
+
+        // Should have called executor (Finding comment doesn't block retrospective)
+        await _executor.Received(1).RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<CancellationToken>());
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var retroComment = await db.TaskComments
+            .FirstOrDefaultAsync(c => c.TaskId == taskId && c.CommentType == nameof(TaskCommentType.Retrospective));
+        Assert.NotNull(retroComment);
+    }
+
     // ── Context Gathering Tests ─────────────────────────────────
 
     [Fact]
@@ -532,6 +654,130 @@ public class RetrospectiveServiceTests : IDisposable
     {
         var context = await _service.GatherRetrospectiveContextAsync("nonexistent");
         Assert.Null(context);
+    }
+
+    [Fact]
+    public async Task GatherContext_NullRoomId_NoReviewMessages()
+    {
+        // Create task with no RoomId
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-no-room",
+                Title = "No room task",
+                Description = "Test task without room",
+                Status = nameof(TaskStatus.Completed),
+                Type = nameof(TaskType.Feature),
+                AssignedAgentId = "engineer-1",
+                RoomId = null,
+                CreatedAt = DateTime.UtcNow.AddHours(-2),
+                StartedAt = DateTime.UtcNow.AddHours(-1),
+                CompletedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var context = await _service.GatherRetrospectiveContextAsync("task-no-room");
+
+        Assert.NotNull(context);
+        Assert.Empty(context.ReviewMessages);
+    }
+
+    [Fact]
+    public async Task GatherContext_ManyReviewMessages_CapsAt20()
+    {
+        var taskId = await CreateTestTask();
+
+        // Seed 25 review messages
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var task = await db.Tasks.FindAsync(taskId);
+
+            for (int i = 0; i < 25; i++)
+            {
+                db.Messages.Add(new MessageEntity
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    RoomId = task!.RoomId!,
+                    SenderId = "reviewer-1",
+                    SenderName = "Socrates",
+                    SenderKind = nameof(MessageSenderKind.Agent),
+                    Kind = nameof(MessageKind.Review),
+                    Content = $"Review message {i:D2}",
+                    SentAt = DateTime.UtcNow.AddMinutes(-25 + i)
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var context = await _service.GatherRetrospectiveContextAsync(taskId);
+
+        Assert.NotNull(context);
+        Assert.Equal(20, context.ReviewMessages.Count);
+        // Should be in chronological order (earliest first after reverse)
+        Assert.Contains("05", context.ReviewMessages[0].Content);
+    }
+
+    [Fact]
+    public async Task GatherContext_NoCompletedAt_NullCycleTime()
+    {
+        // Create task with StartedAt but no CompletedAt
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-no-completed",
+                Title = "Still in progress",
+                Description = "Not completed yet",
+                Status = nameof(TaskStatus.Active),
+                Type = nameof(TaskType.Feature),
+                AssignedAgentId = "engineer-1",
+                CreatedAt = DateTime.UtcNow.AddHours(-2),
+                StartedAt = DateTime.UtcNow.AddHours(-1),
+                CompletedAt = null,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var context = await _service.GatherRetrospectiveContextAsync("task-no-completed");
+
+        Assert.NotNull(context);
+        Assert.Null(context.CycleTime);
+    }
+
+    [Fact]
+    public async Task GatherContext_NoStartedAt_NullCycleTime()
+    {
+        // Create task with CompletedAt but no StartedAt
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-no-started",
+                Title = "Never started",
+                Description = "Completed but no start time",
+                Status = nameof(TaskStatus.Completed),
+                Type = nameof(TaskType.Feature),
+                AssignedAgentId = "engineer-1",
+                CreatedAt = DateTime.UtcNow.AddHours(-2),
+                StartedAt = null,
+                CompletedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var context = await _service.GatherRetrospectiveContextAsync("task-no-started");
+
+        Assert.NotNull(context);
+        Assert.Null(context.CycleTime);
     }
 
     // ── Prompt Tests ────────────────────────────────────────────
