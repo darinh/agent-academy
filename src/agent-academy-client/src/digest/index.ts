@@ -1,0 +1,1 @@
+export { useDigestPanelStyles } from "./digestPanelStyles";

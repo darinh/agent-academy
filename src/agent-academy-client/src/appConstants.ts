@@ -15,6 +15,7 @@ export const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   directMessages: { title: "Direct Messages", meta: "" },
   search: { title: "Search", meta: "Find messages & tasks" },
   memories: { title: "Agent Memory", meta: "Knowledge base" },
+  digests: { title: "Learning Digests", meta: "Knowledge synthesis" },
 };
 
 export const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([

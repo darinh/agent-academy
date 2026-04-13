@@ -30,6 +30,7 @@ const NAV_ITEMS = [
   { value: "dashboard", icon: "📊", label: "Metrics" },
   { value: "commands", icon: "⌨️", label: "Commands" },
   { value: "memories", icon: "🧠", label: "Memory" },
+  { value: "digests", icon: "📚", label: "Digests" },
 ] as const;
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */
