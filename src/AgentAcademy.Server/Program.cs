@@ -7,7 +7,9 @@ using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +43,42 @@ builder.Services.AddAppAuthentication(authSetup);
 
 // Flag for controllers to check
 builder.Services.AddSingleton(new GitHubAuthOptions(authSetup.GitHubAuthEnabled, authSetup.GitHubFrontendUrl));
+
+// Consultant rate limiting — sliding window per HTTP method class
+var consultantRateLimits = builder.Configuration
+    .GetSection(ConsultantRateLimitSettings.SectionName)
+    .Get<ConsultantRateLimitSettings>() ?? new();
+
+if (authSetup.ConsultantAuthEnabled && consultantRateLimits.Enabled)
+{
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.GlobalLimiter = ConsultantRateLimitExtensions
+            .CreateConsultantRateLimiter(consultantRateLimits);
+
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        options.OnRejected = async (ctx, cancellationToken) =>
+        {
+            ctx.HttpContext.Response.ContentType = "application/problem+json";
+
+            var retryAfter = ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue)
+                ? retryAfterValue
+                : TimeSpan.FromSeconds(10);
+
+            ctx.HttpContext.Response.Headers.RetryAfter =
+                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+
+            await ctx.HttpContext.Response.WriteAsJsonAsync(new
+            {
+                type = "https://tools.ietf.org/html/rfc6585#section-4",
+                title = "Rate limit exceeded",
+                status = 429,
+                detail = $"Too many requests. Try again in {(int)Math.Ceiling(retryAfter.TotalSeconds)} seconds.",
+            }, cancellationToken);
+        };
+    });
+}
+builder.Services.AddSingleton(consultantRateLimits);
 
 // Database
 builder.Services.AddDbContext<AgentAcademyDbContext>(options =>
@@ -234,6 +272,12 @@ app.UseCors();
 if (authSetup.AnyAuthEnabled)
 {
     app.UseAuthentication();
+
+    if (authSetup.ConsultantAuthEnabled && consultantRateLimits.Enabled)
+    {
+        app.UseRateLimiter();
+    }
+
     app.UseAuthorization();
 }
 

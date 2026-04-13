@@ -357,6 +357,52 @@ This handles:
 - Multi-round conversations (orchestrator chains rounds)
 - Agent silence (no response = pass, handled by timeout)
 
+## Rate Limiting
+
+> **Source**: `src/AgentAcademy.Server/Auth/ConsultantRateLimitExtensions.cs`, `src/AgentAcademy.Server/Auth/ConsultantRateLimitSettings.cs`
+
+Prevents the consultant from overwhelming agents with rapid-fire requests. Uses ASP.NET Core's built-in `AddRateLimiter()` with a global `PartitionedRateLimiter`.
+
+### Behavior
+
+- **Only consultant requests are rate-limited.** Regular users (cookie auth) and anonymous requests pass through with no limit. The partitioner checks `User.IsInRole("Consultant")`.
+- **Separate buckets for reads and writes.** Exhausting the write limit does not affect read requests, and vice versa.
+- **Sliding window algorithm** with configurable segments for smooth rate enforcement.
+- **429 response** on rejection with `Retry-After` header (seconds) and JSON body:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc6585#section-4",
+  "title": "Rate limit exceeded",
+  "status": 429,
+  "detail": "Too many requests. Try again in {N} seconds."
+}
+```
+
+### Configuration
+
+`ConsultantApi:RateLimiting` section in `appsettings.json`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Enabled` | `true` | Enable/disable rate limiting (only applies when consultant auth is configured) |
+| `WritePermitLimit` | `20` | Max POST/PUT/DELETE/PATCH requests per window |
+| `ReadPermitLimit` | `60` | Max GET/HEAD/OPTIONS requests per window |
+| `WindowSeconds` | `60` | Sliding window duration |
+| `SegmentsPerWindow` | `6` | Segments for sliding window granularity |
+
+### Middleware Ordering
+
+Rate limiting is placed between authentication and authorization:
+
+```
+UseAuthentication() → UseRateLimiter() → UseAuthorization()
+```
+
+This ensures user claims are available for the role check, and rate-limited requests are rejected before authorization evaluation.
+
+> **Tests**: `ConsultantRateLimitTests` (15 tests — defaults, config binding, write/read limits, separate buckets, method classification, non-consultant passthrough, anonymous passthrough, rejection behavior).
+
 ## Risk Assessment
 
 | Component | Risk | Rationale |
@@ -372,5 +418,5 @@ This handles:
 - **OAuth2 provider**: Replace shared secret with Entra ID or similar. The auth scheme abstraction makes this a swap.
 - **WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.
 - ~~**Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.~~ — **Resolved**: Consultant messages now carry `SenderRole = "Consultant"` (derived from `User.IsInRole("Consultant")` claim). Frontend renders a copper-colored "Consultant" role pill in ChatPanel and SearchPanel. DmPanel shows consultant label + distinct bubble styling. DM service includes consultant messages in the human inbox via `HumanSideSenderIds` array. `DmMessage` model includes `SenderRole` field.
-- **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages.
+- **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages. **Resolved**: ASP.NET Core built-in rate limiting middleware with `PartitionedRateLimiter`. Separate sliding window buckets for write operations (POST/PUT/DELETE/PATCH: 20/min default) and read operations (GET/HEAD/OPTIONS: 60/min default). Only applies to consultant-authenticated requests — regular users and cookie-auth pass through unthrottled. Returns 429 with `Retry-After` header and ProblemDetails-style JSON body. Configurable via `ConsultantApi:RateLimiting` section (`Enabled`, `WritePermitLimit`, `ReadPermitLimit`, `WindowSeconds`, `SegmentsPerWindow`). Middleware placed between `UseAuthentication()` and `UseAuthorization()` so user claims are available for role check. 15 tests.
 - ~~**Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records.~~ — **Resolved** (implemented previously).
