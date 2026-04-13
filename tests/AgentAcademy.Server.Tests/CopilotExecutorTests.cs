@@ -57,60 +57,7 @@ public class CopilotExceptionTests
     }
 }
 
-public class CopilotTokenProviderTests
-{
-    [Fact]
-    public void Token_IsNull_Initially()
-    {
-        var provider = new CopilotTokenProvider();
-        Assert.Null(provider.Token);
-        Assert.Null(provider.TokenSetAt);
-    }
-
-    [Fact]
-    public void SetToken_StoresTokenAndTimestamp()
-    {
-        var provider = new CopilotTokenProvider();
-        var before = DateTime.UtcNow;
-
-        provider.SetToken("gho_abc123");
-
-        Assert.Equal("gho_abc123", provider.Token);
-        Assert.NotNull(provider.TokenSetAt);
-        Assert.True(provider.TokenSetAt >= before);
-        Assert.True(provider.TokenSetAt <= DateTime.UtcNow);
-    }
-
-    [Fact]
-    public void ClearToken_ClearsTokenAndTimestamp()
-    {
-        var provider = new CopilotTokenProvider();
-        provider.SetToken("gho_abc123");
-
-        provider.ClearToken();
-
-        Assert.Null(provider.Token);
-        Assert.Null(provider.TokenSetAt);
-    }
-
-    [Fact]
-    public void SetToken_UpdatesTimestamp_OnSubsequentCalls()
-    {
-        var provider = new CopilotTokenProvider();
-
-        provider.SetToken("token1");
-        var firstSetAt = provider.TokenSetAt;
-
-        // Small delay to ensure timestamp changes
-        Thread.Sleep(10);
-
-        provider.SetToken("token2");
-        var secondSetAt = provider.TokenSetAt;
-
-        Assert.Equal("token2", provider.Token);
-        Assert.True(secondSetAt >= firstSetAt);
-    }
-}
+// CopilotTokenProviderTests moved to CopilotTokenProviderTests.cs
 
 public class ErrorClassificationTests
 {
