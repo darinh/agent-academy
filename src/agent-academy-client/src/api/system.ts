@@ -9,7 +9,7 @@ import type {
   SearchResults,
   SearchScope,
 } from "./types";
-import { apiUrl, request } from "./core";
+import { apiUrl, request, downloadFile } from "./core";
 
 // ── Notification Providers ─────────────────────────────────────────────
 
@@ -88,4 +88,12 @@ export function searchWorkspace(
   if (options?.messageLimit != null) params.set("messageLimit", String(options.messageLimit));
   if (options?.taskLimit != null) params.set("taskLimit", String(options.taskLimit));
   return request<SearchResults>(apiUrl(`/api/search?${params}`));
+}
+
+// ── DM Conversation Export ──────────────────────────────────────────────
+
+export function exportDmMessages(agentId: string, format: "json" | "markdown" = "json"): Promise<void> {
+  const params = new URLSearchParams({ format });
+  const ext = format === "markdown" ? "md" : "json";
+  return downloadFile(apiUrl(`/api/export/dm/${encodeURIComponent(agentId)}/messages?${params}`), `dm-export.${ext}`);
 }

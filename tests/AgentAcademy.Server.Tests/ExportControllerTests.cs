@@ -22,6 +22,7 @@ public sealed class ExportControllerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly ServiceProvider _serviceProvider;
     private readonly ExportController _controller;
+    private readonly IServiceScope _exportScope;
     private static int _idCounter;
 
     private static readonly AgentCatalogOptions TestCatalog = new(
@@ -47,14 +48,18 @@ public sealed class ExportControllerTests : IDisposable
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         db.Database.EnsureCreated();
 
+        _exportScope = _serviceProvider.CreateScope();
+        var exportDb = _exportScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
 
         var analytics = new AgentAnalyticsService(
             scopeFactory, TestCatalog, NullLogger<AgentAnalyticsService>.Instance);
         var usageTracker = new LlmUsageTracker(
             scopeFactory, NullLogger<LlmUsageTracker>.Instance);
+        var conversationExport = new ConversationExportService(exportDb);
 
-        _controller = new ExportController(analytics, usageTracker);
+        _controller = new ExportController(analytics, usageTracker, conversationExport);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext()
@@ -63,6 +68,7 @@ public sealed class ExportControllerTests : IDisposable
 
     public void Dispose()
     {
+        _exportScope.Dispose();
         _serviceProvider.Dispose();
         _connection.Dispose();
     }
@@ -331,5 +337,123 @@ public sealed class ExportControllerTests : IDisposable
 
         var lines = content.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(2, lines.Length); // header + 1 recent record
+    }
+
+    // ── ExportRoomMessages ──
+
+    [Fact]
+    public async Task ExportRoomMessages_InvalidFormat_ReturnsBadRequest()
+    {
+        var result = await _controller.ExportRoomMessages("room-1", format: "xml");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ExportRoomMessages_NonexistentRoom_ReturnsNotFound()
+    {
+        var result = await _controller.ExportRoomMessages("nonexistent");
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ExportRoomMessages_Json_ReturnsJsonFile()
+    {
+        using (var db = GetDb())
+        {
+            db.Rooms.Add(new RoomEntity
+            {
+                Id = "export-room-1", Name = "Test Room",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            });
+            db.Messages.Add(new MessageEntity
+            {
+                Id = "em-1", RoomId = "export-room-1", SenderId = "agent-1",
+                SenderName = "Planner", SenderKind = "Agent", Kind = "Chat",
+                Content = "Hello world", SentAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _controller.ExportRoomMessages("export-room-1", format: "json");
+        var fileResult = Assert.IsType<FileContentResult>(result);
+        Assert.Contains("application/json", fileResult.ContentType);
+        Assert.Contains("testroom", fileResult.FileDownloadName.ToLowerInvariant());
+
+        var json = System.Text.Encoding.UTF8.GetString(fileResult.FileContents);
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal(1, doc.RootElement.GetProperty("messageCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task ExportRoomMessages_Markdown_ReturnsMarkdownFile()
+    {
+        using (var db = GetDb())
+        {
+            db.Rooms.Add(new RoomEntity
+            {
+                Id = "export-room-2", Name = "MD Room",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            });
+            db.Messages.Add(new MessageEntity
+            {
+                Id = "em-2", RoomId = "export-room-2", SenderId = "human",
+                SenderName = "Human", SenderKind = "User", Kind = "Chat",
+                Content = "Test content", SentAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _controller.ExportRoomMessages("export-room-2", format: "markdown");
+        var fileResult = Assert.IsType<FileContentResult>(result);
+        Assert.Contains("text/markdown", fileResult.ContentType);
+
+        var md = System.Text.Encoding.UTF8.GetString(fileResult.FileContents);
+        Assert.Contains("# Room: MD Room", md);
+        Assert.Contains("Test content", md);
+    }
+
+    // ── ExportDmMessages ──
+
+    [Fact]
+    public async Task ExportDmMessages_InvalidFormat_ReturnsBadRequest()
+    {
+        var result = await _controller.ExportDmMessages("agent-1", format: "csv");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ExportDmMessages_NoThread_ReturnsNotFound()
+    {
+        var result = await _controller.ExportDmMessages("no-such-agent");
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task ExportDmMessages_Json_ReturnsJsonFile()
+    {
+        using (var db = GetDb())
+        {
+            db.Rooms.Add(new RoomEntity
+            {
+                Id = "dm-room", Name = "DM Room",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            });
+            db.Messages.Add(new MessageEntity
+            {
+                Id = "dm-export-1", RoomId = "dm-room", SenderId = "human",
+                SenderName = "human", SenderKind = "User", Kind = "DirectMessage",
+                Content = "DM test", SentAt = DateTime.UtcNow,
+                RecipientId = "export-agent",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await _controller.ExportDmMessages("export-agent", format: "json");
+        var fileResult = Assert.IsType<FileContentResult>(result);
+        Assert.Contains("application/json", fileResult.ContentType);
+
+        var json = System.Text.Encoding.UTF8.GetString(fileResult.FileContents);
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("export-agent", doc.RootElement.GetProperty("agentId").GetString());
     }
 }

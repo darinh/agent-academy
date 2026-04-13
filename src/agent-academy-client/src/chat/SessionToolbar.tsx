@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, useEffect } from "react";
 import type { AgentDefinition, AgentLocation, ConversationSessionSnapshot } from "../api";
+import { exportRoomMessages } from "../api";
 
 interface SessionToolbarProps {
   roomId: string;
@@ -25,7 +26,10 @@ export const SessionToolbar = memo(function SessionToolbar({
   onCreateSession,
 }: SessionToolbarProps) {
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const agentsRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const agentsInRoom = useMemo(
     () => new Set(agentLocations.filter(l => l.roomId === roomId).map(l => l.agentId)),
@@ -34,18 +38,31 @@ export const SessionToolbar = memo(function SessionToolbar({
 
   // Close agents dropdown on outside click
   useEffect(() => {
-    if (!agentsOpen) return;
+    if (!agentsOpen && !exportOpen) return;
     const handler = (e: MouseEvent) => {
-      if (agentsRef.current && !agentsRef.current.contains(e.target as Node)) setAgentsOpen(false);
+      if (agentsOpen && agentsRef.current && !agentsRef.current.contains(e.target as Node)) setAgentsOpen(false);
+      if (exportOpen && exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [agentsOpen]);
+  }, [agentsOpen, exportOpen]);
 
   const handleToggleAgent = useCallback((agentId: string, currentlyInRoom: boolean) => {
     if (!onToggleAgent) return;
     onToggleAgent(roomId, agentId, currentlyInRoom);
   }, [roomId, onToggleAgent]);
+
+  const handleExport = useCallback(async (format: "json" | "markdown") => {
+    setExporting(true);
+    setExportOpen(false);
+    try {
+      await exportRoomMessages(roomId, format);
+    } catch {
+      // Silently fail — download helper already throws on HTTP errors
+    } finally {
+      setExporting(false);
+    }
+  }, [roomId]);
 
   return (
     <div style={{
@@ -130,6 +147,48 @@ export const SessionToolbar = memo(function SessionToolbar({
           )}
         </div>
       )}
+      <div ref={exportRef} style={{ position: "relative", marginLeft: "auto" }}>
+        <button
+          onClick={() => setExportOpen(!exportOpen)}
+          disabled={exporting}
+          style={{
+            background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+            borderRadius: "4px", padding: "3px 10px", color: "inherit", cursor: "pointer",
+            fontSize: "12px", whiteSpace: "nowrap", opacity: exporting ? 0.6 : 1,
+          }}
+        >
+          {exporting ? "Exporting…" : "Export ▾"}
+        </button>
+        {exportOpen && (
+          <div style={{
+            position: "absolute", right: 0, top: "100%", zIndex: 100,
+            background: "var(--aa-panel, #181825)", border: "1px solid var(--aa-border, #333)",
+            borderRadius: "6px", padding: "4px 0", minWidth: "140px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+          }}>
+            <button
+              onClick={() => void handleExport("json")}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                background: "none", border: "none", color: "inherit",
+                padding: "6px 12px", cursor: "pointer", fontSize: "12px",
+              }}
+            >
+              Export as JSON
+            </button>
+            <button
+              onClick={() => void handleExport("markdown")}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                background: "none", border: "none", color: "inherit",
+                padding: "6px 12px", cursor: "pointer", fontSize: "12px",
+              }}
+            >
+              Export as Markdown
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 });

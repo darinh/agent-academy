@@ -8,7 +8,7 @@ import type {
   SessionListResponse,
   SessionStats,
 } from "./types";
-import { apiUrl, request } from "./core";
+import { apiUrl, request, downloadFile } from "./core";
 
 // ── Rooms ──────────────────────────────────────────────────────────────
 
@@ -126,4 +126,12 @@ export function getRoomSessions(
       `/api/rooms/${encodeURIComponent(roomId)}/sessions${qs ? `?${qs}` : ""}`,
     ),
   );
+}
+
+// ── Conversation Export ──────────────────────────────────────────────────
+
+export function exportRoomMessages(roomId: string, format: "json" | "markdown" = "json"): Promise<void> {
+  const params = new URLSearchParams({ format });
+  const ext = format === "markdown" ? "md" : "json";
+  return downloadFile(apiUrl(`/api/export/rooms/${encodeURIComponent(roomId)}/messages?${params}`), `room-export.${ext}`);
 }

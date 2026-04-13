@@ -21,6 +21,7 @@ import {
   getDmThreads,
   getDmThreadMessages,
   sendDmToAgent,
+  exportDmMessages,
 } from "./api";
 import { DmMessageBubble, useDmPanelStyles } from "./dm";
 import { useMessageSSE } from "./useMessageSSE";
@@ -52,6 +53,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   const [messages, setMessages] = useState<DmMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [exportingDm, setExportingDm] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -300,8 +302,34 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       <div className={s.chatArea}>
         {selectedAgent ? (
           <>
-            <div className={s.chatHeader}>
+            <div className={s.chatHeader} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontWeight: 600 }}>{selectedAgent.name}</span>
+              <select
+                value=""
+                onChange={async (e) => {
+                  const format = e.target.value as "json" | "markdown";
+                  if (!format || !selectedAgentId) return;
+                  e.target.value = "";
+                  setExportingDm(true);
+                  try {
+                    await exportDmMessages(selectedAgentId, format);
+                  } catch {
+                    // download helper handles errors
+                  } finally {
+                    setExportingDm(false);
+                  }
+                }}
+                disabled={exportingDm}
+                style={{
+                  background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+                  borderRadius: "4px", padding: "2px 6px", color: "inherit", cursor: "pointer",
+                  fontSize: "12px", opacity: exportingDm ? 0.6 : 1,
+                }}
+              >
+                <option value="">{exportingDm ? "Exporting…" : "Export ▾"}</option>
+                <option value="json">Export as JSON</option>
+                <option value="markdown">Export as Markdown</option>
+              </select>
             </div>
 
             <div ref={scrollRef} className={s.messageList} role="log" aria-label="Direct messages">

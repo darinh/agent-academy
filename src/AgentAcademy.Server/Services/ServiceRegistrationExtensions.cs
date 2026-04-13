@@ -52,6 +52,9 @@ public static class ServiceRegistrationExtensions
         // Round context loading (extracted from AgentOrchestrator)
         services.AddScoped<RoundContextLoader>();
 
+        // Conversation export (formats room/DM history as JSON/Markdown)
+        services.AddScoped<ConversationExportService>();
+
         return services;
     }
 }
