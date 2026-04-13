@@ -11,10 +11,10 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/sessions")]
 public class SessionController : ControllerBase
 {
-    private readonly ConversationSessionService _sessionService;
+    private readonly ConversationSessionQueryService _sessionService;
     private readonly ILogger<SessionController> _logger;
 
-    public SessionController(ConversationSessionService sessionService, ILogger<SessionController> logger)
+    public SessionController(ConversationSessionQueryService sessionService, ILogger<SessionController> logger)
     {
         _sessionService = sessionService;
         _logger = logger;

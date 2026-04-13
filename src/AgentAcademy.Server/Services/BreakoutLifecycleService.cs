@@ -124,6 +124,7 @@ public sealed class BreakoutLifecycleService
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+        var sessionQueryService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
@@ -194,7 +195,7 @@ public sealed class BreakoutLifecycleService
                     var breakoutDms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
                     if (breakoutDms.Count > 0)
                         await messageService.AcknowledgeDirectMessagesAsync(agent.Id, breakoutDms.Select(m => m.Id).ToList());
-                    var breakoutSummary = await sessionService.GetSessionContextAsync(breakoutRoomId);
+                    var breakoutSummary = await sessionQueryService.GetSessionContextAsync(breakoutRoomId);
 
                     string? breakoutSpecContext = null;
                     var breakoutTaskId = await breakoutRoomService.GetBreakoutTaskIdAsync(breakoutRoomId);

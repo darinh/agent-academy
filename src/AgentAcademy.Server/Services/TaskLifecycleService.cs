@@ -13,18 +13,8 @@ namespace AgentAcademy.Server.Services;
 /// Task entity mutations for create/complete/reject are orchestrated by
 /// TaskOrchestrationService which delegates here for the task-state changes.
 /// </summary>
-public sealed class TaskLifecycleService
+public sealed partial class TaskLifecycleService
 {
-    private const int MaxReviewRounds = 5;
-
-    /// <summary>
-    /// Valid spec-task link types.
-    /// </summary>
-    public static readonly HashSet<string> ValidLinkTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Implements", "Modifies", "Fixes", "References"
-    };
-
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskLifecycleService> _logger;
     private readonly AgentCatalogOptions _catalog;
@@ -107,82 +97,6 @@ public sealed class TaskLifecycleService
     }
 
     /// <summary>
-    /// Approves a task after review. Records the reviewer and increments review rounds.
-    /// </summary>
-    public async Task<TaskSnapshot> ApproveTaskAsync(string taskId, string reviewerAgentId, string? findings = null)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to approve");
-
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.Approved);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        if (!string.IsNullOrWhiteSpace(findings) && !string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"✅ **Approved** by {reviewerName}\n\n{findings}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskApproved, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} approved task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
-    }
-
-    /// <summary>
-    /// Requests changes on a task after review. Records the reviewer and increments review rounds.
-    /// </summary>
-    public async Task<TaskSnapshot> RequestChangesAsync(string taskId, string reviewerAgentId, string findings)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to request changes");
-
-        if (entity.ReviewRounds >= MaxReviewRounds)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
-
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"🔄 **Changes Requested** by {reviewerName}\n\n{findings}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskChangesRequested, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} requested changes on task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
-    }
-
-    /// <summary>
     /// Syncs PR status on a task. Returns null if no change occurred.
     /// </summary>
     public async Task<TaskSnapshot?> SyncTaskPrStatusAsync(
@@ -236,82 +150,6 @@ public sealed class TaskLifecycleService
         await _db.SaveChangesAsync();
 
         return TaskQueryService.BuildTaskComment(comment);
-    }
-
-    // ── Spec–Task Linking ───────────────────────────────────────
-
-    /// <summary>
-    /// Links a task to a spec section. Idempotent — updates link type if the pair already exists.
-    /// </summary>
-    public async Task<SpecTaskLink> LinkTaskToSpecAsync(
-        string taskId, string specSectionId, string agentId, string agentName,
-        string linkType = "Implements", string? note = null)
-    {
-        if (string.IsNullOrWhiteSpace(taskId))
-            throw new ArgumentException("taskId is required");
-        if (string.IsNullOrWhiteSpace(specSectionId))
-            throw new ArgumentException("specSectionId is required");
-        if (!ValidLinkTypes.Contains(linkType))
-            throw new ArgumentException(
-                $"Invalid link type '{linkType}'. Valid types: {string.Join(", ", ValidLinkTypes)}");
-
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        // Upsert with retry: catch unique constraint violation on concurrent insert
-        try
-        {
-            return await UpsertSpecLinkCoreAsync(
-                task, taskId, specSectionId, agentId, agentName, linkType, note);
-        }
-        catch (DbUpdateException)
-        {
-            // Concurrent insert hit unique constraint — reload and update
-            _db.ChangeTracker.Clear();
-            return await UpsertSpecLinkCoreAsync(
-                task, taskId, specSectionId, agentId, agentName, linkType, note);
-        }
-    }
-
-    private async Task<SpecTaskLink> UpsertSpecLinkCoreAsync(
-        TaskEntity task, string taskId, string specSectionId,
-        string agentId, string agentName, string linkType, string? note)
-    {
-        var existing = await _db.SpecTaskLinks
-            .FirstOrDefaultAsync(l => l.TaskId == taskId && l.SpecSectionId == specSectionId);
-
-        if (existing is not null)
-        {
-            existing.LinkType = linkType;
-            existing.Note = note ?? existing.Note;
-            existing.LinkedByAgentId = agentId;
-            existing.LinkedByAgentName = agentName;
-
-            Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
-                $"{agentName} updated spec link: {specSectionId} → {task.Title}");
-            await _db.SaveChangesAsync();
-
-            return TaskQueryService.BuildSpecTaskLink(existing);
-        }
-
-        var entity = new SpecTaskLinkEntity
-        {
-            Id = Guid.NewGuid().ToString("N")[..12],
-            TaskId = taskId,
-            SpecSectionId = specSectionId,
-            LinkType = linkType,
-            LinkedByAgentId = agentId,
-            LinkedByAgentName = agentName,
-            Note = note,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _db.SpecTaskLinks.Add(entity);
-        Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
-            $"{agentName} linked spec {specSectionId} to task: {Truncate(task.Title, 60)}");
-        await _db.SaveChangesAsync();
-
-        return TaskQueryService.BuildSpecTaskLink(entity);
     }
 
     // ── Task Create / Complete / Reject ────────────────────────
@@ -454,64 +292,6 @@ public sealed class TaskLifecycleService
     }
 
     /// <summary>
-    /// Rejects a task (from Approved or Completed state). Updates status, adds review message,
-    /// publishes activity. Does NOT save — the caller owns the unit of work so room/breakout
-    /// reopen can be committed atomically with the rejection.
-    /// </summary>
-    public async Task<RejectTaskResult> RejectTaskCoreAsync(
-        string taskId, string reviewerAgentId, string reason, string? revertCommitSha = null)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.Approved) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.Completed))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be Approved or Completed to reject");
-
-        if (entity.ReviewRounds >= MaxReviewRounds)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
-
-        var now = DateTime.UtcNow;
-        var wasCompleted = currentStatus == nameof(Shared.Models.TaskStatus.Completed);
-
-        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        if (wasCompleted)
-        {
-            entity.MergeCommitSha = null;
-            entity.CompletedAt = null;
-        }
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        var statusNote = revertCommitSha is not null ? " (merge reverted)" : "";
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"❌ **Rejected** by {reviewerName}{statusNote}\n\n{reason}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
-
-        // NOTE: Does NOT call SaveChangesAsync — the caller (TaskOrchestrationService.RejectTaskAsync)
-        // performs room/breakout reopen and saves everything in one atomic commit.
-
-        return new RejectTaskResult(
-            Snapshot: TaskQueryService.BuildTaskSnapshot(entity),
-            RoomId: entity.RoomId,
-            TaskId: taskId,
-            ReviewerName: reviewerName);
-    }
-
-    /// <summary>
     /// Generates default plan content for a task when no explicit plan is provided.
     /// </summary>
     internal static string ResolveTaskPlanContent(string title, string? currentPlan)
@@ -521,15 +301,6 @@ public sealed class TaskLifecycleService
 
         return $"# {title}\n\n## Plan\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate";
     }
-
-    /// <summary>
-    /// Result of a task rejection, containing the info needed for room/breakout reopen.
-    /// </summary>
-    public sealed record RejectTaskResult(
-        TaskSnapshot Snapshot,
-        string? RoomId,
-        string TaskId,
-        string ReviewerName);
 
     // ── Shared Helpers ──────────────────────────────────────────
 

@@ -39,6 +39,7 @@ public static class ServiceRegistrationExtensions
 
         // Conversation session management (epoch lifecycle and summarization)
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<ConversationSessionQueryService>();
 
         // Sprint lifecycle management (creation, stage advancement, artifacts)
         services.AddScoped<SprintService>();

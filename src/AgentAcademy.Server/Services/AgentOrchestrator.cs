@@ -444,7 +444,7 @@ public sealed class AgentOrchestrator
 
         try
         {
-            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
             sessionSummary = await sessionService.GetSessionContextAsync(roomId);
         }
         catch (Exception ex)
@@ -471,7 +471,7 @@ public sealed class AgentOrchestrator
     private async Task<SprintContext> LoadSprintContextAsync(IServiceScope scope)
     {
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+        var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
         var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
 

@@ -20,6 +20,7 @@ public class ConversationSessionServiceTests : IDisposable
     private readonly SystemSettingsService _settings;
     private readonly IAgentExecutor _executor;
     private readonly ConversationSessionService _service;
+    private readonly ConversationSessionQueryService _queryService;
 
     public ConversationSessionServiceTests()
     {
@@ -38,6 +39,7 @@ public class ConversationSessionServiceTests : IDisposable
         _service = new ConversationSessionService(
             _db, _settings, _executor,
             NullLogger<ConversationSessionService>.Instance);
+        _queryService = new ConversationSessionQueryService(_db);
     }
 
     public void Dispose()
@@ -304,7 +306,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var summary = await _service.GetSessionContextAsync("room-1");
+        var summary = await _queryService.GetSessionContextAsync("room-1");
 
         Assert.Equal("Second summary", summary);
     }
@@ -313,7 +315,7 @@ public class ConversationSessionServiceTests : IDisposable
     public async Task GetSessionContext_ReturnsNullWhenNoArchivedSessions()
     {
         await _service.GetOrCreateActiveSessionAsync("room-1");
-        var summary = await _service.GetSessionContextAsync("room-1");
+        var summary = await _queryService.GetSessionContextAsync("room-1");
         Assert.Null(summary);
     }
 
@@ -521,7 +523,7 @@ public class ConversationSessionServiceTests : IDisposable
         await _service.ArchiveAllActiveSessionsAsync();
 
         // The summary should be retrievable for session resume
-        var summary = await _service.GetSessionContextAsync("room-1");
+        var summary = await _queryService.GetSessionContextAsync("room-1");
         Assert.Equal("Resume context: important decisions were made.", summary);
     }
 
@@ -589,7 +591,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("room-1");
+        var (sessions, totalCount) = await _queryService.GetRoomSessionsAsync("room-1");
 
         Assert.Equal(2, totalCount);
         Assert.Equal(2, sessions.Count);
@@ -606,7 +608,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("room-1", status: "Archived");
+        var (sessions, totalCount) = await _queryService.GetRoomSessionsAsync("room-1", status: "Archived");
 
         Assert.Equal(1, totalCount);
         Assert.Single(sessions);
@@ -630,8 +632,8 @@ public class ConversationSessionServiceTests : IDisposable
         }
         await _db.SaveChangesAsync();
 
-        var (page1, total1) = await _service.GetRoomSessionsAsync("room-1", limit: 5, offset: 0);
-        var (page2, total2) = await _service.GetRoomSessionsAsync("room-1", limit: 5, offset: 5);
+        var (page1, total1) = await _queryService.GetRoomSessionsAsync("room-1", limit: 5, offset: 0);
+        var (page2, total2) = await _queryService.GetRoomSessionsAsync("room-1", limit: 5, offset: 5);
 
         Assert.Equal(15, total1);
         Assert.Equal(15, total2);
@@ -643,7 +645,7 @@ public class ConversationSessionServiceTests : IDisposable
     [Fact]
     public async Task GetRoomSessions_ReturnsEmptyForUnknownRoom()
     {
-        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("nonexistent");
+        var (sessions, totalCount) = await _queryService.GetRoomSessionsAsync("nonexistent");
 
         Assert.Empty(sessions);
         Assert.Equal(0, totalCount);
@@ -664,7 +666,7 @@ public class ConversationSessionServiceTests : IDisposable
         }
         await _db.SaveChangesAsync();
 
-        var (sessions, _) = await _service.GetRoomSessionsAsync("room-1", limit: 0);
+        var (sessions, _) = await _queryService.GetRoomSessionsAsync("room-1", limit: 0);
         Assert.Single(sessions); // Clamped to minimum of 1
     }
 
@@ -687,7 +689,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var (sessions, _) = await _service.GetRoomSessionsAsync("room-1");
+        var (sessions, _) = await _queryService.GetRoomSessionsAsync("room-1");
 
         var snap = Assert.Single(sessions);
         Assert.Equal("map-test", snap.Id);
@@ -713,7 +715,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetAllSessionsAsync();
+        var (sessions, totalCount) = await _queryService.GetAllSessionsAsync();
 
         Assert.Equal(3, totalCount);
         Assert.Equal(3, sessions.Count);
@@ -729,7 +731,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetAllSessionsAsync(status: "Active");
+        var (sessions, totalCount) = await _queryService.GetAllSessionsAsync(status: "Active");
 
         Assert.Equal(1, totalCount);
         Assert.Single(sessions);
@@ -753,9 +755,9 @@ public class ConversationSessionServiceTests : IDisposable
         }
         await _db.SaveChangesAsync();
 
-        var (page1, total1) = await _service.GetAllSessionsAsync(limit: 10, offset: 0);
-        var (page2, total2) = await _service.GetAllSessionsAsync(limit: 10, offset: 10);
-        var (page3, total3) = await _service.GetAllSessionsAsync(limit: 10, offset: 20);
+        var (page1, total1) = await _queryService.GetAllSessionsAsync(limit: 10, offset: 0);
+        var (page2, total2) = await _queryService.GetAllSessionsAsync(limit: 10, offset: 10);
+        var (page3, total3) = await _queryService.GetAllSessionsAsync(limit: 10, offset: 20);
 
         Assert.Equal(25, total1);
         Assert.Equal(10, page1.Count);
@@ -776,7 +778,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var stats = await _service.GetSessionStatsAsync();
+        var stats = await _queryService.GetSessionStatsAsync();
 
         Assert.Equal(4, stats.TotalSessions);
         Assert.Equal(2, stats.ActiveSessions);
@@ -787,7 +789,7 @@ public class ConversationSessionServiceTests : IDisposable
     [Fact]
     public async Task GetSessionStats_ReturnsZerosWhenEmpty()
     {
-        var stats = await _service.GetSessionStatsAsync();
+        var stats = await _queryService.GetSessionStatsAsync();
 
         Assert.Equal(0, stats.TotalSessions);
         Assert.Equal(0, stats.ActiveSessions);
@@ -806,7 +808,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetAllSessionsAsync(hoursBack: 24);
+        var (sessions, totalCount) = await _queryService.GetAllSessionsAsync(hoursBack: 24);
 
         Assert.Equal(1, totalCount);
         Assert.Single(sessions);
@@ -822,7 +824,7 @@ public class ConversationSessionServiceTests : IDisposable
         );
         await _db.SaveChangesAsync();
 
-        var stats = await _service.GetSessionStatsAsync(hoursBack: 24);
+        var stats = await _queryService.GetSessionStatsAsync(hoursBack: 24);
 
         Assert.Equal(1, stats.TotalSessions);
         Assert.Equal(5, stats.TotalMessages);
@@ -839,7 +841,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetRoomSessionsAsync("room-1", offset: -5);
+        var (sessions, totalCount) = await _queryService.GetRoomSessionsAsync("room-1", offset: -5);
 
         Assert.Equal(1, totalCount);
         Assert.Single(sessions);
@@ -854,7 +856,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var (sessions, totalCount) = await _service.GetAllSessionsAsync(offset: -10);
+        var (sessions, totalCount) = await _queryService.GetAllSessionsAsync(offset: -10);
 
         Assert.Equal(1, totalCount);
         Assert.Single(sessions);
@@ -973,7 +975,7 @@ public class ConversationSessionServiceTests : IDisposable
     [Fact]
     public async Task GetStageContext_ReturnsNullWhenNoArchived()
     {
-        var result = await _service.GetStageContextAsync("sprint-1", "Intake");
+        var result = await _queryService.GetStageContextAsync("sprint-1", "Intake");
         Assert.Null(result);
     }
 
@@ -997,7 +999,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _service.GetStageContextAsync("sprint-1", "Intake");
+        var result = await _queryService.GetStageContextAsync("sprint-1", "Intake");
 
         Assert.Equal("Intake discussion summary", result);
     }
@@ -1032,7 +1034,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _service.GetStageContextAsync("sprint-1", "Planning");
+        var result = await _queryService.GetStageContextAsync("sprint-1", "Planning");
 
         Assert.Equal("New summary", result);
     }
@@ -1055,7 +1057,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var result = await _service.GetStageContextAsync("sprint-1", "Intake");
+        var result = await _queryService.GetStageContextAsync("sprint-1", "Intake");
 
         Assert.Null(result);
     }
@@ -1102,7 +1104,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var context = await _service.GetSprintContextAsync("sprint-1");
+        var context = await _queryService.GetSprintContextAsync("sprint-1");
 
         // Deduplicated: one per stage, canonical order (Intake before Planning)
         Assert.Equal(2, context.Count);
@@ -1129,7 +1131,7 @@ public class ConversationSessionServiceTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var context = await _service.GetSprintContextAsync("sprint-1");
+        var context = await _queryService.GetSprintContextAsync("sprint-1");
 
         Assert.Empty(context);
     }
@@ -1137,7 +1139,7 @@ public class ConversationSessionServiceTests : IDisposable
     [Fact]
     public async Task GetSprintContext_ReturnsEmptyForUnknownSprint()
     {
-        var context = await _service.GetSprintContextAsync("nonexistent");
+        var context = await _queryService.GetSprintContextAsync("nonexistent");
 
         Assert.Empty(context);
     }
@@ -1222,10 +1224,10 @@ public class ConversationSessionServiceTests : IDisposable
         await _service.GetOrCreateActiveSessionAsync("ws-a-room");
         await _service.GetOrCreateActiveSessionAsync("ws-b-room");
 
-        var (allSessions, allCount) = await _service.GetAllSessionsAsync();
+        var (allSessions, allCount) = await _queryService.GetAllSessionsAsync();
         Assert.Equal(2, allCount);
 
-        var (filteredSessions, filteredCount) = await _service.GetAllSessionsAsync(
+        var (filteredSessions, filteredCount) = await _queryService.GetAllSessionsAsync(
             workspacePath: "/project-a");
         Assert.Equal(1, filteredCount);
         Assert.All(filteredSessions, s => Assert.Equal("/project-a", s.WorkspacePath));
@@ -1246,10 +1248,10 @@ public class ConversationSessionServiceTests : IDisposable
         await _service.IncrementMessageCountAsync(s1.Id);
         await _service.GetOrCreateActiveSessionAsync("stats-b-room");
 
-        var globalStats = await _service.GetSessionStatsAsync();
+        var globalStats = await _queryService.GetSessionStatsAsync();
         Assert.Equal(2, globalStats.TotalSessions);
 
-        var scopedStats = await _service.GetSessionStatsAsync(workspacePath: "/stats-project-a");
+        var scopedStats = await _queryService.GetSessionStatsAsync(workspacePath: "/stats-project-a");
         Assert.Equal(1, scopedStats.TotalSessions);
         Assert.Equal(2, scopedStats.TotalMessages);
     }

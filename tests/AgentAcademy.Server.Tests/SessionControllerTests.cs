@@ -15,7 +15,7 @@ public class SessionControllerTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
-    private readonly ConversationSessionService _sessionService;
+    private readonly ConversationSessionQueryService _sessionService;
     private readonly SessionController _controller;
 
     public SessionControllerTests()
@@ -30,11 +30,7 @@ public class SessionControllerTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        var settings = new SystemSettingsService(_db);
-        var executor = Substitute.For<IAgentExecutor>();
-        _sessionService = new ConversationSessionService(
-            _db, settings, executor,
-            NullLogger<ConversationSessionService>.Instance);
+        _sessionService = new ConversationSessionQueryService(_db);
 
         _controller = new SessionController(
             _sessionService,
