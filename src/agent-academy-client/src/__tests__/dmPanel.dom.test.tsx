@@ -43,6 +43,10 @@ vi.mock("../useMessageSSE", () => ({
   useMessageSSE: () => "disconnected",
 }));
 
+vi.mock("../useDmThreadSSE", () => ({
+  useDmThreadSSE: () => "disconnected",
+}));
+
 import DmPanel from "../DmPanel";
 import type { DmThreadSummary, DmMessage } from "../api";
 import { getDmThreads, getDmThreadMessages, sendDmToAgent } from "../api";
@@ -854,7 +858,7 @@ describe("DmPanel (interactive)", () => {
   // ── Polling ────────────────────────────────────────────────────────
 
   describe("polling", () => {
-    it("refreshes threads every 10 seconds", async () => {
+    it("does not poll threads on a timer — SSE handles live updates", async () => {
       mockGetDmThreads.mockResolvedValue([makeThread()]);
       renderDm();
 
@@ -865,12 +869,11 @@ describe("DmPanel (interactive)", () => {
       const initialCalls = mockGetDmThreads.mock.calls.length;
 
       await act(async () => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(30_000);
       });
 
-      expect(mockGetDmThreads.mock.calls.length).toBeGreaterThan(
-        initialCalls,
-      );
+      // No additional fetches — SSE invalidation replaces 10s polling
+      expect(mockGetDmThreads.mock.calls.length).toBe(initialCalls);
     });
 
     it("does not poll for threads in read-only mode", async () => {

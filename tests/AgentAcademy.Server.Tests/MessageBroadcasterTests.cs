@@ -298,4 +298,126 @@ public sealed class MessageBroadcasterTests
 
         Assert.NotNull(received);
     }
+
+    // ── Global DM Subscribe & Broadcast ─────────────────────────
+
+    [Fact]
+    public void SubscribeAllDm_ReceivesBroadcast()
+    {
+        var sut = new MessageBroadcaster();
+        string? receivedAgentId = null;
+        DmMessage? receivedMsg = null;
+        sut.SubscribeAllDm((agentId, msg) => { receivedAgentId = agentId; receivedMsg = msg; });
+
+        var sent = MakeDm("agent-1");
+        sut.BroadcastDm("agent-1", sent);
+
+        Assert.Equal("agent-1", receivedAgentId);
+        Assert.NotNull(receivedMsg);
+        Assert.Equal(sent.Id, receivedMsg.Id);
+    }
+
+    [Fact]
+    public void SubscribeAllDm_ReceivesFromMultipleAgents()
+    {
+        var sut = new MessageBroadcaster();
+        var received = new List<(string AgentId, string MsgId)>();
+        sut.SubscribeAllDm((agentId, msg) => received.Add((agentId, msg.Id)));
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1", "dm-1"));
+        sut.BroadcastDm("agent-2", MakeDm("agent-2", "dm-2"));
+
+        Assert.Equal(2, received.Count);
+        Assert.Equal("agent-1", received[0].AgentId);
+        Assert.Equal("agent-2", received[1].AgentId);
+    }
+
+    [Fact]
+    public void SubscribeAllDm_WorksWithNoPerThreadSubscribers()
+    {
+        var sut = new MessageBroadcaster();
+        string? receivedAgentId = null;
+        sut.SubscribeAllDm((agentId, _) => receivedAgentId = agentId);
+
+        // No per-thread subscriber — global should still fire
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        Assert.Equal("agent-1", receivedAgentId);
+    }
+
+    [Fact]
+    public void SubscribeAllDm_WorksAlongsidePerThreadSubscribers()
+    {
+        var sut = new MessageBroadcaster();
+        DmMessage? threadMsg = null;
+        string? globalAgent = null;
+        sut.SubscribeDm("agent-1", msg => threadMsg = msg);
+        sut.SubscribeAllDm((agentId, _) => globalAgent = agentId);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        Assert.NotNull(threadMsg);
+        Assert.Equal("agent-1", globalAgent);
+    }
+
+    [Fact]
+    public void UnsubscribeAllDm_StopsDelivery()
+    {
+        var sut = new MessageBroadcaster();
+        var count = 0;
+        var unsub = sut.SubscribeAllDm((_, _) => count++);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+        Assert.Equal(1, count);
+
+        unsub();
+        sut.BroadcastDm("agent-1", MakeDm("agent-1", "dm-2"));
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void GetGlobalDmSubscriberCount_ReturnsCorrectCount()
+    {
+        var sut = new MessageBroadcaster();
+        Assert.Equal(0, sut.GetGlobalDmSubscriberCount());
+
+        var unsub1 = sut.SubscribeAllDm((_, _) => { });
+        Assert.Equal(1, sut.GetGlobalDmSubscriberCount());
+
+        var unsub2 = sut.SubscribeAllDm((_, _) => { });
+        Assert.Equal(2, sut.GetGlobalDmSubscriberCount());
+
+        unsub1();
+        Assert.Equal(1, sut.GetGlobalDmSubscriberCount());
+
+        unsub2();
+        Assert.Equal(0, sut.GetGlobalDmSubscriberCount());
+    }
+
+    [Fact]
+    public void SubscribeAllDm_ExceptionDoesNotAffectOthers()
+    {
+        var sut = new MessageBroadcaster();
+        string? received = null;
+        sut.SubscribeAllDm((_, _) => throw new InvalidOperationException("boom"));
+        sut.SubscribeAllDm((agentId, _) => received = agentId);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        Assert.Equal("agent-1", received);
+    }
+
+    [Fact]
+    public void SubscribeAllDm_ExceptionDoesNotAffectPerThreadSubscribers()
+    {
+        var sut = new MessageBroadcaster();
+        DmMessage? threadMsg = null;
+        sut.SubscribeDm("agent-1", msg => threadMsg = msg);
+        sut.SubscribeAllDm((_, _) => throw new InvalidOperationException("boom"));
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        // Per-thread subscriber fires before global — should still work
+        Assert.NotNull(threadMsg);
+    }
 }

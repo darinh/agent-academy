@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
   Button,
@@ -25,6 +25,7 @@ import {
 } from "./api";
 import { DmMessageBubble, useDmPanelStyles } from "./dm";
 import { useMessageSSE } from "./useMessageSSE";
+import { useDmThreadSSE } from "./useDmThreadSSE";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,21 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     }
   }, []);
 
+  // Debounced refresh: collapses rapid SSE invalidations into a single refetch.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const debouncedRefresh = useMemo(
+    () => () => {
+      if (debounceRef.current !== undefined) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => void refreshThreads(), 500);
+    },
+    [refreshThreads],
+  );
+  useEffect(() => () => { if (debounceRef.current !== undefined) clearTimeout(debounceRef.current); }, []);
+
+  // SSE for real-time thread list updates (replaces 10s polling)
+  useDmThreadSSE(debouncedRefresh, !readOnly);
+
+  // Initial load
   useEffect(() => {
     let active = true;
 
@@ -81,18 +97,10 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       }
     });
 
-    if (readOnly) {
-      return () => {
-        active = false;
-      };
-    }
-
-    const interval = setInterval(() => void refreshThreads(), 10000);
     return () => {
       active = false;
-      clearInterval(interval);
     };
-  }, [readOnly, refreshThreads]);
+  }, [refreshThreads]);
 
   // Load messages when thread selected (initial fetch only — SSE handles live updates)
   const refreshMessages = useCallback(async (agentId: string) => {
