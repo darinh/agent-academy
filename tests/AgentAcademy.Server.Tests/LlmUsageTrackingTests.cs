@@ -13,13 +13,13 @@ using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
-public class LlmUsageTrackerTests : IDisposable
+public class LlmUsageTrackerBasicTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly ServiceProvider _serviceProvider;
     private readonly LlmUsageTracker _tracker;
 
-    public LlmUsageTrackerTests()
+    public LlmUsageTrackerBasicTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
