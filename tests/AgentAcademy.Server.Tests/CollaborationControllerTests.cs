@@ -537,4 +537,131 @@ public sealed class CollaborationControllerTests : IDisposable
         Assert.Single(infoB.DependedOnBy);
         Assert.Equal("dep-a", infoB.DependedOnBy[0].TaskId);
     }
+
+    // ── Bulk Status Edge Cases ──────────────────────────────────
+
+    [Theory]
+    [InlineData(TaskStatus.Queued)]
+    [InlineData(TaskStatus.Active)]
+    [InlineData(TaskStatus.InReview)]
+    [InlineData(TaskStatus.AwaitingValidation)]
+    public async Task BulkUpdateStatus_AllSafeStatuses_Accepted(TaskStatus safeStatus)
+    {
+        SeedTaskEntity("safe-1", "Safe Task", "Queued");
+
+        var request = new BulkUpdateStatusRequest(["safe-1"], safeStatus);
+        var result = await _controller.BulkUpdateStatus(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal(1, bulk.Succeeded);
+        Assert.Equal(safeStatus, bulk.Updated[0].Status);
+    }
+
+    [Theory]
+    [InlineData(TaskStatus.Cancelled)]
+    [InlineData(TaskStatus.Approved)]
+    [InlineData(TaskStatus.Merging)]
+    public async Task BulkUpdateStatus_TerminalStatuses_ReturnsBadRequest(TaskStatus terminalStatus)
+    {
+        SeedTaskEntity("us-1", "Terminal Task", "Active");
+
+        var request = new BulkUpdateStatusRequest(["us-1"], terminalStatus);
+        var result = await _controller.BulkUpdateStatus(request);
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task BulkUpdateStatus_AllWhitespace_ReturnsZeroRequested()
+    {
+        var request = new BulkUpdateStatusRequest(
+            ["", "  ", "\t"], TaskStatus.Queued);
+
+        var result = await _controller.BulkUpdateStatus(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal(0, bulk.Requested);
+        Assert.Equal(0, bulk.Succeeded);
+    }
+
+    [Fact]
+    public async Task BulkUpdateStatus_CaseInsensitiveDedup()
+    {
+        SeedTaskEntity("UPPER", "Upper Case Task", "Active");
+
+        var request = new BulkUpdateStatusRequest(
+            ["UPPER", "upper", "Upper"], TaskStatus.Blocked);
+
+        var result = await _controller.BulkUpdateStatus(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal(1, bulk.Requested);
+    }
+
+    // ── Bulk Assign Edge Cases ──────────────────────────────────
+
+    [Fact]
+    public async Task BulkAssign_DuplicateIds_DedupesAndAssignsOnce()
+    {
+        SeedTaskEntity("dup-assign", "Dup Assign Task");
+
+        var request = new BulkAssignRequest(
+            ["dup-assign", "dup-assign", "dup-assign"], "engineer-1", "Engineer One");
+
+        var result = await _controller.BulkAssign(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal(1, bulk.Requested);
+        Assert.Equal(1, bulk.Succeeded);
+    }
+
+    [Fact]
+    public async Task BulkAssign_EmptyAndWhitespaceIds_SkippedGracefully()
+    {
+        SeedTaskEntity("real-assign", "Real Assign Task");
+
+        var request = new BulkAssignRequest(
+            ["real-assign", "", "  "], "engineer-1", "Engineer One");
+
+        var result = await _controller.BulkAssign(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal(1, bulk.Requested);
+        Assert.Equal(1, bulk.Succeeded);
+    }
+
+    [Fact]
+    public async Task BulkAssign_AllMissing_ReturnsAllErrors()
+    {
+        var request = new BulkAssignRequest(
+            ["ghost-1", "ghost-2"], "engineer-1", "Engineer One");
+
+        var result = await _controller.BulkAssign(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal(0, bulk.Succeeded);
+        Assert.Equal(2, bulk.Failed);
+        Assert.All(bulk.Errors, e => Assert.Equal("NOT_FOUND", e.Code));
+    }
+
+    [Fact]
+    public async Task BulkAssign_PreservesAssignedAgentIdAndName()
+    {
+        SeedTaskEntity("name-check", "Name Check Task");
+
+        var request = new BulkAssignRequest(
+            ["name-check"], "engineer-1", "Engineer One");
+
+        var result = await _controller.BulkAssign(request);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var bulk = Assert.IsType<BulkOperationResult>(ok.Value);
+
+        Assert.Equal("engineer-1", bulk.Updated[0].AssignedAgentId);
+        Assert.Equal("Engineer One", bulk.Updated[0].AssignedAgentName);
+    }
 }
