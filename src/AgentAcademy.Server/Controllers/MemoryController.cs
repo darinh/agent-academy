@@ -185,6 +185,140 @@ public class MemoryController : ControllerBase
         return Ok(new { removed = expired.Count });
     }
 
+    /// <summary>
+    /// GET /api/memories/browse?agentId=X&amp;category=Y&amp;search=Z&amp;includeExpired=false
+    /// Browse memories with optional category filter and text search.
+    /// Uses FTS5 when search is provided, with LIKE fallback.
+    /// </summary>
+    [HttpGet("browse")]
+    public async Task<IActionResult> Browse(
+        [FromQuery] string? agentId,
+        [FromQuery] string? category,
+        [FromQuery] string? search,
+        [FromQuery] bool includeExpired = false,
+        CancellationToken ct = default)
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+
+        if (string.IsNullOrWhiteSpace(agentId))
+            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+
+        var now = DateTime.UtcNow;
+
+        // Use FTS5 search path when a search term is provided
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var results = await RecallHandler.SearchWithFts5Async(_db, agentId, search, category?.ToLowerInvariant(), null);
+            // SearchWithFts5Async includes shared memories from other agents (by design for RECALL).
+            // Browse is agent-scoped, so filter to only the requested agent.
+            results = results.Where(m => m.AgentId == agentId).ToList();
+            if (!includeExpired)
+                results = results.Where(m => m.ExpiresAt == null || m.ExpiresAt > now).ToList();
+
+            return Ok(new BrowseResponse
+            {
+                Total = results.Count,
+                Memories = results.Select(MapToDto).ToList(),
+            });
+        }
+
+        // Non-search: simple EF query
+        IQueryable<AgentMemoryEntity> query = _db.AgentMemories.Where(m => m.AgentId == agentId);
+
+        if (!includeExpired)
+            query = query.Where(m => m.ExpiresAt == null || m.ExpiresAt > now);
+
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(m => m.Category == category.ToLowerInvariant());
+
+        query = query.OrderBy(m => m.Category).ThenBy(m => m.Key);
+
+        var memories = await query.AsNoTracking().ToListAsync(ct);
+
+        return Ok(new BrowseResponse
+        {
+            Total = memories.Count,
+            Memories = memories.Select(MapToDto).ToList(),
+        });
+    }
+
+    /// <summary>
+    /// GET /api/memories/stats?agentId=X — per-category memory counts.
+    /// </summary>
+    [HttpGet("stats")]
+    public async Task<IActionResult> Stats([FromQuery] string? agentId, CancellationToken ct = default)
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+
+        if (string.IsNullOrWhiteSpace(agentId))
+            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+
+        var now = DateTime.UtcNow;
+        var stats = await _db.AgentMemories
+            .Where(m => m.AgentId == agentId)
+            .GroupBy(m => m.Category)
+            .Select(g => new CategoryStat
+            {
+                Category = g.Key,
+                Total = g.Count(),
+                Active = g.Count(m => m.ExpiresAt == null || m.ExpiresAt > now),
+                Expired = g.Count(m => m.ExpiresAt != null && m.ExpiresAt <= now),
+                LastUpdated = g.Max(m => m.UpdatedAt ?? m.CreatedAt),
+            })
+            .OrderByDescending(s => s.Active)
+            .ToListAsync(ct);
+
+        return Ok(new StatsResponse
+        {
+            AgentId = agentId,
+            TotalMemories = stats.Sum(s => s.Total),
+            ActiveMemories = stats.Sum(s => s.Active),
+            ExpiredMemories = stats.Sum(s => s.Expired),
+            Categories = stats,
+        });
+    }
+
+    /// <summary>
+    /// DELETE /api/memories?agentId=X&amp;key=Y — delete a single memory entry.
+    /// </summary>
+    [HttpDelete]
+    public async Task<IActionResult> Delete([FromQuery] string? agentId, [FromQuery] string? key, CancellationToken ct = default)
+    {
+        if (User.Identity?.IsAuthenticated != true)
+            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+
+        if (string.IsNullOrWhiteSpace(agentId))
+            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+
+        if (string.IsNullOrWhiteSpace(key))
+            return BadRequest(new { code = "missing_key", message = "key query parameter is required." });
+
+        var entity = await _db.AgentMemories.FindAsync(new object[] { agentId, key }, ct);
+        if (entity is null)
+            return NotFound(new { code = "not_found", message = $"Memory '{key}' not found for agent '{agentId}'." });
+
+        _db.AgentMemories.Remove(entity);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Memory deleted: agent={AgentId} key={Key}", agentId, key);
+
+        return Ok(new { status = "deleted", agentId, key });
+    }
+
+    private static MemoryExportDto MapToDto(AgentMemoryEntity m) => new()
+    {
+        AgentId = m.AgentId,
+        Category = m.Category,
+        Key = m.Key,
+        Value = m.Value,
+        CreatedAt = m.CreatedAt,
+        UpdatedAt = m.UpdatedAt,
+        LastAccessedAt = m.LastAccessedAt,
+        ExpiresAt = m.ExpiresAt,
+    };
+
     public record MemoryExportDto
     {
         public string AgentId { get; init; } = "";
@@ -215,5 +349,29 @@ public class MemoryController : ControllerBase
         public string Value { get; init; } = "";
         [Range(1, 87_600)]
         public int? TtlHours { get; init; }
+    }
+
+    public record BrowseResponse
+    {
+        public int Total { get; init; }
+        public List<MemoryExportDto> Memories { get; init; } = [];
+    }
+
+    public record StatsResponse
+    {
+        public string AgentId { get; init; } = "";
+        public int TotalMemories { get; init; }
+        public int ActiveMemories { get; init; }
+        public int ExpiredMemories { get; init; }
+        public List<CategoryStat> Categories { get; init; } = [];
+    }
+
+    public record CategoryStat
+    {
+        public string Category { get; init; } = "";
+        public int Total { get; init; }
+        public int Active { get; init; }
+        public int Expired { get; init; }
+        public DateTime LastUpdated { get; init; }
     }
 }

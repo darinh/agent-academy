@@ -17,3 +17,4 @@ export * from "./commands";
 export * from "./analytics";
 export * from "./sprints";
 export * from "./system";
+export * from "./memories";

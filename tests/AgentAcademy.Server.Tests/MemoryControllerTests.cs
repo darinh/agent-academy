@@ -349,4 +349,225 @@ public sealed class MemoryControllerTests : IDisposable
         Assert.Contains(remaining, m => m.Key == "active");
         Assert.Contains(remaining, m => m.Key == "no-expiry");
     }
+
+    // ── Browse ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Browse_Unauthenticated_ReturnsUnauthorized()
+    {
+        SetAuthenticated(false);
+        var result = await _controller.Browse(agentId: "agent1", category: null, search: null);
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Browse_MissingAgentId_ReturnsBadRequest()
+    {
+        var result = await _controller.Browse(agentId: null, category: null, search: null);
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+    }
+
+    [Fact]
+    public async Task Browse_EmptyDb_ReturnsEmptyList()
+    {
+        var result = await _controller.Browse(agentId: "agent1", category: null, search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        Assert.Equal(0, response.Total);
+        Assert.Empty(response.Memories);
+    }
+
+    [Fact]
+    public async Task Browse_ReturnsAllMemoriesForAgent()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "k1", Category = "decision", Value = "v1", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k2", Category = "lesson", Value = "v2", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a2", Key = "k3", Category = "pattern", Value = "v3", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: null, search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        Assert.Equal(2, response.Total);
+        Assert.All(response.Memories, m => Assert.Equal("a1", m.AgentId));
+    }
+
+    [Fact]
+    public async Task Browse_FiltersByCategory()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "k1", Category = "decision", Value = "v1", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k2", Category = "lesson", Value = "v2", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: "decision", search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        Assert.Single(response.Memories);
+        Assert.Equal("decision", response.Memories[0].Category);
+    }
+
+    [Fact]
+    public async Task Browse_ExcludesExpiredByDefault()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "active", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "expired", Category = "lesson", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(-1) });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: null, search: null, includeExpired: false);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        Assert.Single(response.Memories);
+        Assert.Equal("active", response.Memories[0].Key);
+    }
+
+    [Fact]
+    public async Task Browse_IncludesExpiredWhenRequested()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "active", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "expired", Category = "lesson", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(-1) });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: null, search: null, includeExpired: true);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        Assert.Equal(2, response.Total);
+    }
+
+    [Fact]
+    public async Task Browse_OrdersByCategoryThenKey()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "z-key", Category = "lesson", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "a-key", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "b-key", Category = "decision", Value = "v", CreatedAt = now });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Browse(agentId: "a1", category: null, search: null);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.BrowseResponse>(ok.Value);
+        Assert.Equal(3, response.Total);
+        Assert.Equal("a-key", response.Memories[0].Key);
+        Assert.Equal("b-key", response.Memories[1].Key);
+        Assert.Equal("z-key", response.Memories[2].Key);
+    }
+
+    // ── Stats ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Stats_Unauthenticated_ReturnsUnauthorized()
+    {
+        SetAuthenticated(false);
+        var result = await _controller.Stats(agentId: "agent1");
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Stats_MissingAgentId_ReturnsBadRequest()
+    {
+        var result = await _controller.Stats(agentId: null);
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+    }
+
+    [Fact]
+    public async Task Stats_ReturnsPerCategoryCounts()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "k1", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k2", Category = "decision", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k3", Category = "lesson", Value = "v", CreatedAt = now },
+            new AgentMemoryEntity { AgentId = "a1", Key = "k4", Category = "lesson", Value = "v", CreatedAt = now, ExpiresAt = now.AddHours(-1) });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Stats(agentId: "a1");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<MemoryController.StatsResponse>(ok.Value);
+        Assert.Equal("a1", response.AgentId);
+        Assert.Equal(4, response.TotalMemories);
+        Assert.Equal(3, response.ActiveMemories);
+        Assert.Equal(1, response.ExpiredMemories);
+        Assert.Equal(2, response.Categories.Count);
+
+        var decisionStat = response.Categories.First(c => c.Category == "decision");
+        Assert.Equal(2, decisionStat.Active);
+        Assert.Equal(0, decisionStat.Expired);
+    }
+
+    // ── Delete ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Delete_Unauthenticated_ReturnsUnauthorized()
+    {
+        SetAuthenticated(false);
+        var result = await _controller.Delete(agentId: "agent1", key: "k1");
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Delete_MissingAgentId_ReturnsBadRequest()
+    {
+        var result = await _controller.Delete(agentId: null, key: "k1");
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+    }
+
+    [Fact]
+    public async Task Delete_MissingKey_ReturnsBadRequest()
+    {
+        var result = await _controller.Delete(agentId: "a1", key: null);
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("missing_key", bad.Value!.ToString()!);
+    }
+
+    [Fact]
+    public async Task Delete_NotFound_ReturnsNotFound()
+    {
+        var result = await _controller.Delete(agentId: "a1", key: "nonexistent");
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Delete_ExistingMemory_RemovesAndReturnsOk()
+    {
+        _db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "a1", Key = "to-delete", Category = "decision", Value = "v",
+            CreatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.Delete(agentId: "a1", key: "to-delete");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        Assert.Contains("\"status\":\"deleted\"", json);
+
+        var remaining = await _db.AgentMemories.FindAsync("a1", "to-delete");
+        Assert.Null(remaining);
+    }
+
+    [Fact]
+    public async Task Delete_DoesNotAffectOtherMemories()
+    {
+        _db.AgentMemories.AddRange(
+            new AgentMemoryEntity { AgentId = "a1", Key = "keep", Category = "lesson", Value = "v", CreatedAt = DateTime.UtcNow },
+            new AgentMemoryEntity { AgentId = "a1", Key = "remove", Category = "decision", Value = "v", CreatedAt = DateTime.UtcNow });
+        await _db.SaveChangesAsync();
+
+        await _controller.Delete(agentId: "a1", key: "remove");
+
+        var remaining = await _db.AgentMemories.Where(m => m.AgentId == "a1").ToListAsync();
+        Assert.Single(remaining);
+        Assert.Equal("keep", remaining[0].Key);
+    }
 }

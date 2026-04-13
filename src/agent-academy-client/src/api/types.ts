@@ -959,3 +959,37 @@ export interface SearchResults {
   totalCount: number;
   query: string;
 }
+
+// ── Agent Memory ────────────────────────────────────────────────
+
+export interface MemoryDto {
+  agentId: string;
+  category: string;
+  key: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string | null;
+  lastAccessedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface BrowseMemoriesResponse {
+  total: number;
+  memories: MemoryDto[];
+}
+
+export interface MemoryCategoryStat {
+  category: string;
+  total: number;
+  active: number;
+  expired: number;
+  lastUpdated: string;
+}
+
+export interface MemoryStatsResponse {
+  agentId: string;
+  totalMemories: number;
+  activeMemories: number;
+  expiredMemories: number;
+  categories: MemoryCategoryStat[];
+}

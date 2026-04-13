@@ -18,6 +18,7 @@ const DmPanel = lazy(() => import("./DmPanel"));
 const CommandsPanel = lazy(() => import("./CommandsPanel"));
 const SprintPanel = lazy(() => import("./SprintPanel"));
 const SearchPanel = lazy(() => import("./SearchPanel"));
+const MemoryBrowserPanel = lazy(() => import("./MemoryBrowserPanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -118,6 +119,9 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onNavigateToRoom={(roomId) => { props.onSelectRoom(roomId); }}
               onNavigateToTasks={props.onNavigateToTasks}
             />
+          )}
+          {tab === "memories" && (
+            <MemoryBrowserPanel agents={props.configuredAgents} />
           )}
         </section>
       </Suspense>
