@@ -124,9 +124,12 @@ internal sealed class TestServiceGraph : IDisposable
             NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo");
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
-        var breakoutLifecycle = new BreakoutLifecycleService(
+        var breakoutCompletion = new BreakoutCompletionService(
             scopeFactory, Catalog, Executor, SpecManager, pipeline,
-            gitService, worktreeService, memoryLoader,
+            memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, Catalog, Executor, SpecManager,
+            gitService, worktreeService, memoryLoader, breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
         var taskAssignment = new TaskAssignmentHandler(
             Catalog, gitService, worktreeService, breakoutLifecycle,

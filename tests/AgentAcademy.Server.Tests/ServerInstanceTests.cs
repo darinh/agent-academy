@@ -93,11 +93,14 @@ public class ServerInstanceTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var pipeline = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
         var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
-        var breakoutLifecycle = new BreakoutLifecycleService(
+        var breakoutCompletion = new BreakoutCompletionService(
             scopeFactory, _catalog, executor, new SpecManager(), pipeline,
+            memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, _catalog, executor, new SpecManager(),
             new GitService(NullLogger<GitService>.Instance),
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
-            memoryLoader, NullLogger<BreakoutLifecycleService>.Instance);
+            memoryLoader, breakoutCompletion, NullLogger<BreakoutLifecycleService>.Instance);
         var taskAssignment = new TaskAssignmentHandler(
             _catalog, new GitService(NullLogger<GitService>.Instance),
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),

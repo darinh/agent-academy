@@ -393,9 +393,12 @@ public class DiscordNotificationProviderTests
         var gitService = new GitService(Substitute.For<ILogger<GitService>>());
         var worktreeService = new WorktreeService(Substitute.For<ILogger<WorktreeService>>(), repositoryRoot: "/tmp/test-repo");
         var memoryLoader = new AgentMemoryLoader(scopeFactory, Substitute.For<ILogger<AgentMemoryLoader>>());
+        var breakoutCompletion = new BreakoutCompletionService(
+            scopeFactory, catalog, executor, specManager, pipeline,
+            memoryLoader, Substitute.For<ILogger<BreakoutCompletionService>>());
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, catalog, executor, specManager, pipeline, gitService, worktreeService,
-            memoryLoader,
+            scopeFactory, catalog, executor, specManager, gitService, worktreeService,
+            memoryLoader, breakoutCompletion,
             Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
         var taskAssignmentHandler = new TaskAssignmentHandler(catalog, gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());

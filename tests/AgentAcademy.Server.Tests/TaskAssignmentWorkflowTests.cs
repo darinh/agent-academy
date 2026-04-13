@@ -134,12 +134,15 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
-        var breakoutLifecycle = new BreakoutLifecycleService(
+        var breakoutCompletion = new BreakoutCompletionService(
             scopeFactory, _catalog, _executor, new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, _catalog, _executor, new SpecManager(),
             _gitService,
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
-            memoryLoader,
+            memoryLoader, breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
 
         var pipeline = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
@@ -238,12 +241,15 @@ public class TaskAssignmentWorkflowTests : IDisposable
 
         var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader2 = new AgentMemoryLoader(scopeFactory2, NullLogger<AgentMemoryLoader>.Instance);
-        var breakoutLifecycle2 = new BreakoutLifecycleService(
+        var breakoutCompletion2 = new BreakoutCompletionService(
             scopeFactory2, _catalog, _executor, new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            memoryLoader2, NullLogger<BreakoutCompletionService>.Instance);
+        var breakoutLifecycle2 = new BreakoutLifecycleService(
+            scopeFactory2, _catalog, _executor, new SpecManager(),
             mockGitService,
             new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
-            memoryLoader2,
+            memoryLoader2, breakoutCompletion2,
             NullLogger<BreakoutLifecycleService>.Instance);
 
         var pipeline2 = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
