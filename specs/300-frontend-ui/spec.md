@@ -36,7 +36,9 @@ App.tsx (FluentProvider + AppShell)
             ├── CommandsPanel.tsx
             ├── TimelinePanel.tsx
             ├── DashboardPanel.tsx
-            │   └── AgentAnalyticsPanel.tsx (per-agent performance metrics)
+            │   ├── AgentAnalyticsPanel.tsx (per-agent performance metrics)
+            │   └── WorktreeStatusPanel.tsx (live worktree health widget)
+            ├── DigestPanel.tsx (learning digest history and detail)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
@@ -609,6 +611,109 @@ interface SprintArtifact {
 interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; stages: string[]; }
 interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
 ```
+
+## Learning Digests (`DigestPanel.tsx`)
+
+Displays the history of AI-generated learning digests — periodic syntheses of agent retrospectives into shared cross-cutting memories. Accessible as a top-level tab (📚 Digests) in the sidebar.
+
+### UI Layout
+
+1. **Header**: Title "Learning Digests" with total-count badge and controls (status filter dropdown, refresh button)
+2. **Stats row**: Aggregate cards — total digests, memories created, retros processed, undigested retros (highlighted in gold when > 0), last completed timestamp
+3. **Digest list**: Paginated rows (20 per page). Each row shows status badge (Completed/Pending/Failed), truncated summary (120 chars), memory count, retro count, and created timestamp. Click to expand detail.
+4. **Pagination**: Prev/Next buttons with "Page N of M" indicator
+5. **Detail panel**: Expands below the list when a digest is selected. Shows digest ID, status badge, created timestamp, memory/retro counts, full summary text, and source retrospectives (each with agent ID, task ID, timestamp, and full content)
+
+### Data Flow
+
+```
+DigestPanel
+  ├── fetchList → Promise.all([listDigests({status, limit, offset}), getDigestStats()])
+  │   → GET /api/digests?status=X&limit=20&offset=N → DigestListResponse
+  │   → GET /api/digests/stats → DigestStatsResponse
+  └── fetchDetail(id) → getDigest(id)
+      → GET /api/digests/{id} → DigestDetailResponse (includes sources[])
+```
+
+### Race Condition Guards
+
+Both list and detail fetches use `useRef` counters (`fetchIdRef`, `detailFetchIdRef`). Each fetch increments the counter before starting; on completion, the result is discarded if the counter has moved past the request's ID. This prevents stale responses from overwriting newer data when the user rapidly changes filters or selects different digests.
+
+### Types
+
+```typescript
+interface DigestListItem {
+  id: number; createdAt: string; summary: string;
+  memoriesCreated: number; retrospectivesProcessed: number; status: string;
+}
+interface DigestListResponse { digests: DigestListItem[]; total: number; limit: number; offset: number; }
+interface DigestSourceItem {
+  commentId: string; taskId: string; agentId: string; content: string; createdAt: string;
+}
+interface DigestDetailResponse {
+  id: number; createdAt: string; summary: string;
+  memoriesCreated: number; retrospectivesProcessed: number; status: string;
+  sources: DigestSourceItem[];
+}
+interface DigestStatsResponse {
+  totalDigests: number; byStatus: Record<string, number>;
+  totalMemoriesCreated: number; totalRetrospectivesProcessed: number;
+  undigestedRetrospectives: number; lastCompletedAt: string | null;
+}
+```
+
+### Status Badges
+
+| Status | Badge Color | Meaning |
+|--------|-------------|---------|
+| Completed | `done` (green) | Digest finished, memories stored |
+| Pending | `review` (amber) | Digest generation in progress |
+| Failed | `err` (red) | Digest generation failed; retrospective claims released |
+
+### Empty State
+
+When no digests exist: 📚 "No digests yet" with guidance to use `GENERATE_DIGEST` for manual creation.
+
+## Worktree Status Widget (`WorktreeStatusPanel.tsx`)
+
+Embedded in `DashboardPanel` — shows live status of all active agent worktrees. Auto-refreshes every 30 seconds via `setInterval`.
+
+### UI Layout
+
+Each worktree renders as a card with:
+- **Branch row**: Branch icon (cyan), branch name, dirty-files badge (green=clean, amber=1-5, red=6+), task status badge
+- **Meta row**: Agent name (with tooltip showing agent ID), task title (truncated, tooltip for full text)
+- **Last commit**: Short SHA + commit message (mono font), author tooltip
+- **Dirty files preview**: List of dirty file paths (truncated list with "…and N more" overflow)
+- **Diff stats** (right column): Files changed count, insertions (green +N), deletions (red −N)
+
+### Data Flow
+
+```
+WorktreeStatusPanel → getWorktreeStatus() → GET /api/worktrees → WorktreeStatusSnapshot[]
+  (auto-refresh every 30s)
+```
+
+### Types
+
+```typescript
+interface WorktreeStatusSnapshot {
+  branch: string; relativePath: string; createdAt: string;
+  statusAvailable: boolean; error: string | null;
+  totalDirtyFiles: number; dirtyFilesPreview: string[];
+  filesChanged: number; insertions: number; deletions: number;
+  lastCommitSha: string | null; lastCommitMessage: string | null;
+  lastCommitAuthor: string | null; lastCommitDate: string | null;
+  taskId: string | null; taskTitle: string | null; taskStatus: string | null;
+  agentId: string | null; agentName: string | null;
+}
+```
+
+### Error States
+
+- **Load failure**: Error card with icon and message
+- **Worktree unavailable** (`statusAvailable: false`): Shows error text from `wt.error` inline
+- **No worktrees**: 🌳 "No active worktrees" empty state
 
 ## Workspace Search (`SearchPanel.tsx`)
 

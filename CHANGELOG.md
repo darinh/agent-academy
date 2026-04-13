@@ -9,6 +9,10 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 - **008-agent-memory**: `GENERATE_DIGEST` command for manual/admin learning digest triggering. Optional `force` arg bypasses retrospective threshold. Added to planner permissions, human command allowlist (async execution), and planner startup prompt. 12 new tests (4362 total).
 
+### Documentation
+
+- **300-frontend-ui**: Document DigestPanel (learning digest history tab with stats, paginated list, detail with source retrospectives, race condition guards) and WorktreeStatusPanel (live worktree health widget in dashboard with auto-refresh, diff stats, dirty file preview).
+
 ## v2.0.1 (2026-04-12)
 
 ### Refactoring
