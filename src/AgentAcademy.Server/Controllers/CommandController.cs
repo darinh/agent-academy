@@ -50,6 +50,8 @@ public sealed class CommandController : ControllerBase
         "RECORD_EVIDENCE",
         "QUERY_EVIDENCE",
         "CHECK_GATES",
+        "ADD_TASK_DEPENDENCY",
+        "REMOVE_TASK_DEPENDENCY",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

@@ -64,6 +64,7 @@ public class RejectTaskTests : IDisposable
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
+        services.AddScoped<TaskDependencyService>();
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();

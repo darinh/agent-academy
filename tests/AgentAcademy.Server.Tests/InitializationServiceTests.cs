@@ -53,8 +53,9 @@ public sealed class InitializationServiceTests : IDisposable
             _db, NullLogger<MessageService>.Instance, _catalog,
             _activity, session, new MessageBroadcaster());
         var agentLocations = new AgentLocationService(_db, _catalog, _activity);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activity);
         var taskQueries = new TaskQueryService(
-            _db, NullLogger<TaskQueryService>.Instance, _catalog);
+            _db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
         var breakouts = new BreakoutRoomService(
             _db, NullLogger<BreakoutRoomService>.Instance, _catalog,
             _activity, session, taskQueries, agentLocations);

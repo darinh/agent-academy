@@ -40,7 +40,9 @@ public record TaskSnapshot(
     string? MergeCommitSha = null,
     int CommentCount = 0,
     string? WorkspacePath = null,
-    string? SprintId = null
+    string? SprintId = null,
+    List<string>? DependsOnTaskIds = null,
+    List<string>? BlockingTaskIds = null
 );
 
 /// <summary>
@@ -143,4 +145,23 @@ public record SpecTaskLink(
     string LinkedByAgentName,
     string? Note,
     DateTime CreatedAt
+);
+
+/// <summary>
+/// Detailed dependency information for a task, including the dependent task summaries.
+/// </summary>
+public record TaskDependencyInfo(
+    string TaskId,
+    List<TaskDependencySummary> DependsOn,
+    List<TaskDependencySummary> DependedOnBy
+);
+
+/// <summary>
+/// Lightweight summary of a dependency target task.
+/// </summary>
+public record TaskDependencySummary(
+    string TaskId,
+    string Title,
+    TaskStatus Status,
+    bool IsSatisfied
 );

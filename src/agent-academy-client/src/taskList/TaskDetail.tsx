@@ -2,6 +2,7 @@ import type { TaskSnapshot, AgentDefinition } from "../api";
 import { useTaskDetailStyles } from "./taskDetailStyles";
 import { useTaskDetail } from "./useTaskDetail";
 import SpecLinksSection from "./SpecLinksSection";
+import DependenciesSection from "./DependenciesSection";
 import EvidenceLedger from "./EvidenceLedger";
 import GateStatus from "./GateStatus";
 import CommentsSection from "./CommentsSection";
@@ -62,6 +63,12 @@ export default function TaskDetail({ task, agents, onRefresh }: TaskDetailProps)
       )}
 
       <SpecLinksSection specLinks={detail.specLinks} loading={detail.specLinksLoading} />
+
+      <DependenciesSection
+        dependsOn={detail.dependsOn}
+        dependedOnBy={detail.dependedOnBy}
+        loading={detail.depsLoading}
+      />
 
       <EvidenceLedger
         evidence={detail.evidence}

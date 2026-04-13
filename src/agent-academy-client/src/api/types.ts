@@ -313,6 +313,8 @@ export interface TaskSnapshot {
   commentCount?: number;
   type?: "Feature" | "Bug" | "Chore" | "Spike";
   sprintId?: string | null;
+  dependsOnTaskIds?: string[] | null;
+  blockingTaskIds?: string[] | null;
 }
 
 export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker";
@@ -338,6 +340,19 @@ export interface SpecTaskLink {
   linkedByAgentName: string;
   note?: string | null;
   createdAt: string;
+}
+
+export interface TaskDependencySummary {
+  taskId: string;
+  title: string;
+  status: TaskStatus;
+  isSatisfied: boolean;
+}
+
+export interface TaskDependencyInfo {
+  taskId: string;
+  dependsOn: TaskDependencySummary[];
+  dependedOnBy: TaskDependencySummary[];
 }
 
 export type EvidencePhase = "Baseline" | "After" | "Review";

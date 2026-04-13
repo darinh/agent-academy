@@ -26,12 +26,14 @@ import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
 const mockExecuteCommand = vi.fn();
 const mockGetTaskComments = vi.fn();
 const mockGetTaskSpecLinks = vi.fn();
+const mockGetTaskDependencies = vi.fn();
 const mockAssignTask = vi.fn();
 
 vi.mock("../api", () => ({
   executeCommand: (...args: unknown[]) => mockExecuteCommand(...args),
   getTaskComments: (...args: unknown[]) => mockGetTaskComments(...args),
   getTaskSpecLinks: (...args: unknown[]) => mockGetTaskSpecLinks(...args),
+  getTaskDependencies: (...args: unknown[]) => mockGetTaskDependencies(...args),
   assignTask: (...args: unknown[]) => mockAssignTask(...args),
 }));
 
@@ -228,6 +230,7 @@ function uid(): string {
 beforeEach(() => {
   mockGetTaskComments.mockResolvedValue([]);
   mockGetTaskSpecLinks.mockResolvedValue([]);
+  mockGetTaskDependencies.mockResolvedValue({ taskId: "", dependsOn: [], dependedOnBy: [] });
   mockExecuteCommand.mockResolvedValue(makeCommandResponse());
   mockAssignTask.mockResolvedValue(undefined);
 });
@@ -237,6 +240,7 @@ afterEach(() => {
   mockExecuteCommand.mockReset();
   mockGetTaskComments.mockReset();
   mockGetTaskSpecLinks.mockReset();
+  mockGetTaskDependencies.mockReset();
   mockAssignTask.mockReset();
   vi.restoreAllMocks();
 });

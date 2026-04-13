@@ -15,15 +15,18 @@ public sealed class TaskQueryService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskQueryService> _logger;
     private readonly AgentCatalogOptions _catalog;
+    private readonly TaskDependencyService _dependencies;
 
     public TaskQueryService(
         AgentAcademyDbContext db,
         ILogger<TaskQueryService> logger,
-        AgentCatalogOptions catalog)
+        AgentCatalogOptions catalog,
+        TaskDependencyService dependencies)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
+        _dependencies = dependencies;
     }
 
     // ── Task Queries ────────────────────────────────────────────
@@ -49,7 +52,13 @@ public sealed class TaskQueryService
         }
 
         var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
-        return entities.Select(e => BuildTaskSnapshot(e)).ToList();
+        var taskIds = entities.Select(e => e.Id).ToList();
+        var depMap = await _dependencies.GetBatchDependencyIdsAsync(taskIds);
+        return entities.Select(e =>
+        {
+            depMap.TryGetValue(e.Id, out var deps);
+            return BuildTaskSnapshot(e, dependsOnIds: deps.DependsOn, blockingIds: deps.Blocking);
+        }).ToList();
     }
 
     /// <summary>
@@ -60,7 +69,9 @@ public sealed class TaskQueryService
         var entity = await _db.Tasks.FindAsync(taskId);
         if (entity is null) return null;
         var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == taskId);
-        return BuildTaskSnapshot(entity, commentCount);
+        var depMap = await _dependencies.GetBatchDependencyIdsAsync([taskId]);
+        depMap.TryGetValue(taskId, out var deps);
+        return BuildTaskSnapshot(entity, commentCount, deps.DependsOn, deps.Blocking);
     }
 
     /// <summary>
@@ -247,6 +258,19 @@ public sealed class TaskQueryService
     {
         var entity = await _db.Tasks.FindAsync(taskId)
             ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        // Block activation of tasks with unmet dependencies
+        if (status == Shared.Models.TaskStatus.Active)
+        {
+            var blockers = await _dependencies.GetBlockingTasksAsync(taskId);
+            if (blockers.Count > 0)
+            {
+                var blockerList = string.Join(", ", blockers.Select(b => $"'{b.Title}' ({b.Status})"));
+                throw new InvalidOperationException(
+                    $"Cannot activate task '{taskId}' — unmet dependencies: {blockerList}");
+            }
+        }
+
         var now = DateTime.UtcNow;
         entity.Status = status.ToString();
         entity.UpdatedAt = now;
@@ -338,7 +362,11 @@ public sealed class TaskQueryService
 
     // ── Snapshot Builders ───────────────────────────────────────
 
-    internal static TaskSnapshot BuildTaskSnapshot(TaskEntity entity, int commentCount = 0)
+    internal static TaskSnapshot BuildTaskSnapshot(
+        TaskEntity entity,
+        int commentCount = 0,
+        List<string>? dependsOnIds = null,
+        List<string>? blockingIds = null)
     {
         return new TaskSnapshot(
             Id: entity.Id,
@@ -374,7 +402,9 @@ public sealed class TaskQueryService
             MergeCommitSha: entity.MergeCommitSha,
             CommentCount: commentCount,
             WorkspacePath: entity.WorkspacePath,
-            SprintId: entity.SprintId
+            SprintId: entity.SprintId,
+            DependsOnTaskIds: dependsOnIds,
+            BlockingTaskIds: blockingIds
         );
     }
 

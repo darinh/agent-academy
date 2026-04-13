@@ -62,6 +62,7 @@ public class GetPrReviewsHandlerTests : IDisposable
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(catalog);
+        services.AddScoped<TaskDependencyService>();
         services.AddScoped<TaskQueryService>();
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<MessageService>();

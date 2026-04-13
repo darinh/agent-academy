@@ -6,6 +6,7 @@ import type {
   SpecTaskLink,
   TaskAssignmentRequest,
   TaskAssignmentResult,
+  TaskDependencyInfo,
 } from "./types";
 import { apiUrl, request } from "./core";
 
@@ -70,4 +71,21 @@ export function getTaskComments(taskId: string): Promise<TaskComment[]> {
 
 export function getTaskSpecLinks(taskId: string): Promise<SpecTaskLink[]> {
   return request<SpecTaskLink[]>(apiUrl(`/api/tasks/${taskId}/specs`));
+}
+
+export function getTaskDependencies(taskId: string): Promise<TaskDependencyInfo> {
+  return request<TaskDependencyInfo>(apiUrl(`/api/tasks/${taskId}/dependencies`));
+}
+
+export function addTaskDependency(taskId: string, dependsOnTaskId: string): Promise<TaskDependencyInfo> {
+  return request<TaskDependencyInfo>(apiUrl(`/api/tasks/${taskId}/dependencies`), {
+    method: "POST",
+    body: JSON.stringify({ dependsOnTaskId }),
+  });
+}
+
+export function removeTaskDependency(taskId: string, dependsOnTaskId: string): Promise<TaskDependencyInfo> {
+  return request<TaskDependencyInfo>(apiUrl(`/api/tasks/${taskId}/dependencies/${dependsOnTaskId}`), {
+    method: "DELETE",
+  });
 }

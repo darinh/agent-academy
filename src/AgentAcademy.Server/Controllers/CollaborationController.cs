@@ -13,6 +13,7 @@ public class CollaborationController : ControllerBase
 {
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
+    private readonly TaskDependencyService _taskDependencies;
     private readonly MessageService _messageService;
     private readonly RoomService _roomService;
     private readonly AgentCatalogOptions _catalog;
@@ -24,6 +25,7 @@ public class CollaborationController : ControllerBase
     public CollaborationController(
         TaskOrchestrationService taskOrchestration,
         TaskQueryService taskQueries,
+        TaskDependencyService taskDependencies,
         MessageService messageService,
         RoomService roomService,
         AgentCatalogOptions catalog,
@@ -34,6 +36,7 @@ public class CollaborationController : ControllerBase
     {
         _taskOrchestration = taskOrchestration;
         _taskQueries = taskQueries;
+        _taskDependencies = taskDependencies;
         _messageService = messageService;
         _roomService = roomService;
         _catalog = catalog;
@@ -375,6 +378,50 @@ public class CollaborationController : ControllerBase
         }
         catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
     }
+
+    // ── Task Dependencies ───────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/tasks/{taskId}/dependencies — add a dependency.
+    /// </summary>
+    [HttpPost("api/tasks/{taskId}/dependencies")]
+    public async Task<ActionResult<TaskDependencyInfo>> AddDependency(
+        string taskId, [FromBody] AddDependencyRequest request)
+    {
+        try
+        {
+            var info = await _taskDependencies.AddDependencyAsync(taskId, request.DependsOnTaskId);
+            return StatusCode(201, info);
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// DELETE /api/tasks/{taskId}/dependencies/{dependsOnTaskId} — remove a dependency.
+    /// </summary>
+    [HttpDelete("api/tasks/{taskId}/dependencies/{dependsOnTaskId}")]
+    public async Task<ActionResult<TaskDependencyInfo>> RemoveDependency(
+        string taskId, string dependsOnTaskId)
+    {
+        try
+        {
+            var info = await _taskDependencies.RemoveDependencyAsync(taskId, dependsOnTaskId);
+            return Ok(info);
+        }
+        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// GET /api/tasks/{taskId}/dependencies — get full dependency info.
+    /// </summary>
+    [HttpGet("api/tasks/{taskId}/dependencies")]
+    public async Task<ActionResult<TaskDependencyInfo>> GetDependencies(string taskId)
+    {
+        var task = await _taskQueries.GetTaskAsync(taskId);
+        if (task is null) return NotFound(new { error = $"Task '{taskId}' not found" });
+        var info = await _taskDependencies.GetDependencyInfoAsync(taskId);
+        return Ok(info);
+    }
 }
 
 /// <summary>
@@ -394,3 +441,5 @@ public record UpdateTaskPrRequest(
 public record CompleteTaskRequest(
     [property: Range(0, 100_000)] int CommitCount,
     List<string>? TestsCreated = null);
+public record AddDependencyRequest(
+    [property: Required, StringLength(200)] string DependsOnTaskId);

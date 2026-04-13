@@ -51,6 +51,7 @@ public class TaskLifecycleServiceTests : IDisposable
         services.AddScoped<ActivityPublisher>();
         services.AddSingleton(_catalog);
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<TaskDependencyService>();
         services.AddScoped<TaskQueryService>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();

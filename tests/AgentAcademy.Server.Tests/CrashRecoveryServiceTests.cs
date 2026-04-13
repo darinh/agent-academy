@@ -76,8 +76,9 @@ public class CrashRecoveryServiceTests : IDisposable
             _db, NullLogger<MessageService>.Instance, _catalog,
             _activityPublisher, sessionService, new MessageBroadcaster());
 
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activityPublisher);
         var taskQueries = new TaskQueryService(
-            _db, NullLogger<TaskQueryService>.Instance, _catalog);
+            _db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
 
         _breakouts = new BreakoutRoomService(
             _db, NullLogger<BreakoutRoomService>.Instance, _catalog,

@@ -41,6 +41,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<TaskEvidenceEntity> TaskEvidence => Set<TaskEvidenceEntity>();
     public DbSet<SprintEntity> Sprints => Set<SprintEntity>();
     public DbSet<SprintArtifactEntity> SprintArtifacts => Set<SprintArtifactEntity>();
+    public DbSet<TaskDependencyEntity> TaskDependencies => Set<TaskDependencyEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -129,6 +130,26 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_tasks_workspace");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("idx_tasks_created");
             entity.HasIndex(e => e.CompletedAt).HasDatabaseName("idx_tasks_completed");
+        });
+
+        // ── Task Dependencies ───────────────────────────────────
+        modelBuilder.Entity<TaskDependencyEntity>(entity =>
+        {
+            entity.ToTable("task_dependencies");
+            entity.HasKey(e => new { e.TaskId, e.DependsOnTaskId });
+            entity.Property(e => e.CreatedAt).IsRequired();
+
+            entity.HasOne(e => e.Task)
+                .WithMany(t => t.Dependencies)
+                .HasForeignKey(e => e.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.DependsOn)
+                .WithMany(t => t.Dependents)
+                .HasForeignKey(e => e.DependsOnTaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.DependsOnTaskId).HasDatabaseName("idx_task_deps_depends_on");
         });
 
         // ── Task Items ────────────────────────────────────────

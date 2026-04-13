@@ -113,10 +113,12 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
             }));
         sc.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         sc.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        sc.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         sc.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
         sc.AddScoped<ConversationSessionService>();
+        sc.AddScoped<TaskDependencyService>();
         sc.AddScoped<TaskQueryService>();
         sc.AddScoped<TaskLifecycleService>();
         sc.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
@@ -416,8 +418,9 @@ public class PrSyncHelperTests : IDisposable
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activityPublisher);
+        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
+        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher, taskDeps);
         var agentLocations = new AgentLocationService(_db, catalog, _activityPublisher);
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, _taskQueries, agentLocations);

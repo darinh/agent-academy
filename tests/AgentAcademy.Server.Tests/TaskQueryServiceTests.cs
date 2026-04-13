@@ -40,7 +40,10 @@ public class TaskQueryServiceTests : IDisposable
             ]
         );
 
-        _sut = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
+        var activityBus = new ActivityBroadcaster();
+        var activityPublisher = new ActivityPublisher(_db, activityBus);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        _sut = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
     }
 
     public void Dispose()
