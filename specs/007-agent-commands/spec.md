@@ -200,6 +200,15 @@ These formalize existing capabilities with audit trails and structured output.
 - `dotnet-build` — runs `dotnet build --nologo -v q`
 - `dotnet-test` — runs `dotnet test --nologo -v q`
 
+#### Phase 1H: Worktree Management — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `LIST_WORKTREES` | `status?` | All active worktrees: branch, relative path, created time, linked task info (id, title, status, agent). Optional `status` filter matches on task status. | Audit event | `ListWorktreesHandler.cs` — queries WorktreeService + DB task enrichment; read-only, retry-safe |
+| `CLEANUP_WORKTREES` | `includeOrphans?`, `confirm` | Count and list of removed branches | Removes worktrees linked to completed/cancelled tasks. With `includeOrphans=true`, also removes worktrees with no linked task. | `CleanupWorktreesHandler.cs` — Planner/Human-only; destructive (requires `confirm=true`) |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ListWorktrees,CleanupWorktrees}Handler.cs` — 17 tests in `WorktreeCommandHandlerTests.cs`.
+
 ### Tier 2 — Full Autonomy
 
 #### Room Management
@@ -219,6 +228,9 @@ These formalize existing capabilities with audit trails and structured output.
 
 #### Data & Operations
 `QUERY_DB`, `RUN_MIGRATIONS`, `SHOW_MIGRATION_STATUS`, `HEALTHCHECK`, `SHOW_ACTIVE_CONNECTIONS`
+
+#### Worktree Management
+~~`LIST_WORKTREES`~~ *(implemented)*, ~~`CLEANUP_WORKTREES`~~ *(implemented)*
 
 #### Audit & Debug
 `SHOW_AUDIT_EVENTS`, `SHOW_LAST_ERROR`, `TRACE_REQUEST`, `LIST_FEATURE_FLAGS`, `RETRY_FAILED_JOB`
@@ -341,7 +353,7 @@ Expose a subset of platform commands to authenticated human users via HTTP REST 
 
 | Tier | Commands | Risk | Human Access |
 |------|----------|------|--------------|
-| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
+| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `LIST_WORKTREES`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
 | **Side effects** | `RUN_BUILD`, `RUN_TESTS` | Compute cost, long-running | ✅ Allowed |
 | **Room management** | `CREATE_ROOM`, `REOPEN_ROOM`, `CLOSE_ROOM`, `INVITE_TO_ROOM` | State mutation | ✅ Allowed |
 | **Dangerous** | `SHELL`, `RESTART_SERVER`, `MERGE_TASK`, `RECALL_AGENT` | State mutation, git ops | ❌ Denied |
@@ -553,7 +565,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 
 ### Guardrails
 - **Dry-run mode**: Side-effecting commands support `dryRun: true` returning what would happen
-- **Confirmation**: Destructive commands require explicit `confirm=true` in args before execution. Without the flag, the pipeline returns `Denied` status with `CONFIRMATION_REQUIRED` error code and a structured response containing the warning, command name, and retry hint. Destructive handlers self-declare via `ICommandHandler.IsDestructive` (default false). Confirmation check runs after authorization but before rate limiting (unconfirmed commands don't consume rate-limit budget). Applies to both agent pipeline and human/consultant API. Destructive commands: `CLOSE_ROOM`, `CLEANUP_ROOMS`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`. All agent `StartupPrompt` entries in `agents.json` document this flow with per-agent destructive command lists and the two-step `confirm=true` workflow.
+- **Confirmation**: Destructive commands require explicit `confirm=true` in args before execution. Without the flag, the pipeline returns `Denied` status with `CONFIRMATION_REQUIRED` error code and a structured response containing the warning, command name, and retry hint. Destructive handlers self-declare via `ICommandHandler.IsDestructive` (default false). Confirmation check runs after authorization but before rate limiting (unconfirmed commands don't consume rate-limit budget). Applies to both agent pipeline and human/consultant API. Destructive commands: `CLOSE_ROOM`, `CLEANUP_ROOMS`, `CLEANUP_WORKTREES`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`. All agent `StartupPrompt` entries in `agents.json` document this flow with per-agent destructive command lists and the two-step `confirm=true` workflow.
 - **Secret redaction**: All command output is scanned for secrets/tokens before logging
 - **Idempotent mutations**: Write commands produce the same result when called twice with the same args
 
@@ -718,3 +730,4 @@ Discord Server
 | 2026-04-07 | Evidence ledger commands: RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES added to Phase 1C (Verification). Records structured verification checks against tasks with phase (Baseline/After/Review), check names, tool, command, exit code, output. CHECK_GATES evaluates minimum evidence for status transitions. All 6 agents permitted. Human API allowlist updated. Permission model table updated. 23 new tests (1375 total). | evidence-ledger | `42d4124` |
 | 2026-04-05 | Spec-task linking (Phase 2): `SpecTaskLinkEntity` junction table, `LINK_TASK_TO_SPEC` and `SHOW_UNLINKED_CHANGES` commands, `SpecManager.LoadSpecContextForTaskAsync` for task-filtered spec loading, REST endpoints `GET /api/tasks/{id}/specs` and `GET /api/specs/{sectionId}/tasks`, cascade delete, unique constraint, `SpecTaskLinked` activity event. 36 new tests. | spec-task-linking | (this change) |
 | 2026-04-12 | Pipeline-level command retry: `ExecuteWithRetryAsync` retries retry-safe commands on `TIMEOUT`/`INTERNAL` errors (up to 3 attempts, 1s/2s exponential backoff). `ICommandHandler.IsRetrySafe` opt-in property. 19 read-only/idempotent handlers marked safe. `CommandEnvelope.RetryCount` added. `FormatResultsForContext` includes retry count. `RATE_LIMIT` intentionally excluded from pipeline retry. Error recovery known gap resolved. 9 new tests. | pipeline-retry | (this change) |
+| 2026-04-13 | Worktree management commands (Phase 1H): `LIST_WORKTREES` (read-only, retry-safe) returns active worktrees with task/agent enrichment and optional `status` filter. `CLEANUP_WORKTREES` (destructive, Planner/Human-only) removes stale worktrees for completed/cancelled tasks, with `includeOrphans` option. Added to destructive commands list and read-only allowlist. 17 new tests. | worktree-agent-commands | (this change) |
