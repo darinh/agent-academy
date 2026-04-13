@@ -560,6 +560,67 @@ public class TaskLifecycleServiceTests : IDisposable
             () => svc.CompleteTaskCoreAsync("nonexistent", 1));
     }
 
+    [Fact]
+    public async Task CompleteTask_PublishesUnblockEvent_WhenDownstreamFullyUnblocked()
+    {
+        var (svc, db) = CreateScope();
+        SeedTask(db, id: "upstream-1", status: nameof(TaskStatus.Active));
+        SeedTask(db, id: "downstream-1", status: nameof(TaskStatus.Active));
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "downstream-1", DependsOnTaskId = "upstream-1", CreatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        await svc.CompleteTaskCoreAsync("upstream-1", 3);
+
+        var unblockEvents = db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.TaskUnblocked))
+            .ToList();
+        Assert.Single(unblockEvents);
+        Assert.Equal("downstream-1", unblockEvents[0].TaskId);
+        Assert.Contains("unblocked", unblockEvents[0].Message);
+    }
+
+    [Fact]
+    public async Task CompleteTask_NoUnblockEvent_WhenDownstreamHasOtherBlockers()
+    {
+        var (svc, db) = CreateScope();
+        SeedTask(db, id: "upstream-1", status: nameof(TaskStatus.Active));
+        SeedTask(db, id: "upstream-2", status: nameof(TaskStatus.Active));
+        SeedTask(db, id: "downstream-1", status: nameof(TaskStatus.Active));
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "downstream-1", DependsOnTaskId = "upstream-1", CreatedAt = DateTime.UtcNow
+        });
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "downstream-1", DependsOnTaskId = "upstream-2", CreatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        await svc.CompleteTaskCoreAsync("upstream-1", 3);
+
+        var unblockEvents = db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.TaskUnblocked))
+            .ToList();
+        Assert.Empty(unblockEvents);
+    }
+
+    [Fact]
+    public async Task CompleteTask_NoUnblockEvent_WhenNoDownstreamTasks()
+    {
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.CompleteTaskCoreAsync("task-1", 5);
+
+        var unblockEvents = db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.TaskUnblocked))
+            .ToList();
+        Assert.Empty(unblockEvents);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ResolveTaskPlanContent (static)
     // ═══════════════════════════════════════════════════════════════

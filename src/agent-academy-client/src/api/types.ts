@@ -142,7 +142,8 @@ export type ActivityEventType =
   | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
   | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
   | "DirectMessageSent" | "TaskPrStatusChanged"
-  | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled";
+  | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled"
+  | "TaskUnblocked";
 
 export interface ActivityEvent {
   id: string;

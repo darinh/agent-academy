@@ -176,6 +176,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "PresenceUpdated":
       case "DirectMessageSent":
       case "TaskPrStatusChanged":
+      case "TaskUnblocked":
       case "AgentErrorOccurred":
       case "AgentWarningOccurred":
       case "SubagentFailed":
