@@ -39,6 +39,10 @@ vi.mock("../api", () => ({
   sendDmToAgent: vi.fn(),
 }));
 
+vi.mock("../useMessageSSE", () => ({
+  useMessageSSE: () => "disconnected",
+}));
+
 import DmPanel from "../DmPanel";
 import type { DmThreadSummary, DmMessage } from "../api";
 import { getDmThreads, getDmThreadMessages, sendDmToAgent } from "../api";
@@ -886,7 +890,7 @@ describe("DmPanel (interactive)", () => {
       expect(mockGetDmThreads.mock.calls.length).toBe(callsAfterLoad);
     });
 
-    it("polls messages every 3 seconds when thread selected", async () => {
+    it("does not poll messages — SSE handles live delivery", async () => {
       mockGetDmThreads.mockResolvedValue([makeThread()]);
       mockGetDmThreadMessages.mockResolvedValue([
         makeMsg({ id: "dm-1", content: "Initial" }),
@@ -904,12 +908,11 @@ describe("DmPanel (interactive)", () => {
       const msgCalls = mockGetDmThreadMessages.mock.calls.length;
 
       await act(async () => {
-        vi.advanceTimersByTime(3_000);
+        vi.advanceTimersByTime(15_000);
       });
 
-      expect(mockGetDmThreadMessages.mock.calls.length).toBeGreaterThan(
-        msgCalls,
-      );
+      // No additional fetches — SSE replaces polling for message delivery
+      expect(mockGetDmThreadMessages.mock.calls.length).toBe(msgCalls);
     });
 
     it("does not poll messages in read-only mode", async () => {
