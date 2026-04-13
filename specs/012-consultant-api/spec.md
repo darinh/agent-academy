@@ -265,6 +265,28 @@ Frontend: Export CSV button on `AgentAnalyticsPanel` toolbar. Uses `downloadFile
 
 > **Tests**: `CsvExportTests` (20 tests — formatting, escaping, formula injection, edge cases), `ExportControllerTests` (14 tests — validation, content types, truncation, time filtering, integration with real DB).
 
+#### Task Cycle Analytics
+
+> **Source**: `src/AgentAcademy.Server/Services/TaskAnalyticsService.cs`, `src/AgentAcademy.Server/Controllers/AnalyticsController.cs`
+
+Task effectiveness metrics computed from `TaskEntity` lifecycle data.
+
+```
+GET /api/analytics/tasks?hoursBack={N}
+```
+
+Returns `TaskCycleAnalytics`:
+- **Overview**: Total tasks, status counts, completion rate, average cycle time (created→completed), average queue time (created→started), average execution span (started→completed), average review rounds, rework rate (tasks needing >1 review round), total commits.
+- **AgentEffectiveness[]**: Per-agent metrics — assigned, completed, cancelled, completion rate, cycle/queue/execution times, review rounds, commits per task, first-pass approval rate, rework rate. Attribution based on current assignee (not full reassignment history).
+- **ThroughputBuckets[]**: 12 time-series buckets with completed/created counts for sparkline visualization.
+- **TypeBreakdown**: Counts by task type (Feature, Bug, Chore, Spike).
+
+Completion rate uses a union cohort (created-in-window ∪ completed-in-window) as the denominator to prevent >100% when tasks are created before the window but completed inside it. Database indexes on `CreatedAt` and `CompletedAt` support efficient time-window queries.
+
+Frontend: `TaskAnalyticsPanel` in Dashboard — summary KPIs (completion rate, avg cycle, avg queue, avg reviews, rework rate, commits), status badges, throughput sparkline, type breakdown chips, sortable agent effectiveness table. Auto-refreshes every 60s.
+
+> **Tests**: `TaskAnalyticsTests` (19 tests — empty state, status counts, metrics computation, time windowing, rate capping, per-agent breakdown, type breakdown, throughput buckets, controller validation). Frontend: `taskAnalyticsPanel.dom.test.tsx` (14 tests — loading, error, empty, KPIs, badges, sparkline, table, sort, refresh, auto-refresh).
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
