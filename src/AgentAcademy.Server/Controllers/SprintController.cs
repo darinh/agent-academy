@@ -173,14 +173,14 @@ public class SprintController : ControllerBase
     /// POST /api/sprints/{id}/advance — advance the sprint to the next stage.
     /// </summary>
     [HttpPost("{id}/advance")]
-    public async Task<IActionResult> AdvanceSprint(string id)
+    public async Task<IActionResult> AdvanceSprint(string id, [FromQuery] bool force = false)
     {
         try
         {
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _stageService.AdvanceStageAsync(id);
+            var sprint = await _stageService.AdvanceStageAsync(id, force);
             var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),

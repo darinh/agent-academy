@@ -238,6 +238,86 @@ public class SprintCommandHandlerTests : IDisposable
         Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
     }
 
+    [Fact]
+    public async Task AdvanceStage_Implementation_IncompleteTasks_BlocksAgent()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Implementation";
+        db.Rooms.Add(new RoomEntity { Id = "prereq-room", Name = "Test", Status = "Active",
+            WorkspacePath = TestWorkspace, CreatedAt = DateTime.UtcNow });
+        db.Tasks.Add(new TaskEntity { Id = "t-1", Title = "Unfinished", Description = "d",
+            SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room",
+            SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE"), CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Cannot advance from Implementation", result.Error);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_ForceIgnoredForAgents()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Implementation";
+        db.Rooms.Add(new RoomEntity { Id = "prereq-room2", Name = "Test", Status = "Active",
+            WorkspacePath = TestWorkspace, CreatedAt = DateTime.UtcNow });
+        db.Tasks.Add(new TaskEntity { Id = "t-2", Title = "Unfinished", Description = "d",
+            SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room2",
+            SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        // Agent sends force=true, but it should be ignored (AgentRole="Planner", not "Human")
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE", new Dictionary<string, object?> { ["force"] = true }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Cannot advance from Implementation", result.Error);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_ForceAllowedForHumans()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Implementation";
+        db.Rooms.Add(new RoomEntity { Id = "prereq-room3", Name = "Test", Status = "Active",
+            WorkspacePath = TestWorkspace, CreatedAt = DateTime.UtcNow });
+        db.Tasks.Add(new TaskEntity { Id = "t-3", Title = "Unfinished", Description = "d",
+            SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room3",
+            SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        var humanContext = new CommandContext(
+            AgentId: "human", AgentName: "Human", AgentRole: "Human",
+            RoomId: "main", BreakoutRoomId: null, Services: scope.ServiceProvider);
+
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE", new Dictionary<string, object?> { ["force"] = true }),
+            humanContext);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["forced"]);
+    }
+
     // ── STORE_ARTIFACT ───────────────────────────────────────────
 
     [Fact]

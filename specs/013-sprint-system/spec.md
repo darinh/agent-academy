@@ -6,7 +6,7 @@ Defines the sprint lifecycle used to structure multi-agent collaboration into di
 
 ## Current Behavior
 
-> **Status: Implemented** — Full sprint lifecycle operational: creation with overflow carry-forward, six-stage advancement with artifact gates and human sign-off, artifact storage with upsert, completion/cancellation, real-time event broadcasting, orchestrator integration (stage-aware prompts and role roster filtering), REST API, agent commands, and frontend panel.
+> **Status: Implemented** — Full sprint lifecycle operational: creation with overflow carry-forward, six-stage advancement with artifact gates, task prerequisites, and human sign-off, artifact storage with upsert, completion/cancellation, real-time event broadcasting, orchestrator integration (stage-aware prompts and role roster filtering), REST API, agent commands, and frontend panel.
 
 ### Sprint Lifecycle
 
@@ -30,6 +30,9 @@ Stages advance forward only — there is no mechanism to revert to a previous st
 | FinalSynthesis | Retrospective: what was delivered, lessons, overflow | `SprintReport` | — | All roles |
 
 **Artifact gates**: Stages with a required artifact cannot be advanced until an artifact of that type has been stored for the current stage.
+
+**Stage prerequisites**: Stages may define task-based prerequisites that must be satisfied before advancement. Currently:
+- **Implementation**: All tasks linked to the sprint (`TaskEntity.SprintId`) must be in a terminal status (`Completed` or `Cancelled`). Prevents premature advancement to FinalSynthesis while work is still in progress. The `force` flag on `AdvanceStageAsync` (and the REST endpoint `?force=true`) skips prerequisite checks — artifact gates and sign-off requirements are never skipped. **The `force` flag is restricted to Human role in the command handler** — agents cannot bypass prerequisites autonomously via `ADVANCE_STAGE: Force=true`. Forced advancement records `forced=true` in the activity event metadata for audit.
 
 **Human sign-off**: Intake and Planning stages enter an `AwaitingSignOff` state when agents request advancement. A human must approve (advancing to the next stage) or reject (keeping the sprint at the current stage for revision). Other stages advance immediately.
 
@@ -207,7 +210,7 @@ Owns sprint lifecycle: creation, completion, cancellation, and queries. Stage ad
 
 Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintStageService>`.
 
-Manages the sprint stage state machine: advancement, sign-off gating, approval/rejection, and timeout handling. Extracted from `SprintService` to separate stage logic from sprint lifecycle.
+Manages the sprint stage state machine: advancement, sign-off gating, approval/rejection, timeout handling, and stage prerequisites (task completion gates). Extracted from `SprintService` to separate stage logic from sprint lifecycle.
 
 #### Constants
 
@@ -219,7 +222,7 @@ Manages the sprint stage state machine: advancement, sign-off gating, approval/r
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `AdvanceStageAsync(sprintId)` | `SprintEntity` | Advances to next stage. Checks artifact gate and sign-off requirement. |
+| `AdvanceStageAsync(sprintId, force)` | `SprintEntity` | Advances to next stage. Checks artifact gate, stage prerequisites (unless `force=true`), and sign-off requirement. |
 | `ApproveAdvanceAsync(sprintId)` | `SprintEntity` | Approves pending sign-off. Moves to the pending stage. |
 | `RejectAdvanceAsync(sprintId)` | `SprintEntity` | Rejects pending sign-off. Clears AwaitingSignOff without advancing. |
 | `TimeOutSignOffAsync(sprintId, ct)` | `SprintEntity` | Auto-rejects a timed-out sign-off request. |
@@ -246,7 +249,7 @@ Every state change is persisted to the `activity_events` table and broadcast via
 |-----------|---------|-------------------|---------------|
 | Create sprint | SprintService | `SprintStarted` | sprintId, sprintNumber, status, currentStage |
 | Store artifact | SprintArtifactService | `SprintArtifactStored` | sprintId, artifactId (if update), stage, artifactType, createdByAgentId, isUpdate |
-| Advance stage | SprintStageService | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff |
+| Advance stage | SprintStageService | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff, forced |
 | Complete sprint | SprintService | `SprintCompleted` | sprintId, status (Completed) |
 | Cancel sprint | SprintService | `SprintCancelled` | sprintId, status (Cancelled) |
 
@@ -351,7 +354,7 @@ Query parameters:
 | Method | Path | Description | Returns |
 |--------|------|-------------|---------|
 | POST | `/api/sprints` | Start new sprint | `SprintDetailResponse` or 409 |
-| POST | `/api/sprints/{id}/advance` | Advance to next stage | `SprintDetailResponse` or 409 |
+| POST | `/api/sprints/{id}/advance?force=true` | Advance to next stage (force skips prerequisites) | `SprintDetailResponse` or 409 |
 | POST | `/api/sprints/{id}/complete` | Complete sprint | `SprintSnapshot` or 409 |
 | POST | `/api/sprints/{id}/cancel` | Cancel sprint | `SprintSnapshot` or 409 |
 | POST | `/api/sprints/{id}/approve-advance` | Approve pending sign-off | `SprintDetailResponse` or 409 |
@@ -387,10 +390,10 @@ Query parameters:
 ### ADVANCE_STAGE
 
 **Handler**: `AdvanceStageHandler`
-**Args**: `SprintId` (optional — resolves from active workspace if omitted)
+**Args**: `SprintId` (optional — resolves from active workspace if omitted), `Force` (optional boolean — skips stage prerequisites, not artifact gates or sign-off)
 **Agent permissions**: Planner only (Aristotle). Human/Consultant access via REST API.
-**Behavior**: Advances the sprint to the next stage. Validates artifact gate. If sign-off required, enters AwaitingSignOff. On success, creates a new conversation session for the new stage (best-effort — failure becomes a warning, not a rollback).
-**Result**: `{ sprintId, number, previousStage, currentStage, pendingStage?, awaitingSignOff, warning?, message }`
+**Behavior**: Advances the sprint to the next stage. Validates artifact gate. Checks stage prerequisites (e.g., Implementation requires all tasks completed/cancelled) — skipped if `Force=true`. If sign-off required, enters AwaitingSignOff. On success, creates a new conversation session for the new stage (best-effort — failure becomes a warning, not a rollback). Forced advancement records `forced=true` in activity event metadata.
+**Result**: `{ sprintId, number, previousStage, currentStage, pendingStage?, awaitingSignOff, forced, warning?, message }`
 
 ### STORE_ARTIFACT
 
@@ -537,6 +540,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-13 | Stage prerequisites — Implementation stage requires all sprint tasks to be Completed/Cancelled before advancement. Force flag skips prerequisites (not artifact gates or sign-off). `AdvanceStageAsync(sprintId, force)`, `PrerequisiteResult` record, reuses `RoomLifecycleService.TerminalTaskStatuses`. REST: `?force=true`. Command: `Force: true`. Forced events include `forced=true` in metadata. 12 new tests. | feat/stage-prerequisites |
 | 2026-04-13 | Spec sync — documented `SprintStageService` (341 lines) extracted from `SprintService` (635→380 lines). Stage state machine (advancement, sign-off, approval/rejection, timeout) now in dedicated class. Updated service layer, methods, constants, and event broadcasting tables. | develop |
 | 2026-04-12 | Structural refactor — extracted `SprintArtifactService` (265 lines) from `SprintService` (835→635 lines). Artifact storage, retrieval, and validation now in dedicated class. `SprintController` and `StoreArtifactHandler` inject the new service. Zero behavioral changes. | develop |
 | 2026-04-12 | Structural refactor — extracted `SprintMetricsCalculator` (289 lines) from `SprintService` (1123→835 lines). Read-only metrics computation now in dedicated class. `SprintController` injects both services. Zero behavioral changes. | develop |

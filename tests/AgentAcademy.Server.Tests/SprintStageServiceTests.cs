@@ -1005,4 +1005,201 @@ public class SprintStageServiceTests : IDisposable
         Assert.Equal(fromDb.CurrentStage, returned.CurrentStage);
         Assert.Equal(fromDb.AwaitingSignOff, returned.AwaitingSignOff);
     }
+
+    // ── Stage Prerequisites ─────────────────────────────────────
+
+    private void SeedTask(string sprintId, string status, string title = "Test task", string? id = null)
+    {
+        const string roomId = "room-prereq";
+        if (!_db.Rooms.Any(r => r.Id == roomId))
+        {
+            _db.Rooms.Add(new RoomEntity
+            {
+                Id = roomId,
+                Name = "Prereq Test Room",
+                Status = "Active",
+                WorkspacePath = "/tmp/test-sprint-1",
+                CreatedAt = DateTime.UtcNow,
+            });
+            _db.SaveChanges();
+        }
+
+        _db.Tasks.Add(new TaskEntity
+        {
+            Id = id ?? Guid.NewGuid().ToString("N"),
+            Title = title,
+            Description = "Test",
+            SuccessCriteria = "Test",
+            Status = status,
+            RoomId = roomId,
+            SprintId = sprintId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        _db.SaveChanges();
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_AllTasksCompleted_Advances()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Completed", "Task A");
+        SeedTask("sprint-1", "Completed", "Task B");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("FinalSynthesis", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_AllTasksCancelled_Advances()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Cancelled", "Task A");
+        SeedTask("sprint-1", "Cancelled", "Task B");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("FinalSynthesis", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_MixedTerminalStatuses_Advances()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Completed", "Task A");
+        SeedTask("sprint-1", "Cancelled", "Task B");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("FinalSynthesis", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_NoTasks_Advances()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("FinalSynthesis", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_ActiveTask_Throws()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Active", "Unfinished task");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AdvanceStageAsync("sprint-1"));
+
+        Assert.Contains("Cannot advance from Implementation", ex.Message);
+        Assert.Contains("1 task(s)", ex.Message);
+        Assert.Contains("force=true", ex.Message);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_QueuedTask_Throws()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Queued", "Queued task");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AdvanceStageAsync("sprint-1"));
+
+        Assert.Contains("Cannot advance from Implementation", ex.Message);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_InReviewTask_Throws()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "InReview", "Reviewing task");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AdvanceStageAsync("sprint-1"));
+
+        Assert.Contains("Cannot advance from Implementation", ex.Message);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_MultipleIncompleteTasks_ReportsCount()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Active", "Task A");
+        SeedTask("sprint-1", "InReview", "Task B");
+        SeedTask("sprint-1", "Completed", "Task C");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AdvanceStageAsync("sprint-1"));
+
+        Assert.Contains("2 task(s)", ex.Message);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_Force_SkipsPrerequisites()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Active", "Unfinished task");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1", force: true);
+
+        Assert.Equal("FinalSynthesis", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_Force_IncludesForcedInEvent()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        SeedTask("sprint-1", "Active", "Unfinished task");
+
+        await _service.AdvanceStageAsync("sprint-1", force: true);
+
+        var evt = await _db.ActivityEvents
+            .OrderByDescending(e => e.OccurredAt)
+            .FirstOrDefaultAsync();
+        Assert.NotNull(evt);
+        Assert.Contains("forced", evt.Message);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_NonImplementationStage_NoPrerequisiteCheck()
+    {
+        // Discussion stage has no artifact gate and no prerequisite — should advance freely
+        await SeedSprintAsync(stage: "Discussion");
+        SeedTask("sprint-1", "Active", "Active task during discussion");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("Validation", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_TasksFromOtherSprint_Ignored()
+    {
+        await SeedSprintAsync(stage: "Implementation");
+        await SeedSprintAsync(id: "sprint-other", number: 2, stage: "Planning");
+        SeedTask("sprint-1", "Completed", "Our task");
+        SeedTask("sprint-other", "Active", "Someone else's task");
+
+        var sprint = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("FinalSynthesis", sprint.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_Force_DoesNotSkipArtifactGate()
+    {
+        // Implementation has no artifact gate in current config, but let's verify
+        // force behavior on a stage WITH an artifact gate (Validation needs ValidationReport)
+        await SeedSprintAsync(stage: "Validation");
+        SeedTask("sprint-1", "Active", "Task");
+
+        // Should fail on artifact gate even with force=true
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.AdvanceStageAsync("sprint-1", force: true));
+
+        Assert.Contains("ValidationReport", ex.Message);
+    }
 }

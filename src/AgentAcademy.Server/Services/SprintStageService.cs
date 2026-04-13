@@ -67,12 +67,17 @@ public sealed class SprintStageService
     // ── Stage Advancement ────────────────────────────────────────
 
     /// <summary>
-    /// Advances the sprint to the next stage. Validates that any required
-    /// artifact for the current stage exists before allowing advancement.
-    /// If the current stage requires user sign-off, enters AwaitingSignOff
-    /// state instead of advancing immediately.
+    /// Advances the sprint to the next stage. Validates artifact gates,
+    /// stage prerequisites (e.g., all tasks completed), and sign-off gates.
+    /// Use <paramref name="force"/> to skip prerequisite checks when a
+    /// human decides to advance despite incomplete tasks.
     /// </summary>
-    public async Task<SprintEntity> AdvanceStageAsync(string sprintId)
+    /// <param name="sprintId">Sprint to advance.</param>
+    /// <param name="force">
+    /// When true, skips stage prerequisites (task completion checks) but
+    /// NOT artifact gates or sign-off requirements.
+    /// </param>
+    public async Task<SprintEntity> AdvanceStageAsync(string sprintId, bool force = false)
     {
         var sprint = await _db.Sprints.FindAsync(sprintId)
             ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
@@ -96,6 +101,7 @@ public sealed class SprintStageService
                 $"Sprint {sprintId} is already at the final stage ({sprint.CurrentStage}). " +
                 "Use CompleteSprintAsync to finish it.");
 
+        // Artifact gates — always enforced, even with force=true
         if (RequiredArtifactByStage.TryGetValue(sprint.CurrentStage, out var requiredType))
         {
             var hasArtifact = await _db.SprintArtifacts
@@ -107,6 +113,14 @@ public sealed class SprintStageService
                 throw new InvalidOperationException(
                     $"Cannot advance from {sprint.CurrentStage}: " +
                     $"required artifact '{requiredType}' has not been stored.");
+        }
+
+        // Stage prerequisites — skipped when force=true
+        if (!force)
+        {
+            var prereqResult = await CheckPrerequisitesAsync(sprintId, sprint.CurrentStage);
+            if (!prereqResult.Passed)
+                throw new InvalidOperationException(prereqResult.Message);
         }
 
         if (SignOffRequiredStages.Contains(sprint.CurrentStage))
@@ -140,7 +154,7 @@ public sealed class SprintStageService
         sprint.CurrentStage = Stages[currentIndex + 1];
 
         QueueEvent(ActivityEventType.SprintStageAdvanced,
-            $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}",
+            $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}" + (force ? " (forced)" : ""),
             new Dictionary<string, object?>
             {
                 ["sprintId"] = sprintId,
@@ -148,6 +162,7 @@ public sealed class SprintStageService
                 ["previousStage"] = previousStage,
                 ["currentStage"] = sprint.CurrentStage,
                 ["awaitingSignOff"] = false,
+                ["forced"] = force,
             });
 
         await _db.SaveChangesAsync();
@@ -288,6 +303,66 @@ public sealed class SprintStageService
     {
         var idx = Stages.IndexOf(stage);
         return idx >= 0 && idx < Stages.Count - 1 ? Stages[idx + 1] : null;
+    }
+
+    // ── Stage Prerequisites ─────────────────────────────────────
+
+    /// <summary>
+    /// Result of a stage prerequisite check. Failed results include a
+    /// human-readable message and up to <see cref="MaxBlockerDetails"/>
+    /// blocking item descriptions.
+    /// </summary>
+    internal record PrerequisiteResult(bool Passed, string Message, List<string>? BlockingDetails = null)
+    {
+        internal static readonly PrerequisiteResult Ok = new(true, string.Empty);
+    }
+
+    private const int MaxBlockerDetails = 10;
+
+    /// <summary>
+    /// Checks all prerequisites for leaving the given stage. Returns
+    /// <see cref="PrerequisiteResult.Ok"/> if no prerequisites are
+    /// registered or all pass.
+    /// </summary>
+    private async Task<PrerequisiteResult> CheckPrerequisitesAsync(string sprintId, string currentStage)
+    {
+        return currentStage switch
+        {
+            "Implementation" => await CheckImplementationPrerequisitesAsync(sprintId),
+            _ => PrerequisiteResult.Ok,
+        };
+    }
+
+    /// <summary>
+    /// Implementation stage prerequisite: all tasks linked to this sprint
+    /// must be in a terminal status (Completed or Cancelled).
+    /// </summary>
+    private async Task<PrerequisiteResult> CheckImplementationPrerequisitesAsync(string sprintId)
+    {
+        var terminalStatuses = RoomLifecycleService.TerminalTaskStatuses;
+
+        var incompleteTasks = await _db.Tasks
+            .Where(t => t.SprintId == sprintId && !terminalStatuses.Contains(t.Status))
+            .Select(t => new { t.Id, t.Title, t.Status })
+            .Take(MaxBlockerDetails + 1)
+            .ToListAsync();
+
+        if (incompleteTasks.Count == 0)
+            return PrerequisiteResult.Ok;
+
+        var totalIncomplete = incompleteTasks.Count > MaxBlockerDetails
+            ? $"{MaxBlockerDetails}+" : incompleteTasks.Count.ToString();
+
+        var details = incompleteTasks
+            .Take(MaxBlockerDetails)
+            .Select(t => $"{t.Title} ({t.Status})")
+            .ToList();
+
+        return new PrerequisiteResult(
+            Passed: false,
+            Message: $"Cannot advance from Implementation: {totalIncomplete} task(s) are not completed or cancelled. "
+                + "Complete or cancel all tasks first, or use force=true to override.",
+            BlockingDetails: details);
     }
 
     // ── Event Publishing ────────────────────────────────────────
