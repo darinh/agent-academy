@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **008-agent-memory**: Memory browser — `GET /api/memories/browse` (FTS5 search, category filter, expired exclusion, agent-scoped), `GET /api/memories/stats` (per-category counts), `DELETE /api/memories?agentId&key` (individual delete). Frontend `MemoryBrowserPanel` in sidebar with agent selector, search, category chips, stats badges, delete. 17 backend + 14 frontend tests.
 - **010-task-management**: Auto-unblock behavior for task dependencies. When a task completes, `GetTasksUnblockedByCompletionAsync` queries downstream tasks whose dependencies are all now satisfied and publishes `TaskUnblocked` activity events (before `SaveChangesAsync`, treating the completing task as already satisfied). Non-terminal tasks only.
 - **300-frontend-ui**: `TaskUnblocked` added to desktop notification trigger events table (title: "Task unblocked").
 - **012-consultant-api**: DM thread list SSE streaming. `GET /api/dm/threads/stream` SSE endpoint sends `thread-updated` invalidation events when any DM is posted. `MessageBroadcaster.SubscribeAllDm` provides global DM subscription (fires even with no per-thread subscribers, fixing early-return bug in `BroadcastDm`). Frontend `useDmThreadSSE` hook replaces 10s polling with debounced (500ms) refetch on SSE events. Refetch on `connected` event catches missed updates during disconnects. 8 backend + 15 frontend tests (4094 + 2089 total).
