@@ -383,4 +383,175 @@ public sealed class ListAgentStatsHandlerTests : IDisposable
 
         Assert.Equal(CommandStatus.Success, result.Status);
     }
+
+    // ── Edge-case tests (test backfill) ──────────────────────────
+
+    [Fact]
+    public async Task Execute_HoursBackBoundaryMin_Accepted()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["hoursBack"] = "1" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+    }
+
+    [Fact]
+    public async Task Execute_HoursBackBoundaryMax_Accepted()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["hoursBack"] = "8760" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+    }
+
+    [Fact]
+    public async Task Execute_MissingHoursBack_ReturnsOverview()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(MakeEnvelope(), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+
+        // Overview and window timestamps should still be present
+        var overview = Assert.IsType<Dictionary<string, object?>>(data["overview"]);
+        Assert.NotNull(overview["totalTasks"]);
+        Assert.NotNull(data["windowStart"]);
+        Assert.NotNull(data["windowEnd"]);
+    }
+
+    [Fact]
+    public async Task Execute_EmptyStringAgentId_ReturnsEmpty()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+        await SeedTask("T-2", "engineer-2", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["agentId"] = "" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        // Empty string should not match any agent
+        Assert.Equal(0, data["count"]);
+    }
+
+    [Fact]
+    public async Task Execute_BooleanHoursBack_ReturnsValidationError()
+    {
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["hoursBack"] = true }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Execute_DoubleHoursBack_ReturnsValidationError()
+    {
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["hoursBack"] = 3.14 }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Execute_CaseInsensitiveAgentIdFilter_Matches()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+        await SeedTask("T-2", "engineer-2", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["agentId"] = "ENGINEER-1" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(1, data["count"]);
+        var agents = Assert.IsAssignableFrom<List<Dictionary<string, object?>>>(data["agents"]);
+        Assert.Equal("engineer-1", agents[0]["agentId"]);
+    }
+
+    [Fact]
+    public async Task Execute_CaseInsensitiveAgentNameFilter_Matches()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["agentId"] = "hephaestus" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(1, data["count"]);
+    }
+
+    [Fact]
+    public async Task Execute_OverviewPresent_WhenFilteredEmpty()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["agentId"] = "nonexistent" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+
+        // Overview should still be present even when agent filter yields nothing
+        var overview = Assert.IsType<Dictionary<string, object?>>(data["overview"]);
+        Assert.NotNull(overview["totalTasks"]);
+        Assert.NotNull(overview["completionRate"]);
+        Assert.Equal(0, data["count"]);
+    }
+
+    [Fact]
+    public async Task Execute_NegativeHoursBack_ReturnsValidationError()
+    {
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["hoursBack"] = "-5" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Execute_WindowTimestamps_AreIso8601()
+    {
+        await SeedTask("T-1", "engineer-1", "Completed");
+
+        var handler = new ListAgentStatsHandler();
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope(new Dictionary<string, object?> { ["hoursBack"] = "24" }),
+            MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+
+        var windowStart = Assert.IsType<string>(data["windowStart"]);
+        var windowEnd = Assert.IsType<string>(data["windowEnd"]);
+        Assert.True(DateTimeOffset.TryParse(windowStart, out _), "windowStart should be parseable ISO 8601");
+        Assert.True(DateTimeOffset.TryParse(windowEnd, out _), "windowEnd should be parseable ISO 8601");
+    }
 }

@@ -394,6 +394,232 @@ public sealed class WorktreeCommandHandlerTests : IDisposable
         Assert.Equal("CLEANUP_WORKTREES", handler.CommandName);
     }
 
+    // ── Edge-case tests (test backfill) ──────────────────────────
+
+    [Fact]
+    public async Task ListWorktrees_NoLinkedTask_NullTaskFields()
+    {
+        var branch = CreateFeatureBranch("orphan-list", "orphan.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+        // No task linked to this branch
+
+        var handler = new ListWorktreesHandler();
+        var result = await handler.ExecuteAsync(MakeEnvelope("LIST_WORKTREES"), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(1, data["count"]);
+        var worktrees = Assert.IsAssignableFrom<IList<Dictionary<string, object?>>>(data["worktrees"]);
+        Assert.Equal(branch, worktrees[0]["branch"]);
+        Assert.Null(worktrees[0]["taskId"]);
+        Assert.Null(worktrees[0]["taskTitle"]);
+        Assert.Null(worktrees[0]["taskStatus"]);
+        Assert.Null(worktrees[0]["agentId"]);
+        Assert.Null(worktrees[0]["agentName"]);
+    }
+
+    [Fact]
+    public async Task ListWorktrees_CaseInsensitiveStatusFilter()
+    {
+        var branch = CreateFeatureBranch("case-filter", "cf.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-case", Title = "Case test", Status = "Completed",
+                BranchName = branch, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ListWorktreesHandler();
+        // lowercase "completed" should match "Completed"
+        var args = new Dictionary<string, object?> { ["status"] = "completed" };
+        var result = await handler.ExecuteAsync(MakeEnvelope("LIST_WORKTREES", args), MakeContext());
+
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(1, data["count"]);
+    }
+
+    [Fact]
+    public async Task ListWorktrees_MultipleTasksSameBranch_PicksActiveOne()
+    {
+        var branch = CreateFeatureBranch("multi-task", "mt.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            // Completed task (older)
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-old", Title = "Old completed", Status = "Completed",
+                BranchName = branch, AssignedAgentId = "engineer-1", AssignedAgentName = "Old Agent",
+                CreatedAt = DateTime.UtcNow.AddHours(-2), UpdatedAt = DateTime.UtcNow.AddHours(-1)
+            });
+            // Active task (newer)
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-active", Title = "Current active", Status = "Active",
+                BranchName = branch, AssignedAgentId = "engineer-2", AssignedAgentName = "Active Agent",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ListWorktreesHandler();
+        var result = await handler.ExecuteAsync(MakeEnvelope("LIST_WORKTREES"), MakeContext());
+
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        var worktrees = Assert.IsAssignableFrom<IList<Dictionary<string, object?>>>(data["worktrees"]);
+        // Should pick the active task over the completed one
+        Assert.Equal("task-active", worktrees[0]["taskId"]);
+        Assert.Equal("Active Agent", worktrees[0]["agentName"]);
+    }
+
+    [Fact]
+    public async Task ListWorktrees_StatusFilterNoMatch_ReturnsEmpty()
+    {
+        var branch = CreateFeatureBranch("no-match-filter", "nmf.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-active-only", Title = "Active task", Status = "Active",
+                BranchName = branch, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new ListWorktreesHandler();
+        var args = new Dictionary<string, object?> { ["status"] = "Cancelled" };
+        var result = await handler.ExecuteAsync(MakeEnvelope("LIST_WORKTREES", args), MakeContext());
+
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(0, data["count"]);
+    }
+
+    [Fact]
+    public async Task ListWorktrees_StatusFilterOnOrphan_Excluded()
+    {
+        // Worktree with no linked task should be excluded by status filter
+        // since its task status is null
+        var branch = CreateFeatureBranch("orphan-filter", "of.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+
+        var handler = new ListWorktreesHandler();
+        var args = new Dictionary<string, object?> { ["status"] = "Active" };
+        var result = await handler.ExecuteAsync(MakeEnvelope("LIST_WORKTREES", args), MakeContext());
+
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(0, data["count"]);
+    }
+
+    [Fact]
+    public async Task CleanupWorktrees_IncludeOrphansBoolean_Works()
+    {
+        var branch = CreateFeatureBranch("bool-orphan", "bo.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+        // No task linked
+
+        var handler = new CleanupWorktreesHandler();
+        var args = new Dictionary<string, object?>
+        {
+            ["confirm"] = true,
+            ["includeOrphans"] = true  // boolean, not string
+        };
+        var result = await handler.ExecuteAsync(MakeEnvelope("CLEANUP_WORKTREES", args), MakeContext());
+
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(1, data["removedCount"]);
+    }
+
+    [Fact]
+    public async Task CleanupWorktrees_BranchWithActiveAndCompletedTask_StillRemoved()
+    {
+        // Bug discovery: If a branch has both an active and completed task,
+        // the current implementation considers it a completed branch.
+        // This test documents the actual behavior.
+        var branch = CreateFeatureBranch("mixed-status", "ms.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-mixed-done", Title = "Completed task", Status = "Completed",
+                BranchName = branch, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-mixed-active", Title = "Active task", Status = "Active",
+                BranchName = branch, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new CleanupWorktreesHandler();
+        var args = new Dictionary<string, object?> { ["confirm"] = true };
+        var result = await handler.ExecuteAsync(MakeEnvelope("CLEANUP_WORKTREES", args), MakeContext());
+
+        // Documenting current behavior: branch IS removed because it matches
+        // the "has a completed task" query regardless of also having an active task
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(1, data["removedCount"]);
+    }
+
+    [Fact]
+    public async Task CleanupWorktrees_ReviewerRole_Denied()
+    {
+        var handler = new CleanupWorktreesHandler();
+        var args = new Dictionary<string, object?> { ["confirm"] = true };
+        var result = await handler.ExecuteAsync(
+            MakeEnvelope("CLEANUP_WORKTREES", args), MakeContext("Reviewer"));
+
+        Assert.Equal(CommandStatus.Denied, result.Status);
+        Assert.Equal(CommandErrorCode.Permission, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task CleanupWorktrees_MultipleCompletedTasksSameBranch_RemovedOnce()
+    {
+        var branch = CreateFeatureBranch("dedup-test", "dd.txt", "content");
+        await _worktreeService.CreateWorktreeAsync(branch);
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-dedup-1", Title = "Done 1", Status = "Completed",
+                BranchName = branch, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            db.Tasks.Add(new TaskEntity
+            {
+                Id = "task-dedup-2", Title = "Done 2", Status = "Completed",
+                BranchName = branch, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var handler = new CleanupWorktreesHandler();
+        var args = new Dictionary<string, object?> { ["confirm"] = true };
+        var result = await handler.ExecuteAsync(MakeEnvelope("CLEANUP_WORKTREES", args), MakeContext());
+
+        var data = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        // Should count as 1 removal (deduplicated by Distinct())
+        Assert.Equal(1, data["removedCount"]);
+        var removed = Assert.IsAssignableFrom<IList<string>>(data["removedBranches"]);
+        Assert.Single(removed);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     private string CreateTempDir(string prefix)
