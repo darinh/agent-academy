@@ -164,6 +164,41 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 - Non-shared memory content is never included in other agents' prompts
 - Shared memory content is included in all agents' prompts (in a `=== SHARED KNOWLEDGE ===` section)
 
+## Post-Task Retrospectives
+
+> **Status: Implemented** — `RetrospectiveService` runs automated retrospectives after task merge.
+
+After a task is merged via `MERGE_TASK`, the system automatically runs a retrospective for the assigned agent. This creates a feedback loop where agents learn from completed work.
+
+### Flow
+
+1. `MergeTaskHandler` completes the merge successfully
+2. Fire-and-forget: `RetrospectiveService.RunRetrospectiveAsync(taskId, agentId)` starts
+3. Service gathers context: task details, metrics (cycle time, review rounds, commit count), review messages, task comments
+4. Builds a retrospective prompt via `PromptBuilder.BuildRetrospectivePrompt`
+5. Runs the agent with **restricted permissions** (REMEMBER only, no tools) on a synthetic session (`retrospective:{taskId}`)
+6. Processes REMEMBER commands from the response (agent stores learnings)
+7. Saves the remaining text (commands stripped) as a `TaskCommentType.Retrospective` comment
+8. Publishes `ActivityEventType.TaskRetrospectiveCompleted`
+9. Invalidates the synthetic session (in `finally` — runs on all exit paths)
+
+### Design Decisions
+
+- **Fire-and-forget**: Retrospectives don't block the merge response. If the server restarts mid-retrospective, the learning is lost — acceptable since it's supplementary.
+- **Restricted agent**: The agent runs with only `REMEMBER` permission and no tools. This prevents accidental code edits or shell commands during reflection.
+- **Idempotency**: If a `Retrospective` comment already exists for a task, the retrospective is skipped.
+- **Session isolation**: Uses `retrospective:{taskId}` as the room ID to prevent contaminating the agent's real conversation sessions.
+- **Latest review feedback**: Fetches the 20 most recent review messages (descending by time), reversed for chronological display in the prompt. Last 5 shown.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `src/AgentAcademy.Server/Services/RetrospectiveService.cs` | Orchestrates the retrospective lifecycle |
+| `src/AgentAcademy.Server/Services/PromptBuilder.cs` | `BuildRetrospectivePrompt` method |
+| `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs` | Fire-and-forget trigger |
+| `tests/AgentAcademy.Server.Tests/RetrospectiveServiceTests.cs` | 24 tests |
+
 ## Known Gaps
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
@@ -206,3 +241,4 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 | 2026-04-04 | Added EXPORT_MEMORIES and IMPORT_MEMORIES commands + REST endpoints for bulk memory operations. Import validates categories, 500-char limit, 500-entry cap, upsert semantics. Known gap resolved. | memory-import-export |
 | 2026-04-04 | Added memory decay/TTL: optional TTL (hours) on REMEMBER/IMPORT, ExpiresAt filtering on all reads, LastAccessedAt tracking, staleness detection (30-day threshold), ⚠️STALE prompt tags, REST cleanup endpoint. Known gap resolved. | memory-decay-ttl |
 | 2026-04-13 | Added memory browser: `GET /api/memories/browse` (FTS5 search, category filter, expired exclusion, agent-scoped), `GET /api/memories/stats` (per-category counts), `DELETE /api/memories?agentId&key` (individual delete). Frontend `MemoryBrowserPanel` in sidebar. CancellationToken on all endpoints. | feat/memory-browser |
+| 2026-04-13 | Added post-task retrospectives. `RetrospectiveService` runs an automated retrospective after MERGE_TASK — the assigned agent reflects on the task, stores learnings via REMEMBER, and produces a Retrospective comment. `TaskCommentType.Retrospective` added. Fire-and-forget from MergeTaskHandler with session cleanup in finally block. Restricted agent permissions (REMEMBER only, no tools). Idempotency guard. 24 new tests (4302 total). | feat/agent-retrospectives |

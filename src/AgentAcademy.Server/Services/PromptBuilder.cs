@@ -333,4 +333,105 @@ internal static class PromptBuilder
         }
         lines.Add(PromptSanitizer.ContentMarkerClose);
     }
+
+    /// <summary>
+    /// Builds the prompt for a post-task retrospective. The agent reflects on
+    /// the completed task, identifies learnings, and stores them via REMEMBER.
+    /// </summary>
+    internal static string BuildRetrospectivePrompt(
+        AgentDefinition agent, RetrospectiveContext context)
+    {
+        var lines = new List<string>
+        {
+            PromptSanitizer.BoundaryInstruction,
+            "",
+            "=== POST-TASK RETROSPECTIVE ===",
+            "",
+            $"You ({agent.Name}, {agent.Role}) have just completed a task. Take a moment to reflect on the work and capture learnings that will help you and the team in future tasks.",
+            "",
+            "=== COMPLETED TASK ===",
+            $"Title: {PromptSanitizer.SanitizeMetadata(context.Title)}",
+            $"Type: {context.TaskType ?? "Unknown"}",
+            $"Description: {PromptSanitizer.EscapeMarkers(context.Description)}"
+        };
+
+        if (!string.IsNullOrEmpty(context.SuccessCriteria))
+            lines.Add($"Success Criteria: {PromptSanitizer.EscapeMarkers(context.SuccessCriteria)}");
+
+        lines.Add("");
+        lines.Add("=== TASK METRICS ===");
+        lines.Add($"Review rounds: {context.ReviewRounds}");
+        lines.Add($"Commit count: {context.CommitCount}");
+
+        if (context.CycleTime.HasValue)
+        {
+            var ct = context.CycleTime.Value;
+            var cycleStr = ct.TotalHours >= 1
+                ? $"{ct.TotalHours:F1} hours"
+                : $"{ct.TotalMinutes:F0} minutes";
+            lines.Add($"Cycle time: {cycleStr}");
+        }
+
+        // Include review feedback if any
+        if (context.ReviewMessages.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("=== REVIEW FEEDBACK ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
+            foreach (var msg in context.ReviewMessages.TakeLast(5))
+            {
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(msg.Author)}]: {PromptSanitizer.EscapeMarkers(msg.Content)}");
+            }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
+        }
+
+        // Include task comments (findings, evidence, blockers)
+        var relevantComments = context.Comments
+            .Where(c => c.Type is "Finding" or "Evidence" or "Blocker")
+            .ToList();
+        if (relevantComments.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("=== NOTABLE COMMENTS ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
+            foreach (var comment in relevantComments.TakeLast(10))
+            {
+                lines.Add($"[{comment.Type}] {PromptSanitizer.SanitizeMetadata(comment.Author)}: {PromptSanitizer.EscapeMarkers(comment.Content)}");
+            }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
+        }
+
+        lines.Add("");
+        lines.Add("=== INSTRUCTIONS ===");
+        lines.Add("Reflect on this task and produce two outputs:");
+        lines.Add("");
+        lines.Add("1. **REMEMBER commands** (2-5) to store the most valuable learnings. Use these exact categories:");
+        lines.Add("   - `lesson` — general lessons from the experience");
+        lines.Add("   - `pattern` — code or design patterns discovered in the codebase");
+        lines.Add("   - `gotcha` — surprising behavior or non-obvious constraints");
+        lines.Add("   - `incident` — mistakes to avoid repeating");
+        lines.Add("   - `decision` — architectural decisions with rationale");
+        lines.Add("");
+        lines.Add("   Format each REMEMBER exactly like this:");
+        lines.Add("   ```");
+        lines.Add("   REMEMBER:");
+        lines.Add("     category: lesson");
+        lines.Add("     key: descriptive-kebab-case-key");
+        lines.Add("     value: Concise description of the learning. Include enough context to be useful without the original task.");
+        lines.Add("   ```");
+        lines.Add("");
+        lines.Add("2. **Retrospective summary** — a brief (3-5 sentence) summary covering:");
+        lines.Add("   - What went well (patterns to repeat)");
+        lines.Add("   - What was challenging (to anticipate next time)");
+        lines.Add("   - Key insight for the team");
+        lines.Add("");
+        if (context.ReviewRounds > 1)
+        {
+            lines.Add($"NOTE: This task required {context.ReviewRounds} review rounds. Pay special attention to what caused review iterations — this is high-value learning.");
+            lines.Add("");
+        }
+        lines.Add("Focus on learnings specific to THIS task and THIS codebase. Avoid generic advice. Only REMEMBER things you discovered that would not be obvious to a new agent working on a similar task.");
+
+        return string.Join('\n', lines);
+    }
 }

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -8,14 +9,22 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// Handles MERGE_TASK — squash-merges a task branch into develop.
 /// Only Reviewer or Planner roles may invoke this command.
 /// The task must be in Approved status and have a branch name set.
+/// After a successful merge, fires a post-task retrospective (fire-and-forget).
 /// </summary>
 public sealed class MergeTaskHandler : ICommandHandler
 {
     private readonly GitService _gitService;
+    private readonly RetrospectiveService _retrospective;
+    private readonly ILogger<MergeTaskHandler> _logger;
 
-    public MergeTaskHandler(GitService gitService)
+    public MergeTaskHandler(
+        GitService gitService,
+        RetrospectiveService retrospective,
+        ILogger<MergeTaskHandler> logger)
     {
         _gitService = gitService;
+        _retrospective = retrospective;
+        _logger = logger;
     }
 
     public string CommandName => "MERGE_TASK";
@@ -141,6 +150,21 @@ public sealed class MergeTaskHandler : ICommandHandler
                 await messages.PostSystemStatusAsync(context.RoomId,
                     $"✅ Task \"{task.Title}\" merged from {task.BranchName} into develop.");
             }
+
+            // Fire-and-forget: run post-task retrospective for the assigned agent
+            var retroTaskId = taskId;
+            var retroAgentId = task.AssignedAgentId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _retrospective.RunRetrospectiveAsync(retroTaskId, retroAgentId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Post-merge retrospective failed for task {TaskId}", retroTaskId);
+                }
+            });
 
             return command with
             {
