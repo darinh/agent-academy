@@ -229,6 +229,24 @@ After enough retrospective comments accumulate (configurable threshold, default:
 |---------|-----|---------|-------------|
 | Digest threshold | `digest.retrospectiveThreshold` | 5 | Minimum undigested retrospectives before auto-generating |
 
+### Manual Triggering
+
+> **Status: Implemented** — `GENERATE_DIGEST` command allows manual/admin digest generation.
+
+The `GENERATE_DIGEST` command wraps `LearningDigestService.TryGenerateDigestAsync()`, enabling the planner agent or human (via Consultant API) to trigger digest generation on demand.
+
+**Args:**
+- `force` (bool, optional, default: `false`): When `true`, bypasses the threshold check and generates a digest from any available undigested retrospectives. When `false`, only generates if undigested count meets the configured threshold.
+
+**Response:**
+- `generated` (bool): Whether a digest was created.
+- `digestId` (int, present when `generated=true`): The ID of the created digest.
+- `message` (string): Human-readable status.
+
+**Permissions:** Planner (`Aristotle`) only. Also available via `POST /api/commands/execute` (async — returns 202 + polling).
+
+**Not retry-safe:** Digest generation runs the planner agent and creates persistent state. Not idempotent.
+
 ### Data Model
 
 ```
@@ -253,7 +271,9 @@ learning_digest_sources
 | `src/AgentAcademy.Server/Data/Entities/LearningDigestEntity.cs` | Digest persistence entity |
 | `src/AgentAcademy.Server/Data/Entities/LearningDigestSourceEntity.cs` | Junction entity |
 | `src/AgentAcademy.Server/Services/PromptBuilder.cs` | `BuildDigestPrompt` method |
+| `src/AgentAcademy.Server/Commands/Handlers/GenerateDigestHandler.cs` | `GENERATE_DIGEST` command handler |
 | `tests/AgentAcademy.Server.Tests/LearningDigestServiceTests.cs` | 19 tests |
+| `tests/AgentAcademy.Server.Tests/GenerateDigestHandlerTests.cs` | 12 tests |
 
 ## Known Gaps
 
@@ -299,3 +319,4 @@ learning_digest_sources
 | 2026-04-13 | Added memory browser: `GET /api/memories/browse` (FTS5 search, category filter, expired exclusion, agent-scoped), `GET /api/memories/stats` (per-category counts), `DELETE /api/memories?agentId&key` (individual delete). Frontend `MemoryBrowserPanel` in sidebar. CancellationToken on all endpoints. | feat/memory-browser |
 | 2026-04-13 | Added post-task retrospectives. `RetrospectiveService` runs an automated retrospective after MERGE_TASK — the assigned agent reflects on the task, stores learnings via REMEMBER, and produces a Retrospective comment. `TaskCommentType.Retrospective` added. Fire-and-forget from MergeTaskHandler with session cleanup in finally block. Restricted agent permissions (REMEMBER only, no tools). Idempotency guard. 24 new tests (4302 total). | feat/agent-retrospectives |
 | 2026-04-13 | Added learning digests. `LearningDigestService` periodically synthesizes retrospective summaries into cross-cutting shared memories. Planner reviews accumulated retrospectives, stores shared learnings. Failure recovery (failed digests release claims), concurrent trigger safety (rerun flag), configurable threshold (default: 5). Triggered from RetrospectiveService after each retrospective completes. 19 new tests. | feat/learning-digest |
+| 2026-04-13 | Added `GENERATE_DIGEST` command for manual/admin digest triggering. Optional `force` arg bypasses threshold. Added to planner permissions, human command allowlist (async), and startup prompt. 12 new tests. | feat/generate-digest-command |
