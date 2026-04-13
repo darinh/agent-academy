@@ -17,6 +17,7 @@ public class SprintControllerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
+    private readonly SprintStageService _sprintStageService;
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
@@ -35,6 +36,7 @@ public class SprintControllerTests : IDisposable
         _db.Database.EnsureCreated();
 
         _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
         _metricsCalculator = new SprintMetricsCalculator(_db);
 
@@ -61,7 +63,7 @@ public class SprintControllerTests : IDisposable
         _roomService = roomService;
 
         _controller = new SprintController(
-            _sprintService, _artifactService, _metricsCalculator, _roomService,
+            _sprintService, _sprintStageService, _artifactService, _metricsCalculator, _roomService,
             NullLogger<SprintController>.Instance);
     }
 
@@ -202,7 +204,7 @@ public class SprintControllerTests : IDisposable
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.AdvanceStageAsync(sprint.Id);
+        await _sprintStageService.AdvanceStageAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(
             sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan, "a1");
 
@@ -347,7 +349,7 @@ public class SprintControllerTests : IDisposable
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+        await _sprintStageService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var result = await _controller.ApproveAdvance(sprint.Id);
 
@@ -396,7 +398,7 @@ public class SprintControllerTests : IDisposable
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+        await _sprintStageService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var result = await _controller.RejectAdvance(sprint.Id);
 

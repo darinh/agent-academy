@@ -13,6 +13,7 @@ namespace AgentAcademy.Server.Controllers;
 public class SprintController : ControllerBase
 {
     private readonly SprintService _sprintService;
+    private readonly SprintStageService _stageService;
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
@@ -20,12 +21,14 @@ public class SprintController : ControllerBase
 
     public SprintController(
         SprintService sprintService,
+        SprintStageService stageService,
         SprintArtifactService artifactService,
         SprintMetricsCalculator metricsCalculator,
         RoomService roomService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
+        _stageService = stageService;
         _artifactService = artifactService;
         _metricsCalculator = metricsCalculator;
         _roomService = roomService;
@@ -177,7 +180,7 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _sprintService.AdvanceStageAsync(id);
+            var sprint = await _stageService.AdvanceStageAsync(id);
             var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
@@ -256,7 +259,7 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _sprintService.ApproveAdvanceAsync(id);
+            var sprint = await _stageService.ApproveAdvanceAsync(id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 (await _artifactService.GetSprintArtifactsAsync(sprint.Id))
@@ -285,7 +288,7 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _sprintService.RejectAdvanceAsync(id);
+            var sprint = await _stageService.RejectAdvanceAsync(id);
             return Ok(ToSnapshot(sprint));
         }
         catch (InvalidOperationException ex)

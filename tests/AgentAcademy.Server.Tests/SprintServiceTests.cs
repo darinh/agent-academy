@@ -16,6 +16,7 @@ public class SprintServiceTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _service;
+    private readonly SprintStageService _stageService;
     private readonly SprintArtifactService _artifactService;
 
     public SprintServiceTests()
@@ -32,6 +33,7 @@ public class SprintServiceTests : IDisposable
 
         var broadcaster = new ActivityBroadcaster();
         _service = new SprintService(_db, broadcaster, NullLogger<SprintService>.Instance);
+        _stageService = new SprintStageService(_db, broadcaster, NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, broadcaster, NullLogger<SprintArtifactService>.Instance);
     }
 
@@ -522,9 +524,9 @@ public class SprintServiceTests : IDisposable
     /// </summary>
     private async Task<SprintEntity> AdvanceWithApprovalAsync(string sprintId)
     {
-        var sprint = await _service.AdvanceStageAsync(sprintId);
+        var sprint = await _stageService.AdvanceStageAsync(sprintId);
         if (sprint.AwaitingSignOff)
-            sprint = await _service.ApproveAdvanceAsync(sprintId);
+            sprint = await _stageService.ApproveAdvanceAsync(sprintId);
         return sprint;
     }
 
@@ -535,13 +537,13 @@ public class SprintServiceTests : IDisposable
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         // Intake requires sign-off
-        var advanced = await _service.AdvanceStageAsync(sprint.Id);
+        var advanced = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.True(advanced.AwaitingSignOff);
         Assert.Equal("Planning", advanced.PendingStage);
         Assert.Equal("Intake", advanced.CurrentStage); // still at Intake until approved
 
         // Approve the advance
-        advanced = await _service.ApproveAdvanceAsync(sprint.Id);
+        advanced = await _stageService.ApproveAdvanceAsync(sprint.Id);
         Assert.Equal("Planning", advanced.CurrentStage);
         Assert.False(advanced.AwaitingSignOff);
     }
@@ -562,16 +564,16 @@ public class SprintServiceTests : IDisposable
         Assert.Equal("Discussion", sprint.CurrentStage);
 
         // Discussion → Validation (no required artifact, no sign-off)
-        sprint = await _service.AdvanceStageAsync(sprint.Id);
+        sprint = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal("Validation", sprint.CurrentStage);
 
         // Validation → Implementation (requires ValidationReport, no sign-off)
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
-        sprint = await _service.AdvanceStageAsync(sprint.Id);
+        sprint = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal("Implementation", sprint.CurrentStage);
 
         // Implementation → FinalSynthesis (no required artifact, no sign-off)
-        sprint = await _service.AdvanceStageAsync(sprint.Id);
+        sprint = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal("FinalSynthesis", sprint.CurrentStage);
     }
 
@@ -582,7 +584,7 @@ public class SprintServiceTests : IDisposable
         // At Intake, no RequirementsDocument stored
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync(sprint.Id));
+            () => _stageService.AdvanceStageAsync(sprint.Id));
         Assert.Contains("RequirementsDocument", ex.Message);
     }
 
@@ -596,13 +598,13 @@ public class SprintServiceTests : IDisposable
         await AdvanceWithApprovalAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id);
-        await _service.AdvanceStageAsync(sprint.Id); // Discussion → Validation
+        await _stageService.AdvanceStageAsync(sprint.Id); // Discussion → Validation
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
-        await _service.AdvanceStageAsync(sprint.Id); // Validation → Implementation
-        await _service.AdvanceStageAsync(sprint.Id); // Implementation → FinalSynthesis
+        await _stageService.AdvanceStageAsync(sprint.Id); // Validation → Implementation
+        await _stageService.AdvanceStageAsync(sprint.Id); // Implementation → FinalSynthesis
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync(sprint.Id));
+            () => _stageService.AdvanceStageAsync(sprint.Id));
         Assert.Contains("final stage", ex.Message);
     }
 
@@ -613,7 +615,7 @@ public class SprintServiceTests : IDisposable
         await _service.CompleteSprintAsync(sprint.Id, force: true);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync(sprint.Id));
+            () => _stageService.AdvanceStageAsync(sprint.Id));
         Assert.Contains("status is Completed", ex.Message);
     }
 
@@ -621,7 +623,7 @@ public class SprintServiceTests : IDisposable
     public async Task AdvanceStage_ThrowsForMissingSprint()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync("nonexistent"));
+            () => _stageService.AdvanceStageAsync("nonexistent"));
     }
 
     [Fact]
@@ -629,10 +631,10 @@ public class SprintServiceTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
-        await _service.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+        await _stageService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync(sprint.Id));
+            () => _stageService.AdvanceStageAsync(sprint.Id));
         Assert.Contains("awaiting user sign-off", ex.Message);
     }
 
@@ -641,9 +643,9 @@ public class SprintServiceTests : IDisposable
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
-        await _service.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+        await _stageService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
-        var rejected = await _service.RejectAdvanceAsync(sprint.Id);
+        var rejected = await _stageService.RejectAdvanceAsync(sprint.Id);
 
         Assert.Equal("Intake", rejected.CurrentStage);
         Assert.False(rejected.AwaitingSignOff);
@@ -660,7 +662,7 @@ public class SprintServiceTests : IDisposable
         await AdvanceWithApprovalAsync(sprint.Id); // Planning → Discussion
 
         // Discussion → Validation: no sign-off required
-        var advanced = await _service.AdvanceStageAsync(sprint.Id);
+        var advanced = await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal("Validation", advanced.CurrentStage);
         Assert.False(advanced.AwaitingSignOff);
     }
@@ -698,10 +700,10 @@ public class SprintServiceTests : IDisposable
         await AdvanceWithApprovalAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id);
-        await _service.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
-        await _service.AdvanceStageAsync(sprint.Id);
-        await _service.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
 
         // Try to complete without SprintReport
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -719,10 +721,10 @@ public class SprintServiceTests : IDisposable
         await AdvanceWithApprovalAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan);
         await AdvanceWithApprovalAsync(sprint.Id);
-        await _service.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
         await _artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
-        await _service.AdvanceStageAsync(sprint.Id);
-        await _service.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
 
         // Store SprintReport then complete
         await _artifactService.StoreArtifactAsync(sprint.Id, "FinalSynthesis", "SprintReport", TestArtifactContent.SprintReport);

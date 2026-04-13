@@ -66,8 +66,9 @@ internal sealed class SprintTimeoutService : BackgroundService
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+            var stageService = scope.ServiceProvider.GetRequiredService<SprintStageService>();
 
-            await CheckSignOffTimeoutsAsync(sprintService, ct);
+            await CheckSignOffTimeoutsAsync(sprintService, stageService, ct);
             await CheckSprintDurationTimeoutsAsync(sprintService, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -80,7 +81,7 @@ internal sealed class SprintTimeoutService : BackgroundService
         }
     }
 
-    private async Task CheckSignOffTimeoutsAsync(SprintService sprintService, CancellationToken ct)
+    private async Task CheckSignOffTimeoutsAsync(SprintService sprintService, SprintStageService stageService, CancellationToken ct)
     {
         var stale = await sprintService.GetTimedOutSignOffSprintsAsync(SignOffTimeout, ct);
         if (stale.Count == 0) return;
@@ -92,7 +93,7 @@ internal sealed class SprintTimeoutService : BackgroundService
             if (ct.IsCancellationRequested) break;
             try
             {
-                await sprintService.TimeOutSignOffAsync(sprint.Id, ct);
+                await stageService.TimeOutSignOffAsync(sprint.Id, ct);
                 _logger.LogInformation(
                     "Auto-rejected sign-off for sprint #{Number} ({Id})",
                     sprint.Number, sprint.Id);

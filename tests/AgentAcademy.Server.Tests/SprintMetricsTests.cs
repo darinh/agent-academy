@@ -17,6 +17,7 @@ public class SprintMetricsTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _service;
+    private readonly SprintStageService _stageService;
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _calculator;
 
@@ -33,6 +34,7 @@ public class SprintMetricsTests : IDisposable
         _db.Database.EnsureCreated();
 
         _service = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _stageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
         _calculator = new SprintMetricsCalculator(_db);
     }
@@ -150,14 +152,14 @@ public class SprintMetricsTests : IDisposable
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
         // Intake requires sign-off, so approve it
-        await _service.AdvanceStageAsync(sprint.Id);
-        await _service.ApproveAdvanceAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
+        await _stageService.ApproveAdvanceAsync(sprint.Id);
 
         // Now at Planning — store artifact and advance
         await _artifactService.StoreArtifactAsync(sprint.Id, "Planning", "SprintPlan",
             """{"Summary":"S","Phases":[]}""");
-        await _service.AdvanceStageAsync(sprint.Id);
-        await _service.ApproveAdvanceAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
+        await _stageService.ApproveAdvanceAsync(sprint.Id);
 
         var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 
@@ -175,8 +177,8 @@ public class SprintMetricsTests : IDisposable
         // Store artifact and advance from Intake through sign-off
         await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
-        await _service.AdvanceStageAsync(sprint.Id);
-        await _service.ApproveAdvanceAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
+        await _stageService.ApproveAdvanceAsync(sprint.Id);
 
         var metrics = await _calculator.GetSprintMetricsAsync(sprint.Id);
 

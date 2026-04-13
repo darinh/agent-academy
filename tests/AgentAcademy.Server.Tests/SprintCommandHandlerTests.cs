@@ -30,9 +30,11 @@ public class SprintCommandHandlerTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddScoped<SprintService>();
+        services.AddScoped<SprintStageService>();
         services.AddScoped<SprintArtifactService>();
         services.AddSingleton(NullLogger<SprintService>.Instance)
             .AddSingleton(typeof(ILogger<SprintService>), sp => NullLogger<SprintService>.Instance);
+        services.AddSingleton(typeof(ILogger<SprintStageService>), sp => NullLogger<SprintStageService>.Instance);
         services.AddSingleton(typeof(ILogger<SprintArtifactService>), sp => NullLogger<SprintArtifactService>.Instance);
         services.AddScoped<ConversationSessionService>();
         services.AddSingleton(typeof(ILogger<ConversationSessionService>), sp => NullLogger<ConversationSessionService>.Instance);
@@ -436,7 +438,8 @@ public class SprintCommandHandlerTests : IDisposable
         Assert.Equal("Intake", advDict["currentStage"]);
 
         // Approve the advance
-        await sprintService.ApproveAdvanceAsync(sprintId);
+        var stageService = scope.ServiceProvider.GetRequiredService<SprintStageService>();
+        await stageService.ApproveAdvanceAsync(sprintId);
 
         // Force-complete
         var completeResult = await new CompleteSprintHandler().ExecuteAsync(
