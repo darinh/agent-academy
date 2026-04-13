@@ -23,6 +23,7 @@ public sealed class RetrospectiveService
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
     private readonly CommandPipeline _commandPipeline;
+    private readonly LearningDigestService _digestService;
     private readonly ILogger<RetrospectiveService> _logger;
 
     public RetrospectiveService(
@@ -30,12 +31,14 @@ public sealed class RetrospectiveService
         IAgentCatalog catalog,
         IAgentExecutor executor,
         CommandPipeline commandPipeline,
+        LearningDigestService digestService,
         ILogger<RetrospectiveService> logger)
     {
         _scopeFactory = scopeFactory;
         _catalog = catalog;
         _executor = executor;
         _commandPipeline = commandPipeline;
+        _digestService = digestService;
         _logger = logger;
     }
 
@@ -140,6 +143,13 @@ public sealed class RetrospectiveService
                 _logger.LogInformation(
                     "Retrospective completed for task {TaskId} by {AgentName}",
                     taskId, agent.Name);
+
+                // Trigger learning digest check (fire-and-forget, threshold-gated)
+                _ = Task.Run(async () =>
+                {
+                    try { await _digestService.TryGenerateDigestAsync(); }
+                    catch (Exception ex) { _logger.LogDebug(ex, "Digest trigger after retrospective failed"); }
+                });
             }
             finally
             {
