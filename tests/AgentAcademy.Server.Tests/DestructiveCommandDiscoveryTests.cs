@@ -21,6 +21,7 @@ public class DestructiveCommandDiscoveryTests
     {
         "CANCEL_TASK",
         "CLEANUP_ROOMS",
+        "CLEANUP_WORKTREES",
         "CLOSE_ROOM",
         "FORGET",
         "MERGE_TASK",

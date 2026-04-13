@@ -160,6 +160,30 @@ public static class HumanCommandRegistry
             IsDestructive: true,
             DestructiveWarning: "This will archive all stale rooms where tasks are complete. Multiple rooms may be affected."),
 
+        new("LIST_WORKTREES", "List worktrees", "workspace",
+            "Show all active worktrees with task and agent info.",
+            "Returns branch, path, created time, and linked task/agent enrichment for every active worktree.",
+            IsAsync: false,
+            Fields:
+            [
+                new("status", "Task status filter", "text",
+                    "Filter worktrees by their linked task's status (e.g., Active, Completed).",
+                    Required: false),
+            ]),
+
+        new("CLEANUP_WORKTREES", "Cleanup worktrees", "operations",
+            "Remove worktrees for completed or cancelled tasks.",
+            "Cleans up stale worktrees that are no longer needed. Uncommitted changes in those worktrees will be lost.",
+            IsAsync: false,
+            Fields:
+            [
+                new("includeOrphans", "Include orphans", "text",
+                    "Set to 'true' to also remove worktrees with no linked task.",
+                    Required: false),
+            ],
+            IsDestructive: true,
+            DestructiveWarning: "This will remove worktrees for completed/cancelled tasks. Uncommitted changes in those worktrees will be lost."),
+
         new("INVITE_TO_ROOM", "Invite to room", "workspace",
             "Move another agent to a specified room.",
             "Useful for assembling a team in a breakout room or pulling in a specialist.",
