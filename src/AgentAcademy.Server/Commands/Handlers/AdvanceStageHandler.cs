@@ -22,6 +22,20 @@ public sealed class AdvanceStageHandler : ICommandHandler
             sprintId = sid;
         }
 
+        // force=true skips prerequisites — restricted to Human role only.
+        // Agents cannot bypass task completion gates autonomously.
+        var force = false;
+        if (string.Equals(context.AgentRole, "Human", StringComparison.OrdinalIgnoreCase)
+            && command.Args.TryGetValue("force", out var forceObj))
+        {
+            force = forceObj switch
+            {
+                bool b => b,
+                string s => s.Equals("true", StringComparison.OrdinalIgnoreCase),
+                _ => false
+            };
+        }
+
         var roomService = context.Services.GetRequiredService<RoomService>();
         var sprintService = context.Services.GetRequiredService<SprintService>();
         var stageService = context.Services.GetRequiredService<SprintStageService>();
@@ -58,7 +72,7 @@ public sealed class AdvanceStageHandler : ICommandHandler
         try
         {
             var previousStage = (await sprintService.GetSprintByIdAsync(sprintId))?.CurrentStage;
-            var sprint = await stageService.AdvanceStageAsync(sprintId);
+            var sprint = await stageService.AdvanceStageAsync(sprintId, force);
 
             // If awaiting sign-off, return a specific message — don't create a new session
             if (sprint.AwaitingSignOff)
@@ -107,7 +121,9 @@ public sealed class AdvanceStageHandler : ICommandHandler
                     ["previousStage"] = previousStage,
                     ["currentStage"] = sprint.CurrentStage,
                     ["warning"] = sessionWarning,
+                    ["forced"] = force,
                     ["message"] = $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}"
+                        + (force ? " (forced — prerequisites skipped)" : "")
                         + (sessionWarning is not null ? $" ⚠️ {sessionWarning}" : "")
                 }
             };

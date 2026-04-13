@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class RoomLifecycleService
 {
-    private static readonly HashSet<string> TerminalTaskStatuses = new(StringComparer.Ordinal)
+    internal static readonly HashSet<string> TerminalTaskStatuses = new(StringComparer.Ordinal)
     {
         nameof(Shared.Models.TaskStatus.Completed),
         nameof(Shared.Models.TaskStatus.Cancelled),
