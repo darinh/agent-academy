@@ -52,7 +52,11 @@ public sealed class AnalyticsControllerTests : IDisposable
         var analytics = new AgentAnalyticsService(
             scopeFactory, TestCatalog, NullLogger<AgentAnalyticsService>.Instance);
 
-        _controller = new AnalyticsController(analytics);
+        using var dbScope = _serviceProvider.CreateScope();
+        var taskAnalyticsDb = dbScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var taskAnalytics = new TaskAnalyticsService(taskAnalyticsDb, TestCatalog);
+
+        _controller = new AnalyticsController(analytics, taskAnalytics);
     }
 
     public void Dispose()

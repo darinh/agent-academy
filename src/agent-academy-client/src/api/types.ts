@@ -714,6 +714,72 @@ export interface AgentAnalyticsDetail {
   activityBuckets: AgentActivityBucket[];
 }
 
+// ── Task Cycle Analytics ──────────────────────────────────────────────
+
+export interface TaskCycleAnalytics {
+  overview: TaskCycleOverview;
+  agentEffectiveness: AgentTaskEffectiveness[];
+  throughputBuckets: TaskCycleBucket[];
+  typeBreakdown: TaskTypeBreakdown;
+  windowStart: string;
+  windowEnd: string;
+}
+
+export interface TaskCycleOverview {
+  totalTasks: number;
+  statusCounts: TaskStatusCounts;
+  completionRate: number;
+  avgCycleTimeHours: number | null;
+  avgQueueTimeHours: number | null;
+  avgExecutionSpanHours: number | null;
+  avgReviewRounds: number | null;
+  reworkRate: number;
+  totalCommits: number;
+}
+
+export interface TaskStatusCounts {
+  queued: number;
+  active: number;
+  blocked: number;
+  awaitingValidation: number;
+  inReview: number;
+  changesRequested: number;
+  approved: number;
+  merging: number;
+  completed: number;
+  cancelled: number;
+}
+
+export interface AgentTaskEffectiveness {
+  agentId: string;
+  agentName: string;
+  assigned: number;
+  completed: number;
+  cancelled: number;
+  completionRate: number;
+  avgCycleTimeHours: number | null;
+  avgQueueTimeHours: number | null;
+  avgExecutionSpanHours: number | null;
+  avgReviewRounds: number | null;
+  avgCommitsPerTask: number | null;
+  firstPassApprovalRate: number;
+  reworkRate: number;
+}
+
+export interface TaskCycleBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  completed: number;
+  created: number;
+}
+
+export interface TaskTypeBreakdown {
+  feature: number;
+  bug: number;
+  chore: number;
+  spike: number;
+}
+
 // ── Notifications ──────────────────────────────────────────────────────
 
 export interface ProviderStatus {

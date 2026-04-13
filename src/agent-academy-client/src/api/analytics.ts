@@ -6,6 +6,7 @@ import type {
   ErrorRecord,
   AgentAnalyticsSummary,
   AgentAnalyticsDetail,
+  TaskCycleAnalytics,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
 
@@ -62,6 +63,13 @@ export function getAgentAnalytics(hoursBack?: number): Promise<AgentAnalyticsSum
 export function getAgentAnalyticsDetail(agentId: string, hoursBack?: number): Promise<AgentAnalyticsDetail> {
   const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
   return request<AgentAnalyticsDetail>(apiUrl(`/api/analytics/agents/${encodeURIComponent(agentId)}${qs}`));
+}
+
+// ── Task Cycle Analytics ──────────────────────────────────────────────
+
+export function getTaskCycleAnalytics(hoursBack?: number): Promise<TaskCycleAnalytics> {
+  const qs = hoursBack != null ? `?hoursBack=${hoursBack}` : "";
+  return request<TaskCycleAnalytics>(apiUrl(`/api/analytics/tasks${qs}`));
 }
 
 // ── Export / Download ──────────────────────────────────────────────────

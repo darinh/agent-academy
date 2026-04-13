@@ -27,6 +27,7 @@ import ErrorsPanel from "./ErrorsPanel";
 import AuditLogPanel from "./AuditLogPanel";
 import SessionHistoryPanel from "./SessionHistoryPanel";
 import AgentAnalyticsPanel from "./AgentAnalyticsPanel";
+import TaskAnalyticsPanel from "./TaskAnalyticsPanel";
 
 // ── Styles ──
 
@@ -262,6 +263,14 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
           Agent Performance
         </div>
         <AgentAnalyticsPanel hoursBack={hoursBack} />
+      </div>
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <TaskListLtrRegular style={{ fontSize: 20 }} />
+          Task Effectiveness
+        </div>
+        <TaskAnalyticsPanel hoursBack={hoursBack} />
       </div>
 
       <div className={s.section}>

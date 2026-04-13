@@ -127,6 +127,8 @@ public class AgentAcademyDbContext : DbContext
             entity.HasIndex(e => e.SprintId).HasDatabaseName("idx_tasks_sprint");
             entity.Property(e => e.WorkspacePath).IsRequired(false);
             entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_tasks_workspace");
+            entity.HasIndex(e => e.CreatedAt).HasDatabaseName("idx_tasks_created");
+            entity.HasIndex(e => e.CompletedAt).HasDatabaseName("idx_tasks_completed");
         });
 
         // ── Task Items ────────────────────────────────────────
