@@ -16,12 +16,14 @@ public sealed class SystemSettingsService
     public const string BreakoutEpochSizeKey = "conversation.breakoutEpochSize";
     public const string RateLimitMaxCommandsKey = "commands.rateLimitMaxCommands";
     public const string RateLimitWindowSecondsKey = "commands.rateLimitWindowSeconds";
+    public const string SprintAutoStartKey = "sprint.autoStartOnCompletion";
 
     // Defaults
     public const int DefaultMainRoomEpochSize = 50;
     public const int DefaultBreakoutEpochSize = 30;
     public const int DefaultRateLimitMaxCommands = 30;
     public const int DefaultRateLimitWindowSeconds = 60;
+    public const bool DefaultSprintAutoStart = false;
 
     public SystemSettingsService(AgentAcademyDbContext db)
     {
@@ -83,6 +85,7 @@ public sealed class SystemSettingsService
             [BreakoutEpochSizeKey] = DefaultBreakoutEpochSize.ToString(),
             [RateLimitMaxCommandsKey] = DefaultRateLimitMaxCommands.ToString(),
             [RateLimitWindowSecondsKey] = DefaultRateLimitWindowSeconds.ToString(),
+            [SprintAutoStartKey] = DefaultSprintAutoStart.ToString(),
         };
 
         foreach (var (key, value) in stored)
@@ -102,4 +105,7 @@ public sealed class SystemSettingsService
 
     public async Task<int> GetRateLimitWindowSecondsAsync()
         => await GetAsync(RateLimitWindowSecondsKey, DefaultRateLimitWindowSeconds);
+
+    public async Task<bool> GetSprintAutoStartAsync()
+        => await GetAsync(SprintAutoStartKey, DefaultSprintAutoStart);
 }

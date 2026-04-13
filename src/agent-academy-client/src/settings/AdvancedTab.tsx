@@ -16,6 +16,7 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
 
   const [mainRoomEpochSize, setMainRoomEpochSize] = useState("50");
   const [breakoutEpochSize, setBreakoutEpochSize] = useState("30");
+  const [sprintAutoStart, setSprintAutoStart] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
 
@@ -26,6 +27,8 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
           setMainRoomEpochSize(s["conversation.mainRoomEpochSize"]);
         if (s["conversation.breakoutEpochSize"])
           setBreakoutEpochSize(s["conversation.breakoutEpochSize"]);
+        if (s["sprint.autoStartOnCompletion"])
+          setSprintAutoStart(s["sprint.autoStartOnCompletion"] === "True" || s["sprint.autoStartOnCompletion"] === "true");
       })
       .catch(() => {});
   }, []);
@@ -36,6 +39,7 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
       await updateSystemSettings({
         "conversation.mainRoomEpochSize": mainRoomEpochSize,
         "conversation.breakoutEpochSize": breakoutEpochSize,
+        "sprint.autoStartOnCompletion": sprintAutoStart.toString(),
       });
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 2000);
@@ -44,7 +48,7 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
     } finally {
       setSettingsSaving(false);
     }
-  }, [mainRoomEpochSize, breakoutEpochSize]);
+  }, [mainRoomEpochSize, breakoutEpochSize, sprintAutoStart]);
 
   return (
     <>
@@ -71,6 +75,26 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
           {settingsSaving ? <Spinner size="tiny" /> : "Save"}
         </Button>
         {settingsSaved && <span style={{ color: "#4ade80", fontSize: 13 }}>✓ Saved</span>}
+      </div>
+
+      {/* Sprint Automation */}
+      <div style={{ fontWeight: 600, marginTop: 28, marginBottom: 10, color: "#e2e8f0", fontSize: 14 }}>
+        Sprint Automation
+      </div>
+      <div style={{ marginBottom: 14, color: "rgba(148,163,184,0.6)", fontSize: 13, lineHeight: 1.5 }}>
+        When enabled, a new sprint is automatically created after the current sprint completes.
+        Overflow requirements from the completed sprint are carried into the new sprint.
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={sprintAutoStart}
+            onChange={(e) => setSprintAutoStart(e.target.checked)}
+            style={{ accentColor: "#818cf8", width: 16, height: 16 }}
+          />
+          <span style={{ color: "#e2e8f0", fontSize: 13 }}>Auto-start next sprint on completion</span>
+        </label>
       </div>
 
       {/* Desktop Notifications */}

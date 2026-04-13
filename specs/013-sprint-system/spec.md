@@ -58,6 +58,17 @@ When the previous sprint in the workspace has an `OverflowRequirements` artifact
 
 This ensures unfinished work is not silently dropped between sprints.
 
+### Auto-Start on Completion
+
+When the system setting `sprint.autoStartOnCompletion` is enabled (default: `false`), completing a sprint automatically creates the next sprint for the same workspace. The auto-started sprint carries over overflow requirements (see above). If auto-start fails (e.g., race condition), the failure is logged as a warning but does not fail the original completion.
+
+The `SprintStarted` activity event for auto-started sprints includes `trigger: "auto"` in its metadata. Manually started sprints have `trigger: null`.
+
+Cancelling a sprint does **not** trigger auto-start — only successful completion does.
+
+**Setting**: `sprint.autoStartOnCompletion` via `SystemSettingsService` / `PUT /api/settings`.
+**Frontend**: Toggle in Settings → Advanced → Sprint Automation.
+
 ## Entities
 
 > **Source**: `src/AgentAcademy.Server/Data/Entities/SprintEntity.cs`, `SprintArtifactEntity.cs`
@@ -184,7 +195,7 @@ public record SprintReport(string Summary, List<string> Delivered,
 
 ### SprintService
 
-Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintService>`.
+Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `SystemSettingsService`, `ILogger<SprintService>`.
 
 Owns sprint lifecycle: creation, completion, cancellation, and queries. Stage advancement, sign-off gates, and stage state machine are handled by `SprintStageService`. Artifact management is handled by `SprintArtifactService`. Read-only metrics are handled by `SprintMetricsCalculator`.
 
@@ -199,11 +210,11 @@ Owns sprint lifecycle: creation, completion, cancellation, and queries. Stage ad
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `CreateSprintAsync(workspacePath)` | `SprintEntity` | Creates next sprint. Throws if active sprint exists. Links overflow from previous sprint. |
+| `CreateSprintAsync(workspacePath, trigger?)` | `SprintEntity` | Creates next sprint. Throws if active sprint exists. Links overflow from previous sprint. Optional `trigger` label ("auto") included in `SprintStarted` event metadata. |
 | `GetActiveSprintAsync(workspacePath)` | `SprintEntity?` | Returns the active sprint for a workspace. |
 | `GetSprintByIdAsync(sprintId)` | `SprintEntity?` | Lookup by ID. |
 | `GetSprintsForWorkspaceAsync(workspace, limit, offset)` | `(List<SprintEntity>, int)` | Paginated list, ordered by number descending. |
-| `CompleteSprintAsync(sprintId, force)` | `SprintEntity` | Completes the sprint. Must be in FinalSynthesis unless force=true. Checks SprintReport artifact. |
+| `CompleteSprintAsync(sprintId, force)` | `SprintEntity` | Completes the sprint. Must be in FinalSynthesis unless force=true. Checks SprintReport artifact. If `sprint.autoStartOnCompletion` setting is enabled, auto-starts the next sprint. |
 | `CancelSprintAsync(sprintId)` | `SprintEntity` | Cancels an active sprint. |
 
 ### SprintStageService
@@ -528,7 +539,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 | `sprintPanel.test.ts` | Frontend panel rendering and interactions | 53 tests |
 | `sprintRealtime.test.ts` | Real-time event handling | 34 tests |
 
-**Total: 241 tests** across backend and frontend.
+**Total: 249 tests** across backend and frontend.
 
 ## Known Gaps
 
@@ -540,6 +551,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-13 | Sprint auto-start on completion — `sprint.autoStartOnCompletion` system setting. `CompleteSprintAsync` auto-creates next sprint when enabled. `CreateSprintAsync` gains optional `trigger` param for event metadata. Frontend toggle in Settings → Advanced. 8 backend + 5 frontend tests. | feat/sprint-auto-start |
 | 2026-04-13 | Stage prerequisites — Implementation stage requires all sprint tasks to be Completed/Cancelled before advancement. Force flag skips prerequisites (not artifact gates or sign-off). `AdvanceStageAsync(sprintId, force)`, `PrerequisiteResult` record, reuses `RoomLifecycleService.TerminalTaskStatuses`. REST: `?force=true`. Command: `Force: true`. Forced events include `forced=true` in metadata. 12 new tests. | feat/stage-prerequisites |
 | 2026-04-13 | Spec sync — documented `SprintStageService` (341 lines) extracted from `SprintService` (635→380 lines). Stage state machine (advancement, sign-off, approval/rejection, timeout) now in dedicated class. Updated service layer, methods, constants, and event broadcasting tables. | develop |
 | 2026-04-12 | Structural refactor — extracted `SprintArtifactService` (265 lines) from `SprintService` (835→635 lines). Artifact storage, retrieval, and validation now in dedicated class. `SprintController` and `StoreArtifactHandler` inject the new service. Zero behavioral changes. | develop |

@@ -33,7 +33,7 @@ public class SprintMetricsTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _service = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _service = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
         _stageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
         _calculator = new SprintMetricsCalculator(_db);
