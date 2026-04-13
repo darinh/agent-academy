@@ -538,4 +538,268 @@ public class SprintCommandHandlerTests : IDisposable
         var sprint = await sprintService.GetSprintByIdAsync(sprintId);
         Assert.Equal("Completed", sprint!.Status);
     }
+
+    // ── SCHEDULE_SPRINT ──────────────────────────────────────────
+
+    [Fact]
+    public async Task ScheduleSprint_Get_ReturnsNoScheduleWhenNoneExists()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(false, dict["hasSchedule"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_CreatesNewSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+                ["timezone"] = "UTC",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["hasSchedule"]);
+        Assert.Equal("0 9 * * 1", dict["cronExpression"]);
+        Assert.Equal("UTC", dict["timeZoneId"]);
+        Assert.Equal(true, dict["enabled"]);
+        Assert.NotNull(dict["scheduleId"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_UpdatesExistingSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        // Create first
+        await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        // Update
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 10 * * 2",
+                ["enabled"] = "false",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("0 10 * * 2", dict["cronExpression"]);
+        Assert.Equal(false, dict["enabled"]);
+        Assert.Contains("updated", (string)dict["message"]!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_RejectsMissingCron()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "set" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("cron", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_RejectsInvalidCron()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "not-a-cron",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("Invalid cron", result.Error!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_RejectsInvalidTimezone()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+                ["timezone"] = "Mars/Olympus_Mons",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("Unknown timezone", result.Error!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Delete_RemovesExistingSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        // Create first
+        await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        // Delete
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "delete" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["deleted"]);
+
+        // Verify gone
+        var getResult = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+        var getDict = Assert.IsType<Dictionary<string, object?>>(getResult.Result);
+        Assert.Equal(false, getDict["hasSchedule"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Delete_FailsWhenNoSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "delete" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_DefaultActionIsGet()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        // No action arg — should default to "get"
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT"),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(false, dict["hasSchedule"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_RejectsUnknownAction()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "purge" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("purge", result.Error!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_FailsWithNoActiveWorkspace()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var ws = await db.Workspaces.FirstAsync();
+        ws.IsActive = false;
+        await db.SaveChangesAsync();
+
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("workspace", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Get_ReturnsScheduleAfterSet()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "30 14 * * 5",
+                ["timezone"] = "America/New_York",
+                ["enabled"] = false,
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["hasSchedule"]);
+        Assert.Equal("30 14 * * 5", dict["cronExpression"]);
+        Assert.Equal("America/New_York", dict["timeZoneId"]);
+        Assert.Equal(false, dict["enabled"]);
+        Assert.NotNull(dict["nextRunAtUtc"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_EnabledBoolArgWorks()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+                ["enabled"] = true,
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["enabled"]);
+    }
 }

@@ -499,6 +499,16 @@ Query parameters:
 **Behavior**: Marks the sprint as completed. Must be in FinalSynthesis with SprintReport artifact unless force=true.
 **Result**: `{ sprintId, number, status, completedAt, message }`
 
+### SCHEDULE_SPRINT
+
+**Handler**: `ScheduleSprintHandler`
+**Args**: `Action` (get|set|delete, default: get), `Cron` (5-field cron, required for set), `Timezone` (IANA ID, default UTC), `Enabled` (boolean, default true)
+**Agent permissions**: Planner only (Aristotle). Human/Consultant access via `CommandController` allowlist.
+**Behavior**: Manages the cron-based sprint schedule for the active workspace. `get` returns current schedule or indicates none exists. `set` creates or updates with cron validation, timezone validation, and precomputed next-run time. `delete` removes the schedule. Upsert handles concurrent creation via DbUpdateException retry.
+**Result (get)**: `{ hasSchedule, scheduleId?, cronExpression?, timeZoneId?, enabled?, nextRunAtUtc?, lastTriggeredAt?, lastOutcome? }`
+**Result (set)**: Same as get + `{ message }`
+**Result (delete)**: `{ deleted, message }`
+
 ## Frontend
 
 > **Source**: `src/agent-academy-client/src/SprintPanel.tsx` (1148 lines)
