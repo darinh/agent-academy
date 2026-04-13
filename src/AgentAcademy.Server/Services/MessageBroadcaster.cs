@@ -12,6 +12,7 @@ public sealed class MessageBroadcaster
 {
     private readonly Dictionary<string, List<Action<ChatEnvelope>>> _roomSubscribers = new();
     private readonly Dictionary<string, List<Action<DmMessage>>> _dmSubscribers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<Action<string, DmMessage>> _globalDmSubscribers = [];
     private readonly object _lock = new();
 
     // ── Room subscriptions ──────────────────────────────────────
@@ -87,19 +88,33 @@ public sealed class MessageBroadcaster
     /// </summary>
     public void BroadcastDm(string agentId, DmMessage message)
     {
-        List<Action<DmMessage>> snapshot;
+        List<Action<DmMessage>>? threadSnapshot;
+        List<Action<string, DmMessage>>? globalSnapshot;
 
         lock (_lock)
         {
-            if (!_dmSubscribers.TryGetValue(agentId, out var subs) || subs.Count == 0)
-                return;
-            snapshot = [.. subs];
+            threadSnapshot = _dmSubscribers.TryGetValue(agentId, out var subs) && subs.Count > 0
+                ? [.. subs]
+                : null;
+            globalSnapshot = _globalDmSubscribers.Count > 0 ? [.. _globalDmSubscribers] : null;
         }
 
-        foreach (var sub in snapshot)
+        if (threadSnapshot is not null)
         {
-            try { sub(message); }
-            catch { /* subscriber errors are swallowed */ }
+            foreach (var sub in threadSnapshot)
+            {
+                try { sub(message); }
+                catch { /* subscriber errors are swallowed */ }
+            }
+        }
+
+        if (globalSnapshot is not null)
+        {
+            foreach (var sub in globalSnapshot)
+            {
+                try { sub(agentId, message); }
+                catch { /* subscriber errors are swallowed */ }
+            }
         }
     }
 
@@ -140,6 +155,39 @@ public sealed class MessageBroadcaster
         lock (_lock)
         {
             return _dmSubscribers.TryGetValue(agentId, out var subs) ? subs.Count : 0;
+        }
+    }
+
+    // ── Global DM subscriptions ─────────────────────────────────
+
+    /// <summary>
+    /// Subscribes to ALL DM messages across all agent threads (used by thread-list SSE).
+    /// The callback receives (agentId, message). Returns an unsubscribe action.
+    /// </summary>
+    public Action SubscribeAllDm(Action<string, DmMessage> callback)
+    {
+        lock (_lock)
+        {
+            _globalDmSubscribers.Add(callback);
+        }
+
+        return () =>
+        {
+            lock (_lock)
+            {
+                _globalDmSubscribers.Remove(callback);
+            }
+        };
+    }
+
+    /// <summary>
+    /// Returns the number of active global DM subscribers (for diagnostics).
+    /// </summary>
+    public int GetGlobalDmSubscriberCount()
+    {
+        lock (_lock)
+        {
+            return _globalDmSubscribers.Count;
         }
     }
 }

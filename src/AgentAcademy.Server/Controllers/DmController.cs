@@ -241,6 +241,70 @@ public class DmController : ControllerBase
         var json = JsonSerializer.Serialize(msg, SseJsonOptions);
         await response.WriteAsync($"id: {msg.Id}\nevent: {eventName}\ndata: {json}\n\n", ct);
     }
+
+    // ── Thread-list SSE (invalidation stream) ───────────────────
+
+    /// <summary>
+    /// GET /api/dm/threads/stream — SSE stream that notifies when any DM thread changes.
+    /// Sends <c>thread-updated</c> events with <c>{"agentId":"…"}</c> whenever a DM is
+    /// posted in any thread. Clients should debounce and refetch <c>GET /api/dm/threads</c>.
+    /// </summary>
+    [HttpGet("api/dm/threads/stream")]
+    public async Task GetThreadListStream(CancellationToken ct = default)
+    {
+        Response.Headers.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Connection = "keep-alive";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        var channel = Channel.CreateBounded<(string AgentId, DmMessage Message)>(
+            new BoundedChannelOptions(256)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+
+        var overflowed = false;
+
+        var unsubscribe = _messageBroadcaster.SubscribeAllDm((agentId, msg) =>
+        {
+            if (!channel.Writer.TryWrite((agentId, msg)))
+            {
+                overflowed = true;
+                channel.Writer.TryComplete();
+            }
+        });
+
+        try
+        {
+            // Send a connected event so the client knows the stream is live.
+            await Response.WriteAsync("event: connected\ndata: {}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+
+            await foreach (var (agentId, msg) in channel.Reader.ReadAllAsync(ct))
+            {
+                var data = JsonSerializer.Serialize(new { agentId, messageId = msg.Id }, SseJsonOptions);
+                await Response.WriteAsync($"id: {msg.Id}\nevent: thread-updated\ndata: {data}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+
+            if (overflowed)
+            {
+                await Response.WriteAsync("event: resync\ndata: {}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — normal shutdown.
+        }
+        finally
+        {
+            unsubscribe();
+            channel.Writer.TryComplete();
+        }
+    }
 }
 
 public record SendDmRequest([property: Required, MinLength(1), StringLength(50_000)] string Message);
