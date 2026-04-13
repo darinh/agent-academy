@@ -22,6 +22,7 @@ public sealed class AgentControllerTests : IDisposable
     private readonly TestServiceGraph _svc;
     private readonly AgentQuotaService _quotaService;
     private readonly AgentController _controller;
+    private readonly AgentConfigController _configController;
 
     public AgentControllerTests()
     {
@@ -33,8 +34,12 @@ public sealed class AgentControllerTests : IDisposable
 
         _controller = new AgentController(
             _svc.AgentLocationService, _svc.BreakoutRoomService,
-            _svc.Executor, _svc.Catalog, _svc.AgentConfigService,
+            _svc.Executor, _svc.Catalog,
             _quotaService, NullLogger<AgentController>.Instance);
+
+        _configController = new AgentConfigController(
+            _svc.Catalog, _svc.AgentConfigService,
+            NullLogger<AgentConfigController>.Instance);
     }
 
     public void Dispose() => _svc.Dispose();
@@ -108,7 +113,7 @@ public sealed class AgentControllerTests : IDisposable
     [Fact]
     public async Task GetAgentConfig_CatalogAgent_ReturnsConfig()
     {
-        var result = await _controller.GetAgentConfig("engineer-1");
+        var result = await _configController.GetAgentConfig("engineer-1");
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var config = Assert.IsType<AgentConfigResponse>(ok.Value);
         Assert.Equal("engineer-1", config.AgentId);
@@ -117,7 +122,7 @@ public sealed class AgentControllerTests : IDisposable
     [Fact]
     public async Task GetAgentConfig_UnknownAgent_ReturnsNotFound()
     {
-        var result = await _controller.GetAgentConfig("nonexistent");
+        var result = await _configController.GetAgentConfig("nonexistent");
         Assert.IsType<NotFoundObjectResult>(result.Result);
     }
 

@@ -79,7 +79,6 @@ public sealed class AgentQuotaEndpointTests : IDisposable
             breakoutRoomService: null!,   // Not needed for quota endpoints
             executor,
             _catalog,
-            configService,
             _quotaService,
             NullLogger<AgentController>.Instance);
 

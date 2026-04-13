@@ -323,7 +323,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_ValidRequest_ReturnsCreated()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("My Researcher", "You research things carefully."));
@@ -338,7 +338,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_GeneratesKebabCaseId()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Code Review Expert", "You review code."));
@@ -351,7 +351,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_WithModel_IncludesModel()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("My Agent", "Prompt", "claude-opus-4.6"));
@@ -364,7 +364,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_PersistsConfig()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Persisted Agent", "Do things."));
@@ -377,7 +377,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_EmptyName_ReturnsBadRequest()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("", "Some prompt"));
@@ -388,7 +388,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_EmptyPrompt_ReturnsBadRequest()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Valid Name", ""));
@@ -399,7 +399,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_ConflictsWithCatalog_ReturnsConflict()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Planner", "Custom planner prompt"));
@@ -410,7 +410,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_DuplicateCustomName_ReturnsConflict()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Unique Bot", "First version."));
@@ -424,7 +424,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_SpecialCharsInName_ProducesCleanId()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("My Agent!! (v2)", "Prompt"));
@@ -439,7 +439,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_ExistingCustom_ReturnsOk()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Deletable Agent", "To be deleted."));
 
@@ -451,7 +451,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_RemovesFromDatabase()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Gone Agent", "Will be gone."));
 
@@ -464,7 +464,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_BuiltInAgent_ReturnsBadRequest()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.DeleteCustomAgent("planner");
 
@@ -474,7 +474,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_NonexistentAgent_ReturnsNotFound()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.DeleteCustomAgent("no-such-agent");
 
@@ -513,6 +513,12 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var quotaService = new AgentQuotaService(scopeFactory, usageTracker, NullLogger<AgentQuotaService>.Instance);
-        return new AgentController(_agentLocationService, _breakoutRoomService, executor, _catalog, _configService, quotaService, logger);
+        return new AgentController(_agentLocationService, _breakoutRoomService, executor, _catalog, quotaService, logger);
+    }
+
+    private AgentConfigController CreateAgentConfigController()
+    {
+        var logger = Substitute.For<ILogger<AgentConfigController>>();
+        return new AgentConfigController(_catalog, _configService, logger);
     }
 }
