@@ -17,6 +17,7 @@ public sealed class TaskOrchestrationService
     private readonly ActivityPublisher _activity;
     private readonly TaskLifecycleService _taskLifecycle;
     private readonly RoomService _rooms;
+    private readonly RoomSnapshotBuilder _snapshots;
     private readonly RoomLifecycleService _roomLifecycle;
     private readonly AgentLocationService _agentLocations;
     private readonly MessageService _messages;
@@ -29,6 +30,7 @@ public sealed class TaskOrchestrationService
         ActivityPublisher activity,
         TaskLifecycleService taskLifecycle,
         RoomService rooms,
+        RoomSnapshotBuilder snapshots,
         RoomLifecycleService roomLifecycle,
         AgentLocationService agentLocations,
         MessageService messages,
@@ -40,6 +42,7 @@ public sealed class TaskOrchestrationService
         _activity = activity;
         _taskLifecycle = taskLifecycle;
         _rooms = rooms;
+        _snapshots = snapshots;
         _roomLifecycle = roomLifecycle;
         _agentLocations = agentLocations;
         _messages = messages;
@@ -121,7 +124,7 @@ public sealed class TaskOrchestrationService
             }
         }
 
-        var roomSnapshot = await _rooms.BuildRoomSnapshotAsync(roomEntity);
+        var roomSnapshot = await _snapshots.BuildRoomSnapshotAsync(roomEntity);
 
         return new TaskAssignmentResult(
             CorrelationId: correlationId,

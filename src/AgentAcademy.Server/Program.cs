@@ -152,11 +152,12 @@ using (var scope = app.Services.CreateScope())
     // If a workspace is already active, ensure it has a default room
     var catalog = scope.ServiceProvider.GetRequiredService<AgentCatalogOptions>();
     var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
+    var workspaceRooms = scope.ServiceProvider.GetRequiredService<WorkspaceRoomService>();
     var mainRoomId = catalog.DefaultRoomId;
     var activeWorkspace = await rooms.GetActiveWorkspacePathAsync();
     if (activeWorkspace is not null)
     {
-        mainRoomId = await rooms.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
+        mainRoomId = await workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
     }
 
     // Re-enqueue rooms with unanswered human messages (covers crash and clean restart).

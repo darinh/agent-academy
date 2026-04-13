@@ -66,6 +66,9 @@ public class TaskEvidenceTests : IDisposable
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
         services.AddScoped<RoomService>();
+        services.AddScoped<RoomSnapshotBuilder>();
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
         services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<CrashRecoveryService>();

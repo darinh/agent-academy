@@ -25,7 +25,9 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<BreakoutRoomService>();
         services.AddScoped<TaskItemService>();
         services.AddScoped<RoomService>();
+        services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<SearchService>();
 

@@ -17,6 +17,7 @@ public class WorkspaceController : ControllerBase
 {
     private readonly ProjectScanner _scanner;
     private readonly RoomService _roomService;
+    private readonly WorkspaceRoomService _workspaceRooms;
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
     private readonly AgentOrchestrator _orchestrator;
@@ -28,6 +29,7 @@ public class WorkspaceController : ControllerBase
     public WorkspaceController(
         ProjectScanner scanner,
         RoomService roomService,
+        WorkspaceRoomService workspaceRooms,
         TaskOrchestrationService taskOrchestration,
         TaskQueryService taskQueries,
         AgentOrchestrator orchestrator,
@@ -38,6 +40,7 @@ public class WorkspaceController : ControllerBase
     {
         _scanner = scanner;
         _roomService = roomService;
+        _workspaceRooms = workspaceRooms;
         _taskOrchestration = taskOrchestration;
         _taskQueries = taskQueries;
         _orchestrator = orchestrator;
@@ -107,7 +110,7 @@ public class WorkspaceController : ControllerBase
                 }
 
                 await _executor.InvalidateAllSessionsAsync();
-                await _roomService.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
+                await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
                 _logger.LogInformation(
                     "Switched workspace from '{Previous}' to '{Current}' — sessions archived and cleared, default room ensured",
                     previousWorkspace ?? "(none)", scan.Path);
@@ -174,7 +177,7 @@ public class WorkspaceController : ControllerBase
             var meta = await UpsertWorkspaceAsync(scan);
 
             // Ensure the workspace has a default room with agents
-            await _roomService.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
+            await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
 
             // Auto-create spec generation task when project has no specs
             if (!scan.HasSpecs)

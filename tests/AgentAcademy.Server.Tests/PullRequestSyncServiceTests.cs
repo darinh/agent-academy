@@ -128,6 +128,9 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<TaskItemService>();
         sc.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         sc.AddScoped<RoomService>();
+        sc.AddScoped<RoomSnapshotBuilder>();
+        sc.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        sc.AddScoped<WorkspaceRoomService>();
         sc.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
         sc.AddScoped<RoomLifecycleService>();
         sc.AddScoped<CrashRecoveryService>();
@@ -418,10 +421,10 @@ public class PrSyncHelperTests : IDisposable
         var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService);
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, _taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, _activityPublisher, sessionService, messageService);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, messageService, new RoomSnapshotBuilder(_db, catalog));
         var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, _activityPublisher);
-        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, roomLifecycle, agentLocations, messageService, breakouts);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, _activityPublisher));
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, new RoomSnapshotBuilder(_db, catalog), roomLifecycle, agentLocations, messageService, breakouts);
         _initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 

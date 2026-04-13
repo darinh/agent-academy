@@ -19,6 +19,7 @@ public sealed class InitializationService
     private readonly ActivityPublisher _activity;
     private readonly CrashRecoveryService _crashRecovery;
     private readonly RoomService _rooms;
+    private readonly WorkspaceRoomService _workspaceRooms;
 
     public InitializationService(
         AgentAcademyDbContext db,
@@ -26,7 +27,8 @@ public sealed class InitializationService
         AgentCatalogOptions catalog,
         ActivityPublisher activity,
         CrashRecoveryService crashRecovery,
-        RoomService rooms)
+        RoomService rooms,
+        WorkspaceRoomService workspaceRooms)
     {
         _db = db;
         _logger = logger;
@@ -34,6 +36,7 @@ public sealed class InitializationService
         _activity = activity;
         _crashRecovery = crashRecovery;
         _rooms = rooms;
+        _workspaceRooms = workspaceRooms;
     }
 
     /// <summary>
@@ -97,7 +100,7 @@ public sealed class InitializationService
             }
         }
 
-        await _rooms.ResolveStartupMainRoomIdAsync(activeWorkspace);
+        await _workspaceRooms.ResolveStartupMainRoomIdAsync(activeWorkspace);
 
         // Initialize agent locations for any agent not already tracked
         foreach (var agent in _catalog.Agents)

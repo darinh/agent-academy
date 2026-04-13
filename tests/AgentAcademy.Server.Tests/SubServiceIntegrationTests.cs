@@ -24,6 +24,7 @@ public class SubServiceIntegrationTests : IDisposable
     private readonly ActivityPublisher _activityPublisher;
     private readonly InitializationService _initialization;
     private readonly RoomService _rooms;
+    private readonly WorkspaceRoomService _workspaceRooms;
     private readonly RoomLifecycleService _roomLifecycle;
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
@@ -96,10 +97,11 @@ public class SubServiceIntegrationTests : IDisposable
         _messages = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService);
         _breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, _taskQueries, _agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, _breakouts, _agentLocations, _messages, _activityPublisher);
-        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService, _messages);
+        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, _messages, new RoomSnapshotBuilder(_db, _catalog));
+        _workspaceRooms = new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activityPublisher);
         _roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, _activityPublisher);
-        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _rooms, _roomLifecycle, _agentLocations, _messages, _breakouts);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms, _workspaceRooms);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _rooms, new RoomSnapshotBuilder(_db, _catalog), _roomLifecycle, _agentLocations, _messages, _breakouts);
     }
 
     public void Dispose()
@@ -204,7 +206,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         // Create a task room in the same workspace that alphabetically sorts before main
         var now = DateTime.UtcNow;
@@ -241,7 +243,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        await _rooms.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
+        await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
 
         // Add a room for a different workspace
         var now = DateTime.UtcNow;
@@ -1162,7 +1164,7 @@ public class SubServiceIntegrationTests : IDisposable
         await _db.SaveChangesAsync();
 
         // This should create a workspace default room AND retire the legacy one
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         Assert.NotEqual("main", defaultRoomId);
 
@@ -1217,7 +1219,7 @@ public class SubServiceIntegrationTests : IDisposable
         await _db.SaveChangesAsync();
 
         // Should find existing workspace room and retire legacy
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
         Assert.Equal("my-project-main", defaultRoomId);
 
         var legacyRoom = await _db.Rooms.FindAsync("main");
@@ -1254,7 +1256,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         // Legacy room should still have null WorkspacePath (unchanged)
         var legacyRoom = await _db.Rooms.FindAsync("main");
@@ -1320,7 +1322,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
         var room = await _db.Rooms.FindAsync(defaultRoomId);
 
         Assert.Equal(_catalog.DefaultRoomName, room!.Name);

@@ -8,14 +8,13 @@ using Microsoft.Extensions.Logging;
 namespace AgentAcademy.Server.Services;
 
 /// <summary>
-/// Handles room operations: CRUD, queries, default room management,
-/// phase transitions, room messages, and room snapshots.
+/// Handles room operations: CRUD, queries, phase transitions, and room messages.
 /// Lifecycle operations (close, reopen, archive, cleanup) are on <see cref="RoomLifecycleService"/>.
+/// Snapshot building is on <see cref="RoomSnapshotBuilder"/>.
+/// Workspace–room management is on <see cref="WorkspaceRoomService"/>.
 /// </summary>
 public sealed class RoomService
 {
-    private const int MaxRecentMessages = 200;
-
     private static readonly HashSet<string> InProgressStatuses = new(StringComparer.Ordinal)
     {
         nameof(Shared.Models.TaskStatus.Active),
@@ -28,25 +27,22 @@ public sealed class RoomService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<RoomService> _logger;
-    private readonly AgentCatalogOptions _catalog;
     private readonly ActivityPublisher _activity;
-    private readonly ConversationSessionService _sessionService;
     private readonly MessageService _messages;
+    private readonly RoomSnapshotBuilder _snapshots;
 
     public RoomService(
         AgentAcademyDbContext db,
         ILogger<RoomService> logger,
-        AgentCatalogOptions catalog,
         ActivityPublisher activity,
-        ConversationSessionService sessionService,
-        MessageService messages)
+        MessageService messages,
+        RoomSnapshotBuilder snapshots)
     {
         _db = db;
         _logger = logger;
-        _catalog = catalog;
         _activity = activity;
-        _sessionService = sessionService;
         _messages = messages;
+        _snapshots = snapshots;
     }
 
     // ── Room Queries ────────────────────────────────────────────
@@ -88,7 +84,7 @@ public sealed class RoomService
         foreach (var room in rooms)
         {
             var locations = locationsByRoom.GetValueOrDefault(room.Id, []);
-            snapshots.Add(await BuildRoomSnapshotAsync(room, locations));
+            snapshots.Add(await _snapshots.BuildRoomSnapshotAsync(room, locations));
         }
         return snapshots;
     }
@@ -100,7 +96,7 @@ public sealed class RoomService
     {
         var room = await _db.Rooms.FindAsync(roomId);
         if (room is null) return null;
-        return await BuildRoomSnapshotAsync(room);
+        return await _snapshots.BuildRoomSnapshotAsync(room);
     }
 
     /// <summary>
@@ -155,7 +151,7 @@ public sealed class RoomService
         if (hasMore)
             messages = messages.Take(limit).ToList();
 
-        return (messages.Select(BuildChatEnvelope).ToList(), hasMore);
+        return (messages.Select(RoomSnapshotBuilder.BuildChatEnvelope).ToList(), hasMore);
     }
 
     /// <summary>
@@ -278,7 +274,7 @@ public sealed class RoomService
 
         _logger.LogInformation("Created room '{RoomId}' ({RoomName})", roomId, name);
 
-        return await BuildRoomSnapshotAsync(room);
+        return await _snapshots.BuildRoomSnapshotAsync(room);
     }
 
     /// <summary>
@@ -301,7 +297,7 @@ public sealed class RoomService
         _logger.LogInformation("Renamed room '{RoomId}' from '{OldName}' to '{NewName}'",
             roomId, oldName, newName);
 
-        return await BuildRoomSnapshotAsync(room);
+        return await _snapshots.BuildRoomSnapshotAsync(room);
     }
 
     /// <summary>
@@ -328,146 +324,7 @@ public sealed class RoomService
         _logger.LogInformation("Set topic for room '{RoomId}' ({RoomName}): {Topic}",
             roomId, room.Name, room.Topic ?? "(cleared)");
 
-        return await BuildRoomSnapshotAsync(room);
-    }
-
-    // ── Default Room Management ─────────────────────────────────
-
-    /// <summary>
-    /// Ensures a default room exists for the given workspace.
-    /// Creates one if missing. Moves all agents to the workspace's default room.
-    /// Returns the default room ID.
-    /// </summary>
-    public async Task<string> EnsureDefaultRoomForWorkspaceAsync(string workspacePath)
-    {
-        var existingForWorkspace = await _db.Rooms.FirstOrDefaultAsync(
-            r => r.WorkspacePath == workspacePath &&
-                 r.Id != _catalog.DefaultRoomId &&
-                 (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")));
-
-        if (existingForWorkspace is not null)
-        {
-            var defaultRoomId = existingForWorkspace.Id;
-
-            if (existingForWorkspace.Name != _catalog.DefaultRoomName)
-            {
-                existingForWorkspace.Name = _catalog.DefaultRoomName;
-                existingForWorkspace.UpdatedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync();
-                _logger.LogInformation("Updated default room name to '{RoomName}'", _catalog.DefaultRoomName);
-            }
-
-            await RetireLegacyDefaultRoomAsync(workspacePath, defaultRoomId);
-            await MoveAllAgentsToRoomAsync(defaultRoomId);
-            return defaultRoomId;
-        }
-
-        var slug = Normalize(Path.GetFileName(workspacePath.TrimEnd(Path.DirectorySeparatorChar)));
-        if (string.IsNullOrEmpty(slug)) slug = "project";
-        var candidateId = $"{slug}-main";
-
-        var collision = await _db.Rooms.FindAsync(candidateId);
-        if (collision is not null && collision.WorkspacePath != workspacePath)
-        {
-            var hash = Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(workspacePath)))[..8].ToLowerInvariant();
-            candidateId = $"{slug}-{hash}-main";
-        }
-
-        var now = DateTime.UtcNow;
-
-        var room = new RoomEntity
-        {
-            Id = candidateId,
-            Name = _catalog.DefaultRoomName,
-            Status = nameof(RoomStatus.Idle),
-            CurrentPhase = nameof(CollaborationPhase.Intake),
-            WorkspacePath = workspacePath,
-            CreatedAt = now,
-            UpdatedAt = now
-        };
-        _db.Rooms.Add(room);
-
-        var workspace = await _db.Workspaces.FindAsync(workspacePath);
-        var projectLabel = workspace?.ProjectName ?? slug;
-
-        var welcomeMsg = new MessageEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            RoomId = candidateId,
-            SenderId = "system",
-            SenderName = "System",
-            SenderKind = nameof(MessageSenderKind.System),
-            Kind = nameof(MessageKind.System),
-            Content = $"Project loaded: {projectLabel}. Agents are ready.",
-            SentAt = now
-        };
-        _db.Messages.Add(welcomeMsg);
-
-        await _db.SaveChangesAsync();
-
-        await RetireLegacyDefaultRoomAsync(workspacePath, candidateId);
-
-        Publish(ActivityEventType.RoomCreated, candidateId, null, null,
-            $"Default room created for workspace: {projectLabel}");
-
-        _logger.LogInformation("Created default room '{RoomId}' for workspace '{Workspace}'",
-            candidateId, workspacePath);
-
-        await MoveAllAgentsToRoomAsync(candidateId);
-        return candidateId;
-    }
-
-    /// <summary>
-    /// If the legacy catalog default room was backfilled into this workspace,
-    /// clear its WorkspacePath so it stops appearing alongside the real workspace default.
-    /// </summary>
-    internal async Task RetireLegacyDefaultRoomAsync(string workspacePath, string workspaceDefaultRoomId)
-    {
-        var legacyRoomId = _catalog.DefaultRoomId;
-        if (legacyRoomId == workspaceDefaultRoomId) return;
-
-        var legacyRoom = await _db.Rooms.FindAsync(legacyRoomId);
-        if (legacyRoom is not null && legacyRoom.WorkspacePath == workspacePath)
-        {
-            legacyRoom.WorkspacePath = null;
-            legacyRoom.Status = nameof(RoomStatus.Archived);
-            await _db.SaveChangesAsync();
-            _logger.LogInformation(
-                "Retired legacy default room '{RoomId}' — archived and cleared WorkspacePath (was '{Workspace}')",
-                legacyRoomId, workspacePath);
-        }
-    }
-
-    /// <summary>
-    /// Moves all configured agents to the specified room in Idle state.
-    /// </summary>
-    internal async Task MoveAllAgentsToRoomAsync(string roomId)
-    {
-        foreach (var agent in _catalog.Agents)
-        {
-            var loc = await _db.AgentLocations.FindAsync(agent.Id);
-            if (loc is null)
-            {
-                _db.AgentLocations.Add(new AgentLocationEntity
-                {
-                    AgentId = agent.Id,
-                    RoomId = roomId,
-                    State = nameof(AgentState.Idle),
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                loc.RoomId = roomId;
-                loc.BreakoutRoomId = null;
-                loc.State = nameof(AgentState.Idle);
-                loc.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        await _db.SaveChangesAsync();
+        return await _snapshots.BuildRoomSnapshotAsync(room);
     }
 
     // ── Phase Transitions ───────────────────────────────────────
@@ -483,7 +340,7 @@ public sealed class RoomService
 
         if (room.CurrentPhase == targetPhase.ToString())
         {
-            return await BuildRoomSnapshotAsync(room);
+            return await _snapshots.BuildRoomSnapshotAsync(room);
         }
 
         var now = DateTime.UtcNow;
@@ -518,133 +375,7 @@ public sealed class RoomService
 
         await _db.SaveChangesAsync();
 
-        return await BuildRoomSnapshotAsync(room);
-    }
-
-    // ── Startup Helpers ─────────────────────────────────────────
-
-    /// <summary>
-    /// Resolves the main room ID to use at startup for the given workspace.
-    /// </summary>
-    public async Task<string> ResolveStartupMainRoomIdAsync(string? activeWorkspace)
-    {
-        if (activeWorkspace is null)
-        {
-            return _catalog.DefaultRoomId;
-        }
-
-        var workspaceMainRoomId = await _db.Rooms
-            .Where(r => r.WorkspacePath == activeWorkspace
-                && (r.Name == _catalog.DefaultRoomName
-                    || r.Name.EndsWith("Main Room")
-                    || r.Name.EndsWith("Collaboration Room")))
-            .OrderBy(r => r.Id == _catalog.DefaultRoomId ? 1 : 0)
-            .Select(r => r.Id)
-            .FirstOrDefaultAsync();
-
-        if (!string.IsNullOrWhiteSpace(workspaceMainRoomId))
-        {
-            return workspaceMainRoomId;
-        }
-
-        var legacyRoomExists = await _db.Rooms.AnyAsync(r => r.Id == _catalog.DefaultRoomId);
-        if (legacyRoomExists)
-        {
-            return _catalog.DefaultRoomId;
-        }
-
-        return await EnsureDefaultRoomForWorkspaceAsync(activeWorkspace);
-    }
-
-    // ── Snapshot Builders ───────────────────────────────────────
-
-    /// <summary>
-    /// Builds a full room snapshot including messages, active task, and participants.
-    /// </summary>
-    public async Task<RoomSnapshot> BuildRoomSnapshotAsync(
-        RoomEntity room, List<AgentLocationEntity>? preloadedLocations = null)
-    {
-        var activeSession = await _db.ConversationSessions
-            .Where(s => s.RoomId == room.Id && s.Status == "Active")
-            .FirstOrDefaultAsync();
-
-        var activeSessionId = activeSession?.Id;
-
-        var messages = await _db.Messages
-            .Where(m => m.RoomId == room.Id && m.RecipientId == null
-                && (activeSessionId == null || m.SessionId == activeSessionId
-                    || m.SessionId == null || m.SenderKind == nameof(MessageSenderKind.User)))
-            .OrderByDescending(m => m.SentAt)
-            .Take(MaxRecentMessages)
-            .OrderBy(m => m.SentAt)
-            .ToListAsync();
-
-        var activeTaskEntity = await _db.Tasks
-            .Where(t => t.RoomId == room.Id && InProgressStatuses.Contains(t.Status))
-            .OrderByDescending(t => t.CreatedAt)
-            .FirstOrDefaultAsync();
-
-        var activeTask = activeTaskEntity is null ? null : TaskQueryService.BuildTaskSnapshot(activeTaskEntity);
-
-        var preferredRoles = activeTask?.PreferredRoles ?? [];
-        var locations = preloadedLocations
-            ?? await _db.AgentLocations.Where(l => l.RoomId == room.Id).ToListAsync();
-        var participants = BuildParticipants(locations, preferredRoles);
-
-        return new RoomSnapshot(
-            Id: room.Id,
-            Name: room.Name,
-            Topic: room.Topic,
-            Status: Enum.Parse<RoomStatus>(room.Status),
-            CurrentPhase: Enum.Parse<CollaborationPhase>(room.CurrentPhase),
-            ActiveTask: activeTask,
-            Participants: participants,
-            RecentMessages: messages.Select(BuildChatEnvelope).ToList(),
-            CreatedAt: room.CreatedAt,
-            UpdatedAt: room.UpdatedAt
-        );
-    }
-
-    internal List<AgentPresence> BuildParticipants(
-        List<AgentLocationEntity> locations, List<string> preferredRoles)
-    {
-        var agentMap = _catalog.Agents.ToDictionary(a => a.Id);
-
-        return locations
-            .Where(l => agentMap.ContainsKey(l.AgentId) && l.BreakoutRoomId is null)
-            .Select(l =>
-            {
-                var a = agentMap[l.AgentId];
-                return new AgentPresence(
-                    AgentId: a.Id,
-                    Name: a.Name,
-                    Role: a.Role,
-                    Availability: preferredRoles.Contains(a.Role)
-                        ? AgentAvailability.Preferred
-                        : AgentAvailability.Ready,
-                    IsPreferred: preferredRoles.Contains(a.Role),
-                    LastActivityAt: l.UpdatedAt,
-                    ActiveCapabilities: [.. a.CapabilityTags]
-                );
-            })
-            .ToList();
-    }
-
-    internal static ChatEnvelope BuildChatEnvelope(MessageEntity entity)
-    {
-        return new ChatEnvelope(
-            Id: entity.Id,
-            RoomId: entity.RoomId,
-            SenderId: entity.SenderId,
-            SenderName: entity.SenderName,
-            SenderRole: entity.SenderRole,
-            SenderKind: Enum.Parse<MessageSenderKind>(entity.SenderKind),
-            Kind: Enum.Parse<MessageKind>(entity.Kind),
-            Content: entity.Content,
-            SentAt: entity.SentAt,
-            CorrelationId: entity.CorrelationId,
-            ReplyToMessageId: entity.ReplyToMessageId
-        );
+        return await _snapshots.BuildRoomSnapshotAsync(room);
     }
 
     // ── Private Helpers ─────────────────────────────────────────

@@ -31,7 +31,9 @@ internal sealed class TestServiceGraph : IDisposable
     public TaskLifecycleService TaskLifecycleService { get; }
     public BreakoutRoomService BreakoutRoomService { get; }
     public RoomService RoomService { get; }
+    public RoomSnapshotBuilder RoomSnapshotBuilder { get; }
     public RoomLifecycleService RoomLifecycleService { get; }
+    public WorkspaceRoomService WorkspaceRoomService { get; }
     public PlanService PlanService { get; }
     public SearchService SearchService { get; }
     public AgentConfigService AgentConfigService { get; }
@@ -81,12 +83,17 @@ internal sealed class TestServiceGraph : IDisposable
             Db, NullLogger<BreakoutRoomService>.Instance, Catalog,
             ActivityPublisher, SessionService, TaskQueryService, AgentLocationService);
 
+        RoomSnapshotBuilder = new RoomSnapshotBuilder(Db, Catalog);
+
         RoomService = new RoomService(
-            Db, NullLogger<RoomService>.Instance, Catalog,
-            ActivityPublisher, SessionService, MessageService);
+            Db, NullLogger<RoomService>.Instance,
+            ActivityPublisher, MessageService, RoomSnapshotBuilder);
 
         RoomLifecycleService = new RoomLifecycleService(
             Db, NullLogger<RoomLifecycleService>.Instance, Catalog, ActivityPublisher);
+
+        WorkspaceRoomService = new WorkspaceRoomService(
+            Db, NullLogger<WorkspaceRoomService>.Instance, Catalog, ActivityPublisher);
 
         PlanService = new PlanService(Db);
         SearchService = new SearchService(Db, NullLogger<SearchService>.Instance);
@@ -101,7 +108,7 @@ internal sealed class TestServiceGraph : IDisposable
 
         TaskOrchestrationService = new TaskOrchestrationService(
             Db, NullLogger<TaskOrchestrationService>.Instance, Catalog,
-            ActivityPublisher, TaskLifecycleService, RoomService,
+            ActivityPublisher, TaskLifecycleService, RoomService, RoomSnapshotBuilder,
             RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService);
 
         ProjectScanner = new ProjectScanner();
