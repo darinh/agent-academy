@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Spinner,
   Tooltip,
-  makeStyles,
-  shorthands,
 } from "@fluentui/react-components";
 import {
   DismissRegular,
@@ -23,217 +21,8 @@ import {
   type AgentTaskRecord,
   type AgentModelBreakdown,
 } from "./api";
-
-// ── Styles ──
-
-const useStyles = makeStyles({
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    ...shorthands.padding("12px"),
-    ...shorthands.borderRadius("8px"),
-    border: "1px solid var(--aa-border)",
-    backgroundColor: "var(--aa-surface, var(--aa-bg))",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-  },
-  headerLeft: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
-  agentName: {
-    fontSize: "16px",
-    fontWeight: 700,
-    color: "var(--aa-text)",
-  },
-  agentId: {
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-    color: "var(--aa-soft)",
-  },
-  headerActions: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-  iconBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    cursor: "pointer",
-    background: "none",
-    border: "none",
-    color: "var(--aa-soft)",
-    fontSize: "14px",
-    ":hover": { color: "var(--aa-text)" },
-  },
-  kpiRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
-    gap: "8px",
-  },
-  kpiCard: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    ...shorthands.padding("8px"),
-    ...shorthands.borderRadius("6px"),
-    border: "1px solid var(--aa-border)",
-    backgroundColor: "var(--aa-bg)",
-  },
-  kpiValue: {
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "var(--aa-text)",
-    lineHeight: 1,
-    fontFamily: "var(--mono)",
-  },
-  kpiLabel: {
-    fontFamily: "var(--mono)",
-    color: "var(--aa-soft)",
-    fontSize: "9px",
-    textTransform: "uppercase" as const,
-    textAlign: "center" as const,
-  },
-  section: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-  },
-  sectionTitle: {
-    fontSize: "11px",
-    fontFamily: "var(--mono)",
-    fontWeight: 600,
-    color: "var(--aa-soft)",
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.5px",
-  },
-  modelGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-    gap: "6px",
-  },
-  modelCard: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-    ...shorthands.padding("8px"),
-    ...shorthands.borderRadius("6px"),
-    border: "1px solid var(--aa-border)",
-    backgroundColor: "var(--aa-bg)",
-  },
-  modelName: {
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-    fontWeight: 600,
-    color: "var(--aa-text)",
-  },
-  modelStat: {
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    color: "var(--aa-soft)",
-  },
-  modelBar: {
-    height: "3px",
-    ...shorthands.borderRadius("2px"),
-    backgroundColor: "var(--aa-cyan, #5b8def)",
-    marginTop: "4px",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse" as const,
-    fontSize: "11px",
-    fontFamily: "var(--mono)",
-  },
-  th: {
-    textAlign: "left" as const,
-    color: "var(--aa-soft)",
-    fontSize: "9px",
-    textTransform: "uppercase" as const,
-    ...shorthands.padding("4px", "6px"),
-    borderBottom: "1px solid var(--aa-border)",
-  },
-  td: {
-    ...shorthands.padding("4px", "6px"),
-    borderBottom: "1px solid var(--aa-border)",
-    color: "var(--aa-text)",
-    verticalAlign: "top" as const,
-  },
-  errorMsg: {
-    color: "var(--aa-soft)",
-    fontSize: "10px",
-    maxWidth: "300px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-  },
-  taskRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-    ...shorthands.padding("6px", "8px"),
-    ...shorthands.borderRadius("4px"),
-    border: "1px solid var(--aa-border)",
-    backgroundColor: "var(--aa-bg)",
-  },
-  taskTitle: {
-    fontSize: "12px",
-    color: "var(--aa-text)",
-    flex: 1,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-  },
-  taskMeta: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    flexShrink: 0,
-  },
-  taskMetaText: {
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    color: "var(--aa-soft)",
-  },
-  trendSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-  empty: {
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-    color: "var(--aa-soft)",
-    ...shorthands.padding("8px"),
-  },
-  error: {
-    color: "var(--aa-red, #f44)",
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-  },
-});
-
-// ── Status badge color mapping ──
-
-function taskStatusColor(status: string): "active" | "review" | "done" | "cancel" | "warn" | "muted" {
-  switch (status) {
-    case "Active":
-    case "InProgress": return "active";
-    case "Review": return "review";
-    case "Completed":
-    case "Merged": return "done";
-    case "Cancelled":
-    case "Rejected": return "cancel";
-    case "Blocked": return "warn";
-    default: return "muted";
-  }
-}
+import { useAgentDetailStyles } from "./agentDetail/agentDetailStyles";
+import { taskStatusColor } from "./agentDetail/taskStatusColor";
 
 // ── Component ──
 
@@ -244,7 +33,7 @@ interface AgentDetailViewProps {
 }
 
 export default function AgentDetailView({ agentId, hoursBack, onClose }: AgentDetailViewProps) {
-  const s = useStyles();
+  const s = useAgentDetailStyles();
   const [data, setData] = useState<AgentAnalyticsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -400,7 +189,7 @@ export default function AgentDetailView({ agentId, hoursBack, onClose }: AgentDe
 
 // ── Sub-components ──
 
-function ModelBreakdownGrid({ models, styles: s }: { models: AgentModelBreakdown[]; styles: ReturnType<typeof useStyles> }) {
+function ModelBreakdownGrid({ models, styles: s }: { models: AgentModelBreakdown[]; styles: ReturnType<typeof useAgentDetailStyles> }) {
   const maxRequests = Math.max(...models.map(m => m.requests), 1);
 
   return (
@@ -421,7 +210,7 @@ function ModelBreakdownGrid({ models, styles: s }: { models: AgentModelBreakdown
   );
 }
 
-function RequestsTable({ records, styles: s }: { records: AgentUsageRecord[]; styles: ReturnType<typeof useStyles> }) {
+function RequestsTable({ records, styles: s }: { records: AgentUsageRecord[]; styles: ReturnType<typeof useAgentDetailStyles> }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table className={s.table}>
@@ -454,7 +243,7 @@ function RequestsTable({ records, styles: s }: { records: AgentUsageRecord[]; st
   );
 }
 
-function ErrorsTable({ records, styles: s }: { records: AgentErrorRecord[]; styles: ReturnType<typeof useStyles> }) {
+function ErrorsTable({ records, styles: s }: { records: AgentErrorRecord[]; styles: ReturnType<typeof useAgentDetailStyles> }) {
   return (
     <div style={{ overflowX: "auto" }}>
       <table className={s.table}>
@@ -494,7 +283,7 @@ function ErrorsTable({ records, styles: s }: { records: AgentErrorRecord[]; styl
   );
 }
 
-function TasksList({ tasks, styles: s }: { tasks: AgentTaskRecord[]; styles: ReturnType<typeof useStyles> }) {
+function TasksList({ tasks, styles: s }: { tasks: AgentTaskRecord[]; styles: ReturnType<typeof useAgentDetailStyles> }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
       {tasks.map((t) => (
