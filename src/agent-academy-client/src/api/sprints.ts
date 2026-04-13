@@ -4,6 +4,8 @@ import type {
   SprintSnapshot,
   SprintArtifact,
   SprintStage,
+  SprintScheduleRequest,
+  SprintScheduleResponse,
 } from "./types";
 import { apiUrl, request } from "./core";
 
@@ -114,4 +116,38 @@ export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
     throw new Error((body as { error?: string }).error ?? "Failed to reject sprint advance");
   }
   return res.json() as Promise<SprintSnapshot>;
+}
+
+// ── Sprint Schedule ───────────────────────────────────────────────────
+
+export async function getSprintSchedule(): Promise<SprintScheduleResponse | null> {
+  const res = await fetch(apiUrl("/api/sprints/schedule"), { credentials: "include" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch sprint schedule");
+  return res.json() as Promise<SprintScheduleResponse>;
+}
+
+export async function upsertSprintSchedule(
+  body: SprintScheduleRequest,
+): Promise<SprintScheduleResponse> {
+  const res = await fetch(apiUrl("/api/sprints/schedule"), {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to save sprint schedule");
+  }
+  return res.json() as Promise<SprintScheduleResponse>;
+}
+
+export async function deleteSprintSchedule(): Promise<void> {
+  const res = await fetch(apiUrl("/api/sprints/schedule"), {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (res.status === 404) return;
+  if (!res.ok) throw new Error("Failed to delete sprint schedule");
 }
