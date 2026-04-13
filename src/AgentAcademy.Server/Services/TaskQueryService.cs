@@ -350,6 +350,102 @@ public sealed class TaskQueryService
         await _db.SaveChangesAsync();
     }
 
+    // ── Bulk Operations ───────────────────────────────────────
+
+    /// <summary>
+    /// Statuses that are safe for bulk update (no dedicated lifecycle handlers).
+    /// </summary>
+    private static readonly HashSet<Shared.Models.TaskStatus> BulkSafeStatuses =
+    [
+        Shared.Models.TaskStatus.Queued,
+        Shared.Models.TaskStatus.Active,
+        Shared.Models.TaskStatus.Blocked,
+        Shared.Models.TaskStatus.AwaitingValidation,
+        Shared.Models.TaskStatus.InReview,
+    ];
+
+    /// <summary>
+    /// Updates the status of multiple tasks. Skips tasks that fail validation
+    /// (not found, dependency-blocked) and returns per-item results.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkUpdateStatusAsync(
+        IReadOnlyList<string> taskIds, Shared.Models.TaskStatus status)
+    {
+        if (!BulkSafeStatuses.Contains(status))
+            throw new ArgumentException(
+                $"Status '{status}' is not allowed for bulk update. " +
+                $"Allowed: {string.Join(", ", BulkSafeStatuses)}.");
+
+        var dedupedIds = taskIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var updated = new List<TaskSnapshot>();
+        var errors = new List<BulkOperationError>();
+
+        foreach (var taskId in dedupedIds)
+        {
+            try
+            {
+                var snapshot = await UpdateTaskStatusAsync(taskId, status);
+                updated.Add(snapshot);
+            }
+            catch (InvalidOperationException ex)
+            {
+                var code = ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                    ? "NOT_FOUND" : "VALIDATION";
+                errors.Add(new BulkOperationError(taskId, code, ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Bulk status update failed for task '{TaskId}'", taskId);
+                errors.Add(new BulkOperationError(taskId, "INTERNAL", $"Unexpected error: {ex.Message}"));
+            }
+        }
+
+        return new BulkOperationResult(dedupedIds.Count, updated.Count, errors.Count, updated, errors);
+    }
+
+    /// <summary>
+    /// Assigns multiple tasks to a single agent. Skips tasks that fail validation
+    /// (not found) and returns per-item results.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkAssignAsync(
+        IReadOnlyList<string> taskIds, string agentId, string? agentName)
+    {
+        var dedupedIds = taskIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // Resolve agent — if not in catalog, require agentName
+        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+        var resolvedName = agent?.Name ?? agentName;
+        if (string.IsNullOrWhiteSpace(resolvedName))
+            throw new ArgumentException(
+                $"Agent '{agentId}' is not in the catalog. Provide agentName for unknown agents.");
+
+        var updated = new List<TaskSnapshot>();
+        var errors = new List<BulkOperationError>();
+
+        foreach (var taskId in dedupedIds)
+        {
+            try
+            {
+                var snapshot = await AssignTaskAsync(taskId, agent?.Id ?? agentId, resolvedName);
+                updated.Add(snapshot);
+            }
+            catch (InvalidOperationException ex)
+            {
+                errors.Add(new BulkOperationError(taskId, "NOT_FOUND", ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Bulk assign failed for task '{TaskId}'", taskId);
+                errors.Add(new BulkOperationError(taskId, "INTERNAL", $"Unexpected error: {ex.Message}"));
+            }
+        }
+
+        return new BulkOperationResult(dedupedIds.Count, updated.Count, errors.Count, updated, errors);
+    }
+
     // ── Shared Helpers (workspace query) ────────────────────────
 
     internal async Task<string?> GetActiveWorkspacePathAsync()

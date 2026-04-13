@@ -7,6 +7,7 @@ import type {
   TaskAssignmentRequest,
   TaskAssignmentResult,
   TaskDependencyInfo,
+  BulkOperationResult,
 } from "./types";
 import { apiUrl, request } from "./core";
 
@@ -87,5 +88,23 @@ export function addTaskDependency(taskId: string, dependsOnTaskId: string): Prom
 export function removeTaskDependency(taskId: string, dependsOnTaskId: string): Promise<TaskDependencyInfo> {
   return request<TaskDependencyInfo>(apiUrl(`/api/tasks/${taskId}/dependencies/${dependsOnTaskId}`), {
     method: "DELETE",
+  });
+}
+
+// ── Bulk Operations ────────────────────────────────────────────────────
+
+export function bulkUpdateStatus(taskIds: string[], status: TaskStatus): Promise<BulkOperationResult> {
+  return request<BulkOperationResult>(apiUrl("/api/tasks/bulk/status"), {
+    method: "POST",
+    body: JSON.stringify({ taskIds, status }),
+  });
+}
+
+export function bulkAssign(
+  taskIds: string[], agentId: string, agentName: string,
+): Promise<BulkOperationResult> {
+  return request<BulkOperationResult>(apiUrl("/api/tasks/bulk/assign"), {
+    method: "POST",
+    body: JSON.stringify({ taskIds, agentId, agentName }),
   });
 }
