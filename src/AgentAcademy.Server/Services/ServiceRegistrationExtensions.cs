@@ -48,6 +48,9 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<SprintMetricsCalculator>();
         services.AddScoped<TaskAnalyticsService>();
 
+        // Round context loading (extracted from AgentOrchestrator)
+        services.AddScoped<RoundContextLoader>();
+
         return services;
     }
 }

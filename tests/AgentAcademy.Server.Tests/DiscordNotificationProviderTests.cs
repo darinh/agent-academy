@@ -403,7 +403,7 @@ public class DiscordNotificationProviderTests
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
         var taskAssignmentHandler = new TaskAssignmentHandler(catalog, gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());
         var turnRunner = new AgentTurnRunner(executor, pipeline, taskAssignmentHandler, memoryLoader, scopeFactory, Substitute.For<ILogger<AgentTurnRunner>>());
-        return new AgentOrchestrator(scopeFactory, catalog, activityBus, specManager, breakoutLifecycle, turnRunner, logger);
+        return new AgentOrchestrator(scopeFactory, catalog, activityBus, breakoutLifecycle, turnRunner, logger);
     }
 
     #endregion

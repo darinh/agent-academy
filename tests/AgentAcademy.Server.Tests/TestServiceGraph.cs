@@ -140,7 +140,7 @@ internal sealed class TestServiceGraph : IDisposable
             scopeFactory, NullLogger<AgentTurnRunner>.Instance);
 
         Orchestrator = new AgentOrchestrator(
-            scopeFactory, Catalog, ActivityBus, SpecManager,
+            scopeFactory, Catalog, ActivityBus,
             breakoutLifecycle, turnRunner,
             NullLogger<AgentOrchestrator>.Instance);
     }

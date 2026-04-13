@@ -14,7 +14,6 @@ public sealed class AgentOrchestrator
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityBroadcaster _activityBus;
-    private readonly SpecManager _specManager;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
     private readonly AgentTurnRunner _turnRunner;
     private readonly ILogger<AgentOrchestrator> _logger;
@@ -33,7 +32,6 @@ public sealed class AgentOrchestrator
         IServiceScopeFactory scopeFactory,
         AgentCatalogOptions catalog,
         ActivityBroadcaster activityBus,
-        SpecManager specManager,
         BreakoutLifecycleService breakoutLifecycle,
         AgentTurnRunner turnRunner,
         ILogger<AgentOrchestrator> logger)
@@ -41,7 +39,6 @@ public sealed class AgentOrchestrator
         _scopeFactory = scopeFactory;
         _catalog = catalog;
         _activityBus = activityBus;
-        _specManager = specManager;
         _breakoutLifecycle = breakoutLifecycle;
         _turnRunner = turnRunner;
         _logger = logger;
@@ -196,6 +193,7 @@ public sealed class AgentOrchestrator
             var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+            var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 
             // Check if conversation session needs rotation before this round
             if (round == 1)
@@ -221,7 +219,7 @@ public sealed class AgentOrchestrator
                 "Conversation round {Round}/{MaxRounds} for room {RoomId}",
                 round, MaxRoundsPerTrigger, roomId);
 
-            var ctx = await LoadRoundContextAsync(scope, roomId);
+            var ctx = await contextLoader.LoadAsync(roomId);
 
             // ── Planner phase ──
             var planner = FindPlanner();
@@ -328,6 +326,7 @@ public sealed class AgentOrchestrator
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+        var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 
         var catalogAgent = _catalog.Agents.FirstOrDefault(
             a => string.Equals(a.Id, recipientAgentId, StringComparison.OrdinalIgnoreCase));
@@ -372,7 +371,7 @@ public sealed class AgentOrchestrator
         var room = await roomService.GetRoomAsync(roomId);
         if (room is null) return;
 
-        var ctx = await LoadRoundContextAsync(scope, roomId);
+        var ctx = await contextLoader.LoadAsync(roomId);
 
         await _turnRunner.RunAgentTurnAsync(
             catalogAgent, scope, messageService, configService, activity,
@@ -406,94 +405,4 @@ public sealed class AgentOrchestrator
         return result;
     }
 
-    // ── ROUND CONTEXT ──────────────────────────────────────────
-
-    /// <summary>
-    /// Immutable snapshot of shared per-round context. Data only — no services.
-    /// Each field soft-fails to null independently so one failure cannot cascade.
-    /// </summary>
-    private record RoundContext(
-        string? SpecContext,
-        string? SpecVersion,
-        string? SessionSummary,
-        string? SprintPreamble,
-        string? ActiveSprintStage);
-
-    /// <summary>
-    /// Loads the shared context needed by both conversation rounds and DM rounds.
-    /// Each field fails independently to null with a logged warning.
-    /// </summary>
-    private async Task<RoundContext> LoadRoundContextAsync(IServiceScope scope, string roomId)
-    {
-        string? specContext = null;
-        string? specVersion = null;
-        string? sessionSummary = null;
-        string? sprintPreamble = null;
-        string? activeSprintStage = null;
-
-        try
-        {
-            specContext = await _specManager.LoadSpecContextAsync();
-            var versionInfo = await _specManager.GetSpecVersionAsync();
-            specVersion = versionInfo?.Version;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load spec context for room {RoomId}", roomId);
-        }
-
-        try
-        {
-            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
-            sessionSummary = await sessionService.GetSessionContextAsync(roomId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId);
-        }
-
-        try
-        {
-            var (preamble, stage) = await LoadSprintContextAsync(scope);
-            sprintPreamble = preamble;
-            activeSprintStage = stage;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load sprint context for room {RoomId}", roomId);
-        }
-
-        return new(specContext, specVersion, sessionSummary, sprintPreamble, activeSprintStage);
-    }
-
-    private record SprintContext(string? Preamble, string? ActiveStage);
-
-    private async Task<SprintContext> LoadSprintContextAsync(IServiceScope scope)
-    {
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
-        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
-        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
-
-        var workspacePath = await roomService.GetActiveWorkspacePathAsync();
-        if (workspacePath is null) return new(null, null);
-
-        var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
-        if (sprint is null) return new(null, null);
-
-        var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
-
-        string? overflowContent = null;
-        if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
-        {
-            var overflowArtifacts = await artifactService.GetSprintArtifactsAsync(sprint.Id);
-            var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
-            overflowContent = overflow?.Content;
-        }
-
-        var preamble = SprintPreambles.BuildPreamble(
-            sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
-
-        return new(preamble, sprint.CurrentStage);
-    }
 }

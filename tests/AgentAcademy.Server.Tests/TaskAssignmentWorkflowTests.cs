@@ -82,7 +82,12 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<ConversationSessionQueryService>();
         services.AddScoped<AgentConfigService>();
+        services.AddSingleton<SpecManager>();
+        services.AddScoped<SprintService>();
+        services.AddScoped<SprintArtifactService>();
+        services.AddScoped<RoundContextLoader>();
         services.AddSingleton(_executor);
         services.AddSingleton(_gitService);
         services.AddLogging();
@@ -156,7 +161,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
             scopeFactory,
             _catalog,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
-            new SpecManager(),
             breakoutLifecycle,
             turnRunner,
             NullLogger<AgentOrchestrator>.Instance);
@@ -263,7 +267,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
             scopeFactory2,
             _catalog,
             _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
-            new SpecManager(),
             breakoutLifecycle2,
             turnRunner2,
             NullLogger<AgentOrchestrator>.Instance);

@@ -109,7 +109,7 @@ public class ServerInstanceTests : IDisposable
             executor, pipeline, taskAssignment, memoryLoader,
             scopeFactory, NullLogger<AgentTurnRunner>.Instance);
         return new AgentOrchestrator(
-            scopeFactory, _catalog, new ActivityBroadcaster(), new SpecManager(),
+            scopeFactory, _catalog, new ActivityBroadcaster(),
             breakoutLifecycle, turnRunner,
             NullLogger<AgentOrchestrator>.Instance);
     }
