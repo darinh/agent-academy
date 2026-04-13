@@ -43,6 +43,8 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<SprintArtifactEntity> SprintArtifacts => Set<SprintArtifactEntity>();
     public DbSet<SprintScheduleEntity> SprintSchedules => Set<SprintScheduleEntity>();
     public DbSet<TaskDependencyEntity> TaskDependencies => Set<TaskDependencyEntity>();
+    public DbSet<LearningDigestEntity> LearningDigests => Set<LearningDigestEntity>();
+    public DbSet<LearningDigestSourceEntity> LearningDigestSources => Set<LearningDigestSourceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -588,6 +590,34 @@ public class AgentAcademyDbContext : DbContext
                 .HasDatabaseName("idx_sprint_schedules_workspace_unique");
             entity.HasIndex(e => new { e.Enabled, e.NextRunAtUtc })
                 .HasDatabaseName("idx_sprint_schedules_enabled_next_run");
+        });
+
+        modelBuilder.Entity<LearningDigestEntity>(entity =>
+        {
+            entity.ToTable("learning_digests");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.Summary).IsRequired();
+            entity.HasMany(e => e.Sources)
+                .WithOne(s => s.Digest)
+                .HasForeignKey(s => s.DigestId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LearningDigestSourceEntity>(entity =>
+        {
+            entity.ToTable("learning_digest_sources");
+            entity.HasKey(e => new { e.DigestId, e.RetrospectiveCommentId });
+
+            entity.HasOne(e => e.RetrospectiveComment)
+                .WithMany()
+                .HasForeignKey(e => e.RetrospectiveCommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Each retrospective comment can only be digested once
+            entity.HasIndex(e => e.RetrospectiveCommentId)
+                .IsUnique()
+                .HasDatabaseName("idx_digest_sources_retro_unique");
         });
     }
 }

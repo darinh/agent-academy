@@ -99,6 +99,7 @@ public class BranchWorkflowTests : IDisposable
         services.AddSingleton(_gitService);
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();
+        services.AddSingleton<LearningDigestService>();
         services.AddSingleton<RetrospectiveService>();
         services.AddSingleton<CommandAuthorizer>();
         services.AddLogging();

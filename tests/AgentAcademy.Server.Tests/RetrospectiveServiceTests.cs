@@ -68,11 +68,19 @@ public class RetrospectiveServiceTests : IDisposable
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 
+        var digestService = new LearningDigestService(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            _catalog,
+            _executor,
+            _serviceProvider.GetRequiredService<CommandPipeline>(),
+            NullLogger<LearningDigestService>.Instance);
+
         _service = new RetrospectiveService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _catalog,
             _executor,
             _serviceProvider.GetRequiredService<CommandPipeline>(),
+            digestService,
             NullLogger<RetrospectiveService>.Instance);
 
         using var scope = _serviceProvider.CreateScope();

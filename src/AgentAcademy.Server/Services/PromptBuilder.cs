@@ -434,4 +434,63 @@ internal static class PromptBuilder
 
         return string.Join('\n', lines);
     }
+
+    /// <summary>
+    /// Builds the prompt for a learning digest. The planner reviews
+    /// retrospective summaries and identifies cross-cutting patterns
+    /// to store as shared memories.
+    /// </summary>
+    internal static string BuildDigestPrompt(
+        AgentDefinition agent, List<DigestRetrospective> retrospectives)
+    {
+        var lines = new List<string>
+        {
+            PromptSanitizer.BoundaryInstruction,
+            "",
+            "=== LEARNING DIGEST ===",
+            "",
+            $"You ({agent.Name}, {agent.Role}) are reviewing retrospective summaries from your team's recently completed tasks. Your goal: identify cross-cutting patterns and synthesize them into shared knowledge that benefits all agents.",
+            "",
+            $"=== RETROSPECTIVE SUMMARIES ({retrospectives.Count} tasks) ==="
+        };
+
+        lines.Add(PromptSanitizer.ContentMarkerOpen);
+        foreach (var retro in retrospectives)
+        {
+            lines.Add($"--- Task: {PromptSanitizer.SanitizeMetadata(retro.TaskTitle)} (by {PromptSanitizer.SanitizeMetadata(retro.AgentName)}, {retro.CreatedAt:yyyy-MM-dd}) ---");
+            lines.Add(PromptSanitizer.EscapeMarkers(retro.Content));
+            lines.Add("");
+        }
+        lines.Add(PromptSanitizer.ContentMarkerClose);
+
+        lines.Add("");
+        lines.Add("=== INSTRUCTIONS ===");
+        lines.Add("Analyze the retrospectives above and produce two outputs:");
+        lines.Add("");
+        lines.Add("1. **REMEMBER commands** (3-8) to store cross-cutting learnings as **shared** knowledge. These will be visible to ALL agents on the team.");
+        lines.Add("");
+        lines.Add("   Rules:");
+        lines.Add("   - EVERY REMEMBER must use `category: shared` — no exceptions");
+        lines.Add("   - Focus on patterns that appear across MULTIPLE retrospectives");
+        lines.Add("   - Merge redundant agent-specific learnings into unified shared knowledge");
+        lines.Add("   - Identify contradictions between agents' learnings and resolve them");
+        lines.Add("   - Skip one-off observations that only apply to a single task");
+        lines.Add("");
+        lines.Add("   Format each REMEMBER exactly like this:");
+        lines.Add("   ```");
+        lines.Add("   REMEMBER:");
+        lines.Add("     category: shared");
+        lines.Add("     key: descriptive-kebab-case-key");
+        lines.Add("     value: Concise, actionable learning. Include enough context to be useful without the original tasks.");
+        lines.Add("   ```");
+        lines.Add("");
+        lines.Add("2. **Digest summary** — a brief (3-5 sentence) overview covering:");
+        lines.Add("   - Top recurring themes across the retrospectives");
+        lines.Add("   - Any contradictions or tensions discovered");
+        lines.Add("   - Recommended process improvements for the team");
+        lines.Add("");
+        lines.Add("Focus on actionable, specific insights. Avoid restating what individual retrospectives already said. Your value is synthesis — connecting dots across tasks that individual agents can't see.");
+
+        return string.Join('\n', lines);
+    }
 }

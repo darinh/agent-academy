@@ -17,6 +17,7 @@ public sealed class SystemSettingsService
     public const string RateLimitMaxCommandsKey = "commands.rateLimitMaxCommands";
     public const string RateLimitWindowSecondsKey = "commands.rateLimitWindowSeconds";
     public const string SprintAutoStartKey = "sprint.autoStartOnCompletion";
+    public const string DigestThresholdKey = "digest.retrospectiveThreshold";
 
     // Defaults
     public const int DefaultMainRoomEpochSize = 50;
@@ -24,6 +25,7 @@ public sealed class SystemSettingsService
     public const int DefaultRateLimitMaxCommands = 30;
     public const int DefaultRateLimitWindowSeconds = 60;
     public const bool DefaultSprintAutoStart = false;
+    public const int DefaultDigestThreshold = 5;
 
     public SystemSettingsService(AgentAcademyDbContext db)
     {
@@ -86,6 +88,7 @@ public sealed class SystemSettingsService
             [RateLimitMaxCommandsKey] = DefaultRateLimitMaxCommands.ToString(),
             [RateLimitWindowSecondsKey] = DefaultRateLimitWindowSeconds.ToString(),
             [SprintAutoStartKey] = DefaultSprintAutoStart.ToString(),
+            [DigestThresholdKey] = DefaultDigestThreshold.ToString(),
         };
 
         foreach (var (key, value) in stored)
@@ -108,4 +111,7 @@ public sealed class SystemSettingsService
 
     public async Task<bool> GetSprintAutoStartAsync()
         => await GetAsync(SprintAutoStartKey, DefaultSprintAutoStart);
+
+    public async Task<int> GetDigestThresholdAsync()
+        => await GetAsync(DigestThresholdKey, DefaultDigestThreshold);
 }

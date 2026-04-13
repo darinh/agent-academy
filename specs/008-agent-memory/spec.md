@@ -199,6 +199,62 @@ After a task is merged via `MERGE_TASK`, the system automatically runs a retrosp
 | `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs` | Fire-and-forget trigger |
 | `tests/AgentAcademy.Server.Tests/RetrospectiveServiceTests.cs` | 24 tests |
 
+## Learning Digests
+
+> **Status: Implemented** — `LearningDigestService` periodically synthesizes retrospective summaries into cross-cutting shared memories.
+
+After enough retrospective comments accumulate (configurable threshold, default: 5), the system automatically asks the planner agent to review them and extract cross-cutting learnings. These learnings are stored as `category: shared` memories visible to all agents.
+
+### Lifecycle
+
+1. After each retrospective completes, `RetrospectiveService` triggers `LearningDigestService.TryGenerateDigestAsync()` (fire-and-forget)
+2. Service checks for undigested retrospective comments (`CommentType == Retrospective` not claimed by a `Completed` digest)
+3. If count ≥ threshold (or `force: true`), creates a `Pending` digest and claims sources transactionally
+4. Builds a digest prompt via `PromptBuilder.BuildDigestPrompt`
+5. Runs the planner agent with **restricted permissions** (REMEMBER only, no tools) on a synthetic session (`digest:{digestId}`)
+6. Processes REMEMBER commands from the response
+7. Enforces `category: shared` on all created memories (defense-in-depth via `EnforceSharedCategoryAsync`)
+8. Updates digest entity with summary and memories count; marks `Completed`
+9. Publishes `ActivityEventType.LearningDigestCompleted`
+
+### Failure Recovery
+
+- **Failed digests release their claims**: If the executor throws, the digest is marked `Failed` and its `LearningDigestSource` rows are deleted. The retrospectives become available for the next digest.
+- **Concurrent trigger safety**: A `SemaphoreSlim` prevents concurrent digest generation. If a second trigger arrives while one is running, a `_pendingRerun` flag ensures one more pass after the current run finishes (no lost triggers).
+- **Unique constraint on sources**: Each retrospective comment can only be claimed by one digest. Concurrent claim attempts fail cleanly via `DbUpdateException` catch.
+
+### Configuration
+
+| Setting | Key | Default | Description |
+|---------|-----|---------|-------------|
+| Digest threshold | `digest.retrospectiveThreshold` | 5 | Minimum undigested retrospectives before auto-generating |
+
+### Data Model
+
+```
+learning_digests
+├── Id (int, PK)
+├── CreatedAt (datetime)
+├── Summary (text)
+├── MemoriesCreated (int)
+├── RetrospectivesProcessed (int)
+└── Status (text: Pending/Completed/Failed)
+
+learning_digest_sources
+├── DigestId (int, FK → learning_digests)
+├── RetrospectiveCommentId (text, FK → task_comments, UNIQUE)
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `src/AgentAcademy.Server/Services/LearningDigestService.cs` | Orchestrates digest lifecycle |
+| `src/AgentAcademy.Server/Data/Entities/LearningDigestEntity.cs` | Digest persistence entity |
+| `src/AgentAcademy.Server/Data/Entities/LearningDigestSourceEntity.cs` | Junction entity |
+| `src/AgentAcademy.Server/Services/PromptBuilder.cs` | `BuildDigestPrompt` method |
+| `tests/AgentAcademy.Server.Tests/LearningDigestServiceTests.cs` | 19 tests |
+
 ## Known Gaps
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
@@ -242,3 +298,4 @@ After a task is merged via `MERGE_TASK`, the system automatically runs a retrosp
 | 2026-04-04 | Added memory decay/TTL: optional TTL (hours) on REMEMBER/IMPORT, ExpiresAt filtering on all reads, LastAccessedAt tracking, staleness detection (30-day threshold), ⚠️STALE prompt tags, REST cleanup endpoint. Known gap resolved. | memory-decay-ttl |
 | 2026-04-13 | Added memory browser: `GET /api/memories/browse` (FTS5 search, category filter, expired exclusion, agent-scoped), `GET /api/memories/stats` (per-category counts), `DELETE /api/memories?agentId&key` (individual delete). Frontend `MemoryBrowserPanel` in sidebar. CancellationToken on all endpoints. | feat/memory-browser |
 | 2026-04-13 | Added post-task retrospectives. `RetrospectiveService` runs an automated retrospective after MERGE_TASK — the assigned agent reflects on the task, stores learnings via REMEMBER, and produces a Retrospective comment. `TaskCommentType.Retrospective` added. Fire-and-forget from MergeTaskHandler with session cleanup in finally block. Restricted agent permissions (REMEMBER only, no tools). Idempotency guard. 24 new tests (4302 total). | feat/agent-retrospectives |
+| 2026-04-13 | Added learning digests. `LearningDigestService` periodically synthesizes retrospective summaries into cross-cutting shared memories. Planner reviews accumulated retrospectives, stores shared learnings. Failure recovery (failed digests release claims), concurrent trigger safety (rerun flag), configurable threshold (default: 5). Triggered from RetrospectiveService after each retrospective completes. 19 new tests. | feat/learning-digest |
