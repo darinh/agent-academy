@@ -655,10 +655,11 @@ public class DmCommandTests : IDisposable
         var scope = _serviceProvider.CreateScope();
         var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var messageBroadcaster = scope.ServiceProvider.GetRequiredService<MessageBroadcaster>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
         var logger = NullLogger<DmController>.Instance;
 
-        var controller = new DmController(messageService, roomService, _catalog, orchestrator, logger);
+        var controller = new DmController(messageService, roomService, messageBroadcaster, _catalog, orchestrator, logger);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

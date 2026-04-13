@@ -30,7 +30,7 @@ public sealed class DmControllerTests : IDisposable
         _svc = new TestServiceGraph([TestAgent]);
 
         _controller = new DmController(
-            _svc.MessageService, _svc.RoomService, _svc.Catalog,
+            _svc.MessageService, _svc.RoomService, _svc.MessageBroadcaster, _svc.Catalog,
             _svc.Orchestrator, NullLogger<DmController>.Instance);
 
         SetUser(isConsultant: false);
@@ -174,5 +174,37 @@ public sealed class DmControllerTests : IDisposable
         var messages = Assert.IsType<List<DmMessage>>(ok.Value);
         Assert.Single(messages);
         Assert.Equal("Thread message", messages[0].Content);
+    }
+
+    // ── DM Broadcast Integration ────────────────────────────────
+
+    [Fact]
+    public async Task SendMessage_BroadcastsDmToSubscribers()
+    {
+        DmMessage? received = null;
+        _svc.MessageBroadcaster.SubscribeDm("test-agent", msg => received = msg);
+
+        await _controller.SendMessage("test-agent",
+            new SendDmRequest("Broadcast test"));
+
+        Assert.NotNull(received);
+        Assert.Equal("Broadcast test", received.Content);
+        Assert.True(received.IsFromHuman);
+        Assert.Equal("human", received.SenderId);
+    }
+
+    [Fact]
+    public async Task SendMessage_ConsultantBroadcastsDmWithCorrectIdentity()
+    {
+        SetUser(isConsultant: true);
+        DmMessage? received = null;
+        _svc.MessageBroadcaster.SubscribeDm("test-agent", msg => received = msg);
+
+        await _controller.SendMessage("test-agent",
+            new SendDmRequest("Consultant broadcast"));
+
+        Assert.NotNull(received);
+        Assert.Equal("consultant", received.SenderId);
+        Assert.True(received.IsFromHuman);
     }
 }

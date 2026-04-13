@@ -197,4 +197,105 @@ public sealed class MessageBroadcasterTests
         await Task.WhenAll(subscriberTask, broadcastTask);
         Assert.True(messageCount > 0);
     }
+
+    // ── DM Subscribe & Broadcast ────────────────────────────────
+
+    private static DmMessage MakeDm(string agentId, string id = "dm-1", bool fromHuman = true) =>
+        new(id, fromHuman ? "human" : agentId, fromHuman ? "Human" : "Agent", fromHuman ? "Human" : "Engineer",
+            "hello", DateTime.UtcNow, fromHuman);
+
+    [Fact]
+    public void BroadcastDm_NoSubscribers_DoesNotThrow()
+    {
+        var sut = new MessageBroadcaster();
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+    }
+
+    [Fact]
+    public void BroadcastDm_DeliversToSubscriber()
+    {
+        var sut = new MessageBroadcaster();
+        DmMessage? received = null;
+        sut.SubscribeDm("agent-1", msg => received = msg);
+
+        var sent = MakeDm("agent-1");
+        sut.BroadcastDm("agent-1", sent);
+
+        Assert.NotNull(received);
+        Assert.Equal(sent.Id, received.Id);
+    }
+
+    [Fact]
+    public void BroadcastDm_IsolatesAgentThreads()
+    {
+        var sut = new MessageBroadcaster();
+        DmMessage? agent1Msg = null;
+        DmMessage? agent2Msg = null;
+        sut.SubscribeDm("agent-1", msg => agent1Msg = msg);
+        sut.SubscribeDm("agent-2", msg => agent2Msg = msg);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        Assert.NotNull(agent1Msg);
+        Assert.Null(agent2Msg);
+    }
+
+    [Fact]
+    public void BroadcastDm_CaseInsensitiveAgentId()
+    {
+        var sut = new MessageBroadcaster();
+        DmMessage? received = null;
+        sut.SubscribeDm("Agent-1", msg => received = msg);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        Assert.NotNull(received);
+    }
+
+    [Fact]
+    public void UnsubscribeDm_StopsDelivery()
+    {
+        var sut = new MessageBroadcaster();
+        var count = 0;
+        var unsub = sut.SubscribeDm("agent-1", _ => count++);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+        Assert.Equal(1, count);
+
+        unsub();
+        sut.BroadcastDm("agent-1", MakeDm("agent-1", "dm-2"));
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void GetDmSubscriberCount_ReturnsCorrectCount()
+    {
+        var sut = new MessageBroadcaster();
+        Assert.Equal(0, sut.GetDmSubscriberCount("agent-1"));
+
+        var unsub1 = sut.SubscribeDm("agent-1", _ => { });
+        Assert.Equal(1, sut.GetDmSubscriberCount("agent-1"));
+
+        var unsub2 = sut.SubscribeDm("agent-1", _ => { });
+        Assert.Equal(2, sut.GetDmSubscriberCount("agent-1"));
+
+        unsub1();
+        Assert.Equal(1, sut.GetDmSubscriberCount("agent-1"));
+
+        unsub2();
+        Assert.Equal(0, sut.GetDmSubscriberCount("agent-1"));
+    }
+
+    [Fact]
+    public void BroadcastDm_SubscriberException_DoesNotAffectOthers()
+    {
+        var sut = new MessageBroadcaster();
+        DmMessage? received = null;
+        sut.SubscribeDm("agent-1", _ => throw new InvalidOperationException("boom"));
+        sut.SubscribeDm("agent-1", msg => received = msg);
+
+        sut.BroadcastDm("agent-1", MakeDm("agent-1"));
+
+        Assert.NotNull(received);
+    }
 }

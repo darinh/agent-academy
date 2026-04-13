@@ -159,6 +159,33 @@ GET  /api/dm/threads/{agentId}    # Read DM thread
 GET  /api/dm/threads              # List DM threads
 ```
 
+#### Stream DM Thread Messages (SSE)
+
+```
+GET /api/dm/threads/{agentId}/stream?after={messageId}
+```
+
+Server-Sent Events stream delivering DM messages for a specific agent thread in real-time.
+
+**Parameters:**
+- `agentId` (path, required): Agent ID for the DM thread
+- `after` (query, optional): Cursor — only replay messages after this ID, then stream live
+
+**SSE event format:**
+```
+id: {messageId}
+event: message
+data: {"id":"...","senderId":"...","senderName":"...","senderRole":"...","content":"...","sentAt":"...","isFromHuman":true}
+```
+
+**Overflow/resync:** If the client falls behind, emits `event: resync` with `{"lastId":"..."}` and closes the connection. Client should reconnect with `?after={lastId}`.
+
+**Implementation:**
+- Reuses `MessageBroadcaster` with DM-specific subscriptions (`SubscribeDm`/`BroadcastDm`), keyed by agent ID (case-insensitive).
+- Subscribe-first pattern (same as room SSE) avoids race conditions between DB replay and live subscription.
+- `SendDirectMessageAsync` broadcasts `DmMessage` after commit, covering both human→agent and agent→human directions.
+- Returns 404 if agent ID is not found in catalog.
+
 ### Command Execution
 
 The consultant can execute commands through the human command API:

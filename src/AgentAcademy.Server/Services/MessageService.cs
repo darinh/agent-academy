@@ -306,6 +306,19 @@ public sealed class MessageService
                 MessageSenderKind.System, MessageKind.System, dmNotifyContent!, now));
         }
 
+        // Broadcast DM to SSE subscribers on the agent's DM thread
+        var isHumanSide = HumanSideSenderIds.Contains(senderId);
+        var dmAgentId = isHumanSide ? recipientId : senderId;
+        _messageBroadcaster.BroadcastDm(dmAgentId, new DmMessage(
+            Id: messageId,
+            SenderId: senderId,
+            SenderName: senderName,
+            SenderRole: senderRole,
+            Content: message,
+            SentAt: now,
+            IsFromHuman: isHumanSide
+        ));
+
         return messageId;
     }
 
@@ -411,15 +424,34 @@ public sealed class MessageService
     /// <summary>
     /// Returns messages in a DM thread between the human and a specific agent.
     /// </summary>
-    public async Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50)
+    public async Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50, string? afterMessageId = null)
     {
-        return await _db.Messages
+        limit = Math.Clamp(limit, 1, 200);
+
+        IQueryable<MessageEntity> query = _db.Messages
             .Where(m => m.RecipientId != null &&
                         ((HumanSideSenderIds.Contains(m.SenderId) && m.RecipientId == agentId) ||
-                         (m.SenderId == agentId && HumanSideSenderIds.Contains(m.RecipientId!))))
-            .OrderByDescending(m => m.SentAt)
-            .Take(limit)
+                         (m.SenderId == agentId && HumanSideSenderIds.Contains(m.RecipientId!))));
+
+        if (!string.IsNullOrEmpty(afterMessageId))
+        {
+            var cursor = await _db.Messages
+                .Where(m => m.Id == afterMessageId)
+                .Select(m => new { m.SentAt, m.Id })
+                .FirstOrDefaultAsync();
+
+            if (cursor is not null)
+            {
+                query = query.Where(m =>
+                    m.SentAt > cursor.SentAt ||
+                    (m.SentAt == cursor.SentAt && string.Compare(m.Id, cursor.Id) > 0));
+            }
+        }
+
+        return await query
             .OrderBy(m => m.SentAt)
+            .ThenBy(m => m.Id)
+            .Take(limit)
             .ToListAsync();
     }
 

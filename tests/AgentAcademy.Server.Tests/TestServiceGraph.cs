@@ -26,6 +26,7 @@ internal sealed class TestServiceGraph : IDisposable
     public SystemSettingsService SettingsService { get; }
     public ConversationSessionService SessionService { get; }
     public MessageService MessageService { get; }
+    public MessageBroadcaster MessageBroadcaster { get; }
     public AgentLocationService AgentLocationService { get; }
     public TaskQueryService TaskQueryService { get; }
     public TaskLifecycleService TaskLifecycleService { get; }
@@ -67,9 +68,10 @@ internal sealed class TestServiceGraph : IDisposable
             Db, SettingsService, Executor,
             NullLogger<ConversationSessionService>.Instance);
 
+        MessageBroadcaster = new MessageBroadcaster();
         MessageService = new MessageService(
             Db, NullLogger<MessageService>.Instance, Catalog,
-            ActivityPublisher, SessionService, new MessageBroadcaster());
+            ActivityPublisher, SessionService, MessageBroadcaster);
 
         AgentLocationService = new AgentLocationService(Db, Catalog, ActivityPublisher);
 

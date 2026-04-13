@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Threading.Channels;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -14,19 +16,27 @@ public class DmController : ControllerBase
 {
     private readonly MessageService _messageService;
     private readonly RoomService _roomService;
+    private readonly MessageBroadcaster _messageBroadcaster;
     private readonly AgentCatalogOptions _catalog;
     private readonly AgentOrchestrator _orchestrator;
     private readonly ILogger<DmController> _logger;
 
+    private static readonly JsonSerializerOptions SseJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public DmController(
         MessageService messageService,
         RoomService roomService,
+        MessageBroadcaster messageBroadcaster,
         AgentCatalogOptions catalog,
         AgentOrchestrator orchestrator,
         ILogger<DmController> logger)
     {
         _messageService = messageService;
         _roomService = roomService;
+        _messageBroadcaster = messageBroadcaster;
         _catalog = catalog;
         _orchestrator = orchestrator;
         _logger = logger;
@@ -121,6 +131,115 @@ public class DmController : ControllerBase
             SentAt: DateTime.UtcNow,
             IsFromHuman: true
         ));
+    }
+
+    /// <summary>
+    /// GET /api/dm/threads/{agentId}/stream — SSE stream of DM messages for a specific agent thread.
+    /// Replays messages after the optional <paramref name="after"/> cursor,
+    /// then streams live messages. Uses subscribe-first to avoid race conditions.
+    /// Delivery is at-least-once: clients must deduplicate by message ID on reconnect overlap.
+    /// If the client falls behind (channel overflow), emits a <c>resync</c> event and closes.
+    /// </summary>
+    [HttpGet("api/dm/threads/{agentId}/stream")]
+    public async Task GetMessageStream(
+        string agentId,
+        [FromQuery] string? after = null,
+        CancellationToken ct = default)
+    {
+        var agents = _catalog.Agents;
+        var agent = agents.FirstOrDefault(
+            a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
+
+        if (agent is null)
+        {
+            Response.StatusCode = 404;
+            return;
+        }
+
+        Response.Headers.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Connection = "keep-alive";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        var channel = Channel.CreateBounded<DmMessage>(
+            new BoundedChannelOptions(256)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+
+        var replayedIds = new HashSet<string>();
+        var lastId = after;
+        var overflowed = false;
+
+        // Subscribe BEFORE replaying to avoid a race where messages posted
+        // between the DB query and subscription are silently dropped.
+        var unsubscribe = _messageBroadcaster.SubscribeDm(agent.Id, msg =>
+        {
+            if (!channel.Writer.TryWrite(msg))
+            {
+                overflowed = true;
+                channel.Writer.TryComplete();
+            }
+        });
+
+        try
+        {
+            // Replay messages from DB after the cursor
+            var replay = await _messageService.GetDmThreadMessagesAsync(agent.Id, limit: 200, afterMessageId: after);
+
+            foreach (var m in replay)
+            {
+                replayedIds.Add(m.Id);
+                lastId = m.Id;
+                var dm = new DmMessage(
+                    Id: m.Id,
+                    SenderId: m.SenderId,
+                    SenderName: m.SenderName,
+                    SenderRole: m.SenderRole,
+                    Content: m.Content,
+                    SentAt: m.SentAt,
+                    IsFromHuman: m.SenderId == "human" || m.SenderId == "consultant"
+                );
+                await WriteSseEventAsync(Response, "message", dm, ct);
+            }
+            await Response.Body.FlushAsync(ct);
+
+            // Stream live messages
+            await foreach (var msg in channel.Reader.ReadAllAsync(ct))
+            {
+                if (replayedIds.Contains(msg.Id))
+                    continue;
+                replayedIds.Clear();
+
+                lastId = msg.Id;
+                await WriteSseEventAsync(Response, "message", msg, ct);
+                await Response.Body.FlushAsync(ct);
+            }
+
+            if (overflowed)
+            {
+                var resyncData = JsonSerializer.Serialize(new { lastId }, SseJsonOptions);
+                await Response.WriteAsync($"event: resync\ndata: {resyncData}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — normal shutdown.
+        }
+        finally
+        {
+            unsubscribe();
+            channel.Writer.TryComplete();
+        }
+    }
+
+    private static async Task WriteSseEventAsync(HttpResponse response, string eventName, DmMessage msg, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(msg, SseJsonOptions);
+        await response.WriteAsync($"id: {msg.Id}\nevent: {eventName}\ndata: {json}\n\n", ct);
     }
 }
 
