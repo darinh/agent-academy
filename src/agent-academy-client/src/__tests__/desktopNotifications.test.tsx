@@ -182,6 +182,12 @@ describe("useDesktopNotifications", () => {
         expect(mockNotification).toHaveBeenCalledWith("Task created", expect.objectContaining({ body: "Implement auth" }));
       });
 
+      it("creates notification for TaskUnblocked", () => {
+        const { result } = renderHook(() => useDesktopNotifications());
+        result.current.notify(makeEvent({ type: "TaskUnblocked", message: "Task #5 is now unblocked" }));
+        expect(mockNotification).toHaveBeenCalledWith("Task unblocked", expect.objectContaining({ body: "Task #5 is now unblocked" }));
+      });
+
       // ── Event Filtering ───────────────────
 
       it("ignores events not in the notify set", () => {
