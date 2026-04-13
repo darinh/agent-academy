@@ -13,13 +13,13 @@ using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
-public class AgentErrorTrackerTests : IDisposable
+public class AgentErrorTrackerBasicTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentErrorTracker _tracker;
 
-    public AgentErrorTrackerTests()
+    public AgentErrorTrackerBasicTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
