@@ -328,6 +328,34 @@ Frontend: Export CSV button on `AgentAnalyticsPanel` toolbar. Uses `downloadFile
 
 > **Tests**: `CsvExportTests` (20 tests — formatting, escaping, formula injection, edge cases), `ExportControllerTests` (14 tests — validation, content types, truncation, time filtering, integration with real DB).
 
+#### Conversation Export
+
+> **Source**: `src/AgentAcademy.Server/Controllers/ExportController.cs`, `src/AgentAcademy.Server/Services/ConversationExportService.cs`
+
+Downloadable room and DM conversation history in JSON or Markdown format.
+
+```
+GET /api/export/rooms/{roomId}/messages?format=json|markdown
+GET /api/export/dm/{agentId}/messages?format=json|markdown
+```
+
+**Room export** fetches all non-DM messages in a room (`RecipientId == null`), ordered by `SentAt` then `Id`. **DM export** fetches all messages between the human/consultant and a specific agent — both directions — using the `HumanSideSenderIds` array (`["human", "consultant"]`) to match the human side.
+
+- `format` (optional, default `json`): `json` or `markdown`.
+- Message cap: 10,000 per export. Server fetches `MaxExportMessages + 1` to detect truncation.
+- Response headers: `X-Record-Count` (actual count returned), `X-Truncated: true` (when more messages exist beyond cap).
+- Content-Disposition: `attachment; filename="room-{sanitized-name}-{timestamp}.{json|md}"` (rooms) or `"dm-{sanitized-agentId}-{timestamp}.{json|md}"` (DMs). Triggers browser download.
+- Filename sanitization: only `[a-zA-Z0-9_-]` characters preserved, lowercased.
+- Returns `404` with `{ code, message }` if the room doesn't exist (rooms) or no DM thread exists for the agent (DMs — checked by zero messages).
+
+**JSON format** (`ConversationExportService.FormatAsJson`): Envelope object with `exportedAt` (UTC), `roomName` or `agentId`, `messageCount`, and `messages` array. Each message includes: `id`, `senderId`, `senderName`, `senderRole`, `senderKind`, `kind`, `content`, `sentAt`, `replyToMessageId`. Serialized with `WriteIndented = true`, `camelCase` naming.
+
+**Markdown format** (`ConversationExportService.FormatAsMarkdown`): Human-readable document with heading (`# Room: {name}` or `# DM Thread: {agentId}`), export timestamp, message count, date range, then each message as `**{SenderName}** ({Role}) — {timestamp}` followed by content. Messages separated by horizontal rules.
+
+Frontend: Export dropdown in `SessionToolbar` (room chat view) — button with `▾` that reveals JSON/Markdown options on click. DM export via `<select>` element in `DmPanel` thread header. Both use `downloadFile()` helper from `api/core.ts` which reads blob from fetch response and triggers download via temporary anchor element. API client functions: `exportRoomMessages(roomId, format)` in `api/rooms.ts`, `exportDmMessages(agentId, format)` in `api/system.ts`.
+
+> **Tests**: `ConversationExportServiceTests` (21 tests — room/DM fetching, JSON/Markdown formatting, truncation, empty threads, null room), `ExportControllerTests` (extended with conversation export endpoint tests — format validation, 404 handling, content types, truncation headers).
+
 #### Task Cycle Analytics
 
 > **Source**: `src/AgentAcademy.Server/Services/TaskAnalyticsService.cs`, `src/AgentAcademy.Server/Controllers/AnalyticsController.cs`

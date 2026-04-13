@@ -412,6 +412,7 @@ Each room contains conversation sessions (epochs). The ChatPanel toolbar include
 - **Sessions dropdown**: Always visible. Lists all sessions (active + archived) for the current room. Selecting an archived session loads its historical messages in read-only mode.
 - **New Session button**: Creates a new conversation session via `POST /api/rooms/{roomId}/sessions`, archiving the current active session.
 - **Agent management dropdown**: Shows agents currently in the room with remove buttons, plus a list of available agents with add buttons. Uses `POST /api/rooms/{roomId}/agents/{agentId}` and `DELETE /api/rooms/{roomId}/agents/{agentId}`.
+- **Export dropdown** (`SessionToolbar.tsx`): Button labeled "Export ▾" (right-aligned, `marginLeft: auto`) that reveals JSON and Markdown options on click. Calls `exportRoomMessages(roomId, format)` from `api/rooms.ts`. Shows "Exporting…" with reduced opacity while the download is in progress. Closes on outside click. Uses `downloadFile()` helper which reads blob from fetch response and triggers browser download via temporary anchor element.
 
 ### Message Display
 
@@ -422,6 +423,22 @@ Each room contains conversation sessions (epochs). The ChatPanel toolbar include
 ### Connection Status Bar
 
 The status bar shows live SignalR connection state with color indicators (connected/connecting/reconnecting/disconnected).
+
+## Direct Messages (`DmPanel.tsx`)
+
+Telegram-style DM interface for human-to-agent private conversations, accessible via the "directMessages" tab.
+
+### Thread Sidebar
+
+Left column lists all agents with DM threads. Selecting an agent loads the conversation. Thread list shows agent name, last message preview, and timestamp. Sidebar polls for updates on a 10-second interval.
+
+### Chat Area
+
+Right column displays the selected DM thread. Messages are loaded via `GET /api/dm/threads/{agentId}`. Human messages align right, agent messages align left. Consultant messages show a distinct copper-colored "Consultant" label.
+
+### Export
+
+`<select>` element in the DM chat header offers "Export as JSON" and "Export as Markdown" options. Selecting a format calls `exportDmMessages(agentId, format)` from `api/system.ts`. Shows "Exporting…" with reduced opacity during download. Resets to default label after completion or error.
 
 ## Sidebar Room Creation (`SidebarPanel.tsx`)
 
