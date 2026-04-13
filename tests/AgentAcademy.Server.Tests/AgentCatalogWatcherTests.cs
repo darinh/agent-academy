@@ -430,4 +430,160 @@ public sealed class AgentCatalogWatcherTests : IDisposable
         var diff = new CatalogDiff([MakeAgent("a1", "A", "E")], [], []);
         Assert.True(diff.HasChanges);
     }
+
+    // ──────────────── Field-level change detection tests ────────────────
+
+    [Fact]
+    public async Task TriggerReload_NameChange_DetectsModification()
+    {
+        WriteAgents(MakeAgent("a1", "Alpha", "Engineer"));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        WriteAgents(new AgentDefinition("a1", "Alpha Renamed", "Engineer", "Alpha summary", "test prompt", null, [], [], true));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.NotNull(result.Diff);
+        Assert.Single(result.Diff.Modified);
+        Assert.Equal("Alpha Renamed", catalog.Agents[0].Name);
+    }
+
+    [Fact]
+    public async Task TriggerReload_SummaryChange_DetectsModification()
+    {
+        WriteAgents(MakeAgent("a1", "Alpha", "Engineer"));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Updated summary", "test prompt", null, [], [], true));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_ModelChange_DetectsModification()
+    {
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", "gpt-4", [], [], true));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", "gpt-5", [], [], true));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_AutoJoinChange_DetectsModification()
+    {
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", null, [], [], true));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", null, [], [], false));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_CapabilityTagsChange_DetectsModification()
+    {
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", null, ["code"], [], true));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", null, ["code", "review"], [], true));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_EnabledToolsChange_DetectsModification()
+    {
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", null, [], ["tool1"], true));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        WriteAgents(new AgentDefinition("a1", "Alpha", "Engineer", "Alpha summary", "test prompt", null, [], ["tool1", "tool2"], true));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_IdenticalContent_SkipsReload()
+    {
+        WriteAgents(MakeAgent("a1", "Alpha", "Engineer"));
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        // Trigger initial reload to sync hash
+        await watcher.TriggerReloadAsync();
+
+        // Write identical content — hash should match, no reload
+        WriteAgents(MakeAgent("a1", "Alpha", "Engineer"));
+
+        var result = await watcher.TriggerReloadAsync();
+
+        // File bytes changed (whitespace may differ), but if hash matches it skips
+        // If hash differs, it should detect NoChanges via diff
+        Assert.Null(result.Error);
+        Assert.False(result.WasReloaded || (result.Diff?.HasChanges ?? false));
+    }
+
+    [Fact]
+    public void CatalogDiff_HasChanges_TrueWhenRemoved()
+    {
+        var diff = new CatalogDiff([], [MakeAgent("a1", "A", "E")], []);
+        Assert.True(diff.HasChanges);
+    }
+
+    [Fact]
+    public void CatalogDiff_HasChanges_TrueWhenModified()
+    {
+        var diff = new CatalogDiff([], [], [MakeAgent("a1", "A", "E")]);
+        Assert.True(diff.HasChanges);
+    }
+
+    [Fact]
+    public void CatalogReloadResult_Skipped_HasCorrectProperties()
+    {
+        var result = CatalogReloadResult.Skipped();
+        Assert.False(result.WasReloaded);
+        Assert.True(result.WasSkipped);
+        Assert.Null(result.Error);
+        Assert.Null(result.Diff);
+    }
+
+    [Fact]
+    public void CatalogReloadResult_NoChanges_HasCorrectProperties()
+    {
+        var result = CatalogReloadResult.NoChanges();
+        Assert.False(result.WasReloaded);
+        Assert.False(result.WasSkipped);
+        Assert.Null(result.Error);
+        Assert.Null(result.Diff);
+    }
 }
