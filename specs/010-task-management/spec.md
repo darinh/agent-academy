@@ -341,7 +341,7 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 
 `{prefix}` is derived from `TaskEntity.Type`: `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, `Spike -> docs: `.
 
-> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.cs:186-213`
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.MergeOperations.cs`
 
 ---
 
@@ -901,6 +901,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-13 | Spec sync — updated `GitService` source references: merge/rebase/revert operations now in `GitService.MergeOperations.cs` partial class. Branch creation and other operations remain in `GitService.cs`. | Anvil |
 | 2026-04-11 | Spec reconciliation — updated GitHub Integration section: corrected status, added OAuth bridge auth docs, updated IGitHubService interface, added MERGE_PR and PullRequestSyncService sections, fixed branch naming (task/ prefix, not agents/), updated API endpoints table with authSource, removed stale Planned markers | Anvil |
 | 2026-04-07 | Evidence ledger: new §6.6 documenting task evidence system. TaskEvidenceEntity data model, EvidencePhase enum (Baseline/After/Review), gate definitions for status transitions (Active→AwaitingValidation: ≥1, AwaitingValidation→InReview: ≥2, InReview→Approved: ≥1). Authorization rules, commands cross-reference to spec 007. Invariants #10 (immutable evidence) and #11 (advisory gates). | Anvil |
 | 2026-04-07 | Added Invariant #9: git-DB transaction ordering — task metadata must not persist to database until git branch creation succeeds (commit `36e0dda`). Documents failure mode hierarchy and UI contract. | Thucydides / Anvil |

@@ -87,9 +87,29 @@
       "note": "Breakout room management"
     },
     {
+      "pattern": "src/AgentAcademy.Server/Services/BreakoutCompletionService.cs",
+      "specs": ["006"],
+      "note": "Breakout completion logic"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/AgentTurnRunner.cs",
+      "specs": ["006"],
+      "note": "Per-turn agent execution"
+    },
+    {
       "pattern": "src/AgentAcademy.Server/Services/RoomService.cs",
       "specs": ["005"],
       "note": "Room/workspace runtime"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/RoomSnapshotBuilder.cs",
+      "specs": ["005"],
+      "note": "Room snapshot building"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/WorkspaceRoomService.cs",
+      "specs": ["005"],
+      "note": "Workspace room operations"
     },
     {
       "pattern": "src/AgentAcademy.Server/Services/MessageService.cs",
@@ -132,6 +152,11 @@
       "note": "Git operations for task workflow"
     },
     {
+      "pattern": "src/AgentAcademy.Server/Services/GitService.MergeOperations.cs",
+      "specs": ["010"],
+      "note": "Git merge operations (partial class)"
+    },
+    {
       "pattern": "src/AgentAcademy.Server/Services/WorktreeService.cs",
       "specs": ["010"],
       "note": "Worktree management"
@@ -145,6 +170,11 @@
       "pattern": "src/AgentAcademy.Server/Services/ConversationSessionService.cs",
       "specs": ["003"],
       "note": "Conversation session management"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Services/ConversationSessionQueryService.cs",
+      "specs": ["003"],
+      "note": "Conversation session queries"
     },
     {
       "pattern": "src/AgentAcademy.Server/Services/AgentAnalyticsService.cs",

@@ -18,7 +18,9 @@ Controllers and command handlers inject focused domain services directly via con
 |---------|---------------|--------------|--------|
 | `InitializationService` | Startup room/agent seeding, server instance tracking | Scoped | `Services/InitializationService.cs` |
 | `CrashRecoveryService` | Crash detection, breakout/agent/task recovery | Scoped | `Services/CrashRecoveryService.cs` |
-| `RoomService` | Room CRUD, snapshots, phase transitions, workspace scoping | Scoped | `Services/RoomService.cs` |
+| `RoomService` | Room CRUD, phase transitions, workspace scoping | Scoped | `Services/RoomService.cs` |
+| `RoomSnapshotBuilder` | Builds read-model snapshots of rooms (messages, task, participants) | Scoped | `Services/RoomSnapshotBuilder.cs` |
+| `WorkspaceRoomService` | Workspace–room relationships, default room creation, startup resolution | Scoped | `Services/WorkspaceRoomService.cs` |
 | `RoomLifecycleService` | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped | `Services/RoomLifecycleService.cs` |
 | `MessageService` | Room/DM/breakout messaging, message trimming | Scoped | `Services/MessageService.cs` |
 | `TaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped | `Services/TaskQueryService.cs` |
@@ -65,13 +67,13 @@ Configured agents (v1 port):
 
 ### Room Management
 
-> **Source**: `src/AgentAcademy.Server/Services/RoomService.cs`
+> **Source**: `src/AgentAcademy.Server/Services/RoomService.cs`, `src/AgentAcademy.Server/Services/RoomSnapshotBuilder.cs`, `src/AgentAcademy.Server/Services/WorkspaceRoomService.cs`
 
 - `RoomService.GetRoomsAsync(includeArchived)` → rooms for the active workspace, default room first then alphabetically. Archived rooms are excluded by default; pass `includeArchived: true` to include them.
-- `RoomService.GetRoomAsync(roomId)` → single room snapshot or null
+- `RoomService.GetRoomAsync(roomId)` → single room snapshot or null (delegates to `RoomSnapshotBuilder`)
 - `RoomService.RenameRoomAsync(roomId, newName)` → renames a room, publishes `RoomRenamed` activity event, cascades to Discord channel name via `OnRoomRenamedAsync`
-- `RoomService.CreateDefaultRoomAsync()` → creates default room if none exists (legacy, uses global `main` room)
-- `RoomService.EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
+- `WorkspaceRoomService.EnsureDefaultRoomForWorkspaceAsync(workspacePath)` → creates a workspace-specific default room (named from `_catalog.DefaultRoomName`), moves all agents there. Excludes the catalog default room when checking for existing workspace rooms. Auto-corrects stale room names.
+- `WorkspaceRoomService.ResolveStartupMainRoomIdAsync(activeWorkspace)` → resolves the main room ID for a workspace on startup
 - `RoomService.GetProjectNameForRoomAsync(roomId)` → resolves `roomId → WorkspacePath → ProjectName` (falls back to directory basename)
 - `RoomLifecycleService.CleanupStaleRoomsAsync()` → scans for non-main rooms where all tasks are terminal (Completed/Cancelled), evacuates agents to default room, archives the rooms. Returns count of rooms cleaned up.
 - `RoomLifecycleService.CloseRoomAsync(roomId)` → archives a non-main room (guards against main room, non-empty rooms)
@@ -124,7 +126,7 @@ Validation: room must exist, sender must be in catalog (for agent messages).
 
 **Message trimming**: When message count exceeds 200, oldest messages are deleted from the database. This matches v1 behavior.
 
-**Session-aware message loading**: `BuildRoomSnapshotAsync` loads only messages from the active conversation session (plus legacy untagged messages). Messages are tagged with `SessionId` when posted. See spec 003 → Conversation Session Management for epoch lifecycle details.
+**Session-aware message loading**: `RoomSnapshotBuilder.BuildRoomSnapshotAsync` loads only messages from the active conversation session (plus legacy untagged messages). Messages are tagged with `SessionId` when posted. See spec 003 → Conversation Session Management for epoch lifecycle details.
 
 **Message tagging**: `PostMessageAsync`, `PostHumanMessageAsync`, and `PostBreakoutMessageAsync` call `ConversationSessionService.GetOrCreateActiveSessionAsync` to tag each message with the active session ID and increment the session's message count.
 
@@ -277,6 +279,8 @@ builder.Services.AddScoped<InitializationService>();
 builder.Services.AddScoped<BreakoutRoomService>();
 builder.Services.AddScoped<TaskItemService>();
 builder.Services.AddScoped<RoomService>();
+builder.Services.AddScoped<RoomSnapshotBuilder>();
+builder.Services.AddScoped<WorkspaceRoomService>();
 builder.Services.AddScoped<RoomLifecycleService>();
 builder.Services.AddScoped<TaskOrchestrationService>();
 builder.Services.AddScoped<AgentConfigService>();
@@ -319,6 +323,7 @@ Each domain service depends on `AgentAcademyDbContext` (scoped) and the specific
 
 ## Revision History
 
+- **2026-04-13**: Spec sync — documented `RoomSnapshotBuilder` (room snapshot assembly) and `WorkspaceRoomService` (workspace–room relationships) extracted from `RoomService`. Updated service table, source references, and DI registration. RoomService retains CRUD and phase transitions; snapshot building and workspace orchestration now in dedicated services.
 - **2026-04-12**: `WorkspaceRuntime` facade deleted — spec rewritten as "Domain Services Layer". All controllers and command handlers now inject focused services directly. Behavioral documentation preserved; source references updated to actual service files. `GetOverviewAsync` inlined in `SystemController`. No behavioral changes to rooms, messages, tasks, agents, breakouts, plans, or activity publishing.
 - **2026-04-11**: Spec reconciliation — updated to reflect full facade decomposition. Added `TaskOrchestrationService` (scoped) to services table; CreateTaskAsync, CompleteTaskAsync, RejectTaskAsync, PostTaskNoteAsync now delegate to it. Fixed `ActivityPublisher` registration from Singleton to Scoped. Separated `ActivityBroadcaster` (singleton in-memory buffer) from `ActivityPublisher` (scoped EF persistence + broadcast). Removed dead methods. Updated Dependencies and Service Registration.
 - **2026-04-11**: Documented service extraction architecture — WorkspaceRuntime refactored from monolithic 1800+ line class to a thin facade (839 lines) delegating to 10 extracted services. Public API unchanged. Orchestration logic (CreateTask, CompleteTask, RejectTask, GetOverview) retained in WorkspaceRuntime; all other methods are one-liner delegations. Dead code removed after extraction.

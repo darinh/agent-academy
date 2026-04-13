@@ -66,8 +66,8 @@ On setup failure, cleanup runs independently for each resource: breakout room is
 
 ### Breakout Room Workflow
 
-> **Delegated to**: `BreakoutLifecycleService` (extracted from `AgentOrchestrator`)
-> **Source**: `src/AgentAcademy.Server/Services/BreakoutLifecycleService.cs`
+> **Delegated to**: `BreakoutLifecycleService` (loop and coordination) + `BreakoutCompletionService` (post-loop completion, review cycle, agent execution helpers)
+> **Source**: `src/AgentAcademy.Server/Services/BreakoutLifecycleService.cs`, `src/AgentAcademy.Server/Services/BreakoutCompletionService.cs`
 
 Inside a breakout room, the assigned agent works in a loop capped at `BreakoutLifecycleService.MaxBreakoutRounds = 200`. Stuck detection closes after `BreakoutLifecycleService.MaxConsecutiveIdleRounds = 5` idle rounds:
 
@@ -184,10 +184,12 @@ Agent roles map to `MessageKind` values (via `AgentResponseParser.InferMessageKi
 // Program.cs
 builder.Services.AddSingleton<AgentMemoryLoader>();
 builder.Services.AddSingleton<BreakoutLifecycleService>();
+builder.Services.AddSingleton<BreakoutCompletionService>();
+builder.Services.AddSingleton<AgentTurnRunner>();
 builder.Services.AddSingleton<AgentOrchestrator>();
 ```
 
-`AgentOrchestrator` and its extracted services are registered as singletons. The orchestrator uses `IServiceScopeFactory` to create scoped service instances (e.g., `RoomService`, `MessageService`, `TaskOrchestrationService`) for each conversation round. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
+`AgentOrchestrator` and its extracted services are registered as singletons. Per-turn agent execution is delegated to `AgentTurnRunner`. Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`. The orchestrator uses `IServiceScopeFactory` to create scoped service instances (e.g., `RoomService`, `MessageService`, `TaskOrchestrationService`) for each conversation round. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
 
 ### Dependencies
 
@@ -202,7 +204,9 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 | `CommandPipeline` | Singleton | Processes commands from agent responses |
 | `GitService` | Singleton | Creates task branches, returns to develop |
 | `WorktreeService` | Singleton | Creates/removes worktrees for isolated agent work |
-| `BreakoutLifecycleService` | Singleton | Manages breakout room loop and completion |
+| `BreakoutLifecycleService` | Singleton | Manages breakout room loop |
+| `BreakoutCompletionService` | Singleton | Post-loop completion, review cycle, agent execution helpers |
+| `AgentTurnRunner` | Singleton | Per-turn agent execution (config, memory, prompt, LLM, commands) |
 | `AgentMemoryLoader` | Singleton | Loads agent memories for prompts |
 | `ILogger<AgentOrchestrator>` | Singleton | Structured logging |
 
@@ -222,13 +226,21 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 | Dependency | Lifetime | Purpose |
 |------------|----------|---------|
 | `IServiceScopeFactory` | Singleton | Creates scoped DB contexts per round |
-| `IAgentExecutor` | Singleton | Runs agent in breakout loop |
-| `SpecManager` | Singleton | Loads spec context for breakout prompts |
-| `CommandPipeline` | Singleton | Processes commands from agent responses |
+| `BreakoutCompletionService` | Singleton | Post-loop completion and agent execution |
 | `GitService` | Singleton | Manages task branch checkout per round |
 | `WorktreeService` | Singleton | Manages worktree lifecycle |
-| `AgentMemoryLoader` | Singleton | Loads agent memories for breakout prompts |
 | `ILogger<BreakoutLifecycleService>` | Singleton | Structured logging |
+
+**BreakoutCompletionService (singleton)**:
+
+| Dependency | Lifetime | Purpose |
+|------------|----------|---------|
+| `IServiceScopeFactory` | Singleton | Creates scoped DB contexts |
+| `IAgentExecutor` | Singleton | Runs agent in breakout/review loops |
+| `SpecManager` | Singleton | Loads spec context for breakout prompts |
+| `CommandPipeline` | Singleton | Processes commands from agent responses |
+| `AgentMemoryLoader` | Singleton | Loads agent memories for breakout prompts |
+| `ILogger<BreakoutCompletionService>` | Singleton | Structured logging |
 
 ### Constants
 
@@ -287,6 +299,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-13 | Spec sync — documented `BreakoutCompletionService` (post-loop completion, review cycle) and `AgentTurnRunner` (per-turn execution) extracted from orchestrator services. Updated DI registration, dependency tables, and source references. | spec-sync-decomposition |
 | 2026-04-11 | Service extraction reconciliation: updated dependencies, constants, and code references to reflect PromptBuilder, AgentResponseParser, AgentMemoryLoader, and BreakoutLifecycleService extractions. Added sprint context, agent config overrides, worktree creation, and response parsing documentation. | spec-006-extraction-reconciliation |
 | 2026-04-05 | Spec accuracy audit: fixed HandleDirectMessage signature (takes recipientAgentId only), corrected breakout loop caps (MaxBreakoutRounds=200, MaxConsecutiveIdleRounds=5), fixed DM handling in breakouts (posted as messages, not injected into prompt), added constants to table | spec-accuracy-audit |
 | 2026-04-04 | Queue reconstruction on startup: `ReconstructQueueAsync` re-enqueues rooms with unanswered human messages on every server startup. 8 new tests. Resolved queue persistence known gap. | queue-reconstruction |
