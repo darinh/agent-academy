@@ -174,6 +174,7 @@ public enum RoomStatus
 public enum ActivityEventType
 {
     AgentLoaded,
+    AgentCatalogReloaded,
     AgentThinking,
     AgentFinished,
     RoomCreated,
@@ -241,7 +242,8 @@ public enum AgentState
     InRoom,
     Working,
     Presenting,
-    Idle
+    Idle,
+    Offline
 }
 
 /// <summary>
