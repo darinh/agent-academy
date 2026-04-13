@@ -1031,3 +1031,27 @@ export interface MemoryStatsResponse {
   expiredMemories: number;
   categories: MemoryCategoryStat[];
 }
+
+// ── Worktrees ──────────────────────────────────────────────────────────
+
+export interface WorktreeStatusSnapshot {
+  branch: string;
+  relativePath: string;
+  createdAt: string;
+  statusAvailable: boolean;
+  error: string | null;
+  totalDirtyFiles: number;
+  dirtyFilesPreview: string[];
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  lastCommitSha: string | null;
+  lastCommitMessage: string | null;
+  lastCommitAuthor: string | null;
+  lastCommitDate: string | null;
+  taskId: string | null;
+  taskTitle: string | null;
+  taskStatus: string | null;
+  agentId: string | null;
+  agentName: string | null;
+}

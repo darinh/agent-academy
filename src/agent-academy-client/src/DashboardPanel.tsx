@@ -14,6 +14,7 @@ import {
   ClockRegular,
   ClipboardTaskListLtrRegular,
   ChatHistoryRegular,
+  BranchRegular,
 } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { WorkspaceOverview } from "./api";
@@ -28,6 +29,7 @@ import AuditLogPanel from "./AuditLogPanel";
 import SessionHistoryPanel from "./SessionHistoryPanel";
 import AgentAnalyticsPanel from "./AgentAnalyticsPanel";
 import TaskAnalyticsPanel from "./TaskAnalyticsPanel";
+import WorktreeStatusPanel from "./WorktreeStatusPanel";
 
 // ── Styles ──
 
@@ -240,6 +242,14 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
           ))}
         </div>
       )}
+
+      <div className={s.section}>
+        <div className={s.sectionTitle}>
+          <BranchRegular style={{ fontSize: 20 }} />
+          Agent Worktrees
+        </div>
+        <WorktreeStatusPanel />
+      </div>
 
       <div className={s.timeRangeRow}>
         <span className={s.timeRangeLabel}>

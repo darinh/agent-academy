@@ -189,3 +189,28 @@ public record InstanceHealthResult(
     bool AuthFailed,
     string CircuitBreakerState = "Closed"
 );
+
+/// <summary>
+/// Snapshot of a git worktree's status, enriched with linked task and agent info.
+/// </summary>
+public record WorktreeStatusSnapshot(
+    string Branch,
+    string RelativePath,
+    DateTimeOffset CreatedAt,
+    bool StatusAvailable,
+    string? Error,
+    int TotalDirtyFiles,
+    List<string> DirtyFilesPreview,
+    int FilesChanged,
+    int Insertions,
+    int Deletions,
+    string? LastCommitSha,
+    string? LastCommitMessage,
+    string? LastCommitAuthor,
+    DateTimeOffset? LastCommitDate,
+    string? TaskId,
+    string? TaskTitle,
+    string? TaskStatus,
+    string? AgentId,
+    string? AgentName
+);

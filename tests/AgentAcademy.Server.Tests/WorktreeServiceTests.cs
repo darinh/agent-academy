@@ -450,6 +450,107 @@ public class WorktreeServiceTests : IDisposable
         Assert.Null(result);
     }
 
+    // ── GetWorktreeGitStatusAsync Tests ──────────────────────────
+
+    [Fact]
+    public async Task GetWorktreeGitStatus_CleanWorktree_ReportsZeroDirtyFiles()
+    {
+        var branch = CreateFeatureBranch("clean-status", "status-file.txt", "content");
+        var wt = await _service.CreateWorktreeAsync(branch);
+
+        var status = await _service.GetWorktreeGitStatusAsync(wt.Path);
+
+        Assert.True(status.StatusAvailable);
+        Assert.Null(status.Error);
+        Assert.Equal(0, status.TotalDirtyFiles);
+        Assert.Empty(status.DirtyFilesPreview);
+    }
+
+    [Fact]
+    public async Task GetWorktreeGitStatus_DirtyWorktree_ReportsDirtyFiles()
+    {
+        var branch = CreateFeatureBranch("dirty-status", "clean-file.txt", "content");
+        var wt = await _service.CreateWorktreeAsync(branch);
+
+        // Create dirty files in the worktree
+        File.WriteAllText(Path.Combine(wt.Path, "dirty1.txt"), "modified");
+        File.WriteAllText(Path.Combine(wt.Path, "dirty2.txt"), "new file");
+
+        var status = await _service.GetWorktreeGitStatusAsync(wt.Path);
+
+        Assert.True(status.StatusAvailable);
+        Assert.Equal(2, status.TotalDirtyFiles);
+        Assert.Equal(2, status.DirtyFilesPreview.Count);
+        Assert.Contains("dirty1.txt", status.DirtyFilesPreview);
+        Assert.Contains("dirty2.txt", status.DirtyFilesPreview);
+    }
+
+    [Fact]
+    public async Task GetWorktreeGitStatus_ReturnsLastCommitInfo()
+    {
+        var branch = CreateFeatureBranch("commit-info", "info-file.txt", "content");
+        var wt = await _service.CreateWorktreeAsync(branch);
+
+        var status = await _service.GetWorktreeGitStatusAsync(wt.Path);
+
+        Assert.True(status.StatusAvailable);
+        Assert.NotNull(status.LastCommitSha);
+        Assert.Equal(40, status.LastCommitSha!.Length);
+        Assert.NotNull(status.LastCommitMessage);
+        Assert.Contains("info-file.txt", status.LastCommitMessage!);
+        Assert.NotNull(status.LastCommitAuthor);
+        Assert.NotNull(status.LastCommitDate);
+    }
+
+    [Fact]
+    public async Task GetWorktreeGitStatus_ReportsDiffStats()
+    {
+        var branch = CreateFeatureBranch("diff-stats", "base-file.txt", "line1\nline2\nline3\n");
+        var wt = await _service.CreateWorktreeAsync(branch);
+
+        // Modify the tracked file to generate diff stats
+        File.WriteAllText(Path.Combine(wt.Path, "base-file.txt"), "line1\nchanged\nline3\nnew line\n");
+
+        var status = await _service.GetWorktreeGitStatusAsync(wt.Path);
+
+        Assert.True(status.StatusAvailable);
+        // Should have some insertions/deletions
+        Assert.True(status.FilesChanged > 0 || status.Insertions > 0 || status.Deletions > 0);
+    }
+
+    [Fact]
+    public async Task GetWorktreeGitStatus_NonexistentPath_ReturnsUnavailable()
+    {
+        var status = await _service.GetWorktreeGitStatusAsync("/nonexistent/path/worktree");
+
+        Assert.False(status.StatusAvailable);
+        Assert.NotNull(status.Error);
+        Assert.Contains("does not exist", status.Error!);
+    }
+
+    [Fact]
+    public async Task GetWorktreeGitStatus_DirtyFilesCapped_PreviewLimited()
+    {
+        var branch = CreateFeatureBranch("cap-test", "initial.txt", "content");
+        var wt = await _service.CreateWorktreeAsync(branch);
+
+        // Create more than 10 dirty files
+        for (int i = 0; i < 15; i++)
+            File.WriteAllText(Path.Combine(wt.Path, $"file-{i:D2}.txt"), $"content-{i}");
+
+        var status = await _service.GetWorktreeGitStatusAsync(wt.Path);
+
+        Assert.True(status.StatusAvailable);
+        Assert.Equal(15, status.TotalDirtyFiles);
+        Assert.Equal(10, status.DirtyFilesPreview.Count);
+    }
+
+    [Fact]
+    public void RepositoryRoot_ExposesConfiguredRoot()
+    {
+        Assert.Equal(_repoRoot, _service.RepositoryRoot);
+    }
+
     // ── Test Helpers ────────────────────────────────────────────
 
     private string CreateTempDir(string prefix)
