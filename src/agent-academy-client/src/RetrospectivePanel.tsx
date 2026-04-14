@@ -270,7 +270,9 @@ export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTas
                     className={mergeClasses(s.rowTitle, onNavigateToTask && s.rowTitleLink)}
                     title={r.taskTitle}
                     role={onNavigateToTask ? "link" : undefined}
+                    tabIndex={onNavigateToTask ? 0 : undefined}
                     onClick={onNavigateToTask ? (e) => handleTaskClick(e, r.taskId) : undefined}
+                    onKeyDown={onNavigateToTask ? (e) => { if (e.key === "Enter") handleTaskClick(e as unknown as React.MouseEvent, r.taskId); } : undefined}
                   >
                     {r.taskTitle}
                     {onNavigateToTask && <OpenRegular fontSize={10} style={{ marginLeft: 4, verticalAlign: "middle" }} />}
@@ -323,7 +325,9 @@ export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTas
                   style={{ fontFamily: "var(--aa-mono)", fontSize: "12px", fontWeight: 600 }}
                   className={onNavigateToTask ? s.detailTitleLink : undefined}
                   role={onNavigateToTask ? "link" : undefined}
+                  tabIndex={onNavigateToTask ? 0 : undefined}
                   onClick={onNavigateToTask ? (e) => handleTaskClick(e, detail.taskId) : undefined}
+                  onKeyDown={onNavigateToTask ? (e) => { if (e.key === "Enter") handleTaskClick(e as unknown as React.MouseEvent, detail.taskId); } : undefined}
                 >
                   {detail.taskTitle}
                   {onNavigateToTask && <OpenRegular fontSize={10} style={{ marginLeft: 4, verticalAlign: "middle" }} />}
