@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **016-api-reference**: Rate Limiting section documenting three independent mechanisms — Consultant API HTTP-level limiter (global sliding-window, 60 reads / 20 writes per 60s, 429 + Retry-After), per-agent command rate limiter (30 commands/60s, denied envelope in command pipeline), and per-agent hourly quotas (requests/tokens/cost, agent paused on breach). Pagination section documenting three styles — cursor-based `after` (room messages, DM/room SSE streams), limit/offset with total count (sessions, audit, restarts, digests, retrospectives, sprints, deliveries), and limit-only (artifacts, usage/error records, search). Per-endpoint table with defaults and maximums. Known gaps #2 and #3 resolved.
+
+### Added
 - **016-api-reference**: Artifact evaluation service. `ArtifactEvaluatorService` evaluates tracked artifact files against quality criteria: existence (40pts), non-empty content (20pts), syntax validity for JSON/XML files (25pts), and completeness — no TODO/FIXME/HACK markers (15pts). Queries full artifact history (no 100-row cap), deduplicates to latest operation per file, excludes deleted files. Path traversal protection mirrors `CodeWriteToolWrapper` pattern. `GET /api/rooms/{roomId}/evaluations` now returns real evaluations instead of placeholder. 21 new tests (4749 total). Known gap #5 resolved.
 
 ### Added
