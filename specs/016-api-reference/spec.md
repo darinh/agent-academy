@@ -63,7 +63,8 @@ All error responses use [RFC 7807 ProblemDetails](https://www.rfc-editor.org/rfc
 | Method | Route | Description | Params | Returns |
 |--------|-------|-------------|--------|---------|
 | GET | `/` | Service info and endpoint list | — | `200` JSON |
-| GET | `/healthz` | Health check | — | `200 "Healthy"` |
+| GET | `/healthz` | Liveness probe (basic) | — | `200 "Healthy"` |
+| GET | `/health` | Readiness probe (checks DB + executor) | — | `200` / `503` JSON |
 | GET | `/api/health/instance` | Instance-level health and status | — | `InstanceHealth` |
 | GET | `/api/overview` | Workspace overview (agents, rooms, tasks, sprint) | — | `WorkspaceOverview` |
 | GET | `/api/agents/configured` | All configured agents (catalog + custom) | — | `List<AgentDefinition>` |
