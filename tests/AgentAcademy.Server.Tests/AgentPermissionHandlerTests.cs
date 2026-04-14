@@ -14,7 +14,7 @@ public sealed class AgentPermissionHandlerTests
         new() { Kind = kind };
 
     private static PermissionInvocation MakeInvocation(string? sessionId = "session-1") =>
-        new() { SessionId = sessionId };
+        new() { SessionId = sessionId! };
 
     // ── Safe kinds ──────────────────────────────────────────────
 
