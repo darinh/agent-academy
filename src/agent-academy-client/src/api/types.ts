@@ -146,7 +146,8 @@ export type ActivityEventType =
   | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled"
   | "TaskUnblocked"
   | "TaskRetrospectiveCompleted"
-  | "LearningDigestCompleted";
+  | "LearningDigestCompleted"
+  | "ContextUsageUpdated";
 
 export interface ActivityEvent {
   id: string;
@@ -484,6 +485,16 @@ export interface BreakoutRoom {
   status: RoomStatus;
   recentMessages: ChatEnvelope[];
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentContextUsage {
+  agentId: string;
+  roomId: string | null;
+  model: string | null;
+  currentTokens: number;
+  maxTokens: number;
+  percentage: number;
   updatedAt: string;
 }
 

@@ -101,7 +101,8 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
                     new LlmUsageTracker(
                         _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                         NullLogger<LlmUsageTracker>.Instance),
-                    NullLogger<AgentQuotaService>.Instance)),
+                    NullLogger<AgentQuotaService>.Instance),
+                new ActivityBroadcaster()),
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _serviceProvider.GetRequiredService<NotificationManager>(),
             Substitute.For<IAgentToolRegistry>(),

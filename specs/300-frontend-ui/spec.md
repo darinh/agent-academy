@@ -276,6 +276,26 @@ When an agent is in the thinking state (populated via SignalR events), a spinnin
 
 Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear correctly across all room cards — not just the selected room.
 
+### Context Window Visibility (`ContextMeter.tsx`)
+
+Each agent in the sidebar displays a compact context window usage meter showing how full the agent's LLM context is.
+
+**Data flow:**
+- After every LLM API call, `CopilotSdkSender` broadcasts a `ContextUsageUpdated` activity event via `ActivityBroadcaster` (not persisted — real-time only). The event `Metadata` contains `currentTokens`, `maxTokens`, `percentage`, and `model`.
+- `useWorkspace` subscribes to `ContextUsageUpdated` events and maintains `contextByRoom` state (Map<roomId, Map<agentId, AgentContextUsage>>).
+- On room change, `useWorkspace` fetches initial context via `GET /api/rooms/{roomId}/context-usage` (best-effort — errors are swallowed silently).
+- The backend endpoint queries `LlmUsageTracker.GetLatestContextPerAgentAsync(roomId)` which returns the most recent `InputTokens` per agent. Each LLM call includes the full conversation, so the latest input token count represents the current context size.
+
+**Model context limits:**
+- `ModelContextLimits` (static class) maps model name substrings to known context window sizes (e.g., `gpt-4o` → 128K, `claude-sonnet-4` → 200K). Case-insensitive substring matching. Falls back to 128K for unknown models.
+
+**Visual design (`ContextMeter.tsx`):**
+- Compact inline meter: 32px-wide progress bar + percentage label
+- Color coding: grey (<50%), blue (50-74%), amber (75-89%), red (≥90%)
+- Tooltip shows exact token count, model name, and warning if >90%
+- Severity escalation: events with ≥80% usage are broadcast with `ActivitySeverity.Warning`
+- Renders inside agent pills in `AgentActivityBar` and next to agent state badges in `SidebarPanel`
+
 ### Circuit Breaker Indicator (`CircuitBreakerBanner.tsx` + `useCircuitBreakerPolling.ts`)
 
 The frontend monitors the Copilot circuit breaker state (see spec 003) and surfaces degradation to the operator.

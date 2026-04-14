@@ -9,8 +9,9 @@ import {
 import { useSidebarStyles } from "./styles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
-import type { AgentDefinition, AgentLocation, AuthUser, BreakoutRoom, RoomSnapshot } from "./api";
+import type { AgentContextUsage, AgentDefinition, AgentLocation, AuthUser, BreakoutRoom, RoomSnapshot } from "./api";
 import UserBadge from "./UserBadge";
+import ContextMeter from "./ContextMeter";
 import {
   phaseDotColor,
   compactRoomTooltip,
@@ -59,6 +60,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onLogout?: () => void;
   onOpenSettings?: () => void;
   sprintVersion?: number;
+  contextUsage?: Map<string, AgentContextUsage>;
 }) {
   const s = useSidebarStyles();
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -237,6 +239,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                           >
                             {state.toLowerCase()}
                           </span>
+                          {props.contextUsage?.get(agent.id) && (
+                            <ContextMeter usage={props.contextUsage.get(agent.id)!} />
+                          )}
                         </div>
                       </div>
                     </button>

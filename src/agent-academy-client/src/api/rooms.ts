@@ -1,6 +1,7 @@
 import type {
   RoomSnapshot,
   AgentLocation,
+  AgentContextUsage,
   ConversationSessionSnapshot,
   RoomMessagesResponse,
   ChatEnvelope,
@@ -143,4 +144,10 @@ export function compactRoom(roomId: string): Promise<CompactRoomResult> {
   return request<CompactRoomResult>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/compact`), {
     method: "POST",
   });
+}
+
+// ── Context Usage ──────────────────────────────────────────────────────
+
+export function getRoomContextUsage(roomId: string): Promise<AgentContextUsage[]> {
+  return request<AgentContextUsage[]>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/context-usage`));
 }

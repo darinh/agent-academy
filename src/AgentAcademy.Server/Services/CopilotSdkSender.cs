@@ -32,17 +32,20 @@ public sealed class CopilotSdkSender
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly AgentQuotaService _quotaService;
+    private readonly ActivityBroadcaster _activityBus;
 
     public CopilotSdkSender(
         ILogger<CopilotSdkSender> logger,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
-        AgentQuotaService quotaService)
+        AgentQuotaService quotaService,
+        ActivityBroadcaster activityBus)
     {
         _logger = logger;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
         _quotaService = quotaService;
+        _activityBus = activityBus;
     }
 
     /// <summary>
@@ -181,6 +184,35 @@ public sealed class CopilotSdkSender
                     data.Cost, data.Duration,
                     data.ApiCallId, data.Initiator,
                     data.ReasoningEffort);
+
+                // Broadcast context window usage update via SignalR
+                var rawInput = data.InputTokens ?? 0;
+                var inputTokens = double.IsFinite(rawInput) ? (long)Math.Clamp(rawInput, 0, long.MaxValue) : 0L;
+                if (inputTokens > 0)
+                {
+                    var maxTokens = ModelContextLimits.GetLimit(data.Model);
+                    var pct = maxTokens > 0
+                        ? Math.Round((double)inputTokens / maxTokens * 100, 1)
+                        : 0;
+                    _activityBus.Broadcast(new ActivityEvent(
+                        Id: Guid.NewGuid().ToString("N"),
+                        Type: ActivityEventType.ContextUsageUpdated,
+                        Severity: pct >= 80 ? ActivitySeverity.Warning : ActivitySeverity.Info,
+                        RoomId: roomId,
+                        ActorId: agentId,
+                        TaskId: null,
+                        Message: $"Context: {inputTokens:N0}/{maxTokens:N0} tokens ({pct}%)",
+                        CorrelationId: null,
+                        OccurredAt: DateTime.UtcNow,
+                        Metadata: new Dictionary<string, object?>
+                        {
+                            ["currentTokens"] = inputTokens,
+                            ["maxTokens"] = maxTokens,
+                            ["percentage"] = pct,
+                            ["model"] = data.Model,
+                        }
+                    ));
+                }
             }
 
             return sb.ToString();

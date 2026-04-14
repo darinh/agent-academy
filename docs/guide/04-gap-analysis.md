@@ -646,36 +646,13 @@ SessionToolbar now has a "⟳ Compact" button that calls `POST /api/rooms/{roomI
 
 ---
 
-### 4.2 No Context Window Visibility
+### 4.2 ~~No Context Window Visibility~~ — RESOLVED
 
-**Severity**: High
+**Severity**: ~~High~~ Resolved
 
-**Impact**: Users can't see how full an agent's context window is. No progress bar, no warning when approaching limits. Agents may silently truncate context, losing important information. Users don't know when to compact or start a new session.
+**Resolved in**: feat/context-window-visibility
 
-**Suggested Fix**: Display context usage in UI:
-```typescript
-// AgentContextMeter.tsx
-<ContextMeter agent={agentId}>
-  <ProgressBar 
-    value={currentTokens} 
-    max={maxTokens}
-    color={getColorForUsage(currentTokens / maxTokens)}
-  />
-  <Label>
-    {currentTokens.toLocaleString()} / {maxTokens.toLocaleString()} tokens
-    ({Math.round(currentTokens / maxTokens * 100)}% full)
-  </Label>
-  {currentTokens / maxTokens > 0.8 && (
-    <Warning>
-      Context nearly full. Consider compacting session.
-      <Button onClick={compact}>Compact Now</Button>
-    </Warning>
-  )}
-</ContextMeter>
-```
-Real-time updates via SignalR as agents process messages.
-
-**Workaround**: None. Users are blind to context usage. Discover issues only when agents produce degraded responses.
+`ContextMeter` component shows a compact progress bar (32px + percentage) for each agent. Color-coded: grey (<50%), blue (50-74%), amber (75-89%), red (≥90%). Displays in sidebar agent list. Real-time updates via `ContextUsageUpdated` SignalR events broadcast after each LLM call. REST endpoint `GET /api/rooms/{roomId}/context-usage` provides initial load. `ModelContextLimits` maps model names to known context window sizes (gpt-4o: 128K, claude-sonnet-4: 200K, etc.). High usage events (≥80%) broadcast with Warning severity. 16 backend tests + 10 frontend tests.
 
 ---
 
