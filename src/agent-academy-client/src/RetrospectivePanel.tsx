@@ -33,7 +33,11 @@ function taskStatusBadge(status: string): { color: BadgeColor; label: string } {
   }
 }
 
-export default function RetrospectivePanel() {
+interface RetrospectivePanelProps {
+  refreshTrigger?: number;
+}
+
+export default function RetrospectivePanel({ refreshTrigger = 0 }: RetrospectivePanelProps) {
   const s = useRetrospectivePanelStyles();
 
   const [retros, setRetros] = useState<RetrospectiveListItem[]>([]);
@@ -75,6 +79,15 @@ export default function RetrospectivePanel() {
   }, [agentFilter, offset]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
+
+  // Re-fetch when a TaskRetrospectiveCompleted event arrives
+  const prevTrigger = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== prevTrigger.current) {
+      prevTrigger.current = refreshTrigger;
+      fetchList();
+    }
+  }, [refreshTrigger, fetchList]);
 
   const fetchDetail = useCallback(async (commentId: string) => {
     const reqId = ++detailFetchIdRef.current;

@@ -543,6 +543,49 @@ describe("RetrospectivePanel", () => {
         expect(mockListRetrospectives).toHaveBeenCalledTimes(2);
       });
     });
+
+    it("re-fetches when refreshTrigger prop changes", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+      });
+
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("does not re-fetch when refreshTrigger stays the same", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={5} />
+        </FluentProvider>,
+      );
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+      });
+
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={5} />
+        </FluentProvider>,
+      );
+
+      // Should still be 1 — no extra fetch
+      expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── Race condition handling ──

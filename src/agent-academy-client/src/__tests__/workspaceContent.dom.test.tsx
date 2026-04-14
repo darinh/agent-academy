@@ -59,6 +59,7 @@ function makeProps(overrides: Partial<WorkspaceContentProps> = {}): WorkspaceCon
     circuitBreakerState: "Closed",
     sprintVersion: 0,
     lastSprintEvent: null,
+    retroVersion: 0,
     activity: [],
     onSelectRoom: vi.fn(),
     onNavigateToTasks: vi.fn(),
