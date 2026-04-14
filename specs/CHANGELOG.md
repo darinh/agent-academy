@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **009-spec-management**: Spec keyword search. `SpecManager.SearchSpecsAsync` provides keyword-based search across spec content with weighted TF scoring (heading 3×, purpose 2×, body 1×) and multi-term coverage bonus. `LoadSpecContextWithRelevanceAsync` combines task-linked sections (★) with keyword-matched sections (◆), ranking relevant sections first in a single disk pass. Breakout prompts now use task title + description as search query for automatic relevance filtering. `GET /api/specs/search?q=&limit=` endpoint. `CancellationToken` support on new methods. 23 new tests (4709 total). Adversarial review by GPT-5.3-Codex: 2 findings fixed (double disk scan → single pass, added CancellationToken). Known gap #2 resolved.
+
+### Added
 - **300-frontend-ui**: Added Context Window Visibility section documenting `ContextMeter.tsx`, `ContextUsageUpdated` SignalR event, `GET /api/rooms/{roomId}/context-usage` endpoint, and `ModelContextLimits` static mapping. Resolves gap 4.2.
 - **018-testing-strategy**: Added API contract tests via `WebApplicationFactory` integration infrastructure (`ApiContractFixture`). 35 tests validate OpenAPI spec generation, route coverage across 21 controller prefixes, response contract matching for key endpoints, and component schema completeness. Resolved known gap #1.
 - **017-deployment**: Added Dockerfile (multi-stage: node→dotnet SDK→aspnet runtime), docker-compose.yml, and .dockerignore. Containerized deployment section with architecture diagram, build instructions, data persistence, and limitations (app-only, no agent execution). Resolved known gap #1. Added known gap #5 (agent-runner container profile).

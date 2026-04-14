@@ -336,6 +336,7 @@ See [007 — Agent Command System](../007-agent-commands/spec.md) for command de
 | Method | Route | Description | Params | Returns |
 |--------|-------|-------------|--------|---------|
 | GET | `/api/specs/version` | Spec corpus version/hash/section count | — | version info |
+| GET | `/api/specs/search` | Search spec sections by keyword | `?q` **(required)** `?limit` (1–20, default 5) | `List<SpecSearchResult>` |
 | GET | `/api/specs/{sectionId}/tasks` | Tasks linked to a spec section | — | `List<SpecTaskLink>` |
 
 See [009 — Spec Management](../009-spec-management/spec.md) for the spec system.

@@ -377,4 +377,269 @@ public class SpecManagerTests : IDisposable
 
         Assert.NotEqual(hash1, hash2);
     }
+
+    // ── SearchSpecsAsync ───────────────────────────────────────
+
+    [Fact]
+    public async Task SearchSpecs_ReturnsEmpty_WhenQueryIsEmpty()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nHigh-level architecture.");
+        var manager = new SpecManager(_tempDir);
+
+        Assert.Empty(await manager.SearchSpecsAsync(""));
+        Assert.Empty(await manager.SearchSpecsAsync("   "));
+        Assert.Empty(await manager.SearchSpecsAsync(null!));
+    }
+
+    [Fact]
+    public async Task SearchSpecs_ReturnsEmpty_WhenNoDirExists()
+    {
+        var manager = new SpecManager(Path.Combine(_tempDir, "nonexistent"));
+        Assert.Empty(await manager.SearchSpecsAsync("test query"));
+    }
+
+    [Fact]
+    public async Task SearchSpecs_FindsSectionByHeadingKeyword()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nHigh-level architecture.");
+        CreateSpec("001-domain", "# Domain Model\n\n## Purpose\nAll domain types.");
+        var manager = new SpecManager(_tempDir);
+
+        var results = await manager.SearchSpecsAsync("domain");
+
+        Assert.Single(results);
+        Assert.Equal("001-domain", results[0].Id);
+        Assert.Contains("domain", results[0].MatchedTerms);
+    }
+
+    [Fact]
+    public async Task SearchSpecs_RanksHeadingMatchesHigherThanBody()
+    {
+        // "agent" in heading should rank higher than "agent" only in body
+        CreateSpec("000-agents", "# Agent System\n\n## Purpose\nManages agents.\n\nAgents execute tasks.");
+        CreateSpec("001-tasks", "# Task Management\n\n## Purpose\nManages tasks.\n\nTasks are assigned to agents.");
+        var manager = new SpecManager(_tempDir);
+
+        var results = await manager.SearchSpecsAsync("agent");
+
+        Assert.True(results.Count >= 2);
+        Assert.Equal("000-agents", results[0].Id);
+    }
+
+    [Fact]
+    public async Task SearchSpecs_RespectsMaxResults()
+    {
+        for (var i = 0; i < 10; i++)
+            CreateSpec($"{i:D3}-section", $"# Section {i}\n\n## Purpose\nTest purpose {i}.\n\nCommon keyword here.");
+
+        var manager = new SpecManager(_tempDir);
+        var results = await manager.SearchSpecsAsync("keyword", maxResults: 3);
+
+        Assert.Equal(3, results.Count);
+    }
+
+    [Fact]
+    public async Task SearchSpecs_MultiTermQuery_BoostsSectionsMatchingMoreTerms()
+    {
+        CreateSpec("000-both", "# Agent Orchestrator\n\n## Purpose\nOrchestrates agent tasks.");
+        CreateSpec("001-agent-only", "# Agent System\n\n## Purpose\nAgent management.");
+        CreateSpec("002-task-only", "# Task Queue\n\n## Purpose\nTask processing.");
+        var manager = new SpecManager(_tempDir);
+
+        var results = await manager.SearchSpecsAsync("agent task");
+
+        Assert.True(results.Count >= 2);
+        // Section matching both terms should rank highest
+        Assert.Equal("000-both", results[0].Id);
+    }
+
+    [Fact]
+    public async Task SearchSpecs_FiltersStopWords()
+    {
+        CreateSpec("000-overview", "# The System\n\n## Purpose\nAn overview.");
+        var manager = new SpecManager(_tempDir);
+
+        // "the" and "is" are stop words; "system" should match
+        var results = await manager.SearchSpecsAsync("the system is");
+
+        Assert.Single(results);
+        Assert.Equal("000-overview", results[0].Id);
+        Assert.Contains("system", results[0].MatchedTerms);
+    }
+
+    [Fact]
+    public async Task SearchSpecs_ReturnsEmpty_WhenNoMatches()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nArchitecture.");
+        var manager = new SpecManager(_tempDir);
+
+        var results = await manager.SearchSpecsAsync("xyznonexistentterm");
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task SearchSpecs_CaseInsensitive()
+    {
+        CreateSpec("000-auth", "# Authentication\n\n## Purpose\nUser authentication.");
+        var manager = new SpecManager(_tempDir);
+
+        var lower = await manager.SearchSpecsAsync("authentication");
+        var upper = await manager.SearchSpecsAsync("AUTHENTICATION");
+
+        Assert.Single(lower);
+        Assert.Single(upper);
+        Assert.Equal(lower[0].Score, upper[0].Score);
+    }
+
+    // ── LoadSpecContextWithRelevanceAsync ───────────────────────
+
+    [Fact]
+    public async Task LoadWithRelevance_ReturnsNull_WhenNoDirExists()
+    {
+        var manager = new SpecManager(Path.Combine(_tempDir, "nonexistent"));
+        Assert.Null(await manager.LoadSpecContextWithRelevanceAsync("query"));
+    }
+
+    [Fact]
+    public async Task LoadWithRelevance_MarksLinkedSectionsWithStar()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nArchitecture.");
+        CreateSpec("001-domain", "# Domain Model\n\n## Purpose\nTypes.");
+        var manager = new SpecManager(_tempDir);
+
+        var result = await manager.LoadSpecContextWithRelevanceAsync(null, ["001-domain"]);
+
+        Assert.NotNull(result);
+        Assert.Contains("[★]", result);
+        Assert.Contains("001-domain", result);
+    }
+
+    [Fact]
+    public async Task LoadWithRelevance_MarksSearchMatchesWithDiamond()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nArchitecture.");
+        CreateSpec("001-domain", "# Domain Model\n\n## Purpose\nAll entity types and relationships.");
+        var manager = new SpecManager(_tempDir);
+
+        var result = await manager.LoadSpecContextWithRelevanceAsync("domain entity");
+
+        Assert.NotNull(result);
+        Assert.Contains("[◆]", result);
+        Assert.Contains("001-domain", result);
+    }
+
+    [Fact]
+    public async Task LoadWithRelevance_PutsRelevantSectionsFirst()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nArchitecture.");
+        CreateSpec("001-domain", "# Domain Model\n\n## Purpose\nEntity types.");
+        CreateSpec("002-auth", "# Authentication\n\n## Purpose\nSecurity and auth flows.");
+        var manager = new SpecManager(_tempDir);
+
+        var result = await manager.LoadSpecContextWithRelevanceAsync("authentication security");
+
+        Assert.NotNull(result);
+        var lines = result!.Split('\n');
+        // "Relevant sections" header should come first
+        Assert.Contains("Relevant sections", lines[0]);
+        // Auth section should appear before other sections
+        var authIndex = Array.FindIndex(lines, l => l.Contains("002-auth"));
+        var overviewIndex = Array.FindIndex(lines, l => l.Contains("000-overview"));
+        Assert.True(authIndex < overviewIndex, "Relevant section should appear before non-matching sections");
+    }
+
+    [Fact]
+    public async Task LoadWithRelevance_IncludesAllSections_EvenNonMatching()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nArchitecture.");
+        CreateSpec("001-domain", "# Domain Model\n\n## Purpose\nEntity types.");
+        var manager = new SpecManager(_tempDir);
+
+        var result = await manager.LoadSpecContextWithRelevanceAsync("domain");
+
+        Assert.NotNull(result);
+        Assert.Contains("000-overview", result);
+        Assert.Contains("001-domain", result);
+    }
+
+    [Fact]
+    public async Task LoadWithRelevance_FallsBackToFlat_WhenNoQueryAndNoLinks()
+    {
+        CreateSpec("000-overview", "# System Overview\n\n## Purpose\nArchitecture.");
+        var manager = new SpecManager(_tempDir);
+
+        var result = await manager.LoadSpecContextWithRelevanceAsync(null, null);
+
+        Assert.NotNull(result);
+        Assert.Contains("000-overview", result);
+        // No "Relevant sections" header when nothing is relevant
+        Assert.DoesNotContain("Relevant sections", result);
+    }
+
+    // ── TokenizeQuery (internal) ───────────────────────────────
+
+    [Fact]
+    public void TokenizeQuery_SplitsOnWhitespace()
+    {
+        var tokens = SpecManager.TokenizeQuery("agent task system");
+        Assert.Equal(3, tokens.Count);
+        Assert.Contains("agent", tokens);
+        Assert.Contains("task", tokens);
+        Assert.Contains("system", tokens);
+    }
+
+    [Fact]
+    public void TokenizeQuery_RemovesStopWords()
+    {
+        var tokens = SpecManager.TokenizeQuery("the agent is working on a task");
+        Assert.DoesNotContain("the", tokens);
+        Assert.DoesNotContain("is", tokens);
+        Assert.Contains("agent", tokens);
+        Assert.Contains("working", tokens);
+        Assert.Contains("task", tokens);
+    }
+
+    [Fact]
+    public void TokenizeQuery_RemovesShortTerms()
+    {
+        var tokens = SpecManager.TokenizeQuery("a DB in CI");
+        // "a" is a stopword, "DB" and "in" and "CI" are 2 chars — all filtered
+        Assert.Empty(tokens);
+    }
+
+    [Fact]
+    public void TokenizeQuery_LowercasesAndDeduplicates()
+    {
+        var tokens = SpecManager.TokenizeQuery("Agent AGENT agent");
+        Assert.Single(tokens);
+        Assert.Equal("agent", tokens[0]);
+    }
+
+    // ── CountOccurrences (internal) ────────────────────────────
+
+    [Fact]
+    public void CountOccurrences_FindsMultipleMatches()
+    {
+        Assert.Equal(3, SpecManager.CountOccurrences("agent agent agent", "agent"));
+    }
+
+    [Fact]
+    public void CountOccurrences_CaseInsensitive()
+    {
+        Assert.Equal(2, SpecManager.CountOccurrences("Agent AGENT", "agent"));
+    }
+
+    [Fact]
+    public void CountOccurrences_ReturnsZero_WhenNoMatch()
+    {
+        Assert.Equal(0, SpecManager.CountOccurrences("hello world", "xyz"));
+    }
+
+    [Fact]
+    public void CountOccurrences_HandlesEmptyInputs()
+    {
+        Assert.Equal(0, SpecManager.CountOccurrences("", "test"));
+        Assert.Equal(0, SpecManager.CountOccurrences("test", ""));
+        Assert.Equal(0, SpecManager.CountOccurrences(null!, "test"));
+    }
 }

@@ -258,8 +258,10 @@ public sealed class BreakoutCompletionService
                     try
                     {
                         var fixSpecLinks = await taskQueryService.GetSpecLinksForTaskAsync(fixTaskId);
-                        fixSpecContext = await _specManager.LoadSpecContextForTaskAsync(
-                            fixSpecLinks.Select(l => l.SpecSectionId));
+                        var fixTask = await taskQueryService.GetTaskAsync(fixTaskId);
+                        var searchQuery = fixTask is not null ? $"{fixTask.Title} {fixTask.Description}" : null;
+                        fixSpecContext = await _specManager.LoadSpecContextWithRelevanceAsync(
+                            searchQuery, fixSpecLinks.Select(l => l.SpecSectionId));
                     }
                     catch { /* non-critical */ }
                 }
