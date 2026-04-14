@@ -176,6 +176,20 @@ function AppShell() {
     setFocusTaskId(null);
   }, []);
 
+  /* ── Retro filter (cross-panel navigation from tasks) ── */
+  const [retroFilterTaskId, setRetroFilterTaskId] = useState<string | null>(null);
+  const handleNavigateToRetro = useCallback((taskId: string) => {
+    setRetroFilterTaskId(taskId);
+    setTab("retrospectives");
+  }, [setTab]);
+  const handleClearRetroTaskFilter = useCallback(() => {
+    setRetroFilterTaskId(null);
+  }, []);
+  // Clear task filter when navigating away from retrospectives tab
+  useEffect(() => {
+    if (tab !== "retrospectives") setRetroFilterTaskId(null);
+  }, [tab]);
+
   /* ── Keyboard shortcuts ── */
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -420,6 +434,9 @@ function AppShell() {
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}
                 onNavigateToTask={handleNavigateToTask}
+                onNavigateToRetro={handleNavigateToRetro}
+                retroFilterTaskId={retroFilterTaskId}
+                onClearRetroTaskFilter={handleClearRetroTaskFilter}
                 focusTaskId={focusTaskId}
                 onFocusTaskHandled={handleFocusTaskHandled}
                 styles={s}

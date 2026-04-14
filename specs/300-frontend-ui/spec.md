@@ -715,6 +715,13 @@ Both list and detail fetches use `useRef` counters (`fetchIdRef`, `detailFetchId
 
 DigestPanel accepts an optional `refreshTrigger` prop (defaults to `0`). When `useWorkspace` receives a `LearningDigestCompleted` activity event via SignalR, it increments its `digestVersion` state counter. This value flows through `WorkspaceContent` → `DigestPanel.refreshTrigger`. A `useEffect` with a `useRef` guard detects when the trigger changes and calls `fetchList()` to refresh the digest list and stats without user interaction. The `LearningDigestCompleted` event is also included in `TOAST_EVENT_TYPES` so the user sees a notification toast.
 
+### Task Navigation from Sources
+
+In the detail panel's source retrospectives section, each source's task ID is a clickable link (cyan color, open icon) that navigates to the Tasks tab and auto-expands the corresponding task. The link is keyboard-accessible (`tabIndex={0}`, Enter key handler). This follows the same cross-panel navigation pattern as RetrospectivePanel's task-title links.
+
+- **Props**: `onNavigateToTask?: (taskId: string) => void` — when provided, task IDs in source cards render as styled links
+- **Data flow**: DigestPanel source "Task: {taskId}" → `onNavigateToTask(taskId)` → App sets `focusTaskId` + switches to tasks tab
+
 ### Types
 
 ```typescript
@@ -824,6 +831,15 @@ Task titles in both the list rows and the detail panel are clickable links that 
 - **Click behavior**: `stopPropagation` prevents the click from toggling row selection — only the navigation fires
 - **TaskListPanel integration**: Receives `focusTaskId` and `onFocusHandled` props. When a matching task exists in the list, it resets filters to "all", disables sprint-only mode, and auto-expands the task. The focus is consumed (cleared) after expansion to prevent stale re-triggers on later tab visits.
 - **Data flow**: RetrospectivePanel → `onNavigateToTask(taskId)` → App sets `focusTaskId` + switches to tasks tab → TaskListPanel expands task → calls `onFocusHandled` → App clears `focusTaskId`
+
+### Task Filter (Cross-Panel Navigation)
+
+When the user navigates from a task detail's "View retrospectives" link, the Retrospectives tab opens pre-filtered to show only retrospectives for that task.
+
+- **Props**: `filterTaskId?: string | null` — when set, passed as `taskId` param to `GET /api/retrospectives`; `onClearTaskFilter?: () => void` — fires when the dismiss button is clicked
+- **Filter bar**: A styled chip (cyan border, translucent background) displays "Filtered by task: {taskId}" with a dismiss button that clears the filter
+- **Auto-clear**: The filter is automatically cleared when the user navigates away from the Retrospectives tab (via `useEffect` on `tab` in App.tsx), so it never persists as a stale filter
+- **Data flow**: TaskDetail "View retrospectives" link → TaskListPanel `onViewRetros(taskId)` → App sets `retroFilterTaskId` + switches to retro tab → RetrospectivePanel passes `filterTaskId` to API → user clears via dismiss or navigates away
 
 ### Real-Time Refresh
 

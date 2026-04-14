@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, mergeClasses, Spinner } from "@fluentui/react-components";
-import { ArrowSyncRegular, OpenRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, DismissRegular, OpenRegular } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import EmptyState from "./EmptyState";
@@ -36,9 +36,11 @@ function taskStatusBadge(status: string): { color: BadgeColor; label: string } {
 interface RetrospectivePanelProps {
   refreshTrigger?: number;
   onNavigateToTask?: (taskId: string) => void;
+  filterTaskId?: string | null;
+  onClearTaskFilter?: () => void;
 }
 
-export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTask }: RetrospectivePanelProps) {
+export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTask, filterTaskId, onClearTaskFilter }: RetrospectivePanelProps) {
   const s = useRetrospectivePanelStyles();
 
   const [retros, setRetros] = useState<RetrospectiveListItem[]>([]);
@@ -62,6 +64,7 @@ export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTas
       const [listRes, statsRes] = await Promise.all([
         listRetrospectives({
           agentId: agentFilter || undefined,
+          taskId: filterTaskId || undefined,
           limit: PAGE_SIZE,
           offset,
         }),
@@ -77,7 +80,7 @@ export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTas
     } finally {
       if (fetchIdRef.current === id) setLoading(false);
     }
-  }, [agentFilter, offset]);
+  }, [agentFilter, filterTaskId, offset]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
 
@@ -171,6 +174,22 @@ export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTas
           />
         </div>
       </div>
+
+      {/* Task filter indicator */}
+      {filterTaskId && (
+        <div className={s.taskFilterBar}>
+          <span className={s.taskFilterLabel}>Filtered by task: {filterTaskId}</span>
+          {onClearTaskFilter && (
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<DismissRegular />}
+              onClick={onClearTaskFilter}
+              aria-label="Clear task filter"
+            />
+          )}
+        </div>
+      )}
 
       {/* Stats */}
       {stats && (

@@ -1,3 +1,4 @@
+import { OpenRegular } from "@fluentui/react-icons";
 import type { TaskSnapshot, AgentDefinition } from "../api";
 import { useTaskDetailStyles } from "./taskDetailStyles";
 import { useTaskDetail } from "./useTaskDetail";
@@ -12,9 +13,10 @@ interface TaskDetailProps {
   task: TaskSnapshot;
   agents: AgentDefinition[];
   onRefresh: () => void;
+  onViewRetros?: (taskId: string) => void;
 }
 
-export default function TaskDetail({ task, agents, onRefresh }: TaskDetailProps) {
+export default function TaskDetail({ task, agents, onRefresh, onViewRetros }: TaskDetailProps) {
   const s = useTaskDetailStyles();
   const detail = useTaskDetail(task, onRefresh);
 
@@ -88,6 +90,20 @@ export default function TaskDetail({ task, agents, onRefresh }: TaskDetailProps)
         error={detail.commentsError}
         onRetry={detail.fetchComments}
       />
+
+      {onViewRetros && (
+        <div className={s.sectionLabel}>
+          <span
+            role="link"
+            tabIndex={0}
+            style={{ cursor: "pointer", color: "var(--aa-cyan, #5b8def)" }}
+            onClick={() => onViewRetros(task.id)}
+            onKeyDown={(e) => { if (e.key === "Enter") onViewRetros(task.id); }}
+          >
+            View retrospectives for this task <OpenRegular fontSize={10} style={{ marginLeft: 3, verticalAlign: "middle" }} />
+          </span>
+        </div>
+      )}
 
       <TaskActionsBar
         actions={detail.actions}

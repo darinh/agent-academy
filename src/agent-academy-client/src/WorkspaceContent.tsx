@@ -53,6 +53,9 @@ export interface WorkspaceContentProps {
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
   onNavigateToTask: (taskId: string) => void;
+  onNavigateToRetro: (taskId: string) => void;
+  retroFilterTaskId: string | null;
+  onClearRetroTaskFilter: () => void;
   focusTaskId: string | null;
   onFocusTaskHandled: () => void;
   styles: Record<string, string>;
@@ -90,6 +93,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               agents={props.configuredAgents}
               focusTaskId={props.focusTaskId}
               onFocusHandled={props.onFocusTaskHandled}
+              onViewRetros={props.onNavigateToRetro}
             />
           )}
           {tab === "plan" && (
@@ -134,7 +138,14 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
             <MemoryBrowserPanel agents={props.configuredAgents} refreshTrigger={props.memoryVersion} />
           )}
           {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} onNavigateToTask={props.onNavigateToTask} />}
-          {tab === "retrospectives" && <RetrospectivePanel refreshTrigger={props.retroVersion} onNavigateToTask={props.onNavigateToTask} />}
+          {tab === "retrospectives" && (
+            <RetrospectivePanel
+              refreshTrigger={props.retroVersion}
+              onNavigateToTask={props.onNavigateToTask}
+              filterTaskId={props.retroFilterTaskId}
+              onClearTaskFilter={props.onClearRetroTaskFilter}
+            />
+          )}
         </section>
       </Suspense>
     </ChunkErrorBoundary>

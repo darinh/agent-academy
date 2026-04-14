@@ -43,6 +43,20 @@ export const useRetrospectivePanelStyles = makeStyles({
     ...shorthands.gap("12px"),
     flexWrap: "wrap",
   },
+  taskFilterBar: {
+    display: "flex",
+    alignItems: "center",
+    ...shorthands.gap("6px"),
+    ...shorthands.padding("4px", "10px"),
+    backgroundColor: "rgba(91, 141, 239, 0.1)",
+    ...shorthands.border("1px", "solid", "var(--aa-cyan, #5b8def)"),
+    ...shorthands.borderRadius("4px"),
+    fontSize: "11px",
+    fontFamily: "var(--aa-mono)",
+  },
+  taskFilterLabel: {
+    color: "var(--aa-cyan, #5b8def)",
+  },
   statCard: {
     display: "flex",
     flexDirection: "column",

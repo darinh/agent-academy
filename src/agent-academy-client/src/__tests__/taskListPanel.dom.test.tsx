@@ -1765,4 +1765,106 @@ describe("TaskListPanel (interactive)", () => {
       expect(onFocusHandled).not.toHaveBeenCalled();
     });
   });
+
+  describe("onViewRetros (cross-panel retro navigation)", () => {
+    it("renders 'View retrospectives' link in task detail when onViewRetros is provided", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Retro task", description: "Has retros" });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onViewRetros: vi.fn(),
+          }),
+        ),
+      );
+
+      expect(screen.getByText(/View retrospectives for this task/)).toBeInTheDocument();
+    });
+
+    it("does not render 'View retrospectives' link when onViewRetros is absent", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "No retro link", description: "Detail" });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+          }),
+        ),
+      );
+
+      expect(screen.queryByText(/View retrospectives for this task/)).not.toBeInTheDocument();
+    });
+
+    it("calls onViewRetros with the correct taskId when the link is clicked", async () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Click retro", description: "Click me" });
+      const onViewRetros = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onViewRetros,
+          }),
+        ),
+      );
+
+      await userEvent.click(screen.getByText(/View retrospectives for this task/));
+      expect(onViewRetros).toHaveBeenCalledTimes(1);
+      expect(onViewRetros).toHaveBeenCalledWith(taskId);
+    });
+
+    it("'View retrospectives' link is keyboard-activatable", async () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "KB retro", description: "Keyboard test" });
+      const onViewRetros = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onViewRetros,
+          }),
+        ),
+      );
+
+      const link = screen.getByText(/View retrospectives for this task/);
+      expect(link).toHaveAttribute("tabindex", "0");
+      link.focus();
+      await userEvent.keyboard("{Enter}");
+      expect(onViewRetros).toHaveBeenCalledTimes(1);
+      expect(onViewRetros).toHaveBeenCalledWith(taskId);
+    });
+  });
 });

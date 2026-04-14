@@ -1004,4 +1004,77 @@ describe("RetrospectivePanel", () => {
       expect(onNav).toHaveBeenNthCalledWith(2, "task-42");
     });
   });
+
+  // ── Task filter from cross-panel navigation ──
+
+  describe("filterTaskId (cross-panel task filter)", () => {
+    it("passes filterTaskId to the API when provided", async () => {
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId="task-42" />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledWith(
+          expect.objectContaining({ taskId: "task-42" }),
+        );
+      });
+    });
+
+    it("does not pass taskId to API when filterTaskId is null", async () => {
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId={null} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledWith(
+          expect.objectContaining({ taskId: undefined }),
+        );
+      });
+    });
+
+    it("shows task filter indicator when filterTaskId is provided", async () => {
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId="task-42" />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Filtered by task: task-42/)).toBeInTheDocument();
+      });
+    });
+
+    it("does not show task filter indicator when filterTaskId is absent", async () => {
+      setupSuccess();
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Filtered by task:/)).not.toBeInTheDocument();
+      });
+    });
+
+    it("calls onClearTaskFilter when dismiss button is clicked", async () => {
+      const onClear = vi.fn();
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId="task-42" onClearTaskFilter={onClear} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Filtered by task: task-42/)).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByLabelText("Clear task filter"));
+      expect(onClear).toHaveBeenCalledTimes(1);
+    });
+  });
 });

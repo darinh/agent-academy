@@ -235,9 +235,10 @@ interface TaskListPanelProps {
   agents?: AgentDefinition[];
   focusTaskId?: string | null;
   onFocusHandled?: () => void;
+  onViewRetros?: (taskId: string) => void;
 }
 
-export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId, agents = [], focusTaskId, onFocusHandled }: TaskListPanelProps) {
+export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId, agents = [], focusTaskId, onFocusHandled, onViewRetros }: TaskListPanelProps) {
   const s = useLocalStyles();
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -499,7 +500,7 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
               )}
             </div>
 
-            {isExpanded && <TaskDetail task={task} agents={agents} onRefresh={handleRefresh} />}
+            {isExpanded && <TaskDetail task={task} agents={agents} onRefresh={handleRefresh} onViewRetros={onViewRetros} />}
           </div>
         );
       })}
