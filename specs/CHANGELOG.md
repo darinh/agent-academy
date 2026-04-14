@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **018-testing-strategy**: New spec documenting the testing strategy based on existing 4,500+ test infrastructure. Documents test pyramid (unit/integration/E2E), backend testing conventions (xUnit, NSubstitute, in-memory SQLite), frontend testing conventions (Vitest unit tests, Playwright E2E), coverage tooling (coverlet.collector, Vitest coverage), test naming patterns, parallelization strategy, and known gaps (no API contract tests, no performance tests, no CI coverage tracking). Evidence: 170 backend test files, 116 frontend unit tests, 18 E2E specs.
+
 ### Fixed
 - **005-domain-services**: Fixed workspace room adoption — orphaned legacy "main" room is now adopted on workspace activation instead of creating a duplicate. Tasks created in the legacy room are now visible via workspace-scoped queries. Archived rooms excluded from workspace default resolution to prevent re-archiving adopted rooms.
 
