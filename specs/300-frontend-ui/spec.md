@@ -745,6 +745,15 @@ interface RetrospectiveStatsResponse {
 
 When no retrospectives exist: 🔬 "No retrospectives yet" with guidance that retrospectives are created automatically after agents complete tasks.
 
+### Task Navigation
+
+Task titles in both the list rows and the detail panel are clickable links that navigate to the Tasks tab and auto-expand the corresponding task. This enables tracing from a retrospective back to the task that produced it.
+
+- **Props**: `onNavigateToTask?: (taskId: string) => void` — when provided, task titles render as styled links (cyan color, underline on hover, open icon)
+- **Click behavior**: `stopPropagation` prevents the click from toggling row selection — only the navigation fires
+- **TaskListPanel integration**: Receives `focusTaskId` and `onFocusHandled` props. When a matching task exists in the list, it resets filters to "all", disables sprint-only mode, and auto-expands the task. The focus is consumed (cleared) after expansion to prevent stale re-triggers on later tab visits.
+- **Data flow**: RetrospectivePanel → `onNavigateToTask(taskId)` → App sets `focusTaskId` + switches to tasks tab → TaskListPanel expands task → calls `onFocusHandled` → App clears `focusTaskId`
+
 ### Real-Time Refresh
 
 When a `TaskRetrospectiveCompleted` activity event arrives via SignalR/SSE, `useWorkspace` increments a `retroVersion` counter. This flows through `WorkspaceContent` as a `refreshTrigger` prop. RetrospectivePanel detects the change via a `useRef`-tracked previous value and re-fetches the list and stats. Follows the same pattern as `sprintVersion` → `SprintPanel`. A toast notification is also shown via `TOAST_EVENT_TYPES`.
