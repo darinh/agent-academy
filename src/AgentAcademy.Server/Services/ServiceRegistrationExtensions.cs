@@ -29,6 +29,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<WorkspaceRoomService>();
+        services.AddScoped<WorkspaceService>();
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<SearchService>();
 
@@ -48,6 +49,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<SprintStageService>();
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<SprintMetricsCalculator>();
+        services.AddScoped<SprintScheduleService>();
         services.AddScoped<TaskAnalyticsService>();
 
         // Round context loading (extracted from AgentOrchestrator)

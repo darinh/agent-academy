@@ -1,10 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using AgentAcademy.Server.Data;
-using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -18,35 +15,35 @@ public class WorkspaceController : ControllerBase
     private readonly ProjectScanner _scanner;
     private readonly RoomService _roomService;
     private readonly WorkspaceRoomService _workspaceRooms;
+    private readonly WorkspaceService _workspaceService;
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly ConversationSessionService _sessionService;
-    private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceController> _logger;
 
     public WorkspaceController(
         ProjectScanner scanner,
         RoomService roomService,
         WorkspaceRoomService workspaceRooms,
+        WorkspaceService workspaceService,
         TaskOrchestrationService taskOrchestration,
         TaskQueryService taskQueries,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
         ConversationSessionService sessionService,
-        AgentAcademyDbContext db,
         ILogger<WorkspaceController> logger)
     {
         _scanner = scanner;
         _roomService = roomService;
         _workspaceRooms = workspaceRooms;
+        _workspaceService = workspaceService;
         _taskOrchestration = taskOrchestration;
         _taskQueries = taskQueries;
         _orchestrator = orchestrator;
         _executor = executor;
         _sessionService = sessionService;
-        _db = db;
         _logger = logger;
     }
 
@@ -56,8 +53,7 @@ public class WorkspaceController : ControllerBase
     [HttpGet("workspace")]
     public async Task<IActionResult> GetActiveWorkspace()
     {
-        var entity = await _db.Workspaces.FirstOrDefaultAsync(w => w.IsActive);
-        var active = entity is null ? null : ToMeta(entity);
+        var active = await _workspaceService.GetActiveWorkspaceAsync();
         return Ok(new { active, dataDir = active?.Path });
     }
 
@@ -67,10 +63,8 @@ public class WorkspaceController : ControllerBase
     [HttpGet("workspaces")]
     public async Task<ActionResult<List<WorkspaceMeta>>> ListWorkspaces()
     {
-        var entities = await _db.Workspaces
-            .OrderByDescending(w => w.LastAccessedAt)
-            .ToListAsync();
-        return Ok(entities.Select(ToMeta).ToList());
+        var workspaces = await _workspaceService.ListWorkspacesAsync();
+        return Ok(workspaces);
     }
 
     /// <summary>
@@ -89,7 +83,7 @@ public class WorkspaceController : ControllerBase
         {
             var previousWorkspace = await _roomService.GetActiveWorkspacePathAsync();
             var scan = _scanner.ScanProject(resolved);
-            var meta = await UpsertWorkspaceAsync(scan);
+            var meta = await _workspaceService.ActivateWorkspaceAsync(scan);
 
             // On workspace switch: archive sessions with summaries, then clear SDK state
             if (previousWorkspace != scan.Path)
@@ -174,7 +168,7 @@ public class WorkspaceController : ControllerBase
         try
         {
             var scan = _scanner.ScanProject(resolved);
-            var meta = await UpsertWorkspaceAsync(scan);
+            var meta = await _workspaceService.ActivateWorkspaceAsync(scan);
 
             // Ensure the workspace has a default room with agents
             await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(scan.Path);
@@ -232,73 +226,6 @@ public class WorkspaceController : ControllerBase
             return Problem("Failed to onboard project.");
         }
     }
-
-    /// <summary>
-    /// Upserts a workspace in the DB and marks it as active.
-    /// </summary>
-    private async Task<WorkspaceMeta> UpsertWorkspaceAsync(ProjectScanResult scan)
-    {
-        var now = DateTime.UtcNow;
-
-        await using var transaction = await _db.Database.BeginTransactionAsync();
-
-        // Deactivate all other workspaces
-        await _db.Workspaces
-            .Where(w => w.IsActive)
-            .ExecuteUpdateAsync(s => s.SetProperty(w => w.IsActive, false));
-
-        var entity = await _db.Workspaces.FindAsync(scan.Path);
-        if (entity is null)
-        {
-            entity = new WorkspaceEntity
-            {
-                Path = scan.Path,
-                ProjectName = scan.ProjectName,
-                IsActive = true,
-                LastAccessedAt = now,
-                CreatedAt = now,
-                RepositoryUrl = scan.RepositoryUrl,
-                DefaultBranch = scan.DefaultBranch,
-                HostProvider = scan.HostProvider
-            };
-            _db.Workspaces.Add(entity);
-        }
-        else
-        {
-            entity.ProjectName = scan.ProjectName;
-            entity.IsActive = true;
-            entity.LastAccessedAt = now;
-            if (scan.RepositoryUrl is not null) entity.RepositoryUrl = scan.RepositoryUrl;
-            if (scan.DefaultBranch is not null) entity.DefaultBranch = scan.DefaultBranch;
-            if (scan.HostProvider is not null) entity.HostProvider = scan.HostProvider;
-        }
-
-        await _db.SaveChangesAsync();
-
-        // Cap at 20 workspaces (trim oldest after save so count is accurate)
-        var count = await _db.Workspaces.CountAsync();
-        if (count > 20)
-        {
-            var stale = await _db.Workspaces
-                .Where(w => !w.IsActive)
-                .OrderBy(w => w.LastAccessedAt)
-                .Take(count - 20)
-                .ToListAsync();
-            _db.Workspaces.RemoveRange(stale);
-            await _db.SaveChangesAsync();
-        }
-
-        await transaction.CommitAsync();
-        return ToMeta(entity);
-    }
-
-    private static WorkspaceMeta ToMeta(WorkspaceEntity entity) =>
-        new(Path: entity.Path,
-            ProjectName: entity.ProjectName,
-            LastAccessedAt: entity.LastAccessedAt,
-            RepositoryUrl: entity.RepositoryUrl,
-            DefaultBranch: entity.DefaultBranch,
-            HostProvider: entity.HostProvider);
 
     /// <summary>
     /// Validates that the resolved path is within the user's home directory.
