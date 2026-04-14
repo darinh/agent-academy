@@ -52,9 +52,11 @@ public sealed class WorkspaceRoomService
         // Phase 2: Check if workspace already has a room (including an adopted "main").
         // Prefer workspace-specific rooms over the legacy default to avoid conflicts
         // when both exist (e.g., after a partial repair).
+        // Exclude archived rooms — they should not be resurrected as the workspace default.
         var existingForWorkspace = await _db.Rooms
-            .Where(r => r.WorkspacePath == workspacePath &&
-                 (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")))
+            .Where(r => r.WorkspacePath == workspacePath
+                 && r.Status != nameof(RoomStatus.Archived)
+                 && (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")))
             .OrderBy(r => r.Id == _catalog.DefaultRoomId ? 1 : 0)
             .FirstOrDefaultAsync();
 
@@ -149,10 +151,11 @@ public sealed class WorkspaceRoomService
             return null;
         }
 
-        // Archive any duplicate workspace-scoped room that was created before adoption
+        // Archive any non-archived duplicate workspace-scoped room that was created before adoption
         var duplicateRoom = await _db.Rooms.FirstOrDefaultAsync(
             r => r.WorkspacePath == workspacePath
                 && r.Id != _catalog.DefaultRoomId
+                && r.Status != nameof(RoomStatus.Archived)
                 && (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")));
 
         if (duplicateRoom is not null)
