@@ -648,4 +648,139 @@ describe("RetrospectivePanel", () => {
       });
     }
   });
+
+  // ── Edge cases (test backfill) ──
+
+  describe("keyboard navigation", () => {
+    it("opens detail with Space key", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      getRetroRows(container)[0].focus();
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        expect(mockGetRetrospective).toHaveBeenCalledWith("retro-1");
+      });
+    });
+  });
+
+  describe("pagination edge cases", () => {
+    it("disables next button on last page", async () => {
+      const items = Array.from({ length: 20 }, (_, i) =>
+        makeRetroItem({ id: `retro-${i}` }),
+      );
+      setupSuccess({ total: 25 }, undefined, items);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(20);
+      });
+
+      const user = userEvent.setup();
+      const nextBtn = screen.getByText("Next →");
+      await user.click(nextBtn);
+
+      // After navigating to page 2, next should be disabled
+      mockListRetrospectives.mockResolvedValue(
+        makeListResponse(
+          Array.from({ length: 5 }, (_, i) => makeRetroItem({ id: `retro-p2-${i}` })),
+          { total: 25, offset: 20 },
+        ),
+      );
+
+      await waitFor(() => {
+        const nextAfter = screen.getByText("Next →");
+        expect(nextAfter).toBeDisabled();
+      });
+    });
+
+    it("shows correct page count text", async () => {
+      const items = Array.from({ length: 20 }, (_, i) =>
+        makeRetroItem({ id: `retro-${i}` }),
+      );
+      setupSuccess({ total: 60 }, undefined, items);
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("content preview truncation", () => {
+    it("client-side truncates preview longer than 100 chars", async () => {
+      const longPreview = "A".repeat(150);
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ contentPreview: longPreview }),
+      ]);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      // The span with title=full preview contains the truncated text
+      const previewEl = container.querySelector(`[title="${longPreview}"]`);
+      expect(previewEl).toBeTruthy();
+      // Client truncates at 100 chars + "…"
+      expect(previewEl!.textContent!.length).toBeLessThanOrEqual(101);
+    });
+
+    it("does not truncate short preview", async () => {
+      const shortPreview = "Short text.";
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ contentPreview: shortPreview }),
+      ]);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const previewEl = container.querySelector(`[title="${shortPreview}"]`);
+      expect(previewEl?.textContent).toBe("Short text.");
+    });
+  });
+
+  describe("detail error handling", () => {
+    it("shows failure text when detail fetch rejects", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockRejectedValue(new Error("Server error"));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to load detail")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("detail without completed timestamp", () => {
+    it("hides task completed line when taskCompletedAt is null", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail({ taskCompletedAt: null }));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      // Wait for detail-specific content that only appears in the detail panel
+      await waitFor(() => {
+        expect(screen.getByText(/Agent: Coder/)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/Task completed:/)).not.toBeInTheDocument();
+    });
+  });
 });
