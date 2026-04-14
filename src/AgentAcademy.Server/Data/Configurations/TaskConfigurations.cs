@@ -50,6 +50,7 @@ internal sealed class TaskConfiguration : IEntityTypeConfiguration<TaskEntity>
         entity.HasIndex(e => e.WorkspacePath).HasDatabaseName("idx_tasks_workspace");
         entity.HasIndex(e => e.CreatedAt).HasDatabaseName("idx_tasks_created");
         entity.HasIndex(e => e.CompletedAt).HasDatabaseName("idx_tasks_completed");
+        entity.HasIndex(e => e.Priority).HasDatabaseName("idx_tasks_priority");
     }
 }
 

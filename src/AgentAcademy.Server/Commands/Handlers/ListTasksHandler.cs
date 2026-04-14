@@ -38,6 +38,7 @@ public sealed class ListTasksHandler : ICommandHandler
             ["id"] = t.Id,
             ["title"] = t.Title,
             ["status"] = t.Status.ToString(),
+            ["priority"] = t.Priority.ToString(),
             ["assignedTo"] = t.AssignedAgentName ?? t.AssignedAgentId,
             ["description"] = t.Description,
             ["successCriteria"] = t.SuccessCriteria,

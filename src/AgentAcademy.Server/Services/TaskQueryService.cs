@@ -51,7 +51,7 @@ public sealed class TaskQueryService
             query = query.Where(t => t.SprintId == sprintId);
         }
 
-        var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
+        var entities = await query.OrderBy(t => t.Priority).ThenByDescending(t => t.CreatedAt).ToListAsync();
         var taskIds = entities.Select(e => e.Id).ToList();
         var depMap = await _dependencies.GetBatchDependencyIdsAsync(taskIds);
         return entities.Select(e =>
@@ -288,6 +288,20 @@ public sealed class TaskQueryService
     }
 
     /// <summary>
+    /// Updates a task's priority level.
+    /// </summary>
+    public async Task<TaskSnapshot> UpdateTaskPriorityAsync(string taskId, TaskPriority priority)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        entity.Priority = (int)priority;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
     /// Records a branch name on a task. Branch metadata is write-once per task.
     /// </summary>
     public async Task<TaskSnapshot> UpdateTaskBranchAsync(string taskId, string branchName)
@@ -500,7 +514,10 @@ public sealed class TaskQueryService
             WorkspacePath: entity.WorkspacePath,
             SprintId: entity.SprintId,
             DependsOnTaskIds: dependsOnIds,
-            BlockingTaskIds: blockingIds
+            BlockingTaskIds: blockingIds,
+            Priority: Enum.IsDefined(typeof(TaskPriority), entity.Priority)
+                ? (TaskPriority)entity.Priority
+                : TaskPriority.Medium
         );
     }
 

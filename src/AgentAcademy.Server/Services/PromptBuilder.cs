@@ -48,6 +48,7 @@ internal static class PromptBuilder
             lines.Add("=== TASK ===");
             lines.Add(PromptSanitizer.WrapBlock(
                 $"Title: {room.ActiveTask.Title}\n" +
+                $"Priority: {room.ActiveTask.Priority}\n" +
                 $"Description: {room.ActiveTask.Description}" +
                 (string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria)
                     ? ""

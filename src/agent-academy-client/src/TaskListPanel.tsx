@@ -27,6 +27,7 @@ import {
   statusBadgeColor,
   typeBadgeColor,
   sizeBadgeColor,
+  priorityBadgeColor,
 } from "./taskList";
 
 // ── Styles ──────────────────────────────────────────────────────────────
@@ -268,7 +269,14 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
     : tasks;
 
   const sortedTasks = [...filterTasks(baseTasks, filter)].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    (a, b) => {
+      const priA = a.priority ?? "Medium";
+      const priB = b.priority ?? "Medium";
+      const PRIORITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+      const priDiff = (PRIORITY_ORDER[priA] ?? 2) - (PRIORITY_ORDER[priB] ?? 2);
+      if (priDiff !== 0) return priDiff;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    },
   );
 
   const visibleIds = new Set(sortedTasks.map((t) => t.id));
@@ -469,6 +477,9 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
                 <V3Badge color={sizeBadgeColor(task.size)}>{task.size}</V3Badge>
               )}
               <V3Badge color={statusBadgeColor(task.status)}>{task.status}</V3Badge>
+              {task.priority && task.priority !== "Medium" && (
+                <V3Badge color={priorityBadgeColor(task.priority)}>{task.priority}</V3Badge>
+              )}
               {task.blockingTaskIds && task.blockingTaskIds.length > 0 && (
                 <V3Badge color="err">🔗 {task.blockingTaskIds.length} blocked</V3Badge>
               )}

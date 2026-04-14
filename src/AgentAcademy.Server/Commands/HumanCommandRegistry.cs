@@ -364,8 +364,8 @@ public static class HumanCommandRegistry
             Fields: []),
 
         new("UPDATE_TASK", "Update task", "workspace",
-            "Update a task's status, blocker, or note.",
-            "Change task state directly. Allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued. Use CANCEL_TASK or APPROVE_TASK + MERGE_TASK for terminal states.",
+            "Update a task's status, priority, blocker, or note.",
+            "Change task state directly. Allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued. Allowed priorities: Critical, High, Medium, Low. Use CANCEL_TASK or APPROVE_TASK + MERGE_TASK for terminal states.",
             IsAsync: false,
             Fields:
             [
@@ -373,6 +373,8 @@ public static class HumanCommandRegistry
                     Required: true),
                 new("status", "Status", "text", "New status for the task.",
                     Placeholder: "Completed"),
+                new("priority", "Priority", "text", "Priority level: Critical, High, Medium, Low.",
+                    Placeholder: "Medium"),
                 new("blocker", "Blocker", "text", "Blocker description (implies Blocked status)."),
                 new("note", "Note", "text", "Note to attach to the task."),
             ]),

@@ -335,6 +335,21 @@ public class CollaborationController : ControllerBase
     }
 
     /// <summary>
+    /// PUT /api/tasks/{taskId}/priority — update task priority.
+    /// </summary>
+    [HttpPut("api/tasks/{taskId}/priority")]
+    public async Task<ActionResult<TaskSnapshot>> UpdateTaskPriority(
+        string taskId, [FromBody] UpdateTaskPriorityRequest request)
+    {
+        try
+        {
+            var task = await _taskQueries.UpdateTaskPriorityAsync(taskId, request.Priority);
+            return Ok(task);
+        }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
+    }
+
+    /// <summary>
     /// PUT /api/tasks/{taskId}/branch — record branch name on task.
     /// </summary>
     [HttpPut("api/tasks/{taskId}/branch")]
@@ -473,6 +488,7 @@ public record AssignTaskRequest(
     [Required, StringLength(100)] string AgentId,
     [Required, StringLength(200)] string AgentName);
 public record UpdateTaskStatusRequest([EnumDataType(typeof(Shared.Models.TaskStatus))] Shared.Models.TaskStatus Status);
+public record UpdateTaskPriorityRequest([EnumDataType(typeof(TaskPriority))] TaskPriority Priority);
 public record UpdateTaskBranchRequest([Required, StringLength(300)] string BranchName);
 public record UpdateTaskPrRequest(
     [Required, Url, StringLength(2000)] string Url,

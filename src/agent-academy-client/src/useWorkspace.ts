@@ -33,6 +33,7 @@ export interface TaskDraft {
   description: string;
   successCriteria: string;
   roomId?: string;
+  priority?: "Critical" | "High" | "Medium" | "Low";
 }
 
 const FALLBACK_POLL_MS = 120_000;
@@ -447,6 +448,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
         successCriteria: draft.successCriteria,
         preferredRoles: [],
         roomId: draft.roomId,
+        priority: draft.priority,
       });
       await refresh({ showBusy: false });
       setRoomId(result.room.id);

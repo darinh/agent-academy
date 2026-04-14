@@ -45,6 +45,9 @@ public class TaskEntity
     // Sprint association
     public string? SprintId { get; set; }
 
+    /// <summary>Priority level (0=Critical, 1=High, 2=Medium, 3=Low). Stored as int for correct sort order.</summary>
+    public int Priority { get; set; } = 2; // Medium
+
     // Navigation properties
     public RoomEntity? Room { get; set; }
     public SprintEntity? Sprint { get; set; }

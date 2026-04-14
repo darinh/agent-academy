@@ -7,4 +7,6 @@ export {
   statusBadgeColor,
   typeBadgeColor,
   sizeBadgeColor,
+  priorityBadgeColor,
+  comparePriority,
 } from "./taskListHelpers";
