@@ -345,7 +345,44 @@ Agent Academy prioritizes **test count** and **behavior coverage** over strict l
 - **Frontend**: 116 unit tests + 18 E2E tests cover critical user journeys
 - **Integration**: 2 integration tests validate cross-layer interactions
 
-No CI coverage gates exist. Coverage is monitored manually via `dotnet test --collect` and Vitest reports.
+No CI coverage gates exist. Coverage is collected automatically in CI (see below) and available via `scripts/coverage.sh` locally.
+
+## CI Coverage Reporting
+
+The CI workflow (`.github/workflows/ci.yml`) collects coverage on every push and PR:
+
+### Backend (.NET)
+- **Tool**: coverlet.collector 6.0.0 via `dotnet test --collect:"XPlat Code Coverage"`
+- **Merge**: ReportGenerator merges per-project Cobertura XML into a single report
+- **Output**: Cobertura XML, text summary, and GitHub-flavored Markdown summary
+- **Artifact**: Uploaded as `coverage-reports` (30-day retention)
+
+### Frontend (Vitest)
+- **Tool**: `@vitest/coverage-v8` — V8-native coverage with zero instrumentation overhead
+- **Config**: `vite.config.ts` `test.coverage` section — reporters: `text`, `cobertura`, `html`
+- **Output**: Cobertura XML + HTML report in `coverage/`
+- **Artifact**: Uploaded alongside backend report
+
+### Job Summary
+Each CI run writes a coverage summary to the GitHub Actions job summary:
+- Backend: line/branch/method percentages (from ReportGenerator TextSummary)
+- Frontend: line and branch percentages (parsed from Cobertura XML)
+
+### Local Usage
+```bash
+# Both backend and frontend
+scripts/coverage.sh
+
+# Backend only
+scripts/coverage.sh --backend
+
+# Frontend only
+scripts/coverage.sh --frontend
+
+# Or directly:
+dotnet test --collect:"XPlat Code Coverage"
+cd src/agent-academy-client && npm run test:coverage
+```
 
 ## Test Naming Conventions
 
@@ -391,7 +428,7 @@ Examples:
 
 ### Coverage Reporting in CI
 
-No automated coverage reports in CI pipelines. Coverage is run manually. No coverage badges or trend tracking.
+~~No automated coverage reports in CI pipelines. Coverage is run manually. No coverage badges or trend tracking.~~ **Resolved** — CI collects backend (coverlet + ReportGenerator) and frontend (`@vitest/coverage-v8`) coverage on every run, generates Cobertura XML + summary, uploads artifacts, and writes a job summary. See "CI Coverage Reporting" section above. Local script: `scripts/coverage.sh`.
 
 ### Test Data Management
 
@@ -399,6 +436,12 @@ No automated coverage reports in CI pipelines. Coverage is run manually. No cove
 - **Frontend**: Factory functions per test file (no shared fixture library)
 
 ## Revision History
+
+### 2026-04-14 (b)
+- **Added**: CI coverage reporting — automated collection and job summaries
+- **Evidence**: `ci.yml` updated with coverlet + ReportGenerator (.NET), `@vitest/coverage-v8` (frontend)
+- **Resolved**: "Coverage Reporting in CI" known gap
+- **Source**: Task ci-coverage-reporting
 
 ### 2026-04-14
 - **Added**: Initial spec documenting existing test infrastructure

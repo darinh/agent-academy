@@ -35,6 +35,11 @@ Thumbs.db
 publish/
 out/
 
+# Coverage reports
+TestResults/
+coverage/
+src/agent-academy-client/coverage/
+
 # Logs
 *.log
 
