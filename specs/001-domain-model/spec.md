@@ -483,3 +483,4 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 | 2026-04-06 | Full entity inventory: added 14 missing entities, 5 missing model files, 2 missing enums, updated all existing types to match code. Fixed NotificationType location (Notifications.cs, not Enums.cs). Added 30+ missing indexes. | spec-001-entity-inventory |
 | 2026-04-08 | Added WorkspacePath to TaskSnapshot and ConversationSessionSnapshot. Added project-scoping pattern section. Added idx_tasks_workspace and idx_conversation_sessions_workspace indexes. | project-scoping |
 | 2026-04-11 | Added DataAnnotations validation to all API request types. 31 validation tests. Closed validation known gap. | add-request-validation |
+| 2026-04-14 | Extracted 31 inline entity configurations from `OnModelCreating` into 10 `IEntityTypeConfiguration<T>` files in `Data/Configurations/`. DbContext reduced from 623 to 54 lines. Uses `ApplyConfigurationsFromAssembly`. | dbcontext-refactor |

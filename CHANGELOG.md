@@ -17,6 +17,14 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 - **008-agent-memory**: Retrospective history REST API. `RetrospectiveController` exposes read-only endpoints at `/api/retrospectives`: paginated list with agent filter, single retrospective with task metadata, and aggregate statistics (total, per-agent breakdown, average content length, latest timestamp). 21 new tests (4426 total).
 
+### Refactoring
+
+- **001-domain-model**: Extract 31 inline entity configurations from `AgentAcademyDbContext.OnModelCreating` into 10 `IEntityTypeConfiguration<T>` files in `Data/Configurations/`. DbContext reduced from 623→54 lines. Uses `ApplyConfigurationsFromAssembly` for automatic discovery.
+
+### Tests
+
+- **003-agent-system**: Add 22 behavioral tests for `AgentOrchestrator` — queue mechanics, conversation rounds, DM handling, startup recovery (4476 total).
+
 ## v2.0.1 (2026-04-12)
 
 ### Refactoring
