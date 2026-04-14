@@ -166,6 +166,16 @@ function AppShell() {
     enabled: !showProjectSelector && tab === "tasks",
   });
 
+  /* ── Task focus (cross-panel navigation) ── */
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const handleNavigateToTask = useCallback((taskId: string) => {
+    setFocusTaskId(taskId);
+    setTab("tasks");
+  }, [setTab]);
+  const handleFocusTaskHandled = useCallback(() => {
+    setFocusTaskId(null);
+  }, []);
+
   /* ── Keyboard shortcuts ── */
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -409,6 +419,9 @@ function AppShell() {
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}
+                onNavigateToTask={handleNavigateToTask}
+                focusTaskId={focusTaskId}
+                onFocusTaskHandled={handleFocusTaskHandled}
                 styles={s}
               />
             )}

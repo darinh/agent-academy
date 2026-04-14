@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Button, mergeClasses, Spinner } from "@fluentui/react-components";
-import { ArrowSyncRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, OpenRegular } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import EmptyState from "./EmptyState";
@@ -35,9 +35,10 @@ function taskStatusBadge(status: string): { color: BadgeColor; label: string } {
 
 interface RetrospectivePanelProps {
   refreshTrigger?: number;
+  onNavigateToTask?: (taskId: string) => void;
 }
 
-export default function RetrospectivePanel({ refreshTrigger = 0 }: RetrospectivePanelProps) {
+export default function RetrospectivePanel({ refreshTrigger = 0, onNavigateToTask }: RetrospectivePanelProps) {
   const s = useRetrospectivePanelStyles();
 
   const [retros, setRetros] = useState<RetrospectiveListItem[]>([]);
@@ -120,6 +121,11 @@ export default function RetrospectivePanel({ refreshTrigger = 0 }: Retrospective
     setSelectedId(null);
     setDetail(null);
   }, []);
+
+  const handleTaskClick = useCallback((e: MouseEvent, taskId: string) => {
+    e.stopPropagation();
+    onNavigateToTask?.(taskId);
+  }, [onNavigateToTask]);
 
   const agentOptions = useMemo(() => {
     if (!stats) return [];
@@ -241,7 +247,15 @@ export default function RetrospectivePanel({ refreshTrigger = 0 }: Retrospective
               >
                 <V3Badge color="info">{r.agentName}</V3Badge>
                 <div className={s.rowContent}>
-                  <span className={s.rowTitle} title={r.taskTitle}>{r.taskTitle}</span>
+                  <span
+                    className={mergeClasses(s.rowTitle, onNavigateToTask && s.rowTitleLink)}
+                    title={r.taskTitle}
+                    role={onNavigateToTask ? "link" : undefined}
+                    onClick={onNavigateToTask ? (e) => handleTaskClick(e, r.taskId) : undefined}
+                  >
+                    {r.taskTitle}
+                    {onNavigateToTask && <OpenRegular fontSize={10} style={{ marginLeft: 4, verticalAlign: "middle" }} />}
+                  </span>
                   <span className={s.rowPreview} title={r.contentPreview}>{preview}</span>
                 </div>
                 <div className={s.rowMeta}>
@@ -286,8 +300,14 @@ export default function RetrospectivePanel({ refreshTrigger = 0 }: Retrospective
           ) : detail ? (
             <>
               <div className={s.detailHeader}>
-                <span style={{ fontFamily: "var(--aa-mono)", fontSize: "12px", fontWeight: 600 }}>
+                <span
+                  style={{ fontFamily: "var(--aa-mono)", fontSize: "12px", fontWeight: 600 }}
+                  className={onNavigateToTask ? s.detailTitleLink : undefined}
+                  role={onNavigateToTask ? "link" : undefined}
+                  onClick={onNavigateToTask ? (e) => handleTaskClick(e, detail.taskId) : undefined}
+                >
                   {detail.taskTitle}
+                  {onNavigateToTask && <OpenRegular fontSize={10} style={{ marginLeft: 4, verticalAlign: "middle" }} />}
                 </span>
                 <V3Badge color={taskStatusBadge(detail.taskStatus).color}>
                   {taskStatusBadge(detail.taskStatus).label}

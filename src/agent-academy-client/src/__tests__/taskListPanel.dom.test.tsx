@@ -1525,4 +1525,112 @@ describe("TaskListPanel (interactive)", () => {
       expect(screen.getByText("1 selected")).toBeInTheDocument();
     });
   });
+
+  describe("focusTaskId (cross-panel navigation)", () => {
+    it("auto-expands the focused task when focusTaskId matches a task", () => {
+      const taskId = uid();
+      const task = makeTask({
+        id: taskId,
+        title: "Focused task",
+        description: "Should be expanded",
+      });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+          }),
+        ),
+      );
+
+      // The task detail section should be visible (description rendered)
+      expect(screen.getByText("Description")).toBeInTheDocument();
+      expect(screen.getByText("Should be expanded")).toBeInTheDocument();
+    });
+
+    it("does not expand when focusTaskId does not match any task", () => {
+      const task = makeTask({
+        id: uid(),
+        title: "Normal task",
+        description: "Should NOT be expanded",
+      });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: "nonexistent-id",
+          }),
+        ),
+      );
+
+      expect(screen.queryByText("Description")).not.toBeInTheDocument();
+    });
+
+    it("resets filter to 'all' when focusing a task", () => {
+      const taskId = uid();
+      const task = makeTask({
+        id: taskId,
+        title: "Target task",
+        status: "Active",
+        description: "Focused from retro",
+      });
+      const completedTask = makeTask({
+        id: uid(),
+        title: "Done task",
+        status: "Completed",
+      });
+
+      const { rerender } = render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task, completedTask],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: null,
+          }),
+        ),
+      );
+
+      // Both tasks visible initially
+      expect(screen.getByText("Target task")).toBeInTheDocument();
+      expect(screen.getByText("Done task")).toBeInTheDocument();
+
+      // Now focus the task — should auto-expand it
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task, completedTask],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+          }),
+        ),
+      );
+
+      expect(screen.getByText("Description")).toBeInTheDocument();
+      expect(screen.getByText("Focused from retro")).toBeInTheDocument();
+    });
+  });
 });

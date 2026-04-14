@@ -826,4 +826,106 @@ describe("RetrospectivePanel", () => {
       expect(screen.queryByText(/Task completed:/)).not.toBeInTheDocument();
     });
   });
+
+  describe("task title navigation", () => {
+    function renderWithNav(onNavigateToTask = vi.fn()) {
+      return {
+        onNavigateToTask,
+        ...render(
+          <FluentProvider theme={webDarkTheme}>
+            <RetrospectivePanel onNavigateToTask={onNavigateToTask} />
+          </FluentProvider>,
+        ),
+      };
+    }
+
+    it("renders task titles as links when onNavigateToTask is provided", async () => {
+      setupSuccess();
+      renderWithNav();
+
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Implement user authentication");
+      expect(titleEl).toHaveAttribute("role", "link");
+    });
+
+    it("does not render task titles as links when onNavigateToTask is absent", async () => {
+      setupSuccess();
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Implement user authentication");
+      expect(titleEl).not.toHaveAttribute("role", "link");
+    });
+
+    it("calls onNavigateToTask with correct taskId when clicking task title in list", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Auth feature");
+      await userEvent.click(titleEl);
+
+      expect(onNav).toHaveBeenCalledTimes(1);
+      expect(onNav).toHaveBeenCalledWith("task-42");
+    });
+
+    it("calls onNavigateToTask with correct taskId when clicking task title in detail", async () => {
+      const onNav = vi.fn();
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+
+      // Click row to expand detail
+      const rows = getRetroRows(container);
+      await userEvent.click(rows[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Agent: Coder/)).toBeInTheDocument();
+      });
+
+      // The detail header also shows the task title as a link
+      const detailTitles = screen.getAllByText("Implement user authentication");
+      // After expanding, there are two: one in the list row, one in the detail header
+      const links = detailTitles.filter((el) => el.getAttribute("role") === "link");
+      expect(links.length).toBeGreaterThanOrEqual(2);
+
+      // Click the last link (detail header)
+      await userEvent.click(links[links.length - 1]);
+      expect(onNav).toHaveBeenCalledWith("task-42");
+    });
+
+    it("does not toggle row selection when clicking task title link", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Auth feature");
+      await userEvent.click(titleEl);
+
+      // Should NOT have expanded the detail (click was on the title link, not the row)
+      expect(mockGetRetrospective).not.toHaveBeenCalled();
+    });
+  });
 });

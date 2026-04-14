@@ -65,6 +65,9 @@ function makeProps(overrides: Partial<WorkspaceContentProps> = {}): WorkspaceCon
     activity: [],
     onSelectRoom: vi.fn(),
     onNavigateToTasks: vi.fn(),
+    onNavigateToTask: vi.fn(),
+    focusTaskId: null,
+    onFocusTaskHandled: vi.fn(),
     styles: baseStyles,
     ...overrides,
   };

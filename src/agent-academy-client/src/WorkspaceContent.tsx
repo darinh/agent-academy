@@ -52,6 +52,9 @@ export interface WorkspaceContentProps {
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
+  onNavigateToTask: (taskId: string) => void;
+  focusTaskId: string | null;
+  onFocusTaskHandled: () => void;
   styles: Record<string, string>;
 }
 
@@ -85,6 +88,8 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onRefresh={props.onRefreshTasks}
               activeSprintId={props.activeSprintId}
               agents={props.configuredAgents}
+              focusTaskId={props.focusTaskId}
+              onFocusHandled={props.onFocusTaskHandled}
             />
           )}
           {tab === "plan" && (
@@ -129,7 +134,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
             <MemoryBrowserPanel agents={props.configuredAgents} refreshTrigger={props.memoryVersion} />
           )}
           {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} />}
-          {tab === "retrospectives" && <RetrospectivePanel refreshTrigger={props.retroVersion} />}
+          {tab === "retrospectives" && <RetrospectivePanel refreshTrigger={props.retroVersion} onNavigateToTask={props.onNavigateToTask} />}
         </section>
       </Suspense>
     </ChunkErrorBoundary>

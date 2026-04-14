@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   makeStyles,
   mergeClasses,
@@ -233,9 +233,11 @@ interface TaskListPanelProps {
   onRefresh?: () => void;
   activeSprintId?: string | null;
   agents?: AgentDefinition[];
+  focusTaskId?: string | null;
+  onFocusHandled?: () => void;
 }
 
-export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId, agents = [] }: TaskListPanelProps) {
+export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId, agents = [], focusTaskId, onFocusHandled }: TaskListPanelProps) {
   const s = useLocalStyles();
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -244,6 +246,21 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkOperationResult | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
+
+  // Auto-expand a task when navigating from another panel (e.g. RetrospectivePanel)
+  const lastFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusTaskId && focusTaskId !== lastFocusRef.current && tasks.length > 0) {
+      const exists = tasks.some((t) => t.id === focusTaskId);
+      if (exists) {
+        lastFocusRef.current = focusTaskId;
+        setFilter("all");
+        setSprintOnly(false);
+        setExpandedId(focusTaskId);
+        onFocusHandled?.();
+      }
+    }
+  }, [focusTaskId, tasks]);
 
   const baseTasks = sprintOnly && activeSprintId
     ? tasks.filter((t) => t.sprintId === activeSprintId)

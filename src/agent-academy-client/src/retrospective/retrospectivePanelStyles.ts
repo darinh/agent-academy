@@ -117,6 +117,13 @@ export const useRetrospectivePanelStyles = makeStyles({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
+  rowTitleLink: {
+    cursor: "pointer",
+    color: "var(--aa-cyan, #5b8def)",
+    "&:hover": {
+      textDecoration: "underline",
+    },
+  },
   rowPreview: {
     fontSize: "11px",
     fontFamily: "var(--aa-mono)",
@@ -151,6 +158,13 @@ export const useRetrospectivePanelStyles = makeStyles({
     alignItems: "center",
     justifyContent: "space-between",
     ...shorthands.gap("8px"),
+  },
+  detailTitleLink: {
+    cursor: "pointer",
+    color: "var(--aa-cyan, #5b8def)",
+    "&:hover": {
+      textDecoration: "underline",
+    },
   },
   detailMetaRow: {
     display: "flex",
