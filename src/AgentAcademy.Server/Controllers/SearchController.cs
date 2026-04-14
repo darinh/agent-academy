@@ -37,16 +37,16 @@ public class SearchController : ControllerBase
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(q))
-            return BadRequest(new { code = "empty_query", message = "Search query 'q' is required and must not be empty." });
+            return BadRequest(ApiProblem.BadRequest("Search query 'q' is required and must not be empty.", "empty_query"));
 
         if (scope is not "all" and not "messages" and not "tasks")
-            return BadRequest(new { code = "invalid_scope", message = "Scope must be 'all', 'messages', or 'tasks'." });
+            return BadRequest(ApiProblem.BadRequest("Scope must be 'all', 'messages', or 'tasks'.", "invalid_scope"));
 
         if (messageLimit is < 1 or > 100)
-            return BadRequest(new { code = "invalid_limit", message = "messageLimit must be between 1 and 100." });
+            return BadRequest(ApiProblem.BadRequest("messageLimit must be between 1 and 100.", "invalid_limit"));
 
         if (taskLimit is < 1 or > 100)
-            return BadRequest(new { code = "invalid_limit", message = "taskLimit must be between 1 and 100." });
+            return BadRequest(ApiProblem.BadRequest("taskLimit must be between 1 and 100.", "invalid_limit"));
 
         var workspacePath = await _roomService.GetActiveWorkspacePathAsync();
 

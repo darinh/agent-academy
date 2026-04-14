@@ -54,7 +54,7 @@ public class InstructionTemplateController : ControllerBase
         {
             var template = await _configService.GetTemplateAsync(id);
             if (template is null)
-                return NotFound(new { code = "template_not_found", message = $"Template '{id}' not found" });
+                return NotFound(ApiProblem.NotFound($"Template '{id}' not found", "template_not_found"));
 
             return Ok(new InstructionTemplateResponse(
                 template.Id, template.Name, template.Description,
@@ -75,10 +75,10 @@ public class InstructionTemplateController : ControllerBase
         [FromBody] InstructionTemplateRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_template", message = "Template name is required" });
+            return BadRequest(ApiProblem.BadRequest("Template name is required", "invalid_template"));
 
         if (string.IsNullOrWhiteSpace(request.Content))
-            return BadRequest(new { code = "invalid_template", message = "Template content is required" });
+            return BadRequest(ApiProblem.BadRequest("Template content is required", "invalid_template"));
 
         try
         {
@@ -91,11 +91,11 @@ public class InstructionTemplateController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { code = "duplicate_name", message = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message, "duplicate_name"));
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { code = "duplicate_name", message = "A template with this name already exists." });
+            return Conflict(ApiProblem.Conflict("A template with this name already exists.", "duplicate_name"));
         }
         catch (Exception ex)
         {
@@ -112,10 +112,10 @@ public class InstructionTemplateController : ControllerBase
         string id, [FromBody] InstructionTemplateRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_template", message = "Template name is required" });
+            return BadRequest(ApiProblem.BadRequest("Template name is required", "invalid_template"));
 
         if (string.IsNullOrWhiteSpace(request.Content))
-            return BadRequest(new { code = "invalid_template", message = "Template content is required" });
+            return BadRequest(ApiProblem.BadRequest("Template content is required", "invalid_template"));
 
         try
         {
@@ -123,7 +123,7 @@ public class InstructionTemplateController : ControllerBase
                 id, request.Name.Trim(), request.Description?.Trim(), request.Content);
 
             if (template is null)
-                return NotFound(new { code = "template_not_found", message = $"Template '{id}' not found" });
+                return NotFound(ApiProblem.NotFound($"Template '{id}' not found", "template_not_found"));
 
             return Ok(new InstructionTemplateResponse(
                 template.Id, template.Name, template.Description,
@@ -131,11 +131,11 @@ public class InstructionTemplateController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { code = "duplicate_name", message = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message, "duplicate_name"));
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { code = "duplicate_name", message = "A template with this name already exists." });
+            return Conflict(ApiProblem.Conflict("A template with this name already exists.", "duplicate_name"));
         }
         catch (Exception ex)
         {
@@ -155,7 +155,7 @@ public class InstructionTemplateController : ControllerBase
         {
             var deleted = await _configService.DeleteTemplateAsync(id);
             if (!deleted)
-                return NotFound(new { code = "template_not_found", message = $"Template '{id}' not found" });
+                return NotFound(ApiProblem.NotFound($"Template '{id}' not found", "template_not_found"));
 
             return Ok(new { status = "deleted", id });
         }

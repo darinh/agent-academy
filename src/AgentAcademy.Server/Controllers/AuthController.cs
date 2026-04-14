@@ -86,7 +86,7 @@ public class AuthController : ControllerBase
     public IActionResult Login()
     {
         if (!_authOptions.Enabled)
-            return BadRequest(new { error = "GitHub authentication is not configured." });
+            return BadRequest(ApiProblem.BadRequest("GitHub authentication is not configured."));
 
         // After OAuth completes on the backend, redirect to the frontend app
         var redirect = _authOptions.FrontendUrl.TrimEnd('/') + "/";

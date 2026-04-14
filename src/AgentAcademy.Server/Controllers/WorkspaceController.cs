@@ -80,10 +80,10 @@ public class WorkspaceController : ControllerBase
     public async Task<IActionResult> SetActiveWorkspace([FromBody] SwitchWorkspaceRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Path))
-            return BadRequest(new { code = "missing_path", message = "path required" });
+            return BadRequest(ApiProblem.BadRequest("path required", "missing_path"));
 
         if (!ValidatePath(request.Path, out var resolved, out var error))
-            return BadRequest(new { code = "workspace_error", message = error });
+            return BadRequest(ApiProblem.BadRequest(error ?? "Invalid path", "workspace_error"));
 
         try
         {
@@ -120,7 +120,7 @@ public class WorkspaceController : ControllerBase
         }
         catch (DirectoryNotFoundException ex)
         {
-            return BadRequest(new { code = "workspace_error", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "workspace_error"));
         }
         catch (Exception ex)
         {
@@ -136,10 +136,10 @@ public class WorkspaceController : ControllerBase
     public ActionResult<ProjectScanResult> ScanProject([FromBody] ScanRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Path))
-            return BadRequest(new { code = "missing_path", message = "path is required" });
+            return BadRequest(ApiProblem.BadRequest("path is required", "missing_path"));
 
         if (!ValidatePath(request.Path, out var resolved, out var error))
-            return BadRequest(new { error });
+            return BadRequest(ApiProblem.BadRequest(error ?? "Invalid path", "invalid_path"));
 
         try
         {
@@ -148,7 +148,7 @@ public class WorkspaceController : ControllerBase
         }
         catch (DirectoryNotFoundException ex)
         {
-            return NotFound(new { code = "not_found", message = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message, "not_found"));
         }
         catch (Exception ex)
         {
@@ -166,10 +166,10 @@ public class WorkspaceController : ControllerBase
     public async Task<ActionResult<OnboardResult>> OnboardProject([FromBody] ScanRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Path))
-            return BadRequest(new { code = "missing_path", message = "path is required" });
+            return BadRequest(ApiProblem.BadRequest("path is required", "missing_path"));
 
         if (!ValidatePath(request.Path, out var resolved, out var error))
-            return BadRequest(new { error });
+            return BadRequest(ApiProblem.BadRequest(error ?? "Invalid path", "invalid_path"));
 
         try
         {
@@ -224,7 +224,7 @@ public class WorkspaceController : ControllerBase
         }
         catch (DirectoryNotFoundException ex)
         {
-            return NotFound(new { code = "not_found", message = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message, "not_found"));
         }
         catch (Exception ex)
         {

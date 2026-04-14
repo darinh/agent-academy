@@ -318,7 +318,7 @@ public class SystemController : ControllerBase
         try
         {
             if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+                return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
             var since = hoursBack.HasValue
                 ? DateTime.UtcNow.AddHours(-hoursBack.Value)
@@ -365,7 +365,7 @@ public class SystemController : ControllerBase
         try
         {
             if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+                return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
             var since = hoursBack.HasValue
                 ? DateTime.UtcNow.AddHours(-hoursBack.Value)
@@ -392,7 +392,7 @@ public class SystemController : ControllerBase
         try
         {
             if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+                return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
             var since = hoursBack.HasValue
                 ? DateTime.UtcNow.AddHours(-hoursBack.Value)

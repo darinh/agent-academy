@@ -40,7 +40,7 @@ public class AgentConfigController : ControllerBase
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (catalogAgent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found in catalog" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found in catalog", "agent_not_found"));
 
         try
         {
@@ -84,7 +84,7 @@ public class AgentConfigController : ControllerBase
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (catalogAgent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found in catalog" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found in catalog", "agent_not_found"));
 
         try
         {
@@ -114,11 +114,11 @@ public class AgentConfigController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_config", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_config"));
         }
         catch (DbUpdateException)
         {
-            return Conflict(new { code = "config_conflict", message = "Concurrent config update conflict. Please retry." });
+            return Conflict(ApiProblem.Conflict("Concurrent config update conflict. Please retry.", "config_conflict"));
         }
         catch (Exception ex)
         {
@@ -137,7 +137,7 @@ public class AgentConfigController : ControllerBase
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (catalogAgent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found in catalog" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found in catalog", "agent_not_found"));
 
         try
         {
@@ -167,21 +167,21 @@ public class AgentConfigController : ControllerBase
         [FromBody] CreateCustomAgentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_name", message = "Agent name is required" });
+            return BadRequest(ApiProblem.BadRequest("Agent name is required", "invalid_name"));
 
         if (string.IsNullOrWhiteSpace(request.Prompt))
-            return BadRequest(new { code = "invalid_prompt", message = "Agent prompt is required" });
+            return BadRequest(ApiProblem.BadRequest("Agent prompt is required", "invalid_prompt"));
 
         var agentId = ToKebabCase(request.Name.Trim());
         if (string.IsNullOrEmpty(agentId))
-            return BadRequest(new { code = "invalid_name", message = "Name must contain alphanumeric characters" });
+            return BadRequest(ApiProblem.BadRequest("Name must contain alphanumeric characters", "invalid_name"));
 
         if (_catalog.Agents.Any(a => a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase)))
-            return Conflict(new { code = "agent_exists", message = $"A built-in agent with ID '{agentId}' already exists. Choose a different name." });
+            return Conflict(ApiProblem.Conflict($"A built-in agent with ID '{agentId}' already exists. Choose a different name.", "agent_exists"));
 
         var existing = await _configService.GetConfigOverrideAsync(agentId);
         if (existing is not null)
-            return Conflict(new { code = "agent_exists", message = $"An agent with ID '{agentId}' already exists. Choose a different name." });
+            return Conflict(ApiProblem.Conflict($"An agent with ID '{agentId}' already exists. Choose a different name.", "agent_exists"));
 
         try
         {
@@ -221,11 +221,11 @@ public class AgentConfigController : ControllerBase
     public async Task<ActionResult> DeleteCustomAgent(string agentId)
     {
         if (_catalog.Agents.Any(a => a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase)))
-            return BadRequest(new { code = "cannot_delete_builtin", message = "Cannot delete built-in agents" });
+            return BadRequest(ApiProblem.BadRequest("Cannot delete built-in agents", "cannot_delete_builtin"));
 
         var existing = await _configService.GetConfigOverrideAsync(agentId);
         if (existing is null)
-            return NotFound(new { code = "agent_not_found", message = $"Custom agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Custom agent '{agentId}' not found", "agent_not_found"));
 
         try
         {

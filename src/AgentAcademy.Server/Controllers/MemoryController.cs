@@ -39,10 +39,10 @@ public class MemoryController : ControllerBase
     public async Task<IActionResult> Export([FromQuery] string? agentId, [FromQuery] string? category)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         var query = _db.AgentMemories.Where(m => m.AgentId == agentId);
 
@@ -76,13 +76,13 @@ public class MemoryController : ControllerBase
     public async Task<IActionResult> Import([FromBody] MemoryImportRequest? request)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (request?.Memories is null || request.Memories.Count == 0)
-            return BadRequest(new { code = "invalid_request", message = "Request must contain a non-empty 'memories' array." });
+            return BadRequest(ApiProblem.BadRequest("Request must contain a non-empty 'memories' array.", "invalid_request"));
 
         if (request.Memories.Count > MaxImportEntries)
-            return BadRequest(new { code = "payload_too_large", message = $"Import is capped at {MaxImportEntries} entries per request. Got {request.Memories.Count}." });
+            return BadRequest(ApiProblem.BadRequest($"Import is capped at {MaxImportEntries} entries per request. Got {request.Memories.Count}.", "payload_too_large"));
 
         var now = DateTime.UtcNow;
         int created = 0, updated = 0, skipped = 0;
@@ -166,10 +166,10 @@ public class MemoryController : ControllerBase
     public async Task<IActionResult> CleanupExpired([FromQuery] string? agentId)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         var now = DateTime.UtcNow;
         var expired = await _db.AgentMemories
@@ -199,10 +199,10 @@ public class MemoryController : ControllerBase
         CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         var now = DateTime.UtcNow;
 
@@ -250,10 +250,10 @@ public class MemoryController : ControllerBase
     public async Task<IActionResult> Stats([FromQuery] string? agentId, CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         var now = DateTime.UtcNow;
         var stats = await _db.AgentMemories
@@ -287,17 +287,17 @@ public class MemoryController : ControllerBase
     public async Task<IActionResult> Delete([FromQuery] string? agentId, [FromQuery] string? key, CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         if (string.IsNullOrWhiteSpace(key))
-            return BadRequest(new { code = "missing_key", message = "key query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("key query parameter is required.", "missing_key"));
 
         var entity = await _db.AgentMemories.FindAsync(new object[] { agentId, key }, ct);
         if (entity is null)
-            return NotFound(new { code = "not_found", message = $"Memory '{key}' not found for agent '{agentId}'." });
+            return NotFound(ApiProblem.NotFound($"Memory '{key}' not found for agent '{agentId}'.", "not_found"));
 
         _db.AgentMemories.Remove(entity);
         await _db.SaveChangesAsync(ct);

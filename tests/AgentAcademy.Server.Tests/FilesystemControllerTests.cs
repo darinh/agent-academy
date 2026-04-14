@@ -18,7 +18,7 @@ public sealed class FilesystemControllerTests
     {
         var result = _controller.Browse(path: "relative/path", showHidden: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("invalid_path", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "invalid_path");
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class FilesystemControllerTests
     {
         var result = _controller.Browse(path: "/etc", showHidden: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("invalid_path", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "invalid_path");
     }
 
     [Fact]
@@ -129,6 +129,6 @@ public sealed class FilesystemControllerTests
         // Try to escape via path traversal
         var result = _controller.Browse(path: homeDir + "/../../../etc", showHidden: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("invalid_path", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "invalid_path");
     }
 }

@@ -37,7 +37,7 @@ public sealed class RetrospectiveController : ControllerBase
         CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         limit = Math.Clamp(limit, 1, 100);
         offset = Math.Max(offset, 0);
@@ -84,7 +84,7 @@ public sealed class RetrospectiveController : ControllerBase
     public async Task<IActionResult> Get(string commentId, CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var result = await _db.TaskComments.AsNoTracking()
             .Where(c => c.Id == commentId && c.CommentType == RetrospectiveType)
@@ -105,7 +105,7 @@ public sealed class RetrospectiveController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         if (result is null)
-            return NotFound(new { code = "not_found", message = $"Retrospective {commentId} not found." });
+            return NotFound(ApiProblem.NotFound($"Retrospective {commentId} not found.", "not_found"));
 
         return Ok(result);
     }
@@ -117,7 +117,7 @@ public sealed class RetrospectiveController : ControllerBase
     public async Task<IActionResult> Stats(CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         // Load lightweight projection for client-side aggregation
         // (SQLite provider can't translate GroupBy on anonymous types or string Length)

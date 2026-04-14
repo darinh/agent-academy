@@ -62,7 +62,7 @@ public class CollaborationController : ControllerBase
         [FromBody] TaskAssignmentRequest request)
     {
         if (request is null)
-            return BadRequest(new { code = "invalid_task_request", message = "Task payload is required." });
+            return BadRequest(ApiProblem.BadRequest("Task payload is required.", "invalid_task_request"));
 
         try
         {
@@ -72,11 +72,11 @@ public class CollaborationController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_task_request", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_task_request"));
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message));
         }
         catch (Exception ex)
         {
@@ -98,7 +98,7 @@ public class CollaborationController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message));
         }
     }
 
@@ -115,7 +115,7 @@ public class CollaborationController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message));
         }
     }
 
@@ -137,7 +137,7 @@ public class CollaborationController : ControllerBase
     {
         var version = await _specManager.GetSpecVersionAsync();
         if (version is null)
-            return NotFound(new { code = "no_specs", message = "No specification directory found." });
+            return NotFound(ApiProblem.NotFound("No specification directory found.", "no_specs"));
         return Ok(version);
     }
 
@@ -150,7 +150,7 @@ public class CollaborationController : ControllerBase
         [FromBody] PostMessageRequest request)
     {
         if (request is null)
-            return BadRequest(new { code = "invalid_message", message = "Message payload is required." });
+            return BadRequest(ApiProblem.BadRequest("Message payload is required.", "invalid_message"));
 
         try
         {
@@ -161,11 +161,11 @@ public class CollaborationController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_message", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_message"));
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message));
         }
         catch (Exception ex)
         {
@@ -214,11 +214,11 @@ public class CollaborationController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_message", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_message"));
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message));
         }
         catch (Exception ex)
         {
@@ -236,7 +236,7 @@ public class CollaborationController : ControllerBase
         [FromBody] PhaseTransitionRequest request)
     {
         if (request is null)
-            return BadRequest(new { code = "invalid_phase_request", message = "Phase transition payload is required." });
+            return BadRequest(ApiProblem.BadRequest("Phase transition payload is required.", "invalid_phase_request"));
 
         try
         {
@@ -246,11 +246,11 @@ public class CollaborationController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_phase_request", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_phase_request"));
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { error = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message));
         }
         catch (Exception ex)
         {
@@ -323,7 +323,7 @@ public class CollaborationController : ControllerBase
             var task = await _taskQueries.AssignTaskAsync(taskId, request.AgentId, request.AgentName);
             return Ok(task);
         }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
     }
 
     /// <summary>
@@ -338,7 +338,7 @@ public class CollaborationController : ControllerBase
             var task = await _taskQueries.UpdateTaskStatusAsync(taskId, request.Status);
             return Ok(task);
         }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
     }
 
     /// <summary>
@@ -353,7 +353,7 @@ public class CollaborationController : ControllerBase
             var task = await _taskQueries.UpdateTaskBranchAsync(taskId, request.BranchName);
             return Ok(task);
         }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
     }
 
     /// <summary>
@@ -368,7 +368,7 @@ public class CollaborationController : ControllerBase
             var task = await _taskQueries.UpdateTaskPrAsync(taskId, request.Url, request.Number, request.Status);
             return Ok(task);
         }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
     }
 
     /// <summary>
@@ -383,7 +383,7 @@ public class CollaborationController : ControllerBase
             var task = await _taskOrchestration.CompleteTaskAsync(taskId, request.CommitCount, request.TestsCreated);
             return Ok(task);
         }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
     }
 
     // ── Task Dependencies ───────────────────────────────────────
@@ -400,7 +400,7 @@ public class CollaborationController : ControllerBase
             var info = await _taskDependencies.AddDependencyAsync(taskId, request.DependsOnTaskId);
             return StatusCode(201, info);
         }
-        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(ApiProblem.BadRequest(ex.Message)); }
     }
 
     /// <summary>
@@ -415,7 +415,7 @@ public class CollaborationController : ControllerBase
             var info = await _taskDependencies.RemoveDependencyAsync(taskId, dependsOnTaskId);
             return Ok(info);
         }
-        catch (InvalidOperationException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
     }
 
     /// <summary>
@@ -425,7 +425,7 @@ public class CollaborationController : ControllerBase
     public async Task<ActionResult<TaskDependencyInfo>> GetDependencies(string taskId)
     {
         var task = await _taskQueries.GetTaskAsync(taskId);
-        if (task is null) return NotFound(new { error = $"Task '{taskId}' not found" });
+        if (task is null) return NotFound(ApiProblem.NotFound($"Task '{taskId}' not found"));
         var info = await _taskDependencies.GetDependencyInfoAsync(taskId);
         return Ok(info);
     }
@@ -443,7 +443,7 @@ public class CollaborationController : ControllerBase
         [FromBody] BulkUpdateStatusRequest request)
     {
         if (request.TaskIds.Count > MaxBulkSize)
-            return BadRequest(new { error = $"Maximum {MaxBulkSize} tasks per bulk operation." });
+            return BadRequest(ApiProblem.BadRequest($"Maximum {MaxBulkSize} tasks per bulk operation."));
 
         try
         {
@@ -463,7 +463,7 @@ public class CollaborationController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message));
         }
     }
 
@@ -475,7 +475,7 @@ public class CollaborationController : ControllerBase
         [FromBody] BulkAssignRequest request)
     {
         if (request.TaskIds.Count > MaxBulkSize)
-            return BadRequest(new { error = $"Maximum {MaxBulkSize} tasks per bulk operation." });
+            return BadRequest(ApiProblem.BadRequest($"Maximum {MaxBulkSize} tasks per bulk operation."));
 
         try
         {
@@ -496,7 +496,7 @@ public class CollaborationController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message));
         }
     }
 }

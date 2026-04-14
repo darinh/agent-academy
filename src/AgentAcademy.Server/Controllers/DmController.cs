@@ -63,7 +63,7 @@ public class DmController : ControllerBase
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found." });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found.", "agent_not_found"));
 
         var messages = await _messageService.GetDmThreadMessagesAsync(agent.Id);
 
@@ -88,14 +88,14 @@ public class DmController : ControllerBase
         string agentId, [FromBody] SendDmRequest request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest(new { code = "invalid_message", message = "Message content is required." });
+            return BadRequest(ApiProblem.BadRequest("Message content is required.", "invalid_message"));
 
         var agents = _catalog.Agents;
         var agent = agents.FirstOrDefault(
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found." });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found.", "agent_not_found"));
 
         // Derive identity from authenticated claims
         var isConsultant = User.IsInRole("Consultant");
