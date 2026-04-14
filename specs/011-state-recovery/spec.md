@@ -314,6 +314,64 @@ Arguments:
 Result: Server exits with code 75, wrapper restarts process
 ```
 
+### System & Diagnostic Endpoints
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/healthz` | Basic health probe |
+| `GET` | `/api/activity/recent` | Recent activity events |
+| `GET` | `/api/models` | Available LLM models and executor status |
+| `GET` | `/api/usage/records` | Recent individual LLM call records (global) |
+| `GET` | `/api/errors` | Global error summary |
+| `GET` | `/api/errors/records` | Individual error records |
+| `GET` | `/api/settings` | All system settings with defaults |
+| `GET` | `/api/settings/{key}` | Single setting by key |
+| `PUT` | `/api/settings` | Bulk upsert settings |
+
+#### `GET /healthz`
+- Returns `HealthResult` — minimal health check for load balancers/probes
+- `[AllowAnonymous]` — no auth required
+- Distinct from `/api/health/instance` which returns detailed instance info
+- Source: `SystemController.cs`
+
+#### `GET /api/activity/recent`
+- Returns `IReadOnlyList<ActivityEvent>`
+- Complements the SSE stream (`/api/activity/stream`) — provides a snapshot of recent events for initial page load
+- Source: `ActivityController.cs`
+
+#### `GET /api/models`
+- Returns `{ models: ModelInfo[], executorOperational: bool }`
+- Source: `SystemController.cs`
+
+#### `GET /api/usage/records`
+- Query params: `agentId?` (filter by agent), `limit?` (default 50)
+- Returns `List<LlmUsageRecord>`
+- Complements `GET /api/usage` (aggregated summary) with per-call detail
+- Source: `SystemController.cs`
+
+#### `GET /api/errors`
+- Query params: `hoursBack?`
+- Returns `ErrorSummary`
+
+#### `GET /api/errors/records`
+- Query params: `agentId?`, `hoursBack?`, `limit?` (default 50)
+- Returns `List<ErrorRecord>`
+- Source: `SystemController.cs`
+
+#### `GET /api/settings`
+- Returns `Dictionary<string, string>` — all settings with defaults filled in
+- Source: `SettingsController.cs`
+
+#### `GET /api/settings/{key}`
+- Returns `SettingResponse { Key, Value }` or `404` if key not recognized
+- Source: `SettingsController.cs`
+
+#### `PUT /api/settings`
+- Accepts `Dictionary<string, string>` — bulk upsert of settings
+- Returns updated `Dictionary<string, string>` (all settings with defaults)
+- Live-reconfigures rate limiter if `commands.rateLimitMaxCommands` or `commands.rateLimitWindowSeconds` keys change
+- Source: `SettingsController.cs`
+
 ## Invariants
 
 1. **Single active instance**: Only one `ServerInstanceEntity` with `ShutdownAt = NULL` exists at any time

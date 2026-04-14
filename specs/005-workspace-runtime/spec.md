@@ -299,6 +299,135 @@ public record WorktreeStatusSnapshot(
 - **Worktree-level failure** (exception escapes to the controller's `BuildSnapshotAsync`): `WorktreeGitStatus.Unavailable(errorMessage)` is returned with `StatusAvailable = false`. This covers missing directories and unrecoverable errors.
 - **Git command-level failure** (inside `GetWorktreeGitStatusAsync`): Individual git commands (`status`, `diff`, `log`) are each wrapped in try/catch. If one fails, the others still populate their fields and `StatusAvailable` remains `true` with partial data (e.g., dirty files present but diff stats zeroed). The request never fails due to a single worktree's git issues.
 
+### REST API Endpoints
+
+#### Summary
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/rooms/{roomId}/plan` | Get the current plan for a room |
+| `PUT` | `/api/rooms/{roomId}/plan` | Create or update the plan |
+| `DELETE` | `/api/rooms/{roomId}/plan` | Delete the plan |
+| `GET` | `/api/rooms/{roomId}/artifacts` | Artifacts produced in a room |
+| `GET` | `/api/rooms/{roomId}/usage/records` | Individual LLM call records for a room |
+| `GET` | `/api/rooms/{roomId}/evaluations` | Artifact evaluations for a room |
+| `POST` | `/api/rooms/{roomId}/phase` | Transition room to a new phase |
+| `POST` | `/api/rooms/{roomId}/compact` | Reset agent Copilot sessions for a room |
+
+#### Room Plans (PlanController)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/rooms/{roomId}/plan` | Get the current plan for a room |
+| `PUT` | `/api/rooms/{roomId}/plan` | Create or update the plan |
+| `DELETE` | `/api/rooms/{roomId}/plan` | Delete the plan |
+
+**GET `/api/rooms/{roomId}/plan`** — returns `PlanContent` or `404` if no plan exists.
+
+**PUT `/api/rooms/{roomId}/plan`** request:
+```json
+{
+  "content": "## Plan\n\n1. Design the API..."
+}
+```
+Response:
+```json
+{
+  "status": "saved",
+  "roomId": "room-abc"
+}
+```
+
+**DELETE `/api/rooms/{roomId}/plan`** response:
+```json
+{
+  "status": "deleted",
+  "roomId": "room-abc"
+}
+```
+
+**Implementation**: `PlanController.cs`, delegates to `PlanService`.
+
+#### Room Artifacts (RoomController)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/rooms/{roomId}/artifacts` | Artifacts produced in a room |
+
+**GET `/api/rooms/{roomId}/artifacts`** — returns `ArtifactRecord[]`.
+
+**Implementation**: `RoomController.cs`.
+
+#### Room Usage Records (RoomController)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/rooms/{roomId}/usage/records` | Individual LLM call records for a room |
+
+**GET `/api/rooms/{roomId}/usage/records`** — returns `List<LlmUsageRecord>`.
+
+Query parameters:
+- `agentId?` — filter records to a single agent
+- `limit?` — maximum number of records (default `50`)
+
+> **Note**: Room-level aggregated usage (`/api/rooms/{roomId}/usage`) and per-agent breakdown (`/api/rooms/{roomId}/usage/agents`) are already documented in spec 003. This endpoint provides the raw per-call records.
+
+**Implementation**: `RoomController.cs`.
+
+#### Room Evaluations (RoomController)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/rooms/{roomId}/evaluations` | Artifact evaluations for a room |
+
+**GET `/api/rooms/{roomId}/evaluations`** response:
+```json
+{
+  "artifacts": [ /* EvaluationResult[] */ ],
+  "aggregateScore": 85.5
+}
+```
+
+**Implementation**: `RoomController.cs`.
+
+#### Room Phase Transition (CollaborationController)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/rooms/{roomId}/phase` | Transition room to a new phase |
+
+**POST `/api/rooms/{roomId}/phase`** request:
+```json
+{
+  "targetPhase": "implementation",
+  "reason": "Design review complete, moving to implementation"
+}
+```
+Response: `RoomSnapshot` with updated phase.
+
+No phase state machine — any phase can transition to any other.
+
+**Implementation**: `CollaborationController.cs`, delegates to `RoomService.TransitionPhaseAsync`.
+
+#### Room Session Compaction (CollaborationController)
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/rooms/{roomId}/compact` | Reset agent Copilot sessions for a room |
+
+**POST `/api/rooms/{roomId}/compact`** response:
+```json
+{
+  "compactedSessions": 4,
+  "totalAgents": 5,
+  "note": "1 agent had no active session"
+}
+```
+
+Forces all agents in the room to start fresh conversation sessions on their next turn.
+
+**Implementation**: `CollaborationController.cs`.
+
 ## Interfaces & Contracts
 
 ### Service Registration (Program.cs)

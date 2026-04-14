@@ -667,6 +667,145 @@ The agent catalog (`AgentCatalogOptions`) is used by domain services for identit
 | `DeleteTemplate_NotFound_ReturnsFalse` | Missing row |
 | `DeleteTemplate_NullifiesFkOnAgentConfigs` | FK SetNull cascade |
 
+#### Agent Locations
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/locations` | Returns all agent locations across rooms |
+| `PUT` | `/api/agents/{agentId}/location` | Move an agent to a room/state |
+
+**GET `/api/agents/locations`** — returns `List<AgentLocation>`:
+```json
+[
+  {
+    "agentId": "planner-1",
+    "roomId": "main",
+    "state": "active",
+    "breakoutRoomId": null
+  }
+]
+```
+
+**PUT `/api/agents/{agentId}/location`** request:
+```json
+{
+  "roomId": "main",
+  "state": "active",
+  "breakoutRoomId": null
+}
+```
+Returns `AgentLocation` on success.
+
+**Validation**:
+- `agentId` must exist in the agent catalog → `404` if not found
+
+**Implementation**: Endpoints on `AgentController`. Delegates to `AgentLocationService`.
+
+#### Agent Knowledge
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/knowledge` | Agent-specific knowledge entries |
+| `POST` | `/api/agents/{agentId}/knowledge` | Append a knowledge entry (returns 501 — not yet implemented) |
+| `GET` | `/api/knowledge` | Shared knowledge across all agents |
+
+**GET `/api/agents/{agentId}/knowledge`** response:
+```json
+{
+  "entries": ["learned fact 1", "learned fact 2"]
+}
+```
+
+**POST `/api/agents/{agentId}/knowledge`** — returns `501 Not Implemented` until knowledge persistence is built.
+
+**GET `/api/knowledge`** — returns `Dictionary<string, string[]>` keyed by agent ID:
+```json
+{
+  "planner-1": ["fact A", "fact B"],
+  "coder-1": ["fact C"]
+}
+```
+
+**Implementation**: Endpoints on `AgentController`.
+
+#### Agent Execution
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/agents/{agentId}/run` | Execute a prompt against an agent |
+
+**POST `/api/agents/{agentId}/run`** — reads the raw request body as the prompt text. Returns:
+```json
+{
+  "agentId": "coder-1",
+  "response": "Here is the generated code..."
+}
+```
+
+**Validation**:
+- `agentId` must exist in the agent catalog → `404` if not found
+
+**Implementation**: Endpoints on `AgentController`.
+
+#### Agent Sessions
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/sessions` | Breakout room sessions for an agent |
+
+**GET `/api/agents/{agentId}/sessions`** — returns `List<BreakoutRoom>`, both active and archived, most recent first.
+
+**Implementation**: Endpoints on `AgentController`.
+
+#### Agent Quotas
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/quota` | Current quota status and usage |
+| `PUT` | `/api/agents/{agentId}/quota` | Update quota limits |
+| `DELETE` | `/api/agents/{agentId}/quota` | Remove quota limits (unlimited) |
+
+**GET `/api/agents/{agentId}/quota`** — returns `QuotaStatus` (limits + current usage counts).
+
+**PUT `/api/agents/{agentId}/quota`** request:
+```json
+{
+  "maxRequestsPerHour": 100,
+  "maxTokensPerHour": 500000,
+  "maxCostPerHour": 5.00
+}
+```
+All fields nullable — null means no limit for that dimension. Returns `QuotaStatus`.
+
+**DELETE `/api/agents/{agentId}/quota`** — removes all quota limits (unlimited). Returns:
+```json
+{
+  "status": "removed",
+  "agentId": "coder-1"
+}
+```
+
+> **Note**: Quota enforcement is already described in the Known Gaps resolved section. These are the REST API endpoints that manage it.
+
+**Implementation**: Endpoints on `AgentController`. Delegates to `AgentQuotaService`.
+
+#### Auth Logout
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/auth/logout` | Sign out and clear the auth cookie |
+
+**POST `/api/auth/logout`** — signs out and clears the auth cookie. Returns:
+```json
+{
+  "message": "Logged out."
+}
+```
+
+**Authorization**: `[AllowAnonymous]` — does not require authentication.
+
+**Implementation**: Endpoints on `AuthController`.
+
 ### Frontend: Agent Configuration UI
 
 > **Status: Implemented** — Settings panel with agent config cards and template management.

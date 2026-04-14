@@ -716,6 +716,56 @@ See spec 007 § Phase 1C for the full command reference: `RECORD_EVIDENCE`, `QUE
 | `PUT /api/tasks/{id}/branch` | PUT | Record branch name |
 | `PUT /api/tasks/{id}/pr` | PUT | Record PR info |
 | `PUT /api/tasks/{id}/complete` | PUT | Mark complete with final metadata |
+| `DELETE /api/tasks/{id}/dependencies/{dependsOnTaskId}` | DELETE | Remove a dependency link |
+
+#### `PUT /api/tasks/{id}/status`
+
+Update the status of a task.
+
+- **Request body**: `UpdateTaskStatusRequest { Status }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/branch`
+
+Record the branch name associated with a task.
+
+- **Request body**: `UpdateTaskBranchRequest { BranchName }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/pr`
+
+Record pull request information on a task.
+
+- **Request body**: `UpdateTaskPrRequest { Url, Number, Status }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/complete`
+
+Mark a task as complete with final metadata.
+
+- **Request body**: `CompleteTaskRequest { CommitCount, TestsCreated? }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `GET /api/tasks/{id}/comments`
+
+Get all comments for a task.
+
+- **Response**: `List<TaskComment>`, ordered by creation time
+
+> See also section 6.5 for comment data model and the `ADD_TASK_COMMENT` command.
+
+#### `DELETE /api/tasks/{id}/dependencies/{dependsOnTaskId}`
+
+Remove a dependency link between two tasks.
+
+- **Response**: `TaskDependencyInfo`
+- **404**: Task or dependency not found
+
+> **Source**: `src/AgentAcademy.Server/Controllers/CollaborationController.cs`
 
 ### Review Pipeline
 
