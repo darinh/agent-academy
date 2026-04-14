@@ -23,6 +23,7 @@ public class RoomController : ControllerBase
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly RoomArtifactTracker _artifactTracker;
+    private readonly ArtifactEvaluatorService _evaluator;
     private readonly ILogger<RoomController> _logger;
 
     private static readonly JsonSerializerOptions SseJsonOptions = new()
@@ -39,6 +40,7 @@ public class RoomController : ControllerBase
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
         RoomArtifactTracker artifactTracker,
+        ArtifactEvaluatorService evaluator,
         ILogger<RoomController> logger)
     {
         _roomService = roomService;
@@ -49,6 +51,7 @@ public class RoomController : ControllerBase
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
         _artifactTracker = artifactTracker;
+        _evaluator = evaluator;
         _logger = logger;
     }
 
@@ -231,17 +234,21 @@ public class RoomController : ControllerBase
 
     /// <summary>
     /// GET /api/rooms/{roomId}/evaluations — artifact evaluations for a room.
-    /// Evaluation will be wired when the ArtifactEvaluator service is ported.
+    /// Evaluates each tracked artifact file for existence, syntax, and completeness.
     /// </summary>
     [HttpGet("{roomId}/evaluations")]
-    public IActionResult GetRoomEvaluations(string roomId)
+    public async Task<IActionResult> GetRoomEvaluations(string roomId, CancellationToken ct)
     {
-        // ArtifactEvaluator is not yet ported — return empty result.
-        return Ok(new
+        try
         {
-            artifacts = Array.Empty<EvaluationResult>(),
-            aggregateScore = 0.0
-        });
+            var (artifacts, aggregateScore) = await _evaluator.EvaluateRoomArtifactsAsync(roomId, ct);
+            return Ok(new { artifacts, aggregateScore });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to evaluate artifacts for room '{RoomId}'", roomId);
+            return Problem("Failed to evaluate room artifacts.");
+        }
     }
 
     /// <summary>

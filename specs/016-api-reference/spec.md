@@ -155,7 +155,7 @@ See [005 — Domain Services Layer](../005-workspace-runtime/spec.md) for worksp
 | GET | `/api/rooms/{roomId}/usage/records` | Recent usage records | `?agentId` `?limit` | `List<LlmUsageRecord>` |
 | GET | `/api/rooms/{roomId}/errors` | Room error records | `?limit` | `List<ErrorRecord>` |
 | GET | `/api/rooms/{roomId}/artifacts` | Room artifacts (placeholder) | — | `[]` |
-| GET | `/api/rooms/{roomId}/evaluations` | Room evaluations (placeholder) | — | `[]` |
+| GET | `/api/rooms/{roomId}/evaluations` | Artifact quality evaluations | — | `{ artifacts: EvaluationResult[], aggregateScore: double }` |
 
 ### 4.7 Sessions
 
@@ -565,7 +565,7 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 2. **Rate limiting** — The server supports configurable rate limiting via settings, but rate limit headers and behavior are not documented here.
 3. **Pagination consistency** — Most list endpoints use `limit`/`offset`, but some (room messages) use cursor-based `after` parameter.
 4. ~~**Room artifacts**~~ — **Resolved**: `GET /api/rooms/{roomId}/artifacts` returns append-only event log of file operations (Created, Updated, Committed) tracked by `RoomArtifactTracker`. Artifacts recorded from `write_file` SDK tool and `COMMIT_CHANGES` command. Per-file commit attribution via `git diff-tree`. 19 new tests.
-5. **Room evaluations** — `GET /api/rooms/{roomId}/evaluations` still returns placeholder (empty result). Deferred until artifact semantics are settled.
+5. ~~**Room evaluations**~~ — **Resolved**: `GET /api/rooms/{roomId}/evaluations` now returns real artifact quality evaluations via `ArtifactEvaluatorService`. Evaluates each tracked file for existence (40pts), non-empty content (20pts), syntax validity for JSON/XML (25pts), and completeness markers (15pts). Deduplicates to latest operation per file, excludes deleted files. Path traversal protection included. 21 new tests.
 
 ## Revision History
 

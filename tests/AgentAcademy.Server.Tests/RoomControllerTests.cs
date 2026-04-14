@@ -28,7 +28,7 @@ public sealed class RoomControllerTests : IDisposable
         _controller = new RoomController(
             _svc.RoomService, _svc.AgentLocationService, _svc.MessageService,
             new MessageBroadcaster(), _svc.Catalog, _svc.UsageTracker, _svc.ErrorTracker,
-            _svc.ArtifactTracker,
+            _svc.ArtifactTracker, _svc.ArtifactEvaluator,
             NullLogger<RoomController>.Instance);
     }
 
@@ -157,9 +157,9 @@ public sealed class RoomControllerTests : IDisposable
     // ── GetRoomEvaluations ───────────────────────────────────────
 
     [Fact]
-    public void GetRoomEvaluations_ReturnsEmptyResult()
+    public async Task GetRoomEvaluations_NoArtifacts_ReturnsEmptyResult()
     {
-        var result = _controller.GetRoomEvaluations("any-room");
+        var result = await _controller.GetRoomEvaluations("any-room", CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(ok.Value);
     }

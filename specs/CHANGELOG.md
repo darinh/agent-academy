@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **016-api-reference**: Artifact evaluation service. `ArtifactEvaluatorService` evaluates tracked artifact files against quality criteria: existence (40pts), non-empty content (20pts), syntax validity for JSON/XML files (25pts), and completeness — no TODO/FIXME/HACK markers (15pts). Queries full artifact history (no 100-row cap), deduplicates to latest operation per file, excludes deleted files. Path traversal protection mirrors `CodeWriteToolWrapper` pattern. `GET /api/rooms/{roomId}/evaluations` now returns real evaluations instead of placeholder. 21 new tests (4749 total). Known gap #5 resolved.
+
+### Added
 - **016-api-reference**: Room artifact tracking. `RoomArtifactTracker` records file operations (Created, Updated, Committed) as append-only event log in `room_artifacts` table. Wired into `CodeWriteToolWrapper` (write_file/commit_changes SDK tools) and `CommitChangesHandler` (COMMIT_CHANGES command). `GET /api/rooms/{roomId}/artifacts` now returns real data instead of placeholder empty array. Per-file commit attribution via `GitService.GetFilesInCommitAsync`. Room context threaded through tool registry (`IAgentToolRegistry.GetToolsForAgent` roomId parameter). EF migration `AddRoomArtifacts`. 19 new tests (4728 total). Adversarial review by GPT-5.3-Codex: no issues found. Known gap #4 partially resolved (artifacts done, evaluations deferred).
 
 ### Added

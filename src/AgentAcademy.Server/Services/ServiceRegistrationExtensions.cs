@@ -62,6 +62,9 @@ public static class ServiceRegistrationExtensions
         // Room artifact tracking (file operation event log)
         services.AddScoped<RoomArtifactTracker>();
 
+        // Artifact evaluation (quality checks on tracked files)
+        services.AddScoped<ArtifactEvaluatorService>();
+
         return services;
     }
 }
