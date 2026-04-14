@@ -31,7 +31,7 @@ public sealed class DigestController : ControllerBase
         CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         limit = Math.Clamp(limit, 1, 100);
         offset = Math.Max(offset, 0);
@@ -42,7 +42,7 @@ public sealed class DigestController : ControllerBase
         {
             var normalized = NormalizeStatus(status);
             if (normalized is null)
-                return BadRequest(new { code = "invalid_status", message = "Status must be one of: Pending, Completed, Failed." });
+                return BadRequest(ApiProblem.BadRequest("Status must be one of: Pending, Completed, Failed.", "invalid_status"));
             query = query.Where(d => d.Status == normalized);
         }
 
@@ -71,7 +71,7 @@ public sealed class DigestController : ControllerBase
     public async Task<IActionResult> Get(int id, CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var digest = await _db.LearningDigests
             .AsNoTracking()
@@ -95,7 +95,7 @@ public sealed class DigestController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         if (digest is null)
-            return NotFound(new { code = "not_found", message = $"Digest {id} not found." });
+            return NotFound(ApiProblem.NotFound($"Digest {id} not found.", "not_found"));
 
         return Ok(new DigestDetailResponse(
             digest.Id,
@@ -114,7 +114,7 @@ public sealed class DigestController : ControllerBase
     public async Task<IActionResult> Stats(CancellationToken ct = default)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var query = _db.LearningDigests.AsNoTracking();
 

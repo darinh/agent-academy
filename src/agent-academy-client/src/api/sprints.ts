@@ -7,7 +7,8 @@ import type {
   SprintScheduleRequest,
   SprintScheduleResponse,
 } from "./types";
-import { apiUrl, request } from "./core";
+import { apiUrl, request, extractApiError } from "./core";
+import type { ProblemDetails, ApiError } from "./core";
 
 export async function getActiveSprint(): Promise<SprintDetailResponse | null> {
   const res = await fetch(apiUrl("/api/sprints/active"), { credentials: "include" });
@@ -51,8 +52,8 @@ export async function startSprint(): Promise<SprintDetailResponse> {
     credentials: "include",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to start sprint");
+    const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
+    throw new Error(extractApiError(body, "Failed to start sprint"));
   }
   return res.json() as Promise<SprintDetailResponse>;
 }
@@ -63,8 +64,8 @@ export async function advanceSprint(id: string): Promise<SprintDetailResponse> {
     credentials: "include",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to advance sprint");
+    const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
+    throw new Error(extractApiError(body, "Failed to advance sprint"));
   }
   return res.json() as Promise<SprintDetailResponse>;
 }
@@ -76,8 +77,8 @@ export async function completeSprint(id: string, force = false): Promise<SprintS
     credentials: "include",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to complete sprint");
+    const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
+    throw new Error(extractApiError(body, "Failed to complete sprint"));
   }
   return res.json() as Promise<SprintSnapshot>;
 }
@@ -88,8 +89,8 @@ export async function cancelSprint(id: string): Promise<SprintSnapshot> {
     credentials: "include",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to cancel sprint");
+    const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
+    throw new Error(extractApiError(body, "Failed to cancel sprint"));
   }
   return res.json() as Promise<SprintSnapshot>;
 }
@@ -100,8 +101,8 @@ export async function approveSprintAdvance(id: string): Promise<SprintDetailResp
     credentials: "include",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to approve sprint advance");
+    const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
+    throw new Error(extractApiError(body, "Failed to approve sprint advance"));
   }
   return res.json() as Promise<SprintDetailResponse>;
 }
@@ -112,8 +113,8 @@ export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
     credentials: "include",
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? "Failed to reject sprint advance");
+    const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
+    throw new Error(extractApiError(body, "Failed to reject sprint advance"));
   }
   return res.json() as Promise<SprintSnapshot>;
 }
@@ -138,7 +139,7 @@ export async function upsertSprintSchedule(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error ?? "Failed to save sprint schedule");
+    throw new Error(extractApiError(err as (ProblemDetails & ApiError) | null, "Failed to save sprint schedule"));
   }
   return res.json() as Promise<SprintScheduleResponse>;
 }

@@ -42,10 +42,10 @@ public class ExportController : ControllerBase
         CancellationToken ct = default)
     {
         if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+            return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
         if (!IsValidFormat(format))
-            return BadRequest(new { code = "invalid_format", message = "format must be 'csv' or 'json'" });
+            return BadRequest(ApiProblem.BadRequest("format must be 'csv' or 'json'", "invalid_format"));
 
         var summary = await _analytics.GetAnalyticsSummaryAsync(hoursBack, ct);
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
@@ -72,13 +72,13 @@ public class ExportController : ControllerBase
         CancellationToken ct = default)
     {
         if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+            return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
         if (limit < 1 || limit > 50000)
-            return BadRequest(new { code = "invalid_limit", message = "limit must be between 1 and 50000" });
+            return BadRequest(ApiProblem.BadRequest("limit must be between 1 and 50000", "invalid_limit"));
 
         if (!IsValidFormat(format))
-            return BadRequest(new { code = "invalid_format", message = "format must be 'csv' or 'json'" });
+            return BadRequest(ApiProblem.BadRequest("format must be 'csv' or 'json'", "invalid_format"));
 
         var since = hoursBack.HasValue
             ? DateTime.UtcNow.AddHours(-hoursBack.Value)
@@ -120,11 +120,11 @@ public class ExportController : ControllerBase
         CancellationToken ct = default)
     {
         if (!IsValidConversationFormat(format))
-            return BadRequest(new { code = "invalid_format", message = "format must be 'json' or 'markdown'" });
+            return BadRequest(ApiProblem.BadRequest("format must be 'json' or 'markdown'", "invalid_format"));
 
         var result = await _conversationExport.GetRoomMessagesForExportAsync(roomId, ct);
         if (result is null)
-            return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found." });
+            return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found.", "room_not_found"));
 
         var (room, messages, truncated) = result.Value;
 
@@ -155,11 +155,11 @@ public class ExportController : ControllerBase
         CancellationToken ct = default)
     {
         if (!IsValidConversationFormat(format))
-            return BadRequest(new { code = "invalid_format", message = "format must be 'json' or 'markdown'" });
+            return BadRequest(ApiProblem.BadRequest("format must be 'json' or 'markdown'", "invalid_format"));
 
         var result = await _conversationExport.GetDmMessagesForExportAsync(agentId, ct);
         if (result is null)
-            return NotFound(new { code = "thread_not_found", message = $"No DM thread found for agent '{agentId}'." });
+            return NotFound(ApiProblem.NotFound($"No DM thread found for agent '{agentId}'.", "thread_not_found"));
 
         var (_, messages, truncated) = result.Value;
 

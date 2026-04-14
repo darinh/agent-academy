@@ -172,7 +172,7 @@ public sealed class DigestControllerTests : IDisposable
     {
         var result = await _controller.List(status: "invalid");
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("invalid_status", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "invalid_status");
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public sealed class DigestControllerTests : IDisposable
     {
         var result = await _controller.Get(999);
         var notFound = Assert.IsType<NotFoundObjectResult>(result);
-        Assert.Contains("not_found", notFound.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(notFound.Value, "not_found");
     }
 
     [Fact]

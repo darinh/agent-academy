@@ -155,7 +155,7 @@ public class SprintController : ControllerBase
         {
             var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
-                return BadRequest(new { error = "No active workspace." });
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
 
             var sprint = await _sprintService.CreateSprintAsync(workspace);
             var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
@@ -166,7 +166,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -195,7 +195,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -220,7 +220,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -245,7 +245,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -274,7 +274,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -299,7 +299,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -366,7 +366,7 @@ public class SprintController : ControllerBase
         {
             var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
-                return BadRequest(new { error = "No active workspace." });
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
 
             var entity = await _db.SprintSchedules
                 .FirstOrDefaultAsync(s => s.WorkspacePath == workspace);
@@ -392,10 +392,10 @@ public class SprintController : ControllerBase
         {
             var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
-                return BadRequest(new { error = "No active workspace." });
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
 
             if (!SprintSchedulerService.IsValidCron(request.CronExpression))
-                return BadRequest(new { error = "Invalid cron expression. Use standard 5-field format (minute hour day month weekday)." });
+                return BadRequest(ApiProblem.BadRequest("Invalid cron expression. Use standard 5-field format (minute hour day month weekday)."));
 
             TimeZoneInfo tz;
             try
@@ -404,7 +404,7 @@ public class SprintController : ControllerBase
             }
             catch (TimeZoneNotFoundException)
             {
-                return BadRequest(new { error = $"Unknown timezone: {request.TimeZoneId}" });
+                return BadRequest(ApiProblem.BadRequest($"Unknown timezone: {request.TimeZoneId}"));
             }
 
             var now = DateTime.UtcNow;
@@ -469,7 +469,7 @@ public class SprintController : ControllerBase
         {
             var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
-                return BadRequest(new { error = "No active workspace." });
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
 
             var entity = await _db.SprintSchedules
                 .FirstOrDefaultAsync(s => s.WorkspacePath == workspace);
@@ -511,7 +511,7 @@ public class SprintController : ControllerBase
     {
         var workspace = await _roomService.GetActiveWorkspacePathAsync();
         if (workspace is null)
-            return (null, BadRequest(new { error = "No active workspace." }));
+            return (null, BadRequest(ApiProblem.BadRequest("No active workspace.")));
 
         var sprint = await _sprintService.GetSprintByIdAsync(id);
         if (sprint is null || sprint.WorkspacePath != workspace)

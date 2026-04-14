@@ -31,10 +31,10 @@ public sealed class CommandAuditController : ControllerBase
         [FromQuery] int offset = 0)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760." });
+            return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760.", "invalid_hours_back"));
 
         limit = Math.Clamp(limit, 1, 200);
         offset = Math.Max(offset, 0);
@@ -99,10 +99,10 @@ public sealed class CommandAuditController : ControllerBase
     public async Task<IActionResult> GetAuditStats([FromQuery] int? hoursBack = null)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760." });
+            return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760.", "invalid_hours_back"));
 
         await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();

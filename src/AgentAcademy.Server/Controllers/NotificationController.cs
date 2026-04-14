@@ -61,7 +61,7 @@ public class NotificationController : ControllerBase
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         return Ok(provider.GetConfigSchema());
@@ -75,13 +75,13 @@ public class NotificationController : ControllerBase
     {
         if (configuration is null)
         {
-            return BadRequest(new { error = "Configuration dictionary is required" });
+            return BadRequest(ApiProblem.BadRequest("Configuration dictionary is required"));
         }
 
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         try
@@ -116,7 +116,7 @@ public class NotificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to configure provider '{ProviderId}'", id);
-            return StatusCode(500, new { error = "Failed to configure provider" });
+            return StatusCode(500, ApiProblem.ServerError("Failed to configure provider"));
         }
     }
 
@@ -129,7 +129,7 @@ public class NotificationController : ControllerBase
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         try
@@ -141,7 +141,7 @@ public class NotificationController : ControllerBase
         {
             _logger.LogError(ex, "Failed to connect provider '{ProviderId}'", id);
             var detail = provider.LastError ?? "Connection failed. Check server logs for details.";
-            return StatusCode(500, new { error = $"Failed to connect provider: {detail}" });
+            return StatusCode(500, ApiProblem.ServerError($"Failed to connect provider: {detail}"));
         }
     }
 
@@ -154,7 +154,7 @@ public class NotificationController : ControllerBase
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         try
@@ -165,7 +165,7 @@ public class NotificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to disconnect provider '{ProviderId}'", id);
-            return StatusCode(500, new { error = "Failed to disconnect provider" });
+            return StatusCode(500, ApiProblem.ServerError("Failed to disconnect provider"));
         }
     }
 

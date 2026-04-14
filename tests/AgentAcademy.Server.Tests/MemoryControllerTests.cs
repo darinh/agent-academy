@@ -67,7 +67,7 @@ public sealed class MemoryControllerTests : IDisposable
     {
         var result = await _controller.Export(agentId: null, category: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "missing_agent_id");
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public sealed class MemoryControllerTests : IDisposable
 
         var result = await _controller.Import(new MemoryController.MemoryImportRequest { Memories = entries });
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("payload_too_large", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "payload_too_large");
     }
 
     [Fact]
@@ -365,7 +365,7 @@ public sealed class MemoryControllerTests : IDisposable
     {
         var result = await _controller.Browse(agentId: null, category: null, search: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "missing_agent_id");
     }
 
     [Fact]
@@ -476,7 +476,7 @@ public sealed class MemoryControllerTests : IDisposable
     {
         var result = await _controller.Stats(agentId: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "missing_agent_id");
     }
 
     [Fact]
@@ -519,7 +519,7 @@ public sealed class MemoryControllerTests : IDisposable
     {
         var result = await _controller.Delete(agentId: null, key: "k1");
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("missing_agent_id", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "missing_agent_id");
     }
 
     [Fact]
@@ -527,7 +527,7 @@ public sealed class MemoryControllerTests : IDisposable
     {
         var result = await _controller.Delete(agentId: "a1", key: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("missing_key", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "missing_key");
     }
 
     [Fact]

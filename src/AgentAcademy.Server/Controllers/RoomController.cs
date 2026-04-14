@@ -77,7 +77,7 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             return Ok(room);
         }
@@ -102,7 +102,7 @@ public class RoomController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { code = "room_not_found", message = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message, "room_not_found"));
         }
         catch (Exception ex)
         {
@@ -219,13 +219,13 @@ public class RoomController : ControllerBase
     public async Task<ActionResult<RoomSnapshot>> RenameRoom(string roomId, [FromBody] RenameRoomRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_name", message = "Room name cannot be empty" });
+            return BadRequest(ApiProblem.BadRequest("Room name cannot be empty", "invalid_name"));
 
         try
         {
             var room = await _roomService.RenameRoomAsync(roomId, request.Name.Trim());
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             return Ok(room);
         }
@@ -285,7 +285,7 @@ public class RoomController : ControllerBase
     public async Task<ActionResult<RoomSnapshot>> CreateRoom([FromBody] CreateRoomRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_name", message = "Room name cannot be empty" });
+            return BadRequest(ApiProblem.BadRequest("Room name cannot be empty", "invalid_name"));
 
         try
         {
@@ -311,7 +311,7 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             var session = await sessionService.CreateNewSessionAsync(roomId);
             return CreatedAtAction(nameof(GetRoomSessions), new { roomId }, session);
@@ -334,7 +334,7 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
             if (agentName is null)
@@ -342,7 +342,7 @@ public class RoomController : ControllerBase
                 // Check custom agents
                 var config = await db.AgentConfigs.FindAsync(agentId);
                 if (config is null)
-                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                    return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
                 agentName = agentId;
                 if (!string.IsNullOrEmpty(config.CustomInstructions))
                 {
@@ -377,14 +377,14 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
             if (agentName is null)
             {
                 var config = await db.AgentConfigs.FindAsync(agentId);
                 if (config is null)
-                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                    return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
                 agentName = agentId;
                 if (!string.IsNullOrEmpty(config.CustomInstructions))
                 {

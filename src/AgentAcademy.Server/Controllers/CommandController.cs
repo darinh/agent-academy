@@ -88,7 +88,7 @@ public sealed class CommandController : ControllerBase
     public IActionResult GetMetadata()
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var metadata = HumanCommandRegistry.GetAll()
             .Where(m => AllowedCommands.Contains(m.Command) && _handlers.ContainsKey(m.Command))
@@ -104,22 +104,19 @@ public sealed class CommandController : ControllerBase
     public async Task<IActionResult> Execute([FromBody] ExecuteCommandRequest? request)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (request is null)
-            return BadRequest(new { code = "invalid_command_request", message = "Command payload is required." });
+            return BadRequest(ApiProblem.BadRequest("Command payload is required.", "invalid_command_request"));
 
         var commandName = request.Command?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(commandName))
-            return BadRequest(new { code = "invalid_command_request", message = "Command is required." });
+            return BadRequest(ApiProblem.BadRequest("Command is required.", "invalid_command_request"));
 
         if (!AllowedCommands.Contains(commandName))
         {
-            return StatusCode(StatusCodes.Status403Forbidden, new
-            {
-                code = "command_denied",
-                message = $"Command '{commandName}' is not available in the human command API."
-            });
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiProblem.Forbidden($"Command '{commandName}' is not available in the human command API.", "command_denied"));
         }
 
         if (!_handlers.TryGetValue(commandName, out var handler))
@@ -135,7 +132,7 @@ public sealed class CommandController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_command_args", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_command_args"));
         }
 
         var correlationId = $"cmd-{Guid.NewGuid():N}";
@@ -194,7 +191,7 @@ public sealed class CommandController : ControllerBase
     public async Task<IActionResult> GetStatus(string correlationId)
     {
         if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();

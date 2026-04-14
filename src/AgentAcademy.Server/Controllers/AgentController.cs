@@ -71,11 +71,11 @@ public class AgentController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "move_failed", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "move_failed"));
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { code = "move_failed", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "move_failed"));
         }
         catch (Exception ex)
         {
@@ -94,7 +94,7 @@ public class AgentController : ControllerBase
     {
         var agent = FindAgent(agentId);
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
@@ -131,11 +131,11 @@ public class AgentController : ControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Entry))
-            return BadRequest(new { code = "missing_entry", message = "entry string required" });
+            return BadRequest(ApiProblem.BadRequest("entry string required", "missing_entry"));
 
         var agent = FindAgent(agentId);
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
@@ -266,13 +266,13 @@ public class AgentController : ControllerBase
         }
 
         if (string.IsNullOrWhiteSpace(body))
-            return BadRequest(new { code = "empty_prompt", message = "Prompt body is required." });
+            return BadRequest(ApiProblem.BadRequest("Prompt body is required.", "empty_prompt"));
 
         var agent = _catalog.Agents.FirstOrDefault(
             a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
 
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
@@ -299,7 +299,7 @@ public class AgentController : ControllerBase
             a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase) ||
             a.Name.Equals(agentId, StringComparison.OrdinalIgnoreCase));
         if (catalogAgent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
@@ -323,7 +323,7 @@ public class AgentController : ControllerBase
     {
         var agent = FindAgent(agentId);
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
@@ -346,15 +346,15 @@ public class AgentController : ControllerBase
     {
         // Validate: limits must be non-negative when provided
         if (request.MaxRequestsPerHour is < 0)
-            return BadRequest(new { code = "invalid_quota", message = "MaxRequestsPerHour must be >= 0" });
+            return BadRequest(ApiProblem.BadRequest("MaxRequestsPerHour must be >= 0", "invalid_quota"));
         if (request.MaxTokensPerHour is < 0)
-            return BadRequest(new { code = "invalid_quota", message = "MaxTokensPerHour must be >= 0" });
+            return BadRequest(ApiProblem.BadRequest("MaxTokensPerHour must be >= 0", "invalid_quota"));
         if (request.MaxCostPerHour is < 0)
-            return BadRequest(new { code = "invalid_quota", message = "MaxCostPerHour must be >= 0" });
+            return BadRequest(ApiProblem.BadRequest("MaxCostPerHour must be >= 0", "invalid_quota"));
 
         var agent = FindAgent(agentId);
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
@@ -398,7 +398,7 @@ public class AgentController : ControllerBase
     {
         var agent = FindAgent(agentId);
         if (agent is null)
-            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
 
         try
         {
