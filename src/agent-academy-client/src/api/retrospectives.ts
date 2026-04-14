@@ -48,6 +48,7 @@ export interface RetrospectiveStatsResponse {
 
 export interface ListRetrospectivesParams {
   agentId?: string;
+  taskId?: string;
   limit?: number;
   offset?: number;
 }
@@ -55,6 +56,7 @@ export interface ListRetrospectivesParams {
 export function listRetrospectives(params?: ListRetrospectivesParams): Promise<RetrospectiveListResponse> {
   const qs = new URLSearchParams();
   if (params?.agentId) qs.set("agentId", params.agentId);
+  if (params?.taskId) qs.set("taskId", params.taskId);
   if (params?.limit != null) qs.set("limit", String(params.limit));
   if (params?.offset != null) qs.set("offset", String(params.offset));
   const query = qs.toString();

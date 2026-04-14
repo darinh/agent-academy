@@ -26,11 +26,12 @@ public sealed class RetrospectiveController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/retrospectives — paginated retrospective list with optional agent filter.
+    /// GET /api/retrospectives — paginated retrospective list with optional agent and task filters.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string? agentId = null,
+        [FromQuery] string? taskId = null,
         [FromQuery] int limit = 20,
         [FromQuery] int offset = 0,
         CancellationToken ct = default)
@@ -46,6 +47,9 @@ public sealed class RetrospectiveController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(agentId))
             query = query.Where(c => c.AgentId == agentId);
+
+        if (!string.IsNullOrWhiteSpace(taskId))
+            query = query.Where(c => c.TaskId == taskId);
 
         var total = await query.CountAsync(ct);
 

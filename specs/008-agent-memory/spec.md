@@ -297,7 +297,7 @@ learning_digest_sources
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/retrospectives` | Paginated list (default 20, max 100). Optional `agentId` filter. Returns `RetrospectiveListItem[]` with truncated content preview (200 chars). |
+| `GET /api/retrospectives` | Paginated list (default 20, max 100). Optional `agentId` and `taskId` filters (combinable). Returns `RetrospectiveListItem[]` with truncated content preview (200 chars). |
 | `GET /api/retrospectives/{commentId}` | Single retrospective with full content and current task metadata (title, status, completedAt). Returns 404 if comment doesn't exist or isn't a retrospective. |
 | `GET /api/retrospectives/stats` | Aggregate statistics: total count, per-agent breakdown (ordered by count), average content length, latest retrospective timestamp. |
 
