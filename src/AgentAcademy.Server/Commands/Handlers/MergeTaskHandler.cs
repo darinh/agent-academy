@@ -14,16 +14,13 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class MergeTaskHandler : ICommandHandler
 {
     private readonly GitService _gitService;
-    private readonly RetrospectiveService _retrospective;
     private readonly ILogger<MergeTaskHandler> _logger;
 
     public MergeTaskHandler(
         GitService gitService,
-        RetrospectiveService retrospective,
         ILogger<MergeTaskHandler> logger)
     {
         _gitService = gitService;
-        _retrospective = retrospective;
         _logger = logger;
     }
 
@@ -152,13 +149,16 @@ public sealed class MergeTaskHandler : ICommandHandler
             }
 
             // Fire-and-forget: run post-task retrospective for the assigned agent
+            // Resolved at execution time to break DI cycle:
+            // RetrospectiveService → CommandPipeline → MergeTaskHandler → RetrospectiveService
+            var retrospective = context.Services.GetRequiredService<RetrospectiveService>();
             var retroTaskId = taskId;
             var retroAgentId = task.AssignedAgentId;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await _retrospective.RunRetrospectiveAsync(retroTaskId, retroAgentId);
+                    await retrospective.RunRetrospectiveAsync(retroTaskId, retroAgentId);
                 }
                 catch (Exception ex)
                 {

@@ -24,7 +24,6 @@ public class BranchWorkflowTests : IDisposable
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentCatalogOptions _catalog;
     private readonly GitService _gitService;
-    private readonly RetrospectiveService _retrospective;
     private readonly ILogger<MergeTaskHandler> _mergeLogger = NullLogger<MergeTaskHandler>.Instance;
     private readonly string _gitTracePath;
     private readonly string _repoRoot;
@@ -105,8 +104,6 @@ public class BranchWorkflowTests : IDisposable
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 
-        _retrospective = _serviceProvider.GetRequiredService<RetrospectiveService>();
-
         using var scope = _serviceProvider.CreateScope();
         scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>().Database.EnsureCreated();
     }
@@ -127,7 +124,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/test-branch-abc123");
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -144,7 +141,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/test-branch-abc123");
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "planner-1", "Aristotle", "Planner");
 
@@ -178,7 +175,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/test-branch-abc123");
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus", "SoftwareEngineer");
 
@@ -194,7 +191,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task MergeTask_NotApproved_Blocked()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -210,7 +207,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: null);
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -223,7 +220,7 @@ public class BranchWorkflowTests : IDisposable
     [Fact]
     public async Task MergeTask_MissingTaskId_ReturnsError()
     {
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new(), "reviewer-1", "Socrates", "Reviewer");
 
@@ -236,7 +233,7 @@ public class BranchWorkflowTests : IDisposable
     [Fact]
     public async Task MergeTask_NonexistentTask_ReturnsError()
     {
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = "nonexistent-task-id" }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -250,7 +247,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task MergeTask_InReview_Blocked()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -269,7 +266,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: branchName);
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -309,7 +306,7 @@ public class BranchWorkflowTests : IDisposable
             branchName: branchName,
             title: title,
             taskType: taskType);
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -328,7 +325,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: branchName);
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -351,7 +348,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/missing-branch");
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -407,7 +404,7 @@ public class BranchWorkflowTests : IDisposable
         var approvedTask = await taskLifecycle.ApproveTaskAsync(taskResult.Task.Id, "reviewer-1", "Looks good.");
         Assert.Equal(TaskStatus.Approved, approvedTask.Status);
 
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskResult.Task.Id }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -1092,7 +1089,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: branchName);
-        var handler = new MergeTaskHandler(_gitService, _retrospective, _mergeLogger);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
