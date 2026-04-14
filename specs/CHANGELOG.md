@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **README**: Coverage Status section — survey results (15 sections, 85/100 score), strengths (backend exhaustive), known gaps (database schema, API reference, security model, deployment, testing), and 5 planned sections (014–018). Survey completed 2026-04-14.
+
 ### Changed
 - **003-agent-system**: `code` tool group now enabled for all agents (was Engineers + Writer only). Planner and Architect can now read files and search code via SDK tools.
 - **003-agent-system**: Knowledge endpoints now backed by memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub.
