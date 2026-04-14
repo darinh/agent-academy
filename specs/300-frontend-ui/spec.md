@@ -39,6 +39,7 @@ App.tsx (FluentProvider + AppShell)
             │   ├── AgentAnalyticsPanel.tsx (per-agent performance metrics)
             │   └── WorktreeStatusPanel.tsx (live worktree health widget)
             ├── DigestPanel.tsx (learning digest history and detail)
+            ├── RetrospectivePanel.tsx (retrospective history, agent filter, detail view)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
@@ -677,6 +678,68 @@ When no digests exist: 📚 "No digests yet" with guidance to use `GENERATE_DIGE
 ## Worktree Status Widget (`WorktreeStatusPanel.tsx`)
 
 Embedded in `DashboardPanel` — shows live status of all active agent worktrees. Auto-refreshes every 30 seconds via `setInterval`.
+
+## Retrospectives (`RetrospectivePanel.tsx`)
+
+Displays the history of agent post-task retrospectives — reflections agents produce after completing tasks, capturing lessons learned, patterns discovered, and improvement opportunities. Accessible as a top-level tab (🔬 Retros) in the sidebar.
+
+### UI Layout
+
+1. **Header**: Title "Retrospectives" with total-count badge and controls (agent filter dropdown populated from stats, refresh button)
+2. **Stats row**: Aggregate cards — total retrospectives, agent count, average content length, latest retrospective timestamp
+3. **Agent breakdown**: Chip row showing each agent's retrospective count (sorted by count descending)
+4. **Retrospective list**: Paginated rows (20 per page). Each row shows agent name badge, task title, truncated content preview (100 chars), and created timestamp. Click to expand detail.
+5. **Pagination**: Prev/Next buttons with "Page N of M" indicator
+6. **Detail panel**: Expands below the list when a retrospective is selected. Shows task title, task status badge, agent name, task ID, created timestamp, task completed timestamp (when available), and full retrospective content
+
+### Data Flow
+
+```
+RetrospectivePanel
+  ├── fetchList → Promise.all([listRetrospectives({agentId, limit, offset}), getRetrospectiveStats()])
+  │   → GET /api/retrospectives?agentId=X&limit=20&offset=N → RetrospectiveListResponse
+  │   → GET /api/retrospectives/stats → RetrospectiveStatsResponse
+  └── fetchDetail(commentId) → getRetrospective(commentId)
+      → GET /api/retrospectives/{commentId} → RetrospectiveDetailResponse
+```
+
+### Race Condition Guards
+
+Both list and detail fetches use `useRef` counters (`fetchIdRef`, `detailFetchIdRef`). Each fetch increments the counter before starting; on completion, the result is discarded if the counter has moved past the request's ID. This prevents stale responses from overwriting newer data when the user rapidly changes filters or selects different retrospectives.
+
+### Types
+
+```typescript
+interface RetrospectiveListItem {
+  id: string; taskId: string; taskTitle: string;
+  agentId: string; agentName: string;
+  contentPreview: string; createdAt: string;
+}
+interface RetrospectiveListResponse { retrospectives: RetrospectiveListItem[]; total: number; limit: number; offset: number; }
+interface RetrospectiveDetailResponse {
+  id: string; taskId: string; taskTitle: string; taskStatus: string;
+  agentId: string; agentName: string;
+  content: string; createdAt: string; taskCompletedAt: string | null;
+}
+interface RetrospectiveAgentStat { agentId: string; agentName: string; count: number; }
+interface RetrospectiveStatsResponse {
+  totalRetrospectives: number; byAgent: RetrospectiveAgentStat[];
+  averageContentLength: number; latestRetrospectiveAt: string | null;
+}
+```
+
+### Task Status Badges
+
+| Status | Badge Color | Meaning |
+|--------|-------------|---------|
+| Completed | `done` (green) | Task finished successfully |
+| InProgress | `active` (blue) | Task still running |
+| Failed | `err` (red) | Task failed |
+| Blocked | `warn` (amber) | Task blocked |
+
+### Empty State
+
+When no retrospectives exist: 🔬 "No retrospectives yet" with guidance that retrospectives are created automatically after agents complete tasks.
 
 ### UI Layout
 
