@@ -66,6 +66,7 @@ public class SpecTaskLinkTests : IDisposable
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);

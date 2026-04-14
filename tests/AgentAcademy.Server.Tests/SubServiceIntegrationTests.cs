@@ -98,11 +98,11 @@ public class SubServiceIntegrationTests : IDisposable
         _messages = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService, new MessageBroadcaster());
         _breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, _taskQueries, _agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, _breakouts, _agentLocations, _messages, _activityPublisher);
-        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, _messages, new RoomSnapshotBuilder(_db, _catalog));
+        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, _messages, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
         _workspaceRooms = new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activityPublisher);
         _roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, _activityPublisher);
         _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms, _workspaceRooms);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _taskQueries, _rooms, new RoomSnapshotBuilder(_db, _catalog), _roomLifecycle, _agentLocations, _messages, _breakouts);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _taskQueries, _rooms, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), _roomLifecycle, _agentLocations, _messages, _breakouts);
     }
 
     public void Dispose()
@@ -746,7 +746,7 @@ public class SubServiceIntegrationTests : IDisposable
         await _initialization.InitializeAsync();
 
         var room = await _rooms.TransitionPhaseAsync(
-            "main", CollaborationPhase.FinalSynthesis);
+            "main", CollaborationPhase.FinalSynthesis, force: true);
 
         Assert.Equal(RoomStatus.Completed, room.Status);
         Assert.Equal(CollaborationPhase.FinalSynthesis, room.CurrentPhase);

@@ -59,6 +59,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<AgentLocationService>();
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
         services.AddScoped<MessageService>();
         services.AddScoped<BreakoutRoomService>();

@@ -27,6 +27,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<TaskItemService>();
         services.AddScoped<RoomService>();
         services.AddScoped<RoomSnapshotBuilder>();
+        services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<WorkspaceService>();
