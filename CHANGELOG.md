@@ -5,6 +5,10 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ## Unreleased
 
+### CI/Infrastructure
+
+- **018-testing-strategy**: Automated CI coverage reporting. Backend uses coverlet + ReportGenerator for Cobertura XML + text summary. Frontend uses `@vitest/coverage-v8` with Cobertura + HTML output. Both uploaded as artifacts with 30-day retention. Job summary shows line/branch percentages. Local convenience script: `scripts/coverage.sh`.
+
 ### Features
 
 - **008-agent-memory**: `GENERATE_DIGEST` command for manual/admin learning digest triggering. Optional `force` arg bypasses retrospective threshold. Added to planner permissions, human command allowlist (async execution), and planner startup prompt. 12 new tests (4362 total).

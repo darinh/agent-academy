@@ -22,6 +22,19 @@ export default defineConfig({
   },
   test: {
     exclude: ['e2e/**', 'node_modules/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'cobertura', 'html'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/**/*.spec.{ts,tsx}',
+        'src/**/test-utils/**',
+        'src/main.tsx',
+        'src/vite-env.d.ts',
+      ],
+    },
   },
   server: {
     proxy: {
