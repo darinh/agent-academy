@@ -443,7 +443,7 @@ public sealed class CommandController : ControllerBase
 }
 
 public sealed record ExecuteCommandRequest(
-    [property: Required, MinLength(1), StringLength(10_000)] string Command,
+    [Required, MinLength(1), StringLength(10_000)] string Command,
     Dictionary<string, JsonElement>? Args);
 
 public sealed record ExecuteCommandResponse(

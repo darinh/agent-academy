@@ -171,9 +171,9 @@ public class InstructionTemplateController : ControllerBase
 /// Request body for creating or updating an instruction template.
 /// </summary>
 public record InstructionTemplateRequest(
-    [property: Required, StringLength(200)] string Name,
-    [property: StringLength(1000)] string? Description,
-    [property: Required, MinLength(1), StringLength(100_000)] string Content
+    [Required, StringLength(200)] string Name,
+    [StringLength(1000)] string? Description,
+    [Required, MinLength(1), StringLength(100_000)] string Content
 );
 
 /// <summary>

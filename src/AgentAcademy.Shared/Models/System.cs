@@ -173,7 +173,7 @@ public record QuotaStatus(
 /// Wrapper for plan content text.
 /// </summary>
 public record PlanContent(
-    [property: Required, MinLength(1), StringLength(100_000)] string Content
+    [Required, MinLength(1), StringLength(100_000)] string Content
 );
 
 /// <summary>

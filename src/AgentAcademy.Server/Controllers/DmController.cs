@@ -307,4 +307,4 @@ public class DmController : ControllerBase
     }
 }
 
-public record SendDmRequest([property: Required, MinLength(1), StringLength(50_000)] string Message);
+public record SendDmRequest([Required, MinLength(1), StringLength(50_000)] string Message);

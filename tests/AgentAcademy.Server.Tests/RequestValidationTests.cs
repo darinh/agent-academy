@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Shared.Models;
 
@@ -6,14 +7,49 @@ namespace AgentAcademy.Server.Tests;
 
 /// <summary>
 /// Validates that DataAnnotations on API request types enforce constraints.
-/// Uses <see cref="Validator.TryValidateObject"/> which mirrors ASP.NET Core
-/// model validation behavior with [ApiController].
+/// For record types, validation attributes live on constructor parameters
+/// (matching ASP.NET Core 8 behavior). For class types, uses the standard
+/// <see cref="Validator.TryValidateObject"/> property-based validation.
 /// </summary>
 public sealed class RequestValidationTests
 {
     private static List<ValidationResult> Validate(object model)
     {
         var results = new List<ValidationResult>();
+        var type = model.GetType();
+
+        // Record types with positional parameters: validation attributes live on
+        // constructor parameters (matching ASP.NET Core 8 behavior for records).
+        // Validator.TryValidateObject only checks properties, so we validate manually.
+        var ctor = type.GetConstructors().FirstOrDefault();
+        if (ctor is not null && type.GetMethod("<Clone>$") is not null)
+        {
+            var paramsWithAttrs = ctor.GetParameters()
+                .Where(p => p.GetCustomAttributes<ValidationAttribute>(true).Any())
+                .ToList();
+
+            if (paramsWithAttrs.Count > 0)
+            {
+                foreach (var param in paramsWithAttrs)
+                {
+                    var attrs = param.GetCustomAttributes<ValidationAttribute>(true).ToList();
+                    var prop = type.GetProperty(param.Name!, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                    var value = prop?.GetValue(model);
+                    var memberName = prop?.Name ?? param.Name!;
+
+                    foreach (var attr in attrs)
+                    {
+                        var ctx = new ValidationContext(model) { MemberName = memberName };
+                        var result = attr.GetValidationResult(value, ctx);
+                        if (result != ValidationResult.Success && result is not null)
+                            results.Add(result);
+                    }
+                }
+                return results;
+            }
+        }
+
+        // Fallback: records with init properties or regular classes
         var context = new ValidationContext(model);
         Validator.TryValidateObject(model, context, results, validateAllProperties: true);
         return results;

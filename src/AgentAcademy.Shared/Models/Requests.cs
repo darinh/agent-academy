@@ -6,10 +6,10 @@ namespace AgentAcademy.Shared.Models;
 /// Request to post an agent message to a room.
 /// </summary>
 public record PostMessageRequest(
-    [property: Required, StringLength(100)] string RoomId,
-    [property: Required, StringLength(100)] string SenderId,
-    [property: Required, MinLength(1), StringLength(50_000)] string Content,
-    [property: EnumDataType(typeof(MessageKind))] MessageKind Kind = MessageKind.Response,
+    [Required, StringLength(100)] string RoomId,
+    [Required, StringLength(100)] string SenderId,
+    [Required, MinLength(1), StringLength(50_000)] string Content,
+    [EnumDataType(typeof(MessageKind))] MessageKind Kind = MessageKind.Response,
     string? CorrelationId = null,
     DeliveryHint? Hint = null
 );
@@ -18,7 +18,7 @@ public record PostMessageRequest(
 /// Request to transition a room to a new collaboration phase.
 /// </summary>
 public record PhaseTransitionRequest(
-    [property: Required, StringLength(100)] string RoomId,
-    [property: EnumDataType(typeof(CollaborationPhase))] CollaborationPhase TargetPhase,
-    [property: StringLength(500)] string? Reason = null
+    [Required, StringLength(100)] string RoomId,
+    [EnumDataType(typeof(CollaborationPhase))] CollaborationPhase TargetPhase,
+    [StringLength(500)] string? Reason = null
 );

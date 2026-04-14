@@ -504,19 +504,19 @@ public class CollaborationController : ControllerBase
 /// <summary>
 /// Request body for human message endpoint.
 /// </summary>
-public record HumanMessageRequest([property: Required, MinLength(1), StringLength(50_000)] string Content);
+public record HumanMessageRequest([Required, MinLength(1), StringLength(50_000)] string Content);
 
 public record AssignTaskRequest(
-    [property: Required, StringLength(100)] string AgentId,
-    [property: Required, StringLength(200)] string AgentName);
-public record UpdateTaskStatusRequest([property: EnumDataType(typeof(Shared.Models.TaskStatus))] Shared.Models.TaskStatus Status);
-public record UpdateTaskBranchRequest([property: Required, StringLength(300)] string BranchName);
+    [Required, StringLength(100)] string AgentId,
+    [Required, StringLength(200)] string AgentName);
+public record UpdateTaskStatusRequest([EnumDataType(typeof(Shared.Models.TaskStatus))] Shared.Models.TaskStatus Status);
+public record UpdateTaskBranchRequest([Required, StringLength(300)] string BranchName);
 public record UpdateTaskPrRequest(
-    [property: Required, Url, StringLength(2000)] string Url,
-    [property: Range(1, int.MaxValue)] int Number,
-    [property: EnumDataType(typeof(Shared.Models.PullRequestStatus))] Shared.Models.PullRequestStatus Status);
+    [Required, Url, StringLength(2000)] string Url,
+    [Range(1, int.MaxValue)] int Number,
+    [EnumDataType(typeof(Shared.Models.PullRequestStatus))] Shared.Models.PullRequestStatus Status);
 public record CompleteTaskRequest(
-    [property: Range(0, 100_000)] int CommitCount,
+    [Range(0, 100_000)] int CommitCount,
     List<string>? TestsCreated = null);
 public record AddDependencyRequest(
-    [property: Required, StringLength(200)] string DependsOnTaskId);
+    [Required, StringLength(200)] string DependsOnTaskId);

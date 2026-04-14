@@ -259,9 +259,9 @@ public class AgentConfigController : ControllerBase
 /// Request body for creating a custom agent.
 /// </summary>
 public record CreateCustomAgentRequest(
-    [property: Required, StringLength(100)] string Name,
-    [property: Required, MinLength(1), StringLength(100_000)] string Prompt,
-    [property: StringLength(100)] string? Model = null
+    [Required, StringLength(100)] string Name,
+    [Required, MinLength(1), StringLength(100_000)] string Prompt,
+    [StringLength(100)] string? Model = null
 );
 
 /// <summary>
@@ -292,8 +292,8 @@ public record AgentConfigOverrideDto(
 /// All fields nullable — null clears that override field.
 /// </summary>
 public record UpsertAgentConfigRequest(
-    [property: StringLength(100_000)] string? StartupPromptOverride,
-    [property: StringLength(100)] string? ModelOverride,
-    [property: StringLength(100_000)] string? CustomInstructions,
-    [property: StringLength(100)] string? InstructionTemplateId
+    [StringLength(100_000)] string? StartupPromptOverride,
+    [StringLength(100)] string? ModelOverride,
+    [StringLength(100_000)] string? CustomInstructions,
+    [StringLength(100)] string? InstructionTemplateId
 );

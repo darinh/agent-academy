@@ -431,22 +431,22 @@ public class AgentController : ControllerBase
 }
 
 public record UpdateLocationRequest(
-    [property: Required, StringLength(100)] string RoomId,
-    [property: EnumDataType(typeof(AgentState))] AgentState State,
-    [property: StringLength(100)] string? BreakoutRoomId = null
+    [Required, StringLength(100)] string RoomId,
+    [EnumDataType(typeof(AgentState))] AgentState State,
+    [StringLength(100)] string? BreakoutRoomId = null
 );
 
 /// <summary>
 /// Request body for appending agent knowledge.
 /// </summary>
-public record AppendKnowledgeRequest([property: Required, MinLength(1), StringLength(10_000)] string Entry);
+public record AppendKnowledgeRequest([Required, MinLength(1), StringLength(10_000)] string Entry);
 
 /// <summary>
 /// Request body for updating an agent's resource quotas.
 /// Null values mean unlimited.
 /// </summary>
 public record UpdateQuotaRequest(
-    [property: Range(1, 100_000)] int? MaxRequestsPerHour,
-    [property: Range(1, 100_000_000)] long? MaxTokensPerHour,
-    [property: Range(0.01, 10_000)] decimal? MaxCostPerHour
+    [Range(1, 100_000)] int? MaxRequestsPerHour,
+    [Range(1, 100_000_000)] long? MaxTokensPerHour,
+    [Range(0.01, 10_000)] decimal? MaxCostPerHour
 );

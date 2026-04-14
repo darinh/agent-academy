@@ -323,12 +323,12 @@ public class WorkspaceController : ControllerBase
 /// <summary>
 /// Request body for scan and onboard endpoints.
 /// </summary>
-public record ScanRequest([property: Required, StringLength(1000)] string Path);
+public record ScanRequest([Required, StringLength(1000)] string Path);
 
 /// <summary>
 /// Request body for switching active workspace.
 /// </summary>
-public record SwitchWorkspaceRequest([property: Required, StringLength(1000)] string Path);
+public record SwitchWorkspaceRequest([Required, StringLength(1000)] string Path);
 
 /// <summary>
 /// Result of onboarding a project.

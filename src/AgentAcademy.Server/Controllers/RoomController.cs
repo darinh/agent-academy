@@ -503,7 +503,7 @@ public class RoomController : ControllerBase
     }
 }
 
-public record RenameRoomRequest([property: Required, StringLength(200)] string Name);
+public record RenameRoomRequest([Required, StringLength(200)] string Name);
 public record CreateRoomRequest(
-    [property: Required, StringLength(200)] string Name,
-    [property: StringLength(1000)] string? Description = null);
+    [Required, StringLength(200)] string Name,
+    [StringLength(1000)] string? Description = null);
