@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -21,8 +20,6 @@ public class CollaborationController : ControllerBase
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
-    private readonly ActivityPublisher _activityPublisher;
-    private readonly AgentAcademyDbContext _db;
     private readonly ILogger<CollaborationController> _logger;
 
     public CollaborationController(
@@ -35,8 +32,6 @@ public class CollaborationController : ControllerBase
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
         SpecManager specManager,
-        ActivityPublisher activityPublisher,
-        AgentAcademyDbContext db,
         ILogger<CollaborationController> logger)
     {
         _taskOrchestration = taskOrchestration;
@@ -48,8 +43,6 @@ public class CollaborationController : ControllerBase
         _orchestrator = orchestrator;
         _executor = executor;
         _specManager = specManager;
-        _activityPublisher = activityPublisher;
-        _db = db;
         _logger = logger;
     }
 
@@ -432,8 +425,6 @@ public class CollaborationController : ControllerBase
 
     // ── Bulk Task Operations ────────────────────────────────────
 
-    private const int MaxBulkSize = 50;
-
     /// <summary>
     /// POST /api/tasks/bulk/status — update the status of multiple tasks.
     /// Only safe statuses allowed: Queued, Active, Blocked, AwaitingValidation, InReview.
@@ -442,23 +433,9 @@ public class CollaborationController : ControllerBase
     public async Task<ActionResult<BulkOperationResult>> BulkUpdateStatus(
         [FromBody] BulkUpdateStatusRequest request)
     {
-        if (request.TaskIds.Count > MaxBulkSize)
-            return BadRequest(ApiProblem.BadRequest($"Maximum {MaxBulkSize} tasks per bulk operation."));
-
         try
         {
-            var result = await _taskQueries.BulkUpdateStatusAsync(request.TaskIds, request.Status);
-
-            foreach (var task in result.Updated)
-            {
-                _activityPublisher.Publish(
-                    ActivityEventType.TaskStatusUpdated, null, null, task.Id,
-                    $"Task '{task.Title}' status → {task.Status} (bulk)");
-            }
-
-            if (result.Updated.Count > 0)
-                await _db.SaveChangesAsync();
-
+            var result = await _taskOrchestration.BulkUpdateStatusAsync(request.TaskIds, request.Status);
             return Ok(result);
         }
         catch (ArgumentException ex)
@@ -474,24 +451,10 @@ public class CollaborationController : ControllerBase
     public async Task<ActionResult<BulkOperationResult>> BulkAssign(
         [FromBody] BulkAssignRequest request)
     {
-        if (request.TaskIds.Count > MaxBulkSize)
-            return BadRequest(ApiProblem.BadRequest($"Maximum {MaxBulkSize} tasks per bulk operation."));
-
         try
         {
-            var result = await _taskQueries.BulkAssignAsync(
+            var result = await _taskOrchestration.BulkAssignAsync(
                 request.TaskIds, request.AgentId, request.AgentName);
-
-            foreach (var task in result.Updated)
-            {
-                _activityPublisher.Publish(
-                    ActivityEventType.TaskStatusUpdated, null, null, task.Id,
-                    $"Task '{task.Title}' assigned to {task.AssignedAgentName} (bulk)");
-            }
-
-            if (result.Updated.Count > 0)
-                await _db.SaveChangesAsync();
-
             return Ok(result);
         }
         catch (ArgumentException ex)

@@ -116,7 +116,7 @@ internal sealed class TestServiceGraph : IDisposable
 
         TaskOrchestrationService = new TaskOrchestrationService(
             Db, NullLogger<TaskOrchestrationService>.Instance, Catalog,
-            ActivityPublisher, TaskLifecycleService, RoomService, RoomSnapshotBuilder,
+            ActivityPublisher, TaskLifecycleService, TaskQueryService, RoomService, RoomSnapshotBuilder,
             RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService);
 
         ProjectScanner = new ProjectScanner();

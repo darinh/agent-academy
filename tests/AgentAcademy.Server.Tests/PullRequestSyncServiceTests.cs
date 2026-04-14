@@ -429,7 +429,7 @@ public class PrSyncHelperTests : IDisposable
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, messageService, new RoomSnapshotBuilder(_db, catalog));
         var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, _activityPublisher);
         _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, _activityPublisher));
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, new RoomSnapshotBuilder(_db, catalog), roomLifecycle, agentLocations, messageService, breakouts);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, _taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog), roomLifecycle, agentLocations, messageService, breakouts);
         _initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 
