@@ -21,6 +21,7 @@ const SearchPanel = lazy(() => import("./SearchPanel"));
 const MemoryBrowserPanel = lazy(() => import("./MemoryBrowserPanel"));
 const DigestPanel = lazy(() => import("./DigestPanel"));
 const RetrospectivePanel = lazy(() => import("./RetrospectivePanel"));
+const ArtifactsPanel = lazy(() => import("./ArtifactsPanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -101,6 +102,9 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
           )}
           {tab === "commands" && (
             <CommandsPanel roomId={props.room?.id ?? null} readOnly={props.workspaceLimited} />
+          )}
+          {tab === "artifacts" && (
+            <ArtifactsPanel roomId={props.room?.id ?? null} />
           )}
           {tab === "sprint" && <SprintPanel sprintVersion={props.sprintVersion} lastSprintEvent={props.lastSprintEvent} />}
           {tab === "timeline" && (

@@ -21,6 +21,10 @@ vi.mock("../CommandsPanel", () => ({ default: () => <div data-testid="commands-p
 vi.mock("../SprintPanel", () => ({ default: () => <div data-testid="sprint-panel" /> }));
 vi.mock("../SearchPanel", () => ({ default: () => <div data-testid="search-panel" /> }));
 vi.mock("../ChatPanel", () => ({ default: () => <div data-testid="chat-panel" /> }));
+vi.mock("../MemoryBrowserPanel", () => ({ default: () => <div data-testid="memory-panel" /> }));
+vi.mock("../DigestPanel", () => ({ default: () => <div data-testid="digest-panel" /> }));
+vi.mock("../RetrospectivePanel", () => ({ default: () => <div data-testid="retrospective-panel" /> }));
+vi.mock("../ArtifactsPanel", () => ({ default: () => <div data-testid="artifacts-panel" /> }));
 vi.mock("../ChunkErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div data-testid="error-boundary">{children}</div>,
 }));
@@ -143,6 +147,26 @@ describe("WorkspaceContent", () => {
   it("renders SearchPanel when tab is 'search'", async () => {
     renderContent({ tab: "search" });
     expect(await screen.findByTestId("search-panel")).toBeInTheDocument();
+  });
+
+  it("renders ArtifactsPanel when tab is 'artifacts'", async () => {
+    renderContent({ tab: "artifacts" });
+    expect(await screen.findByTestId("artifacts-panel")).toBeInTheDocument();
+  });
+
+  it("renders MemoryBrowserPanel when tab is 'memories'", async () => {
+    renderContent({ tab: "memories" });
+    expect(await screen.findByTestId("memory-panel")).toBeInTheDocument();
+  });
+
+  it("renders DigestPanel when tab is 'digests'", async () => {
+    renderContent({ tab: "digests" });
+    expect(await screen.findByTestId("digest-panel")).toBeInTheDocument();
+  });
+
+  it("renders RetrospectivePanel when tab is 'retrospectives'", async () => {
+    renderContent({ tab: "retrospectives" });
+    expect(await screen.findByTestId("retrospective-panel")).toBeInTheDocument();
   });
 
   it("does not render any known panel for unknown tab", async () => {
