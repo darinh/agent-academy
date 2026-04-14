@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **014-database-schema**: New consolidated database schema reference — 31 entities, 16 FK relationships, 45+ indexes, 8 unique constraints, ER diagrams, FTS5 virtual tables, and migration history.
+
+### Added
 - **016-api-reference**: New unified REST endpoint catalog — 145 endpoints across 26 controllers, 3 SSE streams, 1 SignalR hub. Organized by functional domain (23 sections) with cross-references to domain-specific specs.
 
 ### Added

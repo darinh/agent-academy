@@ -20,6 +20,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [011](./011-state-recovery/spec.md) | State Recovery and Supervised Restart | Implemented |
 | [012](./012-consultant-api/spec.md) | Consultant API | Implemented |
 | [013](./013-sprint-system/spec.md) | Sprint System | Implemented |
+| [014](./014-database-schema/spec.md) | Database Schema | Implemented |
 | [016](./016-api-reference/spec.md) | API Reference | Implemented |
 | [018](./018-testing-strategy/spec.md) | Testing Strategy | Implemented |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
@@ -60,7 +61,7 @@ After every code change:
 **Last Survey**: 2026-04-14
 
 ### Summary
-- **Total Sections**: 17 specification documents (~8,000+ lines)
+- **Total Sections**: 18 specification documents (~9,000+ lines)
 - **Coverage Score**: 90/100 — Excellent
 - **All Features**: Documented with implementation status
 - **Backend Coverage**: 90% (domain model, commands, agents, tasks exhaustive)
@@ -74,13 +75,13 @@ After every code change:
 - ✅ Spec-first culture evident in every section
 
 ### Known Documentation Gaps
-1. **Database Schema** — No consolidated entity relationship diagram (scattered across 39+ entity files)
+1. ~~**Database Schema**~~ — ✅ Resolved in [014 — Database Schema](./014-database-schema/spec.md)
 2. ~~**API Reference**~~ — ✅ Resolved in [016 — API Reference](./016-api-reference/spec.md)
 3. **Security Model** — Threat model and permission system implicit, not consolidated
 4. **Deployment** — Production deployment process is tribal knowledge
 
 ### Planned Sections (Future)
-- `014-database-schema` — Entity relationships, migrations, index strategy
+- ~~`014-database-schema`~~ — ✅ Written
 - `015-security-model` — Threat model, permission consolidation, OAuth security
 - ~~`016-api-reference`~~ — ✅ Written
 - `017-deployment` — Production deployment guide
