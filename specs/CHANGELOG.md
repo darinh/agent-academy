@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **017-deployment**: New deployment & operations spec — system requirements, configuration reference (all settings + secrets + env vars), local development setup, build & test commands, CI/CD pipeline description (ci.yml + version-bump.yml), production deployment guide (systemd + nginx + SQLite), operational procedures (server lifecycle, worktree management, monitoring, backup/restore), troubleshooting matrix, and known gaps (no containerization, no IaC, no automated deploy, no health endpoint).
+
 ### Fixed
 - **016-api-reference**: Standardized all error responses to RFC 7807 ProblemDetails format. 170+ anonymous `new { error }` and `new { code, message }` objects across 21 controllers replaced with `ApiProblem.*()` factory calls. Error codes preserved as ProblemDetails extensions. Frontend `extractApiError()` helper handles both ProblemDetails and legacy formats. `ProblemDetailsAssert` test helper added. 13 tests updated.
 

@@ -23,6 +23,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [014](./014-database-schema/spec.md) | Database Schema | Implemented |
 | [015](./015-security-model/spec.md) | Security Model | Implemented |
 | [016](./016-api-reference/spec.md) | API Reference | Implemented |
+| [017](./017-deployment/spec.md) | Deployment & Operations | Implemented |
 | [018](./018-testing-strategy/spec.md) | Testing Strategy | Implemented |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
 
@@ -62,8 +63,8 @@ After every code change:
 **Last Survey**: 2026-04-14
 
 ### Summary
-- **Total Sections**: 19 specification documents (~9,500+ lines)
-- **Coverage Score**: 93/100 — Excellent
+- **Total Sections**: 20 specification documents (~10,000+ lines)
+- **Coverage Score**: 95/100 — Excellent
 - **All Features**: Documented with implementation status
 - **Backend Coverage**: 90% (domain model, commands, agents, tasks exhaustive)
 - **Frontend Coverage**: 75% (component structure documented, interaction flows lighter)
@@ -79,10 +80,9 @@ After every code change:
 1. ~~**Database Schema**~~ — ✅ Resolved in [014 — Database Schema](./014-database-schema/spec.md)
 2. ~~**API Reference**~~ — ✅ Resolved in [016 — API Reference](./016-api-reference/spec.md)
 3. ~~**Security Model**~~ — ✅ Resolved in [015 — Security Model](./015-security-model/spec.md)
-4. **Deployment** — Production deployment process is tribal knowledge
-
+4. ~~**Deployment**~~ — ✅ Resolved in [017 — Deployment & Operations](./017-deployment/spec.md)
 ### Planned Sections (Future)
 - ~~`014-database-schema`~~ — ✅ Written
 - ~~`015-security-model`~~ — ✅ Written
 - ~~`016-api-reference`~~ — ✅ Written
-- `017-deployment` — Production deployment guide
+- ~~`017-deployment`~~ — ✅ Written
