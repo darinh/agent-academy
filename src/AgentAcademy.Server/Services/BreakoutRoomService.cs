@@ -337,6 +337,13 @@ public sealed class BreakoutRoomService
             .Select(r => r.WorkspacePath)
             .FirstOrDefaultAsync();
 
+        // Inherit priority from parent room's active task (if any)
+        var parentPriority = await _db.Tasks
+            .Where(t => t.RoomId == roomId && t.Status == nameof(Shared.Models.TaskStatus.Active))
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => (int?)t.Priority)
+            .FirstOrDefaultAsync() ?? 2; // default Medium
+
         var entity = new TaskEntity
         {
             Id = taskId,
@@ -357,6 +364,7 @@ public sealed class BreakoutRoomService
             AssignedAgentId = agentId,
             AssignedAgentName = agent?.Name,
             BranchName = branchName,
+            Priority = parentPriority,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now

@@ -42,7 +42,8 @@ public record TaskSnapshot(
     string? WorkspacePath = null,
     string? SprintId = null,
     List<string>? DependsOnTaskIds = null,
-    List<string>? BlockingTaskIds = null
+    List<string>? BlockingTaskIds = null,
+    TaskPriority Priority = TaskPriority.Medium
 );
 
 /// <summary>
@@ -74,7 +75,8 @@ public record TaskAssignmentRequest(
     List<string> PreferredRoles,
     [EnumDataType(typeof(TaskType))] TaskType Type = TaskType.Feature,
     string? CorrelationId = null,
-    [StringLength(50_000)] string? CurrentPlan = null
+    [StringLength(50_000)] string? CurrentPlan = null,
+    [EnumDataType(typeof(TaskPriority))] TaskPriority Priority = TaskPriority.Medium
 );
 
 /// <summary>

@@ -126,6 +126,7 @@ export type TaskStatus =
   | "Completed" | "Cancelled";
 export type TaskItemStatus = "Pending" | "Active" | "Done" | "Rejected";
 export type TaskSize = "XS" | "S" | "M" | "L" | "XL";
+export type TaskPriority = "Critical" | "High" | "Medium" | "Low";
 export type PullRequestStatus =
   | "Open" | "ReviewRequested" | "ChangesRequested"
   | "Approved" | "Merged" | "Closed";
@@ -318,6 +319,7 @@ export interface TaskSnapshot {
   sprintId?: string | null;
   dependsOnTaskIds?: string[] | null;
   blockingTaskIds?: string[] | null;
+  priority?: TaskPriority;
 }
 
 export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker" | "Retrospective";
@@ -438,6 +440,7 @@ export interface TaskAssignmentRequest {
   roomId?: string | null;
   preferredRoles: string[];
   correlationId?: string | null;
+  priority?: TaskPriority;
 }
 
 export interface TaskAssignmentResult {

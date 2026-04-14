@@ -43,7 +43,8 @@ internal sealed class TaskWriteToolWrapper
         [Description("Detailed description of the task")] string description,
         [Description("Success criteria — what must be true for the task to be considered done")] string successCriteria,
         [Description("Preferred agent roles (e.g., SoftwareEngineer, Reviewer)")] string[]? preferredRoles = null,
-        [Description("Task type: Feature, Bug, Refactor, Documentation, Test (default: Feature)")] string? type = null)
+        [Description("Task type: Feature, Bug, Refactor, Documentation, Test (default: Feature)")] string? type = null,
+        [Description("Priority: Critical, High, Medium, Low (default: Medium)")] string? priority = null)
     {
         _logger.LogDebug("Tool call: create_task by {AgentId} (title={Title})", _agentId, title);
 
@@ -61,6 +62,14 @@ internal sealed class TaskWriteToolWrapper
             return $"Error: Invalid task type '{type}'. Valid: Feature, Bug, Refactor, Documentation, Test";
         }
 
+        var taskPriority = TaskPriority.Medium;
+        if (!string.IsNullOrWhiteSpace(priority) &&
+            (!Enum.TryParse<TaskPriority>(priority, ignoreCase: true, out taskPriority)
+             || !Enum.IsDefined(taskPriority)))
+        {
+            return $"Error: Invalid priority '{priority}'. Valid: Critical, High, Medium, Low";
+        }
+
         var roles = preferredRoles?.Where(r => !string.IsNullOrWhiteSpace(r)).ToList()
             ?? new List<string>();
 
@@ -75,7 +84,8 @@ internal sealed class TaskWriteToolWrapper
                 SuccessCriteria: successCriteria,
                 RoomId: null,
                 PreferredRoles: roles,
-                Type: taskType
+                Type: taskType,
+                Priority: taskPriority
             );
 
             var result = await taskOrchestration.CreateTaskAsync(request);
@@ -84,7 +94,8 @@ internal sealed class TaskWriteToolWrapper
                    $"- Title: {result.Task.Title}\n" +
                    $"- Status: {result.Task.Status}\n" +
                    $"- Room: {result.Room.Name} (ID: {result.Room.Id})\n" +
-                   $"- Type: {taskType}";
+                   $"- Type: {taskType}\n" +
+                   $"- Priority: {taskPriority}";
         }
         catch (Exception ex)
         {

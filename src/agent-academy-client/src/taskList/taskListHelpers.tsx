@@ -9,7 +9,7 @@ import {
   EditRegular,
   MergeRegular,
 } from "@fluentui/react-icons";
-import type { TaskSnapshot, TaskStatus, TaskSize, TaskCommentType } from "../api";
+import type { TaskSnapshot, TaskStatus, TaskSize, TaskCommentType, TaskPriority } from "../api";
 import type { BadgeColor } from "../V3Badge";
 
 // ── Filter definitions ──────────────────────────────────────────────────
@@ -74,6 +74,28 @@ export function sizeBadgeColor(size: TaskSize): BadgeColor {
     case "M":            return "info";
     case "L": case "XL": return "warn";
   }
+}
+
+const PRIORITY_ORDER: Record<TaskPriority, number> = {
+  Critical: 0,
+  High: 1,
+  Medium: 2,
+  Low: 3,
+};
+
+export function priorityBadgeColor(priority: TaskPriority): BadgeColor {
+  switch (priority) {
+    case "Critical": return "err";
+    case "High":     return "warn";
+    case "Medium":   return "info";
+    case "Low":      return "muted";
+  }
+}
+
+export function comparePriority(a: TaskSnapshot, b: TaskSnapshot): number {
+  const pa = PRIORITY_ORDER[a.priority ?? "Medium"];
+  const pb = PRIORITY_ORDER[b.priority ?? "Medium"];
+  return pa - pb;
 }
 
 export function commentTypeBadge(type: TaskCommentType): BadgeColor {

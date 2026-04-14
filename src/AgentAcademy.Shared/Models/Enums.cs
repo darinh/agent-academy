@@ -103,6 +103,19 @@ public enum TaskType
 }
 
 /// <summary>
+/// Priority level for a task. Lower numeric value = higher urgency.
+/// Stored as int in the database for correct ORDER BY ASC semantics.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskPriority
+{
+    Critical = 0,
+    High = 1,
+    Medium = 2,
+    Low = 3
+}
+
+/// <summary>
 /// Type of comment attached to a task.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

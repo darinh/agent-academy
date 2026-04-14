@@ -1,6 +1,7 @@
 import type {
   TaskSnapshot,
   TaskStatus,
+  TaskPriority,
   PullRequestStatus,
   TaskComment,
   SpecTaskLink,
@@ -38,6 +39,13 @@ export function updateTaskStatus(taskId: string, status: TaskStatus): Promise<Ta
   return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/status`), {
     method: "PUT",
     body: JSON.stringify({ status }),
+  });
+}
+
+export function updateTaskPriority(taskId: string, priority: TaskPriority): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${taskId}/priority`), {
+    method: "PUT",
+    body: JSON.stringify({ priority }),
   });
 }
 

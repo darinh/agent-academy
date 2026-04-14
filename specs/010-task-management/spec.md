@@ -65,6 +65,7 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 | `CommitCount` | `int` | Number of commits on the task branch |
 | `MergeCommitSha` | `string?` | SHA of the squash-merge commit created by `MERGE_TASK` |
 | `CommentCount` | `int` | Number of task comments (computed at query time) |
+| `Priority` | `TaskPriority` | Priority level: `Critical`, `High`, `Medium` (default), `Low` |
 
 ### TaskEntity
 
@@ -77,7 +78,7 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 | `RoomId` | `string?` | FK to the room where this task was created |
 | `Room` | `RoomEntity?` | Navigation property |
 
-**Note**: `TaskEntity` stores several list-typed fields as JSON strings (`PreferredRoles`, `FleetModels`, `TestsCreated`) and `Size` as a nullable string. `CommentCount` is computed at query time, not stored on the entity.
+**Note**: `TaskEntity` stores several list-typed fields as JSON strings (`PreferredRoles`, `FleetModels`, `TestsCreated`) and `Size` as a nullable string. `Priority` is stored as `int` (not string) for correct `ORDER BY ASC` semantics (0=Critical → 3=Low). `CommentCount` is computed at query time, not stored on the entity.
 
 ### Enums
 
@@ -107,6 +108,15 @@ public enum TaskSize { XS, S, M, L, XL }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PullRequestStatus { Open, ReviewRequested, ChangesRequested, Approved, Merged, Closed }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskPriority
+{
+    Critical = 0,  // Blocking issues, dependencies for other work
+    High = 1,      // Core features, important fixes
+    Medium = 2,    // Standard features (default)
+    Low = 3        // Polish, nice-to-haves
+}
 ```
 
 ### TaskCommentEntity
@@ -713,6 +723,7 @@ See spec 007 § Phase 1C for the full command reference: `RECORD_EVIDENCE`, `QUE
 | `GET /api/tasks/{id}/comments` | GET | List task comments, ordered by creation time |
 | `PUT /api/tasks/{id}/assign` | PUT | Assign agent to task |
 | `PUT /api/tasks/{id}/status` | PUT | Update task status |
+| `PUT /api/tasks/{id}/priority` | PUT | Update task priority |
 | `PUT /api/tasks/{id}/branch` | PUT | Record branch name |
 | `PUT /api/tasks/{id}/pr` | PUT | Record PR info |
 | `PUT /api/tasks/{id}/complete` | PUT | Mark complete with final metadata |
@@ -723,6 +734,14 @@ See spec 007 § Phase 1C for the full command reference: `RECORD_EVIDENCE`, `QUE
 Update the status of a task.
 
 - **Request body**: `UpdateTaskStatusRequest { Status }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/priority`
+
+Update the priority of a task.
+
+- **Request body**: `UpdateTaskPriorityRequest { Priority }` — `Critical`, `High`, `Medium`, `Low`
 - **Response**: `TaskSnapshot`
 - **404**: Task not found
 
@@ -953,6 +972,7 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-14 | Task priority: `TaskPriority` enum (Critical/High/Medium/Low), int DB storage for correct sort order, `PUT /api/tasks/{id}/priority` endpoint, `UPDATE_TASK` command priority arg, `create_task` tool priority param, priority-first sort in `GetTasksAsync`, breakout sub-task priority inheritance, `PromptBuilder` includes priority in agent context. 20 new tests (4622 total). | Anvil |
 | 2026-04-13 | Bulk task operations: `POST /api/tasks/bulk/status` and `/api/tasks/bulk/assign` endpoints. Safe-status subset, max 50, dedup, partial-success. Frontend multi-select with bulk action bar. 12 backend + 10 frontend tests. | Anvil |
 | 2026-04-13 | Spec sync — document auto-unblock behavior: `GetTasksUnblockedByCompletionAsync` fires `TaskUnblocked` events when task completion satisfies all downstream dependencies. Frontend desktop notification and refresh wiring. | Anvil |
 | 2026-04-13 | Spec sync — updated `GitService` source references: merge/rebase/revert operations now in `GitService.MergeOperations.cs` partial class. Branch creation and other operations remain in `GitService.cs`. | Anvil |

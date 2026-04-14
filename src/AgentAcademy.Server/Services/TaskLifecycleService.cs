@@ -206,7 +206,8 @@ public sealed partial class TaskLifecycleService
             ImplementationSummary: "Implementation has not started yet.",
             PreferredRoles: preferredRoles,
             CreatedAt: now,
-            UpdatedAt: now
+            UpdatedAt: now,
+            Priority: request.Priority
         );
 
         var taskEntity = new TaskEntity
@@ -226,6 +227,7 @@ public sealed partial class TaskLifecycleService
             PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
             RoomId = roomId,
             WorkspacePath = workspacePath,
+            Priority = (int)task.Priority,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now

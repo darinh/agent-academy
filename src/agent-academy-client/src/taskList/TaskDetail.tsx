@@ -1,7 +1,9 @@
 import { OpenRegular } from "@fluentui/react-icons";
 import type { TaskSnapshot, AgentDefinition } from "../api";
+import V3Badge from "../V3Badge";
 import { useTaskDetailStyles } from "./taskDetailStyles";
 import { useTaskDetail } from "./useTaskDetail";
+import { priorityBadgeColor } from "./taskListHelpers";
 import SpecLinksSection from "./SpecLinksSection";
 import DependenciesSection from "./DependenciesSection";
 import EvidenceLedger from "./EvidenceLedger";
@@ -22,6 +24,12 @@ export default function TaskDetail({ task, agents, onRefresh, onViewRetros }: Ta
 
   return (
     <div className={s.expandedSection}>
+      {task.priority && (
+        <div className={s.reviewMeta}>
+          <span>Priority: <V3Badge color={priorityBadgeColor(task.priority)}>{task.priority}</V3Badge></span>
+        </div>
+      )}
+
       {task.description && (
         <>
           <div className={s.sectionLabel}>Description</div>
