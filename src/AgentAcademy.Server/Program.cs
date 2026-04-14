@@ -2,6 +2,7 @@ using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.HealthChecks;
 using AgentAcademy.Server.Hubs;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Startup;
@@ -24,6 +25,10 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
+
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
+    .AddCheck<AgentExecutorHealthCheck>("agent_executor", tags: ["ready"]);
 
 builder.Services.AddCors(options =>
 {
@@ -129,5 +134,15 @@ if (authSetup.GitHubAuthEnabled)
 
 app.MapControllers();
 app.MapHub<ActivityHub>("/hubs/activity");
+app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+    ResultStatusCodes =
+    {
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+    },
+}).AllowAnonymous();
 
 app.Run();

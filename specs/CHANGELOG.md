@@ -5,6 +5,10 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **016-api-reference**: Added `GET /health` readiness probe endpoint (checks database + agent executor, returns JSON with per-component details).
+- **017-deployment**: Updated monitoring section with health probe endpoints. Resolved known gap #4 (no structured health check endpoint).
+
+### Added
 - **017-deployment**: New deployment & operations spec — system requirements, configuration reference (all settings + secrets + env vars), local development setup, build & test commands, CI/CD pipeline description (ci.yml + version-bump.yml), production deployment guide (systemd + nginx + SQLite), operational procedures (server lifecycle, worktree management, monitoring, backup/restore), troubleshooting matrix, and known gaps (no containerization, no IaC, no automated deploy, no health endpoint).
 
 ### Fixed

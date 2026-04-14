@@ -484,6 +484,9 @@ git worktree prune
 ### Monitoring
 
 **Health indicators**:
+- Readiness probe: `GET /health` — checks database connectivity and agent executor status, returns JSON with per-component details
+- Liveness probe: `GET /healthz` — lightweight check confirming the server process is responding
+- Instance identity: `GET /api/health/instance` — includes instance ID, crash detection, circuit breaker state
 - Server process is running: `systemctl is-active agent-academy`
 - Database is accessible: check `agent-academy.db` file size and last-modified time
 - Agents are responding: check the main room for recent agent messages via `GET /api/rooms/{mainRoomId}/messages?count=5`
@@ -585,8 +588,7 @@ See [002 — Development Workflow](../002-development-workflow/spec.md) for the 
 1. **No containerization**: No Dockerfile or docker-compose yet. The single-binary publish approach works but lacks container orchestration benefits (immutable deploys, health checks, resource limits).
 2. **No infrastructure-as-code**: Server provisioning is manual. Consider Terraform/Ansible for repeatable deployments.
 3. **No automated production deployment**: CI builds and tests but does not deploy. The `main` branch triggers version bump + tag, but the actual deployment step is manual.
-4. **No structured health check endpoint**: The server relies on process liveness rather than an `/api/health` endpoint. Adding one would enable load balancer and monitoring integration.
-5. **Single-machine only**: SQLite constrains the architecture to one server. Scaling horizontally would require a database migration to PostgreSQL and a distributed message bus for SignalR.
+4. **Single-machine only**: SQLite constrains the architecture to one server. Scaling horizontally would require a database migration to PostgreSQL and a distributed message bus for SignalR.
 
 ---
 
@@ -594,4 +596,5 @@ See [002 — Development Workflow](../002-development-workflow/spec.md) for the 
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-14 | Added /health readiness probe, updated monitoring section, resolved known gap #4 | Anvil (Copilot) |
 | 2026-04-14 | Initial spec — prerequisites, configuration, local dev, CI/CD, production deployment, operations, troubleshooting | Anvil (Copilot) |
