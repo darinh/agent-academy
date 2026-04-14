@@ -168,6 +168,13 @@ export const useDigestPanelStyles = makeStyles({
     fontFamily: "var(--aa-mono)",
     color: "var(--aa-soft)",
   },
+  sourceTaskLink: {
+    cursor: "pointer",
+    color: "var(--aa-cyan, #5b8def)",
+    "&:hover": {
+      textDecoration: "underline",
+    },
+  },
   sourceContent: {
     fontSize: "12px",
     fontFamily: "var(--aa-mono)",

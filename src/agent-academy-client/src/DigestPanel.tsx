@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, mergeClasses, Spinner } from "@fluentui/react-components";
-import { ArrowSyncRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, OpenRegular } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import EmptyState from "./EmptyState";
@@ -33,9 +33,10 @@ function statusBadge(status: string): { color: BadgeColor; label: string } {
 
 interface DigestPanelProps {
   refreshTrigger?: number;
+  onNavigateToTask?: (taskId: string) => void;
 }
 
-export default function DigestPanel({ refreshTrigger = 0 }: DigestPanelProps) {
+export default function DigestPanel({ refreshTrigger = 0, onNavigateToTask }: DigestPanelProps) {
   const s = useDigestPanelStyles();
 
   const [digests, setDigests] = useState<DigestListItem[]>([]);
@@ -118,6 +119,11 @@ export default function DigestPanel({ refreshTrigger = 0 }: DigestPanelProps) {
     setSelectedId(null);
     setDetail(null);
   }, []);
+
+  const handleTaskClick = useCallback((e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation();
+    onNavigateToTask?.(taskId);
+  }, [onNavigateToTask]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -293,7 +299,16 @@ export default function DigestPanel({ refreshTrigger = 0 }: DigestPanelProps) {
                     <div key={src.commentId} className={s.sourceCard}>
                       <div className={s.sourceMetaRow}>
                         <span>Agent: {src.agentId}</span>
-                        <span>Task: {src.taskId}</span>
+                        <span
+                          className={onNavigateToTask ? s.sourceTaskLink : undefined}
+                          role={onNavigateToTask ? "link" : undefined}
+                          tabIndex={onNavigateToTask ? 0 : undefined}
+                          onClick={onNavigateToTask ? (e) => handleTaskClick(e, src.taskId) : undefined}
+                          onKeyDown={onNavigateToTask ? (e) => { if (e.key === "Enter") handleTaskClick(e as unknown as React.MouseEvent, src.taskId); } : undefined}
+                        >
+                          Task: {src.taskId}
+                          {onNavigateToTask && <OpenRegular fontSize={10} style={{ marginLeft: 3, verticalAlign: "middle" }} />}
+                        </span>
                         <span>{formatTimestamp(src.createdAt, false)}</span>
                       </div>
                       <div className={s.sourceContent}>{src.content}</div>

@@ -133,7 +133,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
           {tab === "memories" && (
             <MemoryBrowserPanel agents={props.configuredAgents} refreshTrigger={props.memoryVersion} />
           )}
-          {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} />}
+          {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} onNavigateToTask={props.onNavigateToTask} />}
           {tab === "retrospectives" && <RetrospectivePanel refreshTrigger={props.retroVersion} onNavigateToTask={props.onNavigateToTask} />}
         </section>
       </Suspense>

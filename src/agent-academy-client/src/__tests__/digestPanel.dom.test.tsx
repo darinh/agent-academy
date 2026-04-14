@@ -88,7 +88,7 @@ function makeSource(overrides: Partial<DigestSourceItem> = {}): DigestSourceItem
   };
 }
 
-function renderPanel(props: { refreshTrigger?: number } = {}) {
+function renderPanel(props: { refreshTrigger?: number; onNavigateToTask?: (taskId: string) => void } = {}) {
   return render(
     <FluentProvider theme={webDarkTheme}>
       <DigestPanel {...props} />
@@ -821,6 +821,129 @@ describe("DigestPanel", () => {
       await waitFor(() => {
         expect(mockGetDigest).toHaveBeenCalledWith(77);
       });
+    });
+  });
+
+  // ── Task navigation from source retrospectives ──
+
+  describe("source task navigation", () => {
+    function setupWithSources(onNavigateToTask = vi.fn()) {
+      setupSuccess();
+      mockGetDigest.mockResolvedValue(makeDetail({
+        id: 1,
+        sources: [
+          makeSource({ commentId: "c-1", taskId: "task-10", agentId: "coder-1" }),
+          makeSource({ commentId: "c-2", taskId: "task-20", agentId: "reviewer-1" }),
+        ],
+      }));
+      return { onNavigateToTask };
+    }
+
+    it("renders task IDs as links when onNavigateToTask is provided", async () => {
+      const { onNavigateToTask } = setupWithSources();
+      const { container } = renderPanel({ onNavigateToTask });
+
+      await waitFor(() => expect(getDigestRows(container).length).toBeGreaterThan(0));
+      await userEvent.click(getDigestRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task: task-10/)).toBeInTheDocument();
+      });
+
+      const taskLink = screen.getByText(/Task: task-10/);
+      expect(taskLink).toHaveAttribute("role", "link");
+    });
+
+    it("does not render task IDs as links when onNavigateToTask is absent", async () => {
+      setupSuccess();
+      mockGetDigest.mockResolvedValue(makeDetail({
+        id: 1,
+        sources: [makeSource({ commentId: "c-1", taskId: "task-10" })],
+      }));
+      const { container } = renderPanel();
+
+      await waitFor(() => expect(getDigestRows(container).length).toBeGreaterThan(0));
+      await userEvent.click(getDigestRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task: task-10/)).toBeInTheDocument();
+      });
+
+      const taskEl = screen.getByText(/Task: task-10/);
+      expect(taskEl).not.toHaveAttribute("role", "link");
+    });
+
+    it("calls onNavigateToTask with correct taskId when clicking source task link", async () => {
+      const { onNavigateToTask } = setupWithSources();
+      const { container } = renderPanel({ onNavigateToTask });
+
+      await waitFor(() => expect(getDigestRows(container).length).toBeGreaterThan(0));
+      await userEvent.click(getDigestRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task: task-10/)).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText(/Task: task-10/));
+
+      expect(onNavigateToTask).toHaveBeenCalledTimes(1);
+      expect(onNavigateToTask).toHaveBeenCalledWith("task-10");
+    });
+
+    it("navigates to different tasks from different source retros", async () => {
+      const { onNavigateToTask } = setupWithSources();
+      const { container } = renderPanel({ onNavigateToTask });
+
+      await waitFor(() => expect(getDigestRows(container).length).toBeGreaterThan(0));
+      await userEvent.click(getDigestRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task: task-10/)).toBeInTheDocument();
+        expect(screen.getByText(/Task: task-20/)).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText(/Task: task-10/));
+      await userEvent.click(screen.getByText(/Task: task-20/));
+
+      expect(onNavigateToTask).toHaveBeenCalledTimes(2);
+      expect(onNavigateToTask).toHaveBeenNthCalledWith(1, "task-10");
+      expect(onNavigateToTask).toHaveBeenNthCalledWith(2, "task-20");
+    });
+
+    it("renders open icon on task link when onNavigateToTask is provided", async () => {
+      const { onNavigateToTask } = setupWithSources();
+      const { container } = renderPanel({ onNavigateToTask });
+
+      await waitFor(() => expect(getDigestRows(container).length).toBeGreaterThan(0));
+      await userEvent.click(getDigestRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task: task-10/)).toBeInTheDocument();
+      });
+
+      const taskLink = screen.getByText(/Task: task-10/);
+      const svg = taskLink.querySelector("svg");
+      expect(svg).not.toBeNull();
+    });
+
+    it("task link is keyboard-activatable via Enter", async () => {
+      const { onNavigateToTask } = setupWithSources();
+      const { container } = renderPanel({ onNavigateToTask });
+
+      await waitFor(() => expect(getDigestRows(container).length).toBeGreaterThan(0));
+      await userEvent.click(getDigestRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task: task-10/)).toBeInTheDocument();
+      });
+
+      const taskLink = screen.getByText(/Task: task-10/);
+      expect(taskLink).toHaveAttribute("tabindex", "0");
+      taskLink.focus();
+      await userEvent.keyboard("{Enter}");
+
+      expect(onNavigateToTask).toHaveBeenCalledTimes(1);
+      expect(onNavigateToTask).toHaveBeenCalledWith("task-10");
     });
   });
 
