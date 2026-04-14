@@ -235,7 +235,8 @@ public enum ActivityEventType
     SprintCancelled,
     TaskUnblocked,
     TaskRetrospectiveCompleted,
-    LearningDigestCompleted
+    LearningDigestCompleted,
+    ContextUsageUpdated
 }
 
 /// <summary>

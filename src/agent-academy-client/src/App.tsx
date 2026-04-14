@@ -102,6 +102,7 @@ function AppShell() {
     activity,
     thinkingAgentList,
     thinkingByRoom,
+    roomContextUsage,
     recoveryBanner,
     connectionStatus,
     breakoutRooms,
@@ -340,6 +341,7 @@ function AppShell() {
             onLogout={logoutDialog.request}
             onOpenSettings={() => setShowSettings(true)}
             sprintVersion={sprintVersion}
+            contextUsage={roomContextUsage}
           />
 
           <main className={s.workspace} aria-label="Workspace content">

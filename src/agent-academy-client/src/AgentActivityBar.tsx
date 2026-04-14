@@ -1,7 +1,8 @@
 import { memo } from "react";
 import { Tooltip, makeStyles, shorthands } from "@fluentui/react-components";
 import { roleColor } from "./theme";
-import type { AgentDefinition, AgentLocation } from "./api";
+import ContextMeter from "./ContextMeter";
+import type { AgentDefinition, AgentLocation, AgentContextUsage } from "./api";
 
 const useLocalStyles = makeStyles({
   root: {
@@ -84,12 +85,14 @@ interface AgentActivityBarProps {
   agents: AgentDefinition[];
   locations: AgentLocation[];
   thinkingAgentIds: Set<string>;
+  contextUsage?: Map<string, AgentContextUsage>;
 }
 
 const AgentActivityBar = memo(function AgentActivityBar({
   agents,
   locations,
   thinkingAgentIds,
+  contextUsage,
 }: AgentActivityBarProps) {
   const s = useLocalStyles();
 
@@ -106,6 +109,7 @@ const AgentActivityBar = memo(function AgentActivityBar({
         const isWorking = loc?.state === "Working";
         const rc = roleColor(agent.role);
         const state = isThinking ? "Thinking" : (loc?.state ?? "Idle");
+        const agentContext = contextUsage?.get(agent.id);
         const tooltipContent = `${agent.name} · ${agent.role} · ${state}`;
 
         const pillClass = [
@@ -132,6 +136,7 @@ const AgentActivityBar = memo(function AgentActivityBar({
                   {state}
                 </span>
               )}
+              {agentContext && <ContextMeter usage={agentContext} />}
             </span>
           </Tooltip>
         );

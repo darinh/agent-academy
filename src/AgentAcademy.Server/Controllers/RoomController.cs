@@ -159,6 +159,26 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/rooms/{roomId}/context-usage — current context window usage per agent.
+    /// Returns the latest input token count for each agent's most recent LLM call,
+    /// along with the model's known context limit and usage percentage.
+    /// </summary>
+    [HttpGet("{roomId}/context-usage")]
+    public async Task<ActionResult<List<AgentContextUsage>>> GetRoomContextUsage(string roomId)
+    {
+        try
+        {
+            var usage = await _usageTracker.GetLatestContextPerAgentAsync(roomId);
+            return Ok(usage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get context usage for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve context usage data.");
+        }
+    }
+
+    /// <summary>
     /// GET /api/rooms/{roomId}/usage/records — individual LLM call records.
     /// </summary>
     [HttpGet("{roomId}/usage/records")]

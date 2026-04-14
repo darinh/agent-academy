@@ -210,6 +210,35 @@ public sealed class LlmUsageTracker
     }
 
     /// <summary>
+    /// Returns the current context window usage for each agent in a room.
+    /// The latest <c>InputTokens</c> from each agent's most recent LLM call
+    /// represents the current conversation context size.
+    /// </summary>
+    public async Task<List<AgentContextUsage>> GetLatestContextPerAgentAsync(string roomId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        // Get the most recent usage record per agent in this room
+        var latestPerAgent = await db.LlmUsage
+            .Where(u => u.RoomId == roomId)
+            .GroupBy(u => u.AgentId)
+            .Select(g => g.OrderByDescending(u => u.RecordedAt).First())
+            .ToListAsync();
+
+        return latestPerAgent.Select(u =>
+        {
+            var maxTokens = ModelContextLimits.GetLimit(u.Model);
+            var pct = maxTokens > 0
+                ? Math.Round((double)u.InputTokens / maxTokens * 100, 1)
+                : 0;
+            return new AgentContextUsage(
+                u.AgentId, u.RoomId, u.Model,
+                u.InputTokens, maxTokens, pct, u.RecordedAt);
+        }).ToList();
+    }
+
+    /// <summary>
     /// Recent individual usage records (for detailed inspection).
     /// </summary>
     public async Task<List<LlmUsageRecord>> GetRecentUsageAsync(

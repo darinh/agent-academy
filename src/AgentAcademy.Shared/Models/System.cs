@@ -158,6 +158,22 @@ public record AgentUsageWindow(
 );
 
 /// <summary>
+/// Current context window usage for an agent in a room.
+/// <c>CurrentTokens</c> is the input token count from the most recent LLM call
+/// (each call sends the full conversation, so the latest input = context size).
+/// <c>MaxTokens</c> is the model's known context window limit.
+/// </summary>
+public record AgentContextUsage(
+    string AgentId,
+    string? RoomId,
+    string? Model,
+    long CurrentTokens,
+    long MaxTokens,
+    double Percentage,
+    DateTime UpdatedAt
+);
+
+/// <summary>
 /// Result of a quota check — whether the agent is allowed to proceed.
 /// </summary>
 public record QuotaStatus(

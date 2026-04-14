@@ -5,9 +5,11 @@ import {
   sendHumanMessage,
   transitionPhase,
   submitTask,
+  getRoomContextUsage,
 } from "./api";
 import type {
   ActivityEvent,
+  AgentContextUsage,
   AgentPresence,
   CollaborationPhase,
   RoomSnapshot,
@@ -90,6 +92,8 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
   // Thinking state keyed by roomId → Map<agentId, info>
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
+  // Context usage keyed by roomId → Map<agentId, AgentContextUsage>
+  const [contextByRoom, setContextByRoom] = useState<Map<string, Map<string, import("./api").AgentContextUsage>>>(new Map());
   const [sprintVersion, setSprintVersion] = useState(0);
   const [retroVersion, setRetroVersion] = useState(0);
   const [digestVersion, setDigestVersion] = useState(0);
@@ -133,6 +137,10 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     return Array.from(roomMap.entries(), ([id, info]) => ({ id, ...info }));
   }, [thinkingByRoom, room?.id]);
 
+  const roomContextUsage = useMemo(() => {
+    return contextByRoom.get(room?.id ?? "");
+  }, [contextByRoom, room?.id]);
+
   // Ref so the SignalR callback always sees current configuredAgents without re-subscribing
   const agentsRef = useRef(ov.configuredAgents);
   agentsRef.current = ov.configuredAgents;
@@ -173,6 +181,29 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
           });
         }
         break;
+      case "ContextUsageUpdated": {
+        const rid = evt.roomId;
+        const aid = evt.actorId;
+        const meta = evt.metadata;
+        if (rid && aid && meta) {
+          setContextByRoom((prev) => {
+            const next = new Map(prev);
+            const roomMap = new Map(prev.get(rid) ?? []);
+            roomMap.set(aid, {
+              agentId: aid,
+              roomId: rid,
+              model: (meta.model as string) ?? null,
+              currentTokens: (meta.currentTokens as number) ?? 0,
+              maxTokens: (meta.maxTokens as number) ?? 0,
+              percentage: (meta.percentage as number) ?? 0,
+              updatedAt: evt.occurredAt,
+            });
+            next.set(rid, roomMap);
+            return next;
+          });
+        }
+        break;
+      }
       case "MessagePosted":
       case "RoomCreated":
       case "TaskCreated":
@@ -289,6 +320,31 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch context usage when room changes
+  useEffect(() => {
+    if (!room?.id) return;
+    let cancelled = false;
+    getRoomContextUsage(room.id).then((usages) => {
+      if (cancelled) return;
+      if (usages.length === 0) return;
+      setContextByRoom((prev) => {
+        const next = new Map(prev);
+        const existing = prev.get(room.id);
+        const merged = new Map<string, AgentContextUsage>(existing ?? []);
+        for (const u of usages) {
+          const cur = merged.get(u.agentId);
+          // Only seed from fetch if no realtime data exists or fetch is newer
+          if (!cur || u.updatedAt > cur.updatedAt) {
+            merged.set(u.agentId, u);
+          }
+        }
+        next.set(room.id, merged);
+        return next;
+      });
+    }).catch(() => { /* context fetch is best-effort */ });
+    return () => { cancelled = true; };
+  }, [room?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -484,6 +540,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     activity,
     thinkingAgentList,
     thinkingByRoom,
+    roomContextUsage,
     recoveryBanner,
     connectionStatus,
     activityTransport: transport,
