@@ -5,6 +5,10 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ## Unreleased
 
+### Features
+
+- **010-task-management**: Task priority system. `TaskPriority` enum (`Critical`, `High`, `Medium`, `Low`) with int DB storage (0–3) for correct `ORDER BY ASC`. Priority on `TaskSnapshot`, `TaskAssignmentRequest`, `TaskEntity`. `PUT /api/tasks/{id}/priority` REST endpoint. `UPDATE_TASK` command accepts `priority` arg. `create_task` agent tool accepts optional priority. Tasks sorted by priority then createdAt in `GetTasksAsync`. Breakout sub-tasks inherit parent task priority. `PromptBuilder` includes priority in agent context. Frontend: priority badge in task list/detail, priority-first sort, `updateTaskPriority` API function. 20 new backend tests (4622 total).
+
 ### CI/Infrastructure
 
 - **018-testing-strategy**: Automated CI coverage reporting. Backend uses coverlet + ReportGenerator for Cobertura XML + text summary. Frontend uses `@vitest/coverage-v8` with Cobertura + HTML output. Both uploaded as artifacts with 30-day retention. Job summary shows line/branch percentages. Local convenience script: `scripts/coverage.sh`.
