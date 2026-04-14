@@ -46,6 +46,7 @@ export interface WorkspaceContentProps {
   circuitBreakerState: CircuitBreakerState;
   sprintVersion: number;
   lastSprintEvent: SprintRealtimeEvent | null;
+  retroVersion: number;
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
@@ -126,7 +127,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
             <MemoryBrowserPanel agents={props.configuredAgents} />
           )}
           {tab === "digests" && <DigestPanel />}
-          {tab === "retrospectives" && <RetrospectivePanel />}
+          {tab === "retrospectives" && <RetrospectivePanel refreshTrigger={props.retroVersion} />}
         </section>
       </Suspense>
     </ChunkErrorBoundary>

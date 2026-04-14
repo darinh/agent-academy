@@ -90,6 +90,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   // Thinking state keyed by roomId → Map<agentId, info>
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
   const [sprintVersion, setSprintVersion] = useState(0);
+  const [retroVersion, setRetroVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -210,6 +211,9 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
         setSprintVersion((v) => v + 1);
         break;
       }
+      case "TaskRetrospectiveCompleted":
+        setRetroVersion((v) => v + 1);
+        break;
     }
   }, []);
 
@@ -479,6 +483,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     breakoutRooms: ov.breakoutRooms ?? [],
     sprintVersion,
     lastSprintEvent,
+    retroVersion,
     err,
     busy,
     tab,

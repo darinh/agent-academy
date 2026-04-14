@@ -107,6 +107,7 @@ function AppShell() {
     breakoutRooms,
     sprintVersion,
     lastSprintEvent,
+    retroVersion,
     err,
     busy,
     tab,
@@ -400,6 +401,7 @@ function AppShell() {
                 circuitBreakerState={circuitBreakerState}
                 sprintVersion={sprintVersion}
                 lastSprintEvent={lastSprintEvent}
+                retroVersion={retroVersion}
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}

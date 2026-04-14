@@ -26,6 +26,7 @@ export const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
   "TaskCreated",
   "PhaseChanged",
   "SubagentCompleted",
+  "TaskRetrospectiveCompleted",
 ]);
 
 export function toastIntent(evt: ActivityEvent): "error" | "warning" | "info" {
