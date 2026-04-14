@@ -4,6 +4,7 @@ using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.HealthChecks;
 using AgentAcademy.Server.Hubs;
+using AgentAcademy.Server.Middleware;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Startup;
 using Microsoft.AspNetCore.DataProtection;
@@ -166,11 +167,7 @@ if (Directory.Exists(wwwrootPath))
 {
     app.MapFallback(async context =>
     {
-        var path = context.Request.Path.Value ?? "";
-        if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith("/health", StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase))
+        if (!SpaFallbackHelper.ShouldServeIndex(context.Request.Path.Value))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
