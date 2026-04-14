@@ -20,6 +20,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [011](./011-state-recovery/spec.md) | State Recovery and Supervised Restart | Implemented |
 | [012](./012-consultant-api/spec.md) | Consultant API | Implemented |
 | [013](./013-sprint-system/spec.md) | Sprint System | Implemented |
+| [018](./018-testing-strategy/spec.md) | Testing Strategy | Implemented |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
 
 ## Conventions
@@ -58,11 +59,12 @@ After every code change:
 **Last Survey**: 2026-04-14
 
 ### Summary
-- **Total Sections**: 15 specification documents (~7,100+ lines)
-- **Coverage Score**: 85/100 — Excellent
+- **Total Sections**: 16 specification documents (~7,500+ lines)
+- **Coverage Score**: 90/100 — Excellent
 - **All Features**: Documented with implementation status
 - **Backend Coverage**: 90% (domain model, commands, agents, tasks exhaustive)
 - **Frontend Coverage**: 75% (component structure documented, interaction flows lighter)
+- **Testing**: Documented (test pyramid, conventions, coverage tooling)
 
 ### Strengths
 - ✅ Backend domain model and command system exhaustively documented
@@ -75,11 +77,9 @@ After every code change:
 2. **API Reference** — 80+ REST endpoints documented per-feature but no unified catalog
 3. **Security Model** — Threat model and permission system implicit, not consolidated
 4. **Deployment** — Production deployment process is tribal knowledge
-5. **Testing Strategy** — 4,400+ tests exist but conventions undocumented
 
 ### Planned Sections (Future)
 - `014-database-schema` — Entity relationships, migrations, index strategy
 - `015-security-model` — Threat model, permission consolidation, OAuth security
 - `016-api-reference` — Unified REST endpoint catalog
 - `017-deployment` — Production deployment guide
-- `018-testing-strategy` — Test pyramid, coverage targets, conventions
