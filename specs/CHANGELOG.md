@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **003-agent-system**: Knowledge endpoints now backed by memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub.
+
 ### Added
 - **003-agent-system**: REST API documentation for 14 unspecced endpoints — agent locations (GET/PUT), agent knowledge (GET/POST + shared), agent execution (POST run), agent sessions (GET), agent quotas (GET/PUT/DELETE), and auth logout (POST).
 - **005-workspace-runtime**: New REST API Endpoints section — room plans (GET/PUT/DELETE), room artifacts (GET), room usage records (GET), room evaluations (GET), room phase transition (POST), room session compaction (POST).

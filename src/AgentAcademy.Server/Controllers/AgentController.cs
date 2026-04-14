@@ -86,46 +86,170 @@ public class AgentController : ControllerBase
 
     /// <summary>
     /// GET /api/agents/{agentId}/knowledge — agent-specific knowledge entries.
+    /// Backed by the agent memory system (spec 008). Returns non-expired memories
+    /// for the given agent as a flat list of formatted strings.
     /// </summary>
     [HttpGet("{agentId}/knowledge")]
-    public IActionResult GetAgentKnowledge(string agentId)
+    public async Task<IActionResult> GetAgentKnowledge(string agentId, CancellationToken ct)
     {
-        // Agent knowledge is not yet persisted in the C# runtime.
-        // Return an empty list; the service will be extended in a future task.
-        return Ok(new { entries = Array.Empty<string>() });
+        var agent = FindAgent(agentId);
+        if (agent is null)
+            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+
+        try
+        {
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AgentAcademyDbContext>();
+            var now = DateTime.UtcNow;
+
+            var memories = await db.AgentMemories
+                .Where(m => m.AgentId == agent.Id)
+                .Where(m => m.ExpiresAt == null || m.ExpiresAt > now)
+                .OrderBy(m => m.Category)
+                .ThenBy(m => m.Key)
+                .ToListAsync(ct);
+
+            var entries = memories.Select(m => $"[{m.Category}] {m.Key}: {m.Value}").ToArray();
+            return Ok(new { entries });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get knowledge for agent '{AgentId}'", agentId);
+            return Problem("Failed to retrieve agent knowledge.");
+        }
     }
 
     /// <summary>
     /// POST /api/agents/{agentId}/knowledge — append a knowledge entry.
-    /// Returns 501 until knowledge persistence is implemented.
+    /// Creates a memory in the "knowledge" category with an auto-generated key.
+    /// Backed by the agent memory system (spec 008).
     /// </summary>
     [HttpPost("{agentId}/knowledge")]
-    public IActionResult AppendAgentKnowledge(
+    public async Task<IActionResult> AppendAgentKnowledge(
         string agentId,
-        [FromBody] AppendKnowledgeRequest request)
+        [FromBody] AppendKnowledgeRequest request,
+        CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Entry))
             return BadRequest(new { code = "missing_entry", message = "entry string required" });
 
-        // Agent knowledge persistence is not yet implemented in the C# runtime.
-        _logger.LogInformation(
-            "Knowledge append requested for agent '{AgentId}': {Entry}", agentId, request.Entry);
+        var agent = FindAgent(agentId);
+        if (agent is null)
+            return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
 
-        return StatusCode(501, new
+        try
         {
-            code = "not_implemented",
-            message = "Agent knowledge persistence is not yet implemented."
-        });
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AgentAcademyDbContext>();
+            var now = DateTime.UtcNow;
+
+            // Generate a key from the first ~60 chars of the entry, kebab-cased
+            var key = GenerateKnowledgeKey(request.Entry);
+
+            // Upsert scoped to "knowledge" category to avoid clobbering other categories
+            var existing = await db.AgentMemories
+                .FirstOrDefaultAsync(m => m.AgentId == agent.Id && m.Key == key && m.Category == "knowledge", ct);
+
+            if (existing is not null)
+            {
+                existing.Value = request.Entry;
+                existing.UpdatedAt = now;
+            }
+            else
+            {
+                db.AgentMemories.Add(new Data.Entities.AgentMemoryEntity
+                {
+                    AgentId = agent.Id,
+                    Category = "knowledge",
+                    Key = key,
+                    Value = request.Entry,
+                    CreatedAt = now,
+                });
+            }
+
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException) when (existing is null)
+            {
+                // Concurrent insert race — retry as update
+                db.ChangeTracker.Clear();
+                var conflict = await db.AgentMemories.FindAsync(new object[] { agent.Id, key }, ct);
+                if (conflict is not null)
+                {
+                    conflict.Value = request.Entry;
+                    conflict.UpdatedAt = now;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+
+            _logger.LogInformation(
+                "Knowledge appended for agent '{AgentId}': key={Key}", agent.Id, key);
+
+            return Ok(new { agentId = agent.Id, key, category = "knowledge", entry = request.Entry });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to append knowledge for agent '{AgentId}'", agentId);
+            return Problem("Failed to append agent knowledge.");
+        }
     }
 
     /// <summary>
     /// GET /api/knowledge — shared knowledge across all agents.
+    /// Returns non-expired memories grouped by agent ID.
     /// </summary>
     [HttpGet("/api/knowledge")]
-    public IActionResult GetSharedKnowledge()
+    public async Task<IActionResult> GetSharedKnowledge(CancellationToken ct)
     {
-        // Shared knowledge is not yet persisted in the C# runtime.
-        return Ok(new Dictionary<string, string[]>());
+        try
+        {
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AgentAcademyDbContext>();
+            var now = DateTime.UtcNow;
+
+            var memories = await db.AgentMemories
+                .Where(m => m.ExpiresAt == null || m.ExpiresAt > now)
+                .OrderBy(m => m.AgentId)
+                .ThenBy(m => m.Category)
+                .ThenBy(m => m.Key)
+                .ToListAsync(ct);
+
+            var grouped = memories
+                .GroupBy(m => m.AgentId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(m => $"[{m.Category}] {m.Key}: {m.Value}").ToArray());
+
+            return Ok(grouped);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get shared knowledge");
+            return Problem("Failed to retrieve shared knowledge.");
+        }
+    }
+
+    private static string GenerateKnowledgeKey(string entry)
+    {
+        // Take first ~60 chars, lowercase, replace non-alphanumeric with hyphens, trim
+        var slug = entry.Length > 60 ? entry[..60] : entry;
+        var chars = slug.ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray();
+        var raw = new string(chars).Trim('-');
+        // Collapse consecutive hyphens
+        while (raw.Contains("--"))
+            raw = raw.Replace("--", "-");
+        if (string.IsNullOrEmpty(raw))
+        {
+            // Deterministic fallback: stable hash of the full entry text
+            var hashBytes = System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(entry));
+            raw = $"knowledge-{Convert.ToHexString(hashBytes)[..16].ToLowerInvariant()}";
+        }
+        return raw;
     }
 
     /// <summary>

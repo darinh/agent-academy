@@ -705,28 +705,38 @@ Returns `AgentLocation` on success.
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `GET` | `/api/agents/{agentId}/knowledge` | Agent-specific knowledge entries |
-| `POST` | `/api/agents/{agentId}/knowledge` | Append a knowledge entry (returns 501 — not yet implemented) |
-| `GET` | `/api/knowledge` | Shared knowledge across all agents |
+| `GET` | `/api/agents/{agentId}/knowledge` | Agent-specific knowledge entries (non-expired) |
+| `POST` | `/api/agents/{agentId}/knowledge` | Append a knowledge entry (upsert into memory system) |
+| `GET` | `/api/knowledge` | All non-expired knowledge across all agents |
 
-**GET `/api/agents/{agentId}/knowledge`** response:
+These endpoints are thin wrappers over the agent memory system (spec 008). They return memories as formatted strings `[category] key: value`. For structured memory access, use the `/api/memories/` endpoints instead.
+
+**GET `/api/agents/{agentId}/knowledge`** — returns non-expired memories for the agent:
 ```json
 {
-  "entries": ["learned fact 1", "learned fact 2"]
+  "entries": ["[pattern] ef-core-include: EF Core requires explicit Include()", "[gotcha] sqlite-wal: WAL mode locks differ"]
+}
+```
+Returns `404` if `agentId` is not in the agent catalog.
+
+**POST `/api/agents/{agentId}/knowledge`** — creates or updates a memory entry with `category = "knowledge"`. The key is auto-generated from the entry text (first 60 chars, kebab-cased). If a memory with the same key exists, its value is updated (upsert).
+```json
+// Request
+{ "entry": "The build command is dotnet build AgentAcademy.sln" }
+// Response
+{ "agentId": "coder-1", "key": "the-build-command-is-dotnet-build-agentacademy-sln", "category": "knowledge", "entry": "..." }
+```
+Returns `404` if `agentId` is not in the agent catalog. Returns `400` if `entry` is empty.
+
+**GET `/api/knowledge`** — returns `Dictionary<string, string[]>` of all non-expired memories keyed by agent ID:
+```json
+{
+  "planner-1": ["[pattern] fact-a: ...", "[decision] fact-b: ..."],
+  "coder-1": ["[gotcha] fact-c: ..."]
 }
 ```
 
-**POST `/api/agents/{agentId}/knowledge`** — returns `501 Not Implemented` until knowledge persistence is built.
-
-**GET `/api/knowledge`** — returns `Dictionary<string, string[]>` keyed by agent ID:
-```json
-{
-  "planner-1": ["fact A", "fact B"],
-  "coder-1": ["fact C"]
-}
-```
-
-**Implementation**: Endpoints on `AgentController`.
+**Implementation**: Endpoints on `AgentController`. Queries `AgentMemories` DbSet directly.
 
 #### Agent Execution
 
@@ -887,4 +897,5 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-04-05 | OAuth refresh token — `CopilotTokenProvider` extended with `RefreshToken`, `ExpiresAtUtc`, `IsTokenExpiringSoon`, `CanRefresh`, cookie write-back flag. `ICopilotAuthProbe.RefreshTokenAsync()` exchanges refresh tokens at GitHub's OAuth endpoint. `CopilotAuthMonitorService` proactively refreshes 30 min before expiry and attempts refresh before degrading on auth failure. `Program.cs` captures refresh token in OAuth callback, restores from cookie on restart, merges refreshed tokens into cookie. Access tokens auto-renew for up to 6 months without re-authentication. 21 new tests (1343 total). Adversarial review (GPT-5.2, Claude Sonnet 4, Claude Haiku 4.5): timeout handling, token clobbering, and cookie error handling fixed. | token-refresh |
 | 2026-04-12 | Structural refactor — extracted `CopilotClientFactory` from `CopilotExecutor` (client lifecycle, token resolution, worktree clients). `CopilotExecutor` retains session management, retry logic, error classification, circuit breaker. Zero behavioral changes. `ResolveToken()` divergence between Factory (returns null for SDK fallback) and `CopilotAuthProbe` (checks env vars for raw HTTP probes) documented as intentional. | copilot-client-factory |
 | 2026-04-13 | Spec sync — documented `ConversationSessionQueryService` (read-only session queries) extracted from `ConversationSessionService`. Query methods: `GetSessionContextAsync`, `GetStageContextAsync`, `GetSprintContextAsync`, `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync`. | spec-sync-decomposition |
+| 2026-04-14 | Knowledge endpoints wired to memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category with auto-generated key, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub. | knowledge-endpoints |
 | 2026-04-12 | Structural refactor — extracted `CopilotSessionPool` (session cache with TTL, per-key locks, send serialization, cleanup timer) and `CopilotSdkSender` (streamed response collection, error classification, retry/backoff, usage tracking) from `CopilotExecutor`. Executor reduced from 779→424 lines. Zero behavioral changes. Adversarial review (GPT-5.3 Codex): 1 finding fixed (auth-failure invalidation scope). | session-pool-sender |
