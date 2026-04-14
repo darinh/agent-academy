@@ -917,6 +917,154 @@ interface TaskSearchResult {
 interface SearchResults { messages: MessageSearchResult[]; tasks: TaskSearchResult[]; totalCount: number; query: string; }
 ```
 
+## Server Instance History (`RestartHistoryPanel.tsx`)
+
+Displays a paginated table of server instances with aggregated restart statistics. Embedded within `DashboardPanel` under the "Server Instance History" section heading.
+
+### Data Flow
+
+```
+RestartHistoryPanel
+  ├── fetchData → Promise.allSettled([getRestartHistory(limit, offset), getRestartStats(hoursBack)])
+  │   ├── GET /api/system/restarts?limit=10&offset=N → RestartHistoryResponse
+  │   └── GET /api/system/restarts/stats?hours=24   → RestartStatsDto
+  ├── Stats cards row: Instances, Crashes, Restarts, Clean Stops, Running
+  ├── Instance table: Status | Started | Duration | Version | Exit
+  └── Pagination: ← Newer / N–M of Total / Older →
+```
+
+### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `hoursBack` | `number?` | `24` | Time window for stats aggregation (passed from DashboardPanel time selector) |
+
+### Stats Cards
+
+Five stat cards in a responsive grid (`repeat(auto-fit, minmax(100px, 1fr))`):
+
+| Card | Value Source | Color |
+|------|-------------|-------|
+| Instances (Nh) | `stats.totalInstances` | default |
+| Crashes | `stats.crashRestarts` | `--aa-copper` |
+| Restarts | `stats.intentionalRestarts` | `--aa-gold` |
+| Clean Stops | `stats.cleanShutdowns` | `--aa-lime` |
+| Running | `stats.stillRunning` | `--aa-cyan` |
+
+### Instance Table
+
+Paginated with `PAGE_SIZE = 10`. Columns:
+
+| Column | Source | Rendering |
+|--------|--------|-----------|
+| Status | `shutdownReason` | Icon + `V3Badge` via `reasonBadge()`. Shows crash-recovery badge (`⚡ crash recovery`) when `crashDetected = true` |
+| Started | `startedAt` | `formatTimestamp()` |
+| Duration | `startedAt` → `shutdownAt` | `formatElapsed()` with `granularity: "seconds"`, shows `(running)` for active instance |
+| Version | `version` | Monospace |
+| Exit | `exitCode` | Monospace, `—` for null |
+
+**Status badges**: `Running` → info/play, `CleanShutdown` → ok/checkmark, `IntentionalRestart` → warn/sync, `Crash` → err/error, default → bug/warning.
+
+The currently running instance row has a subtle highlight (`rgba(108, 182, 255, 0.06)`).
+
+### Error Handling
+
+- `Promise.allSettled` fetches history and stats independently — stats failure is non-critical (shows stale stats if available)
+- Stale-response protection via `fetchIdRef` (discards out-of-order responses)
+- Offset clamping: if total shrinks below current page, auto-clamps to last valid page
+- Failed refresh with cached data shows inline error banner with "showing cached data"
+- Full failure (no cached data) shows error panel
+
+### Types
+
+```ts
+interface ServerInstanceDto {
+  id: string; startedAt: string; shutdownAt: string | null;
+  exitCode: number | null; crashDetected: boolean;
+  version: string; shutdownReason: string;
+}
+interface RestartHistoryResponse { instances: ServerInstanceDto[]; total: number; limit: number; offset: number; }
+interface RestartStatsDto {
+  totalInstances: number; crashRestarts: number; intentionalRestarts: number;
+  cleanShutdowns: number; stillRunning: number; windowHours: number;
+  maxRestartsPerWindow: number; restartWindowHours: number;
+}
+```
+
+## Room Stats (`RoomStatsPanel.tsx`)
+
+Displays room-scoped LLM usage aggregates, per-agent cost breakdown, and recent errors for the selected room. Embedded within `WorkspaceOverviewPanel` under "Room Stats — {room.name}".
+
+### Data Flow
+
+```
+RoomStatsPanel({ roomId })
+  ├── fetchData → Promise.allSettled([getRoomUsage(roomId), getRoomUsageByAgent(roomId), getRoomErrors(roomId, 20)])
+  │   ├── GET /api/rooms/{roomId}/usage        → UsageSummary
+  │   ├── GET /api/rooms/{roomId}/usage/agents  → AgentUsageSummary[]
+  │   └── GET /api/rooms/{roomId}/errors?limit=20 → ErrorRecord[]
+  ├── Usage cards: Input tokens | Output tokens | Cost | Calls
+  ├── Per-agent table: Agent | In | Out | Cost | Calls
+  └── Errors table: Agent | Type | Message | Time (max 5 shown)
+```
+
+### Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `roomId` | `string` | Room to fetch stats for (reactive — clears state on change) |
+
+### Usage Cards
+
+Four stat cards in a responsive grid:
+
+| Card | Value Source | Color | Formatting |
+|------|-------------|-------|------------|
+| Input | `usage.totalInputTokens` | default | `formatTokenCount()` |
+| Output | `usage.totalOutputTokens` | default | `formatTokenCount()` |
+| Cost | `usage.totalCost` | `--aa-lime` | `formatCost()` |
+| Calls | `usage.requestCount` | `--aa-gold` | raw number |
+
+Usage cards only render when `usage.requestCount > 0`.
+
+### Per-Agent Table
+
+Columns: Agent (badge), In, Out, Cost, Calls. Right-aligned numeric columns. Agent IDs shown in `V3Badge` with `info` color.
+
+### Errors Table
+
+Shows up to 5 most recent errors. Columns: Agent (mono), Type (`V3Badge` via `errorTypeBadge()`), Message (truncated with ellipsis at 200px), Time (mono, formatted local timestamp without seconds). If more than 5 errors exist, shows "Showing 5 of N errors. See Dashboard for full details."
+
+When no errors exist but usage is present, shows a green "No errors in this room" message.
+
+### Room Switching
+
+When `roomId` changes, the component clears all stale data (`usage`, `agents`, `errors`) before fetching new data. Tracked via `prevRoomRef` to detect switches.
+
+### Error Handling
+
+- Three independent error states (`usageError`, `agentsError`, `errorsError`) — each section degrades independently
+- All-failed state shows single "Failed to load room stats" error
+- `fetchIdRef` prevents stale response races
+- Empty state (no usage, no errors, no agent data, no errors): "No activity recorded for this room yet" with checkmark icon
+
+### Types
+
+```ts
+interface UsageSummary {
+  totalInputTokens: number; totalOutputTokens: number;
+  totalCost: number; requestCount: number; models: string[];
+}
+interface AgentUsageSummary {
+  agentId: string; totalInputTokens: number; totalOutputTokens: number;
+  totalCost: number; requestCount: number;
+}
+interface ErrorRecord {
+  agentId: string; roomId: string; errorType: string;
+  message: string; recoverable: boolean; timestamp: string;
+}
+```
+
 ## Keyboard Shortcuts (`KeyboardShortcutsDialog.tsx`)
 
 A help overlay listing all application keyboard shortcuts. Triggered by pressing `?` (when focus is not in an input/textarea/select).
