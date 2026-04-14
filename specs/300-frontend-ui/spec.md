@@ -696,8 +696,8 @@ Displays the history of agent post-task retrospectives — reflections agents pr
 
 ```
 RetrospectivePanel
-  ├── fetchList → Promise.all([listRetrospectives({agentId, limit, offset}), getRetrospectiveStats()])
-  │   → GET /api/retrospectives?agentId=X&limit=20&offset=N → RetrospectiveListResponse
+  ├── fetchList → Promise.all([listRetrospectives({agentId, taskId, limit, offset}), getRetrospectiveStats()])
+  │   → GET /api/retrospectives?agentId=X&taskId=Y&limit=20&offset=N → RetrospectiveListResponse
   │   → GET /api/retrospectives/stats → RetrospectiveStatsResponse
   └── fetchDetail(commentId) → getRetrospective(commentId)
       → GET /api/retrospectives/{commentId} → RetrospectiveDetailResponse

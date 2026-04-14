@@ -173,6 +173,51 @@ public sealed class RetrospectiveControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task List_FiltersByTaskId()
+    {
+        var task1 = SeedTask(title: "Task One");
+        var task2 = SeedTask(title: "Task Two");
+        SeedRetrospective(taskId: task1.Id);
+        SeedRetrospective(taskId: task2.Id);
+        SeedRetrospective(taskId: task1.Id, agentId: "other", agentName: "Other");
+
+        var result = await _controller.List(taskId: task1.Id);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Equal(2, body.Retrospectives.Count);
+        Assert.All(body.Retrospectives, r => Assert.Equal(task1.Id, r.TaskId));
+        Assert.Equal(2, body.Total);
+    }
+
+    [Fact]
+    public async Task List_FiltersByTaskIdAndAgentId_Combined()
+    {
+        var task1 = SeedTask(title: "Task One");
+        SeedRetrospective(taskId: task1.Id, agentId: "hephaestus", agentName: "Hephaestus");
+        SeedRetrospective(taskId: task1.Id, agentId: "athena", agentName: "Athena");
+        SeedRetrospective(agentId: "hephaestus", agentName: "Hephaestus"); // different task
+
+        var result = await _controller.List(agentId: "hephaestus", taskId: task1.Id);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Single(body.Retrospectives);
+        Assert.Equal("hephaestus", body.Retrospectives[0].AgentId);
+        Assert.Equal(task1.Id, body.Retrospectives[0].TaskId);
+    }
+
+    [Fact]
+    public async Task List_FiltersByTaskId_NoMatch_ReturnsEmpty()
+    {
+        SeedRetrospective();
+
+        var result = await _controller.List(taskId: "nonexistent-task");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Empty(body.Retrospectives);
+        Assert.Equal(0, body.Total);
+    }
+
+    [Fact]
     public async Task List_Pagination_RespectsLimitAndOffset()
     {
         for (var i = 0; i < 5; i++)
