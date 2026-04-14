@@ -205,7 +205,10 @@ public sealed class BreakoutLifecycleService
                         {
                             var specLinks = await taskQueryService.GetSpecLinksForTaskAsync(breakoutTaskId);
                             var linkedSectionIds = specLinks.Select(l => l.SpecSectionId);
-                            breakoutSpecContext = await _specManager.LoadSpecContextForTaskAsync(linkedSectionIds);
+                            var task = await taskQueryService.GetTaskAsync(breakoutTaskId);
+                            var searchQuery = task is not null ? $"{task.Title} {task.Description}" : null;
+                            breakoutSpecContext = await _specManager.LoadSpecContextWithRelevanceAsync(
+                                searchQuery, linkedSectionIds);
                         }
                         catch { /* non-critical: fall through with null spec context */ }
                     }

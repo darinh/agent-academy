@@ -18,6 +18,11 @@ public sealed class SpecManager
     public record SpecSection(string Id, string Heading, string Summary, string FilePath);
 
     /// <summary>
+    /// A spec section matched by keyword search, with a relevance score.
+    /// </summary>
+    public record SpecSearchResult(string Id, string Heading, string Summary, string FilePath, double Score, string MatchedTerms);
+
+    /// <summary>
     /// Version information for the spec corpus, read from specs/spec-version.json.
     /// </summary>
     public record SpecVersionInfo(string Version, string LastUpdated, string ContentHash, int SectionCount);
@@ -193,6 +198,203 @@ public sealed class SpecManager
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Searches spec content by keywords and returns sections ranked by relevance.
+    /// Splits the query into terms and scores each section by weighted term frequency
+    /// (heading matches weighted 3×, purpose 2×, body 1×).
+    /// </summary>
+    public async Task<List<SpecSearchResult>> SearchSpecsAsync(
+        string query, int maxResults = 5, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query) || !Directory.Exists(_specsDir))
+            return [];
+
+        var terms = TokenizeQuery(query);
+        if (terms.Count == 0) return [];
+
+        var scored = new List<SpecSearchResult>();
+
+        try
+        {
+            foreach (var dir in Directory.GetDirectories(_specsDir).OrderBy(d => d))
+            {
+                ct.ThrowIfCancellationRequested();
+                var dirName = Path.GetFileName(dir);
+                var specFile = Path.Combine(dir, "spec.md");
+                if (!File.Exists(specFile)) continue;
+
+                var content = await File.ReadAllTextAsync(specFile, ct);
+                var result = ScoreSection(dirName, content, terms);
+                if (result is not null) scored.Add(result);
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Spec search failed for query: {Query}", query);
+            return [];
+        }
+
+        return scored
+            .OrderByDescending(r => r.Score)
+            .Take(maxResults)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Loads spec context with keyword-based relevance ranking in a single pass.
+    /// Relevant sections (matched by query or linked to task) are marked with ★/◆ and listed first.
+    /// Non-matching sections are still included but listed after relevant ones.
+    /// </summary>
+    public async Task<string?> LoadSpecContextWithRelevanceAsync(
+        string? searchQuery, IEnumerable<string>? linkedSectionIds = null,
+        CancellationToken ct = default)
+    {
+        if (!Directory.Exists(_specsDir)) return null;
+
+        var linkedSet = linkedSectionIds?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var terms = !string.IsNullOrWhiteSpace(searchQuery)
+            ? TokenizeQuery(searchQuery)
+            : [];
+
+        try
+        {
+            var relevant = new List<(string Line, double Score)>();
+            var other = new List<string>();
+
+            foreach (var dir in Directory.GetDirectories(_specsDir).OrderBy(d => d))
+            {
+                ct.ThrowIfCancellationRequested();
+                var dirName = Path.GetFileName(dir);
+                var specFile = Path.Combine(dir, "spec.md");
+                if (!File.Exists(specFile)) continue;
+
+                var content = await File.ReadAllTextAsync(specFile, ct);
+                var headingMatch = Regex.Match(content, @"^#\s+(.+)", RegexOptions.Multiline);
+                var heading = headingMatch.Success ? headingMatch.Groups[1].Value : dirName;
+
+                var purposeMatch = Regex.Match(content, @"## Purpose\s*\n([\s\S]*?)(?=\n##|\z)");
+                var summary = purposeMatch.Success
+                    ? purposeMatch.Groups[1].Value.Trim().Split('\n')[0]
+                    : "";
+
+                var isLinked = linkedSet.Contains(dirName);
+                var searchResult = terms.Count > 0 ? ScoreSection(dirName, content, terms) : null;
+                var isSearchMatch = searchResult is not null;
+                var isRelevant = isLinked || isSearchMatch;
+
+                var marker = isLinked ? "★" : isSearchMatch ? "◆" : " ";
+                var line = $"- [{marker}] specs/{dirName}/spec.md: {heading}" +
+                    (string.IsNullOrEmpty(summary) ? "" : $" — {summary}");
+
+                if (isRelevant)
+                    relevant.Add((line, searchResult?.Score ?? 0));
+                else
+                    other.Add(line);
+            }
+
+            if (relevant.Count == 0 && other.Count == 0) return null;
+
+            var parts = new List<string>();
+            if (relevant.Count > 0)
+            {
+                parts.Add("Relevant sections (★ = task-linked, ◆ = keyword match):");
+                // Sort relevant by score descending (linked without search score come first)
+                parts.AddRange(relevant.OrderByDescending(r => r.Score).Select(r => r.Line));
+            }
+            if (other.Count > 0)
+            {
+                if (relevant.Count > 0)
+                    parts.Add("\nOther sections:");
+                parts.AddRange(other);
+            }
+
+            return string.Join("\n", parts);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static SpecSearchResult? ScoreSection(string dirName, string content, List<string> terms)
+    {
+        var headingMatch = Regex.Match(content, @"^#\s+(.+)", RegexOptions.Multiline);
+        var heading = headingMatch.Success ? headingMatch.Groups[1].Value : dirName;
+
+        var purposeMatch = Regex.Match(content, @"## Purpose\s*\n([\s\S]*?)(?=\n##|\z)");
+        var purpose = purposeMatch.Success ? purposeMatch.Groups[1].Value.Trim() : "";
+
+        var score = 0.0;
+        var matched = new List<string>();
+
+        foreach (var term in terms)
+        {
+            var headingHits = CountOccurrences(heading, term);
+            var purposeHits = CountOccurrences(purpose, term);
+            var bodyHits = CountOccurrences(content, term);
+            var pureBodyHits = Math.Max(0, bodyHits - headingHits - purposeHits);
+
+            var termScore = headingHits * 3.0 + purposeHits * 2.0 + pureBodyHits * 1.0;
+            if (termScore > 0)
+            {
+                score += termScore;
+                matched.Add(term);
+            }
+        }
+
+        if (score <= 0) return null;
+
+        var coverageBonus = (double)matched.Count / terms.Count;
+        score *= (1.0 + coverageBonus);
+
+        var summary = purpose.Split('\n')[0];
+        return new SpecSearchResult(
+            Id: dirName,
+            Heading: heading,
+            Summary: summary,
+            FilePath: $"specs/{dirName}/spec.md",
+            Score: Math.Round(score, 2),
+            MatchedTerms: string.Join(", ", matched));
+    }
+
+    internal static List<string> TokenizeQuery(string query)
+    {
+        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "shall", "can", "need", "dare", "ought",
+            "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+            "into", "through", "during", "before", "after", "above", "below",
+            "between", "out", "off", "over", "under", "again", "further", "then",
+            "once", "and", "but", "or", "nor", "not", "so", "yet", "both",
+            "each", "few", "more", "most", "other", "some", "such", "no", "only",
+            "same", "than", "too", "very", "just", "because", "this", "that",
+            "these", "those", "it", "its", "what", "which", "who", "whom", "how"
+        };
+
+        return Regex.Split(query.ToLowerInvariant(), @"[\s\-_./,;:!?()""]+")
+            .Where(t => t.Length >= 3 && !stopWords.Contains(t))
+            .Distinct()
+            .ToList();
+    }
+
+    internal static int CountOccurrences(string text, string term)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(term)) return 0;
+
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(term, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            index += term.Length;
+        }
+        return count;
     }
 
     /// <summary>

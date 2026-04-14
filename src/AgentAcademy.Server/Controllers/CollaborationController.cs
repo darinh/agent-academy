@@ -135,6 +135,25 @@ public class CollaborationController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/specs/search — search spec sections by keyword.
+    /// Returns sections ranked by relevance (weighted heading/purpose/body match).
+    /// </summary>
+    [HttpGet("api/specs/search")]
+    public async Task<ActionResult<List<SpecManager.SpecSearchResult>>> SearchSpecs(
+        [FromQuery] string q,
+        [FromQuery] int limit = 5,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+            return BadRequest(ApiProblem.BadRequest("Query parameter 'q' is required.", "missing_query"));
+        if (limit < 1 || limit > 20)
+            return BadRequest(ApiProblem.BadRequest("Limit must be between 1 and 20.", "invalid_limit"));
+
+        var results = await _specManager.SearchSpecsAsync(q, limit, ct);
+        return Ok(results);
+    }
+
+    /// <summary>
     /// POST /api/rooms/{roomId}/messages — post a message (agent-to-agent or system).
     /// </summary>
     [HttpPost("api/rooms/{roomId}/messages")]
