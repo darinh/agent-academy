@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **015-security-model**: New consolidated security model — trust boundaries, authentication (GitHub OAuth + consultant key + auth-disabled mode), authorization (global fallback policy + agent command permissions), agent security boundaries (SDK permission handler, worktree isolation, file access controls, shell command sandboxing, identity, memory isolation), prompt injection defenses (boundary markers, metadata sanitization, marker escaping), rate limiting and quotas (HTTP + command + LLM), data protection (token encryption, secret management), network security (CORS, SignalR, TLS), input validation (model validation, path traversal prevention), audit trail, threat model with 10 threats analyzed, and security checklist for new features.
+
+### Added
 - **014-database-schema**: New consolidated database schema reference — 31 entities, 16 FK relationships, 45+ indexes, 8 unique constraints, ER diagrams, FTS5 virtual tables, and migration history.
 
 ### Added
