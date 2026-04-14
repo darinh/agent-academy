@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **005-domain-services**: Fixed workspace room adoption — orphaned legacy "main" room is now adopted on workspace activation instead of creating a duplicate. Tasks created in the legacy room are now visible via workspace-scoped queries. Archived rooms excluded from workspace default resolution to prevent re-archiving adopted rooms.
+
 ### Added
 - **README**: Coverage Status section — survey results (15 sections, 85/100 score), strengths (backend exhaustive), known gaps (database schema, API reference, security model, deployment, testing), and 5 planned sections (014–018). Survey completed 2026-04-14.
 
