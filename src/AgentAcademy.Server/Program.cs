@@ -180,3 +180,8 @@ if (Directory.Exists(wwwrootPath))
 }
 
 app.Run();
+
+// Marker class to enable WebApplicationFactory<Program> in integration tests.
+// With top-level statements the compiler generates an internal Program class;
+// this partial declaration makes it public.
+public partial class Program { }

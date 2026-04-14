@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **018-testing-strategy**: Added API contract tests via `WebApplicationFactory` integration infrastructure (`ApiContractFixture`). 35 tests validate OpenAPI spec generation, route coverage across 21 controller prefixes, response contract matching for key endpoints, and component schema completeness. Resolved known gap #1.
 - **017-deployment**: Added Dockerfile (multi-stage: node→dotnet SDK→aspnet runtime), docker-compose.yml, and .dockerignore. Containerized deployment section with architecture diagram, build instructions, data persistence, and limitations (app-only, no agent execution). Resolved known gap #1. Added known gap #5 (agent-runner container profile).
 - **Program.cs**: CORS origins now configurable via `Cors:Origins` config section (previously hardcoded to localhost:5173). Added `UseForwardedHeaders` for reverse proxy support. Added conditional SPA static file serving when wwwroot exists. DataProtection key path configurable via `DataProtection:KeysPath`.
 

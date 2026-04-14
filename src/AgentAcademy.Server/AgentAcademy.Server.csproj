@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AgentAcademy.Server.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>
