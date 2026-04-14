@@ -75,7 +75,8 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     public IReadOnlyList<AIFunction> GetToolsForAgent(
         IEnumerable<string> enabledTools,
         string? agentId = null,
-        string? agentName = null)
+        string? agentName = null,
+        string? roomId = null)
     {
         var tools = new List<AIFunction>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -104,7 +105,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
                     continue;
                 }
 
-                var contextualTools = CreateContextualTools(group, agentId, agentName ?? agentId);
+                var contextualTools = CreateContextualTools(group, agentId, agentName ?? agentId, roomId);
                 foreach (var tool in contextualTools)
                 {
                     if (seen.Add(tool.Name))
@@ -129,14 +130,14 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     public IReadOnlyList<string> GetAllToolNames() => _allToolNames;
 
     private IReadOnlyList<AIFunction> CreateContextualTools(
-        string group, string agentId, string agentName)
+        string group, string agentId, string agentName, string? roomId)
     {
         return group.ToLowerInvariant() switch
         {
             "task-write" => _toolFunctions.CreateTaskWriteTools(agentId, agentName),
             "memory" => _toolFunctions.CreateMemoryTools(agentId),
             "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName,
-                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity),
+                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId),
             _ => []
         };
     }

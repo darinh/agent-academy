@@ -18,6 +18,7 @@ internal sealed class CodeWriteToolWrapper
     private readonly string _agentId;
     private readonly string _agentName;
     private readonly AgentGitIdentity? _gitIdentity;
+    private readonly string? _roomId;
 
     // Files that agents must never modify (core infrastructure).
     private static readonly string[] ProtectedPaths =
@@ -35,13 +36,14 @@ internal sealed class CodeWriteToolWrapper
 
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
-        string agentId, string agentName, AgentGitIdentity? gitIdentity = null)
+        string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _agentId = agentId;
         _agentName = agentName;
         _gitIdentity = gitIdentity;
+        _roomId = roomId;
     }
 
     [Description("Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
@@ -112,6 +114,9 @@ internal sealed class CodeWriteToolWrapper
 
             var action = isNew ? "Created" : "Updated";
             var stageStatus = staged ? "staged for commit" : "written but NOT staged (git add failed)";
+
+            await RecordArtifactAsync(relativePath, action);
+
             return $"{action}: {relativePath} ({content.Length:N0} chars, {stageStatus})";
         }
         catch (UnauthorizedAccessException)
@@ -188,6 +193,8 @@ internal sealed class CodeWriteToolWrapper
                 "commit_changes by {AgentId} ({AgentName}): {CommitSha} — {Message}",
                 _agentId, _agentName, commitSha, message);
 
+            await RecordCommitArtifactAsync(scope, commitSha.Trim());
+
             return $"Committed: {commitSha.Trim()}\nMessage: {message}";
         }
         catch (InvalidOperationException ex) when (
@@ -205,6 +212,35 @@ internal sealed class CodeWriteToolWrapper
         {
             _logger.LogError(ex, "Unexpected error in commit_changes for {AgentId}", _agentId);
             return $"Error: Unexpected failure — {ex.Message}";
+        }
+    }
+
+    private async Task RecordArtifactAsync(string filePath, string operation)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var tracker = scope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
+            await tracker.RecordAsync(_roomId, _agentId, filePath, operation);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record artifact {Operation} for {Path}", operation, filePath);
+        }
+    }
+
+    private async Task RecordCommitArtifactAsync(IServiceScope scope, string commitSha)
+    {
+        try
+        {
+            var gitService = scope.ServiceProvider.GetRequiredService<GitService>();
+            var tracker = scope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
+            var files = await gitService.GetFilesInCommitAsync(commitSha);
+            await tracker.RecordCommitAsync(_roomId, _agentId, commitSha, files);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record commit artifacts for {Sha}", commitSha);
         }
     }
 }

@@ -28,6 +28,7 @@ public sealed class RoomControllerTests : IDisposable
         _controller = new RoomController(
             _svc.RoomService, _svc.AgentLocationService, _svc.MessageService,
             new MessageBroadcaster(), _svc.Catalog, _svc.UsageTracker, _svc.ErrorTracker,
+            _svc.ArtifactTracker,
             NullLogger<RoomController>.Instance);
     }
 
@@ -79,11 +80,78 @@ public sealed class RoomControllerTests : IDisposable
     // ── GetRoomArtifacts ─────────────────────────────────────────
 
     [Fact]
-    public void GetRoomArtifacts_ReturnsEmptyArray()
+    public async Task GetRoomArtifacts_ReturnsEmptyList()
     {
-        var result = _controller.GetRoomArtifacts("any-room");
-        var ok = Assert.IsType<OkObjectResult>(result);
-        Assert.NotNull(ok.Value);
+        var result = await _controller.GetRoomArtifacts("any-room");
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var artifacts = Assert.IsType<List<ArtifactRecord>>(ok.Value);
+        Assert.Empty(artifacts);
+    }
+
+    [Fact]
+    public async Task GetRoomArtifacts_ReturnsRecordedArtifacts()
+    {
+        var roomId = "test-room";
+        _svc.Db.RoomArtifacts.Add(new AgentAcademy.Server.Data.Entities.RoomArtifactEntity
+        {
+            RoomId = roomId,
+            AgentId = "engineer-1",
+            FilePath = "src/Models/User.cs",
+            Operation = "Created",
+            Timestamp = DateTime.UtcNow,
+        });
+        await _svc.Db.SaveChangesAsync();
+
+        var result = await _controller.GetRoomArtifacts(roomId);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var artifacts = Assert.IsType<List<ArtifactRecord>>(ok.Value);
+        Assert.Single(artifacts);
+        Assert.Equal("src/Models/User.cs", artifacts[0].FilePath);
+        Assert.Equal("Created", artifacts[0].Operation);
+        Assert.Equal("engineer-1", artifacts[0].AgentId);
+    }
+
+    [Fact]
+    public async Task GetRoomArtifacts_RespectsLimit()
+    {
+        var roomId = "limit-room";
+        for (int i = 0; i < 5; i++)
+        {
+            _svc.Db.RoomArtifacts.Add(new AgentAcademy.Server.Data.Entities.RoomArtifactEntity
+            {
+                RoomId = roomId,
+                AgentId = "eng",
+                FilePath = $"src/File{i}.cs",
+                Operation = "Created",
+                Timestamp = DateTime.UtcNow.AddMinutes(-i),
+            });
+        }
+        await _svc.Db.SaveChangesAsync();
+
+        var result = await _controller.GetRoomArtifacts(roomId, limit: 3);
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var artifacts = Assert.IsType<List<ArtifactRecord>>(ok.Value);
+        Assert.Equal(3, artifacts.Count);
+    }
+
+    [Fact]
+    public async Task GetRoomArtifacts_IsolatedByRoom()
+    {
+        _svc.Db.RoomArtifacts.Add(new AgentAcademy.Server.Data.Entities.RoomArtifactEntity
+        {
+            RoomId = "room-a", AgentId = "eng", FilePath = "a.cs", Operation = "Created", Timestamp = DateTime.UtcNow,
+        });
+        _svc.Db.RoomArtifacts.Add(new AgentAcademy.Server.Data.Entities.RoomArtifactEntity
+        {
+            RoomId = "room-b", AgentId = "eng", FilePath = "b.cs", Operation = "Created", Timestamp = DateTime.UtcNow,
+        });
+        await _svc.Db.SaveChangesAsync();
+
+        var result = await _controller.GetRoomArtifacts("room-a");
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var artifacts = Assert.IsType<List<ArtifactRecord>>(ok.Value);
+        Assert.Single(artifacts);
+        Assert.Equal("a.cs", artifacts[0].FilePath);
     }
 
     // ── GetRoomEvaluations ───────────────────────────────────────

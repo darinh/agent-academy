@@ -29,7 +29,8 @@ public interface IAgentToolRegistry
     IReadOnlyList<AIFunction> GetToolsForAgent(
         IEnumerable<string> enabledTools,
         string? agentId = null,
-        string? agentName = null);
+        string? agentName = null,
+        string? roomId = null);
 
     /// <summary>
     /// Returns all registered tool names for diagnostics.

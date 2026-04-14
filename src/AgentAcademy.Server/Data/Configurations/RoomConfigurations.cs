@@ -20,6 +20,24 @@ internal sealed class RoomConfiguration : IEntityTypeConfiguration<RoomEntity>
     }
 }
 
+internal sealed class RoomArtifactConfiguration : IEntityTypeConfiguration<RoomArtifactEntity>
+{
+    public void Configure(EntityTypeBuilder<RoomArtifactEntity> entity)
+    {
+        entity.ToTable("room_artifacts");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.RoomId).IsRequired();
+        entity.Property(e => e.AgentId).IsRequired();
+        entity.Property(e => e.FilePath).IsRequired();
+        entity.Property(e => e.Operation).IsRequired();
+        entity.Property(e => e.CommitSha).IsRequired(false);
+        entity.Property(e => e.Timestamp).IsRequired();
+        entity.HasIndex(e => new { e.RoomId, e.Timestamp })
+            .HasDatabaseName("idx_room_artifacts_room_ts")
+            .IsDescending(false, true);
+    }
+}
+
 internal sealed class PlanConfiguration : IEntityTypeConfiguration<PlanEntity>
 {
     public void Configure(EntityTypeBuilder<PlanEntity> entity)
