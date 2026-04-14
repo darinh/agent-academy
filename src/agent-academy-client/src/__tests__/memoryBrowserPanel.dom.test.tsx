@@ -355,6 +355,7 @@ describe("MemoryBrowserPanel", () => {
           value: "Fresh value",
           createdAt: "2026-04-10T12:00:00Z",
           updatedAt: null,
+          lastAccessedAt: null,
           expiresAt: null,
         }],
       };

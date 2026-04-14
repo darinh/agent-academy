@@ -217,7 +217,7 @@ describe("DigestPanel", () => {
 
     it("highlights undigested count when > 0", async () => {
       setupSuccess({}, { undigestedRetrospectives: 5 });
-      const { container } = renderPanel();
+      renderPanel();
       await waitFor(() => {
         expect(screen.getByText("5")).toBeInTheDocument();
       });
@@ -715,7 +715,7 @@ describe("DigestPanel", () => {
     it("ignores stale list responses", async () => {
       // Set up initial load
       setupSuccess({}, {}, [makeDigestItem({ id: 1, summary: "Initial load" })]);
-      const { container } = renderPanel();
+      renderPanel();
       await waitFor(() => {
         expect(screen.getByText("Initial load")).toBeInTheDocument();
       });

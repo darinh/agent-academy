@@ -955,7 +955,7 @@ describe("RetrospectivePanel", () => {
       setupSuccess(undefined, undefined, [
         makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
       ]);
-      const { container } = renderWithNav();
+      renderWithNav();
 
       await waitFor(() => {
         expect(screen.getByText("Auth feature")).toBeInTheDocument();
