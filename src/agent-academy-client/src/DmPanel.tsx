@@ -54,6 +54,7 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   const [messages, setMessages] = useState<DmMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [exportingDm, setExportingDm] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -176,13 +177,14 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   const doSend = useCallback(async () => {
     if (readOnly || !selectedAgentId || !input.trim()) return;
     setSending(true);
+    setSendError(null);
     try {
       await sendDmToAgent(selectedAgentId, input.trim());
       setInput("");
       void refreshMessages(selectedAgentId);
       void refreshThreads();
     } catch {
-      // Send failed — input is preserved so the user can retry
+      setSendError("Failed to send message. Your text is preserved — try again.");
     } finally {
       setSending(false);
     }
@@ -361,6 +363,20 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
               </div>
             ) : (
               <div className={s.composer}>
+                {sendError && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "6px 12px", borderRadius: "6px",
+                    backgroundColor: "rgba(220, 53, 69, 0.08)",
+                    border: "1px solid rgba(220, 53, 69, 0.2)",
+                    color: "var(--aa-copper, #dc3545)", fontSize: "12px",
+                  }}>
+                    <span style={{ flex: 1 }}>⚠ {sendError}</span>
+                    <button onClick={() => setSendError(null)} style={{
+                      background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "12px",
+                    }}>✕</button>
+                  </div>
+                )}
                 <Textarea
                   className={s.composerInput}
                   appearance="filled-darker"

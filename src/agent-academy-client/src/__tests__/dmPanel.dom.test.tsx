@@ -780,6 +780,11 @@ describe("DmPanel (interactive)", () => {
         const sendBtn = screen.getByTitle("Send");
         expect(sendBtn).not.toBeDisabled();
       });
+
+      // Error message should be visible to the user
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to send message/)).toBeInTheDocument();
+      });
     });
   });
 

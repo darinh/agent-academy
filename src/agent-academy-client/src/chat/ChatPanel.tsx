@@ -65,11 +65,14 @@ const ChatPanel = memo(function ChatPanel(props: {
   const onSendMessage = props.onSendMessage;
   const thinkingAgents = props.thinkingAgents;
   const connectionStatus = props.connectionStatus;
+  const currentRoomIdRef = useRef(room?.id ?? null);
+  currentRoomIdRef.current = room?.id ?? null;
 
   // Session management
   const [sessions, setSessions] = useState<ConversationSessionSnapshot[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [sessionMessages, setSessionMessages] = useState<ChatEnvelope[] | null>(null);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
 
   const displayMessages = sessionMessages ?? room?.recentMessages ?? [];
   const filteredMessages = useMemo(
@@ -105,11 +108,12 @@ const ChatPanel = memo(function ChatPanel(props: {
 
   // Load sessions for the room
   useEffect(() => {
-    if (!room) { setSessions([]); setSelectedSessionId(null); setSessionMessages(null); return; }
+    if (!room) { setSessions([]); setSelectedSessionId(null); setSessionMessages(null); setSessionLoadError(null); return; }
     let cancelled = false;
+    setSessionLoadError(null);
     getRoomSessions(room.id, undefined, 50)
-      .then((res) => { if (!cancelled) setSessions(res.sessions); })
-      .catch(() => { if (!cancelled) setSessions([]); });
+      .then((res) => { if (!cancelled) { setSessions(res.sessions); setSessionLoadError(null); } })
+      .catch(() => { if (!cancelled) { setSessions([]); setSessionLoadError("Failed to load sessions"); } });
     setSelectedSessionId(null);
     setSessionMessages(null);
     return () => { cancelled = true; };
@@ -125,8 +129,8 @@ const ChatPanel = memo(function ChatPanel(props: {
     }
     let cancelled = false;
     getRoomMessages(room.id, { sessionId: selectedSessionId, limit: 200 })
-      .then((res) => { if (!cancelled) setSessionMessages(res.messages); })
-      .catch(() => { if (!cancelled) setSessionMessages([]); });
+      .then((res) => { if (!cancelled) { setSessionMessages(res.messages); setSessionLoadError(null); } })
+      .catch(() => { if (!cancelled) { setSessionMessages([]); setSessionLoadError("Failed to load session messages"); } });
     return () => { cancelled = true; };
   }, [selectedSessionId, room?.id, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -278,6 +282,31 @@ const ChatPanel = memo(function ChatPanel(props: {
         )}
         {props.loading && filteredMessages.length === 0 ? (
           <SkeletonLoader rows={4} variant="chat" />
+        ) : sessionLoadError ? (
+          <div style={{
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: "8px", padding: "24px",
+            color: "var(--aa-copper, #dc3545)", fontSize: "13px",
+          }}>
+            <span>⚠ {sessionLoadError}</span>
+            <button onClick={() => {
+              setSessionLoadError(null);
+              if (room) {
+                const retryRoomId = room.id;
+                getRoomSessions(retryRoomId, undefined, 50)
+                  .then((res) => {
+                    if (currentRoomIdRef.current === retryRoomId) setSessions(res.sessions);
+                  })
+                  .catch(() => {
+                    if (currentRoomIdRef.current === retryRoomId) setSessionLoadError("Failed to load sessions");
+                  });
+              }
+            }} style={{
+              background: "none", border: "1px solid rgba(220, 53, 69, 0.3)",
+              borderRadius: "4px", padding: "4px 12px", cursor: "pointer",
+              color: "inherit", fontSize: "12px",
+            }}>Retry</button>
+          </div>
         ) : filteredMessages.length ? (
           filteredMessages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />
