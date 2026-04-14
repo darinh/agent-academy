@@ -429,4 +429,151 @@ public sealed class RetrospectiveControllerTests : IDisposable
         var result = await _controller.Stats();
         Assert.IsType<UnauthorizedObjectResult>(result);
     }
+
+    // ── Edge cases (test backfill) ──────────────────────────────
+
+    [Fact]
+    public async Task List_LimitClampedTo100WhenExceeded()
+    {
+        SeedRetrospective();
+
+        var result = await _controller.List(limit: 500);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Equal(100, body.Limit);
+    }
+
+    [Fact]
+    public async Task List_WhitespaceAgentId_TreatedAsNoFilter()
+    {
+        SeedRetrospective(agentId: "hephaestus", agentName: "Hephaestus");
+        SeedRetrospective(agentId: "athena", agentName: "Athena");
+
+        var result = await _controller.List(agentId: "   ");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Equal(2, body.Retrospectives.Count);
+    }
+
+    [Fact]
+    public async Task List_WhitespaceTaskId_TreatedAsNoFilter()
+    {
+        SeedRetrospective();
+        SeedRetrospective();
+
+        var result = await _controller.List(taskId: "  ");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Equal(2, body.Retrospectives.Count);
+    }
+
+    [Fact]
+    public async Task List_OffsetBeyondTotal_ReturnsEmptyListWithCorrectTotal()
+    {
+        SeedRetrospective();
+        SeedRetrospective();
+
+        var result = await _controller.List(offset: 100);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Empty(body.Retrospectives);
+        Assert.Equal(2, body.Total);
+    }
+
+    [Fact]
+    public async Task List_ContentExactly200Chars_NotTruncated()
+    {
+        var exact200 = new string('X', 200);
+        SeedRetrospective(content: exact200);
+
+        var result = await _controller.List();
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        var item = Assert.Single(body.Retrospectives);
+        Assert.Equal(200, item.ContentPreview.Length);
+        Assert.DoesNotContain("…", item.ContentPreview);
+    }
+
+    [Fact]
+    public async Task List_Content201Chars_Truncated()
+    {
+        var content201 = new string('X', 201);
+        SeedRetrospective(content: content201);
+
+        var result = await _controller.List();
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        var item = Assert.Single(body.Retrospectives);
+        Assert.Equal(201, item.ContentPreview.Length); // 200 chars + "…"
+        Assert.EndsWith("…", item.ContentPreview);
+    }
+
+    [Fact]
+    public async Task Get_ReturnsCorrectAgentFields()
+    {
+        var retro = SeedRetrospective(agentId: "athena", agentName: "Athena", content: "Analysis complete.");
+
+        var result = await _controller.Get(retro.Id);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveDetailResponse>(ok.Value);
+        Assert.Equal("athena", body.AgentId);
+        Assert.Equal("Athena", body.AgentName);
+        Assert.Equal("Analysis complete.", body.Content);
+    }
+
+    [Fact]
+    public async Task Stats_SingleAgent_ReturnsOneEntry()
+    {
+        SeedRetrospective(agentId: "solo", agentName: "Solo");
+
+        var result = await _controller.Stats();
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveStatsResponse>(ok.Value);
+        Assert.Single(body.ByAgent);
+        Assert.Equal("solo", body.ByAgent[0].AgentId);
+        Assert.Equal(1, body.ByAgent[0].Count);
+    }
+
+    [Fact]
+    public async Task List_EmptyAgentId_TreatedAsNoFilter()
+    {
+        SeedRetrospective();
+
+        var result = await _controller.List(agentId: "");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Single(body.Retrospectives);
+    }
+
+    [Fact]
+    public async Task List_EmptyTaskId_TreatedAsNoFilter()
+    {
+        SeedRetrospective();
+
+        var result = await _controller.List(taskId: "");
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Single(body.Retrospectives);
+    }
+
+    [Fact]
+    public async Task List_LargeOffset_DoesNotThrow()
+    {
+        var result = await _controller.List(offset: int.MaxValue);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveListResponse>(ok.Value);
+        Assert.Empty(body.Retrospectives);
+    }
+
+    [Fact]
+    public async Task Get_ContentPreservedExactly()
+    {
+        var content = "Line 1\nLine 2\n\tTabbed line\n  Spaces  ";
+        var retro = SeedRetrospective(content: content);
+
+        var result = await _controller.Get(retro.Id);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<RetrospectiveDetailResponse>(ok.Value);
+        Assert.Equal(content, body.Content);
+    }
 }
