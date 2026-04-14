@@ -179,35 +179,11 @@ UI timeline view showing phase durations and transitions. Analytics dashboard ag
 
 ## 2. Task Management
 
-### 2.1 No Task Prioritization
+### 2.1 ~~No Task Prioritization~~ — RESOLVED
 
-**Severity**: High
+**Resolved in**: feat/task-priority (spec 010 v1.1.0)
 
-**Impact**: Tasks have no priority field. When multiple tasks exist, agents and humans have no way to indicate "do this one first." The Orchestrator assigns work without priority awareness. Critical tasks may be delayed while nice-to-haves are implemented.
-
-**Suggested Fix**: Add priority field to Task model:
-```csharp
-public enum TaskPriority {
-    Critical = 0,  // Blocking issues, dependencies for other work
-    High = 1,      // Core features, important fixes
-    Medium = 2,    // Standard features
-    Low = 3        // Polish, nice-to-haves
-}
-
-public class Task {
-    public TaskPriority Priority { get; set; } = TaskPriority.Medium;
-}
-
-// Orchestrator assignment logic
-var nextTask = tasks
-    .Where(t => t.Status == TaskStatus.Pending)
-    .OrderBy(t => t.Priority)
-    .ThenBy(t => t.CreatedAt)
-    .FirstOrDefault();
-```
-UI shows priority badges, allows sorting, and includes priority selector when creating tasks.
-
-**Workaround**: Use task titles with prefixes like "P0:", "CRITICAL:", or manually tell agents which task to start first.
+Tasks now have a `Priority` field (Critical=0, High=1, Medium=2, Low=3). The Orchestrator queries tasks ordered by priority then creation date. The `SET_PRIORITY` command allows agents and humans to change priority. Breakout sub-tasks inherit parent priority. UI shows priority badges and allows editing via task detail panel. 20 tests cover the feature.
 
 ---
 
@@ -3578,7 +3554,7 @@ These require significant refactoring but are important for scale:
 Low-effort, high-impact improvements:
 
 - Manual compaction button (4.1)
-- Task priority field (2.1)
+- ~~Task priority field (2.1)~~ ✅
 - Keyboard shortcuts (6.7)
 - Conversation export (4.3)
 - Spec search (11.2)
