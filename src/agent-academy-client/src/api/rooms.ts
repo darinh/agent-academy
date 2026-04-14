@@ -9,6 +9,8 @@ import type {
   SessionListResponse,
   SessionStats,
   CompactRoomResult,
+  ArtifactRecord,
+  RoomEvaluationResponse,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
 
@@ -150,4 +152,15 @@ export function compactRoom(roomId: string): Promise<CompactRoomResult> {
 
 export function getRoomContextUsage(roomId: string): Promise<AgentContextUsage[]> {
   return request<AgentContextUsage[]>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/context-usage`));
+}
+
+// ── Artifacts & Evaluations ────────────────────────────────────────────
+
+export function getRoomArtifacts(roomId: string, limit = 100): Promise<ArtifactRecord[]> {
+  const qs = limit !== 100 ? `?limit=${limit}` : "";
+  return request<ArtifactRecord[]>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/artifacts${qs}`));
+}
+
+export function getRoomEvaluations(roomId: string): Promise<RoomEvaluationResponse> {
+  return request<RoomEvaluationResponse>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/evaluations`));
 }

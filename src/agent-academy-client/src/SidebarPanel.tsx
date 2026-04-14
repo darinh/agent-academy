@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { value: "directMessages", icon: "✉️", label: "Messages" },
   { value: "plan", icon: "📄", label: "Plan" },
   { value: "tasks", icon: "📋", label: "Tasks" },
+  { value: "artifacts", icon: "📦", label: "Artifacts" },
   { value: "timeline", icon: "⏱️", label: "Timeline" },
   { value: "sprint", icon: "🏃", label: "Sprint" },
   { value: "dashboard", icon: "📊", label: "Metrics" },

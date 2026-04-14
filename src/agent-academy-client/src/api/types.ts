@@ -1089,3 +1089,30 @@ export interface WorktreeStatusSnapshot {
   agentId: string | null;
   agentName: string | null;
 }
+
+// ── Artifacts & Evaluations ─────────────────────────────────────────────
+
+export type ArtifactOperation = "Created" | "Updated" | "Committed" | "Deleted";
+
+export interface ArtifactRecord {
+  agentId: string;
+  roomId: string;
+  filePath: string;
+  operation: ArtifactOperation;
+  timestamp: string;
+}
+
+export interface EvaluationResult {
+  filePath: string;
+  score: number;
+  exists: boolean;
+  nonEmpty: boolean;
+  syntaxValid: boolean;
+  complete: boolean;
+  issues: string[];
+}
+
+export interface RoomEvaluationResponse {
+  artifacts: EvaluationResult[];
+  aggregateScore: number;
+}
