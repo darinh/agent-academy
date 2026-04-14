@@ -14,7 +14,8 @@ public record RoomSnapshot(
     List<AgentPresence> Participants,
     List<ChatEnvelope> RecentMessages,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    PhasePrerequisiteStatus? PhaseGates = null
 );
 
 /// <summary>
@@ -105,4 +106,21 @@ public record SessionStats(
     int ActiveSessions,
     int ArchivedSessions,
     int TotalMessages
+);
+
+/// <summary>
+/// Per-phase gate indicating whether a transition is allowed and why not.
+/// </summary>
+public record PhaseGate(
+    bool Allowed,
+    string? Reason = null
+);
+
+/// <summary>
+/// Phase prerequisite status for all phases in a room.
+/// Included in <see cref="RoomSnapshot"/> so the UI can disable transition
+/// buttons without a separate API call.
+/// </summary>
+public record PhasePrerequisiteStatus(
+    Dictionary<string, PhaseGate> Gates
 );

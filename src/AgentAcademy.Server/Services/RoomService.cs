@@ -30,19 +30,22 @@ public sealed class RoomService
     private readonly ActivityPublisher _activity;
     private readonly MessageService _messages;
     private readonly RoomSnapshotBuilder _snapshots;
+    private readonly PhaseTransitionValidator _phaseValidator;
 
     public RoomService(
         AgentAcademyDbContext db,
         ILogger<RoomService> logger,
         ActivityPublisher activity,
         MessageService messages,
-        RoomSnapshotBuilder snapshots)
+        RoomSnapshotBuilder snapshots,
+        PhaseTransitionValidator phaseValidator)
     {
         _db = db;
         _logger = logger;
         _activity = activity;
         _messages = messages;
         _snapshots = snapshots;
+        _phaseValidator = phaseValidator;
     }
 
     // ── Room Queries ────────────────────────────────────────────
@@ -333,14 +336,24 @@ public sealed class RoomService
     /// Transitions a room (and its active task) to a new phase.
     /// </summary>
     public async Task<RoomSnapshot> TransitionPhaseAsync(
-        string roomId, CollaborationPhase targetPhase, string? reason = null)
+        string roomId, CollaborationPhase targetPhase, string? reason = null, bool force = false)
     {
         var room = await _db.Rooms.FindAsync(roomId)
             ?? throw new InvalidOperationException($"Room '{roomId}' not found");
 
+        // Same-phase no-op (preserve idempotent retry semantics)
         if (room.CurrentPhase == targetPhase.ToString())
         {
             return await _snapshots.BuildRoomSnapshotAsync(room);
+        }
+
+        // Validate prerequisites unless force is set
+        if (!force)
+        {
+            var currentPhase = Enum.Parse<CollaborationPhase>(room.CurrentPhase);
+            var gate = await _phaseValidator.ValidateTransitionAsync(roomId, currentPhase, targetPhase);
+            if (!gate.Allowed)
+                throw new PhasePrerequisiteException(targetPhase, gate);
         }
 
         var now = DateTime.UtcNow;

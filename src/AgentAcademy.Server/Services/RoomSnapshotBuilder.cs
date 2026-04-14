@@ -25,11 +25,13 @@ public sealed class RoomSnapshotBuilder
 
     private readonly AgentAcademyDbContext _db;
     private readonly IAgentCatalog _catalog;
+    private readonly PhaseTransitionValidator _phaseValidator;
 
-    public RoomSnapshotBuilder(AgentAcademyDbContext db, IAgentCatalog catalog)
+    public RoomSnapshotBuilder(AgentAcademyDbContext db, IAgentCatalog catalog, PhaseTransitionValidator phaseValidator)
     {
         _db = db;
         _catalog = catalog;
+        _phaseValidator = phaseValidator;
     }
 
     /// <summary>
@@ -65,6 +67,8 @@ public sealed class RoomSnapshotBuilder
             ?? await _db.AgentLocations.Where(l => l.RoomId == room.Id).ToListAsync();
         var participants = BuildParticipants(locations, preferredRoles);
 
+        var phaseGates = await _phaseValidator.GetGatesAsync(room.Id);
+
         return new RoomSnapshot(
             Id: room.Id,
             Name: room.Name,
@@ -75,7 +79,8 @@ public sealed class RoomSnapshotBuilder
             Participants: participants,
             RecentMessages: messages.Select(BuildChatEnvelope).ToList(),
             CreatedAt: room.CreatedAt,
-            UpdatedAt: room.UpdatedAt
+            UpdatedAt: room.UpdatedAt,
+            PhaseGates: phaseGates
         );
     }
 

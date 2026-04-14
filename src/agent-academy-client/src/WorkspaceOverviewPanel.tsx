@@ -2,6 +2,7 @@ import {
   Button,
   Card,
   ProgressBar,
+  Tooltip,
   makeStyles,
   shorthands,
 } from "@fluentui/react-components";
@@ -9,9 +10,10 @@ import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import {
   ArrowRightRegular,
+  LockClosedRegular,
   ChartMultipleRegular,
 } from "@fluentui/react-icons";
-import type { CollaborationPhase, RoomSnapshot, WorkspaceOverview } from "./api";
+import type { CollaborationPhase, PhaseGate, RoomSnapshot, WorkspaceOverview } from "./api";
 import RoomStatsPanel from "./RoomStatsPanel";
 
 const PHASES: readonly CollaborationPhase[] = [
@@ -134,6 +136,21 @@ function phaseProgress(phase: CollaborationPhase): number {
   return idx >= 0 ? (idx + 1) / PHASES.length : 0;
 }
 
+/** Returns the gate for a phase, considering direction (backward transitions always allowed). */
+function getGate(
+  phase: CollaborationPhase,
+  currentPhase: CollaborationPhase,
+  room: RoomSnapshot,
+): PhaseGate {
+  // Same phase — always "allowed" (button will be disabled separately)
+  if (phase === currentPhase) return { allowed: true };
+  // Backward transitions are always allowed
+  if (PHASES.indexOf(phase) < PHASES.indexOf(currentPhase)) return { allowed: true };
+  // Forward: consult server-provided gates
+  const gate = room.phaseGates?.gates?.[phase];
+  return gate ?? { allowed: true };
+}
+
 // ── Component ──
 
 interface WorkspaceOverviewPanelProps {
@@ -172,19 +189,33 @@ export default function WorkspaceOverviewPanel({
           </div>
 
           <div className={s.transitionRow}>
-            {PHASES.map((phase) => (
-              <Button
-                key={phase}
-                size="small"
-                className={phase === room.currentPhase ? s.phaseButtonActive : s.phaseButton}
-                appearance={phase === room.currentPhase ? "primary" : "outline"}
-                disabled={phase === room.currentPhase || transitioning || readOnly}
-                icon={<ArrowRightRegular />}
-                onClick={() => onPhaseTransition(phase)}
-              >
-                {phase}
-              </Button>
-            ))}
+            {PHASES.map((phase) => {
+              const isCurrent = phase === room.currentPhase;
+              const gate = getGate(phase, room.currentPhase, room);
+              const blocked = !isCurrent && !gate.allowed;
+              const disabled = isCurrent || transitioning || readOnly || blocked;
+              const btn = (
+                <Button
+                  key={phase}
+                  size="small"
+                  className={isCurrent ? s.phaseButtonActive : s.phaseButton}
+                  appearance={isCurrent ? "primary" : "outline"}
+                  disabled={disabled}
+                  icon={blocked ? <LockClosedRegular /> : <ArrowRightRegular />}
+                  onClick={() => onPhaseTransition(phase)}
+                >
+                  {phase}
+                </Button>
+              );
+              if (blocked && gate.reason) {
+                return (
+                  <Tooltip key={phase} content={gate.reason} relationship="description">
+                    <span>{btn}</span>
+                  </Tooltip>
+                );
+              }
+              return btn;
+            })}
           </div>
           {readOnly && (
             <div className={s.limitedModeNote}>

@@ -237,6 +237,10 @@ public class CollaborationController : ControllerBase
                 roomId, request.TargetPhase, request.Reason);
             return Ok(snapshot);
         }
+        catch (PhasePrerequisiteException ex)
+        {
+            return Conflict(ApiProblem.Conflict(ex.Message, "phase_prerequisites_not_met"));
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_phase_request"));

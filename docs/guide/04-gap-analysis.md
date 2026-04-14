@@ -21,29 +21,13 @@ This gap analysis serves as:
 
 ## 1. Workflow & Phase Management
 
-### 1.1 No Phase Prerequisites
+### 1.1 ~~No Phase Prerequisites~~ — RESOLVED
 
-**Severity**: High
+**Severity**: ~~High~~ Resolved
 
-**Impact**: Users can transition to Implementing with zero planned tasks, or advance to Reviewing with no completed work. This breaks the intended workflow model where each phase has specific deliverables. New users may skip Planning entirely and wonder why nothing happens in Implementing. Agents may execute in an invalid state.
+**Resolved in**: feat/phase-prerequisites
 
-**Suggested Fix**: Implement server-side phase transition validation:
-```csharp
-// PhaseTransitionValidator.cs
-public class PhaseTransitionRules {
-    public bool CanTransition(Phase from, Phase to, RoomState state) {
-        return to switch {
-            Phase.Implementing => state.Tasks.Any(),
-            Phase.Reviewing => state.Tasks.Any(t => t.Status == TaskStatus.Completed),
-            Phase.Committing => state.Tasks.All(t => t.ReviewStatus == ReviewStatus.Approved),
-            _ => true
-        };
-    }
-}
-```
-UI would show disabled transition buttons with tooltip explaining missing prerequisites.
-
-**Workaround**: Humans must manually verify prerequisites before advancing phases. No automatic enforcement.
+Server-side `PhaseTransitionValidator` enforces per-phase gates: Discussion/Validation require ≥1 task, Implementation requires ≥1 approved/completed task, FinalSynthesis requires all tasks terminal. Backward transitions always allowed. `force` flag available for API power users. Frontend shows locked icon + tooltip on blocked phases. Returns 409 Conflict with reason on violation.
 
 ---
 
@@ -695,41 +679,13 @@ Real-time updates via SignalR as agents process messages.
 
 ---
 
-### 4.3 No Conversation Export
+### 4.3 ~~No Conversation Export~~ — RESOLVED
 
-**Severity**: Low
+**Severity**: ~~Low~~ Resolved
 
-**Impact**: Can't export chat history as text, JSON, or PDF. Useful for:
-- Sharing discussions with stakeholders
-- Archiving project decisions
-- Training data collection
-- Compliance/audit requirements
-Must screenshot or manually copy-paste.
+**Resolved in**: feat/conversation-export (spec 300-frontend-ui)
 
-**Suggested Fix**: Add export functionality:
-```typescript
-// ExportMenu.tsx
-<Dropdown label="Export">
-  <MenuItem onClick={() => exportAs('markdown')}>
-    Download as Markdown
-  </MenuItem>
-  <MenuItem onClick={() => exportAs('json')}>
-    Download as JSON (structured)
-  </MenuItem>
-  <MenuItem onClick={() => exportAs('pdf')}>
-    Generate PDF Report
-  </MenuItem>
-  <MenuItem onClick={() => exportAs('html')}>
-    Save as HTML Archive
-  </MenuItem>
-</Dropdown>
-
-// API
-GET /api/rooms/{id}/export?format=markdown&includeCommands=true
-```
-Export includes messages, commands, task state, phase transitions.
-
-**Workaround**: Manually copy-paste messages into external document. Time-consuming and loses structure.
+Export dropdown in SessionToolbar (JSON/Markdown) for room messages, and DM export via DmPanel. Backend: `ExportController` with `ConversationExportService`. Frontend: `exportRoomMessages()`, `exportDmMessages()`, `downloadFile()` helper.
 
 ---
 
@@ -1562,46 +1518,13 @@ ORDER BY rank;
 
 ---
 
-### 6.7 No Keyboard Shortcuts
+### 6.7 ~~No Keyboard Shortcuts~~ — RESOLVED
 
-**Severity**: Low
+**Severity**: ~~Low~~ Resolved
 
-**Impact**: No keyboard-driven workflow beyond browser defaults. Power users can't:
-- Navigate rooms with hotkeys (J/K like Gmail)
-- Quick-transition phases (Ctrl+Shift+P)
-- Focus search (/)
-- Submit messages (Ctrl+Enter)
-Mouse-heavy interaction slows down experienced users.
+**Resolved in**: feat/keyboard-shortcuts (spec 300-frontend-ui)
 
-**Suggested Fix**: Add keyboard shortcut system:
-```typescript
-// KeyboardShortcuts.tsx
-const SHORTCUTS = {
-  '/': focusGlobalSearch,
-  'g r': goToRoomList,
-  'g d': goToDashboard,
-  'j': nextRoom,
-  'k': previousRoom,
-  'n': newMessage,
-  'ctrl+enter': sendMessage,
-  'ctrl+shift+p': transitionPhase,
-  '?': showShortcutHelp
-};
-
-useKeyboardShortcuts(SHORTCUTS);
-
-// Help modal
-<ShortcutHelp>
-  <ShortcutList>
-    <Shortcut keys="/" description="Focus search" />
-    <Shortcut keys="j/k" description="Next/previous room" />
-    <Shortcut keys="ctrl+enter" description="Send message" />
-    {/* ... */}
-  </ShortcutList>
-</ShortcutHelp>
-```
-
-**Workaround**: Use mouse for all navigation. Slower but functional.
+Global keyboard shortcut system via `useKeyboardShortcuts` hook. Shortcuts: `/` focus search, `?` toggle help overlay, `⌘K` command palette. Input guard prevents firing when focus is in text inputs. `KeyboardShortcutsDialog` lists all available shortcuts.
 
 ---
 
@@ -3347,95 +3270,14 @@ dotnet run -- migrate --rollback --steps 1
 
 ---
 
-### 12.6 No Docker/Container Support Documented
+### 12.6 ~~No Docker/Container Support Documented~~ — RESOLVED
 
-**Severity**: Medium
+**Severity**: ~~Medium~~ Resolved
 
-**Impact**: Deployment story is unclear. No Dockerfile, no docker-compose.yml, no documentation on containerized deployment. Users must figure out:
-- How to build the container
-- What environment variables to set
-- How to persist data volumes
-- How to configure networking
 
-This slows adoption and increases deployment errors.
+**Resolved in**: feat/docker-containerization + docs/017-deployment
 
-**Suggested Fix**: Add container support:
-```dockerfile
-# Dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-WORKDIR /app
-EXPOSE 80
-EXPOSE 443
-
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
-COPY ["AgentAcademy.csproj", "./"]
-RUN dotnet restore
-COPY . .
-RUN dotnet build -c Release -o /app/build
-
-FROM build AS publish
-RUN dotnet publish -c Release -o /app/publish
-
-FROM base AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
-
-# Install git
-RUN apt-get update && apt-get install -y git
-
-ENTRYPOINT ["dotnet", "AgentAcademy.dll"]
-```
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  agent-academy:
-    build: .
-    ports:
-      - "5000:80"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - OpenAI__ApiKey=${OPENAI_API_KEY}
-      - Git__UserName=${GIT_USER_NAME}
-      - Git__UserEmail=${GIT_USER_EMAIL}
-    volumes:
-      - ./workspace:/workspace
-      - ./data:/app/data
-    restart: unless-stopped
-```
-
-```markdown
-# docs/deployment/docker.md
-## Docker Deployment
-
-### Quick Start
-```bash
-# Create .env file
-cp .env.example .env
-# Edit .env with your settings
-
-# Start services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-```
-
-### Volumes
-- `/workspace` - Git repository and workspace files (persist)
-- `/app/data` - SQLite database (persist)
-
-### Environment Variables
-See `.env.example` for all configuration options.
-```
-
-**Workaround**: Deploy directly on host or figure out containerization yourself. Inconsistent deployments.
+Dockerfile (multi-stage .NET 8 build), docker-compose.yml, and spec 017-deployment cover containerized deployment, environment variables, volume mounts, and health probes.
 
 ---
 
@@ -3528,8 +3370,10 @@ Low-effort, high-impact improvements:
 
 - ~~Manual compaction button (4.1)~~ ✅
 - ~~Task priority field (2.1)~~ ✅
-- Keyboard shortcuts (6.7)
-- Conversation export (4.3)
+- ~~Keyboard shortcuts (6.7)~~ ✅
+- ~~Conversation export (4.3)~~ ✅
+- ~~Phase prerequisites (1.1)~~ ✅
+- ~~Docker/container support (12.6)~~ ✅
 - Spec search (11.2)
 
 ---

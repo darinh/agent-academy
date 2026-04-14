@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   CollaborationPhase,
+  PhaseGate,
   RoomSnapshot,
   WorkspaceOverview,
   AgentPresence,
@@ -62,6 +63,18 @@ function statusColor(status: string): string {
 function phaseProgress(phase: CollaborationPhase): number {
   const idx = PHASES.indexOf(phase);
   return idx >= 0 ? (idx + 1) / PHASES.length : 0;
+}
+
+/** Mirrors getGate from WorkspaceOverviewPanel. */
+function getGate(
+  phase: CollaborationPhase,
+  currentPhase: CollaborationPhase,
+  room: RoomSnapshot,
+): PhaseGate {
+  if (phase === currentPhase) return { allowed: true };
+  if (PHASES.indexOf(phase) < PHASES.indexOf(currentPhase)) return { allowed: true };
+  const gate = room.phaseGates?.gates?.[phase];
+  return gate ?? { allowed: true };
 }
 
 // ── Tests ──
@@ -303,6 +316,102 @@ describe("WorkspaceOverviewPanel", () => {
         "Implementation",
         "FinalSynthesis",
       ]);
+    });
+  });
+
+  describe("phase gate logic", () => {
+    it("backward transitions are always allowed even when gates block", () => {
+      const room = makeRoom({
+        currentPhase: "Implementation",
+        phaseGates: {
+          gates: {
+            Intake: { allowed: true },
+            Planning: { allowed: false, reason: "blocked" },
+            Discussion: { allowed: false, reason: "blocked" },
+            Validation: { allowed: false, reason: "blocked" },
+            Implementation: { allowed: true },
+            FinalSynthesis: { allowed: false, reason: "tasks in progress" },
+          },
+        },
+      });
+      // All phases before current should be allowed regardless of gate
+      expect(getGate("Intake", "Implementation", room).allowed).toBe(true);
+      expect(getGate("Planning", "Implementation", room).allowed).toBe(true);
+      expect(getGate("Discussion", "Implementation", room).allowed).toBe(true);
+      expect(getGate("Validation", "Implementation", room).allowed).toBe(true);
+    });
+
+    it("same phase is always allowed", () => {
+      const room = makeRoom({ currentPhase: "Discussion" });
+      expect(getGate("Discussion", "Discussion", room).allowed).toBe(true);
+    });
+
+    it("forward transition blocked when gate says not allowed", () => {
+      const room = makeRoom({
+        currentPhase: "Planning",
+        phaseGates: {
+          gates: {
+            Intake: { allowed: true },
+            Planning: { allowed: true },
+            Discussion: { allowed: false, reason: "Create at least one task" },
+            Validation: { allowed: false, reason: "No tasks" },
+            Implementation: { allowed: false, reason: "No approved tasks" },
+            FinalSynthesis: { allowed: false, reason: "No tasks" },
+          },
+        },
+      });
+      const gate = getGate("Discussion", "Planning", room);
+      expect(gate.allowed).toBe(false);
+      expect(gate.reason).toBe("Create at least one task");
+    });
+
+    it("forward transition allowed when gate allows", () => {
+      const room = makeRoom({
+        currentPhase: "Planning",
+        phaseGates: {
+          gates: {
+            Discussion: { allowed: true },
+          },
+        },
+      });
+      expect(getGate("Discussion", "Planning", room).allowed).toBe(true);
+    });
+
+    it("missing phaseGates defaults to allowed", () => {
+      const room = makeRoom({ currentPhase: "Planning" });
+      // No phaseGates property at all
+      expect(getGate("Discussion", "Planning", room).allowed).toBe(true);
+    });
+
+    it("disables button when gate blocks and not backward/same", () => {
+      const room = makeRoom({
+        currentPhase: "Intake",
+        phaseGates: {
+          gates: {
+            Intake: { allowed: true },
+            Planning: { allowed: true },
+            Discussion: { allowed: false, reason: "Need tasks" },
+            Validation: { allowed: false, reason: "Need tasks" },
+            Implementation: { allowed: false, reason: "Need approved" },
+            FinalSynthesis: { allowed: false, reason: "Need all terminal" },
+          },
+        },
+      });
+      const transitioning = false;
+      const readOnly = false;
+      for (const phase of PHASES) {
+        const isCurrent = phase === room.currentPhase;
+        const gate = getGate(phase, room.currentPhase, room);
+        const blocked = !isCurrent && !gate.allowed;
+        const disabled = isCurrent || transitioning || readOnly || blocked;
+        if (phase === "Intake") {
+          expect(disabled).toBe(true); // current
+        } else if (phase === "Planning") {
+          expect(disabled).toBe(false); // allowed gate
+        } else {
+          expect(disabled).toBe(true); // blocked by gate
+        }
+      }
     });
   });
 });

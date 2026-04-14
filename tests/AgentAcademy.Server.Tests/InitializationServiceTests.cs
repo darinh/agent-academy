@@ -64,10 +64,10 @@ public sealed class InitializationServiceTests : IDisposable
             _db, NullLogger<CrashRecoveryService>.Instance,
             breakouts, agentLocations, messageService, _activity);
 
-        var snapshots = new RoomSnapshotBuilder(_db, _catalog);
+        var snapshots = new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db));
         _roomService = new RoomService(
             _db, NullLogger<RoomService>.Instance,
-            _activity, messageService, snapshots);
+            _activity, messageService, snapshots, new PhaseTransitionValidator(_db));
         _workspaceRoomService = new WorkspaceRoomService(
             _db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activity);
     }

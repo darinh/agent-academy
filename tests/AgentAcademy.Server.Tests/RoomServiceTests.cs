@@ -50,6 +50,7 @@ public class RoomServiceTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
+        services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
@@ -756,7 +757,7 @@ public class RoomServiceTests : IDisposable
         db.Tasks.Add(MakeTask("t1", "r1", status: nameof(TaskStatus.Active), phase: "Planning"));
         await db.SaveChangesAsync();
 
-        await svc.TransitionPhaseAsync("r1", CollaborationPhase.Implementation);
+        await svc.TransitionPhaseAsync("r1", CollaborationPhase.Implementation, force: true);
 
         var task = await db.Tasks.FindAsync("t1");
         Assert.Equal("Implementation", task!.CurrentPhase);
@@ -817,7 +818,7 @@ public class RoomServiceTests : IDisposable
         db.Rooms.Add(MakeRoom("r1", "Room", phase: nameof(CollaborationPhase.Validation)));
         await db.SaveChangesAsync();
 
-        var snapshot = await svc.TransitionPhaseAsync("r1", CollaborationPhase.FinalSynthesis);
+        var snapshot = await svc.TransitionPhaseAsync("r1", CollaborationPhase.FinalSynthesis, force: true);
 
         Assert.Equal(RoomStatus.Completed, snapshot.Status);
         Assert.Equal(CollaborationPhase.FinalSynthesis, snapshot.CurrentPhase);
@@ -833,7 +834,7 @@ public class RoomServiceTests : IDisposable
         db.Rooms.Add(MakeRoom("r1", "Room", phase: nameof(CollaborationPhase.Intake)));
         await db.SaveChangesAsync();
 
-        var snapshot = await svc.TransitionPhaseAsync("r1", CollaborationPhase.Discussion);
+        var snapshot = await svc.TransitionPhaseAsync("r1", CollaborationPhase.Discussion, force: true);
 
         Assert.Equal(RoomStatus.Active, snapshot.Status);
     }

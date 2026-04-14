@@ -34,6 +34,7 @@ internal sealed class TestServiceGraph : IDisposable
     public BreakoutRoomService BreakoutRoomService { get; }
     public RoomService RoomService { get; }
     public RoomSnapshotBuilder RoomSnapshotBuilder { get; }
+    public PhaseTransitionValidator PhaseTransitionValidator { get; }
     public RoomLifecycleService RoomLifecycleService { get; }
     public WorkspaceRoomService WorkspaceRoomService { get; }
     public PlanService PlanService { get; }
@@ -91,11 +92,13 @@ internal sealed class TestServiceGraph : IDisposable
             Db, NullLogger<BreakoutRoomService>.Instance, Catalog,
             ActivityPublisher, SessionService, TaskQueryService, AgentLocationService);
 
-        RoomSnapshotBuilder = new RoomSnapshotBuilder(Db, Catalog);
+        PhaseTransitionValidator = new PhaseTransitionValidator(Db);
+
+        RoomSnapshotBuilder = new RoomSnapshotBuilder(Db, Catalog, PhaseTransitionValidator);
 
         RoomService = new RoomService(
             Db, NullLogger<RoomService>.Instance,
-            ActivityPublisher, MessageService, RoomSnapshotBuilder);
+            ActivityPublisher, MessageService, RoomSnapshotBuilder, PhaseTransitionValidator);
 
         RoomLifecycleService = new RoomLifecycleService(
             Db, NullLogger<RoomLifecycleService>.Instance, Catalog, ActivityPublisher);

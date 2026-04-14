@@ -452,6 +452,15 @@ export interface TaskAssignmentResult {
 
 // ── Rooms ──────────────────────────────────────────────────────────────
 
+export interface PhaseGate {
+  allowed: boolean;
+  reason?: string | null;
+}
+
+export interface PhasePrerequisiteStatus {
+  gates: Record<string, PhaseGate>;
+}
+
 export interface RoomSnapshot {
   id: string;
   name: string;
@@ -463,6 +472,7 @@ export interface RoomSnapshot {
   recentMessages: ChatEnvelope[];
   createdAt: string;
   updatedAt: string;
+  phaseGates?: PhasePrerequisiteStatus | null;
 }
 
 export interface BreakoutRoom {
