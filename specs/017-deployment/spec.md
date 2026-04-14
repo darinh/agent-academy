@@ -374,6 +374,81 @@ sudo systemctl start agent-academy
 sudo systemctl status agent-academy
 ```
 
+### Containerized Deployment (Docker)
+
+An alternative to systemd deployment. The multi-stage `Dockerfile` builds both frontend and backend into a single image that serves the SPA from the .NET process.
+
+**Architecture:**
+
+```
+┌──────────────────────────────────────────────────┐
+│  Docker Container (agent-academy)                 │
+│                                                   │
+│  ┌───────────────────────────────────────────┐   │
+│  │  ASP.NET Core 8 (Kestrel, port 8080)      │   │
+│  │  ├── REST API (/api/*)                    │   │
+│  │  ├── SignalR Hub (/hubs/activity)         │   │
+│  │  ├── Static files (/wwwroot — Vite build) │   │
+│  │  ├── SPA fallback (index.html)            │   │
+│  │  └── Health checks (/health)              │   │
+│  └───────────────┬───────────────────────────┘   │
+│                  │                                │
+│  Volume: /data   │                                │
+│  ├── agent-academy.db  (SQLite + WAL/SHM)        │
+│  └── data-protection-keys/                        │
+└──────────────────────────────────────────────────┘
+```
+
+**Build and run:**
+
+```bash
+# Build the image
+docker build -t agent-academy .
+
+# Run with docker-compose (recommended)
+docker compose up -d
+
+# Or run directly
+docker run -d \
+  --name agent-academy \
+  -p 8080:8080 \
+  -v aa-data:/data \
+  -e ConsultantApi__SharedSecret="your-secret" \
+  agent-academy
+```
+
+**Multi-stage build process:**
+
+1. `build-frontend` (node:20-alpine): `npm ci` + `npm run build` → produces `dist/`
+2. `build-backend` (dotnet/sdk:8.0): `dotnet publish` → produces published DLLs
+3. `runtime` (dotnet/aspnet:8.0): copies published output + frontend dist into wwwroot
+
+**Image size:** ~250 MB (aspnet runtime + curl for healthcheck)
+
+**docker-compose.yml** provides:
+- Named volume `aa-data` for SQLite database and DataProtection keys
+- Environment variable configuration for GitHub OAuth, Consultant API, Discord
+- Health check using the `/health` endpoint
+- Restart policy: `unless-stopped`
+
+**Data persistence:**
+
+| Path | Purpose | Persistence |
+|------|---------|-------------|
+| `/data/agent-academy.db` | SQLite database (+ WAL/SHM sidecars) | Named volume `aa-data` |
+| `/data/data-protection-keys/` | ASP.NET DataProtection keys (auth cookies) | Named volume `aa-data` |
+
+**Limitations:**
+
+This is an **app-only container** — it runs the web API and serves the frontend, but does **not** include agent execution capabilities:
+
+- No .NET SDK (cannot run `dotnet build`/`dotnet test` inside the container)
+- No Node.js (cannot run `npm test`)
+- No Copilot CLI (cannot execute agents)
+- No git worktree management
+
+Agent execution requires a host machine with these tools, communicating with the containerized API via the Consultant API. A future "runner" profile may package these tools for fully containerized agent execution.
+
 ### Reverse Proxy (nginx)
 
 ```nginx
@@ -585,10 +660,11 @@ See [002 — Development Workflow](../002-development-workflow/spec.md) for the 
 
 ## Known Gaps
 
-1. **No containerization**: No Dockerfile or docker-compose yet. The single-binary publish approach works but lacks container orchestration benefits (immutable deploys, health checks, resource limits).
+1. ~~**No containerization**~~: ✅ Resolved — Dockerfile and docker-compose.yml added. App-only container (no agent execution in-container).
 2. **No infrastructure-as-code**: Server provisioning is manual. Consider Terraform/Ansible for repeatable deployments.
 3. **No automated production deployment**: CI builds and tests but does not deploy. The `main` branch triggers version bump + tag, but the actual deployment step is manual.
 4. **Single-machine only**: SQLite constrains the architecture to one server. Scaling horizontally would require a database migration to PostgreSQL and a distributed message bus for SignalR.
+5. **No agent-runner container**: The Docker image is app-only. A future "runner" profile with .NET SDK, Node.js, Git, and Copilot CLI would enable fully containerized agent execution.
 
 ---
 
@@ -596,5 +672,6 @@ See [002 — Development Workflow](../002-development-workflow/spec.md) for the 
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-14 | Added Dockerfile, docker-compose, containerized deployment section; resolved known gap #1; added gap #5 (runner profile) | Anvil (Copilot) |
 | 2026-04-14 | Added /health readiness probe, updated monitoring section, resolved known gap #4 | Anvil (Copilot) |
 | 2026-04-14 | Initial spec — prerequisites, configuration, local dev, CI/CD, production deployment, operations, troubleshooting | Anvil (Copilot) |

@@ -1,0 +1,35 @@
+**/.git
+**/.gitignore
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+
+# Database files (mounted at runtime, not baked into image)
+*.db
+*.db-wal
+*.db-shm
+
+# Agent worktrees (runtime concern, not part of image)
+.worktrees/
+
+# Test projects (not needed in production image)
+tests/
+
+# Documentation (not needed in production image)
+docs/
+specs/
+*.md
+!README.md
+
+# Scripts and config not needed for build
+scripts/
+mempalace.yaml
+entities.json
+.github/
+.githooks/
+.team/

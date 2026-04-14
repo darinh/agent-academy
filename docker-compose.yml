@@ -1,0 +1,36 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-academy
+    ports:
+      - "${AA_PORT:-8080}:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
+      # CORS — configure origins for cross-origin access
+      - Cors__Origins__0=${CORS_ORIGIN_0:-http://localhost:8080}
+      - Cors__Origins__1=${CORS_ORIGIN_1:-http://localhost:5173}
+      # GitHub OAuth (optional — app runs without auth)
+      - GitHub__AppId=${GITHUB_APP_ID:-}
+      - GitHub__ClientId=${GITHUB_CLIENT_ID:-}
+      - GitHub__ClientSecret=${GITHUB_CLIENT_SECRET:-}
+      - GitHub__FrontendUrl=${GITHUB_FRONTEND_URL:-http://localhost:8080}
+      # Consultant API (optional — for external agent access)
+      - ConsultantApi__SharedSecret=${CONSULTANT_SHARED_SECRET:-}
+      # Discord notifications (optional)
+      - Discord__BotToken=${DISCORD_BOT_TOKEN:-}
+      - Discord__GuildId=${DISCORD_GUILD_ID:-}
+    volumes:
+      - aa-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  aa-data:
+    driver: local
