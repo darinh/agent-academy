@@ -31,7 +31,11 @@ function statusBadge(status: string): { color: BadgeColor; label: string } {
   }
 }
 
-export default function DigestPanel() {
+interface DigestPanelProps {
+  refreshTrigger?: number;
+}
+
+export default function DigestPanel({ refreshTrigger = 0 }: DigestPanelProps) {
   const s = useDigestPanelStyles();
 
   const [digests, setDigests] = useState<DigestListItem[]>([]);
@@ -73,6 +77,15 @@ export default function DigestPanel() {
   }, [statusFilter, offset]);
 
   useEffect(() => { fetchList(); }, [fetchList]);
+
+  // Re-fetch when a LearningDigestCompleted event arrives
+  const prevTrigger = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== prevTrigger.current) {
+      prevTrigger.current = refreshTrigger;
+      fetchList();
+    }
+  }, [refreshTrigger, fetchList]);
 
   const fetchDetail = useCallback(async (id: number) => {
     const reqId = ++detailFetchIdRef.current;

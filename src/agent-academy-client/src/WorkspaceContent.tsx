@@ -47,6 +47,7 @@ export interface WorkspaceContentProps {
   sprintVersion: number;
   lastSprintEvent: SprintRealtimeEvent | null;
   retroVersion: number;
+  digestVersion: number;
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
@@ -126,7 +127,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
           {tab === "memories" && (
             <MemoryBrowserPanel agents={props.configuredAgents} />
           )}
-          {tab === "digests" && <DigestPanel />}
+          {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} />}
           {tab === "retrospectives" && <RetrospectivePanel refreshTrigger={props.retroVersion} />}
         </section>
       </Suspense>

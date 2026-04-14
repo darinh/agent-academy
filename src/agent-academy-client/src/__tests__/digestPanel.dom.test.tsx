@@ -88,10 +88,10 @@ function makeSource(overrides: Partial<DigestSourceItem> = {}): DigestSourceItem
   };
 }
 
-function renderPanel() {
+function renderPanel(props: { refreshTrigger?: number } = {}) {
   return render(
     <FluentProvider theme={webDarkTheme}>
-      <DigestPanel />
+      <DigestPanel {...props} />
     </FluentProvider>,
   );
 }
@@ -821,6 +821,43 @@ describe("DigestPanel", () => {
       await waitFor(() => {
         expect(mockGetDigest).toHaveBeenCalledWith(77);
       });
+    });
+  });
+
+  describe("real-time refresh via refreshTrigger", () => {
+    it("re-fetches when refreshTrigger prop changes", async () => {
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+
+      mockListDigests.mockClear();
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+    });
+
+    it("does not re-fetch when refreshTrigger stays the same", async () => {
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={5} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+
+      mockListDigests.mockClear();
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={5} />
+        </FluentProvider>,
+      );
+      // Should not have been called again
+      expect(mockListDigests).not.toHaveBeenCalled();
     });
   });
 });

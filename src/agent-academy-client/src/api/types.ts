@@ -144,7 +144,8 @@ export type ActivityEventType =
   | "DirectMessageSent" | "TaskPrStatusChanged"
   | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled"
   | "TaskUnblocked"
-  | "TaskRetrospectiveCompleted";
+  | "TaskRetrospectiveCompleted"
+  | "LearningDigestCompleted";
 
 export interface ActivityEvent {
   id: string;
