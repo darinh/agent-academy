@@ -352,6 +352,7 @@ public class UsageApiEndpointTests : IDisposable
             _roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
+            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
             NullLogger<RoomController>.Instance);
 
         var result = await controller.GetRoomUsage("room-1");
@@ -373,6 +374,7 @@ public class UsageApiEndpointTests : IDisposable
             _roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
+            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageByAgent("room-1");
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -390,6 +392,7 @@ public class UsageApiEndpointTests : IDisposable
             _roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
+            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageRecords("room-1");
         var ok = Assert.IsType<OkObjectResult>(result.Result);
@@ -409,6 +412,7 @@ public class UsageApiEndpointTests : IDisposable
             _roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, _tracker,
             new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
+            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
             NullLogger<RoomController>.Instance);
         var result = await controller.GetRoomUsageRecords("room-1", limit: 2);
         var ok = Assert.IsType<OkObjectResult>(result.Result);

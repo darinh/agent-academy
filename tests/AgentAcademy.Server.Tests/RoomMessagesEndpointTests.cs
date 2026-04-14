@@ -282,7 +282,8 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
         var activityPublisher = new ActivityPublisher(_db, new ActivityBroadcaster());
         var artifactTracker = new RoomArtifactTracker(_db, activityPublisher, NullLogger<RoomArtifactTracker>.Instance);
-        return new RoomController(_roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, usageTracker, errorTracker, artifactTracker, logger);
+        var evaluator = new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance);
+        return new RoomController(_roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, usageTracker, errorTracker, artifactTracker, evaluator, logger);
     }
 
     private void SeedMessages(params (string id, string content, DateTime sentAt)[] messages)
