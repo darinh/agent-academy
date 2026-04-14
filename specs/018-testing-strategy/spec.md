@@ -16,9 +16,9 @@ Agent Academy follows a standard test pyramid with emphasis on unit tests:
         /\
        /E2E\          ~18 tests (Playwright)
       /------\
-     / Integ  \       ~2 tests (ASP.NET Core integration)
+     / Integ  \       ~35 tests (WebApplicationFactory contract tests)
     /----------\
-   /    Unit    \     ~4,500+ tests (xUnit + Vitest)
+   /    Unit    \     ~4,550+ tests (xUnit + Vitest)
   /--------------\
 ```
 
@@ -384,7 +384,7 @@ Examples:
 
 ### Missing Coverage
 
-1. **API Contract Tests**: No OpenAPI/Swagger validation tests. Controllers are tested via unit tests, not contract-driven tests.
+1. ~~**API Contract Tests**: No OpenAPI/Swagger validation tests. Controllers are tested via unit tests, not contract-driven tests.~~ **Resolved** — 35 OpenAPI contract tests via `WebApplicationFactory` + `ApiContractFixture` validate Swagger doc generation, route coverage, response schemas, and endpoint roundtrips.
 2. **Performance Tests**: No load tests, stress tests, or benchmark suites.
 3. **Security Tests**: No dedicated security test suite (e.g., OWASP Top 10 validation).
 4. **Mutation Testing**: No mutation coverage (e.g., Stryker.NET).
