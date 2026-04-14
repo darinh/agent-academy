@@ -1124,8 +1124,84 @@ A help overlay listing all application keyboard shortcuts. Triggered by pressing
 - **Toggle**: Pressing `?` again closes the dialog.
 - **Lazy-loaded**: Component is loaded via `React.lazy()` — zero cost until first open.
 
+## Artifacts Panel (`ArtifactsPanel.tsx`)
+
+Displays agent file operations and quality evaluations for the selected room. Accessible via the "Artifacts" sidebar tab.
+
+### Data Flow
+
+```
+ArtifactsPanel({ roomId, refreshTrigger })
+  ├── fetchArtifacts → GET /api/rooms/{roomId}/artifacts → ArtifactRecord[]
+  │   └── Independent loading state (fast — reads DB)
+  ├── fetchEvaluations → GET /api/rooms/{roomId}/evaluations → { artifacts: EvaluationResult[], aggregateScore }
+  │   └── Independent loading state (slow — reads files from disk)
+  └── Race condition protection: cancelled flag on roomId change
+```
+
+### Quality Evaluations Section
+
+Per-file evaluation cards in a responsive grid:
+
+| Check | Points | Description |
+|-------|--------|-------------|
+| Exists | 40 | File is present on disk |
+| Non-Empty | 20 | File has content |
+| Syntax Valid | 25 | JSON/XML parses correctly (other formats always pass) |
+| Complete | 15 | No TODO/FIXME/HACK markers |
+
+- **Score bar**: Color-coded (green ≥80, yellow ≥50, red <50) with percentage
+- **Check marks**: ✓/✗ for each criterion
+- **Issues list**: Rendered below checks when evaluation finds problems
+- **Aggregate score badge**: Top-right header shows overall room quality
+
+### File Operations Log Section
+
+Collapsible table of recent file operations (default: expanded):
+
+| Column | Content |
+|--------|---------|
+| Time | Formatted timestamp (HH:MM:SS) |
+| Agent | Agent ID that performed the operation |
+| Operation | Created (green), Updated (blue), Committed (purple), Deleted (red) |
+| File | File path (truncated at 50 chars with ellipsis) |
+
+Labeled "Recent File Operations" — backend caps at 100 events by default (configurable via `limit` parameter).
+
+### Types
+
+```typescript
+type ArtifactOperation = "Created" | "Updated" | "Committed" | "Deleted";
+
+interface ArtifactRecord {
+  agentId: string; roomId: string; filePath: string;
+  operation: ArtifactOperation; timestamp: string;
+}
+
+interface EvaluationResult {
+  filePath: string; score: number;
+  exists: boolean; nonEmpty: boolean; syntaxValid: boolean; complete: boolean;
+  issues: string[];
+}
+
+interface RoomEvaluationResponse {
+  artifacts: EvaluationResult[]; aggregateScore: number;
+}
+```
+
+### Tests
+
+21 tests in `artifactsPanel.dom.test.tsx`:
+- Empty states (no room, no artifacts)
+- Data fetching (room ID, refresh trigger, room switch refetch)
+- Evaluation display (scores, checks, issues, error handling)
+- Log display (entries, operations, collapse/expand)
+- Independent loading (artifacts visible while evaluations load)
+- Refresh button behavior
+
 ## Future Work
 
+- Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
 - ~~Sprint panel: SignalR integration for real-time stage/artifact updates~~ **RESOLVED** — Sprint events carry structured `metadata` payloads (sprintId, stage, action, status). `SprintPanel` applies optimistic updates for stage transitions, sign-off state, and completion. Artifact events trigger targeted fetch with stale-response protection. Debounced reconciliation (1.5s) replaces immediate full refetch. Event deduplication prevents replay issues on reconnect. Committed in this session.
 - ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **RESOLVED** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown. Committed in `08a7447`.
