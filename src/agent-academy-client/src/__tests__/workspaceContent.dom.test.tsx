@@ -60,6 +60,7 @@ function makeProps(overrides: Partial<WorkspaceContentProps> = {}): WorkspaceCon
     sprintVersion: 0,
     lastSprintEvent: null,
     retroVersion: 0,
+    digestVersion: 0,
     activity: [],
     onSelectRoom: vi.fn(),
     onNavigateToTasks: vi.fn(),

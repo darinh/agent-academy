@@ -91,6 +91,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
   const [sprintVersion, setSprintVersion] = useState(0);
   const [retroVersion, setRetroVersion] = useState(0);
+  const [digestVersion, setDigestVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -213,6 +214,9 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       }
       case "TaskRetrospectiveCompleted":
         setRetroVersion((v) => v + 1);
+        break;
+      case "LearningDigestCompleted":
+        setDigestVersion((v) => v + 1);
         break;
     }
   }, []);
@@ -484,6 +488,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     sprintVersion,
     lastSprintEvent,
     retroVersion,
+    digestVersion,
     err,
     busy,
     tab,
