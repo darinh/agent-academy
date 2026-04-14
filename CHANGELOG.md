@@ -8,6 +8,7 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 ### Features
 
 - **010-task-management**: Task priority system. `TaskPriority` enum (`Critical`, `High`, `Medium`, `Low`) with int DB storage (0–3) for correct `ORDER BY ASC`. Priority on `TaskSnapshot`, `TaskAssignmentRequest`, `TaskEntity`. `PUT /api/tasks/{id}/priority` REST endpoint. `UPDATE_TASK` command accepts `priority` arg. `create_task` agent tool accepts optional priority. Tasks sorted by priority then createdAt in `GetTasksAsync`. Breakout sub-tasks inherit parent task priority. `PromptBuilder` includes priority in agent context. Frontend: priority badge in task list/detail, priority-first sort, `updateTaskPriority` API function. 20 new backend tests (4622 total).
+- **300-frontend-ui**: Manual session compaction button in `SessionToolbar`. "⟳ Compact" button calls `POST /api/rooms/{roomId}/compact` to reset agent CLI sessions and free context window space. Shows loading state, success/error feedback with auto-dismiss, fires `onCompacted` callback. `CompactRoomResult` type and `compactRoom()` API function in `api/rooms.ts`. 7 new frontend tests (2327 total).
 
 ### CI/Infrastructure
 

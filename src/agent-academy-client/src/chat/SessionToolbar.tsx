@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState, useEffect } from "react";
 import type { AgentDefinition, AgentLocation, ConversationSessionSnapshot } from "../api";
-import { exportRoomMessages } from "../api";
+import { exportRoomMessages, compactRoom } from "../api";
 
 interface SessionToolbarProps {
   roomId: string;
@@ -12,6 +12,7 @@ interface SessionToolbarProps {
   agentLocations: AgentLocation[];
   onToggleAgent?: (roomId: string, agentId: string, present: boolean) => void;
   onCreateSession?: (roomId: string) => void;
+  onCompacted?: () => void;
 }
 
 export const SessionToolbar = memo(function SessionToolbar({
@@ -24,12 +25,27 @@ export const SessionToolbar = memo(function SessionToolbar({
   agentLocations,
   onToggleAgent,
   onCreateSession,
+  onCompacted,
 }: SessionToolbarProps) {
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [compacting, setCompacting] = useState(false);
+  const [compactResult, setCompactResult] = useState<string | null>(null);
   const agentsRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+  const compactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compactRequestRef = useRef(0);
+
+  // Clear compact result timer and stale request on unmount or room change
+  useEffect(() => {
+    setCompacting(false);
+    setCompactResult(null);
+    compactRequestRef.current++;
+    return () => {
+      if (compactTimerRef.current) clearTimeout(compactTimerRef.current);
+    };
+  }, [roomId]);
 
   const agentsInRoom = useMemo(
     () => new Set(agentLocations.filter(l => l.roomId === roomId).map(l => l.agentId)),
@@ -63,6 +79,29 @@ export const SessionToolbar = memo(function SessionToolbar({
       setExporting(false);
     }
   }, [roomId]);
+
+  const handleCompact = useCallback(async () => {
+    setCompacting(true);
+    setCompactResult(null);
+    if (compactTimerRef.current) clearTimeout(compactTimerRef.current);
+    const requestId = ++compactRequestRef.current;
+    try {
+      const result = await compactRoom(roomId);
+      if (requestId !== compactRequestRef.current) return;
+      const msg = result.note
+        ? result.note
+        : `Compacted ${result.compactedSessions} session(s)`;
+      setCompactResult(msg);
+      onCompacted?.();
+      compactTimerRef.current = setTimeout(() => setCompactResult(null), 4000);
+    } catch {
+      if (requestId !== compactRequestRef.current) return;
+      setCompactResult("Failed to compact sessions");
+      compactTimerRef.current = setTimeout(() => setCompactResult(null), 4000);
+    } finally {
+      if (requestId === compactRequestRef.current) setCompacting(false);
+    }
+  }, [roomId, onCompacted]);
 
   return (
     <div style={{
@@ -146,6 +185,30 @@ export const SessionToolbar = memo(function SessionToolbar({
             </div>
           )}
         </div>
+      )}
+      <button
+        onClick={() => void handleCompact()}
+        disabled={compacting}
+        title="Reset agent sessions to free context window space"
+        style={{
+          background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+          borderRadius: "4px", padding: "3px 10px", color: "inherit", cursor: compacting ? "wait" : "pointer",
+          fontSize: "12px", whiteSpace: "nowrap", opacity: compacting ? 0.6 : 1,
+        }}
+      >
+        {compacting ? "Compacting…" : "⟳ Compact"}
+      </button>
+      {compactResult && (
+        <span
+          role="status"
+          style={{
+            fontSize: "11px",
+            color: compactResult.startsWith("Failed") ? "var(--aa-copper, #dc3545)" : "var(--aa-green, #28a745)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {compactResult}
+        </span>
       )}
       <div ref={exportRef} style={{ position: "relative", marginLeft: "auto" }}>
         <button
