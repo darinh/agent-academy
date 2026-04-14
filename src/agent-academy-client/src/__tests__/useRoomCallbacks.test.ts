@@ -79,7 +79,7 @@ describe("useRoomCallbacks", () => {
 
       try {
         await act(async () => {
-          await result.current.wrappedPhaseTransition("Review");
+          await result.current.wrappedPhaseTransition("Validation");
         });
       } catch {
         // expected

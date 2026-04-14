@@ -36,7 +36,18 @@ function makeTask(overrides: Partial<TaskSnapshot> = {}): TaskSnapshot {
 
 function makeSprintDetail(id = "sprint-1"): SprintDetailResponse {
   return {
-    sprint: { id, name: "Sprint 1" } as SprintSnapshot,
+    sprint: {
+      id,
+      number: 1,
+      status: "Active",
+      currentStage: "Intake",
+      overflowFromSprintId: null,
+      awaitingSignOff: false,
+      pendingStage: null,
+      signOffRequestedAt: null,
+      createdAt: "2026-04-01T00:00:00Z",
+      completedAt: null,
+    } as SprintSnapshot,
     artifacts: [],
     stages: [],
   };

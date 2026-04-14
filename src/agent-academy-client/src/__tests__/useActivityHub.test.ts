@@ -156,7 +156,7 @@ describe("useActivityHub", () => {
         type: "RoomCreated",
         severity: "Info",
         message: "Room created",
-        timestamp: "2026-04-01T00:00:00Z",
+        occurredAt: "2026-04-01T00:00:00Z",
         metadata: null,
       };
 
