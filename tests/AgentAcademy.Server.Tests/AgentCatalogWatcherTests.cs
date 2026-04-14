@@ -567,6 +567,222 @@ public sealed class AgentCatalogWatcherTests : IDisposable
         Assert.True(diff.HasChanges);
     }
 
+    // ──────────────── Permissions equality tests ────────────────
+
+    [Fact]
+    public async Task TriggerReload_PermissionsChanged_DetectsModification()
+    {
+        var perms1 = new CommandPermissionSet(["READ_FILE"], ["WRITE_FILE"]);
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, Permissions: perms1);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var perms2 = new CommandPermissionSet(["READ_FILE", "LIST_DIR"], ["WRITE_FILE"]);
+        var modified = agent with { Permissions = perms2 };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_PermissionsDeniedChanged_DetectsModification()
+    {
+        var perms1 = new CommandPermissionSet(["READ_FILE"], ["WRITE_FILE"]);
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, Permissions: perms1);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var perms2 = new CommandPermissionSet(["READ_FILE"], []);
+        var modified = agent with { Permissions = perms2 };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_PermissionsAddedFromNull_DetectsModification()
+    {
+        var agent = MakeAgent("a1", "Alpha", "Engineer");
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var modified = agent with { Permissions = new CommandPermissionSet(["RUN_BUILD"], []) };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_PermissionsRemovedToNull_DetectsModification()
+    {
+        var perms = new CommandPermissionSet(["RUN_BUILD"], []);
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, Permissions: perms);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var modified = agent with { Permissions = null };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_PermissionsIdentical_NoModification()
+    {
+        var perms = new CommandPermissionSet(["READ_FILE", "WRITE_FILE"], ["DELETE"]);
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, Permissions: perms);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        // Re-write identical content (same permissions)
+        var same = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, Permissions: new CommandPermissionSet(["READ_FILE", "WRITE_FILE"], ["DELETE"]));
+        WriteAgents(same);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.False(result.WasReloaded);
+    }
+
+    // ──────────────── GitIdentity equality tests ────────────────
+
+    [Fact]
+    public async Task TriggerReload_GitIdentityNameChanged_DetectsModification()
+    {
+        var git1 = new AgentGitIdentity("Bot Alpha", "alpha@test.com");
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, GitIdentity: git1);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var git2 = new AgentGitIdentity("Bot Alpha v2", "alpha@test.com");
+        var modified = agent with { GitIdentity = git2 };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_GitIdentityEmailChanged_DetectsModification()
+    {
+        var git1 = new AgentGitIdentity("Bot Alpha", "alpha@test.com");
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, GitIdentity: git1);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var git2 = new AgentGitIdentity("Bot Alpha", "new-alpha@test.com");
+        var modified = agent with { GitIdentity = git2 };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_GitIdentityAddedFromNull_DetectsModification()
+    {
+        var agent = MakeAgent("a1", "Alpha", "Engineer");
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var modified = agent with { GitIdentity = new AgentGitIdentity("Bot", "bot@test.com") };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_GitIdentityRemovedToNull_DetectsModification()
+    {
+        var git = new AgentGitIdentity("Bot", "bot@test.com");
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, GitIdentity: git);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var modified = agent with { GitIdentity = null };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
+    [Fact]
+    public async Task TriggerReload_GitIdentityIdentical_NoModification()
+    {
+        var git = new AgentGitIdentity("Bot", "bot@test.com");
+        var agent = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, GitIdentity: git);
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var same = new AgentDefinition("a1", "Alpha", "Engineer", "summary", "prompt", null,
+            [], [], true, GitIdentity: new AgentGitIdentity("Bot", "bot@test.com"));
+        WriteAgents(same);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.False(result.WasReloaded);
+    }
+
+    [Fact]
+    public async Task TriggerReload_BothPermissionsAndGitIdentityChanged_DetectsModification()
+    {
+        var agent = MakeAgent("a1", "Alpha", "Engineer");
+        WriteAgents(agent);
+        var options = AgentCatalogLoader.Load(_tempDir);
+        var catalog = new AgentCatalog(options);
+        using var watcher = CreateWatcher(catalog);
+
+        var modified = agent with
+        {
+            Permissions = new CommandPermissionSet(["RUN_BUILD"], ["DELETE_FILE"]),
+            GitIdentity = new AgentGitIdentity("Bot Alpha", "alpha@agent.dev")
+        };
+        WriteAgents(modified);
+        var result = await watcher.TriggerReloadAsync();
+
+        Assert.True(result.WasReloaded);
+        Assert.Single(result.Diff!.Modified);
+    }
+
     [Fact]
     public void CatalogReloadResult_Skipped_HasCorrectProperties()
     {
