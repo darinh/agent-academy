@@ -38,6 +38,7 @@ App.tsx (FluentProvider + AppShell)
             ├── DashboardPanel.tsx
             │   ├── AgentAnalyticsPanel.tsx (per-agent performance metrics)
             │   └── WorktreeStatusPanel.tsx (live worktree health widget)
+            ├── MemoryBrowserPanel.tsx (per-agent memory browser with search, categories, delete)
             ├── DigestPanel.tsx (learning digest history and detail)
             ├── RetrospectivePanel.tsx (retrospective history, agent filter, detail view)
             ├── WorkspaceOverviewPanel.tsx
@@ -612,6 +613,76 @@ interface SprintArtifact {
 interface SprintDetailResponse { sprint: SprintSnapshot; artifacts: SprintArtifact[]; stages: string[]; }
 interface SprintListResponse { sprints: SprintSnapshot[]; totalCount: number; }
 ```
+
+## Agent Memory Browser (`MemoryBrowserPanel.tsx`)
+
+Displays and manages per-agent memories — key-value pairs stored by agents during task execution, organized by category. Accessible as a top-level tab (🧠 Memory) in the sidebar.
+
+### UI Layout
+
+1. **Header**: Title "Agent Memory" with active/expired count badges and a manual refresh button
+2. **Controls row**: Agent selector dropdown (auto-selects first agent), search input (debounced 300ms), "Include expired" checkbox
+3. **Category chips**: Rendered from stats — shows categories with active memory counts. Click to filter; click again to clear. "all" chip shown first.
+4. **Memory list**: Each row shows category badge (color-coded), memory key (clickable when value exceeds 120 chars), value preview (truncated at 120 chars with "…"), timestamp, and a delete button
+5. **Expanded value**: Clicking the key toggles expansion when the value is truncated — the full memory value is shown below the row
+
+### Data Flow
+
+```
+MemoryBrowserPanel
+  ├── fetchData → Promise.allSettled([browseMemories({agentId, category, search, includeExpired}), getMemoryStats(agentId)])
+  │   → GET /api/memories/browse?agentId=X&category=Y&search=Z&includeExpired=true → BrowseMemoriesResponse
+  │   → GET /api/memories/stats?agentId=X → MemoryStatsResponse
+  └── handleDelete(agentId, key) → deleteMemory(agentId, key)
+      → DELETE /api/memories?agentId=X&key=Y
+```
+
+### Race Condition Guards
+
+List fetches use a `fetchIdRef` counter. Each fetch increments the counter before starting; on completion, the result is discarded if the counter has moved. Stats refresh after delete also checks that `selectedAgent` hasn't changed since the delete was initiated.
+
+### Real-Time Refresh
+
+When a `LearningDigestCompleted` activity event arrives via SignalR, `useWorkspace` increments its `memoryVersion` counter. This flows through `WorkspaceContent` → `MemoryBrowserPanel.refreshTrigger`. A `useEffect` with a `useRef` guard (`prevTrigger`) detects when the trigger changes and calls `fetchData()` to refresh the memory list and stats without user interaction. The same `LearningDigestCompleted` event also increments `digestVersion` for `DigestPanel`.
+
+### Category Color Mapping
+
+| Category | Badge Color |
+|----------|-------------|
+| decision | `active` (blue) |
+| lesson | `ok` (green) |
+| pattern | `feat` (purple) |
+| preference | `info` (cyan) |
+| invariant / gotcha | `warn` (amber) |
+| risk / incident | `err` (red) |
+| constraint | `review` (yellow) |
+| finding | `info` (cyan) |
+| spec-drift | `warn` (amber) |
+| verification | `ok` (green) |
+| shared | `tool` (teal) |
+| (other) | `muted` (gray) |
+
+### Types
+
+```typescript
+interface MemoryBrowserPanelProps { agents: AgentDefinition[]; refreshTrigger?: number; }
+
+interface MemoryDto {
+  agentId: string; category: string; key: string; value: string;
+  createdAt: string; updatedAt: string | null;
+  lastAccessedAt: string | null; expiresAt: string | null;
+}
+interface BrowseMemoriesResponse { total: number; memories: MemoryDto[]; }
+interface MemoryCategoryStat { category: string; total: number; active: number; expired: number; lastUpdated: string; }
+interface MemoryStatsResponse {
+  agentId: string; totalMemories: number; activeMemories: number;
+  expiredMemories: number; categories: MemoryCategoryStat[];
+}
+```
+
+### Empty State
+
+When no memories match the current filters: contextual message showing agent name and active filters. When no agent is selected (no agents loaded): no initial fetch.
 
 ## Learning Digests (`DigestPanel.tsx`)
 

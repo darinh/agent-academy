@@ -257,6 +257,48 @@ The `AgentOrchestrator` uses `WorktreeService` to provide each agent with an iso
 - `TaskEntity.WorkspacePath` — associates tasks with a project directory
 - `ConversationSessionEntity.WorkspacePath` — associates sessions with a project directory
 
+#### Worktree Status REST API
+
+`WorktreeController` (`Controllers/WorktreeController.cs`) exposes worktree status for operator visibility into agent work-in-progress.
+
+**Endpoint**: `GET /api/worktrees` → `List<WorktreeStatusSnapshot>`
+
+**Behavior**:
+1. Retrieves all active worktrees from `WorktreeService.GetActiveWorktrees()`
+2. Batch-queries tasks by branch name to link worktrees to task/agent metadata (prefers the most recent non-completed task per branch)
+3. Collects git status for each worktree in parallel (bounded to 4 concurrent `git` operations via `SemaphoreSlim`)
+4. For each worktree, runs `git status --porcelain=v1` (dirty files, capped at 10 preview), `git diff --shortstat HEAD --` (aggregate diff counts), and `git log -1 --format=%H%x00%s%x00%an%x00%aI` (last commit metadata). Each git command is wrapped in its own try/catch — individual command failures are tolerated and produce partial data (e.g., diff stats may be zero while dirty files are populated)
+5. Returns an empty list if no active worktrees exist
+
+**Response type** (`WorktreeStatusSnapshot` in `AgentAcademy.Shared.Models`):
+```csharp
+public record WorktreeStatusSnapshot(
+    string Branch,
+    string RelativePath,
+    DateTimeOffset CreatedAt,
+    bool StatusAvailable,
+    string? Error,
+    int TotalDirtyFiles,
+    List<string> DirtyFilesPreview,
+    int FilesChanged,
+    int Insertions,
+    int Deletions,
+    string? LastCommitSha,
+    string? LastCommitMessage,
+    string? LastCommitAuthor,
+    DateTimeOffset? LastCommitDate,
+    string? TaskId,
+    string? TaskTitle,
+    string? TaskStatus,
+    string? AgentId,
+    string? AgentName
+);
+```
+
+**Error handling**: Two levels of degradation:
+- **Worktree-level failure** (exception escapes to the controller's `BuildSnapshotAsync`): `WorktreeGitStatus.Unavailable(errorMessage)` is returned with `StatusAvailable = false`. This covers missing directories and unrecoverable errors.
+- **Git command-level failure** (inside `GetWorktreeGitStatusAsync`): Individual git commands (`status`, `diff`, `log`) are each wrapped in try/catch. If one fails, the others still populate their fields and `StatusAvailable` remains `true` with partial data (e.g., dirty files present but diff stats zeroed). The request never fails due to a single worktree's git issues.
+
 ## Interfaces & Contracts
 
 ### Service Registration (Program.cs)
