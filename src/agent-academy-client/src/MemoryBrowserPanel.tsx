@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Spinner, Tooltip } from "@fluentui/react-components";
 import { mergeClasses } from "@fluentui/react-components";
 import V3Badge from "./V3Badge";
+import EmptyState from "./EmptyState";
 import { ArrowSyncRegular, DeleteRegular } from "@fluentui/react-icons";
 import { formatTimestamp } from "./panelUtils";
 import {
@@ -130,6 +131,18 @@ export default function MemoryBrowserPanel({ agents, refreshTrigger = 0 }: Memor
     agents.find((a) => a.id === selectedAgent)?.name ?? selectedAgent,
     [agents, selectedAgent],
   );
+
+  if (agents.length === 0) {
+    return (
+      <div className={s.root}>
+        <EmptyState
+          icon={<span style={{ fontSize: "48px" }}>🧠</span>}
+          title="No agents configured"
+          detail="Agent memories will appear here once agents are loaded and have stored knowledge."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={s.root}>

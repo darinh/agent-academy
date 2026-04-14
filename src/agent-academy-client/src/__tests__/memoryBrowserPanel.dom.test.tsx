@@ -206,10 +206,12 @@ describe("MemoryBrowserPanel", () => {
     });
   });
 
-  it("does not fetch when no agents available", () => {
+  it("does not fetch when no agents available and shows empty state", () => {
     render(wrap(createElement(MemoryBrowserPanel, { agents: [] })));
     expect(mockBrowse).not.toHaveBeenCalled();
     expect(mockStats).not.toHaveBeenCalled();
+    expect(screen.getByText("No agents configured")).toBeInTheDocument();
+    expect(screen.getByText(/Agent memories will appear here/)).toBeInTheDocument();
   });
 
   it("debounces search input", async () => {

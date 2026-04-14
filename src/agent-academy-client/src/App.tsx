@@ -221,7 +221,11 @@ function AppShell() {
 
   /* ── Early returns ── */
   if (auth === null || loading) {
-    return <div className={s.root} />;
+    return (
+      <div className={s.root} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Spinner size="large" label="Loading Agent Academy…" />
+      </div>
+    );
   }
 
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
