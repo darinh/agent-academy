@@ -654,38 +654,11 @@ POST /api/agents
 
 ## 4. Context & Session Management
 
-### 4.1 No Manual Compaction from UI
+### 4.1 ~~No Manual Compaction from UI~~ — RESOLVED
 
-**Severity**: Medium
+**Resolved in**: feat/manual-compaction (spec 300-frontend-ui)
 
-**Impact**: Session compaction (summarizing conversation history to free context window space) happens automatically at thresholds, but users can't trigger it manually. If you know a discussion just concluded and want to compact before starting the next topic, you must use API directly: `POST /api/rooms/{id}/compact`. The UI has no button.
-
-**Suggested Fix**: Add compaction control to UI:
-```typescript
-// RoomControls.tsx
-<Button 
-  onClick={() => compactSession(roomId)}
-  disabled={messages.length < MIN_MESSAGES_FOR_COMPACTION}
-  title="Summarize conversation history to free context space"
->
-  Compact Session
-</Button>
-
-// Shows progress modal
-<CompactionProgress>
-  Summarizing {messageCount} messages...
-  <ProgressBar value={progress} />
-</CompactionProgress>
-
-// After completion, shows summary for review
-<CompactionResult>
-  <Summary>{sessionSummary}</Summary>
-  <Button onClick={editSummary}>Edit Summary</Button>
-  <Button onClick={confirmCompaction}>Confirm</Button>
-</CompactionResult>
-```
-
-**Workaround**: Use Consultant API or curl to POST to compaction endpoint. Requires knowing API structure and authentication.
+SessionToolbar now has a "⟳ Compact" button that calls `POST /api/rooms/{roomId}/compact`. Shows loading state, success/error feedback with 4s auto-dismiss. Race condition protection via request token and timer ref. 7 tests cover the feature.
 
 ---
 
@@ -3553,7 +3526,7 @@ These require significant refactoring but are important for scale:
 
 Low-effort, high-impact improvements:
 
-- Manual compaction button (4.1)
+- ~~Manual compaction button (4.1)~~ ✅
 - ~~Task priority field (2.1)~~ ✅
 - Keyboard shortcuts (6.7)
 - Conversation export (4.3)

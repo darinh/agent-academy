@@ -508,6 +508,14 @@ export interface SessionStats {
   totalMessages: number;
 }
 
+// ── Compaction ─────────────────────────────────────────────────────────
+
+export interface CompactRoomResult {
+  compactedSessions: number;
+  totalAgents: number;
+  note?: string;
+}
+
 // ── Workspace / Project ────────────────────────────────────────────────
 
 export interface WorkspaceOverview {

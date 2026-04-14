@@ -7,6 +7,7 @@ import type {
   CollaborationPhase,
   SessionListResponse,
   SessionStats,
+  CompactRoomResult,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
 
@@ -134,4 +135,12 @@ export function exportRoomMessages(roomId: string, format: "json" | "markdown" =
   const params = new URLSearchParams({ format });
   const ext = format === "markdown" ? "md" : "json";
   return downloadFile(apiUrl(`/api/export/rooms/${encodeURIComponent(roomId)}/messages?${params}`), `room-export.${ext}`);
+}
+
+// ── Compaction ──────────────────────────────────────────────────────────
+
+export function compactRoom(roomId: string): Promise<CompactRoomResult> {
+  return request<CompactRoomResult>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/compact`), {
+    method: "POST",
+  });
 }

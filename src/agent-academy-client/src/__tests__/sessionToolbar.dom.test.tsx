@@ -312,6 +312,130 @@ describe("SessionToolbar", () => {
     );
     expect(findButton(container, /Agents/)).toBeTruthy();
   });
+
+  // ── Compact button ──
+
+  it("renders Compact button", () => {
+    const { container } = render(
+      <SessionToolbar {...defaultProps} />,
+    );
+    const btn = findButton(container, /Compact/);
+    expect(btn).toBeTruthy();
+    expect(btn!.textContent).toContain("Compact");
+  });
+
+  it("has a title tooltip on the Compact button", () => {
+    const { container } = render(
+      <SessionToolbar {...defaultProps} />,
+    );
+    const btn = findButton(container, /Compact/)!;
+    expect(btn.title).toContain("context window");
+  });
+
+  it("shows Compacting… text while compact is in progress", async () => {
+    // Create a promise we control to simulate in-flight request
+    let resolveCompact!: (value: unknown) => void;
+    const compactPromise = new Promise((resolve) => { resolveCompact = resolve; });
+    const { compactRoom: _orig } = await import("../api");
+    const apiMod = await import("../api/rooms");
+    const spy = vi.spyOn(apiMod, "compactRoom").mockReturnValue(compactPromise as ReturnType<typeof apiMod.compactRoom>);
+
+    const { container } = render(
+      <SessionToolbar {...defaultProps} />,
+    );
+    const btn = findButton(container, /Compact/)!;
+    fireEvent.click(btn);
+
+    // Should show compacting state
+    expect(btn.textContent).toContain("Compacting");
+    expect(btn.disabled).toBe(true);
+
+    // Resolve and clean up
+    resolveCompact({ compactedSessions: 2, totalAgents: 2 });
+    spy.mockRestore();
+  });
+
+  it("shows success result message after compaction", async () => {
+    const { waitFor } = await import("@testing-library/react");
+    const apiMod = await import("../api/rooms");
+    const spy = vi.spyOn(apiMod, "compactRoom").mockResolvedValue({
+      compactedSessions: 3, totalAgents: 3,
+    });
+
+    const { container } = render(
+      <SessionToolbar {...defaultProps} />,
+    );
+    fireEvent.click(findButton(container, /Compact/)!);
+
+    await waitFor(() => {
+      const status = container.querySelector("[role='status']");
+      expect(status).toBeTruthy();
+      expect(status!.textContent).toContain("Compacted 3 session(s)");
+    });
+
+    spy.mockRestore();
+  });
+
+  it("shows note from server when present in compaction result", async () => {
+    const { waitFor } = await import("@testing-library/react");
+    const apiMod = await import("../api/rooms");
+    const spy = vi.spyOn(apiMod, "compactRoom").mockResolvedValue({
+      compactedSessions: 0, totalAgents: 2,
+      note: "Executor is not fully operational; no sessions to compact.",
+    });
+
+    const { container } = render(
+      <SessionToolbar {...defaultProps} />,
+    );
+    fireEvent.click(findButton(container, /Compact/)!);
+
+    await waitFor(() => {
+      const status = container.querySelector("[role='status']");
+      expect(status).toBeTruthy();
+      expect(status!.textContent).toContain("not fully operational");
+    });
+
+    spy.mockRestore();
+  });
+
+  it("shows error message when compaction fails", async () => {
+    const { waitFor } = await import("@testing-library/react");
+    const apiMod = await import("../api/rooms");
+    const spy = vi.spyOn(apiMod, "compactRoom").mockRejectedValue(new Error("Network error"));
+
+    const { container } = render(
+      <SessionToolbar {...defaultProps} />,
+    );
+    fireEvent.click(findButton(container, /Compact/)!);
+
+    await waitFor(() => {
+      const status = container.querySelector("[role='status']");
+      expect(status).toBeTruthy();
+      expect(status!.textContent).toContain("Failed");
+    });
+
+    spy.mockRestore();
+  });
+
+  it("calls onCompacted callback after successful compaction", async () => {
+    const { waitFor } = await import("@testing-library/react");
+    const apiMod = await import("../api/rooms");
+    const spy = vi.spyOn(apiMod, "compactRoom").mockResolvedValue({
+      compactedSessions: 2, totalAgents: 2,
+    });
+    const onCompacted = vi.fn();
+
+    const { container } = render(
+      <SessionToolbar {...defaultProps} onCompacted={onCompacted} />,
+    );
+    fireEvent.click(findButton(container, /Compact/)!);
+
+    await waitFor(() => {
+      expect(onCompacted).toHaveBeenCalledOnce();
+    });
+
+    spy.mockRestore();
+  });
 });
 
 // ── Helpers ──
