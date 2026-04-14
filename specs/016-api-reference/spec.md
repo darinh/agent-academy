@@ -25,7 +25,7 @@ If `ConsultantApi:SharedSecret` is not configured, the consultant auth scheme is
 - Route parameters use `{param}` syntax.
 - Query parameters are optional unless marked **(required)**.
 - Error responses use `ProblemDetails` format (RFC 7807).
-- List endpoints support pagination via `limit`/`offset` query parameters where noted.
+- List endpoints support pagination via `limit`/`offset` or cursor-based `after` query parameters — see [Pagination](#pagination) below.
 - SSE streams use `text/event-stream` content type with `data:` JSON payloads.
 
 ### Error Response Format
@@ -53,6 +53,147 @@ All error responses use [RFC 7807 ProblemDetails](https://www.rfc-editor.org/rfc
 **Backend**: All controllers use the `ApiProblem` factory (`Controllers/ApiProblem.cs`) which produces `ProblemDetails` instances with an optional `code` extension. Controllers return these via `BadRequest(pd)`, `NotFound(pd)`, `Conflict(pd)`, etc.
 
 **Frontend**: The `extractApiError()` helper in `api/core.ts` reads `body.detail ?? body.error ?? body.title` to extract messages, supporting both ProblemDetails and any legacy format.
+
+### Rate Limiting
+
+Three independent rate-limiting mechanisms protect the server. None share state.
+
+#### 1. Consultant API Rate Limiting (HTTP-level)
+
+Applies to all requests authenticated via `X-Consultant-Key`. Non-consultant requests are not rate-limited at the HTTP layer.
+
+| Property | Read (`GET`) | Write (`POST`/`PUT`/`DELETE`/`PATCH`) |
+|----------|-------------|---------------------------------------|
+| **Permit limit** | 60 | 20 |
+| **Window** | 60 seconds (sliding) | 60 seconds (sliding) |
+| **Segments per window** | 6 | 6 |
+| **Scope** | Global (shared across all consultant requests) | Global |
+
+**Configuration**: `ConsultantApi:RateLimiting` in `appsettings.json`. Set `Enabled: false` to disable.
+
+**When exceeded**: HTTP `429 Too Many Requests` with:
+- `Retry-After` header (seconds until next permit)
+- `application/problem+json` body:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc6585#section-4",
+  "title": "Rate limit exceeded",
+  "status": 429,
+  "detail": "Too many requests. Try again in N seconds."
+}
+```
+
+> **Note**: No `X-RateLimit-Remaining` or `X-RateLimit-Limit` headers are returned. Clients should rely on `Retry-After` for backoff.
+
+**Backend**: `ConsultantRateLimitExtensions.cs` registers a `PartitionedRateLimiter<HttpContext>` with two sliding-window partitions (`consultant-read`, `consultant-write`). Enabled only when consultant auth is configured and `RateLimiting.Enabled` is true.
+
+#### 2. Command Rate Limiting (per-agent, internal)
+
+Applies to agent command execution within the command pipeline. Not an HTTP-level limiter — commands are denied internally before execution.
+
+| Property | Default |
+|----------|---------|
+| **Max commands** | 30 |
+| **Window** | 60 seconds |
+| **Scope** | Per-agent (keyed by `agentId`) |
+
+**Configuration**: Adjustable at runtime via system settings:
+- `commands.rateLimitMaxCommands` (default: 30)
+- `commands.rateLimitWindowSeconds` (default: 60)
+
+Changes take effect immediately — `SettingsController.UpsertSettings` and `WebApplicationExtensions.InitializeAsync` both call `CommandRateLimiter.Configure()` on update.
+
+**When exceeded**: The command pipeline returns a denied `CommandEnvelope` with `Status = Denied`, `ErrorCode = RateLimit`. The denial is audited and injected into the agent's context. No HTTP error is returned to the caller — the agent receives the denial as part of its conversation flow.
+
+**Backend**: `CommandRateLimiter.cs` implements an in-memory sliding-window counter per agent. `CommandPipeline.cs` checks the limiter before executing any command.
+
+#### 3. Agent Quotas (per-agent, hourly)
+
+Per-agent resource quotas that limit requests, tokens, and cost within a rolling hour window.
+
+| Quota | Default | Window |
+|-------|---------|--------|
+| `MaxRequestsPerHour` | null (unlimited) | 1 hour |
+| `MaxTokensPerHour` | null (unlimited) | 1 hour |
+| `MaxCostPerHour` | null (unlimited) | 1 hour |
+
+**Configuration**: Per-agent via `PUT /api/agents/{agentId}/quota` (stored in `AgentConfigs` table, cached 30 seconds).
+
+**Enforcement**:
+- Request count: authoritative in-memory sliding window
+- Tokens and cost: best-effort DB aggregation over the last hour
+
+**When exceeded**: `AgentQuotaExceededException` is thrown with `RetryAfterSeconds`. The executor catches it and transitions the agent to a "temporarily paused" state. No HTTP 429 is returned — the quota violation surfaces as a paused-agent message in the room.
+
+**Backend**: `AgentQuotaService.cs` tracks quotas. `CopilotExecutor.cs`, `AgentTurnRunner.cs`, and `BreakoutCompletionService.cs` enforce them at the execution boundary.
+
+### Pagination
+
+List endpoints use one of three pagination styles. The style is fixed per endpoint.
+
+#### Style 1: Cursor-based (`after`)
+
+Used for chronologically-ordered streams where total count is unknown or expensive.
+
+| Parameter | Type | Default | Max | Description |
+|-----------|------|---------|-----|-------------|
+| `after` | string | — | — | Message ID cursor; returns items after this ID |
+| `limit` | int | varies | varies | Maximum items to return |
+
+Response includes `hasMore: true/false` to indicate additional pages. No total count.
+
+**Endpoints using cursor-based pagination:**
+
+| Endpoint | Default `limit` | Max `limit` |
+|----------|-----------------|-------------|
+| `GET /api/rooms/{roomId}/messages` | 50 | 200 |
+| `GET /api/rooms/{roomId}/messages/stream` (SSE) | 200 (fixed replay cap) | 200 |
+| `GET /api/dm/threads/{agentId}/stream` (SSE) | 200 (fixed replay cap) | 200 |
+
+#### Style 2: Limit/offset with total count
+
+Used for bounded collections where clients need page navigation.
+
+| Parameter | Type | Default | Max | Description |
+|-----------|------|---------|-----|-------------|
+| `limit` | int | varies | varies | Maximum items to return |
+| `offset` | int | 0 | — | Number of items to skip |
+
+Response includes `totalCount` (or `total`) for page calculation.
+
+**Endpoints using limit/offset with total count:**
+
+| Endpoint | Default `limit` | Max `limit` |
+|----------|-----------------|-------------|
+| `GET /api/sessions` | 20 | 100 |
+| `GET /api/rooms/{roomId}/sessions` | 20 | 100 |
+| `GET /api/commands/audit` | 50 | 200 |
+| `GET /api/system/restarts` | 20 | 100 |
+| `GET /api/digests` | 20 | 100 |
+| `GET /api/retrospectives` | 20 | 100 |
+| `GET /api/sprints` | 20 | 100 |
+| `GET /api/notifications/deliveries` | 50 | 200 |
+
+> **Note**: `GET /api/notifications/deliveries` uses limit/offset but does not return a total count in the response.
+
+#### Style 3: Limit-only (no offset, no cursor)
+
+Used for "most recent N items" queries where paging through older results is not supported.
+
+| Endpoint | Default `limit` | Max `limit` |
+|----------|-----------------|-------------|
+| `GET /api/rooms/{roomId}/artifacts` | 100 | 500 |
+| `GET /api/rooms/{roomId}/usage/records` | 50 | 200 |
+| `GET /api/rooms/{roomId}/errors` | 50 | 200 |
+| `GET /api/usage/records` | 50 | 200 |
+| `GET /api/errors/records` | 50 | 200 |
+| `GET /api/specs/search` | 5 | 20 |
+| `GET /api/search` | 25 per category | 100 per category |
+
+#### Unpaginated endpoints
+
+All other list endpoints return the full collection. These are bounded by design (e.g., rooms, agents, workspaces, templates) and are not expected to grow unboundedly.
 
 ---
 
@@ -562,8 +703,8 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 ## Known Gaps
 
 1. **Request/response schemas** — Type names are listed but full property definitions are not included. See domain-specific specs for detailed contracts.
-2. **Rate limiting** — The server supports configurable rate limiting via settings, but rate limit headers and behavior are not documented here.
-3. **Pagination consistency** — Most list endpoints use `limit`/`offset`, but some (room messages) use cursor-based `after` parameter.
+2. ~~**Rate limiting**~~ — **Resolved**: Three independent mechanisms documented — Consultant API HTTP-level limiter (429 + Retry-After), per-agent command rate limiter (denied envelope), and per-agent hourly quotas (agent paused). See [Rate Limiting](#rate-limiting).
+3. ~~**Pagination consistency**~~ — **Resolved**: Three pagination styles documented — cursor-based (`after`), limit/offset with total count, and limit-only. Per-endpoint table with defaults and maximums. See [Pagination](#pagination).
 4. ~~**Room artifacts**~~ — **Resolved**: `GET /api/rooms/{roomId}/artifacts` returns append-only event log of file operations (Created, Updated, Committed) tracked by `RoomArtifactTracker`. Artifacts recorded from `write_file` SDK tool and `COMMIT_CHANGES` command. Per-file commit attribution via `git diff-tree`. 19 new tests.
 5. ~~**Room evaluations**~~ — **Resolved**: `GET /api/rooms/{roomId}/evaluations` now returns real artifact quality evaluations via `ArtifactEvaluatorService`. Evaluates each tracked file for existence (40pts), non-empty content (20pts), syntax validity for JSON/XML (25pts), and completeness markers (15pts). Deduplicates to latest operation per file, excludes deleted files. Path traversal protection included. 21 new tests.
 
@@ -571,4 +712,5 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 
 | Date | Change |
 |------|--------|
+| 2026-04-14 | Add Rate Limiting section (3 mechanisms) and Pagination section (3 styles) — resolves gaps 2 and 3 |
 | 2026-04-14 | Initial catalog — 145 endpoints across 26 controllers |
