@@ -640,6 +640,10 @@ DigestPanel
 
 Both list and detail fetches use `useRef` counters (`fetchIdRef`, `detailFetchIdRef`). Each fetch increments the counter before starting; on completion, the result is discarded if the counter has moved past the request's ID. This prevents stale responses from overwriting newer data when the user rapidly changes filters or selects different digests.
 
+### Real-Time Refresh
+
+DigestPanel accepts an optional `refreshTrigger` prop (defaults to `0`). When `useWorkspace` receives a `LearningDigestCompleted` activity event via SignalR, it increments its `digestVersion` state counter. This value flows through `WorkspaceContent` → `DigestPanel.refreshTrigger`. A `useEffect` with a `useRef` guard detects when the trigger changes and calls `fetchList()` to refresh the digest list and stats without user interaction. The `LearningDigestCompleted` event is also included in `TOAST_EVENT_TYPES` so the user sees a notification toast.
+
 ### Types
 
 ```typescript
