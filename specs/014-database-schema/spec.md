@@ -662,7 +662,29 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 
 ---
 
-### 10. Learning & Digests
+### 10. Room Artifacts
+
+#### RoomArtifactEntity
+
+> Table: `room_artifacts`
+
+Append-only event log of file operations produced by agents in rooms.
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| Id | INTEGER | PK, auto-increment | |
+| RoomId | TEXT | No | Room where the artifact was produced |
+| AgentId | TEXT | No | Agent that produced the artifact |
+| FilePath | TEXT | No | Relative file path |
+| Operation | TEXT | No | Created \| Updated \| Committed |
+| CommitSha | TEXT | Yes | Set for commit operations |
+| Timestamp | DATETIME | No | When the operation occurred |
+
+**Indexes**: `idx_room_artifacts_room_ts` (RoomId ASC, Timestamp DESC)
+
+---
+
+### 11. Learning & Digests
 
 #### LearningDigestEntity
 

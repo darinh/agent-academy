@@ -89,14 +89,19 @@ public sealed class CommitChangesTests : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<RoomArtifactTracker>();
         services.AddLogging();
 
         _serviceProvider = services.BuildServiceProvider();
-        _handler = new CommitChangesHandler(_gitService, NullLogger<CommitChangesHandler>.Instance);
+
+        using var initScope = _serviceProvider.CreateScope();
+        var db = initScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.Database.EnsureCreated();
+
+        var artifactTracker = initScope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
+        _handler = new CommitChangesHandler(_gitService, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<CommitChangesHandler>.Instance);
 
         using var scope = _serviceProvider.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        db.Database.EnsureCreated();
 
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         initialization.InitializeAsync().GetAwaiter().GetResult();

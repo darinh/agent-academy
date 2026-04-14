@@ -367,6 +367,30 @@ public partial class GitService
         return stdout.Trim();
     }
 
+    /// <summary>
+    /// Returns the list of files changed in a commit (relative paths).
+    /// Uses git diff-tree to avoid parsing formatted log output.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> GetFilesInCommitAsync(string commitSha, string? workingDir = null)
+    {
+        var dir = workingDir ?? _repositoryRoot;
+        await _gitLock.WaitAsync();
+        try
+        {
+            var output = await RunGitInDirInternalAsync(dir, "diff-tree", "--no-commit-id", "--name-only", "-r", commitSha.Trim());
+            if (string.IsNullOrWhiteSpace(output))
+                return [];
+
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get files in commit {Sha}", commitSha);
+            return [];
+        }
+        finally { _gitLock.Release(); }
+    }
+
     private static string FindProjectRoot()
     {
         var dir = Directory.GetCurrentDirectory();

@@ -45,6 +45,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<TaskDependencyEntity> TaskDependencies => Set<TaskDependencyEntity>();
     public DbSet<LearningDigestEntity> LearningDigests => Set<LearningDigestEntity>();
     public DbSet<LearningDigestSourceEntity> LearningDigestSources => Set<LearningDigestSourceEntity>();
+    public DbSet<RoomArtifactEntity> RoomArtifacts => Set<RoomArtifactEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

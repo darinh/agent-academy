@@ -48,6 +48,7 @@ internal sealed class TestServiceGraph : IDisposable
     public IServiceScopeFactory ScopeFactory { get; }
     public LlmUsageTracker UsageTracker { get; }
     public AgentErrorTracker ErrorTracker { get; }
+    public RoomArtifactTracker ArtifactTracker { get; }
     public SpecManager SpecManager { get; }
 
     public TestServiceGraph(List<AgentDefinition>? agents = null)
@@ -128,6 +129,7 @@ internal sealed class TestServiceGraph : IDisposable
 
         UsageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         ErrorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
+        ArtifactTracker = new RoomArtifactTracker(Db, ActivityPublisher, NullLogger<RoomArtifactTracker>.Instance);
 
         SpecManager = new SpecManager();
         var pipeline = new CommandPipeline(

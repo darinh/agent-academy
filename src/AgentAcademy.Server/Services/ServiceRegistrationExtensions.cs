@@ -59,6 +59,9 @@ public static class ServiceRegistrationExtensions
         // Conversation export (formats room/DM history as JSON/Markdown)
         services.AddScoped<ConversationExportService>();
 
+        // Room artifact tracking (file operation event log)
+        services.AddScoped<RoomArtifactTracker>();
+
         return services;
     }
 }

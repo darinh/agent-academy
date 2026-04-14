@@ -564,7 +564,8 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 1. **Request/response schemas** — Type names are listed but full property definitions are not included. See domain-specific specs for detailed contracts.
 2. **Rate limiting** — The server supports configurable rate limiting via settings, but rate limit headers and behavior are not documented here.
 3. **Pagination consistency** — Most list endpoints use `limit`/`offset`, but some (room messages) use cursor-based `after` parameter.
-4. **Room artifacts and evaluations** — Endpoints exist but return empty arrays (placeholder).
+4. ~~**Room artifacts**~~ — **Resolved**: `GET /api/rooms/{roomId}/artifacts` returns append-only event log of file operations (Created, Updated, Committed) tracked by `RoomArtifactTracker`. Artifacts recorded from `write_file` SDK tool and `COMMIT_CHANGES` command. Per-file commit attribution via `git diff-tree`. 19 new tests.
+5. **Room evaluations** — `GET /api/rooms/{roomId}/evaluations` still returns placeholder (empty result). Deferred until artifact semantics are settled.
 
 ## Revision History
 

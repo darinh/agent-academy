@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **016-api-reference**: Room artifact tracking. `RoomArtifactTracker` records file operations (Created, Updated, Committed) as append-only event log in `room_artifacts` table. Wired into `CodeWriteToolWrapper` (write_file/commit_changes SDK tools) and `CommitChangesHandler` (COMMIT_CHANGES command). `GET /api/rooms/{roomId}/artifacts` now returns real data instead of placeholder empty array. Per-file commit attribution via `GitService.GetFilesInCommitAsync`. Room context threaded through tool registry (`IAgentToolRegistry.GetToolsForAgent` roomId parameter). EF migration `AddRoomArtifacts`. 19 new tests (4728 total). Adversarial review by GPT-5.3-Codex: no issues found. Known gap #4 partially resolved (artifacts done, evaluations deferred).
+
+### Added
 - **009-spec-management**: Spec keyword search. `SpecManager.SearchSpecsAsync` provides keyword-based search across spec content with weighted TF scoring (heading 3×, purpose 2×, body 1×) and multi-term coverage bonus. `LoadSpecContextWithRelevanceAsync` combines task-linked sections (★) with keyword-matched sections (◆), ranking relevant sections first in a single disk pass. Breakout prompts now use task title + description as search query for automatic relevance filtering. `GET /api/specs/search?q=&limit=` endpoint. `CancellationToken` support on new methods. 23 new tests (4709 total). Adversarial review by GPT-5.3-Codex: 2 findings fixed (double disk scan → single pass, added CancellationToken). Known gap #2 resolved.
 
 ### Added

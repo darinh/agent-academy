@@ -372,6 +372,7 @@ public class ErrorApiEndpointTests : IDisposable
                 new ConversationSessionService(_db, new SystemSettingsService(_db),
                     Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance), new MessageBroadcaster()),
             new MessageBroadcaster(), _catalog, usageTracker, _errorTracker,
+            new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
             NullLogger<RoomController>.Instance);
     }
 

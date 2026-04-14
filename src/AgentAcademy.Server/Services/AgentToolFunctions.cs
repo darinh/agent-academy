@@ -370,9 +370,9 @@ public sealed class AgentToolFunctions
     /// calling agent. Only agents with <c>code-write</c> in their
     /// <c>EnabledTools</c> (typically SoftwareEngineer role) receive these tools.
     /// </summary>
-    public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null)
+    public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
     {
-        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName, gitIdentity);
+        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName, gitIdentity, roomId);
         return
         [
             AIFunctionFactory.Create(wrapper.WriteFileAsync, "write_file",

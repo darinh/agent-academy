@@ -22,6 +22,7 @@ public class RoomController : ControllerBase
     private readonly IAgentCatalog _catalog;
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
+    private readonly RoomArtifactTracker _artifactTracker;
     private readonly ILogger<RoomController> _logger;
 
     private static readonly JsonSerializerOptions SseJsonOptions = new()
@@ -37,6 +38,7 @@ public class RoomController : ControllerBase
         IAgentCatalog catalog,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
+        RoomArtifactTracker artifactTracker,
         ILogger<RoomController> logger)
     {
         _roomService = roomService;
@@ -46,6 +48,7 @@ public class RoomController : ControllerBase
         _catalog = catalog;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
+        _artifactTracker = artifactTracker;
         _logger = logger;
     }
 
@@ -112,14 +115,23 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/rooms/{roomId}/artifacts — artifacts produced in a room.
-    /// Artifact tracking will be wired when AgentEventTracker is ported.
+    /// GET /api/rooms/{roomId}/artifacts — artifacts produced by agents in a room.
+    /// Returns an append-only event log of file operations (write, commit, delete).
     /// </summary>
     [HttpGet("{roomId}/artifacts")]
-    public IActionResult GetRoomArtifacts(string roomId)
+    public async Task<ActionResult<List<ArtifactRecord>>> GetRoomArtifacts(
+        string roomId, [FromQuery] int limit = 100)
     {
-        // AgentEventTracker is not yet ported — return empty list.
-        return Ok(Array.Empty<ArtifactRecord>());
+        try
+        {
+            var artifacts = await _artifactTracker.GetRoomArtifactsAsync(roomId, limit);
+            return Ok(artifacts);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get artifacts for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve artifact data.");
+        }
     }
 
     /// <summary>
