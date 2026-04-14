@@ -741,6 +741,10 @@ interface RetrospectiveStatsResponse {
 
 When no retrospectives exist: 🔬 "No retrospectives yet" with guidance that retrospectives are created automatically after agents complete tasks.
 
+### Real-Time Refresh
+
+When a `TaskRetrospectiveCompleted` activity event arrives via SignalR/SSE, `useWorkspace` increments a `retroVersion` counter. This flows through `WorkspaceContent` as a `refreshTrigger` prop. RetrospectivePanel detects the change via a `useRef`-tracked previous value and re-fetches the list and stats. Follows the same pattern as `sprintVersion` → `SprintPanel`. A toast notification is also shown via `TOAST_EVENT_TYPES`.
+
 ### UI Layout
 
 Each worktree renders as a card with:
