@@ -334,5 +334,23 @@ describe("PlanPanel", () => {
         expect(screen.getByText("raw string error")).toBeInTheDocument();
       });
     });
+
+    it("dismiss button clears the error banner", async () => {
+      mockGetPlan.mockRejectedValue(new Error("Server error"));
+      renderPanel("room-1");
+
+      await waitFor(() => {
+        expect(screen.getByText("Server error")).toBeInTheDocument();
+      });
+
+      const dismissBtn = screen.getByRole("button", { name: /dismiss/i });
+      expect(dismissBtn).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(dismissBtn);
+      });
+
+      expect(screen.queryByText("Server error")).not.toBeInTheDocument();
+    });
   });
 });

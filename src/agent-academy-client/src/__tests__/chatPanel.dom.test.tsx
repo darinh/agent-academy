@@ -629,6 +629,136 @@ describe("ChatPanel (interactive)", () => {
     });
   });
 
+  // ── Session load error states ─────────────────────────────────────────
+
+  describe("session load error", () => {
+    it("shows error message when session load fails", async () => {
+      mockGetRoomSessions.mockRejectedValue(new Error("Network error"));
+      renderChat();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows retry button alongside error", async () => {
+      mockGetRoomSessions.mockRejectedValue(new Error("timeout"));
+      renderChat();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+      expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    });
+
+    it("retry button re-fetches sessions successfully", async () => {
+      // getRoomSessions is called twice on mount: once for archived check, once for session list.
+      // Use mockRejectedValue for all initial calls, then switch to resolved after error is shown.
+      mockGetRoomSessions.mockReset();
+      mockGetRoomSessions.mockRejectedValue(new Error("timeout"));
+
+      const { user } = renderChat();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+
+      const callsBeforeRetry = mockGetRoomSessions.mock.calls.length;
+
+      // Now switch mock to resolve for the retry
+      mockGetRoomSessions.mockResolvedValue({ sessions: [], totalCount: 0 });
+
+      await user.click(screen.getByRole("button", { name: /retry/i }));
+
+      await waitFor(() => {
+        // Verify the retry actually made an API call, not just cleared the UI
+        expect(mockGetRoomSessions.mock.calls.length).toBeGreaterThan(callsBeforeRetry);
+        expect(screen.queryByText(/Failed to load sessions/)).not.toBeInTheDocument();
+      });
+    });
+
+    it("retry shows error again if re-fetch also fails", async () => {
+      mockGetRoomSessions.mockReset();
+      mockGetRoomSessions.mockRejectedValue(new Error("persistent failure"));
+      const { user } = renderChat();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+
+      const callsBeforeRetry = mockGetRoomSessions.mock.calls.length;
+
+      await user.click(screen.getByRole("button", { name: /retry/i }));
+
+      await waitFor(() => {
+        // Verify retry actually called the API again and got the same error
+        expect(mockGetRoomSessions.mock.calls.length).toBeGreaterThan(callsBeforeRetry);
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+    });
+
+    it("clears error when room changes to null", async () => {
+      mockGetRoomSessions.mockRejectedValue(new Error("fail"));
+      const { rerender } = renderChat();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+
+      // Re-render with null room
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(ChatPanel, {
+            room: null,
+            loading: false,
+            thinkingAgents: [],
+            connectionStatus: "connected" as ConnectionStatus,
+            onSendMessage: vi.fn(async () => true),
+          }),
+        ),
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Failed to load sessions/)).not.toBeInTheDocument();
+      });
+    });
+
+    it("clears error when room changes to a different room", async () => {
+      mockGetRoomSessions.mockReset();
+      mockGetRoomSessions.mockRejectedValue(new Error("fail"));
+      const room1 = makeRoom({ id: "room-1" });
+      const room2 = makeRoom({ id: "room-2", recentMessages: [makeMessage({ id: "m-new", content: "New room msg" })] });
+
+      const { rerender } = renderChat({ room: room1 });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load sessions/)).toBeInTheDocument();
+      });
+
+      // Switch to a different room — sessions mock should now succeed
+      mockGetRoomSessions.mockResolvedValue({ sessions: [], totalCount: 0 });
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(ChatPanel, {
+            room: room2,
+            loading: false,
+            thinkingAgents: [],
+            connectionStatus: "connected" as ConnectionStatus,
+            onSendMessage: vi.fn(async () => true),
+          }),
+        ),
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Failed to load sessions/)).not.toBeInTheDocument();
+      });
+    });
+  });
+
   // ── Composer hint text ───────────────────────────────────────────────
 
   describe("composer hints", () => {
