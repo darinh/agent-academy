@@ -289,7 +289,7 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 | Group | Tools | Type | Agents |
 |-------|-------|------|--------|
 | `task-state` | `list_tasks`, `list_rooms`, `show_agents` | Read-only (shared) | All agents |
-| `code` | `read_file`, `search_code` | Read-only (shared) | Engineers, Writer |
+| `code` | `read_file`, `search_code` | Read-only (shared) | All agents (Planner, Architect, Engineers, Reviewer, Writer) |
 | `task-write` | `create_task`, `update_task_status`, `add_task_comment` | Write (per-agent) | All agents |
 | `memory` | `remember`, `recall` | Write/Read (per-agent) | All agents |
 | `chat` | (platform concept, not an SDK tool) | — | All agents |
@@ -898,4 +898,5 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-04-12 | Structural refactor — extracted `CopilotClientFactory` from `CopilotExecutor` (client lifecycle, token resolution, worktree clients). `CopilotExecutor` retains session management, retry logic, error classification, circuit breaker. Zero behavioral changes. `ResolveToken()` divergence between Factory (returns null for SDK fallback) and `CopilotAuthProbe` (checks env vars for raw HTTP probes) documented as intentional. | copilot-client-factory |
 | 2026-04-13 | Spec sync — documented `ConversationSessionQueryService` (read-only session queries) extracted from `ConversationSessionService`. Query methods: `GetSessionContextAsync`, `GetStageContextAsync`, `GetSprintContextAsync`, `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync`. | spec-sync-decomposition |
 | 2026-04-14 | Knowledge endpoints wired to memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category with auto-generated key, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub. | knowledge-endpoints |
+| 2026-04-14 | Platform review — agent capability fixes. Added `code` tool group to Planner and Architect (were blind to codebase). Added `RUN_BUILD`, `RUN_TESTS`, `SHOW_DIFF`, `GIT_LOG`, `READ_FILE`, `SEARCH_CODE` commands to engineers. Fixed prompt-permission mismatches across all 6 agents. Added SDK Tools documentation section to all agent prompts. Updated `AgentCatalogWatcher.AgentsEqual` to compare `Permissions` and `GitIdentity`. Added conversation kickoff on fresh startup. | platform-review |
 | 2026-04-12 | Structural refactor — extracted `CopilotSessionPool` (session cache with TTL, per-key locks, send serialization, cleanup timer) and `CopilotSdkSender` (streamed response collection, error classification, retry/backoff, usage tracking) from `CopilotExecutor`. Executor reduced from 779→424 lines. Zero behavioral changes. Adversarial review (GPT-5.3 Codex): 1 finding fixed (auth-failure invalidation scope). | session-pool-sender |

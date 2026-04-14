@@ -5,7 +5,10 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **003-agent-system**: `code` tool group now enabled for all agents (was Engineers + Writer only). Planner and Architect can now read files and search code via SDK tools.
 - **003-agent-system**: Knowledge endpoints now backed by memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub.
+- **003-agent-system**: Platform review — fixed prompt-permission mismatches across all 6 agents. Engineers gained `RUN_BUILD`, `RUN_TESTS`, `SHOW_DIFF`, `GIT_LOG`, `READ_FILE`, `SEARCH_CODE` commands. All prompts now include SDK Tools documentation section. `AgentCatalogWatcher.AgentsEqual` now compares `Permissions` and `GitIdentity` fields for hot-reload accuracy.
+- **006-orchestrator**: Added conversation kickoff on fresh startup — posts system message and triggers orchestration when main room has no prior conversations. Idempotent (skips on restart if agents have spoken).
 
 ### Added
 - **003-agent-system**: REST API documentation for 14 unspecced endpoints — agent locations (GET/PUT), agent knowledge (GET/POST + shared), agent execution (POST run), agent sessions (GET), agent quotas (GET/PUT/DELETE), and auth logout (POST).

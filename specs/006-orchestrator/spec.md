@@ -19,6 +19,7 @@ Human messages and DM triggers are enqueued by room ID. A single processing loop
 - Processing is serialized via `_processing` flag + `_lock` — only one room is processed at a time
 - The orchestrator can be stopped via `Stop()`, which flips `_stopped` and halts queue processing
 - **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `RoomService.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
+- **Conversation kickoff on fresh start**: During `WebApplicationExtensions.InitializeAsync()` (step 7), if the main room has no `User` or `Agent` messages and crash recovery did not run, a system kickoff message is posted and the room is enqueued. This bootstraps agent collaboration on a fresh workspace without requiring a manual human message. The check is idempotent — once agents have spoken, subsequent restarts skip the kickoff.
 
 ### Conversation Rounds
 
@@ -299,6 +300,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-14 | Conversation kickoff on fresh start: `WebApplicationExtensions.InitializeAsync()` step 7 posts a system kickoff message and triggers orchestration when the main room has no prior user/agent messages. Idempotent — skips on restart if agents have already spoken. Skips during crash recovery. | platform-review |
 | 2026-04-13 | Spec sync — documented `BreakoutCompletionService` (post-loop completion, review cycle) and `AgentTurnRunner` (per-turn execution) extracted from orchestrator services. Updated DI registration, dependency tables, and source references. | spec-sync-decomposition |
 | 2026-04-11 | Service extraction reconciliation: updated dependencies, constants, and code references to reflect PromptBuilder, AgentResponseParser, AgentMemoryLoader, and BreakoutLifecycleService extractions. Added sprint context, agent config overrides, worktree creation, and response parsing documentation. | spec-006-extraction-reconciliation |
 | 2026-04-05 | Spec accuracy audit: fixed HandleDirectMessage signature (takes recipientAgentId only), corrected breakout loop caps (MaxBreakoutRounds=200, MaxConsecutiveIdleRounds=5), fixed DM handling in breakouts (posted as messages, not injected into prompt), added constants to table | spec-accuracy-audit |

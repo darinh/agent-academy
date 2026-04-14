@@ -348,7 +348,25 @@ public sealed class AgentCatalogWatcher : BackgroundService
             && a.Model == b.Model
             && a.AutoJoinDefaultRoom == b.AutoJoinDefaultRoom
             && a.CapabilityTags.SequenceEqual(b.CapabilityTags)
-            && a.EnabledTools.SequenceEqual(b.EnabledTools);
+            && a.EnabledTools.SequenceEqual(b.EnabledTools)
+            && PermissionsEqual(a.Permissions, b.Permissions)
+            && GitIdentityEqual(a.GitIdentity, b.GitIdentity);
+    }
+
+    private static bool PermissionsEqual(CommandPermissionSet? a, CommandPermissionSet? b)
+    {
+        if (a is null && b is null) return true;
+        if (a is null || b is null) return false;
+        return a.Allowed.SequenceEqual(b.Allowed)
+            && a.Denied.SequenceEqual(b.Denied);
+    }
+
+    private static bool GitIdentityEqual(AgentGitIdentity? a, AgentGitIdentity? b)
+    {
+        if (a is null && b is null) return true;
+        if (a is null || b is null) return false;
+        return a.AuthorName == b.AuthorName
+            && a.AuthorEmail == b.AuthorEmail;
     }
 
     private string ComputeFileHash()

@@ -64,6 +64,35 @@ public static class WebApplicationExtensions
         var maxCmds = await settingsService.GetRateLimitMaxCommandsAsync();
         var windowSecs = await settingsService.GetRateLimitWindowSecondsAsync();
         rateLimiter.Configure(maxCmds, windowSecs);
+
+        // 7. Conversation kickoff — if the main room has no human/agent messages yet,
+        //    post a system kickoff message and trigger orchestration so agents begin
+        //    collaborating without waiting for a manual human message.
+        //    Idempotent: skips if agents have already spoken or if crash recovery ran.
+        if (!CrashRecoveryService.CurrentCrashDetected)
+        {
+            var hasConversation = await db.Messages.AnyAsync(m =>
+                m.RoomId == mainRoomId &&
+                (m.SenderKind == nameof(MessageSenderKind.Agent) ||
+                 m.SenderKind == nameof(MessageSenderKind.User)));
+
+            if (!hasConversation)
+            {
+                var logger = app.Services.GetRequiredService<ILogger<Program>>();
+                var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+                var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+
+                var kickoffContent = activeWorkspace is not null
+                    ? $"Workspace ready: `{activeWorkspace}`. Team assembled. Aristotle, assess the current state and propose next steps."
+                    : "Team assembled. No workspace is active — onboard a project to begin.";
+
+                await messageService.PostSystemMessageAsync(mainRoomId, kickoffContent);
+                orchestrator.HandleHumanMessage(mainRoomId);
+                logger.LogInformation(
+                    "Conversation kickoff: posted system message and triggered orchestration for room {RoomId}",
+                    mainRoomId);
+            }
+        }
     }
 
     /// <summary>
