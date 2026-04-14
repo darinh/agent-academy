@@ -1164,15 +1164,15 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        // This should create a workspace default room AND retire the legacy one
+        // Legacy room already has workspace path → should be recognized as workspace default
         var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
-        Assert.NotEqual("main", defaultRoomId);
+        Assert.Equal("main", defaultRoomId);
 
-        // Legacy room should have WorkspacePath cleared
+        // Legacy room should keep its WorkspacePath (it IS the workspace default)
         var legacyRoom = await _db.Rooms.FindAsync("main");
         Assert.NotNull(legacyRoom);
-        Assert.Null(legacyRoom!.WorkspacePath);
+        Assert.Equal(workspacePath, legacyRoom!.WorkspacePath);
 
         // Only the workspace default room should appear in room list
         var rooms = await _rooms.GetRoomsAsync();
@@ -1232,7 +1232,7 @@ public class SubServiceIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task EnsureDefaultRoom_DoesNotRetire_WhenLegacyRoomNotBackfilled()
+    public async Task EnsureDefaultRoom_AdoptsLegacyRoom_WhenNotBackfilled()
     {
         var workspacePath = "/home/test/my-project";
         _db.Workspaces.Add(new WorkspaceEntity
@@ -1243,7 +1243,7 @@ public class SubServiceIntegrationTests : IDisposable
             CreatedAt = DateTime.UtcNow
         });
 
-        // Legacy room with no workspace (never backfilled)
+        // Legacy room with no workspace (never backfilled) — this is the bug case
         var now = DateTime.UtcNow;
         _db.Rooms.Add(new RoomEntity
         {
@@ -1259,9 +1259,9 @@ public class SubServiceIntegrationTests : IDisposable
 
         await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
-        // Legacy room should still have null WorkspacePath (unchanged)
+        // Legacy room should now be adopted (WorkspacePath set to workspace)
         var legacyRoom = await _db.Rooms.FindAsync("main");
-        Assert.Null(legacyRoom!.WorkspacePath);
+        Assert.Equal(workspacePath, legacyRoom!.WorkspacePath);
     }
 
     // ── RenameRoomAsync ────────────────────────────────────────

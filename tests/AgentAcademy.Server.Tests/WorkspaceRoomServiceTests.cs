@@ -282,13 +282,15 @@ public sealed class WorkspaceRoomServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResolveStartup_FallsBackToLegacy_WhenNoWorkspaceRoom()
+    public async Task ResolveStartup_AdoptsOrphanedLegacyRoom()
     {
         SeedRoom(Catalog.DefaultRoomId, "Legacy", workspacePath: null);
 
         var result = await Sut.ResolveStartupMainRoomIdAsync("/some/workspace");
 
         Assert.Equal(Catalog.DefaultRoomId, result);
+        var room = await Db.Rooms.FindAsync(Catalog.DefaultRoomId);
+        Assert.Equal("/some/workspace", room!.WorkspacePath);
     }
 
     [Fact]
@@ -300,5 +302,145 @@ public sealed class WorkspaceRoomServiceTests : IDisposable
         var room = await Db.Rooms.FindAsync(result);
         Assert.NotNull(room);
         Assert.Equal("/home/user/new-project", room.WorkspacePath);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  TryAdoptLegacyRoomAsync
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task TryAdopt_AdoptsOrphanedLegacyRoom()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Old Name", workspacePath: null);
+
+        var result = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+
+        Assert.Equal(Catalog.DefaultRoomId, result);
+        var room = await Db.Rooms.FindAsync(Catalog.DefaultRoomId);
+        Assert.Equal("/home/user/project", room!.WorkspacePath);
+        Assert.Equal(Catalog.DefaultRoomName, room.Name);
+    }
+
+    [Fact]
+    public async Task TryAdopt_ReturnsNull_WhenLegacyRoomAlreadyOwned()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Main Room", workspacePath: "/other/workspace");
+
+        var result = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task TryAdopt_ReturnsNull_WhenLegacyRoomArchived()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Main Room", workspacePath: null, status: "Archived");
+
+        var result = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task TryAdopt_ReturnsNull_WhenNoLegacyRoom()
+    {
+        var result = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task TryAdopt_ArchivesDuplicateWorkspaceRoom()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Main Room", workspacePath: null);
+        SeedRoom("project-main", "Main Collaboration Room", "/home/user/project");
+
+        var result = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+
+        Assert.Equal(Catalog.DefaultRoomId, result);
+        var duplicate = await Db.Rooms.FindAsync("project-main");
+        Assert.Equal(nameof(RoomStatus.Archived), duplicate!.Status);
+        // WorkspacePath preserved so workspace-scoped queries still find its data
+        Assert.Equal("/home/user/project", duplicate.WorkspacePath);
+    }
+
+    [Fact]
+    public async Task TryAdopt_SecondCallIsIdempotent()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Main Room", workspacePath: null);
+
+        var first = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+        var second = await Sut.TryAdoptLegacyRoomAsync("/home/user/project");
+
+        Assert.Equal(Catalog.DefaultRoomId, first);
+        Assert.Null(second); // Already owned, no re-adoption
+    }
+
+    [Fact]
+    public async Task EnsureDefault_AdoptsLegacyRoom_InsteadOfCreatingNew()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Old Room", workspacePath: null);
+
+        var result = await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        Assert.Equal(Catalog.DefaultRoomId, result);
+        var room = await Db.Rooms.FindAsync(Catalog.DefaultRoomId);
+        Assert.Equal("/home/user/project", room!.WorkspacePath);
+        // No duplicate room should exist
+        var allRooms = Db.Rooms.ToList();
+        Assert.Single(allRooms);
+    }
+
+    [Fact]
+    public async Task EnsureDefault_AdoptedRoomSurvivesSecondCall()
+    {
+        SeedRoom(Catalog.DefaultRoomId, "Old Room", workspacePath: null);
+
+        var first = await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+        var second = await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        Assert.Equal(first, second);
+        Assert.Equal(Catalog.DefaultRoomId, first);
+        // Still only one room
+        var rooms = Db.Rooms.Where(r => r.Status != nameof(RoomStatus.Archived)).ToList();
+        Assert.Single(rooms);
+    }
+
+    [Fact]
+    public async Task EnsureDefault_RepairsDuplicateRoomState()
+    {
+        // Simulate the bug: legacy room orphaned + duplicate created
+        SeedRoom(Catalog.DefaultRoomId, "Main Room", workspacePath: null);
+        SeedRoom("project-main", "Main Collaboration Room", "/home/user/project");
+
+        var result = await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        // Should adopt legacy and archive duplicate
+        Assert.Equal(Catalog.DefaultRoomId, result);
+        var duplicate = await Db.Rooms.FindAsync("project-main");
+        Assert.Equal(nameof(RoomStatus.Archived), duplicate!.Status);
+    }
+
+    [Fact]
+    public async Task TasksInAdoptedRoom_VisibleViaWorkspaceQuery()
+    {
+        // Simulate: legacy room with tasks, then workspace switch
+        SeedRoom(Catalog.DefaultRoomId, "Main Room", workspacePath: null);
+        Db.Tasks.Add(new TaskEntity
+        {
+            Id = "task-1", Title = "Test Task", Status = "Active",
+            RoomId = Catalog.DefaultRoomId,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        Db.SaveChanges();
+
+        await Sut.EnsureDefaultRoomForWorkspaceAsync("/home/user/project");
+
+        // Task should now be findable by workspace query
+        var room = await Db.Rooms.FindAsync(Catalog.DefaultRoomId);
+        Assert.Equal("/home/user/project", room!.WorkspacePath);
+        // The task's RoomId points to "main" which now has the workspace path
+        var task = await Db.Tasks.FindAsync("task-1");
+        Assert.Equal(Catalog.DefaultRoomId, task!.RoomId);
     }
 }

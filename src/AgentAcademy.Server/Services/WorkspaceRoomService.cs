@@ -33,15 +33,30 @@ public sealed class WorkspaceRoomService
 
     /// <summary>
     /// Ensures a default room exists for the given workspace.
-    /// Creates one if missing. Moves all agents to the workspace's default room.
-    /// Returns the default room ID.
+    /// Prefers adopting the legacy "main" room (preserving its messages and task
+    /// associations) over creating a duplicate workspace-scoped room.
+    /// Moves all agents to the workspace's default room. Returns the default room ID.
     /// </summary>
     public async Task<string> EnsureDefaultRoomForWorkspaceAsync(string workspacePath)
     {
-        var existingForWorkspace = await _db.Rooms.FirstOrDefaultAsync(
-            r => r.WorkspacePath == workspacePath &&
-                 r.Id != _catalog.DefaultRoomId &&
-                 (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")));
+        // Phase 1: Adopt orphaned legacy room if available.
+        // The legacy "main" room may contain messages and tasks from before
+        // the workspace was activated. Adopting it keeps those visible.
+        var adopted = await TryAdoptLegacyRoomAsync(workspacePath);
+        if (adopted is not null)
+        {
+            await MoveAllAgentsToRoomAsync(adopted);
+            return adopted;
+        }
+
+        // Phase 2: Check if workspace already has a room (including an adopted "main").
+        // Prefer workspace-specific rooms over the legacy default to avoid conflicts
+        // when both exist (e.g., after a partial repair).
+        var existingForWorkspace = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath &&
+                 (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")))
+            .OrderBy(r => r.Id == _catalog.DefaultRoomId ? 1 : 0)
+            .FirstOrDefaultAsync();
 
         if (existingForWorkspace is not null)
         {
@@ -118,6 +133,52 @@ public sealed class WorkspaceRoomService
     }
 
     /// <summary>
+    /// Tries to adopt the orphaned legacy default room for the given workspace.
+    /// If the legacy room exists with no workspace path and is not archived, claim it.
+    /// If a duplicate workspace-scoped room was already created, archive the duplicate
+    /// and adopt the legacy room (which holds the real conversation history).
+    /// Returns the adopted room ID, or null if adoption was not possible.
+    /// </summary>
+    internal async Task<string?> TryAdoptLegacyRoomAsync(string workspacePath)
+    {
+        var legacyRoom = await _db.Rooms.FindAsync(_catalog.DefaultRoomId);
+        if (legacyRoom is null
+            || legacyRoom.WorkspacePath is not null
+            || legacyRoom.Status == nameof(RoomStatus.Archived))
+        {
+            return null;
+        }
+
+        // Archive any duplicate workspace-scoped room that was created before adoption
+        var duplicateRoom = await _db.Rooms.FirstOrDefaultAsync(
+            r => r.WorkspacePath == workspacePath
+                && r.Id != _catalog.DefaultRoomId
+                && (r.Name.EndsWith("Main Room") || r.Name.EndsWith("Collaboration Room")));
+
+        if (duplicateRoom is not null)
+        {
+            // Archive but keep WorkspacePath so any tasks/messages in the duplicate
+            // remain visible to workspace-scoped queries
+            duplicateRoom.Status = nameof(RoomStatus.Archived);
+            duplicateRoom.UpdatedAt = DateTime.UtcNow;
+            _logger.LogInformation(
+                "Archived duplicate workspace room '{RoomId}' in favor of adopted legacy room",
+                duplicateRoom.Id);
+        }
+
+        legacyRoom.WorkspacePath = workspacePath;
+        legacyRoom.Name = _catalog.DefaultRoomName;
+        legacyRoom.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Adopted orphaned default room '{RoomId}' for workspace '{Workspace}'",
+            legacyRoom.Id, workspacePath);
+
+        return legacyRoom.Id;
+    }
+
+    /// <summary>
     /// If the legacy catalog default room was backfilled into this workspace,
     /// clear its WorkspacePath so it stops appearing alongside the real workspace default.
     /// </summary>
@@ -170,12 +231,20 @@ public sealed class WorkspaceRoomService
 
     /// <summary>
     /// Resolves the main room ID to use at startup for the given workspace.
+    /// Triggers legacy room adoption if applicable.
     /// </summary>
     public async Task<string> ResolveStartupMainRoomIdAsync(string? activeWorkspace)
     {
         if (activeWorkspace is null)
         {
             return _catalog.DefaultRoomId;
+        }
+
+        // Attempt adoption first — ensures legacy room gets claimed on restart
+        var adopted = await TryAdoptLegacyRoomAsync(activeWorkspace);
+        if (adopted is not null)
+        {
+            return adopted;
         }
 
         var workspaceMainRoomId = await _db.Rooms
