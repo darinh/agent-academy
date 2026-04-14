@@ -19,9 +19,10 @@ const DEBOUNCE_MS = 300;
 
 interface MemoryBrowserPanelProps {
   agents: AgentDefinition[];
+  refreshTrigger?: number;
 }
 
-export default function MemoryBrowserPanel({ agents }: MemoryBrowserPanelProps) {
+export default function MemoryBrowserPanel({ agents, refreshTrigger = 0 }: MemoryBrowserPanelProps) {
   const s = useMemoryBrowserStyles();
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [category, setCategory] = useState<string>("");
@@ -85,6 +86,15 @@ export default function MemoryBrowserPanel({ agents }: MemoryBrowserPanelProps) 
   }, [selectedAgent, category, debouncedSearch, includeExpired]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Re-fetch when a LearningDigestCompleted event arrives (new shared memories)
+  const prevTrigger = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== prevTrigger.current) {
+      prevTrigger.current = refreshTrigger;
+      fetchData();
+    }
+  }, [refreshTrigger, fetchData]);
 
   const handleDelete = useCallback(async (agentId: string, key: string) => {
     try {

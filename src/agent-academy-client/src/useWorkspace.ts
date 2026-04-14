@@ -92,6 +92,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [sprintVersion, setSprintVersion] = useState(0);
   const [retroVersion, setRetroVersion] = useState(0);
   const [digestVersion, setDigestVersion] = useState(0);
+  const [memoryVersion, setMemoryVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -217,6 +218,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
         break;
       case "LearningDigestCompleted":
         setDigestVersion((v) => v + 1);
+        setMemoryVersion((v) => v + 1);
         break;
     }
   }, []);
@@ -489,6 +491,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     lastSprintEvent,
     retroVersion,
     digestVersion,
+    memoryVersion,
     err,
     busy,
     tab,

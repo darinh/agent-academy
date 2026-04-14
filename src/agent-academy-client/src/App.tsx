@@ -109,6 +109,7 @@ function AppShell() {
     lastSprintEvent,
     retroVersion,
     digestVersion,
+    memoryVersion,
     err,
     busy,
     tab,
@@ -404,6 +405,7 @@ function AppShell() {
                 lastSprintEvent={lastSprintEvent}
                 retroVersion={retroVersion}
                 digestVersion={digestVersion}
+                memoryVersion={memoryVersion}
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}

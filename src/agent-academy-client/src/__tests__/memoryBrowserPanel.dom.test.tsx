@@ -241,4 +241,38 @@ describe("MemoryBrowserPanel", () => {
 
     vi.useRealTimers();
   });
+
+  describe("real-time refresh via refreshTrigger", () => {
+    it("re-fetches when refreshTrigger prop changes", async () => {
+      const { rerender } = render(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 0 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+
+      mockBrowse.mockClear();
+      mockStats.mockClear();
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 1 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+    });
+
+    it("does not re-fetch when refreshTrigger stays the same", async () => {
+      const { rerender } = render(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 5 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+
+      mockBrowse.mockClear();
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 5 })),
+      );
+      expect(mockBrowse).not.toHaveBeenCalled();
+    });
+
+    it("works without refreshTrigger prop (defaults to 0)", async () => {
+      await renderAndWaitForData();
+      expect(mockBrowse).toHaveBeenCalledTimes(1);
+    });
+  });
 });
