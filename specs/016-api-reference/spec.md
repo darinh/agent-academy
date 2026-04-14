@@ -28,6 +28,32 @@ If `ConsultantApi:SharedSecret` is not configured, the consultant auth scheme is
 - List endpoints support pagination via `limit`/`offset` query parameters where noted.
 - SSE streams use `text/event-stream` content type with `data:` JSON payloads.
 
+### Error Response Format
+
+All error responses use [RFC 7807 ProblemDetails](https://www.rfc-editor.org/rfc/rfc7807). The response body is:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Human-readable explanation of what went wrong.",
+  "code": "machine_readable_code"
+}
+```
+
+| Field | Type | Always Present | Description |
+|-------|------|----------------|-------------|
+| `type` | string | Yes | URI identifying the error type |
+| `title` | string | Yes | Short HTTP status phrase |
+| `status` | integer | Yes | HTTP status code |
+| `detail` | string | Yes | Specific error message |
+| `code` | string | No | Machine-readable error code (in `extensions`) |
+
+**Backend**: All controllers use the `ApiProblem` factory (`Controllers/ApiProblem.cs`) which produces `ProblemDetails` instances with an optional `code` extension. Controllers return these via `BadRequest(pd)`, `NotFound(pd)`, `Conflict(pd)`, etc.
+
+**Frontend**: The `extractApiError()` helper in `api/core.ts` reads `body.detail ?? body.error ?? body.title` to extract messages, supporting both ProblemDetails and any legacy format.
+
 ---
 
 ## 1. System & Health

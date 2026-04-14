@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **016-api-reference**: Standardized all error responses to RFC 7807 ProblemDetails format. 170+ anonymous `new { error }` and `new { code, message }` objects across 21 controllers replaced with `ApiProblem.*()` factory calls. Error codes preserved as ProblemDetails extensions. Frontend `extractApiError()` helper handles both ProblemDetails and legacy formats. `ProblemDetailsAssert` test helper added. 13 tests updated.
+
 ### Added
 - **015-security-model**: New consolidated security model — trust boundaries, authentication (GitHub OAuth + consultant key + auth-disabled mode), authorization (global fallback policy + agent command permissions), agent security boundaries (SDK permission handler, worktree isolation, file access controls, shell command sandboxing, identity, memory isolation), prompt injection defenses (boundary markers, metadata sanitization, marker escaping), rate limiting and quotas (HTTP + command + LLM), data protection (token encryption, secret management), network security (CORS, SignalR, TLS), input validation (model validation, path traversal prevention), audit trail, threat model with 10 threats analyzed, and security checklist for new features.
 
