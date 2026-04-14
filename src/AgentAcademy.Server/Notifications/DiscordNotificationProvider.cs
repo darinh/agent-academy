@@ -222,28 +222,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        if (!IsConnected || _client is null)
-        {
-            _logger.LogWarning("Cannot send notification — Discord provider is not connected");
-            return false;
-        }
+        var guild = GetGuildIfConnected("send notification");
+        if (guild is null) return false;
 
         try
         {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null)
-            {
-                _logger.LogError("Discord guild {GuildId} not found", _guildId);
-                return false;
-            }
-
-            // Route to room-specific channel if RoomId is available
             if (!string.IsNullOrEmpty(message.RoomId))
-            {
                 return await _sender.SendToRoomChannelAsync(guild, _channelId, message, cancellationToken);
-            }
 
-            // Fallback: send to configured default channel
             return await _sender.SendToDefaultChannelAsync(guild, _channelId, message, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -258,21 +244,11 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!IsConnected || _client is null)
-        {
-            _logger.LogWarning("Cannot request input — Discord provider is not connected");
-            return null;
-        }
+        var guild = GetGuildIfConnected("request input");
+        if (guild is null) return null;
 
         try
         {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null)
-            {
-                _logger.LogError("Discord guild {GuildId} not found", _guildId);
-                return null;
-            }
-
             var channel = DiscordMessageSender.ResolveDefaultChannel(guild, _channelId);
             if (channel is null)
             {
@@ -294,13 +270,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             if (request.Choices is { Count: > 0 })
             {
                 return await _inputHandler.RequestChoiceInputAsync(
-                    _client, channel, embed, request.Choices, ProviderId, cancellationToken);
+                    _client!, channel, embed, request.Choices, ProviderId, cancellationToken);
             }
 
             if (request.AllowFreeform)
             {
                 return await _inputHandler.RequestFreeformInputAsync(
-                    _client, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
+                    _client!, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
             }
 
             _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
@@ -345,21 +321,11 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        if (!IsConnected || _client is null)
-        {
-            _logger.LogWarning("Cannot send agent question — Discord provider is not connected");
-            return false;
-        }
+        var guild = GetGuildIfConnected("send agent question");
+        if (guild is null) return false;
 
         try
         {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null)
-            {
-                _logger.LogError("Discord guild {GuildId} not found", _guildId);
-                return false;
-            }
-
             return await _sender.SendAgentQuestionAsync(guild, question, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -376,13 +342,11 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(dm);
 
-        if (!IsConnected || _client is null) return false;
+        var guild = GetGuildIfConnected("send direct message");
+        if (guild is null) return false;
 
         try
         {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null) return false;
-
             return await _sender.SendDirectMessageAsync(guild, dm, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -398,33 +362,50 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// </summary>
     public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
     {
-        if (_client is null || !_isConfigured) return;
-
-        var guild = _client.GetGuild(_guildId);
-        if (guild is null) return;
-
-        await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
+        var guild = GetGuildIfConfigured();
+        if (guild is not null)
+            await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
     }
 
     /// <inheritdoc />
     public async Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
     {
-        if (_client is null || !_isConfigured) return;
-
-        var guild = _client.GetGuild(_guildId);
-        if (guild is null) return;
-
-        await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
+        var guild = GetGuildIfConfigured();
+        if (guild is not null)
+            await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
     }
 
 
     #region Private helpers
 
     /// <summary>
-    /// Maps notification type to Discord embed color.
-    /// Forwarding shim — canonical implementation is on <see cref="DiscordMessageSender"/>.
+    /// Resolves the Discord guild when the provider is connected.
+    /// Logs a warning if disconnected or guild unavailable. Returns null on failure.
     /// </summary>
-    public static Color GetColorForType(NotificationType type) => DiscordMessageSender.GetColorForType(type);
+    private SocketGuild? GetGuildIfConnected(string operationName)
+    {
+        if (!IsConnected || _client is null)
+        {
+            _logger.LogWarning("Cannot {Operation} — Discord provider is not connected", operationName);
+            return null;
+        }
+
+        var guild = _client.GetGuild(_guildId);
+        if (guild is null)
+            _logger.LogError("Discord guild {GuildId} not found", _guildId);
+
+        return guild;
+    }
+
+    /// <summary>
+    /// Resolves the Discord guild when the provider is configured (but not necessarily fully connected).
+    /// Used by best-effort lifecycle operations. Returns null silently if unavailable.
+    /// </summary>
+    private SocketGuild? GetGuildIfConfigured()
+    {
+        if (_client is null || !_isConfigured) return null;
+        return _client.GetGuild(_guildId);
+    }
 
     private Task OnDiscordLog(LogMessage logMessage)
     {

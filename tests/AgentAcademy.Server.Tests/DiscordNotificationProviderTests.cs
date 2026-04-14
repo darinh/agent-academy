@@ -283,7 +283,7 @@ public class DiscordNotificationProviderTests
     [InlineData(NotificationType.Error)]
     public void GetColorForType_ReturnsDistinctColorForEachType(NotificationType type)
     {
-        var color = DiscordNotificationProvider.GetColorForType(type);
+        var color = DiscordMessageSender.GetColorForType(type);
 
         // Verify we get a non-default color
         Assert.NotEqual(default, color);
@@ -292,31 +292,31 @@ public class DiscordNotificationProviderTests
     [Fact]
     public void GetColorForType_AgentThinking_IsBlue()
     {
-        Assert.Equal(Color.Blue, DiscordNotificationProvider.GetColorForType(NotificationType.AgentThinking));
+        Assert.Equal(Color.Blue, DiscordMessageSender.GetColorForType(NotificationType.AgentThinking));
     }
 
     [Fact]
     public void GetColorForType_NeedsInput_IsGold()
     {
-        Assert.Equal(Color.Gold, DiscordNotificationProvider.GetColorForType(NotificationType.NeedsInput));
+        Assert.Equal(Color.Gold, DiscordMessageSender.GetColorForType(NotificationType.NeedsInput));
     }
 
     [Fact]
     public void GetColorForType_TaskComplete_IsGreen()
     {
-        Assert.Equal(Color.Green, DiscordNotificationProvider.GetColorForType(NotificationType.TaskComplete));
+        Assert.Equal(Color.Green, DiscordMessageSender.GetColorForType(NotificationType.TaskComplete));
     }
 
     [Fact]
     public void GetColorForType_TaskFailed_IsRed()
     {
-        Assert.Equal(Color.Red, DiscordNotificationProvider.GetColorForType(NotificationType.TaskFailed));
+        Assert.Equal(Color.Red, DiscordMessageSender.GetColorForType(NotificationType.TaskFailed));
     }
 
     [Fact]
     public void GetColorForType_Error_IsRed()
     {
-        Assert.Equal(Color.Red, DiscordNotificationProvider.GetColorForType(NotificationType.Error));
+        Assert.Equal(Color.Red, DiscordMessageSender.GetColorForType(NotificationType.Error));
     }
 
     #endregion
