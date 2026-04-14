@@ -702,7 +702,7 @@ public class RestartHistoryApiTests : IDisposable
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, actPub, messageService, new RoomSnapshotBuilder(_db, catalog));
         var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, actPub);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, actPub, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, actPub));
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, roomService, new RoomSnapshotBuilder(_db, catalog), roomLifecycle, agentLocations, messageService, breakouts);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog), roomLifecycle, agentLocations, messageService, breakouts);
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);

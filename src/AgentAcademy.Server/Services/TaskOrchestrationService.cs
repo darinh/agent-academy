@@ -16,6 +16,7 @@ public sealed class TaskOrchestrationService
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly TaskLifecycleService _taskLifecycle;
+    private readonly TaskQueryService _taskQueries;
     private readonly RoomService _rooms;
     private readonly RoomSnapshotBuilder _snapshots;
     private readonly RoomLifecycleService _roomLifecycle;
@@ -23,12 +24,15 @@ public sealed class TaskOrchestrationService
     private readonly MessageService _messages;
     private readonly BreakoutRoomService _breakouts;
 
+    private const int MaxBulkSize = 50;
+
     public TaskOrchestrationService(
         AgentAcademyDbContext db,
         ILogger<TaskOrchestrationService> logger,
         IAgentCatalog catalog,
         ActivityPublisher activity,
         TaskLifecycleService taskLifecycle,
+        TaskQueryService taskQueries,
         RoomService rooms,
         RoomSnapshotBuilder snapshots,
         RoomLifecycleService roomLifecycle,
@@ -41,6 +45,7 @@ public sealed class TaskOrchestrationService
         _catalog = catalog;
         _activity = activity;
         _taskLifecycle = taskLifecycle;
+        _taskQueries = taskQueries;
         _rooms = rooms;
         _snapshots = snapshots;
         _roomLifecycle = roomLifecycle;
@@ -206,5 +211,59 @@ public sealed class TaskOrchestrationService
         _logger.LogInformation(
             "Reopened auto-archived room '{RoomId}' ({RoomName}) due to task rejection",
             roomId, room.Name);
+    }
+
+    // ── Bulk Operations ─────────────────────────────────────────
+
+    /// <summary>
+    /// Updates the status of multiple tasks and publishes activity events.
+    /// Throws <see cref="ArgumentException"/> if <paramref name="taskIds"/> exceeds
+    /// <see cref="MaxBulkSize"/> or the status is disallowed.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkUpdateStatusAsync(
+        IReadOnlyList<string> taskIds, Shared.Models.TaskStatus status)
+    {
+        if (taskIds.Count > MaxBulkSize)
+            throw new ArgumentException($"Maximum {MaxBulkSize} tasks per bulk operation.");
+
+        var result = await _taskQueries.BulkUpdateStatusAsync(taskIds, status);
+
+        foreach (var task in result.Updated)
+        {
+            _activity.Publish(
+                ActivityEventType.TaskStatusUpdated, null, null, task.Id,
+                $"Task '{task.Title}' status → {task.Status} (bulk)");
+        }
+
+        if (result.Updated.Count > 0)
+            await _db.SaveChangesAsync();
+
+        return result;
+    }
+
+    /// <summary>
+    /// Assigns multiple tasks to a single agent and publishes activity events.
+    /// Throws <see cref="ArgumentException"/> if <paramref name="taskIds"/> exceeds
+    /// <see cref="MaxBulkSize"/> or the agent can't be resolved.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkAssignAsync(
+        IReadOnlyList<string> taskIds, string agentId, string? agentName)
+    {
+        if (taskIds.Count > MaxBulkSize)
+            throw new ArgumentException($"Maximum {MaxBulkSize} tasks per bulk operation.");
+
+        var result = await _taskQueries.BulkAssignAsync(taskIds, agentId, agentName);
+
+        foreach (var task in result.Updated)
+        {
+            _activity.Publish(
+                ActivityEventType.TaskStatusUpdated, null, null, task.Id,
+                $"Task '{task.Title}' assigned to {task.AssignedAgentName} (bulk)");
+        }
+
+        if (result.Updated.Count > 0)
+            await _db.SaveChangesAsync();
+
+        return result;
     }
 }

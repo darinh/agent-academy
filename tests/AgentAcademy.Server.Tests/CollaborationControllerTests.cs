@@ -22,7 +22,6 @@ public sealed class CollaborationControllerTests : IDisposable
             _svc.TaskOrchestrationService, _svc.TaskQueryService,
             _svc.TaskDependencyService, _svc.MessageService, _svc.RoomService, _svc.Catalog,
             _svc.Orchestrator, _svc.Executor, _svc.SpecManager,
-            _svc.ActivityPublisher, _svc.Db,
             NullLogger<CollaborationController>.Instance);
 
         // Set a default anonymous HttpContext so User doesn't NullRef
