@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **016-api-reference**: New unified REST endpoint catalog — 145 endpoints across 26 controllers, 3 SSE streams, 1 SignalR hub. Organized by functional domain (23 sections) with cross-references to domain-specific specs.
+
+### Added
 - **018-testing-strategy**: New spec documenting the testing strategy based on existing 4,500+ test infrastructure. Documents test pyramid (unit/integration/E2E), backend testing conventions (xUnit, NSubstitute, in-memory SQLite), frontend testing conventions (Vitest unit tests, Playwright E2E), coverage tooling (coverlet.collector, Vitest coverage), test naming patterns, parallelization strategy, and known gaps (no API contract tests, no performance tests, no CI coverage tracking). Evidence: 170 backend test files, 116 frontend unit tests, 18 E2E specs.
 
 ### Changed
