@@ -274,5 +274,107 @@ describe("MemoryBrowserPanel", () => {
       await renderAndWaitForData();
       expect(mockBrowse).toHaveBeenCalledTimes(1);
     });
+
+    it("re-fetches multiple times for successive refreshTrigger increments", async () => {
+      const { rerender } = render(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 0 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+
+      mockBrowse.mockClear();
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 1 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+
+      mockBrowse.mockClear();
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 2 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+    });
+
+    it("also re-fetches stats when refreshTrigger changes", async () => {
+      const { rerender } = render(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 0 })),
+      );
+      await waitFor(() => expect(mockStats).toHaveBeenCalledTimes(1));
+
+      mockStats.mockClear();
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 1 })),
+      );
+      await waitFor(() => expect(mockStats).toHaveBeenCalledTimes(1));
+    });
+
+    it("handles browse failure gracefully during refresh (shows error, keeps stats)", async () => {
+      const { rerender } = render(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 0 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+
+      // Stats should be visible after initial load
+      expect(screen.getByText("4 active")).toBeInTheDocument();
+
+      // Next refresh: browse fails, stats succeeds (Promise.allSettled)
+      mockBrowse.mockRejectedValue(new Error("Network timeout"));
+      mockStats.mockResolvedValue(makeStatsResponse());
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 1 })),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Network timeout/)).toBeInTheDocument();
+      });
+      // Stats should still be visible despite browse failure
+      expect(screen.getByText("4 active")).toBeInTheDocument();
+    });
+
+    it("discards stale refresh response when a newer fetch overtakes it", async () => {
+      let resolveFirst: (v: ReturnType<typeof makeBrowseResponse>) => void;
+      const firstPromise = new Promise<ReturnType<typeof makeBrowseResponse>>((r) => { resolveFirst = r; });
+
+      const { rerender } = render(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 0 })),
+      );
+      await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+
+      // Trigger refresh with a slow response
+      mockBrowse.mockReturnValueOnce(firstPromise);
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 1 })),
+      );
+
+      // Trigger another refresh that resolves immediately with uniquely identifiable data
+      const freshResponse: ReturnType<typeof makeBrowseResponse> = {
+        total: 1,
+        memories: [{
+          agentId: "agent-1",
+          category: "decision",
+          key: "fresh-unique-key",
+          value: "Fresh value",
+          createdAt: "2026-04-10T12:00:00Z",
+          updatedAt: null,
+          expiresAt: null,
+        }],
+      };
+      mockBrowse.mockResolvedValue(freshResponse);
+      rerender(
+        wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 2 })),
+      );
+
+      // Wait for the fresh response to render
+      await waitFor(() => {
+        expect(screen.getByText("fresh-unique-key")).toBeInTheDocument();
+      });
+
+      // Now resolve the stale first response — it should be ignored
+      resolveFirst!(makeBrowseResponse(5));
+      await waitFor(() => {
+        // Should still show the fresh data, not the stale 5-item response
+        expect(screen.getByText("fresh-unique-key")).toBeInTheDocument();
+        expect(screen.queryByText("key-4")).not.toBeInTheDocument();
+      });
+    });
   });
 });

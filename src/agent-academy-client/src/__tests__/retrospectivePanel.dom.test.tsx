@@ -927,5 +927,81 @@ describe("RetrospectivePanel", () => {
       // Should NOT have expanded the detail (click was on the title link, not the row)
       expect(mockGetRetrospective).not.toHaveBeenCalled();
     });
+
+    it("navigates to different tasks when clicking different retro items", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-10", taskTitle: "Auth feature" }),
+        makeRetroItem({ id: "r-2", taskId: "task-20", taskTitle: "Database migration" }),
+        makeRetroItem({ id: "r-3", taskId: "task-30", taskTitle: "API refactor" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText("Auth feature"));
+      await userEvent.click(screen.getByText("Database migration"));
+      await userEvent.click(screen.getByText("API refactor"));
+
+      expect(onNav).toHaveBeenCalledTimes(3);
+      expect(onNav).toHaveBeenNthCalledWith(1, "task-10");
+      expect(onNav).toHaveBeenNthCalledWith(2, "task-20");
+      expect(onNav).toHaveBeenNthCalledWith(3, "task-30");
+    });
+
+    it("renders open icon on task title links when onNavigateToTask is provided", async () => {
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      const { container } = renderWithNav();
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      // The link span should contain an SVG icon (OpenRegular)
+      const titleEl = screen.getByText("Auth feature");
+      const svg = titleEl.querySelector("svg");
+      expect(svg).not.toBeNull();
+    });
+
+    it("does not render open icon when onNavigateToTask is absent", async () => {
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Auth feature");
+      const svg = titleEl.querySelector("svg");
+      expect(svg).toBeNull();
+    });
+
+    it("multiple retros for the same task all navigate to the same taskId", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+        makeRetroItem({ id: "r-2", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        const titles = screen.getAllByText("Auth feature");
+        expect(titles.length).toBe(2);
+      });
+
+      const titles = screen.getAllByText("Auth feature");
+      await userEvent.click(titles[0]);
+      await userEvent.click(titles[1]);
+
+      expect(onNav).toHaveBeenCalledTimes(2);
+      expect(onNav).toHaveBeenNthCalledWith(1, "task-42");
+      expect(onNav).toHaveBeenNthCalledWith(2, "task-42");
+    });
   });
 });

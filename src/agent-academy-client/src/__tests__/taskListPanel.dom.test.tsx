@@ -1632,5 +1632,137 @@ describe("TaskListPanel (interactive)", () => {
       expect(screen.getByText("Description")).toBeInTheDocument();
       expect(screen.getByText("Focused from retro")).toBeInTheDocument();
     });
+
+    it("calls onFocusHandled after processing focusTaskId", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Handled task", description: "Detail" });
+      const onFocusHandled = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).toHaveBeenCalledTimes(1);
+    });
+
+    it("switches focus from task A to task B when focusTaskId changes", () => {
+      const idA = uid();
+      const idB = uid();
+      const taskA = makeTask({ id: idA, title: "Task A", description: "Detail A" });
+      const taskB = makeTask({ id: idB, title: "Task B", description: "Detail B" });
+
+      const { rerender } = render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [taskA, taskB],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: idA,
+          }),
+        ),
+      );
+
+      expect(screen.getByText("Detail A")).toBeInTheDocument();
+
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [taskA, taskB],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: idB,
+          }),
+        ),
+      );
+
+      expect(screen.getByText("Detail B")).toBeInTheDocument();
+    });
+
+    it("does not call onFocusHandled when focusTaskId does not match any task", () => {
+      const task = makeTask({ id: uid(), title: "Unmatched" });
+      const onFocusHandled = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: "nonexistent-id",
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).not.toHaveBeenCalled();
+    });
+
+    it("does not re-trigger focus for the same focusTaskId on rerender", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Stable focus", description: "Detail" });
+      const onFocusHandled = vi.fn();
+
+      const { rerender } = render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).toHaveBeenCalledTimes(1);
+      onFocusHandled.mockClear();
+
+      // Re-render with same focusTaskId — should NOT fire again
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).not.toHaveBeenCalled();
+    });
   });
 });

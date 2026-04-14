@@ -859,5 +859,166 @@ describe("DigestPanel", () => {
       // Should not have been called again
       expect(mockListDigests).not.toHaveBeenCalled();
     });
+
+    it("re-fetches multiple times for successive refreshTrigger increments", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+
+      mockListDigests.mockClear();
+      setupSuccess();
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+
+      mockListDigests.mockClear();
+      setupSuccess();
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={2} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+    });
+
+    it("also re-fetches stats when refreshTrigger changes", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockGetDigestStats).toHaveBeenCalledTimes(1));
+
+      mockGetDigestStats.mockClear();
+      setupSuccess();
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockGetDigestStats).toHaveBeenCalledTimes(1));
+    });
+
+    it("preserves selected detail across refresh trigger", async () => {
+      setupSuccess(undefined, undefined, [
+        makeDigestItem({ id: 1 }),
+        makeDigestItem({ id: 2 }),
+      ]);
+      mockGetDigest.mockResolvedValue(makeDetail({ id: 1, summary: "Selected digest detail" }));
+
+      const { container, rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(getDigestRows(container).length).toBeGreaterThan(0);
+      });
+
+      // Select a digest to show detail
+      await userEvent.click(getDigestRows(container)[0]);
+      await waitFor(() => {
+        expect(screen.getByText("Selected digest detail")).toBeInTheDocument();
+      });
+
+      // Trigger refresh — selectedId state is preserved across re-fetch
+      setupSuccess(undefined, undefined, [
+        makeDigestItem({ id: 1 }),
+        makeDigestItem({ id: 2 }),
+      ]);
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+
+      // Wait for the refresh fetch to complete
+      await waitFor(() => {
+        expect(mockListDigests).toHaveBeenCalled();
+      });
+
+      // Detail should still be visible (selectedId not cleared by list refresh)
+      expect(screen.getByText("Selected digest detail")).toBeInTheDocument();
+    });
+
+    it("handles list fetch error during refresh gracefully", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+
+      // Next refresh fails
+      mockListDigests.mockRejectedValue(new Error("Server error"));
+      mockGetDigestStats.mockRejectedValue(new Error("Server error"));
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Server error/)).toBeInTheDocument();
+      });
+    });
+
+    it("discards stale refresh response when a newer fetch overtakes it", async () => {
+      let resolveFirst: (v: ReturnType<typeof makeListResponse>) => void;
+      const firstPromise = new Promise<ReturnType<typeof makeListResponse>>((r) => { resolveFirst = r; });
+
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => expect(mockListDigests).toHaveBeenCalledTimes(1));
+
+      // Trigger refresh with a slow list response
+      mockListDigests.mockReturnValueOnce(firstPromise);
+      mockGetDigestStats.mockResolvedValue(makeStats());
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+
+      // Trigger another refresh that resolves immediately
+      const freshList = [makeDigestItem({ id: 99, summary: "Fresh digest" })];
+      setupSuccess(undefined, undefined, freshList);
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <DigestPanel refreshTrigger={2} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Fresh digest")).toBeInTheDocument();
+      });
+
+      // Now resolve the stale first response — it should be ignored (fetchIdRef guard)
+      resolveFirst!(makeListResponse([
+        makeDigestItem({ id: 1, summary: "Stale digest" }),
+        makeDigestItem({ id: 2, summary: "Also stale" }),
+        makeDigestItem({ id: 3, summary: "Still stale" }),
+      ]));
+
+      // Wait a tick and verify the stale data didn't overwrite
+      await waitFor(() => {
+        expect(screen.getByText("Fresh digest")).toBeInTheDocument();
+        expect(screen.queryByText("Stale digest")).not.toBeInTheDocument();
+      });
+    });
   });
 });
