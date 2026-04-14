@@ -63,9 +63,11 @@ public class SprintControllerTests : IDisposable
 
         _roomService = roomService;
 
+        var scheduleService = new SprintScheduleService(_db);
+
         _controller = new SprintController(
-            _sprintService, _sprintStageService, _artifactService, _metricsCalculator, _roomService,
-            _db,
+            _sprintService, _sprintStageService, _artifactService, _metricsCalculator,
+            scheduleService, _roomService,
             NullLogger<SprintController>.Instance);
     }
 

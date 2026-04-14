@@ -42,6 +42,8 @@ internal sealed class TestServiceGraph : IDisposable
     public AgentOrchestrator Orchestrator { get; }
     public TaskOrchestrationService TaskOrchestrationService { get; }
     public ProjectScanner ProjectScanner { get; }
+    public WorkspaceService WorkspaceService { get; }
+    public SprintScheduleService SprintScheduleService { get; }
     public IServiceScopeFactory ScopeFactory { get; }
     public LlmUsageTracker UsageTracker { get; }
     public AgentErrorTracker ErrorTracker { get; }
@@ -118,6 +120,8 @@ internal sealed class TestServiceGraph : IDisposable
             RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService);
 
         ProjectScanner = new ProjectScanner();
+        WorkspaceService = new WorkspaceService(Db, NullLogger<WorkspaceService>.Instance);
+        SprintScheduleService = new SprintScheduleService(Db);
 
         UsageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         ErrorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
