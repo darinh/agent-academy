@@ -21,7 +21,7 @@ public class RoomController : ControllerBase
     private readonly IMessageService _messageService;
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
-    private readonly LlmUsageTracker _usageTracker;
+    private readonly ILlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly RoomArtifactTracker _artifactTracker;
     private readonly ArtifactEvaluatorService _evaluator;
@@ -38,7 +38,7 @@ public class RoomController : ControllerBase
         IMessageService messageService,
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,
-        LlmUsageTracker usageTracker,
+        ILlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
         RoomArtifactTracker artifactTracker,
         ArtifactEvaluatorService evaluator,

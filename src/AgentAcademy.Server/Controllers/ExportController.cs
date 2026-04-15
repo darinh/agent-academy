@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -13,7 +14,7 @@ namespace AgentAcademy.Server.Controllers;
 public class ExportController : ControllerBase
 {
     private readonly AgentAnalyticsService _analytics;
-    private readonly LlmUsageTracker _usageTracker;
+    private readonly ILlmUsageTracker _usageTracker;
     private readonly ConversationExportService _conversationExport;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -24,7 +25,7 @@ public class ExportController : ControllerBase
 
     public ExportController(
         AgentAnalyticsService analytics,
-        LlmUsageTracker usageTracker,
+        ILlmUsageTracker usageTracker,
         ConversationExportService conversationExport)
     {
         _analytics = analytics;

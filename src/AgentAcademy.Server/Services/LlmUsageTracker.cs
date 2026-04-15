@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// Records and queries LLM API usage metrics. Singleton service that
 /// creates its own DB scopes for persistence (same pattern as CopilotExecutor).
 /// </summary>
-public sealed class LlmUsageTracker
+public sealed class LlmUsageTracker : ILlmUsageTracker
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<LlmUsageTracker> _logger;

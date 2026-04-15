@@ -49,6 +49,7 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddAgentObservability(this IServiceCollection services)
     {
         services.AddSingleton<LlmUsageTracker>();
+        services.AddSingleton<ILlmUsageTracker>(sp => sp.GetRequiredService<LlmUsageTracker>());
         services.AddSingleton<AgentErrorTracker>();
         services.AddSingleton<AgentQuotaService>();
         services.AddSingleton<AgentAnalyticsService>();
