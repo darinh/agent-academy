@@ -14,7 +14,7 @@ namespace AgentAcademy.Server.Controllers;
 public class WorkspaceController : ControllerBase
 {
     private readonly ProjectScanner _scanner;
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
     private readonly WorkspaceRoomService _workspaceRooms;
     private readonly WorkspaceService _workspaceService;
     private readonly ITaskOrchestrationService _taskOrchestration;
@@ -26,7 +26,7 @@ public class WorkspaceController : ControllerBase
 
     public WorkspaceController(
         ProjectScanner scanner,
-        RoomService roomService,
+        IRoomService roomService,
         WorkspaceRoomService workspaceRooms,
         WorkspaceService workspaceService,
         ITaskOrchestrationService taskOrchestration,

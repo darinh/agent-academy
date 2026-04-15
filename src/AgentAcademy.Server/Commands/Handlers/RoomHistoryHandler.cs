@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -39,7 +40,7 @@ public sealed class RoomHistoryHandler : ICommandHandler
                 count = Math.Min(countInt, MaxCount);
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
 
         var room = await roomService.GetRoomAsync(roomId);
         if (room is null)

@@ -14,7 +14,7 @@ namespace AgentAcademy.Server.Services;
 /// Snapshot building is on <see cref="RoomSnapshotBuilder"/>.
 /// Workspace–room management is on <see cref="WorkspaceRoomService"/>.
 /// </summary>
-public sealed class RoomService
+public sealed class RoomService : IRoomService
 {
     private static readonly HashSet<string> InProgressStatuses = new(StringComparer.Ordinal)
     {

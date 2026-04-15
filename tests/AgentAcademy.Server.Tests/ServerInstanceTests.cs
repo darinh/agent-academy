@@ -280,7 +280,7 @@ public class ServerInstanceTests : IDisposable
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
         serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
-        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
+        serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         var orchestrator = CreateOrchestrator(scopeFactory);
 
@@ -341,7 +341,7 @@ public class ServerInstanceTests : IDisposable
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
         serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
-        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
+        serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         var orchestrator = CreateOrchestrator(scopeFactory);
 
@@ -571,7 +571,7 @@ public class ServerInstanceTests : IDisposable
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
         serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
-        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
+        serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         // Use a stopped orchestrator so ProcessQueueAsync doesn't drain the queue
         var orchestrator = CreateOrchestrator(scopeFactory);
@@ -616,7 +616,7 @@ public class ServerInstanceTests : IDisposable
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
         serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
-        serviceProvider.GetService(typeof(RoomService)).Returns(_roomService);
+        serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         var orchestrator = CreateOrchestrator(scopeFactory);
         orchestrator.Stop();

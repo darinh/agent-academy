@@ -2,6 +2,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -18,7 +19,7 @@ public class SprintController : ControllerBase
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly SprintScheduleService _scheduleService;
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
@@ -27,7 +28,7 @@ public class SprintController : ControllerBase
         SprintArtifactService artifactService,
         SprintMetricsCalculator metricsCalculator,
         SprintScheduleService scheduleService,
-        RoomService roomService,
+        IRoomService roomService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;

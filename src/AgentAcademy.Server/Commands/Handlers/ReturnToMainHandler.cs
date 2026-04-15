@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -16,7 +17,7 @@ public sealed class ReturnToMainHandler : ICommandHandler
     {
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var mainRoomId = catalog.DefaultRoomId;
 
         var room = await roomService.GetRoomAsync(mainRoomId);

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -12,9 +13,9 @@ namespace AgentAcademy.Server.Controllers;
 public class SearchController : ControllerBase
 {
     private readonly SearchService _search;
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
 
-    public SearchController(SearchService search, RoomService roomService)
+    public SearchController(SearchService search, IRoomService roomService)
     {
         _search = search;
         _roomService = roomService;

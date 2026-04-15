@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -39,7 +40,7 @@ public sealed class CreateRoomHandler : ICommandHandler
         var description = command.Args.TryGetValue("description", out var descObj) && descObj is string desc
             ? desc : null;
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var room = await roomService.CreateRoomAsync(name.Trim(), description?.Trim());
 
         return command with

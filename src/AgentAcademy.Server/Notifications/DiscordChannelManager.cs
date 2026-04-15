@@ -4,6 +4,7 @@ using Discord;
 using Discord.Webhook;
 using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Notifications;
 
@@ -286,7 +287,7 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
             projectName = await roomService.GetProjectNameForRoomAsync(roomId);
 
             if (projectName is null)
@@ -400,7 +401,7 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
             var room = await roomService.GetRoomAsync(roomId);
             if (room is not null)
                 roomName = room.Name;

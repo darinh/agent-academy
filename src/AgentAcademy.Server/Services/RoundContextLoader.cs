@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -22,7 +23,7 @@ public sealed class RoundContextLoader
 {
     private readonly SpecManager _specManager;
     private readonly ConversationSessionQueryService _sessionQuery;
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
     private readonly SprintService _sprintService;
     private readonly SprintArtifactService _artifactService;
     private readonly ILogger<RoundContextLoader> _logger;
@@ -30,7 +31,7 @@ public sealed class RoundContextLoader
     public RoundContextLoader(
         SpecManager specManager,
         ConversationSessionQueryService sessionQuery,
-        RoomService roomService,
+        IRoomService roomService,
         SprintService sprintService,
         SprintArtifactService artifactService,
         ILogger<RoundContextLoader> logger)

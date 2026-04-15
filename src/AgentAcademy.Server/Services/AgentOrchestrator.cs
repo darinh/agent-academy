@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -71,7 +72,7 @@ public sealed class AgentOrchestrator
     public async Task ReconstructQueueAsync()
     {
         using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var pendingRoomIds = await roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         if (pendingRoomIds.Count == 0)

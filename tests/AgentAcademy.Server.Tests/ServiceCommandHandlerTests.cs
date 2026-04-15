@@ -72,6 +72,7 @@ public sealed class ServiceCommandHandlerTests : IDisposable
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
         services.AddScoped<WorkspaceRoomService>();
@@ -142,7 +143,7 @@ public sealed class ServiceCommandHandlerTests : IDisposable
     private async Task<string> CreateRoom(string name)
     {
         using var scope = _serviceProvider.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var room = await roomService.CreateRoomAsync(name, null);
         return room.Id;
     }

@@ -16,7 +16,7 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/rooms")]
 public class RoomController : ControllerBase
 {
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
     private readonly IMessageService _messageService;
     private readonly MessageBroadcaster _messageBroadcaster;
@@ -33,7 +33,7 @@ public class RoomController : ControllerBase
     };
 
     public RoomController(
-        RoomService roomService,
+        IRoomService roomService,
         AgentLocationService agentLocationService,
         IMessageService messageService,
         MessageBroadcaster messageBroadcaster,

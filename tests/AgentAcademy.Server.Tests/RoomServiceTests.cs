@@ -54,6 +54,7 @@ public class RoomServiceTests : IDisposable
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddLogging();

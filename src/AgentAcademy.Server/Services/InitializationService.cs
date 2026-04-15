@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -18,7 +19,7 @@ public sealed class InitializationService
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly CrashRecoveryService _crashRecovery;
-    private readonly RoomService _rooms;
+    private readonly IRoomService _rooms;
     private readonly WorkspaceRoomService _workspaceRooms;
 
     public InitializationService(
@@ -27,7 +28,7 @@ public sealed class InitializationService
         IAgentCatalog catalog,
         ActivityPublisher activity,
         CrashRecoveryService crashRecovery,
-        RoomService rooms,
+        IRoomService rooms,
         WorkspaceRoomService workspaceRooms)
     {
         _db = db;

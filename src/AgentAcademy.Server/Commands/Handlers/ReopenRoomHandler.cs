@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -35,7 +36,7 @@ public sealed class ReopenRoomHandler : ICommandHandler
             };
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var lifecycle = context.Services.GetRequiredService<RoomLifecycleService>();
         var room = await roomService.GetRoomAsync(roomId);
 

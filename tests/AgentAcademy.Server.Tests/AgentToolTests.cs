@@ -63,6 +63,7 @@ public class AgentToolFunctionsTests : IDisposable
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
         services.AddScoped<WorkspaceRoomService>();
@@ -368,6 +369,7 @@ public class AgentWriteToolTests : IDisposable
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
         services.AddScoped<WorkspaceRoomService>();

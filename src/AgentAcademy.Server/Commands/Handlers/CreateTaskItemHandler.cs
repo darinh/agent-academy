@@ -52,7 +52,7 @@ public sealed class CreateTaskItemHandler : ICommandHandler
             ? br : context.BreakoutRoomId;
 
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var taskItems = context.Services.GetRequiredService<ITaskItemService>();
 
         // Resolve assignee: accept agent ID or name, normalize to ID

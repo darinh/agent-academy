@@ -65,6 +65,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<MessageService>();
         services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<BreakoutRoomService>();

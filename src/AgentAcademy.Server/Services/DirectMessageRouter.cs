@@ -40,7 +40,7 @@ public sealed class DirectMessageRouter
         _logger.LogInformation("DM round for agent {AgentId}", recipientAgentId);
 
         using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();

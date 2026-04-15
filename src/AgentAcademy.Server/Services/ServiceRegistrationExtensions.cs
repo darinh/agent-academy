@@ -44,6 +44,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<BreakoutRoomService>();
         services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomLifecycleService>();

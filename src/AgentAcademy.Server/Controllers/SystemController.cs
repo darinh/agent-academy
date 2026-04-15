@@ -16,7 +16,7 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class SystemController : ControllerBase
 {
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
     private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly ActivityPublisher _activity;
@@ -30,7 +30,7 @@ public class SystemController : ControllerBase
     private static readonly DateTime StartedAt = DateTime.UtcNow;
 
     public SystemController(
-        RoomService roomService,
+        IRoomService roomService,
         AgentLocationService agentLocationService,
         IBreakoutRoomService breakoutRoomService,
         ActivityPublisher activity,

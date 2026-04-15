@@ -139,7 +139,7 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: list_rooms (includeArchived={IncludeArchived})", includeArchived);
 
         using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var rooms = await roomService.GetRoomsAsync(includeArchived);
 
         if (rooms.Count == 0)

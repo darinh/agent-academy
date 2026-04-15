@@ -5,6 +5,7 @@ using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Startup;
 
@@ -34,7 +35,7 @@ public static class WebApplicationExtensions
 
         // 3. If a workspace is already active, ensure it has a default room
         var catalog = scope.ServiceProvider.GetRequiredService<IAgentCatalog>();
-        var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var rooms = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var workspaceRooms = scope.ServiceProvider.GetRequiredService<WorkspaceRoomService>();
         var mainRoomId = catalog.DefaultRoomId;
         var activeWorkspace = await rooms.GetActiveWorkspacePathAsync();

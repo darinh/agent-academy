@@ -16,7 +16,7 @@ namespace AgentAcademy.Server.Controllers;
 public class DmController : ControllerBase
 {
     private readonly IMessageService _messageService;
-    private readonly RoomService _roomService;
+    private readonly IRoomService _roomService;
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
     private readonly AgentOrchestrator _orchestrator;
@@ -29,7 +29,7 @@ public class DmController : ControllerBase
 
     public DmController(
         IMessageService messageService,
-        RoomService roomService,
+        IRoomService roomService,
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,
         AgentOrchestrator orchestrator,

@@ -45,7 +45,7 @@ public sealed class ConversationRoundRunner
             bool hadNonPassResponse = false;
 
             using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
             var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
             var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();

@@ -57,7 +57,7 @@ public sealed class DmHandler : ICommandHandler
     {
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<IMessageService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var notificationManager = context.Services.GetRequiredService<NotificationManager>();
 
         var roomId = context.RoomId ?? "main";
@@ -124,7 +124,7 @@ public sealed class DmHandler : ICommandHandler
     {
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<IMessageService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
 
         // Validate agent exists (case-insensitive, use canonical ID)
         var agents = catalog.Agents;

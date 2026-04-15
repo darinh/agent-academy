@@ -127,7 +127,7 @@ public sealed class BreakoutLifecycleService
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
         var sessionQueryService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
 
         var catalogAgent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
         if (catalogAgent is null) return;

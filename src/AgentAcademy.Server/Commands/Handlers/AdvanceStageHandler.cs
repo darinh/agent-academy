@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -36,7 +37,7 @@ public sealed class AdvanceStageHandler : ICommandHandler
             };
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var sprintService = context.Services.GetRequiredService<SprintService>();
         var stageService = context.Services.GetRequiredService<SprintStageService>();
         var sessionService = context.Services.GetRequiredService<ConversationSessionService>();

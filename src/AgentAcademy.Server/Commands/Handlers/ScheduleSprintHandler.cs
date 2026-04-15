@@ -4,6 +4,7 @@ using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -27,7 +28,7 @@ public sealed class ScheduleSprintHandler : ICommandHandler
             action = a.Trim().ToLowerInvariant();
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var workspacePath = await roomService.GetActiveWorkspacePathAsync();
         if (string.IsNullOrEmpty(workspacePath))
         {

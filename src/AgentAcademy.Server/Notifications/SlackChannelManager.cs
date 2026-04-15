@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using AgentAcademy.Server.Services;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Notifications;
 
@@ -50,7 +51,7 @@ internal sealed class SlackChannelManager
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+                var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
                 projectName = await roomService.GetProjectNameForRoomAsync(roomId);
             }
             catch (Exception ex)
