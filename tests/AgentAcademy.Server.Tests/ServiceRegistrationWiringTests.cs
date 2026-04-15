@@ -73,6 +73,8 @@ public sealed class ServiceRegistrationWiringTests
             typeof(BreakoutLifecycleService),
             typeof(TaskAssignmentHandler),
             typeof(AgentTurnRunner),
+            typeof(ConversationRoundRunner),
+            typeof(DirectMessageRouter),
             typeof(AgentOrchestrator),
         };
 

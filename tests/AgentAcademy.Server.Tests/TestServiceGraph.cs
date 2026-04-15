@@ -157,8 +157,10 @@ internal sealed class TestServiceGraph : IDisposable
             scopeFactory, NullLogger<AgentTurnRunner>.Instance);
 
         Orchestrator = new AgentOrchestrator(
-            scopeFactory, Catalog, ActivityBus,
-            breakoutLifecycle, turnRunner,
+            scopeFactory,
+            new ConversationRoundRunner(scopeFactory, Catalog, turnRunner, NullLogger<ConversationRoundRunner>.Instance),
+            new DirectMessageRouter(scopeFactory, Catalog, turnRunner, NullLogger<DirectMessageRouter>.Instance),
+            breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
     }
 

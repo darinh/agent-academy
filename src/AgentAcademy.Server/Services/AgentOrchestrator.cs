@@ -1,27 +1,26 @@
-using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
 
 /// <summary>
-/// Drives the multi-agent conversation lifecycle: queue-based message
-/// processing, conversation rounds, breakout room workflows, and review
-/// cycles. Ported from v1 TypeScript CollaborationOrchestrator.
+/// Queue-based message processor that serializes agent work. Accepts human
+/// messages and DMs, enqueues them, and dispatches to <see cref="ConversationRoundRunner"/>
+/// or <see cref="DirectMessageRouter"/> for execution. All conversation and
+/// DM logic has been extracted into those dedicated services.
 /// </summary>
 public sealed class AgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IAgentCatalog _catalog;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly ConversationRoundRunner _roundRunner;
+    private readonly DirectMessageRouter _dmRouter;
     private readonly BreakoutLifecycleService _breakoutLifecycle;
-    private readonly AgentTurnRunner _turnRunner;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
     private readonly object _lock = new();
     private bool _processing;
-    private volatile bool _stopped;
+    private readonly CancellationTokenSource _cts = new();
 
     private record QueueItem(string RoomId, string? TargetAgentId = null);
 
@@ -30,24 +29,22 @@ public sealed class AgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
-        IAgentCatalog catalog,
-        ActivityBroadcaster activityBus,
+        ConversationRoundRunner roundRunner,
+        DirectMessageRouter dmRouter,
         BreakoutLifecycleService breakoutLifecycle,
-        AgentTurnRunner turnRunner,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
-        _catalog = catalog;
-        _activityBus = activityBus;
+        _roundRunner = roundRunner;
+        _dmRouter = dmRouter;
         _breakoutLifecycle = breakoutLifecycle;
-        _turnRunner = turnRunner;
         _logger = logger;
     }
 
     /// <summary>Signals the orchestrator to stop processing.</summary>
     public void Stop()
     {
-        _stopped = true;
+        _cts.Cancel();
         _breakoutLifecycle.Stop();
     }
 
@@ -138,16 +135,13 @@ public sealed class AgentOrchestrator
 
         try
         {
-            while (!_stopped)
+            while (!_cts.IsCancellationRequested)
             {
                 QueueItem? item;
                 lock (_lock)
                 {
                     if (!_queue.TryDequeue(out item))
                     {
-                        // Atomically clear processing flag while still holding the lock.
-                        // Any concurrent HandleHumanMessage that enqueued after the last
-                        // dequeue will see _processing == false and start a new loop.
                         _processing = false;
                         return;
                     }
@@ -157,11 +151,11 @@ public sealed class AgentOrchestrator
                 {
                     if (item.TargetAgentId is not null)
                     {
-                        await RunDirectMessageRoundAsync(item.TargetAgentId);
+                        await _dmRouter.RouteAsync(item.TargetAgentId);
                     }
                     else
                     {
-                        await RunConversationRoundAsync(item.RoomId);
+                        await _roundRunner.RunRoundsAsync(item.RoomId, _cts.Token);
                     }
                 }
                 catch (Exception ex)
@@ -175,234 +169,4 @@ public sealed class AgentOrchestrator
             lock (_lock) { _processing = false; }
         }
     }
-
-    // ── CONVERSATION ROUND (MC room) ────────────────────────────
-
-    private const int MaxRoundsPerTrigger = 3;
-
-    private async Task RunConversationRoundAsync(string roomId)
-    {
-        for (int round = 1; round <= MaxRoundsPerTrigger; round++)
-        {
-            bool hadNonPassResponse = false;
-
-            using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-            var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
-            var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
-            var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
-            var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
-
-            // Check if conversation session needs rotation before this round
-            if (round == 1)
-            {
-                try
-                {
-                    var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
-                    var rotated = await sessionService.CheckAndRotateAsync(roomId);
-                    if (rotated)
-                        _logger.LogInformation(
-                            "Conversation session rotated for room {RoomId} before round 1", roomId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Session rotation check failed for room {RoomId}", roomId);
-                }
-            }
-
-            var room = await roomService.GetRoomAsync(roomId);
-            if (room is null) return;
-
-            _logger.LogInformation(
-                "Conversation round {Round}/{MaxRounds} for room {RoomId}",
-                round, MaxRoundsPerTrigger, roomId);
-
-            var ctx = await contextLoader.LoadAsync(roomId);
-
-            // ── Planner phase ──
-            var planner = FindPlanner();
-            if (planner is not null)
-                planner = await configService.GetEffectiveAgentAsync(planner);
-
-            var plannerId = planner?.Id;
-
-            if (planner is not null && ctx.ActiveSprintStage is not null
-                && !SprintPreambles.IsRoleAllowedInStage(planner.Role, ctx.ActiveSprintStage))
-            {
-                _logger.LogInformation(
-                    "Planner {PlannerName} excluded from sprint stage {Stage}",
-                    planner.Name, ctx.ActiveSprintStage);
-                planner = null;
-            }
-
-            var agentsToRun = new List<AgentDefinition>();
-
-            if (planner is not null)
-            {
-                var freshRoom = await roomService.GetRoomAsync(roomId) ?? room;
-                var taskItems = await taskItemService.GetActiveTaskItemsAsync();
-                var plannerSuffix = "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
-                    + "by name if they should respond (e.g., '@Archimedes should review').\n"
-                    + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
-                    + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
-
-                var plannerResult = await _turnRunner.RunAgentTurnAsync(
-                    planner, scope, messageService, configService, activity,
-                    freshRoom, roomId, ctx.SpecContext, taskItems, ctx.SessionSummary, ctx.SprintPreamble, plannerSuffix, ctx.SpecVersion);
-
-                if (plannerResult.IsNonPass)
-                {
-                    hadNonPassResponse = true;
-                    foreach (var a in AgentResponseParser.ParseTaggedAgents(_catalog.Agents, plannerResult.Response))
-                    {
-                        if (a.Id != plannerResult.Agent.Id) agentsToRun.Add(a);
-                    }
-                }
-            }
-
-            // ── Fallback to idle agents if nobody was tagged ──
-            if (agentsToRun.Count == 0)
-            {
-                agentsToRun.AddRange(
-                    (await GetIdleAgentsInRoomAsync(agentLocationService, roomId))
-                        .Where(a => a.Id != plannerId)
-                        .Take(3));
-            }
-
-            if (ctx.ActiveSprintStage is not null)
-                agentsToRun = SprintPreambles.FilterByStageRoster(agentsToRun, ctx.ActiveSprintStage, a => a.Role);
-
-            // ── Run agents sequentially so each sees prior responses ──
-            foreach (var catalogAgent in agentsToRun)
-            {
-                if (_stopped) break;
-
-                var currentRoom = await roomService.GetRoomAsync(roomId);
-                if (currentRoom is null) break;
-
-                var location = await agentLocationService.GetAgentLocationAsync(catalogAgent.Id);
-                if (location?.State == AgentState.Working) continue;
-
-                var result = await _turnRunner.RunAgentTurnAsync(
-                    catalogAgent, scope, messageService, configService, activity,
-                    currentRoom, roomId, ctx.SpecContext,
-                    sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
-
-                if (result.IsNonPass) hadNonPassResponse = true;
-            }
-
-            _logger.LogInformation(
-                "Conversation round {Round} finished for room {RoomId}", round, roomId);
-
-            if (!hadNonPassResponse || _stopped) break;
-
-            var updatedRoom = await roomService.GetRoomAsync(roomId);
-            if (updatedRoom?.ActiveTask is null) break;
-
-            if (round < MaxRoundsPerTrigger)
-            {
-                _logger.LogInformation(
-                    "Non-PASS responses in room with active task; starting round {NextRound}/{MaxRounds}",
-                    round + 1, MaxRoundsPerTrigger);
-            }
-        }
-    }
-
-    // ── DM ROUND ────────────────────────────────────────────────
-
-    /// <summary>
-    /// Runs a targeted round for a specific agent after receiving a DM.
-    /// Only the recipient agent runs, with DMs injected into their context.
-    /// </summary>
-    private async Task RunDirectMessageRoundAsync(string recipientAgentId)
-    {
-        _logger.LogInformation("DM round for agent {AgentId}", recipientAgentId);
-
-        using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
-        var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
-        var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
-
-        var catalogAgent = _catalog.Agents.FirstOrDefault(
-            a => string.Equals(a.Id, recipientAgentId, StringComparison.OrdinalIgnoreCase));
-
-        if (catalogAgent is null)
-        {
-            _logger.LogWarning("DM round: agent {AgentId} not found in catalog", recipientAgentId);
-            return;
-        }
-
-        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
-
-        // If agent is in a breakout room, forward DMs there instead
-        var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
-        if (location?.State == AgentState.Working && location.BreakoutRoomId is not null)
-        {
-            var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
-            if (dms.Count > 0)
-            {
-                foreach (var dm in dms)
-                {
-                    await messageService.PostBreakoutMessageAsync(
-                        location.BreakoutRoomId,
-                        "system", "System", "System",
-                        $"📩 Direct message from {dm.SenderName}: {dm.Content}");
-                }
-                await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
-            }
-            _logger.LogInformation(
-                "DM round: agent {AgentName} is in breakout room. DM posted to breakout context.",
-                agent.Name);
-            return;
-        }
-
-        var roomId = location?.RoomId;
-        if (roomId is null)
-        {
-            var rooms = await roomService.GetRoomsAsync();
-            roomId = rooms.FirstOrDefault()?.Id ?? "main";
-        }
-
-        var room = await roomService.GetRoomAsync(roomId);
-        if (room is null) return;
-
-        var ctx = await contextLoader.LoadAsync(roomId);
-
-        await _turnRunner.RunAgentTurnAsync(
-            catalogAgent, scope, messageService, configService, activity,
-            room, roomId, ctx.SpecContext,
-            sessionSummary: ctx.SessionSummary, sprintPreamble: ctx.SprintPreamble, specVersion: ctx.SpecVersion);
-
-        _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
-    }
-
-    // ── AGENT HELPERS ───────────────────────────────────────────
-
-    private AgentDefinition? FindPlanner() =>
-        _catalog.Agents.FirstOrDefault(a => a.Role == "Planner");
-
-    private async Task<List<AgentDefinition>> GetIdleAgentsInRoomAsync(
-        AgentLocationService agentLocationService, string roomId)
-    {
-        var result = new List<AgentDefinition>();
-        foreach (var agent in _catalog.Agents)
-        {
-            var loc = await agentLocationService.GetAgentLocationAsync(agent.Id);
-            if (loc is not null &&
-                loc.RoomId == roomId &&
-                (loc.State == AgentState.Idle ||
-                 loc.State == AgentState.InRoom ||
-                 loc.State == AgentState.Presenting))
-            {
-                result.Add(agent);
-            }
-        }
-        return result;
-    }
-
 }

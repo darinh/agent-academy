@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
@@ -160,15 +159,11 @@ public class TaskAssignmentWorkflowTests : IDisposable
             _executor, pipeline, taskAssignment, memoryLoader,
             scopeFactory, NullLogger<AgentTurnRunner>.Instance);
 
-        var orchestrator = new AgentOrchestrator(
-            scopeFactory,
-            _catalog,
-            _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
-            breakoutLifecycle,
-            turnRunner,
-            NullLogger<AgentOrchestrator>.Instance);
+        var roundRunner = new ConversationRoundRunner(
+            scopeFactory, _catalog, turnRunner,
+            NullLogger<ConversationRoundRunner>.Instance);
 
-        await InvokeConversationRoundAsync(orchestrator, "main");
+        await roundRunner.RunRoundsAsync("main");
 
         // Allow fire-and-forget breakout loop to complete
         await Task.Delay(2000);
@@ -266,15 +261,11 @@ public class TaskAssignmentWorkflowTests : IDisposable
             _executor, pipeline2, taskAssignment2, memoryLoader2,
             scopeFactory2, NullLogger<AgentTurnRunner>.Instance);
 
-        var orchestrator = new AgentOrchestrator(
-            scopeFactory2,
-            _catalog,
-            _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
-            breakoutLifecycle2,
-            turnRunner2,
-            NullLogger<AgentOrchestrator>.Instance);
+        var roundRunner2 = new ConversationRoundRunner(
+            scopeFactory2, _catalog, turnRunner2,
+            NullLogger<ConversationRoundRunner>.Instance);
 
-        await InvokeConversationRoundAsync(orchestrator, "main");
+        await roundRunner2.RunRoundsAsync("main");
 
         // Allow fire-and-forget to settle
         await Task.Delay(2000);
@@ -305,19 +296,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
         _connection.Dispose();
         if (Directory.Exists(_repoRoot))
             Directory.Delete(_repoRoot, recursive: true);
-    }
-
-    private static async Task InvokeConversationRoundAsync(AgentOrchestrator orchestrator, string roomId)
-    {
-        var method = typeof(AgentOrchestrator).GetMethod(
-            "RunConversationRoundAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("RunConversationRoundAsync not found");
-
-        var task = method.Invoke(orchestrator, [roomId]) as Task
-            ?? throw new InvalidOperationException("RunConversationRoundAsync did not return a Task");
-
-        await task;
     }
 
     private static void InitializeRepository(string repoRoot)

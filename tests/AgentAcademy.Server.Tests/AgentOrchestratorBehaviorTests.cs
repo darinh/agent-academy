@@ -108,7 +108,6 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
 
         // Build singleton orchestration services manually
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var activityBus = _serviceProvider.GetRequiredService<ActivityBroadcaster>();
 
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
@@ -140,10 +139,17 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
             breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
 
+        var roundRunner = new ConversationRoundRunner(
+            scopeFactory, _catalog, turnRunner,
+            NullLogger<ConversationRoundRunner>.Instance);
+        var dmRouter = new DirectMessageRouter(
+            scopeFactory, _catalog, turnRunner,
+            NullLogger<DirectMessageRouter>.Instance);
+
         var orchestratorLoggerFactory = LoggerFactory.Create(b => b.AddProvider(new CapturingLoggerProvider(_logErrors)));
         _orchestrator = new AgentOrchestrator(
-            scopeFactory, _catalog, activityBus,
-            breakoutLifecycle, turnRunner,
+            scopeFactory, roundRunner, dmRouter,
+            breakoutLifecycle,
             orchestratorLoggerFactory.CreateLogger<AgentOrchestrator>());
     }
 

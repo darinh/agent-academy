@@ -109,9 +109,15 @@ public class ServerInstanceTests : IDisposable
         var turnRunner = new AgentTurnRunner(
             executor, pipeline, taskAssignment, memoryLoader,
             scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+        var roundRunner = new ConversationRoundRunner(
+            scopeFactory, _catalog, turnRunner,
+            NullLogger<ConversationRoundRunner>.Instance);
+        var dmRouter = new DirectMessageRouter(
+            scopeFactory, _catalog, turnRunner,
+            NullLogger<DirectMessageRouter>.Instance);
         return new AgentOrchestrator(
-            scopeFactory, _catalog, new ActivityBroadcaster(),
-            breakoutLifecycle, turnRunner,
+            scopeFactory, roundRunner, dmRouter,
+            breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
     }
 

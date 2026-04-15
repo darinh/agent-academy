@@ -106,6 +106,8 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<BreakoutLifecycleService>();
         services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<AgentTurnRunner>();
+        services.AddSingleton<ConversationRoundRunner>();
+        services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<AgentOrchestrator>();
 
         services.AddLogging();

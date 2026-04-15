@@ -102,6 +102,8 @@ public static class AgentPipelineExtensions
         services.AddSingleton<BreakoutLifecycleService>();
         services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<AgentTurnRunner>();
+        services.AddSingleton<ConversationRoundRunner>();
+        services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<AgentOrchestrator>();
         return services;
     }
