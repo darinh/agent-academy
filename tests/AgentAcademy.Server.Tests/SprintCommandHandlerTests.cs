@@ -37,6 +37,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<ISprintArtifactService>(sp => sp.GetRequiredService<SprintArtifactService>());
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton(NullLogger<SprintService>.Instance)
             .AddSingleton(typeof(ILogger<SprintService>), sp => NullLogger<SprintService>.Instance);
         services.AddSingleton(typeof(ILogger<SprintStageService>), sp => NullLogger<SprintStageService>.Instance);
@@ -45,6 +46,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(typeof(ILogger<ConversationSessionService>), sp => NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton(typeof(ILogger<SystemSettingsService>), sp => NullLogger<SystemSettingsService>.Instance);
         services.AddSingleton(Substitute.For<IAgentExecutor>());
 
@@ -70,6 +72,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddScoped<TaskItemService>();
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
         services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();

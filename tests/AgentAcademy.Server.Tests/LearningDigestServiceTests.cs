@@ -67,6 +67,7 @@ public class LearningDigestServiceTests : IDisposable
         services.AddScoped<MessageService>();
         services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();
         services.AddSingleton<CommandParser>();

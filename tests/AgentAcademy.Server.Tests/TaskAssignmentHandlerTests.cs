@@ -106,6 +106,7 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         services.AddScoped<TaskItemService>();
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
         services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();
@@ -119,6 +120,7 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddLogging();
         services.AddSingleton(executor);
 

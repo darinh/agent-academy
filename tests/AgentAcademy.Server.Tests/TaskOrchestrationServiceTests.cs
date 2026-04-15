@@ -71,6 +71,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
         services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<MessageService>();
@@ -80,6 +81,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<IAgentExecutor, StubExecutor>();

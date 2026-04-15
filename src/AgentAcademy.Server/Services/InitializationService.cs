@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// ensuring the default room exists, seeding agent locations, and resolving
 /// the startup main room.
 /// </summary>
-public sealed class InitializationService
+public sealed class InitializationService : IInitializationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<InitializationService> _logger;

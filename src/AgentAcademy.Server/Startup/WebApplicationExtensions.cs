@@ -36,7 +36,7 @@ public static class WebApplicationExtensions
         db.Database.Migrate();
 
         // 2. Initialize startup state (create default room + agent locations)
-        var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
+        var initialization = scope.ServiceProvider.GetRequiredService<IInitializationService>();
         await initialization.InitializeAsync();
 
         // 3. If a workspace is already active, ensure it has a default room
@@ -66,7 +66,7 @@ public static class WebApplicationExtensions
         }
 
         // 6. Configure rate limiter from persisted settings
-        var settingsService = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
+        var settingsService = scope.ServiceProvider.GetRequiredService<ISystemSettingsService>();
         var rateLimiter = app.Services.GetRequiredService<CommandRateLimiter>();
         var maxCmds = await settingsService.GetRateLimitMaxCommandsAsync();
         var windowSecs = await settingsService.GetRateLimitWindowSecondsAsync();

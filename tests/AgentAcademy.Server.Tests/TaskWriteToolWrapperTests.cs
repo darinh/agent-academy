@@ -48,6 +48,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddLogging(b => b.ClearProviders());
         services.AddSingleton(Substitute.For<IAgentExecutor>());
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<MessageService>();
@@ -63,6 +64,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
         services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         services.AddScoped<RoomSnapshotBuilder>();

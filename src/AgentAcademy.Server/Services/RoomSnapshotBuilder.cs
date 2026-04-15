@@ -26,9 +26,9 @@ public sealed class RoomSnapshotBuilder : IRoomSnapshotBuilder
 
     private readonly AgentAcademyDbContext _db;
     private readonly IAgentCatalog _catalog;
-    private readonly PhaseTransitionValidator _phaseValidator;
+    private readonly IPhaseTransitionValidator _phaseValidator;
 
-    public RoomSnapshotBuilder(AgentAcademyDbContext db, IAgentCatalog catalog, PhaseTransitionValidator phaseValidator)
+    public RoomSnapshotBuilder(AgentAcademyDbContext db, IAgentCatalog catalog, IPhaseTransitionValidator phaseValidator)
     {
         _db = db;
         _catalog = catalog;

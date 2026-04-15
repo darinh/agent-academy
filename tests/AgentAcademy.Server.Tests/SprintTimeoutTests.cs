@@ -375,6 +375,7 @@ public class SprintTimeoutTests : IDisposable
         services.AddSingleton<ILogger<SprintService>>(NullLogger<SprintService>.Instance);
         services.AddSingleton<ILogger<SprintStageService>>(NullLogger<SprintStageService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<SprintService>(sp =>
             new SprintService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),

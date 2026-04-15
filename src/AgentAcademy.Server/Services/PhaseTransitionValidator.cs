@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// Validates phase transition prerequisites for collaboration rooms.
 /// Returns per-phase gate status and blocks transitions that violate prerequisites.
 /// </summary>
-public sealed class PhaseTransitionValidator
+public sealed class PhaseTransitionValidator : IPhaseTransitionValidator
 {
     private static readonly CollaborationPhase[] PhaseOrder =
     [

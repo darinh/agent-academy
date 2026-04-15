@@ -122,6 +122,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
+        sc.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         sc.AddScoped<ConversationSessionService>();
             sc.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         sc.AddScoped<TaskDependencyService>();
@@ -144,6 +145,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         sc.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         sc.AddScoped<PhaseTransitionValidator>();
+        sc.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         sc.AddScoped<RoomService>();
         sc.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
         sc.AddScoped<RoomSnapshotBuilder>();

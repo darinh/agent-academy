@@ -45,6 +45,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<CrashRecoveryService>();
         services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddScoped<InitializationService>();
+        services.AddScoped<IInitializationService>(sp => sp.GetRequiredService<InitializationService>());
         services.AddScoped<BreakoutRoomService>();
         services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddScoped<RoomService>();
@@ -52,12 +53,15 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
         services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
         services.AddScoped<WorkspaceService>();
+        services.AddScoped<IWorkspaceService>(sp => sp.GetRequiredService<WorkspaceService>());
         services.AddScoped<SearchService>();
+        services.AddScoped<ISearchService>(sp => sp.GetRequiredService<SearchService>());
 
         // Agent config (merges catalog defaults with DB overrides)
         services.AddScoped<AgentConfigService>();
@@ -65,6 +69,7 @@ public static class ServiceRegistrationExtensions
 
         // System settings (typed access to system_settings table)
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
 
         // Conversation session management (epoch lifecycle and summarization)
         services.AddScoped<ConversationSessionService>();

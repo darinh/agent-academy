@@ -17,7 +17,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class ConversationSessionService : IConversationSessionService
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly SystemSettingsService _settings;
+    private readonly ISystemSettingsService _settings;
     private readonly IAgentExecutor _executor;
     private readonly ILogger<ConversationSessionService> _logger;
 
@@ -40,7 +40,7 @@ public sealed class ConversationSessionService : IConversationSessionService
 
     public ConversationSessionService(
         AgentAcademyDbContext db,
-        SystemSettingsService settings,
+        ISystemSettingsService settings,
         IAgentExecutor executor,
         ILogger<ConversationSessionService> logger)
     {

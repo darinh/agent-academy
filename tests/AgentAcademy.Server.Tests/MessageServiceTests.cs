@@ -54,6 +54,7 @@ public class MessageServiceTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();

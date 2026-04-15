@@ -107,7 +107,7 @@ public sealed class LearningDigestService
             int threshold;
             using (var scope = _scopeFactory.CreateScope())
             {
-                var settings = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
+                var settings = scope.ServiceProvider.GetRequiredService<ISystemSettingsService>();
                 threshold = await settings.GetDigestThresholdAsync();
             }
 

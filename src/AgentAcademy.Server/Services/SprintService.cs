@@ -20,13 +20,13 @@ public sealed class SprintService : Contracts.ISprintService
 
     private readonly AgentAcademyDbContext _db;
     private readonly IActivityBroadcaster _activityBus;
-    private readonly SystemSettingsService _settings;
+    private readonly ISystemSettingsService _settings;
     private readonly ILogger<SprintService> _logger;
 
     public SprintService(
         AgentAcademyDbContext db,
         IActivityBroadcaster activityBus,
-        SystemSettingsService settings,
+        ISystemSettingsService settings,
         ILogger<SprintService> logger)
     {
         _db = db;

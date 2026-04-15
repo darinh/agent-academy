@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Services;
@@ -7,7 +8,7 @@ namespace AgentAcademy.Server.Services;
 /// Provides typed access to system-wide settings stored in the database.
 /// Settings are key-value pairs with sensible defaults for unconfigured keys.
 /// </summary>
-public sealed class SystemSettingsService
+public sealed class SystemSettingsService : ISystemSettingsService
 {
     private readonly AgentAcademyDbContext _db;
 

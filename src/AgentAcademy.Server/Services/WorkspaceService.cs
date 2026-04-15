@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Orchestration of side effects (session archival, executor invalidation)
 /// remains in the controller.
 /// </summary>
-public sealed class WorkspaceService
+public sealed class WorkspaceService : IWorkspaceService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceService> _logger;

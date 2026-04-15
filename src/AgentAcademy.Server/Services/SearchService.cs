@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Full-text search across workspace messages (room + breakout) and tasks.
 /// Uses FTS5 virtual tables with BM25 ranking, falling back to LIKE on older databases.
 /// </summary>
-public sealed class SearchService
+public sealed class SearchService : ISearchService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<SearchService> _logger;

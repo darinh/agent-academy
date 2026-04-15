@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -11,10 +12,10 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/settings")]
 public class SettingsController : ControllerBase
 {
-    private readonly SystemSettingsService _settings;
+    private readonly ISystemSettingsService _settings;
     private readonly CommandRateLimiter _rateLimiter;
 
-    public SettingsController(SystemSettingsService settings, CommandRateLimiter rateLimiter)
+    public SettingsController(ISystemSettingsService settings, CommandRateLimiter rateLimiter)
     {
         _settings = settings;
         _rateLimiter = rateLimiter;

@@ -12,10 +12,10 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/search")]
 public class SearchController : ControllerBase
 {
-    private readonly SearchService _search;
+    private readonly ISearchService _search;
     private readonly IRoomService _roomService;
 
-    public SearchController(SearchService search, IRoomService roomService)
+    public SearchController(ISearchService search, IRoomService roomService)
     {
         _search = search;
         _roomService = roomService;
