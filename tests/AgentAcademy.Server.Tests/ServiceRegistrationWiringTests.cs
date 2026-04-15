@@ -46,6 +46,10 @@ public sealed class ServiceRegistrationWiringTests
         // IGitService should be registered (alias for GitService)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IGitService));
+
+        // IWorktreeService should be registered (alias for WorktreeService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IWorktreeService));
     }
 
     [Fact]
@@ -274,6 +278,32 @@ public sealed class ServiceRegistrationWiringTests
 
         var concrete = provider.GetRequiredService<GitService>();
         var iface = provider.GetRequiredService<IGitService>();
+
+        Assert.Same(concrete, iface);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IWorktreeService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IWorktreeService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IWorktreeService_resolves_to_same_WorktreeService_instance()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+        using var provider = services.BuildServiceProvider();
+
+        var concrete = provider.GetRequiredService<WorktreeService>();
+        var iface = provider.GetRequiredService<IWorktreeService>();
 
         Assert.Same(concrete, iface);
     }

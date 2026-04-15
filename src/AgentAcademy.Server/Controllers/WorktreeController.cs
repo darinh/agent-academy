@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,12 +14,12 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/worktrees")]
 public class WorktreeController : ControllerBase
 {
-    private readonly WorktreeService _worktreeService;
+    private readonly IWorktreeService _worktreeService;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorktreeController> _logger;
 
     public WorktreeController(
-        WorktreeService worktreeService,
+        IWorktreeService worktreeService,
         AgentAcademyDbContext db,
         ILogger<WorktreeController> logger)
     {

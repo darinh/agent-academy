@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -12,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// worktree directory so agents can work on different branches in parallel
 /// without stash/checkout cycling on the main working tree.
 /// </summary>
-public class WorktreeService : IDisposable
+public class WorktreeService : IWorktreeService, IDisposable
 {
     private readonly ILogger<WorktreeService> _logger;
     private readonly string _repositoryRoot;
@@ -598,45 +599,4 @@ public class WorktreeService : IDisposable
         _disposed = true;
         _lock.Dispose();
     }
-}
-
-/// <summary>
-/// Tracks an active worktree managed by <see cref="WorktreeService"/>.
-/// </summary>
-public record WorktreeInfo(string Branch, string Path, DateTimeOffset CreatedAt);
-
-/// <summary>
-/// Represents a worktree entry as reported by <c>git worktree list --porcelain</c>.
-/// </summary>
-public record GitWorktreeEntry(string Path, string? Head, string? Branch, bool Bare);
-
-/// <summary>
-/// Git-level status for a single worktree: dirty files, diff stats, and last commit.
-/// </summary>
-public record WorktreeGitStatus(
-    bool StatusAvailable,
-    string? Error,
-    int TotalDirtyFiles,
-    List<string> DirtyFilesPreview,
-    int FilesChanged,
-    int Insertions,
-    int Deletions,
-    string? LastCommitSha,
-    string? LastCommitMessage,
-    string? LastCommitAuthor,
-    DateTimeOffset? LastCommitDate)
-{
-    public static WorktreeGitStatus Unavailable(string error) => new(
-        StatusAvailable: false,
-        Error: error,
-        TotalDirtyFiles: 0,
-        DirtyFilesPreview: [],
-        FilesChanged: 0,
-        Insertions: 0,
-        Deletions: 0,
-        LastCommitSha: null,
-        LastCommitMessage: null,
-        LastCommitAuthor: null,
-        LastCommitDate: null
-    );
 }

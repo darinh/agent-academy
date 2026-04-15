@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,7 @@ public sealed class ListWorktreesHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var worktreeService = context.Services.GetRequiredService<WorktreeService>();
+        var worktreeService = context.Services.GetRequiredService<IWorktreeService>();
         var db = context.Services.GetRequiredService<AgentAcademyDbContext>();
 
         var worktrees = worktreeService.GetActiveWorktrees();

@@ -121,6 +121,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton(new WorktreeService(
             Microsoft.Extensions.Logging.Abstractions.NullLogger<WorktreeService>.Instance,
             repositoryRoot: "/tmp/test-repo"));
+        services.AddSingleton<IWorktreeService>(sp => sp.GetRequiredService<WorktreeService>());
         services.AddSingleton<AgentMemoryLoader>();
         services.AddSingleton<BreakoutCompletionService>();
         services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
