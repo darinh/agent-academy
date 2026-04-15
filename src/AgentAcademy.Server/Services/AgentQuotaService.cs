@@ -15,7 +15,7 @@ namespace AgentAcademy.Server.Services;
 /// Token/cost checks are best-effort via DB aggregation (concurrent calls may
 /// slightly overshoot). Singleton; creates its own DB scopes.
 /// </summary>
-public sealed class AgentQuotaService
+public sealed class AgentQuotaService : IAgentQuotaService
 {
     private static readonly TimeSpan QuotaWindow = TimeSpan.FromHours(1);
     private static readonly TimeSpan ConfigCacheTtl = TimeSpan.FromSeconds(30);

@@ -53,6 +53,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<AgentErrorTracker>();
         services.AddSingleton<IAgentErrorTracker>(sp => sp.GetRequiredService<AgentErrorTracker>());
         services.AddSingleton<AgentQuotaService>();
+        services.AddSingleton<IAgentQuotaService>(sp => sp.GetRequiredService<AgentQuotaService>());
         services.AddSingleton<AgentAnalyticsService>();
         return services;
     }

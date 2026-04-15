@@ -51,7 +51,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly NotificationManager _notificationManager;
     private readonly IAgentToolRegistry _toolRegistry;
     private readonly IAgentErrorTracker _errorTracker;
-    private readonly AgentQuotaService _quotaService;
+    private readonly IAgentQuotaService _quotaService;
     private readonly IAgentCatalog _catalog;
     private readonly CopilotCircuitBreaker _circuitBreaker = new();
     private volatile bool _authFailed;
@@ -69,7 +69,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         NotificationManager notificationManager,
         IAgentToolRegistry toolRegistry,
         IAgentErrorTracker errorTracker,
-        AgentQuotaService quotaService,
+        IAgentQuotaService quotaService,
         IAgentCatalog catalog)
     {
         _logger = logger;
