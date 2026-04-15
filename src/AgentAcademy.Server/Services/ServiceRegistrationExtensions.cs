@@ -77,8 +77,11 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<SprintStageService>();
         services.AddScoped<ISprintStageService>(sp => sp.GetRequiredService<SprintStageService>());
         services.AddScoped<SprintArtifactService>();
+        services.AddScoped<ISprintArtifactService>(sp => sp.GetRequiredService<SprintArtifactService>());
         services.AddScoped<SprintMetricsCalculator>();
+        services.AddScoped<ISprintMetricsCalculator>(sp => sp.GetRequiredService<SprintMetricsCalculator>());
         services.AddScoped<SprintScheduleService>();
+        services.AddScoped<ISprintScheduleService>(sp => sp.GetRequiredService<SprintScheduleService>());
 
         // Round context loading (extracted from AgentOrchestrator)
         services.AddScoped<RoundContextLoader>();

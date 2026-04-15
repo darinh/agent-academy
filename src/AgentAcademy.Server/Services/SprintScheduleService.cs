@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Validation and persistence only — the background scheduler
 /// (<see cref="SprintSchedulerService"/>) handles cron evaluation.
 /// </summary>
-public sealed class SprintScheduleService
+public sealed class SprintScheduleService : ISprintScheduleService
 {
     private readonly AgentAcademyDbContext _db;
 

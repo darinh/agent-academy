@@ -55,7 +55,7 @@ public sealed class StoreArtifactHandler : ICommandHandler
 
         var roomService = context.Services.GetRequiredService<IRoomService>();
         var sprintService = context.Services.GetRequiredService<ISprintService>();
-        var artifactService = context.Services.GetRequiredService<SprintArtifactService>();
+        var artifactService = context.Services.GetRequiredService<ISprintArtifactService>();
 
         // Resolve sprint if not explicitly given
         if (string.IsNullOrEmpty(sprintId))

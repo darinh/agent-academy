@@ -16,18 +16,18 @@ public class SprintController : ControllerBase
 {
     private readonly ISprintService _sprintService;
     private readonly ISprintStageService _stageService;
-    private readonly SprintArtifactService _artifactService;
-    private readonly SprintMetricsCalculator _metricsCalculator;
-    private readonly SprintScheduleService _scheduleService;
+    private readonly ISprintArtifactService _artifactService;
+    private readonly ISprintMetricsCalculator _metricsCalculator;
+    private readonly ISprintScheduleService _scheduleService;
     private readonly IRoomService _roomService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
         ISprintService sprintService,
         ISprintStageService stageService,
-        SprintArtifactService artifactService,
-        SprintMetricsCalculator metricsCalculator,
-        SprintScheduleService scheduleService,
+        ISprintArtifactService artifactService,
+        ISprintMetricsCalculator metricsCalculator,
+        ISprintScheduleService scheduleService,
         IRoomService roomService,
         ILogger<SprintController> logger)
     {

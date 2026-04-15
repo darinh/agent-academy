@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// Manages sprint artifact storage, retrieval, and validation.
 /// Extracted from SprintService to separate artifact concerns from sprint lifecycle.
 /// </summary>
-public sealed class SprintArtifactService
+public sealed class SprintArtifactService : ISprintArtifactService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly IActivityBroadcaster _activityBus;

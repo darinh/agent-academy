@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// task/artifact counts) and workspace-level rollups. Read-only analytics
 /// over sprint lifecycle events.
 /// </summary>
-public sealed class SprintMetricsCalculator
+public sealed class SprintMetricsCalculator : ISprintMetricsCalculator
 {
     private readonly AgentAcademyDbContext _db;
 
