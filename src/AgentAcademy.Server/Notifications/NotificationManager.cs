@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Shared.Models;
 
 namespace AgentAcademy.Server.Notifications;
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Notifications;
 /// Broadcasts notifications to all connected providers and collects input from the first
 /// provider that can supply it.
 /// </summary>
-public sealed class NotificationManager
+public sealed class NotificationManager : INotificationManager
 {
     private readonly ConcurrentDictionary<string, INotificationProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<NotificationManager> _logger;

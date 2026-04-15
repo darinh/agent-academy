@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,14 +15,14 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/notifications")]
 public class NotificationController : ControllerBase
 {
-    private readonly NotificationManager _manager;
+    private readonly INotificationManager _manager;
     private readonly NotificationDeliveryTracker _tracker;
     private readonly ConfigEncryptionService _encryption;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<NotificationController> _logger;
 
     public NotificationController(
-        NotificationManager manager,
+        INotificationManager manager,
         NotificationDeliveryTracker tracker,
         ConfigEncryptionService encryption,
         AgentAcademyDbContext db,

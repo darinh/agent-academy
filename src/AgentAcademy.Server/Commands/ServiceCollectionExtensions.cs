@@ -1,5 +1,6 @@
 using System.Reflection;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 
 namespace AgentAcademy.Server.Commands;
 
@@ -41,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ConfigEncryptionService>();
         services.AddSingleton<NotificationDeliveryTracker>();
         services.AddSingleton<NotificationManager>();
+        services.AddSingleton<INotificationManager>(sp => sp.GetRequiredService<NotificationManager>());
         services.AddSingleton<ConsoleNotificationProvider>();
         services.AddSingleton<DiscordChannelManager>();
         services.AddSingleton<DiscordInputHandler>();
