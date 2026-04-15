@@ -195,7 +195,7 @@ internal sealed class TaskWriteToolWrapper
         }
 
         using var scope = _scopeFactory.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
 
         try
         {

@@ -55,6 +55,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddSingleton(_catalog);
         services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<TaskDependencyService>();
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());

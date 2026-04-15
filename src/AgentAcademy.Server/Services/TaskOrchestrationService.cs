@@ -16,7 +16,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
     private readonly ILogger<TaskOrchestrationService> _logger;
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
-    private readonly TaskLifecycleService _taskLifecycle;
+    private readonly ITaskLifecycleService _taskLifecycle;
     private readonly ITaskQueryService _taskQueries;
     private readonly RoomService _rooms;
     private readonly RoomSnapshotBuilder _snapshots;
@@ -32,7 +32,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         ILogger<TaskOrchestrationService> logger,
         IAgentCatalog catalog,
         ActivityPublisher activity,
-        TaskLifecycleService taskLifecycle,
+        ITaskLifecycleService taskLifecycle,
         ITaskQueryService taskQueries,
         RoomService rooms,
         RoomSnapshotBuilder snapshots,

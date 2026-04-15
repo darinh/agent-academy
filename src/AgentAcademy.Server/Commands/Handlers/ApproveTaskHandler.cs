@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -48,7 +49,7 @@ public sealed class ApproveTaskHandler : ICommandHandler
             findings = findingsStr;
         }
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
 
         try
         {

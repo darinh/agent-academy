@@ -52,7 +52,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
             }
         }
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -227,7 +228,7 @@ public sealed class RetrospectiveService
         string taskId, string agentId, string agentName, string content)
     {
         using var scope = _scopeFactory.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
 
         await taskLifecycle.AddTaskCommentAsync(
             taskId, agentId, agentName, TaskCommentType.Retrospective, content);

@@ -70,7 +70,7 @@ public sealed class MergePrHandler : ICommandHandler
         }
 
         var messages = context.Services.GetRequiredService<MessageService>();
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
