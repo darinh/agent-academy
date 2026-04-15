@@ -76,6 +76,7 @@ public sealed class TaskDependencyHandlerTests : IDisposable
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddScoped<InitializationService>();
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());

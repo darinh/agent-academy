@@ -153,6 +153,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<RoomLifecycleService>();
         sc.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         sc.AddScoped<CrashRecoveryService>();
+        sc.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         sc.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         sc.AddScoped<InitializationService>();
         sc.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
