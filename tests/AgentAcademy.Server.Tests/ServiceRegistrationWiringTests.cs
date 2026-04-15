@@ -54,6 +54,10 @@ public sealed class ServiceRegistrationWiringTests
         // ILlmUsageTracker should be registered (alias for LlmUsageTracker)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(ILlmUsageTracker));
+
+        // IAgentErrorTracker should be registered (alias for AgentErrorTracker)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentErrorTracker));
     }
 
     [Fact]
@@ -334,6 +338,32 @@ public sealed class ServiceRegistrationWiringTests
 
         var concrete = provider.GetRequiredService<LlmUsageTracker>();
         var iface = provider.GetRequiredService<ILlmUsageTracker>();
+
+        Assert.Same(concrete, iface);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentErrorTracker_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentErrorTracker)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IAgentErrorTracker_resolves_to_same_AgentErrorTracker_instance()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+        using var provider = services.BuildServiceProvider();
+
+        var concrete = provider.GetRequiredService<AgentErrorTracker>();
+        var iface = provider.GetRequiredService<IAgentErrorTracker>();
 
         Assert.Same(concrete, iface);
     }

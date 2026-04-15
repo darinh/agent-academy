@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// creates its own DB scopes (same pattern as LlmUsageTracker).
 /// Recording failures never propagate to agent execution.
 /// </summary>
-public sealed class AgentErrorTracker
+public sealed class AgentErrorTracker : IAgentErrorTracker
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentErrorTracker> _logger;
