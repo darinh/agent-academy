@@ -57,7 +57,7 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             {
                 try
                 {
-                    var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
+                    var sessionService = scope.ServiceProvider.GetRequiredService<IConversationSessionService>();
                     var rotated = await sessionService.CheckAndRotateAsync(roomId);
                     if (rotated)
                         _logger.LogInformation(

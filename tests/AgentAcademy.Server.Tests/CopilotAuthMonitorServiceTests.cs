@@ -511,6 +511,7 @@ public class CopilotExecutorAuthTransitionTests
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
             services.AddScoped<SystemSettingsService>();
             services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
             services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
             services.AddSingleton(new NotificationManager(NullLogger<NotificationManager>.Instance));
 

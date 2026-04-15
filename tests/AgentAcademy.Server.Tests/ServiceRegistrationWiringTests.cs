@@ -168,6 +168,17 @@ public sealed class ServiceRegistrationWiringTests
     }
 
     [Fact]
+    public void AddDomainServices_registers_IConversationSessionService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IConversationSessionService)
+            && sd.Lifetime == ServiceLifetime.Scoped);
+    }
+
+    [Fact]
     public void AddDomainServices_interface_forwards_resolve_to_concrete()
     {
         var services = new ServiceCollection();
@@ -186,6 +197,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ICrashRecoveryService),
             typeof(IActivityPublisher),
             typeof(IAgentConfigService),
+            typeof(IConversationSessionService),
         };
 
         foreach (var iface in forwardedInterfaces)

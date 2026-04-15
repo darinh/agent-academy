@@ -107,6 +107,7 @@ public class GetPrReviewsHandlerTests : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(Substitute.ForPartsOf<GitService>(
             NullLogger<GitService>.Instance,
             Path.GetTempPath(), "git"));

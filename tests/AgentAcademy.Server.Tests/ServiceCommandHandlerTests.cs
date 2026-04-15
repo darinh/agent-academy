@@ -97,6 +97,7 @@ public sealed class ServiceCommandHandlerTests : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
 
         // Register command handlers for ListCommandsHandler
         services.AddSingleton<ICommandHandler, ListCommandsHandler>();

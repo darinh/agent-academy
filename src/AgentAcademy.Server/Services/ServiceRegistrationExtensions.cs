@@ -67,6 +67,7 @@ public static class ServiceRegistrationExtensions
 
         // Conversation session management (epoch lifecycle and summarization)
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<ConversationSessionQueryService>();
         services.AddScoped<ConversationKickoffService>();
 

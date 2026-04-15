@@ -98,6 +98,7 @@ public class TaskItemCommandTests : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 

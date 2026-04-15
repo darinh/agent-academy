@@ -114,6 +114,7 @@ public class BranchWorkflowTests : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(_gitService);
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();

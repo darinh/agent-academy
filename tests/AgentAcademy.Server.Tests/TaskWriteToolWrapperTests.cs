@@ -48,6 +48,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddSingleton(Substitute.For<IAgentExecutor>());
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<MessageService>();
         services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();

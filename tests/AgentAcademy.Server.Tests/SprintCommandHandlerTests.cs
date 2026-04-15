@@ -40,6 +40,7 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddSingleton(typeof(ILogger<SprintStageService>), sp => NullLogger<SprintStageService>.Instance);
         services.AddSingleton(typeof(ILogger<SprintArtifactService>), sp => NullLogger<SprintArtifactService>.Instance);
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(typeof(ILogger<ConversationSessionService>), sp => NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton(typeof(ILogger<SystemSettingsService>), sp => NullLogger<SystemSettingsService>.Instance);
