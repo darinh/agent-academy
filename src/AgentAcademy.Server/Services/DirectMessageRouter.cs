@@ -15,13 +15,13 @@ public sealed class DirectMessageRouter : IDirectMessageRouter
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
-    private readonly AgentTurnRunner _turnRunner;
+    private readonly IAgentTurnRunner _turnRunner;
     private readonly ILogger<DirectMessageRouter> _logger;
 
     public DirectMessageRouter(
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
-        AgentTurnRunner turnRunner,
+        IAgentTurnRunner turnRunner,
         ILogger<DirectMessageRouter> logger)
     {
         _scopeFactory = scopeFactory;

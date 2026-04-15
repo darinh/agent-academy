@@ -397,4 +397,28 @@ public sealed class ServiceRegistrationWiringTests
 
         Assert.Same(concrete, iface);
     }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentTurnRunner_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentTurnRunner)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IAgentTurnRunner_forwards_to_AgentTurnRunner()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentTurnRunner));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
 }

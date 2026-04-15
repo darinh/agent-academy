@@ -116,6 +116,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
         services.AddSingleton<AgentTurnRunner>();
+        services.AddSingleton<IAgentTurnRunner>(sp => sp.GetRequiredService<AgentTurnRunner>());
         services.AddSingleton<ConversationRoundRunner>();
         services.AddSingleton<IConversationRoundRunner>(sp => sp.GetRequiredService<ConversationRoundRunner>());
         services.AddSingleton<DirectMessageRouter>();
