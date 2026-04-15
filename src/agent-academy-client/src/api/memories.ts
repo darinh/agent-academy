@@ -1,5 +1,12 @@
 import { apiUrl, request } from "./core";
-import type { MemoryDto, BrowseMemoriesResponse, MemoryStatsResponse } from "./types";
+import type {
+  MemoryDto,
+  BrowseMemoriesResponse,
+  MemoryStatsResponse,
+  MemoryExportResponse,
+  MemoryImportEntry,
+  MemoryImportResponse,
+} from "./types";
 
 export interface BrowseMemoriesParams {
   agentId: string;
@@ -25,4 +32,26 @@ export function deleteMemory(agentId: string, key: string): Promise<{ status: st
   return request(apiUrl(`/api/memories?${qs}`), { method: "DELETE" });
 }
 
-export type { MemoryDto, BrowseMemoriesResponse, MemoryStatsResponse };
+// ── Memory Export/Import ───────────────────────────────────────────────
+
+export function exportMemories(agentId?: string, category?: string): Promise<MemoryExportResponse> {
+  const qs = new URLSearchParams();
+  if (agentId) qs.set("agentId", agentId);
+  if (category) qs.set("category", category);
+  const query = qs.toString();
+  return request<MemoryExportResponse>(apiUrl(`/api/memories/export${query ? `?${query}` : ""}`));
+}
+
+export function importMemories(memories: MemoryImportEntry[]): Promise<MemoryImportResponse> {
+  return request<MemoryImportResponse>(apiUrl("/api/memories/import"), {
+    method: "POST",
+    body: JSON.stringify({ memories }),
+  });
+}
+
+export function deleteExpiredMemories(agentId?: string): Promise<{ removed: number }> {
+  const qs = agentId ? `?agentId=${encodeURIComponent(agentId)}` : "";
+  return request<{ removed: number }>(apiUrl(`/api/memories/expired${qs}`), { method: "DELETE" });
+}
+
+export type { MemoryDto, BrowseMemoriesResponse, MemoryStatsResponse, MemoryExportResponse, MemoryImportEntry, MemoryImportResponse };

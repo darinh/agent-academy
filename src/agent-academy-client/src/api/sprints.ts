@@ -6,6 +6,8 @@ import type {
   SprintStage,
   SprintScheduleRequest,
   SprintScheduleResponse,
+  SprintMetrics,
+  SprintMetricsSummary,
 } from "./types";
 import { apiUrl, request, extractApiError } from "./core";
 import type { ProblemDetails, ApiError } from "./core";
@@ -151,4 +153,14 @@ export async function deleteSprintSchedule(): Promise<void> {
   });
   if (res.status === 404) return;
   if (!res.ok) throw new Error("Failed to delete sprint schedule");
+}
+
+// ── Sprint Metrics ───────────────────────────────────────────────────
+
+export function getSprintMetrics(id: string): Promise<SprintMetrics> {
+  return request<SprintMetrics>(apiUrl(`/api/sprints/${encodeURIComponent(id)}/metrics`));
+}
+
+export function getSprintMetricsSummary(): Promise<SprintMetricsSummary> {
+  return request<SprintMetricsSummary>(apiUrl("/api/sprints/metrics/summary"));
 }

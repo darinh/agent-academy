@@ -7,6 +7,10 @@ import type {
   UpdateQuotaRequest,
   InstructionTemplate,
   InstructionTemplateRequest,
+  AgentLocation,
+  AgentKnowledgeResponse,
+  AllKnowledgeResponse,
+  RunAgentResponse,
 } from "./types";
 import { apiUrl, request } from "./core";
 
@@ -115,5 +119,44 @@ export function deleteInstructionTemplate(id: string): Promise<{ status: string;
   return request<{ status: string; id: string }>(
     apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`),
     { method: "DELETE" },
+  );
+}
+
+// ── Agent Locations ────────────────────────────────────────────────────
+
+export function getAgentLocations(): Promise<AgentLocation[]> {
+  return request<AgentLocation[]>(apiUrl("/api/agents/locations"));
+}
+
+// ── Agent Knowledge ────────────────────────────────────────────────────
+
+export function getAgentKnowledge(agentId: string): Promise<AgentKnowledgeResponse> {
+  return request<AgentKnowledgeResponse>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/knowledge`),
+  );
+}
+
+export function addAgentKnowledge(
+  agentId: string,
+  entry: string,
+): Promise<{ added: number }> {
+  return request<{ added: number }>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/knowledge`),
+    { method: "POST", body: JSON.stringify({ entry }) },
+  );
+}
+
+export function getAllKnowledge(): Promise<AllKnowledgeResponse> {
+  return request<AllKnowledgeResponse>(apiUrl("/api/knowledge"));
+}
+
+export function runAgent(agentId: string, prompt: string): Promise<RunAgentResponse> {
+  return request<RunAgentResponse>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/run`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: prompt,
+    },
   );
 }

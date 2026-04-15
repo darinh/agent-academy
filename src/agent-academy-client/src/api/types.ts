@@ -1116,3 +1116,130 @@ export interface RoomEvaluationResponse {
   artifacts: EvaluationResult[];
   aggregateScore: number;
 }
+
+// ── Sprint Metrics ─────────────────────────────────────────────────────
+
+export interface SprintMetrics {
+  sprintId: string;
+  sprintNumber: number;
+  status: SprintStatus;
+  durationSeconds: number | null;
+  stageTransitions: number;
+  artifactCount: number;
+  taskCount: number;
+  completedTaskCount: number;
+  timePerStageSeconds: Record<string, number>;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SprintMetricsSummary {
+  totalSprints: number;
+  completedSprints: number;
+  cancelledSprints: number;
+  activeSprints: number;
+  averageDurationSeconds: number | null;
+  averageTaskCount: number;
+  averageArtifactCount: number;
+  averageTimePerStageSeconds: Record<string, number>;
+}
+
+// ── Models ─────────────────────────────────────────────────────────────
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+  executorOperational: boolean;
+}
+
+// ── Memory Export/Import ───────────────────────────────────────────────
+
+export interface MemoryExportDto {
+  agentId: string;
+  category: string;
+  key: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string | null;
+  lastAccessedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface MemoryExportResponse {
+  count: number;
+  memories: MemoryExportDto[];
+}
+
+export interface MemoryImportEntry {
+  agentId: string;
+  category: string;
+  key: string;
+  value: string;
+  ttlHours?: number | null;
+}
+
+export interface MemoryImportResponse {
+  created: number;
+  updated: number;
+  skipped: number;
+  total: number;
+  errors: string[] | null;
+}
+
+// ── Notification Deliveries ────────────────────────────────────────────
+
+export interface NotificationDeliveryDto {
+  id: number;
+  channel: string;
+  title: string | null;
+  body: string | null;
+  roomId: string | null;
+  agentId: string | null;
+  providerId: string;
+  status: string;
+  error: string | null;
+  attemptedAt: string;
+}
+
+export type NotificationDeliveryStats = Record<string, number>;
+
+// ── Specs ──────────────────────────────────────────────────────────────
+
+export interface SpecVersionInfo {
+  version: string;
+  lastUpdated: string;
+  contentHash: string;
+  sectionCount: number;
+}
+
+export interface SpecSearchResult {
+  id: string;
+  heading: string;
+  summary: string;
+  filePath: string;
+  score: number;
+  matchedTerms: string;
+}
+
+// ── Agent Knowledge ────────────────────────────────────────────────────
+
+export interface AgentKnowledgeResponse {
+  entries: string[];
+}
+
+export type AllKnowledgeResponse = Record<string, string[]>;
+
+export interface RunAgentResponse {
+  agentId: string;
+  response: string;
+}
+
+// ── Room Cleanup ───────────────────────────────────────────────────────
+
+export interface CleanupResponse {
+  archivedCount: number;
+}

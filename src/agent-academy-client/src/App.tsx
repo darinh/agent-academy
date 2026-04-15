@@ -15,6 +15,7 @@ import { useLayoutStyles, useWorkspaceStyles, useRecoveryStyles } from "./styles
 import { useWorkspace } from "./useWorkspace";
 import { useDesktopNotifications } from "./useDesktopNotifications";
 import type { ActivityEvent, CollaborationPhase, WorkspaceMeta } from "./api";
+import { renameRoom } from "./api";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
 import ConfirmDialog from "./ConfirmDialog";
@@ -257,6 +258,13 @@ function AppShell() {
     : null;
 
   /* ── Header model ── */
+  const isRoomView = tab === "chat" && !!room && !sessionAgent && !selectedBreakout;
+  const handleRoomRename = useCallback(async (newName: string) => {
+    if (!room) return;
+    await renameRoom(room.id, newName);
+    handleManualRefresh();
+  }, [room, handleManualRefresh]);
+
   const headerModel: HeaderModel = {
     title: sessionAgent
       ? `${sessionAgent.name}'s Sessions`
@@ -276,6 +284,8 @@ function AppShell() {
     workspaceLimited,
     degradedEyebrow: degradedCopy?.eyebrow ?? null,
     circuitBreakerState,
+    canRename: isRoomView,
+    onRename: handleRoomRename,
   };
 
   /* ── Toolbar model ── */
@@ -330,6 +340,7 @@ function AppShell() {
             onSelectRoom={wrappedRoomSelect}
             onSelectWorkspace={handleWorkspaceSelect}
             onCreateRoom={handleCreateRoom}
+            onCleanupRooms={async () => { await (await import("./api")).cleanupRooms(); handleManualRefresh(); }}
             activeView={tab}
             onViewChange={setTab}
             workspace={

@@ -11,6 +11,7 @@ import type {
   CompactRoomResult,
   ArtifactRecord,
   RoomEvaluationResponse,
+  CleanupResponse,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
 
@@ -148,4 +149,33 @@ export function getRoomArtifacts(roomId: string, limit = 100): Promise<ArtifactR
 
 export function getRoomEvaluations(roomId: string): Promise<RoomEvaluationResponse> {
   return request<RoomEvaluationResponse>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/evaluations`));
+}
+
+// ── Room Management ────────────────────────────────────────────────────
+
+export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/name`), {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function cleanupRooms(): Promise<CleanupResponse> {
+  return request<CleanupResponse>(apiUrl("/api/rooms/cleanup"), { method: "POST" });
+}
+
+// ── Room Usage Records ─────────────────────────────────────────────────
+
+export function getRoomUsageRecords(
+  roomId: string,
+  limit = 50,
+  offset = 0,
+): Promise<import("./types").LlmUsageRecord[]> {
+  const params = new URLSearchParams();
+  if (limit !== 50) params.set("limit", String(limit));
+  if (offset > 0) params.set("offset", String(offset));
+  const qs = params.toString();
+  return request<import("./types").LlmUsageRecord[]>(
+    apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/usage/records${qs ? `?${qs}` : ""}`),
+  );
 }

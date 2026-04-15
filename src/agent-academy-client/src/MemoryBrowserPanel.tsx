@@ -3,15 +3,19 @@ import { Spinner, Tooltip } from "@fluentui/react-components";
 import { mergeClasses } from "@fluentui/react-components";
 import V3Badge from "./V3Badge";
 import EmptyState from "./EmptyState";
-import { ArrowSyncRegular, DeleteRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, DeleteRegular, ArrowDownloadRegular, ArrowUploadRegular } from "@fluentui/react-icons";
 import { formatTimestamp } from "./panelUtils";
 import {
   browseMemories,
   getMemoryStats,
   deleteMemory,
+  exportMemories,
+  importMemories,
+  deleteExpiredMemories,
   type MemoryDto,
   type MemoryStatsResponse,
   type AgentDefinition,
+  type MemoryImportEntry,
 } from "./api";
 import { useMemoryBrowserStyles } from "./memory";
 
@@ -122,6 +126,66 @@ export default function MemoryBrowserPanel({ agents, refreshTrigger = 0 }: Memor
     });
   }, []);
 
+  const [actionPending, setActionPending] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = useCallback(async () => {
+    if (!selectedAgent) return;
+    setActionPending("export");
+    setActionMessage(null);
+    try {
+      const data = await exportMemories(selectedAgent, category || undefined);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `memories-${selectedAgent}${category ? `-${category}` : ""}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setActionMessage({ ok: true, text: `Exported ${data.count} memories` });
+    } catch (err) {
+      setActionMessage({ ok: false, text: err instanceof Error ? err.message : "Export failed" });
+    } finally {
+      setActionPending(null);
+    }
+  }, [selectedAgent, category]);
+
+  const handleImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setActionPending("import");
+    setActionMessage(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as { memories?: MemoryImportEntry[] };
+      const entries = parsed.memories ?? (Array.isArray(parsed) ? parsed as MemoryImportEntry[] : []);
+      if (entries.length === 0) throw new Error("No memories found in file");
+      const result = await importMemories(entries);
+      setActionMessage({ ok: true, text: `Created ${result.created}, updated ${result.updated}, skipped ${result.skipped}` });
+      fetchData();
+    } catch (err) {
+      setActionMessage({ ok: false, text: err instanceof Error ? err.message : "Import failed" });
+    } finally {
+      setActionPending(null);
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }, [fetchData]);
+
+  const handleCleanupExpired = useCallback(async () => {
+    setActionPending("cleanup");
+    setActionMessage(null);
+    try {
+      const result = await deleteExpiredMemories(selectedAgent || undefined);
+      setActionMessage({ ok: true, text: `Removed ${result.removed} expired memories` });
+      fetchData();
+    } catch (err) {
+      setActionMessage({ ok: false, text: err instanceof Error ? err.message : "Cleanup failed" });
+    } finally {
+      setActionPending(null);
+    }
+  }, [selectedAgent, fetchData]);
+
   const categories = useMemo(() =>
     stats?.categories.filter((c) => c.active > 0).map((c) => c.category) ?? [],
     [stats],
@@ -162,16 +226,70 @@ export default function MemoryBrowserPanel({ agents, refreshTrigger = 0 }: Memor
             </>
           )}
         </div>
-        <Tooltip content="Refresh" relationship="label">
-          <button
-            onClick={fetchData}
-            style={{ background: "none", border: "none", color: "var(--aa-soft)", cursor: "pointer" }}
-            aria-label="Refresh memories"
-          >
-            <ArrowSyncRegular fontSize={14} />
-          </button>
-        </Tooltip>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Tooltip content="Export memories" relationship="label">
+            <button
+              onClick={handleExport}
+              disabled={actionPending != null || !selectedAgent}
+              style={{ background: "none", border: "none", color: "var(--aa-soft)", cursor: "pointer", opacity: actionPending ? 0.5 : 1 }}
+              aria-label="Export memories"
+            >
+              {actionPending === "export" ? <Spinner size="tiny" /> : <ArrowDownloadRegular fontSize={14} />}
+            </button>
+          </Tooltip>
+          <Tooltip content="Import memories from JSON" relationship="label">
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={actionPending != null}
+              style={{ background: "none", border: "none", color: "var(--aa-soft)", cursor: "pointer", opacity: actionPending ? 0.5 : 1 }}
+              aria-label="Import memories"
+            >
+              {actionPending === "import" ? <Spinner size="tiny" /> : <ArrowUploadRegular fontSize={14} />}
+            </button>
+          </Tooltip>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json"
+            style={{ display: "none" }}
+            onChange={handleImportFile}
+          />
+          {stats && stats.expiredMemories > 0 && (
+            <Tooltip content={`Remove ${stats.expiredMemories} expired memories`} relationship="label">
+              <button
+                onClick={handleCleanupExpired}
+                disabled={actionPending != null}
+                style={{ background: "none", border: "none", color: "var(--aa-soft)", cursor: "pointer", opacity: actionPending ? 0.5 : 1 }}
+                aria-label="Cleanup expired memories"
+              >
+                {actionPending === "cleanup" ? <Spinner size="tiny" /> : <DeleteRegular fontSize={14} />}
+              </button>
+            </Tooltip>
+          )}
+          <Tooltip content="Refresh" relationship="label">
+            <button
+              onClick={fetchData}
+              style={{ background: "none", border: "none", color: "var(--aa-soft)", cursor: "pointer" }}
+              aria-label="Refresh memories"
+            >
+              <ArrowSyncRegular fontSize={14} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
+
+      {actionMessage && (
+        <div style={{
+          padding: "6px 12px",
+          fontSize: "12px",
+          color: actionMessage.ok ? "var(--aa-lime, #98c379)" : "var(--error, #e06c75)",
+          background: actionMessage.ok ? "rgba(152, 195, 121, 0.08)" : "rgba(224, 108, 117, 0.08)",
+          borderRadius: 4,
+          margin: "0 16px 8px",
+        }}>
+          {actionMessage.text}
+        </div>
+      )}
 
       {/* Controls */}
       <div className={s.controls}>
