@@ -1,4 +1,5 @@
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// Unlike <see cref="ActivityBroadcaster"/>, this has no buffer —
 /// the SSE endpoint handles replay from the database.
 /// </summary>
-public sealed class MessageBroadcaster
+public sealed class MessageBroadcaster : IMessageBroadcaster
 {
     private readonly Dictionary<string, List<Action<ChatEnvelope>>> _roomSubscribers = new();
     private readonly Dictionary<string, List<Action<DmMessage>>> _dmSubscribers = new(StringComparer.OrdinalIgnoreCase);

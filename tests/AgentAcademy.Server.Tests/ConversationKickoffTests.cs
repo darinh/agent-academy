@@ -52,7 +52,9 @@ public sealed class ConversationKickoffTests : IDisposable
         var __broadcaster = new ActivityBroadcaster();
         services.AddSingleton(__broadcaster);
         services.AddSingleton<IActivityBroadcaster>(__broadcaster);
-        services.AddSingleton(new MessageBroadcaster());
+        var msgBroadcaster = new MessageBroadcaster();
+        services.AddSingleton(msgBroadcaster);
+        services.AddSingleton<IMessageBroadcaster>(msgBroadcaster);
         services.AddSingleton<IAgentExecutor>(executor);
         var specManager = new SpecManager(
             specsDir: Path.Combine(Path.GetTempPath(), $"kickoff-test-{Guid.NewGuid()}"),

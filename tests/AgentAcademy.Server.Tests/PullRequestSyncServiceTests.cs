@@ -106,6 +106,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddSingleton<ActivityBroadcaster>();
         sc.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         sc.AddSingleton<MessageBroadcaster>();
+        sc.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         sc.AddScoped<ActivityPublisher>();
         sc.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         sc.AddSingleton(new AgentCatalogOptions("main", "Main Room",
