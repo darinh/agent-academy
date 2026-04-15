@@ -15,7 +15,7 @@ public class WorkspaceController : ControllerBase
 {
     private readonly ProjectScanner _scanner;
     private readonly IRoomService _roomService;
-    private readonly WorkspaceRoomService _workspaceRooms;
+    private readonly IWorkspaceRoomService _workspaceRooms;
     private readonly WorkspaceService _workspaceService;
     private readonly ITaskOrchestrationService _taskOrchestration;
     private readonly ITaskQueryService _taskQueries;
@@ -27,7 +27,7 @@ public class WorkspaceController : ControllerBase
     public WorkspaceController(
         ProjectScanner scanner,
         IRoomService roomService,
-        WorkspaceRoomService workspaceRooms,
+        IWorkspaceRoomService workspaceRooms,
         WorkspaceService workspaceService,
         ITaskOrchestrationService taskOrchestration,
         ITaskQueryService taskQueries,

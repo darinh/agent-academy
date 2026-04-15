@@ -36,7 +36,7 @@ public static class WebApplicationExtensions
         // 3. If a workspace is already active, ensure it has a default room
         var catalog = scope.ServiceProvider.GetRequiredService<IAgentCatalog>();
         var rooms = scope.ServiceProvider.GetRequiredService<IRoomService>();
-        var workspaceRooms = scope.ServiceProvider.GetRequiredService<WorkspaceRoomService>();
+        var workspaceRooms = scope.ServiceProvider.GetRequiredService<IWorkspaceRoomService>();
         var mainRoomId = catalog.DefaultRoomId;
         var activeWorkspace = await rooms.GetActiveWorkspacePathAsync();
         if (activeWorkspace is not null)

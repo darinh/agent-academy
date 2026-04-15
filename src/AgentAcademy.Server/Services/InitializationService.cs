@@ -20,7 +20,7 @@ public sealed class InitializationService
     private readonly ActivityPublisher _activity;
     private readonly CrashRecoveryService _crashRecovery;
     private readonly IRoomService _rooms;
-    private readonly WorkspaceRoomService _workspaceRooms;
+    private readonly IWorkspaceRoomService _workspaceRooms;
 
     public InitializationService(
         AgentAcademyDbContext db,
@@ -29,7 +29,7 @@ public sealed class InitializationService
         ActivityPublisher activity,
         CrashRecoveryService crashRecovery,
         IRoomService rooms,
-        WorkspaceRoomService workspaceRooms)
+        IWorkspaceRoomService workspaceRooms)
     {
         _db = db;
         _logger = logger;

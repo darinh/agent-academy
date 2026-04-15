@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// Extracted from <see cref="RoomService"/> to isolate workspace orchestration
 /// from room CRUD and queries.
 /// </summary>
-public sealed class WorkspaceRoomService
+public sealed class WorkspaceRoomService : IWorkspaceRoomService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<WorkspaceRoomService> _logger;

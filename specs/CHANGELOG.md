@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **005-workspace-runtime**: `WorkspaceRoomService` now has `IWorkspaceRoomService` interface contract (Scoped + forwarded DI pattern). Service architecture text, service table, and DI registration snippet updated.
 - **005-workspace-runtime**: `RoomLifecycleService` now has `IRoomLifecycleService` interface contract (Scoped + forwarded DI pattern). Service table and DI registration snippet updated.
 - **005-workspace-runtime**: `BreakoutRoomService` now has `IBreakoutRoomService` interface contract (Scoped + forwarded DI pattern). Service table updated.
 - **005-workspace-runtime**: Fix stale `AgentOrchestrator` references — `ActivityPublisher` is now resolved by `ConversationRoundRunner` and `DirectMessageRouter` (not injected into `AgentOrchestrator`); worktree integration section now references `BreakoutLifecycleService` and `TaskAssignmentHandler` as the actual `WorktreeService` consumers.

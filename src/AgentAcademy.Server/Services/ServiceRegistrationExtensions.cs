@@ -51,6 +51,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<WorkspaceRoomService>();
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
         services.AddScoped<WorkspaceService>();
         services.AddScoped<SearchService>();
 
