@@ -21,6 +21,4 @@ public class WorkspaceEntity
     /// <summary>Git hosting provider: "github", "azure-devops", "gitlab", "bitbucket", or null.</summary>
     public string? HostProvider { get; set; }
 
-    /// <summary>Agent worktrees associated with this workspace.</summary>
-    public List<AgentWorkspaceEntity> AgentWorktrees { get; set; } = [];
 }

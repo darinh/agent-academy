@@ -16,25 +16,10 @@ import { apiUrl, request, downloadFile } from "./core";
 
 // ── Rooms ──────────────────────────────────────────────────────────────
 
-export function getRooms(): Promise<RoomSnapshot[]> {
-  return request<RoomSnapshot[]>(apiUrl("/api/rooms"));
-}
-
-export function getRoom(roomId: string): Promise<RoomSnapshot> {
-  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}`));
-}
-
 export function createRoom(name: string, description?: string): Promise<RoomSnapshot> {
   return request<RoomSnapshot>(apiUrl("/api/rooms"), {
     method: "POST",
     body: JSON.stringify({ name, description }),
-  });
-}
-
-export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {
-  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}/name`), {
-    method: "PUT",
-    body: JSON.stringify({ name }),
   });
 }
 

@@ -9,7 +9,6 @@ import type {
   TaskCycleAnalytics,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
-
 // ── Usage / LLM Tracking ──────────────────────────────────────────────
 
 export function getGlobalUsage(hoursBack?: number): Promise<UsageSummary> {
@@ -78,15 +77,4 @@ export function exportAgentAnalytics(hoursBack?: number, format: "csv" | "json" 
   const params = new URLSearchParams({ format });
   if (hoursBack != null) params.set("hoursBack", String(hoursBack));
   return downloadFile(apiUrl(`/api/export/agents?${params}`), `agent-analytics.${format}`);
-}
-
-export function exportUsageRecords(
-  options?: { hoursBack?: number; agentId?: string; limit?: number; format?: "csv" | "json" },
-): Promise<void> {
-  const format = options?.format ?? "csv";
-  const params = new URLSearchParams({ format });
-  if (options?.hoursBack != null) params.set("hoursBack", String(options.hoursBack));
-  if (options?.agentId) params.set("agentId", options.agentId);
-  if (options?.limit != null) params.set("limit", String(options.limit));
-  return downloadFile(apiUrl(`/api/export/usage?${params}`), `usage-records.${format}`);
 }
