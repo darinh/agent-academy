@@ -19,6 +19,7 @@ import {
   SettingsRegular,
   PersonAddRegular,
   BranchForkRegular,
+  DatabaseRegular,
 } from "@fluentui/react-icons";
 import {
   getNotificationProviders,
@@ -32,7 +33,7 @@ import {
 import NotificationSetupWizard from "./NotificationSetupWizard";
 import AgentConfigCard from "./AgentConfigCard";
 import TemplateCard from "./TemplateCard";
-import { CustomAgentsTab, GitHubTab, AdvancedTab } from "./settings";
+import { CustomAgentsTab, GitHubTab, AdvancedTab, ModelsTab, NotificationDeliveriesSection, DataExportSection } from "./settings";
 
 // ── Styles ──────────────────────────────────────────────────────────────
 
@@ -270,6 +271,7 @@ export default function SettingsPanel({ onClose, desktopNotifications }: Setting
     { id: "built-in", icon: <BotRegular />, label: "Built-in Agents" },
     { id: "templates", icon: <DocumentTextRegular />, label: "Templates" },
     { id: "notifications", icon: <AlertRegular />, label: "Notifications" },
+    { id: "models", icon: <DatabaseRegular />, label: "Models" },
     { id: "github", icon: <BranchForkRegular />, label: "GitHub" },
     { id: "advanced", icon: <SettingsRegular />, label: "Advanced" },
   ];
@@ -416,13 +418,19 @@ export default function SettingsPanel({ onClose, desktopNotifications }: Setting
                     </div>
                   ))
                 )}
+                <NotificationDeliveriesSection />
               </>
             )}
+
+            {activeTab === "models" && <ModelsTab />}
 
             {activeTab === "github" && <GitHubTab />}
 
             {activeTab === "advanced" && (
-              <AdvancedTab desktopNotifications={desktopNotifications} />
+              <>
+                <AdvancedTab desktopNotifications={desktopNotifications} />
+                <DataExportSection />
+              </>
             )}
 
           </div>
