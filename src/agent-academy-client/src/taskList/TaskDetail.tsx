@@ -10,6 +10,7 @@ import EvidenceLedger from "./EvidenceLedger";
 import GateStatus from "./GateStatus";
 import CommentsSection from "./CommentsSection";
 import TaskActionsBar from "./TaskActionsBar";
+import TaskPropertyControls from "./TaskPropertyControls";
 
 interface TaskDetailProps {
   task: TaskSnapshot;
@@ -112,6 +113,8 @@ export default function TaskDetail({ task, agents, onRefresh, onViewRetros }: Ta
           </span>
         </div>
       )}
+
+      <TaskPropertyControls task={task} onRefresh={onRefresh} />
 
       <TaskActionsBar
         actions={detail.actions}

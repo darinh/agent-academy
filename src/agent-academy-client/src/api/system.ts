@@ -4,11 +4,15 @@ import type {
   ConfigureResponse,
   ConnectResponse,
   TestNotificationResponse,
+  NotificationDeliveryDto,
+  NotificationDeliveryStats,
   DmThreadSummary,
   DmMessage,
   SearchResults,
   SearchScope,
   WorktreeStatusSnapshot,
+  ModelsResponse,
+  ActivityEvent,
 } from "./types";
 import { apiUrl, request, downloadFile } from "./core";
 
@@ -50,6 +54,14 @@ export function disconnectProvider(id: string): Promise<ConnectResponse> {
 
 export function testNotification(): Promise<TestNotificationResponse> {
   return request<TestNotificationResponse>(apiUrl(`${NOTIF_BASE}/test`), { method: "POST" });
+}
+
+export function getNotificationDeliveries(limit = 50): Promise<NotificationDeliveryDto[]> {
+  return request<NotificationDeliveryDto[]>(apiUrl(`${NOTIF_BASE}/deliveries?limit=${limit}`));
+}
+
+export function getNotificationDeliveryStats(): Promise<NotificationDeliveryStats> {
+  return request<NotificationDeliveryStats>(apiUrl(`${NOTIF_BASE}/deliveries/stats`));
 }
 
 // ── Direct Messaging ───────────────────────────────────────────────────
@@ -103,4 +115,22 @@ export function exportDmMessages(agentId: string, format: "json" | "markdown" = 
 
 export function getWorktreeStatus(): Promise<WorktreeStatusSnapshot[]> {
   return request<WorktreeStatusSnapshot[]>(apiUrl("/api/worktrees"));
+}
+
+// ── Models ───────────────────────────────────────────────────────────────
+
+export function getAvailableModels(): Promise<ModelsResponse> {
+  return request<ModelsResponse>(apiUrl("/api/models"));
+}
+
+// ── Activity ─────────────────────────────────────────────────────────────
+
+export function getRecentActivity(limit = 50): Promise<ActivityEvent[]> {
+  return request<ActivityEvent[]>(apiUrl(`/api/activity/recent?limit=${limit}`));
+}
+
+// ── System Admin ─────────────────────────────────────────────────────────
+
+export function reloadAgentCatalog(): Promise<{ status: string }> {
+  return request<{ status: string }>(apiUrl("/api/system/reload-catalog"), { method: "POST" });
 }

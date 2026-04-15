@@ -55,6 +55,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onSelectRoom: (roomId: string) => void;
   onSelectWorkspace: (breakoutId: string) => void;
   onCreateRoom?: (name: string) => void;
+  onCleanupRooms?: () => Promise<void>;
   onSwitchProject?: () => void;
   workspace?: { name: string; path: string } | null;
   user?: AuthUser | null;
@@ -66,6 +67,13 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   const s = useSidebarStyles();
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
+  const [cleaningUp, setCleaningUp] = useState(false);
+
+  const handleCleanup = useCallback(async () => {
+    if (!props.onCleanupRooms) return;
+    setCleaningUp(true);
+    try { await props.onCleanupRooms(); } finally { setCleaningUp(false); }
+  }, [props.onCleanupRooms]);
 
   const handleCreateRoom = useCallback(() => {
     const name = newRoomName.trim();
@@ -142,6 +150,21 @@ const SidebarPanel = memo(function SidebarPanel(props: {
               <div className={s.sectionLabel}>Rooms</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <div className={s.sectionCount}>{props.rooms.length}</div>
+                {props.onCleanupRooms && (
+                  <Tooltip content="Archive idle rooms" relationship="label">
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      className={s.sidebarIconButton}
+                      onClick={handleCleanup}
+                      disabled={cleaningUp}
+                      aria-label="Cleanup idle rooms"
+                      style={{ minWidth: 0, padding: "0 4px", fontSize: "11px" }}
+                    >
+                      {cleaningUp ? <Spinner size="tiny" /> : "🧹"}
+                    </Button>
+                  </Tooltip>
+                )}
                 {props.onCreateRoom && (
                   <Button
                     appearance="subtle"
