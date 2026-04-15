@@ -69,7 +69,9 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<ConversationSessionQueryService>();
+        services.AddScoped<IConversationSessionQueryService>(sp => sp.GetRequiredService<ConversationSessionQueryService>());
         services.AddScoped<ConversationKickoffService>();
+        services.AddScoped<IConversationKickoffService>(sp => sp.GetRequiredService<ConversationKickoffService>());
 
         // Sprint lifecycle management (creation, stage advancement, artifacts)
         services.AddScoped<SprintService>();
@@ -88,6 +90,7 @@ public static class ServiceRegistrationExtensions
 
         // Conversation export (formats room/DM history as JSON/Markdown)
         services.AddScoped<ConversationExportService>();
+        services.AddScoped<IConversationExportService>(sp => sp.GetRequiredService<ConversationExportService>());
 
         // Room artifact tracking (file operation event log)
         services.AddScoped<RoomArtifactTracker>();

@@ -221,7 +221,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
         AgentDefinition agent, BreakoutRoom br, string? worktreePath = null)
     {
         using var fixScope = _scopeFactory.CreateScope();
-        var sessionService = fixScope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
+        var sessionService = fixScope.ServiceProvider.GetRequiredService<IConversationSessionQueryService>();
 
         await messageService.PostSystemStatusAsync(parentRoomId,
             $"🔄 {agent.Name} is returning to \"{br.Name}\" to address review feedback.");

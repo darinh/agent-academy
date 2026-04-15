@@ -105,6 +105,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<ConversationSessionQueryService>();
+        services.AddScoped<IConversationSessionQueryService>(sp => sp.GetRequiredService<ConversationSessionQueryService>());
         services.AddScoped<AgentConfigService>();
         services.AddScoped<IAgentConfigService>(sp => sp.GetRequiredService<AgentConfigService>());
         services.AddSingleton<SpecManager>();

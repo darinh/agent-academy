@@ -1,4 +1,4 @@
-using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,10 +11,10 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/sessions")]
 public class SessionController : ControllerBase
 {
-    private readonly ConversationSessionQueryService _sessionService;
+    private readonly IConversationSessionQueryService _sessionService;
     private readonly ILogger<SessionController> _logger;
 
-    public SessionController(ConversationSessionQueryService sessionService, ILogger<SessionController> logger)
+    public SessionController(IConversationSessionQueryService sessionService, ILogger<SessionController> logger)
     {
         _sessionService = sessionService;
         _logger = logger;

@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// and context retrieval for agents. Extracted from ConversationSessionService
 /// to separate query operations from lifecycle mutations.
 /// </summary>
-public sealed class ConversationSessionQueryService
+public sealed class ConversationSessionQueryService : IConversationSessionQueryService
 {
     private readonly AgentAcademyDbContext _db;
 

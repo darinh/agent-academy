@@ -303,7 +303,7 @@ public class RoomController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] int limit = 20,
         [FromQuery] int offset = 0,
-        [FromServices] ConversationSessionQueryService sessionService = default!)
+        [FromServices] IConversationSessionQueryService sessionService = default!)
     {
         try
         {

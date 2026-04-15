@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Services;
@@ -9,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Exports room and DM conversation history as JSON or Markdown.
 /// </summary>
-public sealed class ConversationExportService
+public sealed class ConversationExportService : IConversationExportService
 {
     private const int MaxExportMessages = 10_000;
 

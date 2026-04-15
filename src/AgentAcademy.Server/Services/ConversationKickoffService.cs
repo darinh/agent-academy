@@ -10,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// conversation has started yet. Idempotent: once any Agent or User message
 /// exists, subsequent calls are no-ops.
 /// </summary>
-public sealed class ConversationKickoffService
+public sealed class ConversationKickoffService : IConversationKickoffService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly IMessageService _messageService;

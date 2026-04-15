@@ -15,7 +15,7 @@ public class ExportController : ControllerBase
 {
     private readonly IAgentAnalyticsService _analytics;
     private readonly ILlmUsageTracker _usageTracker;
-    private readonly ConversationExportService _conversationExport;
+    private readonly IConversationExportService _conversationExport;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -26,7 +26,7 @@ public class ExportController : ControllerBase
     public ExportController(
         IAgentAnalyticsService analytics,
         ILlmUsageTracker usageTracker,
-        ConversationExportService conversationExport)
+        IConversationExportService conversationExport)
     {
         _analytics = analytics;
         _usageTracker = usageTracker;

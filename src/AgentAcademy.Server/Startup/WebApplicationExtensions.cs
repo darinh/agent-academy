@@ -78,7 +78,7 @@ public static class WebApplicationExtensions
         //    Idempotent: skips if agents have already spoken or if crash recovery ran.
         if (!CrashRecoveryService.CurrentCrashDetected)
         {
-            var kickoff = scope.ServiceProvider.GetRequiredService<ConversationKickoffService>();
+            var kickoff = scope.ServiceProvider.GetRequiredService<IConversationKickoffService>();
             await kickoff.TryKickoffAsync(mainRoomId, activeWorkspace);
         }
     }
