@@ -72,6 +72,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<CopilotClientFactory>();
         services.AddSingleton<CopilotSessionPool>();
         services.AddSingleton<CopilotSdkSender>();
+        services.AddSingleton<ICopilotSdkSender>(sp => sp.GetRequiredService<CopilotSdkSender>());
         services.AddSingleton<CopilotExecutor>();
         services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
         services.AddHttpClient<ICopilotAuthProbe, GitHubCopilotAuthProbe>(client =>
