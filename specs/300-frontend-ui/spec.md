@@ -28,7 +28,7 @@ App.tsx (FluentProvider + AppShell)
     │   └── Switch Project button
     └── Main workspace
         ├── Workspace header + phase pill + UserBadge
-        ├── Tab bar (overview, directMessages, plan, tasks, timeline, sprint, dashboard [Metrics], commands)
+        ├── Sidebar nav (overview, search, directMessages, plan, tasks, artifacts, timeline, activity, sprint, dashboard, commands, memories, knowledge, specs, digests, retrospectives)
         └── Tab content panels
             ├── ChatPanel.tsx (room-centric conversation with session management)
             ├── TaskListPanel.tsx
@@ -44,7 +44,13 @@ App.tsx (FluentProvider + AppShell)
             ├── WorkspaceOverviewPanel.tsx
             ├── DmPanel.tsx (Telegram-style DM conversations)
             ├── SprintPanel.tsx (sprint lifecycle viewer)
-            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, github, advanced)
+            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, github, models, advanced)
+            │   ├── ModelsTab.tsx (LLM model list with executor status)
+            │   ├── NotificationDeliveriesSection.tsx (delivery history + stats)
+            │   └── DataExportSection.tsx (agent config + usage export)
+            ├── ActivityFeedPanel.tsx (standalone activity feed with severity badges)
+            ├── SpecSearchPanel.tsx (full-text spec search with debounced input)
+            ├── AgentKnowledgePanel.tsx (per-agent knowledge browser with agent selector)
             ├── AgentSessionPanel.tsx (per-agent session inspector)
             ├── CommandPalette.tsx (Cmd+K overlay)
             ├── KeyboardShortcutsDialog.tsx (? key shortcut help)
@@ -158,6 +164,14 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/analytics/agents` | GET | Per-agent performance metrics (optional `hoursBack` query param, 1–8760) |
 | `/api/analytics/agents/{agentId}` | GET | Agent detail drill-down (optional `hoursBack`, `requestLimit`, `errorLimit`, `taskLimit`) |
 | `/api/search` | GET | Full-text search across messages and tasks (required `q`, optional `scope`, `messageLimit`, `taskLimit`) |
+| `/api/activity/recent` | GET | Recent activity events (optional `limit`, default 50) |
+| `/api/models` | GET | Available LLM models and executor status |
+| `/api/specs/search` | GET | Full-text spec search (required `q`, optional `limit`) |
+| `/api/agents/{agentId}/knowledge` | GET | Agent knowledge entries |
+| `/api/notifications/deliveries` | GET | Notification delivery history (optional `limit`) |
+| `/api/notifications/deliveries/stats` | GET | Delivery status aggregates |
+| `/api/export/agents` | GET | Export agent config (optional `format`: json/csv) — triggers file download |
+| `/api/export/usage` | GET | Export usage analytics (optional `format`, `hoursBack`) — triggers file download |
 
 ### Browse response shape (from server):
 ```json
@@ -476,7 +490,7 @@ The sidebar Rooms section includes inline room creation:
 
 ## Settings Panel (`SettingsPanel.tsx`)
 
-The Settings panel is a full tabbed configuration page with six tabs:
+The Settings panel is a full tabbed configuration page with seven tabs:
 
 ### Custom Agents Tab
 
@@ -511,6 +525,29 @@ Instruction template CRUD interface. Templates are reusable prompt fragments tha
 
 Provider setup UI for notification integrations (Discord, Slack, etc.). Connect/disconnect controls per provider, with the `NotificationSetupWizard` handling provider-specific configuration.
 
+#### Delivery History (`NotificationDeliveriesSection.tsx`)
+
+Embedded below the provider setup controls. Shows recent notification delivery records with aggregated status stats.
+
+- **Stats summary**: Badge row showing delivery counts by status (e.g., `Delivered: 42`, `Failed: 3`). Color-coded — green for `Delivered`/`Sent`, red for `Failed`, muted for others.
+- **Delivery list**: Grid layout per row — status badge, title/body (truncated with ellipsis), channel name, formatted timestamp. Max-height 400px with vertical scroll.
+- **Refresh button**: Subtle button in section header to re-fetch.
+- **Data**: `Promise.all([getNotificationDeliveries(30), getNotificationDeliveryStats()])` on mount.
+
+API:
+- `GET /api/notifications/deliveries?limit=30` → `NotificationDeliveryDto[]`
+- `GET /api/notifications/deliveries/stats` → `NotificationDeliveryStats` (Record<string, number>)
+
+Types:
+```typescript
+interface NotificationDeliveryDto {
+  id: number; channel: string; title: string | null; body: string | null;
+  roomId: string | null; agentId: string | null; providerId: string;
+  status: string; error: string | null; attemptedAt: string;
+}
+type NotificationDeliveryStats = Record<string, number>;
+```
+
 ### GitHub Tab
 
 GitHub integration status and PR capability overview. Data loaded from `GET /api/github/status` (see §010).
@@ -527,10 +564,38 @@ GitHub integration status and PR capability overview. Data loaded from `GET /api
 
 API type: `GitHubStatus { isConfigured: boolean; repository: string | null; authSource: "oauth" | "cli" | "none" }` — exported from `api.ts`.
 
+### Models Tab (`ModelsTab.tsx`)
+
+Displays available LLM models and executor operational status. Data loaded from `GET /api/models`.
+
+- **Executor status badge**: Green `Operational` or red `Degraded` badge via `V3Badge`.
+- **Model list**: Each model renders as a card showing display name (bold) and model ID (monospace, muted). Styled with dark background and subtle border.
+- **Footer**: Model count text.
+- **Empty state**: "No models configured" message when the models array is empty.
+- **Error/loading states**: Spinner during fetch, error text on failure.
+
+API:
+- `GET /api/models` → `ModelsResponse`
+
+Types:
+```typescript
+interface ModelInfo { id: string; name: string; }
+interface ModelsResponse { models: ModelInfo[]; executorOperational: boolean; }
+```
+
 ### Advanced Tab
 
 System-level settings:
 - **Main Room Epoch** and **Breakout Room Epoch**: Configure conversation session rotation thresholds (message count before automatic session archival).
+
+#### Data Export (`DataExportSection.tsx`)
+
+Embedded below the epoch settings in the Advanced tab. Allows downloading agent configuration and usage analytics for external analysis or backup.
+
+- **Agent configuration**: Download as JSON or CSV via `GET /api/export/agents?format={format}`. Triggers browser file download (`agents-export.json` or `.csv`).
+- **Usage analytics**: Download as JSON or CSV via `GET /api/export/usage?format={format}`. Triggers browser file download (`usage-export.json` or `.csv`).
+- **State**: One operation at a time — buttons disable while any export is in progress.
+- **Feedback**: Success message (green) or error message (red) shown inline after each attempt.
 
 ## Sprint Panel (`SprintPanel.tsx`)
 
@@ -1198,6 +1263,106 @@ interface RoomEvaluationResponse {
 - Log display (entries, operations, collapse/expand)
 - Independent loading (artifacts visible while evaluations load)
 - Refresh button behavior
+
+## Activity Feed Panel (`ActivityFeedPanel.tsx`)
+
+Standalone activity feed accessible via the "Activity" sidebar tab (`⚡`). Displays recent workspace events with severity badges, event categories, and relative timestamps.
+
+### Data Flow
+
+```
+ActivityFeedPanel
+  └── getRecentActivity(50) → GET /api/activity/recent?limit=50 → ActivityEvent[]
+```
+
+### UI
+
+- **Header**: "Recent Activity" title with event count badge and refresh button.
+- **Event list**: Each event renders as a row with:
+  - Relative timestamp (right-aligned, monospace, 60px fixed width)
+  - Severity badge via `V3Badge` — `Error` (red/err), `Warning` (amber/warn), default (muted)
+  - Event category label derived from event type via `eventCategory()` utility
+  - Event message text
+- **Empty state**: 📭 "No activity yet" with guidance text.
+- **Error state**: ⚡ "Failed to load activity" with error detail.
+- **Loading**: Spinner with "Loading activity…" label.
+- **Refresh**: Manual refresh via header button; no auto-polling (the panel fetches once on mount).
+
+### Types
+
+Reuses existing `ActivityEvent` type from the API layer.
+
+## Spec Search Panel (`SpecSearchPanel.tsx`)
+
+Full-text search across project specifications. Accessible via the "Specs" sidebar tab (`📜`).
+
+### Data Flow
+
+```
+SpecSearchPanel
+  └── searchSpecs(query, 20) → GET /api/specs/search?q={query}&limit=20 → SpecSearchResult[]
+```
+
+### UI
+
+- **Search bar**: Debounced input (400ms) with `SearchRegular` icon. Pressing Enter triggers immediate search (cancels pending debounce). Fluent UI `Input` with `underline` appearance.
+- **Result cards**: Each result shows:
+  - Heading (bold, 13px)
+  - Relevance score badge (`V3Badge`, percentage, e.g., "85%")
+  - Summary text
+  - File path (monospace, muted)
+  - Matched terms (italic, muted) — if present
+- **Initial state**: 📜 "Search specifications" with guidance text (shown before any search).
+- **No results**: 🔍 "No results" with the query echoed back.
+- **Error state**: Amber warning text inline.
+- **Loading**: Spinner next to the search input (non-blocking — results area stays visible).
+
+### Debounce Pattern
+
+Uses a `useRef`-tracked `setTimeout` with 400ms delay. The ref is explicitly typed as `ReturnType<typeof setTimeout> | undefined`. On Enter keypress, the pending debounce is cancelled and search fires immediately.
+
+### Types
+
+```typescript
+interface SpecSearchResult {
+  id: string; heading: string; summary: string;
+  filePath: string; score: number; matchedTerms: string;
+}
+```
+
+## Agent Knowledge Panel (`AgentKnowledgePanel.tsx`)
+
+Per-agent knowledge entry browser. Accessible via the "Knowledge" sidebar tab (`📖`).
+
+### Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `agents` | `AgentDefinition[]` | Configured agents list (passed from App.tsx via WorkspaceContent) |
+
+### Data Flow
+
+```
+AgentKnowledgePanel({ agents })
+  └── getAgentKnowledge(agentId) → GET /api/agents/{agentId}/knowledge → AgentKnowledgeResponse
+```
+
+### UI
+
+- **Header**: "Agent Knowledge" title with entry count badge and refresh button.
+- **Agent selector**: Native `<select>` dropdown listing all configured agents by name and role. Auto-selects first agent on mount.
+- **Entry list**: Each knowledge entry renders in a monospace card with dark background.
+- **Empty state (no agents)**: 📖 "No agents configured" with guidance text.
+- **Empty state (no entries)**: 📭 "No knowledge entries" with agent name echoed.
+- **Error state**: Amber warning text with error detail.
+- **Loading**: Spinner with "Loading knowledge…" label.
+- **Refresh**: Manual refresh via header button; refetches when selected agent changes.
+
+### Types
+
+```typescript
+interface AgentKnowledgeResponse { entries: string[]; }
+```
 
 ## Future Work
 
