@@ -93,7 +93,7 @@ public sealed class AgentOrchestrator
             "Queue reconstruction: re-enqueued {Count} room(s) with pending human messages: {RoomIds}",
             pendingRoomIds.Count, string.Join(", ", pendingRoomIds));
 
-        _ = ProcessQueueAsync();
+        SignalProcessing();
     }
 
     // ── PUBLIC ENTRY POINT ──────────────────────────────────────
@@ -104,8 +104,7 @@ public sealed class AgentOrchestrator
     /// </summary>
     public void HandleHumanMessage(string roomId)
     {
-        lock (_lock) { _queue.Enqueue(new QueueItem(roomId)); }
-        _ = ProcessQueueAsync();
+        EnqueueAndProcess(new QueueItem(roomId));
     }
 
     /// <summary>
@@ -121,31 +120,25 @@ public sealed class AgentOrchestrator
                 return;
             _queue.Enqueue(new QueueItem(RoomId: "", TargetAgentId: recipientAgentId));
         }
-        _ = ProcessQueueAsync();
+        SignalProcessing();
     }
 
     // ── QUEUE ───────────────────────────────────────────────────
 
     private async Task ProcessQueueAsync()
     {
-        lock (_lock)
-        {
-            if (_processing) return;
-            _processing = true;
-        }
+        if (!TryBeginProcessing()) return;
+        var resetProcessingOnExit = true;
 
         try
         {
             while (!_cts.IsCancellationRequested)
             {
                 QueueItem? item;
-                lock (_lock)
+                if (!TryDequeueOrStop(out item))
                 {
-                    if (!_queue.TryDequeue(out item))
-                    {
-                        _processing = false;
-                        return;
-                    }
+                    resetProcessingOnExit = false;
+                    return;
                 }
 
                 try
@@ -167,7 +160,48 @@ public sealed class AgentOrchestrator
         }
         finally
         {
-            lock (_lock) { _processing = false; }
+            if (resetProcessingOnExit)
+            {
+                EndProcessing();
+            }
         }
     }
+
+    private void EnqueueAndProcess(QueueItem item)
+    {
+        lock (_lock) { _queue.Enqueue(item); }
+        SignalProcessing();
+    }
+
+    private bool TryBeginProcessing()
+    {
+        lock (_lock)
+        {
+            if (_processing) return false;
+            _processing = true;
+            return true;
+        }
+    }
+
+    private bool TryDequeueOrStop(out QueueItem? item)
+    {
+        lock (_lock)
+        {
+            if (_queue.TryDequeue(out item))
+            {
+                return true;
+            }
+
+            _processing = false;
+            item = null;
+            return false;
+        }
+    }
+
+    private void EndProcessing()
+    {
+        lock (_lock) { _processing = false; }
+    }
+
+    private void SignalProcessing() => _ = ProcessQueueAsync();
 }

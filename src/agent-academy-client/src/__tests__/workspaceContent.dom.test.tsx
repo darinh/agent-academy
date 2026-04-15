@@ -24,7 +24,15 @@ vi.mock("../ChatPanel", () => ({ default: () => <div data-testid="chat-panel" />
 vi.mock("../MemoryBrowserPanel", () => ({ default: () => <div data-testid="memory-panel" /> }));
 vi.mock("../DigestPanel", () => ({ default: () => <div data-testid="digest-panel" /> }));
 vi.mock("../RetrospectivePanel", () => ({ default: () => <div data-testid="retrospective-panel" /> }));
-vi.mock("../ArtifactsPanel", () => ({ default: () => <div data-testid="artifacts-panel" /> }));
+vi.mock("../ArtifactsPanel", () => ({
+  default: ({ roomId, refreshTrigger }: { roomId: string | null; refreshTrigger?: number }) => (
+    <div
+      data-testid="artifacts-panel"
+      data-room-id={roomId ?? ""}
+      data-refresh-trigger={String(refreshTrigger ?? "")}
+    />
+  ),
+}));
 vi.mock("../ChunkErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div data-testid="error-boundary">{children}</div>,
 }));
@@ -153,6 +161,30 @@ describe("WorkspaceContent", () => {
   it("renders ArtifactsPanel when tab is 'artifacts'", async () => {
     renderContent({ tab: "artifacts" });
     expect(await screen.findByTestId("artifacts-panel")).toBeInTheDocument();
+  });
+
+  it("passes room ID and artifactVersion to ArtifactsPanel refresh props", async () => {
+    renderContent({
+      tab: "artifacts",
+      artifactVersion: 7,
+      room: {
+        id: "room-9",
+        name: "Room 9",
+        topic: null,
+        status: "Active",
+        currentPhase: "Discussion",
+        activeTask: null,
+        participants: [],
+        recentMessages: [],
+        createdAt: new Date("2026-04-01T00:00:00Z").toISOString(),
+        updatedAt: new Date("2026-04-01T00:00:00Z").toISOString(),
+        phaseGates: null,
+      },
+    });
+
+    const panel = await screen.findByTestId("artifacts-panel");
+    expect(panel).toHaveAttribute("data-room-id", "room-9");
+    expect(panel).toHaveAttribute("data-refresh-trigger", "7");
   });
 
   it("renders MemoryBrowserPanel when tab is 'memories'", async () => {
