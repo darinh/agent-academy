@@ -21,14 +21,14 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
     private readonly IAgentCatalog _catalog;
     private readonly GitService _gitService;
     private readonly WorktreeService _worktreeService;
-    private readonly BreakoutLifecycleService _breakoutLifecycle;
+    private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<TaskAssignmentHandler> _logger;
 
     public TaskAssignmentHandler(
         IAgentCatalog catalog,
         GitService gitService,
         WorktreeService worktreeService,
-        BreakoutLifecycleService breakoutLifecycle,
+        IBreakoutLifecycleService breakoutLifecycle,
         ILogger<TaskAssignmentHandler> logger)
     {
         _catalog = catalog;

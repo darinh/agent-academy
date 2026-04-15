@@ -11,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// agent's current room. Creates a fresh DI scope per invocation.
 /// Extracted from AgentOrchestrator to isolate DM routing from queue management.
 /// </summary>
-public sealed class DirectMessageRouter
+public sealed class DirectMessageRouter : IDirectMessageRouter
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;

@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// Manages the breakout conversation loop: agent rounds, stuck detection, and
 /// failure cleanup. Delegates completion/review to <see cref="BreakoutCompletionService"/>.
 /// </summary>
-public sealed class BreakoutLifecycleService
+public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
 {
     /// <summary>
     /// Consecutive breakout rounds with zero commands parsed before the agent is

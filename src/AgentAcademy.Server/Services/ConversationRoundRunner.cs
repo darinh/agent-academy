@@ -11,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// fresh DI scope to ensure clean DbContext state.
 /// Extracted from AgentOrchestrator to isolate round logic from queue management.
 /// </summary>
-public sealed class ConversationRoundRunner
+public sealed class ConversationRoundRunner : IConversationRoundRunner
 {
     private const int MaxRoundsPerTrigger = 3;
 

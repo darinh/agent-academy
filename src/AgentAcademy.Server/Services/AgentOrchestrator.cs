@@ -6,16 +6,16 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Queue-based message processor that serializes agent work. Accepts human
-/// messages and DMs, enqueues them, and dispatches to <see cref="ConversationRoundRunner"/>
-/// or <see cref="DirectMessageRouter"/> for execution. All conversation and
+/// messages and DMs, enqueues them, and dispatches to <see cref="IConversationRoundRunner"/>
+/// or <see cref="IDirectMessageRouter"/> for execution. All conversation and
 /// DM logic has been extracted into those dedicated services.
 /// </summary>
 public sealed class AgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ConversationRoundRunner _roundRunner;
-    private readonly DirectMessageRouter _dmRouter;
-    private readonly BreakoutLifecycleService _breakoutLifecycle;
+    private readonly IConversationRoundRunner _roundRunner;
+    private readonly IDirectMessageRouter _dmRouter;
+    private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
@@ -31,9 +31,9 @@ public sealed class AgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
-        ConversationRoundRunner roundRunner,
-        DirectMessageRouter dmRouter,
-        BreakoutLifecycleService breakoutLifecycle,
+        IConversationRoundRunner roundRunner,
+        IDirectMessageRouter dmRouter,
+        IBreakoutLifecycleService breakoutLifecycle,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;

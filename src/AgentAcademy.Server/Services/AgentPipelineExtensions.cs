@@ -101,11 +101,14 @@ public static class AgentPipelineExtensions
     {
         services.AddSingleton<BreakoutCompletionService>();
         services.AddSingleton<BreakoutLifecycleService>();
+        services.AddSingleton<IBreakoutLifecycleService>(sp => sp.GetRequiredService<BreakoutLifecycleService>());
         services.AddSingleton<TaskAssignmentHandler>();
         services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
         services.AddSingleton<AgentTurnRunner>();
         services.AddSingleton<ConversationRoundRunner>();
+        services.AddSingleton<IConversationRoundRunner>(sp => sp.GetRequiredService<ConversationRoundRunner>());
         services.AddSingleton<DirectMessageRouter>();
+        services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
         services.AddSingleton<AgentOrchestrator>();
         return services;
     }
