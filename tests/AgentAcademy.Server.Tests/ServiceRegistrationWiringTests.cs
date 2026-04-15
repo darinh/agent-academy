@@ -249,6 +249,8 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ISprintArtifactService),
             typeof(ISprintMetricsCalculator),
             typeof(ISprintScheduleService),
+            typeof(ISprintService),
+            typeof(ISprintStageService),
         };
 
         foreach (var iface in expectedInterfaces)
@@ -269,6 +271,8 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ISprintArtifactService),
             typeof(ISprintMetricsCalculator),
             typeof(ISprintScheduleService),
+            typeof(ISprintService),
+            typeof(ISprintStageService),
         };
 
         foreach (var iface in forwardedInterfaces)
@@ -396,6 +400,90 @@ public sealed class ServiceRegistrationWiringTests
             typeof(IWorkspaceService),
             typeof(IInitializationService),
             typeof(IPhaseTransitionValidator),
+        };
+
+        foreach (var iface in forwardedInterfaces)
+        {
+            var descriptor = services.FirstOrDefault(sd => sd.ServiceType == iface);
+            Assert.NotNull(descriptor);
+            Assert.NotNull(descriptor!.ImplementationFactory);
+        }
+    }
+
+    [Fact]
+    public void AddDomainServices_registers_room_service_interfaces()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var expectedInterfaces = new[]
+        {
+            typeof(IRoomService),
+            typeof(IRoomLifecycleService),
+            typeof(IRoomSnapshotBuilder),
+            typeof(IWorkspaceRoomService),
+            typeof(IBreakoutRoomService),
+        };
+
+        foreach (var iface in expectedInterfaces)
+        {
+            Assert.Contains(services, sd =>
+                sd.ServiceType == iface && sd.Lifetime == ServiceLifetime.Scoped);
+        }
+    }
+
+    [Fact]
+    public void AddDomainServices_room_interfaces_forward_to_concrete()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var forwardedInterfaces = new[]
+        {
+            typeof(IRoomService),
+            typeof(IRoomLifecycleService),
+            typeof(IRoomSnapshotBuilder),
+            typeof(IWorkspaceRoomService),
+            typeof(IBreakoutRoomService),
+        };
+
+        foreach (var iface in forwardedInterfaces)
+        {
+            var descriptor = services.FirstOrDefault(sd => sd.ServiceType == iface);
+            Assert.NotNull(descriptor);
+            Assert.NotNull(descriptor!.ImplementationFactory);
+        }
+    }
+
+    [Fact]
+    public void AddDomainServices_registers_messaging_service_interfaces()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var expectedInterfaces = new[]
+        {
+            typeof(IMessageService),
+            typeof(IAgentLocationService),
+        };
+
+        foreach (var iface in expectedInterfaces)
+        {
+            Assert.Contains(services, sd =>
+                sd.ServiceType == iface && sd.Lifetime == ServiceLifetime.Scoped);
+        }
+    }
+
+    [Fact]
+    public void AddDomainServices_messaging_interfaces_forward_to_concrete()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var forwardedInterfaces = new[]
+        {
+            typeof(IMessageService),
+            typeof(IAgentLocationService),
         };
 
         foreach (var iface in forwardedInterfaces)
@@ -838,6 +926,150 @@ public sealed class ServiceRegistrationWiringTests
         services.AddAgentPipeline();
 
         var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentToolFunctions));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IMessageBroadcaster_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IMessageBroadcaster)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IMessageBroadcaster_forwards_to_MessageBroadcaster()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IMessageBroadcaster));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentAnalyticsService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentAnalyticsService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IAgentAnalyticsService_forwards_to_AgentAnalyticsService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentAnalyticsService));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ICopilotSdkSender_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ICopilotSdkSender)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ICopilotSdkSender_forwards_to_CopilotSdkSender()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(ICopilotSdkSender));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IBreakoutLifecycleService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IBreakoutLifecycleService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IBreakoutLifecycleService_forwards_to_BreakoutLifecycleService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IBreakoutLifecycleService));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IConversationRoundRunner_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IConversationRoundRunner)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IConversationRoundRunner_forwards_to_ConversationRoundRunner()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IConversationRoundRunner));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IDirectMessageRouter_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IDirectMessageRouter)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IDirectMessageRouter_forwards_to_DirectMessageRouter()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IDirectMessageRouter));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
         Assert.NotNull(descriptor.ImplementationFactory);
     }
