@@ -58,6 +58,10 @@ public sealed class ServiceRegistrationWiringTests
         // IAgentErrorTracker should be registered (alias for AgentErrorTracker)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentErrorTracker));
+
+        // IAgentQuotaService should be registered (alias for AgentQuotaService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentQuotaService));
     }
 
     [Fact]
@@ -364,6 +368,32 @@ public sealed class ServiceRegistrationWiringTests
 
         var concrete = provider.GetRequiredService<AgentErrorTracker>();
         var iface = provider.GetRequiredService<IAgentErrorTracker>();
+
+        Assert.Same(concrete, iface);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentQuotaService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentQuotaService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IAgentQuotaService_resolves_to_same_AgentQuotaService_instance()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+        using var provider = services.BuildServiceProvider();
+
+        var concrete = provider.GetRequiredService<AgentQuotaService>();
+        var iface = provider.GetRequiredService<IAgentQuotaService>();
 
         Assert.Same(concrete, iface);
     }

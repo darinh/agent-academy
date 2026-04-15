@@ -32,14 +32,14 @@ public sealed class CopilotSdkSender
     private readonly ILogger<CopilotSdkSender> _logger;
     private readonly ILlmUsageTracker _usageTracker;
     private readonly IAgentErrorTracker _errorTracker;
-    private readonly AgentQuotaService _quotaService;
+    private readonly IAgentQuotaService _quotaService;
     private readonly IActivityBroadcaster _activityBus;
 
     public CopilotSdkSender(
         ILogger<CopilotSdkSender> logger,
         ILlmUsageTracker usageTracker,
         IAgentErrorTracker errorTracker,
-        AgentQuotaService quotaService,
+        IAgentQuotaService quotaService,
         IActivityBroadcaster activityBus)
     {
         _logger = logger;
