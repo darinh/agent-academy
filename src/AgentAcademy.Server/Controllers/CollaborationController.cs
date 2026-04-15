@@ -18,7 +18,7 @@ public class CollaborationController : ControllerBase
     private readonly IMessageService _messageService;
     private readonly IRoomService _roomService;
     private readonly IAgentCatalog _catalog;
-    private readonly AgentOrchestrator _orchestrator;
+    private readonly IAgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
     private readonly ILogger<CollaborationController> _logger;
@@ -30,7 +30,7 @@ public class CollaborationController : ControllerBase
         IMessageService messageService,
         IRoomService roomService,
         IAgentCatalog catalog,
-        AgentOrchestrator orchestrator,
+        IAgentOrchestrator orchestrator,
         IAgentExecutor executor,
         SpecManager specManager,
         ILogger<CollaborationController> logger)

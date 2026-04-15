@@ -10,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// or <see cref="IDirectMessageRouter"/> for execution. All conversation and
 /// DM logic has been extracted into those dedicated services.
 /// </summary>
-public sealed class AgentOrchestrator
+public sealed class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConversationRoundRunner _roundRunner;

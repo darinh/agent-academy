@@ -19,7 +19,7 @@ public class DmController : ControllerBase
     private readonly IRoomService _roomService;
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
-    private readonly AgentOrchestrator _orchestrator;
+    private readonly IAgentOrchestrator _orchestrator;
     private readonly ILogger<DmController> _logger;
 
     private static readonly JsonSerializerOptions SseJsonOptions = new()
@@ -32,7 +32,7 @@ public class DmController : ControllerBase
         IRoomService roomService,
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,
-        AgentOrchestrator orchestrator,
+        IAgentOrchestrator orchestrator,
         ILogger<DmController> logger)
     {
         _messageService = messageService;

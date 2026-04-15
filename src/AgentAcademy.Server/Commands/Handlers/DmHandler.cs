@@ -182,7 +182,7 @@ public sealed class DmHandler : ICommandHandler
         ));
 
         // Trigger recipient agent to respond promptly
-        var orchestrator = context.Services.GetRequiredService<AgentOrchestrator>();
+        var orchestrator = context.Services.GetRequiredService<IAgentOrchestrator>();
         orchestrator.HandleDirectMessage(targetAgent.Id);
 
         return command with
