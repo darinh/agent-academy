@@ -14,14 +14,14 @@ Documents the domain services that manage core workspace state — rooms, agents
 
 Controllers and command handlers inject focused domain services directly via constructor injection. There is no facade or intermediary layer.
 
-**Service interface contracts** (`Services/Contracts/`): All seven task services plus room, room lifecycle, workspace-room, message, breakout, and agent location services expose interface contracts. Consumers inject the interface (e.g., `ITaskQueryService`, `IRoomService`, `IWorkspaceRoomService`), not the concrete class. DI registration uses the forwarding pattern — each concrete type is registered alongside its interface so both resolve to the same scoped instance. See [Service Registration](#service-registration) below.
+**Service interface contracts** (`Services/Contracts/`): All seven task services plus room, room lifecycle, room snapshot, workspace-room, message, breakout, and agent location services expose interface contracts. Consumers inject the interface (e.g., `ITaskQueryService`, `IRoomService`, `IRoomSnapshotBuilder`, `IWorkspaceRoomService`), not the concrete class. DI registration uses the forwarding pattern — each concrete type is registered alongside its interface so both resolve to the same scoped instance. See [Service Registration](#service-registration) below.
 
 | Service | Interface | Responsibility | Registration | Source |
 |---------|-----------|---------------|--------------|--------|
 | `InitializationService` | — | Startup room/agent seeding, server instance tracking | Scoped | `Services/InitializationService.cs` |
 | `CrashRecoveryService` | — | Crash detection, breakout/agent/task recovery | Scoped | `Services/CrashRecoveryService.cs` |
 | `RoomService` | `IRoomService` | Room CRUD, phase transitions, workspace scoping | Scoped + forwarded | `Services/RoomService.cs` |
-| `RoomSnapshotBuilder` | — | Builds read-model snapshots of rooms (messages, task, participants) | Scoped | `Services/RoomSnapshotBuilder.cs` |
+| `RoomSnapshotBuilder` | `IRoomSnapshotBuilder` | Builds read-model snapshots of rooms (messages, task, participants) | Scoped + forwarded | `Services/RoomSnapshotBuilder.cs` |
 | `WorkspaceRoomService` | `IWorkspaceRoomService` | Workspace–room relationships, default room creation, startup resolution | Scoped + forwarded | `Services/WorkspaceRoomService.cs` |
 | `RoomLifecycleService` | `IRoomLifecycleService` | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped + forwarded | `Services/RoomLifecycleService.cs` |
 | `MessageService` | `IMessageService` | Room/DM/breakout messaging, message trimming | Scoped + forwarded | `Services/MessageService.cs` |
@@ -489,6 +489,7 @@ services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoo
 services.AddScoped<RoomService>();
 services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
 services.AddScoped<RoomSnapshotBuilder>();
+services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
 services.AddScoped<WorkspaceRoomService>();
 services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
 services.AddScoped<RoomLifecycleService>();
@@ -535,6 +536,7 @@ Each domain service depends on `AgentAcademyDbContext` (scoped) and the specific
 
 ## Revision History
 
+- **2026-04-15**: Extracted `IRoomSnapshotBuilder` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `RoomSnapshotBuilder`.
 - **2026-04-15**: Extracted `IWorkspaceRoomService` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `WorkspaceRoomService`.
 - **2026-04-15**: Extracted `IAgentLocationService` interface contract. Updated service table and DI registration for `IRoomService`, `IMessageService`, `IBreakoutRoomService`, `IAgentLocationService` — all now show forwarding pattern.
 - **2026-04-15**: Documented task service interface contracts (`Services/Contracts/`). Service table now shows Interface column; DI registration updated to forwarding pattern. Added `TaskSnapshotFactory`, `TaskDependencyService`, `TaskAnalyticsService`, `RoomArtifactTracker`, `ArtifactEvaluatorService`.

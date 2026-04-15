@@ -11,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Handles room operations: CRUD, queries, phase transitions, and room messages.
 /// Lifecycle operations (close, reopen, archive, cleanup) are on <see cref="IRoomLifecycleService"/>.
-/// Snapshot building is on <see cref="RoomSnapshotBuilder"/>.
+/// Snapshot building is on <see cref="IRoomSnapshotBuilder"/>.
 /// Workspace–room management is on <see cref="IWorkspaceRoomService"/>.
 /// </summary>
 public sealed class RoomService : IRoomService
@@ -30,7 +30,7 @@ public sealed class RoomService : IRoomService
     private readonly ILogger<RoomService> _logger;
     private readonly ActivityPublisher _activity;
     private readonly IMessageService _messages;
-    private readonly RoomSnapshotBuilder _snapshots;
+    private readonly IRoomSnapshotBuilder _snapshots;
     private readonly PhaseTransitionValidator _phaseValidator;
 
     public RoomService(
@@ -38,7 +38,7 @@ public sealed class RoomService : IRoomService
         ILogger<RoomService> logger,
         ActivityPublisher activity,
         IMessageService messages,
-        RoomSnapshotBuilder snapshots,
+        IRoomSnapshotBuilder snapshots,
         PhaseTransitionValidator phaseValidator)
     {
         _db = db;

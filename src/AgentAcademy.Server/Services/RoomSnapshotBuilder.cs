@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// Builds read-model snapshots of rooms including messages, active task, and participants.
 /// Extracted from <see cref="RoomService"/> to isolate snapshot assembly from room mutations.
 /// </summary>
-public sealed class RoomSnapshotBuilder
+public sealed class RoomSnapshotBuilder : IRoomSnapshotBuilder
 {
     private const int MaxRecentMessages = 200;
 
