@@ -17,7 +17,7 @@ public class WorkspaceController : ControllerBase
     private readonly RoomService _roomService;
     private readonly WorkspaceRoomService _workspaceRooms;
     private readonly WorkspaceService _workspaceService;
-    private readonly TaskOrchestrationService _taskOrchestration;
+    private readonly ITaskOrchestrationService _taskOrchestration;
     private readonly ITaskQueryService _taskQueries;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
@@ -29,7 +29,7 @@ public class WorkspaceController : ControllerBase
         RoomService roomService,
         WorkspaceRoomService workspaceRooms,
         WorkspaceService workspaceService,
-        TaskOrchestrationService taskOrchestration,
+        ITaskOrchestrationService taskOrchestration,
         ITaskQueryService taskQueries,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,

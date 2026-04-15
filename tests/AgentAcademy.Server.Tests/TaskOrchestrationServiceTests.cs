@@ -69,6 +69,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<IAgentExecutor, StubExecutor>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
@@ -89,12 +90,12 @@ public class TaskOrchestrationServiceTests : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────
 
-    private (TaskOrchestrationService Svc, AgentAcademyDbContext Db) CreateScope()
+    private (ITaskOrchestrationService Svc, AgentAcademyDbContext Db) CreateScope()
     {
         var scope = _serviceProvider.CreateScope();
         _scopes.Add(scope);
         return (
-            scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>(),
+            scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>(),
             scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>());
     }
 

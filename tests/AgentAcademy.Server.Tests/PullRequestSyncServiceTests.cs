@@ -146,6 +146,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<InitializationService>();
         sc.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         sc.AddScoped<TaskOrchestrationService>();
+        sc.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         sc.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         sc.AddSingleton(_github);
 
@@ -157,7 +158,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         db.Database.EnsureCreated();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         initialization.InitializeAsync().GetAwaiter().GetResult();
     }
@@ -178,7 +179,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         await using var scope = _services.CreateAsyncScope();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: $"Test task PR#{prNumber}",

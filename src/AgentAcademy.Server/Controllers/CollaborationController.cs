@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class CollaborationController : ControllerBase
 {
-    private readonly TaskOrchestrationService _taskOrchestration;
+    private readonly ITaskOrchestrationService _taskOrchestration;
     private readonly ITaskQueryService _taskQueries;
     private readonly TaskDependencyService _taskDependencies;
     private readonly MessageService _messageService;
@@ -24,7 +24,7 @@ public class CollaborationController : ControllerBase
     private readonly ILogger<CollaborationController> _logger;
 
     public CollaborationController(
-        TaskOrchestrationService taskOrchestration,
+        ITaskOrchestrationService taskOrchestration,
         ITaskQueryService taskQueries,
         TaskDependencyService taskDependencies,
         MessageService messageService,

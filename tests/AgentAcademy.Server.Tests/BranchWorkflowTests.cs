@@ -95,6 +95,7 @@ public class BranchWorkflowTests : IDisposable
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
@@ -285,7 +286,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var task = await taskQueries.GetTaskAsync(taskId);
 
@@ -365,7 +366,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var task = await taskQueries.GetTaskAsync(taskId);
 
@@ -384,7 +385,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await initialization.InitializeAsync();
@@ -602,7 +603,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -624,7 +625,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -645,7 +646,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -680,7 +681,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -703,7 +704,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -724,7 +725,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -743,7 +744,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
@@ -766,7 +767,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         await taskQueries.UpdateTaskBranchAsync(taskId, "task/original-abc123");
@@ -786,7 +787,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         var result = await taskOrchestration.CompleteTaskAsync(
@@ -808,7 +809,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         // Simulate what MergeTaskHandler does after merge: complete with SHA
@@ -833,7 +834,7 @@ public class BranchWorkflowTests : IDisposable
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var approved = await taskLifecycle.ApproveTaskAsync(taskId, "reviewer-1", null);
 
