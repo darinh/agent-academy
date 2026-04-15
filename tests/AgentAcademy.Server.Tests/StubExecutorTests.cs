@@ -154,6 +154,7 @@ public class AgentExecutorInterfaceTests
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
         services.AddScoped<RoomSnapshotBuilder>();

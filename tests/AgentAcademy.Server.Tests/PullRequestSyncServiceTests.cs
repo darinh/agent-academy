@@ -133,6 +133,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<BreakoutRoomService>();
         sc.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         sc.AddScoped<TaskItemService>();
+        sc.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         sc.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         sc.AddScoped<PhaseTransitionValidator>();
         sc.AddScoped<RoomService>();

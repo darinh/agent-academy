@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -47,7 +48,7 @@ public sealed class ConversationRoundRunner
             var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
             var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
             var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+            var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
             var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();

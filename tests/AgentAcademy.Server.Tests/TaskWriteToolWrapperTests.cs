@@ -65,6 +65,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<CrashRecoveryService>();
         services.AddScoped<InitializationService>();
 

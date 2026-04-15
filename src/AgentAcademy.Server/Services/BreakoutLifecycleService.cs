@@ -120,7 +120,7 @@ public sealed class BreakoutLifecycleService
         using var scope = _scopeFactory.CreateScope();
         var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-        var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+        var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();

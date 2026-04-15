@@ -67,6 +67,7 @@ public class TaskItemCommandTests : IDisposable
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomService>();
         services.AddScoped<RoomSnapshotBuilder>();
@@ -403,7 +404,7 @@ public class TaskItemCommandTests : IDisposable
         // Mark one as Done
         using (var scope = _serviceProvider.CreateScope())
         {
-            var taskItems = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+            var taskItems = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
             await taskItems.UpdateTaskItemStatusAsync(id1, TaskItemStatus.Done);
         }
 
@@ -536,7 +537,7 @@ public class TaskItemCommandTests : IDisposable
         string assignedTo, string title = "Test Item", string roomId = "room-1")
     {
         using var scope = _serviceProvider.CreateScope();
-        var taskItems = scope.ServiceProvider.GetRequiredService<TaskItemService>();
+        var taskItems = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var item = await taskItems.CreateTaskItemAsync(title, "Test description", assignedTo, roomId, null);
         return item.Id;
     }

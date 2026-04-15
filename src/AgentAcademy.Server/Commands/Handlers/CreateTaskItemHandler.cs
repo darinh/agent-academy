@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,7 +53,7 @@ public sealed class CreateTaskItemHandler : ICommandHandler
 
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var roomService = context.Services.GetRequiredService<RoomService>();
-        var taskItems = context.Services.GetRequiredService<TaskItemService>();
+        var taskItems = context.Services.GetRequiredService<ITaskItemService>();
 
         // Resolve assignee: accept agent ID or name, normalize to ID
         var agents = catalog.Agents;
