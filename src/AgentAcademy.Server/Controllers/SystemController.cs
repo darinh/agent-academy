@@ -23,7 +23,7 @@ public class SystemController : ControllerBase
     private readonly IAgentExecutor _executor;
     private readonly IAgentCatalog _catalog;
     private readonly AgentAcademyDbContext _db;
-    private readonly LlmUsageTracker _usageTracker;
+    private readonly ILlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly ILogger<SystemController> _logger;
 
@@ -37,7 +37,7 @@ public class SystemController : ControllerBase
         IAgentExecutor executor,
         IAgentCatalog catalog,
         AgentAcademyDbContext db,
-        LlmUsageTracker usageTracker,
+        ILlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
         ILogger<SystemController> logger)
     {

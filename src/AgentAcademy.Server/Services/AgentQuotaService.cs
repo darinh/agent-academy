@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,7 @@ public sealed class AgentQuotaService
     private static readonly TimeSpan ConfigCacheTtl = TimeSpan.FromSeconds(30);
 
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly LlmUsageTracker _usageTracker;
+    private readonly ILlmUsageTracker _usageTracker;
     private readonly ILogger<AgentQuotaService> _logger;
 
     // In-memory sliding window for request rate (authoritative)
@@ -31,7 +32,7 @@ public sealed class AgentQuotaService
 
     public AgentQuotaService(
         IServiceScopeFactory scopeFactory,
-        LlmUsageTracker usageTracker,
+        ILlmUsageTracker usageTracker,
         ILogger<AgentQuotaService> logger)
     {
         _scopeFactory = scopeFactory;

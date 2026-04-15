@@ -50,6 +50,10 @@ public sealed class ServiceRegistrationWiringTests
         // IWorktreeService should be registered (alias for WorktreeService)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IWorktreeService));
+
+        // ILlmUsageTracker should be registered (alias for LlmUsageTracker)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ILlmUsageTracker));
     }
 
     [Fact]
@@ -304,6 +308,32 @@ public sealed class ServiceRegistrationWiringTests
 
         var concrete = provider.GetRequiredService<WorktreeService>();
         var iface = provider.GetRequiredService<IWorktreeService>();
+
+        Assert.Same(concrete, iface);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ILlmUsageTracker_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ILlmUsageTracker)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ILlmUsageTracker_resolves_to_same_LlmUsageTracker_instance()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+        using var provider = services.BuildServiceProvider();
+
+        var concrete = provider.GetRequiredService<LlmUsageTracker>();
+        var iface = provider.GetRequiredService<ILlmUsageTracker>();
 
         Assert.Same(concrete, iface);
     }
