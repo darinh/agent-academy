@@ -17,7 +17,7 @@ namespace AgentAcademy.Server.Controllers;
 public class RoomController : ControllerBase
 {
     private readonly IRoomService _roomService;
-    private readonly AgentLocationService _agentLocationService;
+    private readonly IAgentLocationService _agentLocationService;
     private readonly IMessageService _messageService;
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
@@ -34,7 +34,7 @@ public class RoomController : ControllerBase
 
     public RoomController(
         IRoomService roomService,
-        AgentLocationService agentLocationService,
+        IAgentLocationService agentLocationService,
         IMessageService messageService,
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,

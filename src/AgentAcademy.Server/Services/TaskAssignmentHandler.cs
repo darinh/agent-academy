@@ -88,7 +88,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
     private async Task HandleAssignmentAsync(
         IServiceScope scope, string roomId, ParsedTaskAssignment assignment)
     {
-        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
         var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();

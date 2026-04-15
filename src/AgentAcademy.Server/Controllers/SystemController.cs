@@ -17,7 +17,7 @@ namespace AgentAcademy.Server.Controllers;
 public class SystemController : ControllerBase
 {
     private readonly IRoomService _roomService;
-    private readonly AgentLocationService _agentLocationService;
+    private readonly IAgentLocationService _agentLocationService;
     private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly ActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
@@ -31,7 +31,7 @@ public class SystemController : ControllerBase
 
     public SystemController(
         IRoomService roomService,
-        AgentLocationService agentLocationService,
+        IAgentLocationService agentLocationService,
         IBreakoutRoomService breakoutRoomService,
         ActivityPublisher activity,
         IAgentExecutor executor,

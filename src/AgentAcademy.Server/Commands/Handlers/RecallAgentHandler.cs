@@ -52,7 +52,7 @@ public sealed class RecallAgentHandler : ICommandHandler
         }
 
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
         var breakouts = context.Services.GetRequiredService<IBreakoutRoomService>();
         var messages = context.Services.GetRequiredService<IMessageService>();
 

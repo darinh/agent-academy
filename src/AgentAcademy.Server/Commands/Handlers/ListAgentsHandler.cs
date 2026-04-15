@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,7 +16,7 @@ public sealed class ListAgentsHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
         var agents = catalog.Agents;
         var locations = await agentLocations.GetAgentLocationsAsync();
         var locationMap = locations.ToDictionary(l => l.AgentId);

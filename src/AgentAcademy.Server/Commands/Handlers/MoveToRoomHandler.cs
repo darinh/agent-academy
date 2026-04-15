@@ -27,7 +27,7 @@ public sealed class MoveToRoomHandler : ICommandHandler
             };
         }
 
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
         var roomService = context.Services.GetRequiredService<IRoomService>();
 
         // Verify room exists

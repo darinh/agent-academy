@@ -69,7 +69,7 @@ public sealed class InviteToRoomHandler : ICommandHandler
         roomId = roomId.Trim();
 
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
         var messages = context.Services.GetRequiredService<IMessageService>();
         var roomService = context.Services.GetRequiredService<IRoomService>();
 

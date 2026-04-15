@@ -21,7 +21,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
     private readonly IRoomService _rooms;
     private readonly RoomSnapshotBuilder _snapshots;
     private readonly RoomLifecycleService _roomLifecycle;
-    private readonly AgentLocationService _agentLocations;
+    private readonly IAgentLocationService _agentLocations;
     private readonly IMessageService _messages;
     private readonly IBreakoutRoomService _breakouts;
 
@@ -37,7 +37,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         IRoomService rooms,
         RoomSnapshotBuilder snapshots,
         RoomLifecycleService roomLifecycle,
-        AgentLocationService agentLocations,
+        IAgentLocationService agentLocations,
         IMessageService messages,
         IBreakoutRoomService breakouts)
     {

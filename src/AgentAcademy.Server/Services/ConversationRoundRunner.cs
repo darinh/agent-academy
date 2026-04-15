@@ -47,7 +47,7 @@ public sealed class ConversationRoundRunner
             using var scope = _scopeFactory.CreateScope();
             var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
             var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
-            var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+            var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
             var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
@@ -171,7 +171,7 @@ public sealed class ConversationRoundRunner
         _catalog.Agents.FirstOrDefault(a => a.Role == "Planner");
 
     private async Task<List<AgentDefinition>> GetIdleAgentsInRoomAsync(
-        AgentLocationService agentLocationService, string roomId)
+        IAgentLocationService agentLocationService, string roomId)
     {
         var result = new List<AgentDefinition>();
         foreach (var agent in _catalog.Agents)

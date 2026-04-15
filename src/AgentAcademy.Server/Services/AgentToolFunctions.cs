@@ -159,7 +159,7 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: show_agents");
 
         using var scope = _scopeFactory.CreateScope();
-        var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var agentLocations = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
         var locations = await agentLocations.GetAgentLocationsAsync();
 
         var agentLines = new List<string>();

@@ -42,7 +42,7 @@ public sealed class DirectMessageRouter
         using var scope = _scopeFactory.CreateScope();
         var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
-        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
         var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();

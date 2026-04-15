@@ -14,17 +14,17 @@ Documents the domain services that manage core workspace state — rooms, agents
 
 Controllers and command handlers inject focused domain services directly via constructor injection. There is no facade or intermediary layer.
 
-**Task service interfaces** (`Services/Contracts/`): All seven task services expose interface contracts. Consumers inject the interface (e.g., `ITaskQueryService`), not the concrete class. DI registration uses the forwarding pattern — each concrete type is registered alongside its interface so both resolve to the same scoped instance. See [Service Registration](#service-registration) below.
+**Service interface contracts** (`Services/Contracts/`): All seven task services plus room, message, breakout, and agent location services expose interface contracts. Consumers inject the interface (e.g., `ITaskQueryService`, `IRoomService`), not the concrete class. DI registration uses the forwarding pattern — each concrete type is registered alongside its interface so both resolve to the same scoped instance. See [Service Registration](#service-registration) below.
 
 | Service | Interface | Responsibility | Registration | Source |
 |---------|-----------|---------------|--------------|--------|
 | `InitializationService` | — | Startup room/agent seeding, server instance tracking | Scoped | `Services/InitializationService.cs` |
 | `CrashRecoveryService` | — | Crash detection, breakout/agent/task recovery | Scoped | `Services/CrashRecoveryService.cs` |
-| `RoomService` | — | Room CRUD, phase transitions, workspace scoping | Scoped | `Services/RoomService.cs` |
+| `RoomService` | `IRoomService` | Room CRUD, phase transitions, workspace scoping | Scoped + forwarded | `Services/RoomService.cs` |
 | `RoomSnapshotBuilder` | — | Builds read-model snapshots of rooms (messages, task, participants) | Scoped | `Services/RoomSnapshotBuilder.cs` |
 | `WorkspaceRoomService` | — | Workspace–room relationships, default room creation, startup resolution | Scoped | `Services/WorkspaceRoomService.cs` |
 | `RoomLifecycleService` | — | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped | `Services/RoomLifecycleService.cs` |
-| `MessageService` | — | Room/DM/breakout messaging, message trimming | Scoped | `Services/MessageService.cs` |
+| `MessageService` | `IMessageService` | Room/DM/breakout messaging, message trimming | Scoped + forwarded | `Services/MessageService.cs` |
 | `TaskQueryService` | `ITaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped + forwarded | `Services/TaskQueryService.cs` |
 | `TaskLifecycleService` | `ITaskLifecycleService` | Task creation staging, claim/release/approve/reject | Scoped + forwarded | `Services/TaskLifecycleService.cs` |
 | `TaskEvidenceService` | `ITaskEvidenceService` | Evidence recording and gate checks | Scoped + forwarded | `Services/TaskEvidenceService.cs` |
@@ -33,7 +33,7 @@ Controllers and command handlers inject focused domain services directly via con
 | `TaskOrchestrationService` | `ITaskOrchestrationService` | Task creation/completion/rejection coordinating rooms, agents, and lifecycle | Scoped + forwarded | `Services/TaskOrchestrationService.cs` |
 | `TaskAnalyticsService` | `ITaskAnalyticsService` | Task cycle effectiveness metrics | Scoped + forwarded | `Services/TaskAnalyticsService.cs` |
 | `BreakoutRoomService` | `IBreakoutRoomService` | Breakout room lifecycle, task association, stuck reopening | Scoped + forwarded | `Services/BreakoutRoomService.cs` |
-| `AgentLocationService` | — | Agent location tracking and movement | Scoped | `Services/AgentLocationService.cs` |
+| `AgentLocationService` | `IAgentLocationService` | Agent location tracking and movement | Scoped + forwarded | `Services/AgentLocationService.cs` |
 | `PlanService` | — | Plan CRUD with room/breakout validation | Scoped | `Services/PlanService.cs` |
 | `TaskSnapshotFactory` | — (static) | Pure DTO mapping: `TaskEntity` → `TaskSnapshot`, comments, evidence, spec links | Static class | `Services/TaskSnapshotFactory.cs` |
 | `ActivityPublisher` | — | Event creation, EF persistence, broadcast via `ActivityBroadcaster` | Scoped | `Services/ActivityPublisher.cs` |
@@ -445,7 +445,7 @@ Domain services are registered via `services.AddDomainServices()` (called from `
 // Task services: concrete + forwarded interface
 services.AddScoped<TaskQueryService>();
 services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
-// ... same pattern for all 7 task service interfaces
+// ... same pattern for all 7 task service interfaces + room, message, breakout, and agent location services
 ```
 
 All consumers (controllers, command handlers, other services) inject the interface. The concrete registration remains so that test DI setups that register the concrete type directly continue to work.
@@ -476,14 +476,18 @@ services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOr
 services.AddScoped<TaskAnalyticsService>();
 services.AddScoped<ITaskAnalyticsService>(sp => sp.GetRequiredService<TaskAnalyticsService>());
 
-// Other domain services
+// Other domain services — concrete + interface forwarding where extracted
 services.AddScoped<MessageService>();
+services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
 services.AddScoped<AgentLocationService>();
+services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
 services.AddScoped<PlanService>();
 services.AddScoped<CrashRecoveryService>();
 services.AddScoped<InitializationService>();
 services.AddScoped<BreakoutRoomService>();
+services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
 services.AddScoped<RoomService>();
+services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
 services.AddScoped<RoomSnapshotBuilder>();
 services.AddScoped<WorkspaceRoomService>();
 services.AddScoped<RoomLifecycleService>();
@@ -529,6 +533,7 @@ Each domain service depends on `AgentAcademyDbContext` (scoped) and the specific
 
 ## Revision History
 
+- **2026-04-15**: Extracted `IAgentLocationService` interface contract. Updated service table and DI registration for `IRoomService`, `IMessageService`, `IBreakoutRoomService`, `IAgentLocationService` — all now show forwarding pattern.
 - **2026-04-15**: Documented task service interface contracts (`Services/Contracts/`). Service table now shows Interface column; DI registration updated to forwarding pattern. Added `TaskSnapshotFactory`, `TaskDependencyService`, `TaskAnalyticsService`, `RoomArtifactTracker`, `ArtifactEvaluatorService`.
 - **2026-04-13**: Spec sync — documented `RoomSnapshotBuilder` (room snapshot assembly) and `WorkspaceRoomService` (workspace–room relationships) extracted from `RoomService`. Updated service table, source references, and DI registration. RoomService retains CRUD and phase transitions; snapshot building and workspace orchestration now in dedicated services.
 - **2026-04-12**: `WorkspaceRuntime` facade deleted — spec rewritten as "Domain Services Layer". All controllers and command handlers now inject focused services directly. Behavioral documentation preserved; source references updated to actual service files. `GetOverviewAsync` inlined in `SystemController`. No behavioral changes to rooms, messages, tasks, agents, breakouts, plans, or activity publishing.

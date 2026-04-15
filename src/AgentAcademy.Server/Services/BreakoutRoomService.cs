@@ -25,7 +25,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
     private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
     private readonly ITaskQueryService _taskQueries;
-    private readonly AgentLocationService _agentLocations;
+    private readonly IAgentLocationService _agentLocations;
 
     public BreakoutRoomService(
         AgentAcademyDbContext db,
@@ -34,7 +34,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
         ActivityPublisher activity,
         ConversationSessionService sessionService,
         ITaskQueryService taskQueries,
-        AgentLocationService agentLocations)
+        IAgentLocationService agentLocations)
     {
         _db = db;
         _logger = logger;

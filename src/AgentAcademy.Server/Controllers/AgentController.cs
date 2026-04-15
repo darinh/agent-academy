@@ -15,7 +15,7 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/agents")]
 public class AgentController : ControllerBase
 {
-    private readonly AgentLocationService _agentLocationService;
+    private readonly IAgentLocationService _agentLocationService;
     private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly IAgentExecutor _executor;
     private readonly IAgentCatalog _catalog;
@@ -23,7 +23,7 @@ public class AgentController : ControllerBase
     private readonly ILogger<AgentController> _logger;
 
     public AgentController(
-        AgentLocationService agentLocationService,
+        IAgentLocationService agentLocationService,
         IBreakoutRoomService breakoutRoomService,
         IAgentExecutor executor,
         IAgentCatalog catalog,
