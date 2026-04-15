@@ -32,7 +32,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
     private readonly IGitService _gitService;
-    private readonly WorktreeService _worktreeService;
+    private readonly IWorktreeService _worktreeService;
     private readonly AgentMemoryLoader _memoryLoader;
     private readonly IBreakoutCompletionService _completion;
     private readonly ILogger<BreakoutLifecycleService> _logger;
@@ -45,7 +45,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         IAgentExecutor executor,
         SpecManager specManager,
         IGitService gitService,
-        WorktreeService worktreeService,
+        IWorktreeService worktreeService,
         AgentMemoryLoader memoryLoader,
         IBreakoutCompletionService completion,
         ILogger<BreakoutLifecycleService> logger)

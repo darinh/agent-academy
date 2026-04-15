@@ -84,6 +84,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<GitService>();
         services.AddSingleton<IGitService>(sp => sp.GetRequiredService<GitService>());
         services.AddSingleton<WorktreeService>();
+        services.AddSingleton<IWorktreeService>(sp => sp.GetRequiredService<WorktreeService>());
         services.AddSingleton<GitHubService>(sp =>
             new GitHubService(
                 sp.GetRequiredService<ILogger<GitHubService>>(),

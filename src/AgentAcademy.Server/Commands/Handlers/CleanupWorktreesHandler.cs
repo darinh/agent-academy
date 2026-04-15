@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,7 @@ public sealed class CleanupWorktreesHandler : ICommandHandler
             };
         }
 
-        var worktreeService = context.Services.GetRequiredService<WorktreeService>();
+        var worktreeService = context.Services.GetRequiredService<IWorktreeService>();
         var db = context.Services.GetRequiredService<AgentAcademyDbContext>();
 
         var worktrees = worktreeService.GetActiveWorktrees();

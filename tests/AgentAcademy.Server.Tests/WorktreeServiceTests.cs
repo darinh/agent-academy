@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentAcademy.Server.Tests;
