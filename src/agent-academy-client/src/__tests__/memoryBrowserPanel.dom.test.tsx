@@ -11,15 +11,21 @@ vi.mock("../api", () => ({
   browseMemories: vi.fn(),
   getMemoryStats: vi.fn(),
   deleteMemory: vi.fn(),
+  exportMemories: vi.fn(),
+  importMemories: vi.fn(),
+  deleteExpiredMemories: vi.fn(),
 }));
 
 import MemoryBrowserPanel from "../MemoryBrowserPanel";
 import type { BrowseMemoriesResponse, MemoryStatsResponse, AgentDefinition } from "../api";
-import { browseMemories, getMemoryStats, deleteMemory } from "../api";
+import { browseMemories, getMemoryStats, deleteMemory, exportMemories, importMemories, deleteExpiredMemories } from "../api";
 
 const mockBrowse = vi.mocked(browseMemories);
 const mockStats = vi.mocked(getMemoryStats);
 const mockDelete = vi.mocked(deleteMemory);
+const mockExport = vi.mocked(exportMemories);
+const mockImport = vi.mocked(importMemories);
+const mockCleanup = vi.mocked(deleteExpiredMemories);
 
 function makeAgents(count = 2): AgentDefinition[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -377,6 +383,228 @@ describe("MemoryBrowserPanel", () => {
         // Should still show the fresh data, not the stale 5-item response
         expect(screen.getByText("fresh-unique-key")).toBeInTheDocument();
         expect(screen.queryByText("key-4")).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("export memories", () => {
+    it("shows export button", async () => {
+      await renderAndWaitForData();
+      expect(screen.getByLabelText("Export memories")).toBeInTheDocument();
+    });
+
+    it("calls exportMemories with selected agent", async () => {
+      mockExport.mockResolvedValueOnce({ count: 3, memories: [] });
+      await renderAndWaitForData();
+
+      const exportBtn = screen.getByLabelText("Export memories");
+      await act(async () => { fireEvent.click(exportBtn); });
+
+      await waitFor(() => {
+        expect(mockExport).toHaveBeenCalledWith("agent-1", undefined);
+      });
+    });
+
+    it("shows success message with export count", async () => {
+      mockExport.mockResolvedValueOnce({ count: 5, memories: [] });
+      // Mock URL.createObjectURL for blob download
+      globalThis.URL.createObjectURL = vi.fn(() => "blob:test");
+      globalThis.URL.revokeObjectURL = vi.fn();
+
+      await renderAndWaitForData();
+      const exportBtn = screen.getByLabelText("Export memories");
+      await act(async () => { fireEvent.click(exportBtn); });
+
+      await waitFor(() => {
+        expect(screen.getByText("Exported 5 memories")).toBeInTheDocument();
+      });
+    });
+
+    it("shows error message on export failure", async () => {
+      mockExport.mockRejectedValueOnce(new Error("Export failed"));
+      await renderAndWaitForData();
+
+      const exportBtn = screen.getByLabelText("Export memories");
+      await act(async () => { fireEvent.click(exportBtn); });
+
+      await waitFor(() => {
+        expect(screen.getByText("Export failed")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("import memories", () => {
+    it("shows import button", async () => {
+      await renderAndWaitForData();
+      expect(screen.getByLabelText("Import memories")).toBeInTheDocument();
+    });
+
+    it("has hidden file input for JSON", async () => {
+      await renderAndWaitForData();
+      const fileInput = document.querySelector('input[type="file"][accept=".json"]') as HTMLInputElement;
+      expect(fileInput).toBeInTheDocument();
+      expect(fileInput.style.display).toBe("none");
+    });
+
+    it("calls importMemories with parsed file contents", async () => {
+      mockImport.mockResolvedValueOnce({ created: 2, updated: 0, skipped: 0, total: 2, errors: null });
+      await renderAndWaitForData();
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const fileContent = JSON.stringify({
+        memories: [
+          { agentId: "agent-1", category: "test", key: "k1", value: "v1" },
+          { agentId: "agent-1", category: "test", key: "k2", value: "v2" },
+        ],
+      });
+      const file = new File([fileContent], "import.json", { type: "application/json" });
+
+      await act(async () => {
+        fireEvent.change(fileInput, { target: { files: [file] } });
+        // Allow file.text() to resolve
+        await new Promise((r) => setTimeout(r, 50));
+      });
+
+      await waitFor(() => {
+        expect(mockImport).toHaveBeenCalledWith([
+          { agentId: "agent-1", category: "test", key: "k1", value: "v1" },
+          { agentId: "agent-1", category: "test", key: "k2", value: "v2" },
+        ]);
+      });
+    });
+
+    it("shows success message after import", async () => {
+      mockImport.mockResolvedValueOnce({ created: 3, updated: 1, skipped: 0, total: 4, errors: null });
+      await renderAndWaitForData();
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File([JSON.stringify({ memories: [{ agentId: "a", category: "c", key: "k", value: "v" }] })], "test.json", { type: "application/json" });
+
+      await act(async () => {
+        fireEvent.change(fileInput, { target: { files: [file] } });
+        await new Promise((r) => setTimeout(r, 50));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Created 3, updated 1, skipped 0/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows error for empty import file", async () => {
+      await renderAndWaitForData();
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File([JSON.stringify({ memories: [] })], "empty.json", { type: "application/json" });
+
+      await act(async () => {
+        fireEvent.change(fileInput, { target: { files: [file] } });
+        await new Promise((r) => setTimeout(r, 50));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("No memories found in file")).toBeInTheDocument();
+      });
+    });
+
+    it("shows error on import API failure", async () => {
+      mockImport.mockRejectedValueOnce(new Error("Import failed"));
+      await renderAndWaitForData();
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File([JSON.stringify({ memories: [{ agentId: "a", category: "c", key: "k", value: "v" }] })], "test.json", { type: "application/json" });
+
+      await act(async () => {
+        fireEvent.change(fileInput, { target: { files: [file] } });
+        await new Promise((r) => setTimeout(r, 50));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Import failed")).toBeInTheDocument();
+      });
+    });
+
+    it("handles array-format import file (no wrapping object)", async () => {
+      mockImport.mockResolvedValueOnce({ created: 1, updated: 0, skipped: 0, total: 1, errors: null });
+      await renderAndWaitForData();
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File([JSON.stringify([{ agentId: "a", category: "c", key: "k", value: "v" }])], "array.json", { type: "application/json" });
+
+      await act(async () => {
+        fireEvent.change(fileInput, { target: { files: [file] } });
+        await new Promise((r) => setTimeout(r, 50));
+      });
+
+      await waitFor(() => {
+        expect(mockImport).toHaveBeenCalledWith([{ agentId: "a", category: "c", key: "k", value: "v" }]);
+      });
+    });
+  });
+
+  describe("cleanup expired memories", () => {
+    it("shows cleanup button when expired memories exist", async () => {
+      await renderAndWaitForData();
+      expect(screen.getByLabelText("Cleanup expired memories")).toBeInTheDocument();
+    });
+
+    it("hides cleanup button when no expired memories", async () => {
+      mockStats.mockImplementation(() => Promise.resolve({
+        ...makeStatsResponse(),
+        expiredMemories: 0,
+      }));
+      await renderAndWaitForData();
+      expect(screen.queryByLabelText("Cleanup expired memories")).not.toBeInTheDocument();
+    });
+
+    it("calls deleteExpiredMemories with selected agent", async () => {
+      mockCleanup.mockResolvedValueOnce({ removed: 3 });
+      await renderAndWaitForData();
+
+      const cleanupBtn = screen.getByLabelText("Cleanup expired memories");
+      await act(async () => { fireEvent.click(cleanupBtn); });
+
+      await waitFor(() => {
+        expect(mockCleanup).toHaveBeenCalledWith("agent-1");
+      });
+    });
+
+    it("shows success message with removed count", async () => {
+      mockCleanup.mockResolvedValueOnce({ removed: 2 });
+      await renderAndWaitForData();
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Cleanup expired memories"));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Removed 2 expired memories")).toBeInTheDocument();
+      });
+    });
+
+    it("shows error on cleanup failure", async () => {
+      mockCleanup.mockRejectedValueOnce(new Error("Cleanup failed"));
+      await renderAndWaitForData();
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Cleanup expired memories"));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Cleanup failed")).toBeInTheDocument();
+      });
+    });
+
+    it("refreshes data after successful cleanup", async () => {
+      mockCleanup.mockResolvedValueOnce({ removed: 1 });
+      await renderAndWaitForData();
+
+      const callsBefore = mockBrowse.mock.calls.length;
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Cleanup expired memories"));
+      });
+
+      await waitFor(() => {
+        expect(mockBrowse.mock.calls.length).toBeGreaterThan(callsBefore);
       });
     });
   });
