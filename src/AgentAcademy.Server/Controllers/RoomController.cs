@@ -22,7 +22,7 @@ public class RoomController : ControllerBase
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
     private readonly ILlmUsageTracker _usageTracker;
-    private readonly AgentErrorTracker _errorTracker;
+    private readonly IAgentErrorTracker _errorTracker;
     private readonly RoomArtifactTracker _artifactTracker;
     private readonly ArtifactEvaluatorService _evaluator;
     private readonly ILogger<RoomController> _logger;
@@ -39,7 +39,7 @@ public class RoomController : ControllerBase
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,
         ILlmUsageTracker usageTracker,
-        AgentErrorTracker errorTracker,
+        IAgentErrorTracker errorTracker,
         RoomArtifactTracker artifactTracker,
         ArtifactEvaluatorService evaluator,
         ILogger<RoomController> logger)

@@ -24,7 +24,7 @@ public class SystemController : ControllerBase
     private readonly IAgentCatalog _catalog;
     private readonly AgentAcademyDbContext _db;
     private readonly ILlmUsageTracker _usageTracker;
-    private readonly AgentErrorTracker _errorTracker;
+    private readonly IAgentErrorTracker _errorTracker;
     private readonly ILogger<SystemController> _logger;
 
     private static readonly DateTime StartedAt = DateTime.UtcNow;
@@ -38,7 +38,7 @@ public class SystemController : ControllerBase
         IAgentCatalog catalog,
         AgentAcademyDbContext db,
         ILlmUsageTracker usageTracker,
-        AgentErrorTracker errorTracker,
+        IAgentErrorTracker errorTracker,
         ILogger<SystemController> logger)
     {
         _roomService = roomService;

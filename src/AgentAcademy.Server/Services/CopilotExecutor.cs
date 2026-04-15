@@ -50,7 +50,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly NotificationManager _notificationManager;
     private readonly IAgentToolRegistry _toolRegistry;
-    private readonly AgentErrorTracker _errorTracker;
+    private readonly IAgentErrorTracker _errorTracker;
     private readonly AgentQuotaService _quotaService;
     private readonly IAgentCatalog _catalog;
     private readonly CopilotCircuitBreaker _circuitBreaker = new();
@@ -68,7 +68,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         IServiceScopeFactory scopeFactory,
         NotificationManager notificationManager,
         IAgentToolRegistry toolRegistry,
-        AgentErrorTracker errorTracker,
+        IAgentErrorTracker errorTracker,
         AgentQuotaService quotaService,
         IAgentCatalog catalog)
     {

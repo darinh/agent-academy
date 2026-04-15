@@ -51,6 +51,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<LlmUsageTracker>();
         services.AddSingleton<ILlmUsageTracker>(sp => sp.GetRequiredService<LlmUsageTracker>());
         services.AddSingleton<AgentErrorTracker>();
+        services.AddSingleton<IAgentErrorTracker>(sp => sp.GetRequiredService<AgentErrorTracker>());
         services.AddSingleton<AgentQuotaService>();
         services.AddSingleton<AgentAnalyticsService>();
         return services;
