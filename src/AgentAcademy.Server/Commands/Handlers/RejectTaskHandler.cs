@@ -12,9 +12,9 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class RejectTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
 
-    public RejectTaskHandler(GitService gitService)
+    public RejectTaskHandler(IGitService gitService)
     {
         _gitService = gitService;
     }

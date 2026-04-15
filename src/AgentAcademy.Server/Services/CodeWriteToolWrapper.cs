@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -185,7 +186,7 @@ internal sealed class CodeWriteToolWrapper
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var gitService = scope.ServiceProvider.GetRequiredService<GitService>();
+            var gitService = scope.ServiceProvider.GetRequiredService<IGitService>();
 
             var commitSha = await gitService.CommitAsync(message, _gitIdentity);
 
@@ -233,7 +234,7 @@ internal sealed class CodeWriteToolWrapper
     {
         try
         {
-            var gitService = scope.ServiceProvider.GetRequiredService<GitService>();
+            var gitService = scope.ServiceProvider.GetRequiredService<IGitService>();
             var tracker = scope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
             var files = await gitService.GetFilesInCommitAsync(commitSha);
             await tracker.RecordCommitAsync(_roomId, _agentId, commitSha, files);

@@ -2,6 +2,7 @@ using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -12,11 +13,11 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class CommitChangesHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CommitChangesHandler> _logger;
 
-    public CommitChangesHandler(GitService gitService, IServiceScopeFactory scopeFactory, ILogger<CommitChangesHandler> logger)
+    public CommitChangesHandler(IGitService gitService, IServiceScopeFactory scopeFactory, ILogger<CommitChangesHandler> logger)
     {
         _gitService = gitService;
         _scopeFactory = scopeFactory;

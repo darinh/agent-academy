@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 
 namespace AgentAcademy.Server.Services;
@@ -89,11 +90,6 @@ public partial class GitService
     }
 
     // ── Rebase & Conflict Detection ─────────────────────────────
-
-    /// <summary>
-    /// Result of a conflict detection check.
-    /// </summary>
-    public record MergeConflictResult(bool HasConflicts, IReadOnlyList<string> ConflictingFiles);
 
     /// <summary>
     /// Performs a dry-run merge to detect conflicts between develop and a feature branch
