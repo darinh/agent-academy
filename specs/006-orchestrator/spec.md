@@ -222,6 +222,7 @@ builder.Services.AddSingleton<BreakoutLifecycleService>();
 builder.Services.AddSingleton<BreakoutCompletionService>();
 builder.Services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
 builder.Services.AddSingleton<AgentTurnRunner>();
+builder.Services.AddSingleton<IAgentTurnRunner>(sp => sp.GetRequiredService<AgentTurnRunner>());
 builder.Services.AddSingleton<TaskAssignmentHandler>();
 builder.Services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
 builder.Services.AddSingleton<ConversationRoundRunner>();
@@ -232,7 +233,7 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 builder.Services.AddScoped<RoundContextLoader>();
 ```
 
-`AgentOrchestrator` and its extracted singleton services are registered in `AgentPipelineExtensions`. `RoundContextLoader` is scoped (resolved per-round via `IServiceScopeFactory`). Per-turn agent execution is delegated to `AgentTurnRunner`. Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`, consumed through `IBreakoutCompletionService`. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
+`AgentOrchestrator` and its extracted singleton services are registered in `AgentPipelineExtensions`. `RoundContextLoader` is scoped (resolved per-round via `IServiceScopeFactory`). Per-turn agent execution is delegated to `AgentTurnRunner` (consumed via `IAgentTurnRunner`). Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`, consumed through `IBreakoutCompletionService`. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
 
 ### Dependencies
 
@@ -252,7 +253,7 @@ builder.Services.AddScoped<RoundContextLoader>();
 |------------|----------|---------|
 | `IServiceScopeFactory` | Singleton | Creates fresh scoped container per round |
 | `IAgentCatalog` | Singleton | Agent definitions (planner lookup, idle agent enumeration) |
-| `AgentTurnRunner` | Singleton | Per-turn agent execution (config, memory, prompt, LLM, commands) |
+| `IAgentTurnRunner` | Singleton | Per-turn agent execution (config, memory, prompt, LLM, commands) |
 | `ILogger<ConversationRoundRunner>` | Singleton | Structured logging |
 
 **DirectMessageRouter (singleton)**:
@@ -261,7 +262,7 @@ builder.Services.AddScoped<RoundContextLoader>();
 |------------|----------|---------|
 | `IServiceScopeFactory` | Singleton | Creates scoped container per DM routing |
 | `IAgentCatalog` | Singleton | Catalog lookup for recipient agent |
-| `AgentTurnRunner` | Singleton | Runs targeted agent turn |
+| `IAgentTurnRunner` | Singleton | Runs targeted agent turn |
 | `ILogger<DirectMessageRouter>` | Singleton | Structured logging |
 
 **RoundContextLoader (scoped)**:
@@ -377,6 +378,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-15 | Extracted `IAgentTurnRunner` interface contract. Updated DI registration (concrete + forwarding), dependency tables for `ConversationRoundRunner` and `DirectMessageRouter` to show `IAgentTurnRunner`. | refactor/agent-turn-runner-contract |
 | 2026-04-15 | Extracted `IBreakoutCompletionService` contract from `BreakoutCompletionService`. Updated DI registration and dependency table to show interface-forwarded consumption in `BreakoutLifecycleService`. | service-contract-stabilization |
 | 2026-04-15 | Orchestrator decomposition: documented `ConversationRoundRunner` (conversation round execution), `DirectMessageRouter` (DM routing), and `RoundContextLoader` (shared per-round context). Updated `AgentOrchestrator` to reflect its reduced role as a pure queue manager. Updated DI registration, dependency tables, constants ownership, and source references. | spec-006-decomposition-update |
 | 2026-04-14 | Conversation kickoff on fresh start: `WebApplicationExtensions.InitializeAsync()` step 7 posts a system kickoff message and triggers orchestration when the main room has no prior user/agent messages. Idempotent — skips on restart if agents have already spoken. Skips during crash recovery. | platform-review |
