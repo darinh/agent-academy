@@ -183,4 +183,16 @@ public sealed class ServiceRegistrationWiringTests
             sd.ServiceType == typeof(ITaskAssignmentHandler)
             && sd.Lifetime == ServiceLifetime.Singleton);
     }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IBreakoutCompletionService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IBreakoutCompletionService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
 }

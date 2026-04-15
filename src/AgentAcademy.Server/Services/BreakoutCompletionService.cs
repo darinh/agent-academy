@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// cycle, handling review rejection (fix loop), and finalizing breakouts.
 /// Also exposes agent execution helpers shared with <see cref="BreakoutLifecycleService"/>.
 /// </summary>
-public sealed class BreakoutCompletionService
+public sealed class BreakoutCompletionService : IBreakoutCompletionService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
@@ -41,12 +41,14 @@ public sealed class BreakoutCompletionService
         _logger = logger;
     }
 
-    /// <summary>Volatile flag shared with the lifecycle service to stop processing.</summary>
-    internal volatile bool Stopped;
+    private volatile bool _stopped;
+
+    /// <summary>Signals completion/fix-loop processing to stop.</summary>
+    public void Stop() => _stopped = true;
 
     // ── AGENT EXECUTION HELPERS ────────────────────────────────
 
-    internal async Task<string> RunAgentAsync(
+    public async Task<string> RunAgentAsync(
         AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)
     {
         try
@@ -67,7 +69,7 @@ public sealed class BreakoutCompletionService
         }
     }
 
-    internal async Task<CommandPipelineResult> ProcessCommandsAsync(
+    public async Task<CommandPipelineResult> ProcessCommandsAsync(
         AgentDefinition agent, string responseText, string roomId, string? workingDirectory = null)
     {
         try
@@ -85,7 +87,7 @@ public sealed class BreakoutCompletionService
 
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
 
-    internal async Task HandleBreakoutCompleteAsync(
+    public async Task HandleBreakoutCompleteAsync(
         IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         ITaskItemService taskItemService, ITaskQueryService taskQueryService,
         IAgentLocationService agentLocationService, IRoomService roomService,
@@ -239,7 +241,7 @@ public sealed class BreakoutCompletionService
 
         for (var round = 1; ; round++)
         {
-            if (Stopped) break;
+            if (_stopped) break;
             var updatedBr = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
             if (updatedBr is null || updatedBr.Status != RoomStatus.Active) break;
 

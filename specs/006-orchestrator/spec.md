@@ -220,6 +220,7 @@ Agent roles map to `MessageKind` values (via `AgentResponseParser.InferMessageKi
 builder.Services.AddSingleton<AgentMemoryLoader>();
 builder.Services.AddSingleton<BreakoutLifecycleService>();
 builder.Services.AddSingleton<BreakoutCompletionService>();
+builder.Services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
 builder.Services.AddSingleton<AgentTurnRunner>();
 builder.Services.AddSingleton<TaskAssignmentHandler>();
 builder.Services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
@@ -231,7 +232,7 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 builder.Services.AddScoped<RoundContextLoader>();
 ```
 
-`AgentOrchestrator` and its extracted singleton services are registered in `AgentPipelineExtensions`. `RoundContextLoader` is scoped (resolved per-round via `IServiceScopeFactory`). Per-turn agent execution is delegated to `AgentTurnRunner`. Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
+`AgentOrchestrator` and its extracted singleton services are registered in `AgentPipelineExtensions`. `RoundContextLoader` is scoped (resolved per-round via `IServiceScopeFactory`). Per-turn agent execution is delegated to `AgentTurnRunner`. Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`, consumed through `IBreakoutCompletionService`. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
 
 ### Dependencies
 
@@ -303,7 +304,7 @@ builder.Services.AddScoped<RoundContextLoader>();
 | Dependency | Lifetime | Purpose |
 |------------|----------|---------|
 | `IServiceScopeFactory` | Singleton | Creates scoped DB contexts per round |
-| `BreakoutCompletionService` | Singleton | Post-loop completion and agent execution |
+| `IBreakoutCompletionService` | Singleton | Post-loop completion and agent execution |
 | `GitService` | Singleton | Manages task branch checkout per round |
 | `WorktreeService` | Singleton | Manages worktree lifecycle |
 | `ILogger<BreakoutLifecycleService>` | Singleton | Structured logging |
@@ -376,6 +377,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-15 | Extracted `IBreakoutCompletionService` contract from `BreakoutCompletionService`. Updated DI registration and dependency table to show interface-forwarded consumption in `BreakoutLifecycleService`. | service-contract-stabilization |
 | 2026-04-15 | Orchestrator decomposition: documented `ConversationRoundRunner` (conversation round execution), `DirectMessageRouter` (DM routing), and `RoundContextLoader` (shared per-round context). Updated `AgentOrchestrator` to reflect its reduced role as a pure queue manager. Updated DI registration, dependency tables, constants ownership, and source references. | spec-006-decomposition-update |
 | 2026-04-14 | Conversation kickoff on fresh start: `WebApplicationExtensions.InitializeAsync()` step 7 posts a system kickoff message and triggers orchestration when the main room has no prior user/agent messages. Idempotent — skips on restart if agents have already spoken. Skips during crash recovery. | platform-review |
 | 2026-04-13 | Spec sync — documented `BreakoutCompletionService` (post-loop completion, review cycle) and `AgentTurnRunner` (per-turn execution) extracted from orchestrator services. Updated DI registration, dependency tables, and source references. | spec-sync-decomposition |
