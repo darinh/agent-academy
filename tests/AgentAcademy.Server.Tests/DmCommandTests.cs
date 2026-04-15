@@ -106,6 +106,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
 
         // Real NotificationManager with no providers (SendAgentQuestionAsync returns false)
         services.AddSingleton<NotificationManager>();

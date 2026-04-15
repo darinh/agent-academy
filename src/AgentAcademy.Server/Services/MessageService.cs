@@ -25,7 +25,7 @@ public sealed class MessageService : IMessageService
     private readonly ILogger<MessageService> _logger;
     private readonly IAgentCatalog _catalog;
     private readonly IActivityPublisher _activity;
-    private readonly ConversationSessionService _sessionService;
+    private readonly IConversationSessionService _sessionService;
     private readonly MessageBroadcaster _messageBroadcaster;
 
     public MessageService(
@@ -33,7 +33,7 @@ public sealed class MessageService : IMessageService
         ILogger<MessageService> logger,
         IAgentCatalog catalog,
         IActivityPublisher activity,
-        ConversationSessionService sessionService,
+        IConversationSessionService sessionService,
         MessageBroadcaster messageBroadcaster)
     {
         _db = db;

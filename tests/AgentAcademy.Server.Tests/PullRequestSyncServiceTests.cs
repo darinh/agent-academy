@@ -122,6 +122,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
         sc.AddScoped<ConversationSessionService>();
+            sc.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         sc.AddScoped<TaskDependencyService>();
         sc.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         sc.AddScoped<TaskQueryService>();

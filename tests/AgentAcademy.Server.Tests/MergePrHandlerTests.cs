@@ -107,6 +107,7 @@ public class MergePrHandlerTests : IDisposable
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(Substitute.For<GitService>(NullLogger<GitService>.Instance, "/tmp", "git"));
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();

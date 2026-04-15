@@ -23,7 +23,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
     private readonly ILogger<BreakoutRoomService> _logger;
     private readonly IAgentCatalog _catalog;
     private readonly IActivityPublisher _activity;
-    private readonly ConversationSessionService _sessionService;
+    private readonly IConversationSessionService _sessionService;
     private readonly ITaskQueryService _taskQueries;
     private readonly IAgentLocationService _agentLocations;
 
@@ -32,7 +32,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
         ILogger<BreakoutRoomService> logger,
         IAgentCatalog catalog,
         IActivityPublisher activity,
-        ConversationSessionService sessionService,
+        IConversationSessionService sessionService,
         ITaskQueryService taskQueries,
         IAgentLocationService agentLocations)
     {

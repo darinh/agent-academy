@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ namespace AgentAcademy.Server.Services;
 /// SDK sessions are invalidated at rotation boundaries to reset
 /// accumulated context.
 /// </summary>
-public sealed class ConversationSessionService
+public sealed class ConversationSessionService : IConversationSessionService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly SystemSettingsService _settings;

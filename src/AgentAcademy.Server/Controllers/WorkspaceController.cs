@@ -21,7 +21,7 @@ public class WorkspaceController : ControllerBase
     private readonly ITaskQueryService _taskQueries;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
-    private readonly ConversationSessionService _sessionService;
+    private readonly IConversationSessionService _sessionService;
     private readonly ILogger<WorkspaceController> _logger;
 
     public WorkspaceController(
@@ -33,7 +33,7 @@ public class WorkspaceController : ControllerBase
         ITaskQueryService taskQueries,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
-        ConversationSessionService sessionService,
+        IConversationSessionService sessionService,
         ILogger<WorkspaceController> logger)
     {
         _scanner = scanner;

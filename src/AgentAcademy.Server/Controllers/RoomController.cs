@@ -345,7 +345,7 @@ public class RoomController : ControllerBase
     [HttpPost("{roomId}/sessions")]
     public async Task<ActionResult<ConversationSessionSnapshot>> CreateSession(
         string roomId,
-        [FromServices] ConversationSessionService sessionService)
+        [FromServices] IConversationSessionService sessionService)
     {
         try
         {

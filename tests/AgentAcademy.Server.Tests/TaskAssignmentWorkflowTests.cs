@@ -102,6 +102,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<ConversationSessionQueryService>();
         services.AddScoped<AgentConfigService>();
         services.AddScoped<IAgentConfigService>(sp => sp.GetRequiredService<AgentConfigService>());
