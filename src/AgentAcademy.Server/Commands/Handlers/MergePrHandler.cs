@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -71,7 +72,7 @@ public sealed class MergePrHandler : ICommandHandler
         var messages = context.Services.GetRequiredService<MessageService>();
         var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
         var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Validate task exists
         var task = await taskQueries.GetTaskAsync(taskId);

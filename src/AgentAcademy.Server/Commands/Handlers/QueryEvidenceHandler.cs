@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -43,7 +44,7 @@ public sealed class QueryEvidenceHandler : ICommandHandler
             phase = parsed;
         }
 
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try
         {

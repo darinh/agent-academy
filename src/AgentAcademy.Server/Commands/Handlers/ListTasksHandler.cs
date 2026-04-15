@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -14,7 +15,7 @@ public sealed class ListTasksHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
         var tasks = await taskQueries.GetTasksAsync();
 
         // Apply optional filters from args

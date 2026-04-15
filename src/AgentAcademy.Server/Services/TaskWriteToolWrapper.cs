@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -129,7 +130,7 @@ internal sealed class TaskWriteToolWrapper
             return $"Error: Invalid status '{status}'. Allowed: {string.Join(", ", AllowedTaskStatuses.Order())}";
 
         using var scope = _scopeFactory.CreateScope();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
 
         try

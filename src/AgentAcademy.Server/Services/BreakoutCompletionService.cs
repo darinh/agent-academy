@@ -4,6 +4,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -86,7 +87,7 @@ public sealed class BreakoutCompletionService
 
     internal async Task HandleBreakoutCompleteAsync(
         BreakoutRoomService breakoutRoomService, MessageService messageService,
-        TaskItemService taskItemService, TaskQueryService taskQueryService,
+        TaskItemService taskItemService, ITaskQueryService taskQueryService,
         AgentLocationService agentLocationService, RoomService roomService,
         ActivityPublisher activity, AgentConfigService configService,
         string breakoutRoomId, string parentRoomId, string? worktreePath = null)
@@ -212,7 +213,7 @@ public sealed class BreakoutCompletionService
 
     private async Task HandleReviewRejectionAsync(
         BreakoutRoomService breakoutRoomService, MessageService messageService,
-        TaskItemService taskItemService, TaskQueryService taskQueryService,
+        TaskItemService taskItemService, ITaskQueryService taskQueryService,
         AgentLocationService agentLocationService, RoomService roomService,
         string breakoutRoomId, string parentRoomId,
         AgentDefinition agent, BreakoutRoom br, string? worktreePath = null)

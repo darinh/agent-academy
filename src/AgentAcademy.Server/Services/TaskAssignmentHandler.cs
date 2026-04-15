@@ -93,7 +93,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
         var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
-        var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var planService = scope.ServiceProvider.GetRequiredService<PlanService>();
 
         var agent = _catalog.Agents.FirstOrDefault(a =>
@@ -199,7 +199,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
         string breakoutRoomId, string? taskId, TaskItem? taskItem,
         string? taskBranch, string? worktreePath, string roomId, string title,
         BreakoutRoomService breakoutRoomService, MessageService messageService,
-        TaskQueryService taskQueryService, TaskItemService taskItemService)
+        ITaskQueryService taskQueryService, TaskItemService taskItemService)
     {
         try
         {

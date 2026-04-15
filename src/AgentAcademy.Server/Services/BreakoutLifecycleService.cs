@@ -4,6 +4,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -120,7 +121,7 @@ public sealed class BreakoutLifecycleService
         var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
-        var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
@@ -319,7 +320,7 @@ public sealed class BreakoutLifecycleService
     private async Task HandleStuckDetectedAsync(
         BreakoutRoomService breakoutRoomService,
         MessageService messageService,
-        TaskQueryService taskQueryService,
+        ITaskQueryService taskQueryService,
         string breakoutRoomId, string parentRoomId,
         AgentDefinition agent, string reason)
     {
@@ -365,7 +366,7 @@ public sealed class BreakoutLifecycleService
             using var scope = _scopeFactory.CreateScope();
             var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
             var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-            var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+            var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
             var breakoutName = (await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;
 

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services.Contracts;
@@ -58,7 +57,7 @@ public sealed class TaskQueryService : ITaskQueryService
         return entities.Select(e =>
         {
             depMap.TryGetValue(e.Id, out var deps);
-            return BuildTaskSnapshot(e, dependsOnIds: deps.DependsOn, blockingIds: deps.Blocking);
+            return TaskSnapshotFactory.BuildTaskSnapshot(e, dependsOnIds: deps.DependsOn, blockingIds: deps.Blocking);
         }).ToList();
     }
 
@@ -72,7 +71,7 @@ public sealed class TaskQueryService : ITaskQueryService
         var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == taskId);
         var depMap = await _dependencies.GetBatchDependencyIdsAsync([taskId]);
         depMap.TryGetValue(taskId, out var deps);
-        return BuildTaskSnapshot(entity, commentCount, deps.DependsOn, deps.Blocking);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity, commentCount, deps.DependsOn, deps.Blocking);
     }
 
     /// <summary>
@@ -86,7 +85,7 @@ public sealed class TaskQueryService : ITaskQueryService
             .FirstOrDefaultAsync();
         if (entity is null) return null;
         var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == entity.Id);
-        return BuildTaskSnapshot(entity, commentCount);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity, commentCount);
     }
 
     /// <summary>
@@ -105,7 +104,7 @@ public sealed class TaskQueryService : ITaskQueryService
             .OrderBy(t => t.CreatedAt)
             .ToListAsync();
 
-        return entities.Select(e => BuildTaskSnapshot(e)).ToList();
+        return entities.Select(e => TaskSnapshotFactory.BuildTaskSnapshot(e)).ToList();
     }
 
     /// <summary>
@@ -142,7 +141,7 @@ public sealed class TaskQueryService : ITaskQueryService
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
 
-        return comments.Select(BuildTaskComment).ToList();
+        return comments.Select(TaskSnapshotFactory.BuildTaskComment).ToList();
     }
 
     /// <summary>
@@ -168,7 +167,7 @@ public sealed class TaskQueryService : ITaskQueryService
             query = query.Where(e => e.Phase == phase.Value.ToString());
 
         var entities = await query.OrderBy(e => e.CreatedAt).ToListAsync();
-        return entities.Select(BuildTaskEvidence).ToList();
+        return entities.Select(TaskSnapshotFactory.BuildTaskEvidence).ToList();
     }
 
     /// <summary>
@@ -184,7 +183,7 @@ public sealed class TaskQueryService : ITaskQueryService
             .OrderBy(l => l.SpecSectionId)
             .ToListAsync();
 
-        return links.Select(BuildSpecTaskLink).ToList();
+        return links.Select(TaskSnapshotFactory.BuildSpecTaskLink).ToList();
     }
 
     /// <summary>
@@ -197,7 +196,7 @@ public sealed class TaskQueryService : ITaskQueryService
             .OrderByDescending(l => l.CreatedAt)
             .ToListAsync();
 
-        return links.Select(BuildSpecTaskLink).ToList();
+        return links.Select(TaskSnapshotFactory.BuildSpecTaskLink).ToList();
     }
 
     /// <summary>
@@ -220,7 +219,7 @@ public sealed class TaskQueryService : ITaskQueryService
         foreach (var entity in unlinkedTasks)
         {
             var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == entity.Id);
-            snapshots.Add(BuildTaskSnapshot(entity, commentCount));
+            snapshots.Add(TaskSnapshotFactory.BuildTaskSnapshot(entity, commentCount));
         }
         return snapshots;
     }
@@ -249,7 +248,7 @@ public sealed class TaskQueryService : ITaskQueryService
 
         entity.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -285,7 +284,7 @@ public sealed class TaskQueryService : ITaskQueryService
             entity.CompletedAt = null;
 
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -299,7 +298,7 @@ public sealed class TaskQueryService : ITaskQueryService
         entity.Priority = (int)priority;
         entity.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -320,11 +319,11 @@ public sealed class TaskQueryService : ITaskQueryService
             entity.BranchName = branchName;
             entity.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
-            return BuildTaskSnapshot(entity);
+            return TaskSnapshotFactory.BuildTaskSnapshot(entity);
         }
 
         if (string.Equals(entity.BranchName, branchName, StringComparison.Ordinal))
-            return BuildTaskSnapshot(entity);
+            return TaskSnapshotFactory.BuildTaskSnapshot(entity);
 
         _logger.LogError(
             "Refusing to reassign branch for task {TaskId}: existing {ExistingBranch}, attempted {AttemptedBranch}",
@@ -348,7 +347,7 @@ public sealed class TaskQueryService : ITaskQueryService
         entity.PullRequestStatus = status.ToString();
         entity.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -471,99 +470,4 @@ public sealed class TaskQueryService : ITaskQueryService
             .FirstOrDefaultAsync();
     }
 
-    // ── Snapshot Builders ───────────────────────────────────────
-
-    internal static TaskSnapshot BuildTaskSnapshot(
-        TaskEntity entity,
-        int commentCount = 0,
-        List<string>? dependsOnIds = null,
-        List<string>? blockingIds = null)
-    {
-        return new TaskSnapshot(
-            Id: entity.Id,
-            Title: entity.Title,
-            Description: entity.Description,
-            SuccessCriteria: entity.SuccessCriteria,
-            Status: Enum.Parse<Shared.Models.TaskStatus>(entity.Status),
-            Type: Enum.TryParse<TaskType>(entity.Type, out var tt) ? tt : TaskType.Feature,
-            CurrentPhase: Enum.Parse<CollaborationPhase>(entity.CurrentPhase),
-            CurrentPlan: entity.CurrentPlan,
-            ValidationStatus: Enum.Parse<WorkstreamStatus>(entity.ValidationStatus),
-            ValidationSummary: entity.ValidationSummary,
-            ImplementationStatus: Enum.Parse<WorkstreamStatus>(entity.ImplementationStatus),
-            ImplementationSummary: entity.ImplementationSummary,
-            PreferredRoles: JsonSerializer.Deserialize<List<string>>(entity.PreferredRoles) ?? [],
-            CreatedAt: entity.CreatedAt,
-            UpdatedAt: entity.UpdatedAt,
-            Size: string.IsNullOrEmpty(entity.Size) ? null : Enum.Parse<TaskSize>(entity.Size),
-            StartedAt: entity.StartedAt,
-            CompletedAt: entity.CompletedAt,
-            AssignedAgentId: entity.AssignedAgentId,
-            AssignedAgentName: entity.AssignedAgentName,
-            UsedFleet: entity.UsedFleet,
-            FleetModels: JsonSerializer.Deserialize<List<string>>(entity.FleetModels) ?? [],
-            BranchName: entity.BranchName,
-            PullRequestUrl: entity.PullRequestUrl,
-            PullRequestNumber: entity.PullRequestNumber,
-            PullRequestStatus: string.IsNullOrEmpty(entity.PullRequestStatus) ? null : Enum.Parse<PullRequestStatus>(entity.PullRequestStatus),
-            ReviewerAgentId: entity.ReviewerAgentId,
-            ReviewRounds: entity.ReviewRounds,
-            TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
-            CommitCount: entity.CommitCount,
-            MergeCommitSha: entity.MergeCommitSha,
-            CommentCount: commentCount,
-            WorkspacePath: entity.WorkspacePath,
-            SprintId: entity.SprintId,
-            DependsOnTaskIds: dependsOnIds,
-            BlockingTaskIds: blockingIds,
-            Priority: Enum.IsDefined(typeof(TaskPriority), entity.Priority)
-                ? (TaskPriority)entity.Priority
-                : TaskPriority.Medium
-        );
-    }
-
-    internal static TaskComment BuildTaskComment(TaskCommentEntity entity)
-    {
-        return new TaskComment(
-            Id: entity.Id,
-            TaskId: entity.TaskId,
-            AgentId: entity.AgentId,
-            AgentName: entity.AgentName,
-            CommentType: Enum.TryParse<TaskCommentType>(entity.CommentType, out var ct) ? ct : TaskCommentType.Comment,
-            Content: entity.Content,
-            CreatedAt: entity.CreatedAt
-        );
-    }
-
-    internal static TaskEvidence BuildTaskEvidence(TaskEvidenceEntity entity)
-    {
-        return new TaskEvidence(
-            Id: entity.Id,
-            TaskId: entity.TaskId,
-            Phase: Enum.TryParse<EvidencePhase>(entity.Phase, out var p) ? p : EvidencePhase.After,
-            CheckName: entity.CheckName,
-            Tool: entity.Tool,
-            Command: entity.Command,
-            ExitCode: entity.ExitCode,
-            OutputSnippet: entity.OutputSnippet,
-            Passed: entity.Passed,
-            AgentId: entity.AgentId,
-            AgentName: entity.AgentName,
-            CreatedAt: entity.CreatedAt
-        );
-    }
-
-    internal static SpecTaskLink BuildSpecTaskLink(SpecTaskLinkEntity entity)
-    {
-        return new SpecTaskLink(
-            Id: entity.Id,
-            TaskId: entity.TaskId,
-            SpecSectionId: entity.SpecSectionId,
-            LinkType: Enum.TryParse<SpecLinkType>(entity.LinkType, out var lt) ? lt : SpecLinkType.Implements,
-            LinkedByAgentId: entity.LinkedByAgentId,
-            LinkedByAgentName: entity.LinkedByAgentName,
-            Note: entity.Note,
-            CreatedAt: entity.CreatedAt
-        );
-    }
 }

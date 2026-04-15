@@ -68,7 +68,7 @@ public sealed partial class TaskLifecycleService
                 $"{agentName} updated spec link: {specSectionId} → {task.Title}");
             await _db.SaveChangesAsync();
 
-            return TaskQueryService.BuildSpecTaskLink(existing);
+            return TaskSnapshotFactory.BuildSpecTaskLink(existing);
         }
 
         var entity = new SpecTaskLinkEntity
@@ -88,6 +88,6 @@ public sealed partial class TaskLifecycleService
             $"{agentName} linked spec {specSectionId} to task: {Truncate(task.Title, 60)}");
         await _db.SaveChangesAsync();
 
-        return TaskQueryService.BuildSpecTaskLink(entity);
+        return TaskSnapshotFactory.BuildSpecTaskLink(entity);
     }
 }

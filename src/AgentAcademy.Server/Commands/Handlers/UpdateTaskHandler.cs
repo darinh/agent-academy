@@ -2,6 +2,7 @@ using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -55,7 +56,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
         }
 
         var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try
         {

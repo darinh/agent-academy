@@ -4,6 +4,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -110,7 +111,7 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: list_tasks (status={Status})", status);
 
         using var scope = _scopeFactory.CreateScope();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var tasks = await taskQueries.GetTasksAsync();
 
         if (!string.IsNullOrWhiteSpace(status) &&

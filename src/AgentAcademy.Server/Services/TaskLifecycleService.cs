@@ -78,7 +78,7 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
             $"{entity.AssignedAgentName} claimed task: {Truncate(entity.Title, 80)}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -106,7 +106,7 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
             $"{releasedName} released task: {Truncate(entity.Title, 80)}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -130,7 +130,7 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
             $"PR #{entity.PullRequestNumber} status changed: {oldStatus} → {newStatus}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     // ── Task Comments ──────────────────────────────────────────
@@ -162,7 +162,7 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
 
         await _db.SaveChangesAsync();
 
-        return TaskQueryService.BuildTaskComment(comment);
+        return TaskSnapshotFactory.BuildTaskComment(comment);
     }
 
     // ── Task Create / Complete / Reject ────────────────────────
@@ -312,7 +312,7 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
         }
 
         await _db.SaveChangesAsync();
-        return (TaskQueryService.BuildTaskSnapshot(entity), entity.RoomId);
+        return (TaskSnapshotFactory.BuildTaskSnapshot(entity), entity.RoomId);
     }
 
     /// <summary>

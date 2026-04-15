@@ -86,7 +86,7 @@ public class TaskPriorityTests : IDisposable
         _db.Tasks.Add(entity);
         await _db.SaveChangesAsync();
 
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
 
         Assert.Equal(expected, snapshot.Priority);
     }
@@ -96,7 +96,7 @@ public class TaskPriorityTests : IDisposable
     {
         var entity = CreateTask("t-invalid", "Invalid", priority: 99);
 
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
 
         Assert.Equal(TaskPriority.Medium, snapshot.Priority);
     }

@@ -17,7 +17,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly TaskLifecycleService _taskLifecycle;
-    private readonly TaskQueryService _taskQueries;
+    private readonly ITaskQueryService _taskQueries;
     private readonly RoomService _rooms;
     private readonly RoomSnapshotBuilder _snapshots;
     private readonly RoomLifecycleService _roomLifecycle;
@@ -33,7 +33,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         IAgentCatalog catalog,
         ActivityPublisher activity,
         TaskLifecycleService taskLifecycle,
-        TaskQueryService taskQueries,
+        ITaskQueryService taskQueries,
         RoomService rooms,
         RoomSnapshotBuilder snapshots,
         RoomLifecycleService roomLifecycle,

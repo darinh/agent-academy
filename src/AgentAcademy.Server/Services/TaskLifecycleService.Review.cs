@@ -44,7 +44,7 @@ public sealed partial class TaskLifecycleService
             $"{reviewerName} approved task: {Truncate(entity.Title, 80)}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -84,7 +84,7 @@ public sealed partial class TaskLifecycleService
             $"{reviewerName} requested changes on task: {Truncate(entity.Title, 80)}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -139,7 +139,7 @@ public sealed partial class TaskLifecycleService
         // performs room/breakout reopen and saves everything in one atomic commit.
 
         return new RejectTaskResult(
-            Snapshot: TaskQueryService.BuildTaskSnapshot(entity),
+            Snapshot: TaskSnapshotFactory.BuildTaskSnapshot(entity),
             RoomId: entity.RoomId,
             TaskId: taskId,
             ReviewerName: reviewerName);
