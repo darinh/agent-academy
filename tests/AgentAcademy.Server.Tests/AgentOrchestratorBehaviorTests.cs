@@ -90,7 +90,9 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         var __broadcaster = new ActivityBroadcaster();
         services.AddSingleton(__broadcaster);
         services.AddSingleton<IActivityBroadcaster>(__broadcaster);
-        services.AddSingleton(new MessageBroadcaster());
+        var msgBroadcaster = new MessageBroadcaster();
+        services.AddSingleton(msgBroadcaster);
+        services.AddSingleton<IMessageBroadcaster>(msgBroadcaster);
         services.AddSingleton<IAgentExecutor>(_executor);
         services.AddSingleton(new SpecManager(
             specsDir: Path.Combine(Path.GetTempPath(), $"orchestrator-test-specs-{Guid.NewGuid()}"),

@@ -19,7 +19,7 @@ public class RoomController : ControllerBase
     private readonly IRoomService _roomService;
     private readonly IAgentLocationService _agentLocationService;
     private readonly IMessageService _messageService;
-    private readonly MessageBroadcaster _messageBroadcaster;
+    private readonly IMessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
     private readonly ILlmUsageTracker _usageTracker;
     private readonly IAgentErrorTracker _errorTracker;
@@ -36,7 +36,7 @@ public class RoomController : ControllerBase
         IRoomService roomService,
         IAgentLocationService agentLocationService,
         IMessageService messageService,
-        MessageBroadcaster messageBroadcaster,
+        IMessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,
         ILlmUsageTracker usageTracker,
         IAgentErrorTracker errorTracker,
