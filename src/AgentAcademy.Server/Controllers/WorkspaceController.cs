@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -17,7 +18,7 @@ public class WorkspaceController : ControllerBase
     private readonly WorkspaceRoomService _workspaceRooms;
     private readonly WorkspaceService _workspaceService;
     private readonly TaskOrchestrationService _taskOrchestration;
-    private readonly TaskQueryService _taskQueries;
+    private readonly ITaskQueryService _taskQueries;
     private readonly AgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly ConversationSessionService _sessionService;
@@ -29,7 +30,7 @@ public class WorkspaceController : ControllerBase
         WorkspaceRoomService workspaceRooms,
         WorkspaceService workspaceService,
         TaskOrchestrationService taskOrchestration,
-        TaskQueryService taskQueries,
+        ITaskQueryService taskQueries,
         AgentOrchestrator orchestrator,
         IAgentExecutor executor,
         ConversationSessionService sessionService,

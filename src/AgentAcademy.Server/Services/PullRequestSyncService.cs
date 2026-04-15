@@ -1,6 +1,7 @@
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -60,7 +61,7 @@ internal sealed class PullRequestSyncService : BackgroundService
             List<(string TaskId, int PrNumber)> activePrs;
             await using (var scope = _scopeFactory.CreateAsyncScope())
             {
-                var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+                var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
                 activePrs = await taskQueries.GetTasksWithActivePrsAsync();
             }
 

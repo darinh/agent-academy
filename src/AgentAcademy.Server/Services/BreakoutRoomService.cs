@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -23,7 +24,7 @@ public sealed class BreakoutRoomService
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
-    private readonly TaskQueryService _taskQueries;
+    private readonly ITaskQueryService _taskQueries;
     private readonly AgentLocationService _agentLocations;
 
     public BreakoutRoomService(
@@ -32,7 +33,7 @@ public sealed class BreakoutRoomService
         IAgentCatalog catalog,
         ActivityPublisher activity,
         ConversationSessionService sessionService,
-        TaskQueryService taskQueries,
+        ITaskQueryService taskQueries,
         AgentLocationService agentLocations)
     {
         _db = db;

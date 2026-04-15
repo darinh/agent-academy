@@ -63,7 +63,7 @@ public sealed class TaskEvidenceService : ITaskEvidenceService
             $"{agentName} recorded {phase.ToString().ToLower()} evidence: {checkName} — {(passed ? "passed" : "FAILED")}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskEvidence(entity);
+        return TaskSnapshotFactory.BuildTaskEvidence(entity);
     }
 
     /// <summary>
@@ -83,7 +83,7 @@ public sealed class TaskEvidenceService : ITaskEvidenceService
             .OrderBy(e => e.CreatedAt)
             .ToListAsync();
 
-        var evidenceModels = allEvidence.Select(TaskQueryService.BuildTaskEvidence).ToList();
+        var evidenceModels = allEvidence.Select(TaskSnapshotFactory.BuildTaskEvidence).ToList();
         var currentStatus = task.Status;
         string targetStatus;
         int requiredChecks;

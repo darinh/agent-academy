@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -12,7 +13,7 @@ namespace AgentAcademy.Server.Controllers;
 public class CollaborationController : ControllerBase
 {
     private readonly TaskOrchestrationService _taskOrchestration;
-    private readonly TaskQueryService _taskQueries;
+    private readonly ITaskQueryService _taskQueries;
     private readonly TaskDependencyService _taskDependencies;
     private readonly MessageService _messageService;
     private readonly RoomService _roomService;
@@ -24,7 +25,7 @@ public class CollaborationController : ControllerBase
 
     public CollaborationController(
         TaskOrchestrationService taskOrchestration,
-        TaskQueryService taskQueries,
+        ITaskQueryService taskQueries,
         TaskDependencyService taskDependencies,
         MessageService messageService,
         RoomService roomService,

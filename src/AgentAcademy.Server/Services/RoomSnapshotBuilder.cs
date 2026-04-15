@@ -60,7 +60,7 @@ public sealed class RoomSnapshotBuilder
             .OrderByDescending(t => t.CreatedAt)
             .FirstOrDefaultAsync();
 
-        var activeTask = activeTaskEntity is null ? null : TaskQueryService.BuildTaskSnapshot(activeTaskEntity);
+        var activeTask = activeTaskEntity is null ? null : TaskSnapshotFactory.BuildTaskSnapshot(activeTaskEntity);
 
         var preferredRoles = activeTask?.PreferredRoles ?? [];
         var locations = preloadedLocations

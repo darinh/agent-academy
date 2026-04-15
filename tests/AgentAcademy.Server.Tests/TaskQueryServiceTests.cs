@@ -1429,7 +1429,7 @@ public class TaskQueryServiceTests : IDisposable
             SprintId = "sprint-1",
         };
 
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity, 7);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity, 7);
 
         Assert.Equal("t1", snapshot.Id);
         Assert.Equal("Build feature", snapshot.Title);
@@ -1472,7 +1472,7 @@ public class TaskQueryServiceTests : IDisposable
     {
         var entity = CreateTask("t1", "No size");
         entity.Size = null;
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
         Assert.Null(snapshot.Size);
     }
 
@@ -1481,7 +1481,7 @@ public class TaskQueryServiceTests : IDisposable
     {
         var entity = CreateTask("t1", "Empty size");
         entity.Size = "";
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
         Assert.Null(snapshot.Size);
     }
 
@@ -1490,7 +1490,7 @@ public class TaskQueryServiceTests : IDisposable
     {
         var entity = CreateTask("t1", "No PR");
         entity.PullRequestStatus = null;
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
         Assert.Null(snapshot.PullRequestStatus);
     }
 
@@ -1499,7 +1499,7 @@ public class TaskQueryServiceTests : IDisposable
     {
         var entity = CreateTask("t1", "Empty PR status");
         entity.PullRequestStatus = "";
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
         Assert.Null(snapshot.PullRequestStatus);
     }
 
@@ -1507,7 +1507,7 @@ public class TaskQueryServiceTests : IDisposable
     public void BuildTaskSnapshot_DefaultCommentCount_IsZero()
     {
         var entity = CreateTask("t1", "No comments");
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
         Assert.Equal(0, snapshot.CommentCount);
     }
 
@@ -1516,7 +1516,7 @@ public class TaskQueryServiceTests : IDisposable
     {
         var entity = CreateTask("t1", "Unknown type");
         entity.Type = "UnknownType";
-        var snapshot = TaskQueryService.BuildTaskSnapshot(entity);
+        var snapshot = TaskSnapshotFactory.BuildTaskSnapshot(entity);
         Assert.Equal(TaskType.Feature, snapshot.Type);
     }
 
@@ -1539,7 +1539,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = now,
         };
 
-        var comment = TaskQueryService.BuildTaskComment(entity);
+        var comment = TaskSnapshotFactory.BuildTaskComment(entity);
 
         Assert.Equal("c1", comment.Id);
         Assert.Equal("t1", comment.TaskId);
@@ -1564,7 +1564,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = DateTime.UtcNow,
         };
 
-        var comment = TaskQueryService.BuildTaskComment(entity);
+        var comment = TaskSnapshotFactory.BuildTaskComment(entity);
         Assert.Equal(TaskCommentType.Comment, comment.CommentType);
     }
 
@@ -1592,7 +1592,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = now,
         };
 
-        var evidence = TaskQueryService.BuildTaskEvidence(entity);
+        var evidence = TaskSnapshotFactory.BuildTaskEvidence(entity);
 
         Assert.Equal("e1", evidence.Id);
         Assert.Equal("t1", evidence.TaskId);
@@ -1623,7 +1623,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = DateTime.UtcNow,
         };
 
-        var evidence = TaskQueryService.BuildTaskEvidence(entity);
+        var evidence = TaskSnapshotFactory.BuildTaskEvidence(entity);
         Assert.Equal(EvidencePhase.After, evidence.Phase);
     }
 
@@ -1646,7 +1646,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = DateTime.UtcNow,
         };
 
-        var evidence = TaskQueryService.BuildTaskEvidence(entity);
+        var evidence = TaskSnapshotFactory.BuildTaskEvidence(entity);
         Assert.Null(evidence.Command);
         Assert.Null(evidence.ExitCode);
         Assert.Null(evidence.OutputSnippet);
@@ -1673,7 +1673,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = now,
         };
 
-        var link = TaskQueryService.BuildSpecTaskLink(entity);
+        var link = TaskSnapshotFactory.BuildSpecTaskLink(entity);
 
         Assert.Equal("l1", link.Id);
         Assert.Equal("t1", link.TaskId);
@@ -1699,7 +1699,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = DateTime.UtcNow,
         };
 
-        var link = TaskQueryService.BuildSpecTaskLink(entity);
+        var link = TaskSnapshotFactory.BuildSpecTaskLink(entity);
         Assert.Equal(SpecLinkType.Implements, link.LinkType);
     }
 
@@ -1718,7 +1718,7 @@ public class TaskQueryServiceTests : IDisposable
             CreatedAt = DateTime.UtcNow,
         };
 
-        var link = TaskQueryService.BuildSpecTaskLink(entity);
+        var link = TaskSnapshotFactory.BuildSpecTaskLink(entity);
         Assert.Null(link.Note);
     }
 

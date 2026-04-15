@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -121,6 +122,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<ConversationSessionService>();
         sc.AddScoped<TaskDependencyService>();
         sc.AddScoped<TaskQueryService>();
+        sc.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         sc.AddScoped<TaskLifecycleService>();
         sc.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         sc.AddScoped<MessageService>();
@@ -155,7 +157,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 
@@ -176,7 +178,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: $"Test task PR#{prNumber}",
             Description: "Test description",
