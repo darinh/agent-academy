@@ -151,7 +151,11 @@ if (authSetup.GitHubAuthEnabled)
 }
 
 app.MapControllers();
-app.MapHub<ActivityHub>("/hubs/activity");
+var activityHubEndpoint = app.MapHub<ActivityHub>("/hubs/activity");
+if (!authSetup.AnyAuthEnabled)
+{
+    activityHubEndpoint.AllowAnonymous();
+}
 app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     ResponseWriter = HealthCheckResponseWriter.WriteAsync,

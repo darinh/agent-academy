@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace AgentAcademy.Server.Hubs;
@@ -7,6 +8,7 @@ namespace AgentAcademy.Server.Hubs;
 /// Clients connect here to receive live updates from <see cref="Services.ActivityBroadcaster"/>.
 /// The hub itself is thin — broadcasting is handled by <see cref="ActivityHubBroadcaster"/>.
 /// </summary>
+[Authorize]
 public class ActivityHub : Hub
 {
     public override async Task OnConnectedAsync()

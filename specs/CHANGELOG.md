@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **015-security-model**: `ActivityHub` now has explicit `[Authorize]` metadata and `/hubs/activity` is explicitly mapped with `.AllowAnonymous()` when auth is disabled, preserving first-run public mode while hardening auth-enabled mode. Known gap #2 resolved.
 - **005-workspace-runtime**: `WorkspaceRoomService` now has `IWorkspaceRoomService` interface contract (Scoped + forwarded DI pattern). Service architecture text, service table, and DI registration snippet updated.
 - **005-workspace-runtime**: `RoomLifecycleService` now has `IRoomLifecycleService` interface contract (Scoped + forwarded DI pattern). Service table and DI registration snippet updated.
 - **005-workspace-runtime**: `BreakoutRoomService` now has `IBreakoutRoomService` interface contract (Scoped + forwarded DI pattern). Service table updated.

@@ -397,11 +397,11 @@ Default policy:
 
 ### 8.2 SignalR
 
-**File**: `Program.cs:130-131`, `Hubs/ActivityHub.cs`
+**File**: `Program.cs`, `Hubs/ActivityHub.cs`
 
 - Hub mapped at `/hubs/activity`
-- No explicit `[Authorize]` attribute — protected by the global fallback authorization policy
-- When auth is disabled, the hub is publicly accessible (consistent with all other endpoints)
+- `ActivityHub` has explicit `[Authorize]` metadata (belt-and-suspenders with fallback policy)
+- When auth is disabled at startup, the hub endpoint is explicitly mapped with `.AllowAnonymous()` to preserve first-run/public mode behavior
 
 ### 8.3 TLS
 
@@ -511,12 +511,12 @@ When adding new features, verify:
 ## Known Gaps
 
 1. **No symlink resolution in path validation** — Mitigated by agents' inability to create symlinks. Would require `Path.GetFullPath` on the resolved symlink target. Low priority.
-2. **No explicit `[Authorize]` on SignalR hub** — Relies on global fallback policy. Adding the attribute would be belt-and-suspenders.
-3. **CORS locked to localhost:5173** — Must be updated for any non-localhost deployment. Consider making the origin configurable.
-4. **No OS-level resource limits on agent processes** — CPU/memory limits would require containerization or cgroup integration. Out of scope for v1.
+2. **CORS locked to localhost:5173** — Must be updated for any non-localhost deployment. Consider making the origin configurable.
+3. **No OS-level resource limits on agent processes** — CPU/memory limits would require containerization or cgroup integration. Out of scope for v1.
 
 ## Revision History
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-15 | Added explicit `[Authorize]` on `ActivityHub` and documented auth-disabled `.AllowAnonymous()` mapping for `/hubs/activity`; resolved Known Gap #2. | 015-security-model |
 | 2026-04-14 | Initial spec — consolidated from codebase survey of auth, authorization, agent boundaries, prompt injection, rate limiting, data protection, and input validation. | 015-security-model |
