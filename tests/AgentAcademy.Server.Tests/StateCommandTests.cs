@@ -60,6 +60,7 @@ public class StateCommandTests : IDisposable
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
@@ -775,7 +776,7 @@ public class StateCommandTests : IDisposable
     private async Task ClaimTaskForAgent(string taskId, string agentId, string agentName)
     {
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         await taskLifecycle.ClaimTaskAsync(taskId, agentId, agentName);
     }
 

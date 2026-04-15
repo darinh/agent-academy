@@ -75,6 +75,7 @@ public class BranchWorkflowTests : IDisposable
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
@@ -283,7 +284,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var task = await taskQueries.GetTaskAsync(taskId);
@@ -363,7 +364,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var task = await taskQueries.GetTaskAsync(taskId);
@@ -382,7 +383,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -600,7 +601,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -622,7 +623,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -643,7 +644,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -678,7 +679,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -701,7 +702,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -722,7 +723,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -741,7 +742,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -764,7 +765,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
@@ -784,7 +785,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
@@ -806,7 +807,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
@@ -831,7 +832,7 @@ public class BranchWorkflowTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var approved = await taskLifecycle.ApproveTaskAsync(taskId, "reviewer-1", null);

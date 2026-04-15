@@ -102,7 +102,7 @@ internal sealed class PullRequestSyncService : BackgroundService
             var newStatus = MapToPrStatus(prInfo);
 
             await using var scope = _scopeFactory.CreateAsyncScope();
-            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
 
             var updated = await taskLifecycle.SyncTaskPrStatusAsync(taskId, newStatus);
             if (updated != null)

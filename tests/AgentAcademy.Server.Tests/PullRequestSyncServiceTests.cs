@@ -124,6 +124,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<TaskQueryService>();
         sc.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         sc.AddScoped<TaskLifecycleService>();
+        sc.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         sc.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         sc.AddScoped<MessageService>();
         sc.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
@@ -155,7 +156,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         db.Database.EnsureCreated();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         initialization.InitializeAsync().GetAwaiter().GetResult();
@@ -176,7 +177,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
     {
         await using var scope = _services.CreateAsyncScope();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
