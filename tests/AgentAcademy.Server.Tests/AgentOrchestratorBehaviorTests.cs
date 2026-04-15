@@ -619,6 +619,27 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
     }
 
     [Fact]
+    public async Task DmRound_AllowsSameAgentToRequeueAfterFirstItemDequeues()
+    {
+        await SeedRoomAsync("room-1", "Test Room");
+        await SeedAgentLocationAsync("engineer-1", "room-1", AgentState.Idle);
+        await SeedDirectMessageAsync("engineer-1", "human", "User", "First DM", "room-1");
+        await SeedMessageAsync("room-1", "human", "User", nameof(MessageSenderKind.User), "Context");
+
+        _orchestrator.HandleDirectMessage("engineer-1");
+
+        var firstCall = await WaitForExecutorCallsAsync(1, TimeSpan.FromSeconds(5));
+        Assert.True(firstCall, "First DM should trigger one engineer turn");
+
+        await SeedDirectMessageAsync("engineer-1", "human", "User", "Second DM", "room-1");
+        _orchestrator.HandleDirectMessage("engineer-1");
+
+        var secondCall = await WaitForExecutorCallsAsync(1, TimeSpan.FromSeconds(5));
+        Assert.True(secondCall, "Second DM should enqueue after the first item is dequeued");
+        Assert.Equal(2, GetExecutorAgentIds().Count(id => id == "engineer-1"));
+    }
+
+    [Fact]
     public async Task DmRound_ForwardsDmsToBreakoutRoom_NoExecutorCall()
     {
         await SeedRoomAsync("room-1", "Main Room");

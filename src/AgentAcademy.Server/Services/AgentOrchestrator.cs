@@ -19,6 +19,7 @@ public sealed class AgentOrchestrator
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
+    private readonly HashSet<string> _queuedDirectMessages = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private bool _processing;
     private readonly CancellationTokenSource _cts = new();
@@ -113,13 +114,11 @@ public sealed class AgentOrchestrator
     /// </summary>
     public void HandleDirectMessage(string recipientAgentId)
     {
-        lock (_lock)
+        if (!TryEnqueueDirectMessage(recipientAgentId))
         {
-            // Dedupe: skip if a DM trigger for this agent is already queued
-            if (_queue.Any(q => q.TargetAgentId == recipientAgentId))
-                return;
-            _queue.Enqueue(new QueueItem(RoomId: "", TargetAgentId: recipientAgentId));
+            return;
         }
+
         SignalProcessing();
     }
 
@@ -134,7 +133,7 @@ public sealed class AgentOrchestrator
         {
             while (!_cts.IsCancellationRequested)
             {
-                QueueItem? item;
+                QueueItem item;
                 if (!TryDequeueOrStop(out item))
                 {
                     resetProcessingOnExit = false;
@@ -143,9 +142,9 @@ public sealed class AgentOrchestrator
 
                 try
                 {
-                    if (item.TargetAgentId is not null)
+                    if (item.TargetAgentId is { } targetAgentId)
                     {
-                        await _dmRouter.RouteAsync(item.TargetAgentId);
+                        await _dmRouter.RouteAsync(targetAgentId);
                     }
                     else
                     {
@@ -173,6 +172,21 @@ public sealed class AgentOrchestrator
         SignalProcessing();
     }
 
+    private bool TryEnqueueDirectMessage(string recipientAgentId)
+    {
+        lock (_lock)
+        {
+            // Dedupe: skip if a DM trigger for this agent is already queued.
+            if (!_queuedDirectMessages.Add(recipientAgentId))
+            {
+                return false;
+            }
+
+            _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
+            return true;
+        }
+    }
+
     private bool TryBeginProcessing()
     {
         lock (_lock)
@@ -183,17 +197,23 @@ public sealed class AgentOrchestrator
         }
     }
 
-    private bool TryDequeueOrStop(out QueueItem? item)
+    private bool TryDequeueOrStop(out QueueItem item)
     {
         lock (_lock)
         {
-            if (_queue.TryDequeue(out item))
+            if (_queue.TryDequeue(out var dequeuedItem))
             {
+                if (dequeuedItem.TargetAgentId is { } targetAgentId)
+                {
+                    _queuedDirectMessages.Remove(targetAgentId);
+                }
+
+                item = dequeuedItem;
                 return true;
             }
 
             _processing = false;
-            item = null;
+            item = default!;
             return false;
         }
     }
