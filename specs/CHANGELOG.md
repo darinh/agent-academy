@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **300-frontend-ui**: Updated component tree to reflect 16 sidebar nav items (was showing old tab bar list). Updated SettingsPanel from 6 to 7 tabs (added Models). Added 3 new sidebar panel sections (ActivityFeedPanel, SpecSearchPanel, AgentKnowledgePanel). Added 3 new settings sub-component sections (ModelsTab, NotificationDeliveriesSection, DataExportSection). Added 8 new API endpoints to the contract table. All sections include data flow, types, and UI descriptions verified against source.
+
+### Changed
 - **006-orchestrator**: Extracted 4 interface contracts for infrastructure singletons: `ICopilotClientFactory`, `ICopilotSessionPool`, `ITokenPersistenceService`, `IAgentToolFunctions`. Runtime consumers migrated: CopilotExecutor, AgentCatalogWatcher, AgentToolRegistry, AuthController. Total contracts: 60.
 - **006-orchestrator**: Extracted 5 interface contracts for pipeline singleton services: `ILearningDigestService`, `IRetrospectiveService`, `ISpecManager`, `IProjectScanner`, `IAgentMemoryLoader`. All runtime consumers migrated to interface injection. SpecManager nested records (`SpecSection`, `SpecSearchResult`, `SpecVersionInfo`) promoted to namespace-level types. Total contracts: 56.
 - **015-security-model**: `ActivityHub` now has explicit `[Authorize]` metadata and `/hubs/activity` is explicitly mapped with `.AllowAnonymous()` when auth is disabled, preserving first-run public mode while hardening auth-enabled mode. Known gap #2 resolved.
