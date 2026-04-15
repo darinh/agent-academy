@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// approval/rejection. Owns the stage definitions and required-artifact gates.
 /// Extracted from SprintService to separate stage logic from sprint lifecycle.
 /// </summary>
-public sealed class SprintStageService
+public sealed class SprintStageService : ISprintStageService
 {
     /// <summary>
     /// Ordered stages of a sprint. Advancement follows this sequence.

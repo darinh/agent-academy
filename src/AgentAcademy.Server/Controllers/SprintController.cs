@@ -15,7 +15,7 @@ namespace AgentAcademy.Server.Controllers;
 public class SprintController : ControllerBase
 {
     private readonly ISprintService _sprintService;
-    private readonly SprintStageService _stageService;
+    private readonly ISprintStageService _stageService;
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly SprintScheduleService _scheduleService;
@@ -24,7 +24,7 @@ public class SprintController : ControllerBase
 
     public SprintController(
         ISprintService sprintService,
-        SprintStageService stageService,
+        ISprintStageService stageService,
         SprintArtifactService artifactService,
         SprintMetricsCalculator metricsCalculator,
         SprintScheduleService scheduleService,
