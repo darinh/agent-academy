@@ -50,7 +50,7 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
             var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<IActivityPublisher>();
-            var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+            var configService = scope.ServiceProvider.GetRequiredService<IAgentConfigService>();
             var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 
             if (round == 1)

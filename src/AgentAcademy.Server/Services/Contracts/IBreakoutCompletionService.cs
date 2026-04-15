@@ -45,7 +45,7 @@ public interface IBreakoutCompletionService
         IAgentLocationService agentLocationService,
         IRoomService roomService,
         IActivityPublisher activity,
-        AgentConfigService configService,
+        IAgentConfigService configService,
         string breakoutRoomId,
         string parentRoomId,
         string? worktreePath = null);

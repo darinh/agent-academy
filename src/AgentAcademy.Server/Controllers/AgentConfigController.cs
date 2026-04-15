@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,12 +16,12 @@ namespace AgentAcademy.Server.Controllers;
 public class AgentConfigController : ControllerBase
 {
     private readonly IAgentCatalog _catalog;
-    private readonly AgentConfigService _configService;
+    private readonly IAgentConfigService _configService;
     private readonly ILogger<AgentConfigController> _logger;
 
     public AgentConfigController(
         IAgentCatalog catalog,
-        AgentConfigService configService,
+        IAgentConfigService configService,
         ILogger<AgentConfigController> logger)
     {
         _catalog = catalog;

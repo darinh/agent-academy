@@ -60,6 +60,7 @@ public static class ServiceRegistrationExtensions
 
         // Agent config (merges catalog defaults with DB overrides)
         services.AddScoped<AgentConfigService>();
+        services.AddScoped<IAgentConfigService>(sp => sp.GetRequiredService<AgentConfigService>());
 
         // System settings (typed access to system_settings table)
         services.AddScoped<SystemSettingsService>();

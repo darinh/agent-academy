@@ -91,7 +91,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
         IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         ITaskItemService taskItemService, ITaskQueryService taskQueryService,
         IAgentLocationService agentLocationService, IRoomService roomService,
-        IActivityPublisher activity, AgentConfigService configService,
+        IActivityPublisher activity, IAgentConfigService configService,
         string breakoutRoomId, string parentRoomId, string? worktreePath = null)
     {
         var br = await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId);
@@ -160,7 +160,7 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
     private async Task<ParsedReviewVerdict?> RunReviewCycleAsync(
         IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         IRoomService roomService,
-        IActivityPublisher activity, AgentConfigService configService,
+        IActivityPublisher activity, IAgentConfigService configService,
         string parentRoomId, AgentDefinition presentingAgent, string workReport)
     {
         var catalogReviewer = FindReviewer();
