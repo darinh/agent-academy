@@ -100,6 +100,7 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddOrchestrationServices(this IServiceCollection services)
     {
         services.AddSingleton<BreakoutCompletionService>();
+        services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
         services.AddSingleton<BreakoutLifecycleService>();
         services.AddSingleton<IBreakoutLifecycleService>(sp => sp.GetRequiredService<BreakoutLifecycleService>());
         services.AddSingleton<TaskAssignmentHandler>();

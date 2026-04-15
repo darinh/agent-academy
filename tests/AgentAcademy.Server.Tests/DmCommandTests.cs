@@ -95,6 +95,7 @@ public class DmCommandTests : IDisposable
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
@@ -118,6 +119,7 @@ public class DmCommandTests : IDisposable
             repositoryRoot: "/tmp/test-repo"));
         services.AddSingleton<AgentMemoryLoader>();
         services.AddSingleton<BreakoutCompletionService>();
+        services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
         services.AddSingleton<BreakoutLifecycleService>();
         services.AddSingleton<IBreakoutLifecycleService>(sp => sp.GetRequiredService<BreakoutLifecycleService>());
         services.AddSingleton<TaskAssignmentHandler>();

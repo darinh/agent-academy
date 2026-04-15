@@ -224,29 +224,22 @@ public class BreakoutCompletionServiceTests
         Assert.Equal("text", result.RemainingText);
     }
 
-    // ── Stopped flag ─────────────────────────────────────────────
+    // ── Stop signaling ────────────────────────────────────────────
 
     [Fact]
-    public void Stopped_InitiallyFalse()
+    public void Stop_CanBeCalledWithoutThrowing()
     {
-        Assert.False(_service.Stopped);
+        var ex = Record.Exception(() => _service.Stop());
+        Assert.Null(ex);
     }
 
     [Fact]
-    public void Stopped_CanBeSetToTrue()
+    public void Stop_IsIdempotent()
     {
-        _service.Stopped = true;
+        _service.Stop();
 
-        Assert.True(_service.Stopped);
-    }
-
-    [Fact]
-    public void Stopped_CanBeToggledBackToFalse()
-    {
-        _service.Stopped = true;
-        _service.Stopped = false;
-
-        Assert.False(_service.Stopped);
+        var ex = Record.Exception(() => _service.Stop());
+        Assert.Null(ex);
     }
 
     // ── Catalog wiring ───────────────────────────────────────────

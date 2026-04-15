@@ -137,6 +137,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ITaskItemService),
             typeof(ITaskOrchestrationService),
             typeof(ITaskAnalyticsService),
+            typeof(ICrashRecoveryService),
         };
 
         foreach (var iface in expectedInterfaces)
@@ -162,6 +163,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ITaskItemService),
             typeof(ITaskOrchestrationService),
             typeof(ITaskAnalyticsService),
+            typeof(ICrashRecoveryService),
         };
 
         foreach (var iface in forwardedInterfaces)
@@ -181,6 +183,18 @@ public sealed class ServiceRegistrationWiringTests
 
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(ITaskAssignmentHandler)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IBreakoutCompletionService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IBreakoutCompletionService)
             && sd.Lifetime == ServiceLifetime.Singleton);
     }
 }

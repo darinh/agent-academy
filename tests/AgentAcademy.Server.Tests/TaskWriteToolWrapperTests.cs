@@ -77,6 +77,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddScoped<TaskItemService>();
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddScoped<InitializationService>();
 
         _sp = services.BuildServiceProvider();

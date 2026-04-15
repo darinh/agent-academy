@@ -10,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Manages the breakout conversation loop: agent rounds, stuck detection, and
-/// failure cleanup. Delegates completion/review to <see cref="BreakoutCompletionService"/>.
+/// failure cleanup. Delegates completion/review to <see cref="IBreakoutCompletionService"/>.
 /// </summary>
 public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
 {
@@ -34,7 +34,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
     private readonly GitService _gitService;
     private readonly WorktreeService _worktreeService;
     private readonly AgentMemoryLoader _memoryLoader;
-    private readonly BreakoutCompletionService _completion;
+    private readonly IBreakoutCompletionService _completion;
     private readonly ILogger<BreakoutLifecycleService> _logger;
 
     private volatile bool _stopped;
@@ -47,7 +47,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         GitService gitService,
         WorktreeService worktreeService,
         AgentMemoryLoader memoryLoader,
-        BreakoutCompletionService completion,
+        IBreakoutCompletionService completion,
         ILogger<BreakoutLifecycleService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -65,7 +65,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
     public void Stop()
     {
         _stopped = true;
-        _completion.Stopped = true;
+        _completion.Stop();
     }
 
     /// <summary>
