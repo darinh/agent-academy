@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AgentAcademy.Server.Services.Contracts;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Sessions are created lazily via a caller-provided factory and
 /// disposed automatically on expiry or invalidation.
 /// </summary>
-public sealed class CopilotSessionPool : IAsyncDisposable
+public sealed class CopilotSessionPool : ICopilotSessionPool
 {
     private static readonly TimeSpan SessionTtl = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(2);

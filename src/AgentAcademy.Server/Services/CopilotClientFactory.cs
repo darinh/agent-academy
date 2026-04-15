@@ -23,7 +23,7 @@ public sealed record ClientAcquisitionResult(CopilotClient? Client, bool WasRecr
 /// Extracted from CopilotExecutor to isolate client-lifecycle concerns
 /// from session management, retry logic, and auth-state transitions.
 /// </summary>
-public sealed class CopilotClientFactory : IAsyncDisposable
+public sealed class CopilotClientFactory : ICopilotClientFactory
 {
     private readonly ILogger<CopilotClientFactory> _logger;
     private readonly ICopilotTokenProvider _tokenProvider;

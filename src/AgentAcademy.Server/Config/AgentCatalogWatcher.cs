@@ -22,7 +22,7 @@ public sealed class AgentCatalogWatcher : BackgroundService
     private readonly AgentCatalogFileInfo _fileInfo;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IActivityBroadcaster _broadcaster;
-    private readonly CopilotSessionPool _sessionPool;
+    private readonly ICopilotSessionPool _sessionPool;
     private readonly ILogger<AgentCatalogWatcher> _logger;
 
     private readonly SemaphoreSlim _reloadLock = new(1, 1);
@@ -38,7 +38,7 @@ public sealed class AgentCatalogWatcher : BackgroundService
         AgentCatalogFileInfo fileInfo,
         IServiceScopeFactory scopeFactory,
         IActivityBroadcaster broadcaster,
-        CopilotSessionPool sessionPool,
+        ICopilotSessionPool sessionPool,
         ILogger<AgentCatalogWatcher> logger)
     {
         _catalog = catalog;

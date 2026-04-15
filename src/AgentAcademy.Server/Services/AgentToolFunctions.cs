@@ -20,7 +20,7 @@ namespace AgentAcademy.Server.Services;
 /// Write tools (task-write, memory) capture the calling agent's identity
 /// via closures and are created per-agent session.
 /// </summary>
-public sealed class AgentToolFunctions
+public sealed class AgentToolFunctions : IAgentToolFunctions
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;

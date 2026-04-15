@@ -22,13 +22,13 @@ public class AuthController : ControllerBase
     private readonly GitHubAuthOptions _authOptions;
     private readonly ICopilotTokenProvider _tokenProvider;
     private readonly IAgentExecutor _executor;
-    private readonly TokenPersistenceService _tokenPersistence;
+    private readonly ITokenPersistenceService _tokenPersistence;
 
     public AuthController(
         GitHubAuthOptions authOptions,
         ICopilotTokenProvider tokenProvider,
         IAgentExecutor executor,
-        TokenPersistenceService tokenPersistence)
+        ITokenPersistenceService tokenPersistence)
     {
         _authOptions = authOptions;
         _tokenProvider = tokenProvider;

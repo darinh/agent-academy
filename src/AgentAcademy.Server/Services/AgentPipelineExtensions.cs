@@ -43,6 +43,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<CopilotTokenProvider>();
         services.AddSingleton<ICopilotTokenProvider>(sp => sp.GetRequiredService<CopilotTokenProvider>());
         services.AddSingleton<TokenPersistenceService>();
+        services.AddSingleton<ITokenPersistenceService>(sp => sp.GetRequiredService<TokenPersistenceService>());
         services.AddHostedService(sp => sp.GetRequiredService<TokenPersistenceService>());
         return services;
     }
@@ -63,6 +64,7 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddAgentTooling(this IServiceCollection services)
     {
         services.AddSingleton<AgentToolFunctions>();
+        services.AddSingleton<IAgentToolFunctions>(sp => sp.GetRequiredService<AgentToolFunctions>());
         services.AddSingleton<IAgentToolRegistry, AgentToolRegistry>();
         return services;
     }
@@ -70,7 +72,9 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddAgentExecution(this IServiceCollection services)
     {
         services.AddSingleton<CopilotClientFactory>();
+        services.AddSingleton<ICopilotClientFactory>(sp => sp.GetRequiredService<CopilotClientFactory>());
         services.AddSingleton<CopilotSessionPool>();
+        services.AddSingleton<ICopilotSessionPool>(sp => sp.GetRequiredService<CopilotSessionPool>());
         services.AddSingleton<CopilotSdkSender>();
         services.AddSingleton<ICopilotSdkSender>(sp => sp.GetRequiredService<CopilotSdkSender>());
         services.AddSingleton<CopilotExecutor>();

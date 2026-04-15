@@ -82,6 +82,22 @@ public sealed class ServiceRegistrationWiringTests
         // IAgentMemoryLoader should be registered (alias for AgentMemoryLoader)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentMemoryLoader));
+
+        // ICopilotClientFactory should be registered (alias for CopilotClientFactory)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ICopilotClientFactory));
+
+        // ICopilotSessionPool should be registered (alias for CopilotSessionPool)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ICopilotSessionPool));
+
+        // ITokenPersistenceService should be registered (alias for TokenPersistenceService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ITokenPersistenceService));
+
+        // IAgentToolFunctions should be registered (alias for AgentToolFunctions)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentToolFunctions));
     }
 
     [Fact]
@@ -726,6 +742,102 @@ public sealed class ServiceRegistrationWiringTests
         services.AddAgentPipeline();
 
         var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentMemoryLoader));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ICopilotClientFactory_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ICopilotClientFactory)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ICopilotClientFactory_forwards_to_CopilotClientFactory()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(ICopilotClientFactory));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ICopilotSessionPool_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ICopilotSessionPool)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ICopilotSessionPool_forwards_to_CopilotSessionPool()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(ICopilotSessionPool));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ITokenPersistenceService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ITokenPersistenceService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ITokenPersistenceService_forwards_to_TokenPersistenceService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(ITokenPersistenceService));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentToolFunctions_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentToolFunctions)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IAgentToolFunctions_forwards_to_AgentToolFunctions()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentToolFunctions));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
         Assert.NotNull(descriptor.ImplementationFactory);
     }

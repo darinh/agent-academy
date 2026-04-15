@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// a browser visit. Subscribes to <see cref="ICopilotTokenProvider.TokenChanged"/>
 /// to persist automatically on every token refresh.
 /// </summary>
-public sealed class TokenPersistenceService : IHostedService, IDisposable
+public sealed class TokenPersistenceService : IHostedService, ITokenPersistenceService, IDisposable
 {
     private const string Purpose = "AgentAcademy.AuthTokens";
     private const string AccessTokenKey = "auth:accessToken";
@@ -210,7 +210,7 @@ public sealed class TokenPersistenceService : IHostedService, IDisposable
     /// Removes all persisted token data from the database.
     /// Called on logout to ensure stale credentials don't survive a restart.
     /// </summary>
-    internal async Task ClearPersistedTokensAsync()
+    public async Task ClearPersistedTokensAsync()
     {
         await _persistLock.WaitAsync();
         try

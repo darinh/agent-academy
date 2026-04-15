@@ -1,4 +1,5 @@
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -21,7 +22,7 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class AgentToolRegistry : IAgentToolRegistry
 {
-    private readonly AgentToolFunctions _toolFunctions;
+    private readonly IAgentToolFunctions _toolFunctions;
     private readonly IAgentCatalog _catalog;
     private readonly Dictionary<string, IReadOnlyList<AIFunction>> _staticGroups;
     private readonly IReadOnlyList<string> _allToolNames;
@@ -32,7 +33,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
         new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory", "code-write" };
 
     public AgentToolRegistry(
-        AgentToolFunctions toolFunctions,
+        IAgentToolFunctions toolFunctions,
         IAgentCatalog catalog,
         ILogger<AgentToolRegistry> logger)
     {
