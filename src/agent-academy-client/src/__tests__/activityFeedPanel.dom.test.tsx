@@ -58,7 +58,7 @@ function wrap(ui: React.ReactNode) {
 function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
   return {
     id: "evt-1",
-    type: "TaskCompleted",
+    type: "TaskCreated",
     severity: "Info",
     message: "Task completed successfully",
     occurredAt: "2026-04-10T14:30:00Z",

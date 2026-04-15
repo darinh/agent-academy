@@ -134,15 +134,19 @@ export type PullRequestStatus =
 // ── Activity ───────────────────────────────────────────────────────────
 
 export type ActivityEventType =
-  | "AgentLoaded" | "AgentThinking" | "AgentFinished"
-  | "RoomCreated" | "RoomClosed" | "TaskCreated"
+  | "AgentLoaded" | "AgentCatalogReloaded" | "AgentThinking" | "AgentFinished"
+  | "RoomCreated" | "RoomClosed" | "RoomRenamed" | "TaskCreated"
   | "PhaseChanged" | "MessagePosted" | "MessageSent"
   | "PresenceUpdated" | "RoomStatusChanged"
   | "ArtifactEvaluated" | "QualityGateChecked" | "IterationRetried"
   | "CheckpointCreated" | "AgentErrorOccurred" | "AgentWarningOccurred"
   | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
   | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
+  | "CommandExecuted" | "CommandDenied" | "CommandFailed"
+  | "TaskClaimed" | "TaskReleased" | "TaskApproved" | "TaskRejected"
+  | "TaskChangesRequested" | "TaskStatusUpdated" | "TaskCommentAdded"
   | "DirectMessageSent" | "TaskPrStatusChanged"
+  | "AgentRecalled" | "SpecTaskLinked" | "EvidenceRecorded" | "GateChecked"
   | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled"
   | "TaskUnblocked"
   | "TaskRetrospectiveCompleted"
