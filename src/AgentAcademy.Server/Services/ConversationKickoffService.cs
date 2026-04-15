@@ -14,13 +14,13 @@ public sealed class ConversationKickoffService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly IMessageService _messageService;
-    private readonly AgentOrchestrator _orchestrator;
+    private readonly IAgentOrchestrator _orchestrator;
     private readonly ILogger<ConversationKickoffService> _logger;
 
     public ConversationKickoffService(
         AgentAcademyDbContext db,
         IMessageService messageService,
-        AgentOrchestrator orchestrator,
+        IAgentOrchestrator orchestrator,
         ILogger<ConversationKickoffService> logger)
     {
         _db = db;

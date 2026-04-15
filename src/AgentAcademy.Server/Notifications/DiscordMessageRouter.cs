@@ -14,13 +14,13 @@ namespace AgentAcademy.Server.Notifications;
 public sealed class DiscordMessageRouter
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentOrchestrator _orchestrator;
+    private readonly IAgentOrchestrator _orchestrator;
     private readonly DiscordChannelManager _channelManager;
     private readonly ILogger<DiscordMessageRouter> _logger;
 
     public DiscordMessageRouter(
         IServiceScopeFactory scopeFactory,
-        AgentOrchestrator orchestrator,
+        IAgentOrchestrator orchestrator,
         DiscordChannelManager channelManager,
         ILogger<DiscordMessageRouter> logger)
     {

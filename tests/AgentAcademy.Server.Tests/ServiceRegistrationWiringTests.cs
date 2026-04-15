@@ -38,6 +38,10 @@ public sealed class ServiceRegistrationWiringTests
         // ICopilotTokenProvider should be registered (alias for CopilotTokenProvider)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(ICopilotTokenProvider));
+
+        // IAgentOrchestrator should be registered (alias for AgentOrchestrator)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentOrchestrator));
     }
 
     [Fact]
@@ -229,6 +233,18 @@ public sealed class ServiceRegistrationWiringTests
 
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IBreakoutCompletionService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentOrchestrator_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentOrchestrator)
             && sd.Lifetime == ServiceLifetime.Singleton);
     }
 }

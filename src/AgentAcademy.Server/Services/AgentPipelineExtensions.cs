@@ -113,6 +113,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
         services.AddSingleton<AgentOrchestrator>();
+        services.AddSingleton<IAgentOrchestrator>(sp => sp.GetRequiredService<AgentOrchestrator>());
         return services;
     }
 }

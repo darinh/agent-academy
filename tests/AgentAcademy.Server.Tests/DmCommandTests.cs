@@ -133,6 +133,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
         services.AddSingleton<AgentOrchestrator>();
+        services.AddSingleton<IAgentOrchestrator>(sp => sp.GetRequiredService<AgentOrchestrator>());
 
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
@@ -685,7 +686,7 @@ public class DmCommandTests : IDisposable
         var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var messageBroadcaster = scope.ServiceProvider.GetRequiredService<MessageBroadcaster>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
         var logger = NullLogger<DmController>.Instance;
 
         var controller = new DmController(messageService, roomService, messageBroadcaster, _catalog, orchestrator, logger);

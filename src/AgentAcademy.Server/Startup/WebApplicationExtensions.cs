@@ -53,14 +53,14 @@ public static class WebApplicationExtensions
         //    Must run BEFORE crash recovery, which posts system messages that would
         //    mask pending human messages from the reconstruction query.
         {
-            var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
             await orchestrator.ReconstructQueueAsync();
         }
 
         // 5. Crash recovery — posts system messages, so must come after queue reconstruction
         if (CrashRecoveryService.CurrentCrashDetected)
         {
-            var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
             await orchestrator.HandleStartupRecoveryAsync(mainRoomId);
         }
 

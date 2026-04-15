@@ -19,7 +19,7 @@ public class WorkspaceController : ControllerBase
     private readonly WorkspaceService _workspaceService;
     private readonly ITaskOrchestrationService _taskOrchestration;
     private readonly ITaskQueryService _taskQueries;
-    private readonly AgentOrchestrator _orchestrator;
+    private readonly IAgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
     private readonly IConversationSessionService _sessionService;
     private readonly ILogger<WorkspaceController> _logger;
@@ -31,7 +31,7 @@ public class WorkspaceController : ControllerBase
         WorkspaceService workspaceService,
         ITaskOrchestrationService taskOrchestration,
         ITaskQueryService taskQueries,
-        AgentOrchestrator orchestrator,
+        IAgentOrchestrator orchestrator,
         IAgentExecutor executor,
         IConversationSessionService sessionService,
         ILogger<WorkspaceController> logger)
