@@ -381,6 +381,7 @@ public class SprintTimeoutTests : IDisposable
                 sp.GetRequiredService<ActivityBroadcaster>(),
                 sp.GetRequiredService<SystemSettingsService>(),
                 sp.GetRequiredService<ILogger<SprintService>>()));
+        services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
         services.AddScoped<SprintStageService>(sp =>
             new SprintStageService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),

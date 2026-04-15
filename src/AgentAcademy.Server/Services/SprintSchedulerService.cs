@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Cronos;
 using Microsoft.EntityFrameworkCore;
@@ -68,7 +69,7 @@ internal sealed class SprintSchedulerService : BackgroundService
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-            var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+            var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
 
             var now = DateTime.UtcNow;
             var dueSchedules = await db.SprintSchedules
@@ -92,7 +93,7 @@ internal sealed class SprintSchedulerService : BackgroundService
 
     private async Task EvaluateOneAsync(
         SprintScheduleEntity schedule,
-        SprintService sprintService,
+        ISprintService sprintService,
         AgentAcademyDbContext db,
         DateTime now,
         CancellationToken ct)

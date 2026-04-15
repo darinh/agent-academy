@@ -31,6 +31,7 @@ public class SprintCommandHandlerTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddScoped<SprintService>();
+        services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
         services.AddScoped<SprintStageService>();
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<SystemSettingsService>();

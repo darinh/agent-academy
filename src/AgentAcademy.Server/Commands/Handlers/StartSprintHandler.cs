@@ -16,7 +16,7 @@ public sealed class StartSprintHandler : ICommandHandler
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         var roomService = context.Services.GetRequiredService<IRoomService>();
-        var sprintService = context.Services.GetRequiredService<SprintService>();
+        var sprintService = context.Services.GetRequiredService<ISprintService>();
 
         var workspacePath = await roomService.GetActiveWorkspacePathAsync();
         if (string.IsNullOrEmpty(workspacePath))

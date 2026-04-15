@@ -138,9 +138,9 @@ public sealed class SprintArtifactService
 
     private static void ValidateStage(string stage)
     {
-        if (!SprintService.Stages.Contains(stage))
+        if (!SprintStageService.Stages.Contains(stage))
             throw new ArgumentException(
-                $"Invalid stage '{stage}'. Valid stages: {string.Join(", ", SprintService.Stages)}",
+                $"Invalid stage '{stage}'. Valid stages: {string.Join(", ", SprintStageService.Stages)}",
                 nameof(stage));
     }
 

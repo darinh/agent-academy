@@ -70,7 +70,7 @@ public sealed class ConversationSessionQueryService
             .ToDictionary(g => g.Key, g => g.First().Summary!);
 
         // Order by canonical stage sequence
-        return SprintService.Stages
+        return SprintStageService.Stages
             .Where(stage => latestPerStage.ContainsKey(stage))
             .Select(stage => (Stage: stage, Summary: latestPerStage[stage]))
             .ToList();
