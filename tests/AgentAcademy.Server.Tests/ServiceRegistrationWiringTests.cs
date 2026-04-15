@@ -137,6 +137,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ITaskItemService),
             typeof(ITaskOrchestrationService),
             typeof(ITaskAnalyticsService),
+            typeof(ICrashRecoveryService),
         };
 
         foreach (var iface in expectedInterfaces)
@@ -162,6 +163,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ITaskItemService),
             typeof(ITaskOrchestrationService),
             typeof(ITaskAnalyticsService),
+            typeof(ICrashRecoveryService),
         };
 
         foreach (var iface in forwardedInterfaces)

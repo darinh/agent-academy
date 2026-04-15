@@ -18,7 +18,7 @@ public sealed class InitializationService
     private readonly ILogger<InitializationService> _logger;
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
-    private readonly CrashRecoveryService _crashRecovery;
+    private readonly ICrashRecoveryService _crashRecovery;
     private readonly IRoomService _rooms;
     private readonly IWorkspaceRoomService _workspaceRooms;
 
@@ -27,7 +27,7 @@ public sealed class InitializationService
         ILogger<InitializationService> logger,
         IAgentCatalog catalog,
         ActivityPublisher activity,
-        CrashRecoveryService crashRecovery,
+        ICrashRecoveryService crashRecovery,
         IRoomService rooms,
         IWorkspaceRoomService workspaceRooms)
     {
