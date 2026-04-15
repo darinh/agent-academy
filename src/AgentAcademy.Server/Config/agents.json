@@ -80,7 +80,13 @@
                         "GIT_LOG",
                         "SHOW_DIFF",
                         "RUN_BUILD",
-                        "RUN_TESTS"
+                        "RUN_TESTS",
+                        "CREATE_PR",
+                        "POST_PR_REVIEW",
+                        "GET_PR_REVIEWS",
+                        "MERGE_PR",
+                        "ADD_TASK_DEPENDENCY",
+                        "REMOVE_TASK_DEPENDENCY"
                     ],
                     "Denied": []
                 }
@@ -134,7 +140,10 @@
                         "READ_FILE",
                         "SEARCH_CODE",
                         "GIT_LOG",
-                        "SHOW_DIFF"
+                        "SHOW_DIFF",
+                        "GET_PR_REVIEWS",
+                        "ADD_TASK_DEPENDENCY",
+                        "REMOVE_TASK_DEPENDENCY"
                     ],
                     "Denied": [
                         "RESTART_SERVER"
@@ -198,7 +207,11 @@
                         "SHOW_DIFF",
                         "GIT_LOG",
                         "READ_FILE",
-                        "SEARCH_CODE"
+                        "SEARCH_CODE",
+                        "CREATE_PR",
+                        "GET_PR_REVIEWS",
+                        "ADD_TASK_DEPENDENCY",
+                        "REMOVE_TASK_DEPENDENCY"
                     ],
                     "Denied": [
                         "APPROVE_TASK",
@@ -264,7 +277,11 @@
                         "SHOW_DIFF",
                         "GIT_LOG",
                         "READ_FILE",
-                        "SEARCH_CODE"
+                        "SEARCH_CODE",
+                        "CREATE_PR",
+                        "GET_PR_REVIEWS",
+                        "ADD_TASK_DEPENDENCY",
+                        "REMOVE_TASK_DEPENDENCY"
                     ],
                     "Denied": [
                         "APPROVE_TASK",
@@ -334,7 +351,11 @@
                         "SEARCH_CODE",
                         "GIT_LOG",
                         "RUN_BUILD",
-                        "RUN_TESTS"
+                        "RUN_TESTS",
+                        "CREATE_PR",
+                        "POST_PR_REVIEW",
+                        "GET_PR_REVIEWS",
+                        "MERGE_PR"
                     ],
                     "Denied": [
                         "RESTART_SERVER"
