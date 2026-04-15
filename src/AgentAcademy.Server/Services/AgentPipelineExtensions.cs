@@ -56,6 +56,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<AgentQuotaService>();
         services.AddSingleton<IAgentQuotaService>(sp => sp.GetRequiredService<AgentQuotaService>());
         services.AddSingleton<AgentAnalyticsService>();
+        services.AddSingleton<IAgentAnalyticsService>(sp => sp.GetRequiredService<AgentAnalyticsService>());
         return services;
     }
 

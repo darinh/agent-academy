@@ -12,10 +12,10 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/analytics")]
 public class AnalyticsController : ControllerBase
 {
-    private readonly AgentAnalyticsService _analytics;
+    private readonly IAgentAnalyticsService _analytics;
     private readonly ITaskAnalyticsService _taskAnalytics;
 
-    public AnalyticsController(AgentAnalyticsService analytics, ITaskAnalyticsService taskAnalytics)
+    public AnalyticsController(IAgentAnalyticsService analytics, ITaskAnalyticsService taskAnalytics)
     {
         _analytics = analytics;
         _taskAnalytics = taskAnalytics;
