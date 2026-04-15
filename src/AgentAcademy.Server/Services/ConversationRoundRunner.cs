@@ -17,13 +17,13 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
-    private readonly AgentTurnRunner _turnRunner;
+    private readonly IAgentTurnRunner _turnRunner;
     private readonly ILogger<ConversationRoundRunner> _logger;
 
     public ConversationRoundRunner(
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
-        AgentTurnRunner turnRunner,
+        IAgentTurnRunner turnRunner,
         ILogger<ConversationRoundRunner> logger)
     {
         _scopeFactory = scopeFactory;

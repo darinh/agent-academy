@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// posting, task assignments). Extracted from AgentOrchestrator to isolate the
 /// per-turn execution concern from round-level orchestration.
 /// </summary>
-public sealed class AgentTurnRunner
+public sealed class AgentTurnRunner : IAgentTurnRunner
 {
     private readonly IAgentExecutor _executor;
     private readonly CommandPipeline _commandPipeline;
