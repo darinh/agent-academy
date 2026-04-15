@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -9,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Coordinates task operations that cross room, agent, and task boundaries.
 /// </summary>
-public sealed class TaskOrchestrationService
+public sealed class TaskOrchestrationService : ITaskOrchestrationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskOrchestrationService> _logger;

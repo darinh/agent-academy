@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -118,6 +119,68 @@ public sealed class ServiceRegistrationWiringTests
 
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddDomainServices_registers_task_service_interfaces()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var expectedInterfaces = new[]
+        {
+            typeof(ITaskQueryService),
+            typeof(ITaskLifecycleService),
+            typeof(ITaskEvidenceService),
+            typeof(ITaskDependencyService),
+            typeof(ITaskItemService),
+            typeof(ITaskOrchestrationService),
+            typeof(ITaskAnalyticsService),
+        };
+
+        foreach (var iface in expectedInterfaces)
+        {
+            Assert.Contains(services, sd =>
+                sd.ServiceType == iface && sd.Lifetime == ServiceLifetime.Scoped);
+        }
+    }
+
+    [Fact]
+    public void AddDomainServices_interface_forwards_resolve_to_concrete()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        // Verify forward registrations use factory pattern (not direct type mapping)
+        var forwardedInterfaces = new[]
+        {
+            typeof(ITaskQueryService),
+            typeof(ITaskLifecycleService),
+            typeof(ITaskEvidenceService),
+            typeof(ITaskDependencyService),
+            typeof(ITaskItemService),
+            typeof(ITaskOrchestrationService),
+            typeof(ITaskAnalyticsService),
+        };
+
+        foreach (var iface in forwardedInterfaces)
+        {
+            var descriptor = services.FirstOrDefault(sd => sd.ServiceType == iface);
+            Assert.NotNull(descriptor);
+            Assert.NotNull(descriptor!.ImplementationFactory);
+        }
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ITaskAssignmentHandler_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ITaskAssignmentHandler)
             && sd.Lifetime == ServiceLifetime.Singleton);
     }
 }

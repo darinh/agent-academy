@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// Computes task cycle analytics — effectiveness metrics derived from task
 /// lifecycle data. Scoped service (one DbContext per request).
 /// </summary>
-public sealed class TaskAnalyticsService
+public sealed class TaskAnalyticsService : ITaskAnalyticsService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly IAgentCatalog _catalog;

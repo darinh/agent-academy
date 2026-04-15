@@ -1,5 +1,7 @@
 namespace AgentAcademy.Server.Services;
 
+using AgentAcademy.Server.Services.Contracts;
+
 /// <summary>
 /// DI registration extensions for domain services.
 /// Extracted from Program.cs to reduce churn — domain services are stable but numerous.
@@ -14,24 +16,37 @@ public static class ServiceRegistrationExtensions
     {
         // Core domain services (scoped — one per request, uses scoped DbContext)
         services.AddScoped<ActivityPublisher>();
+
+        // Task services: registered as concrete + forwarded interface for backward compat.
+        // Consumers should migrate from GetRequiredService<TaskXxxService>() to
+        // GetRequiredService<ITaskXxxService>() over time.
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<TaskEvidenceService>();
+        services.AddScoped<ITaskEvidenceService>(sp => sp.GetRequiredService<TaskEvidenceService>());
         services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
+        services.AddScoped<TaskAnalyticsService>();
+        services.AddScoped<ITaskAnalyticsService>(sp => sp.GetRequiredService<TaskAnalyticsService>());
+
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<CrashRecoveryService>();
         services.AddScoped<InitializationService>();
         services.AddScoped<BreakoutRoomService>();
-        services.AddScoped<TaskItemService>();
         services.AddScoped<RoomService>();
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<WorkspaceService>();
-        services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<SearchService>();
 
         // Agent config (merges catalog defaults with DB overrides)
@@ -51,7 +66,6 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<SprintMetricsCalculator>();
         services.AddScoped<SprintScheduleService>();
-        services.AddScoped<TaskAnalyticsService>();
 
         // Round context loading (extracted from AgentOrchestrator)
         services.AddScoped<RoundContextLoader>();

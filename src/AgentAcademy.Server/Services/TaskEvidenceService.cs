@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// Handles task verification evidence recording and gate checks.
 /// Extracted from TaskLifecycleService to isolate the evidence ledger concern.
 /// </summary>
-public sealed class TaskEvidenceService
+public sealed class TaskEvidenceService : ITaskEvidenceService
 {
     /// <summary>
     /// Valid evidence phases.
