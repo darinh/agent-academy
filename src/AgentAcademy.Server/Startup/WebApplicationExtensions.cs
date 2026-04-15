@@ -1,9 +1,14 @@
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.HealthChecks;
+using AgentAcademy.Server.Hubs;
+using AgentAcademy.Server.Middleware;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using AgentAcademy.Server.Services.Contracts;
 
@@ -124,5 +129,87 @@ public static class WebApplicationExtensions
         notificationManager.RegisterProvider(app.Services.GetRequiredService<ConsoleNotificationProvider>());
         notificationManager.RegisterProvider(app.Services.GetRequiredService<DiscordNotificationProvider>());
         notificationManager.RegisterProvider(app.Services.GetRequiredService<SlackNotificationProvider>());
+    }
+
+    /// <summary>
+    /// Configures the HTTP middleware + endpoint pipeline.
+    /// Keeps Program.cs focused on composition while preserving ordering.
+    /// </summary>
+    public static void ConfigureHttpPipeline(
+        this WebApplication app,
+        AppAuthSetup authSetup,
+        ConsultantRateLimitSettings consultantRateLimits)
+    {
+        app.UseForwardedHeaders(new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        });
+
+        // Serve SPA static files in production (no-op when wwwroot doesn't exist)
+        var wwwrootPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+        if (Directory.Exists(wwwrootPath))
+        {
+            app.UseDefaultFiles();
+            app.UseStaticFiles();
+        }
+
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+
+        app.UseCors();
+
+        if (authSetup.AnyAuthEnabled)
+        {
+            app.UseAuthentication();
+
+            if (authSetup.ConsultantAuthEnabled && consultantRateLimits.Enabled)
+            {
+                app.UseRateLimiter();
+            }
+
+            app.UseAuthorization();
+        }
+
+        if (authSetup.GitHubAuthEnabled)
+        {
+            app.UseCopilotTokenRefresh();
+        }
+
+        app.MapControllers();
+        var activityHubEndpoint = app.MapHub<ActivityHub>("/hubs/activity");
+        if (!authSetup.AnyAuthEnabled)
+        {
+            activityHubEndpoint.AllowAnonymous();
+        }
+
+        app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+        {
+            ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+            ResultStatusCodes =
+            {
+                [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy] = StatusCodes.Status200OK,
+                [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded] = StatusCodes.Status200OK,
+                [Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+            },
+        }).AllowAnonymous();
+
+        if (Directory.Exists(wwwrootPath))
+        {
+            app.MapFallback(async context =>
+            {
+                if (!SpaFallbackHelper.ShouldServeIndex(context.Request.Path.Value))
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+
+                context.Response.ContentType = "text/html";
+                await context.Response.SendFileAsync(
+                    app.Environment.WebRootFileProvider.GetFileInfo("index.html"));
+            });
+        }
     }
 }
