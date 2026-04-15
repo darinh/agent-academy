@@ -122,7 +122,9 @@ public class BranchWorkflowTests : IDisposable
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();
         services.AddSingleton<LearningDigestService>();
+        services.AddSingleton<ILearningDigestService>(sp => sp.GetRequiredService<LearningDigestService>());
         services.AddSingleton<RetrospectiveService>();
+        services.AddSingleton<IRetrospectiveService>(sp => sp.GetRequiredService<RetrospectiveService>());
         services.AddSingleton<CommandAuthorizer>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();

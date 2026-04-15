@@ -30,10 +30,10 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
-    private readonly SpecManager _specManager;
+    private readonly ISpecManager _specManager;
     private readonly IGitService _gitService;
     private readonly IWorktreeService _worktreeService;
-    private readonly AgentMemoryLoader _memoryLoader;
+    private readonly IAgentMemoryLoader _memoryLoader;
     private readonly IBreakoutCompletionService _completion;
     private readonly ILogger<BreakoutLifecycleService> _logger;
 
@@ -43,10 +43,10 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
         IAgentExecutor executor,
-        SpecManager specManager,
+        ISpecManager specManager,
         IGitService gitService,
         IWorktreeService worktreeService,
-        AgentMemoryLoader memoryLoader,
+        IAgentMemoryLoader memoryLoader,
         IBreakoutCompletionService completion,
         ILogger<BreakoutLifecycleService> logger)
     {

@@ -152,7 +152,7 @@ public sealed class MergeTaskHandler : ICommandHandler
             // Fire-and-forget: run post-task retrospective for the assigned agent
             // Resolved at execution time to break DI cycle:
             // RetrospectiveService → CommandPipeline → MergeTaskHandler → RetrospectiveService
-            var retrospective = context.Services.GetRequiredService<RetrospectiveService>();
+            var retrospective = context.Services.GetRequiredService<IRetrospectiveService>();
             var retroTaskId = taskId;
             var retroAgentId = task.AssignedAgentId;
             _ = Task.Run(async () =>

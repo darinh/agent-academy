@@ -105,6 +105,7 @@ public class SpecTaskLinkTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(new SpecManager(_specsDir));
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 

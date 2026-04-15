@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api")]
 public class WorkspaceController : ControllerBase
 {
-    private readonly ProjectScanner _scanner;
+    private readonly IProjectScanner _scanner;
     private readonly IRoomService _roomService;
     private readonly IWorkspaceRoomService _workspaceRooms;
     private readonly IWorkspaceService _workspaceService;
@@ -25,7 +25,7 @@ public class WorkspaceController : ControllerBase
     private readonly ILogger<WorkspaceController> _logger;
 
     public WorkspaceController(
-        ProjectScanner scanner,
+        IProjectScanner scanner,
         IRoomService roomService,
         IWorkspaceRoomService workspaceRooms,
         IWorkspaceService workspaceService,

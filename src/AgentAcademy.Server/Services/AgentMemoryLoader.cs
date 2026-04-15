@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// Extracted from duplicated implementations in AgentOrchestrator and
 /// BreakoutLifecycleService.
 /// </summary>
-public sealed class AgentMemoryLoader
+public sealed class AgentMemoryLoader : Contracts.IAgentMemoryLoader
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentMemoryLoader> _logger;

@@ -18,7 +18,7 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
     private readonly IAgentExecutor _executor;
     private readonly CommandPipeline _commandPipeline;
     private readonly ITaskAssignmentHandler _taskAssignmentHandler;
-    private readonly AgentMemoryLoader _memoryLoader;
+    private readonly IAgentMemoryLoader _memoryLoader;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentTurnRunner> _logger;
 
@@ -26,7 +26,7 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
         IAgentExecutor executor,
         CommandPipeline commandPipeline,
         ITaskAssignmentHandler taskAssignmentHandler,
-        AgentMemoryLoader memoryLoader,
+        IAgentMemoryLoader memoryLoader,
         IServiceScopeFactory scopeFactory,
         ILogger<AgentTurnRunner> logger)
     {

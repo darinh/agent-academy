@@ -10,23 +10,23 @@ namespace AgentAcademy.Server.Services;
 /// Provides methods to load spec context for prompt injection, list spec sections,
 /// read individual spec content, and track spec versioning.
 /// </summary>
-public sealed class SpecManager
+/// <summary>
+/// Represents a single spec section with its metadata.
+/// </summary>
+public record SpecSection(string Id, string Heading, string Summary, string FilePath);
+
+/// <summary>
+/// A spec section matched by keyword search, with a relevance score.
+/// </summary>
+public record SpecSearchResult(string Id, string Heading, string Summary, string FilePath, double Score, string MatchedTerms);
+
+/// <summary>
+/// Version information for the spec corpus, read from specs/spec-version.json.
+/// </summary>
+public record SpecVersionInfo(string Version, string LastUpdated, string ContentHash, int SectionCount);
+
+public sealed class SpecManager : Contracts.ISpecManager
 {
-    /// <summary>
-    /// Represents a single spec section with its metadata.
-    /// </summary>
-    public record SpecSection(string Id, string Heading, string Summary, string FilePath);
-
-    /// <summary>
-    /// A spec section matched by keyword search, with a relevance score.
-    /// </summary>
-    public record SpecSearchResult(string Id, string Heading, string Summary, string FilePath, double Score, string MatchedTerms);
-
-    /// <summary>
-    /// Version information for the spec corpus, read from specs/spec-version.json.
-    /// </summary>
-    public record SpecVersionInfo(string Version, string LastUpdated, string ContentHash, int SectionCount);
-
     private readonly string _specsDir;
     private readonly ILogger<SpecManager>? _logger;
 

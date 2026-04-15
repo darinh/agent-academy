@@ -86,7 +86,9 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddProjectAndGitServices(this IServiceCollection services)
     {
         services.AddSingleton<SpecManager>();
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
         services.AddSingleton<ProjectScanner>();
+        services.AddSingleton<IProjectScanner>(sp => sp.GetRequiredService<ProjectScanner>());
         services.AddSingleton<GitService>();
         services.AddSingleton<IGitService>(sp => sp.GetRequiredService<GitService>());
         services.AddSingleton<WorktreeService>();
@@ -102,8 +104,11 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddLearningServices(this IServiceCollection services)
     {
         services.AddSingleton<AgentMemoryLoader>();
+        services.AddSingleton<IAgentMemoryLoader>(sp => sp.GetRequiredService<AgentMemoryLoader>());
         services.AddSingleton<LearningDigestService>();
+        services.AddSingleton<ILearningDigestService>(sp => sp.GetRequiredService<LearningDigestService>());
         services.AddSingleton<RetrospectiveService>();
+        services.AddSingleton<IRetrospectiveService>(sp => sp.GetRequiredService<RetrospectiveService>());
         return services;
     }
 

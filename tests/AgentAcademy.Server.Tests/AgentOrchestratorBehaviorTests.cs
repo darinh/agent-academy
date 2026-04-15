@@ -97,6 +97,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         services.AddSingleton(new SpecManager(
             specsDir: Path.Combine(Path.GetTempPath(), $"orchestrator-test-specs-{Guid.NewGuid()}"),
             logger: NullLogger<SpecManager>.Instance));
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
 
         // Scoped domain services (matches production registration)
         services.AddDomainServices();

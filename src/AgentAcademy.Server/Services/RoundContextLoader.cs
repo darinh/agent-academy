@@ -21,7 +21,7 @@ internal record RoundContext(
 /// </summary>
 public sealed class RoundContextLoader
 {
-    private readonly SpecManager _specManager;
+    private readonly ISpecManager _specManager;
     private readonly IConversationSessionQueryService _sessionQuery;
     private readonly IRoomService _roomService;
     private readonly ISprintService _sprintService;
@@ -29,7 +29,7 @@ public sealed class RoundContextLoader
     private readonly ILogger<RoundContextLoader> _logger;
 
     public RoundContextLoader(
-        SpecManager specManager,
+        ISpecManager specManager,
         IConversationSessionQueryService sessionQuery,
         IRoomService roomService,
         ISprintService sprintService,

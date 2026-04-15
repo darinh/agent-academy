@@ -335,7 +335,7 @@ public sealed class GenerateDigestHandlerTests : IDisposable
 
         public object? GetService(Type serviceType)
         {
-            if (serviceType == typeof(LearningDigestService))
+            if (serviceType == typeof(ILearningDigestService) || serviceType == typeof(LearningDigestService))
                 return _digestService;
             return _inner.GetService(serviceType);
         }

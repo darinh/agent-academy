@@ -10,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// git state, and configuration files. Ported from the TypeScript
 /// ProjectScanner in local-agent-host.
 /// </summary>
-public sealed class ProjectScanner
+public sealed class ProjectScanner : Contracts.IProjectScanner
 {
     /// <summary>Config files and the tech stack they imply.</summary>
     private static readonly Dictionary<string, string> ConfigFiles = new()

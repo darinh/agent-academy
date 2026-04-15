@@ -52,7 +52,7 @@ public sealed class LinkTaskToSpecHandler : ICommandHandler
         }
 
         var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
-        var specManager = context.Services.GetRequiredService<SpecManager>();
+        var specManager = context.Services.GetRequiredService<ISpecManager>();
 
         // Validate the spec section exists on disk
         var specContent = await specManager.GetSpecContentAsync(specSectionId);

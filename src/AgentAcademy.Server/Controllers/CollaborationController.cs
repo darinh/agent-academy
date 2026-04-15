@@ -20,7 +20,7 @@ public class CollaborationController : ControllerBase
     private readonly IAgentCatalog _catalog;
     private readonly IAgentOrchestrator _orchestrator;
     private readonly IAgentExecutor _executor;
-    private readonly SpecManager _specManager;
+    private readonly ISpecManager _specManager;
     private readonly ILogger<CollaborationController> _logger;
 
     public CollaborationController(
@@ -32,7 +32,7 @@ public class CollaborationController : ControllerBase
         IAgentCatalog catalog,
         IAgentOrchestrator orchestrator,
         IAgentExecutor executor,
-        SpecManager specManager,
+        ISpecManager specManager,
         ILogger<CollaborationController> logger)
     {
         _taskOrchestration = taskOrchestration;
@@ -140,7 +140,7 @@ public class CollaborationController : ControllerBase
     /// Returns sections ranked by relevance (weighted heading/purpose/body match).
     /// </summary>
     [HttpGet("api/specs/search")]
-    public async Task<ActionResult<List<SpecManager.SpecSearchResult>>> SearchSpecs(
+    public async Task<ActionResult<List<SpecSearchResult>>> SearchSpecs(
         [FromQuery] string q,
         [FromQuery] int limit = 5,
         CancellationToken ct = default)

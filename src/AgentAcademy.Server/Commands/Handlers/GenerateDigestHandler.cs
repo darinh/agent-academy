@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,7 +18,7 @@ public sealed class GenerateDigestHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var digestService = context.Services.GetRequiredService<LearningDigestService>();
+        var digestService = context.Services.GetRequiredService<ILearningDigestService>();
 
         var force = false;
         if (command.Args.TryGetValue("force", out var forceObj))

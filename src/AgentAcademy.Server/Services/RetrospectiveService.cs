@@ -18,13 +18,13 @@ namespace AgentAcademy.Server.Services;
 /// Designed to be called fire-and-forget from MergeTaskHandler. Creates
 /// its own DI scopes (singleton lifetime, like BreakoutCompletionService).
 /// </summary>
-public sealed class RetrospectiveService
+public sealed class RetrospectiveService : Contracts.IRetrospectiveService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
     private readonly CommandPipeline _commandPipeline;
-    private readonly LearningDigestService _digestService;
+    private readonly ILearningDigestService _digestService;
     private readonly ILogger<RetrospectiveService> _logger;
 
     public RetrospectiveService(
@@ -32,7 +32,7 @@ public sealed class RetrospectiveService
         IAgentCatalog catalog,
         IAgentExecutor executor,
         CommandPipeline commandPipeline,
-        LearningDigestService digestService,
+        ILearningDigestService digestService,
         ILogger<RetrospectiveService> logger)
     {
         _scopeFactory = scopeFactory;

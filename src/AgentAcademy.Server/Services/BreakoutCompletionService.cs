@@ -18,18 +18,18 @@ public sealed class BreakoutCompletionService : IBreakoutCompletionService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
-    private readonly SpecManager _specManager;
+    private readonly ISpecManager _specManager;
     private readonly CommandPipeline _commandPipeline;
-    private readonly AgentMemoryLoader _memoryLoader;
+    private readonly IAgentMemoryLoader _memoryLoader;
     private readonly ILogger<BreakoutCompletionService> _logger;
 
     public BreakoutCompletionService(
         IServiceScopeFactory scopeFactory,
         IAgentCatalog catalog,
         IAgentExecutor executor,
-        SpecManager specManager,
+        ISpecManager specManager,
         CommandPipeline commandPipeline,
-        AgentMemoryLoader memoryLoader,
+        IAgentMemoryLoader memoryLoader,
         ILogger<BreakoutCompletionService> logger)
     {
         _scopeFactory = scopeFactory;

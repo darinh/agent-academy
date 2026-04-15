@@ -18,7 +18,7 @@ namespace AgentAcademy.Server.Services;
 /// Singleton with its own DI scopes (same pattern as RetrospectiveService).
 /// Thread-safe: uses a semaphore to prevent concurrent digest generation.
 /// </summary>
-public sealed class LearningDigestService
+public sealed class LearningDigestService : Contracts.ILearningDigestService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;

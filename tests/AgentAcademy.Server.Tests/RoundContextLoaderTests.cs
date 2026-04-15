@@ -29,6 +29,7 @@ public sealed class RoundContextLoaderTests : IDisposable
         services.AddSingleton<MessageBroadcaster>();
         services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddSingleton<SpecManager>();
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
         services.AddSingleton(Substitute.For<IAgentExecutor>());
         services.AddDomainServices();
         services.AddLogging();

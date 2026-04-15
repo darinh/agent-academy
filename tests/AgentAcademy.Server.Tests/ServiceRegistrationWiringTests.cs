@@ -62,6 +62,26 @@ public sealed class ServiceRegistrationWiringTests
         // IAgentQuotaService should be registered (alias for AgentQuotaService)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentQuotaService));
+
+        // ILearningDigestService should be registered (alias for LearningDigestService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ILearningDigestService));
+
+        // IRetrospectiveService should be registered (alias for RetrospectiveService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IRetrospectiveService));
+
+        // ISpecManager should be registered (alias for SpecManager)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ISpecManager));
+
+        // IProjectScanner should be registered (alias for ProjectScanner)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IProjectScanner));
+
+        // IAgentMemoryLoader should be registered (alias for AgentMemoryLoader)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentMemoryLoader));
     }
 
     [Fact]
@@ -586,6 +606,126 @@ public sealed class ServiceRegistrationWiringTests
         services.AddAgentPipeline();
 
         var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentTurnRunner));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ILearningDigestService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ILearningDigestService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ILearningDigestService_forwards_to_LearningDigestService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(ILearningDigestService));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IRetrospectiveService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IRetrospectiveService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IRetrospectiveService_forwards_to_RetrospectiveService()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IRetrospectiveService));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_ISpecManager_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ISpecManager)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_ISpecManager_forwards_to_SpecManager()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(ISpecManager));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IProjectScanner_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IProjectScanner)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IProjectScanner_forwards_to_ProjectScanner()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IProjectScanner));
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IAgentMemoryLoader_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IAgentMemoryLoader)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IAgentMemoryLoader_forwards_to_AgentMemoryLoader()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        var descriptor = services.First(sd => sd.ServiceType == typeof(IAgentMemoryLoader));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
         Assert.NotNull(descriptor.ImplementationFactory);
     }

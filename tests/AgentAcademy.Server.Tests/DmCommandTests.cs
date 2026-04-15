@@ -120,6 +120,7 @@ public class DmCommandTests : IDisposable
         // Real services needed by AgentOrchestrator
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<SpecManager>();
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
         services.AddSingleton<CommandAuthorizer>();
         services.AddSingleton<CommandPipeline>();
         services.AddSingleton<GitService>();
@@ -129,6 +130,7 @@ public class DmCommandTests : IDisposable
             repositoryRoot: "/tmp/test-repo"));
         services.AddSingleton<IWorktreeService>(sp => sp.GetRequiredService<WorktreeService>());
         services.AddSingleton<AgentMemoryLoader>();
+        services.AddSingleton<IAgentMemoryLoader>(sp => sp.GetRequiredService<AgentMemoryLoader>());
         services.AddSingleton<BreakoutCompletionService>();
         services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
         services.AddSingleton<BreakoutLifecycleService>();
