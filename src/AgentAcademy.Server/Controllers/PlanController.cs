@@ -12,13 +12,13 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/rooms/{roomId}/plan")]
 public class PlanController : ControllerBase
 {
-    private readonly PlanService _planService;
+    private readonly IPlanService _planService;
     private readonly IRoomService _roomService;
     private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly ILogger<PlanController> _logger;
 
     public PlanController(
-        PlanService planService,
+        IPlanService planService,
         IRoomService roomService,
         IBreakoutRoomService breakoutRoomService,
         ILogger<PlanController> logger)

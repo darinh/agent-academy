@@ -11,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Tracks file artifacts produced by agents in rooms (append-only event log).
 /// Records write_file, commit, and delete operations for observability.
 /// </summary>
-public sealed class RoomArtifactTracker
+public sealed class RoomArtifactTracker : IRoomArtifactTracker
 {
     private readonly AgentAcademyDbContext _db;
     private readonly IActivityPublisher _activity;

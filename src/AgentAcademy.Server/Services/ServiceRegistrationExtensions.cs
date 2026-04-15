@@ -41,6 +41,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<AgentLocationService>();
         services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
+        services.AddScoped<IPlanService>(sp => sp.GetRequiredService<PlanService>());
         services.AddScoped<CrashRecoveryService>();
         services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddScoped<InitializationService>();
@@ -94,9 +95,11 @@ public static class ServiceRegistrationExtensions
 
         // Room artifact tracking (file operation event log)
         services.AddScoped<RoomArtifactTracker>();
+        services.AddScoped<IRoomArtifactTracker>(sp => sp.GetRequiredService<RoomArtifactTracker>());
 
         // Artifact evaluation (quality checks on tracked files)
         services.AddScoped<ArtifactEvaluatorService>();
+        services.AddScoped<IArtifactEvaluatorService>(sp => sp.GetRequiredService<ArtifactEvaluatorService>());
 
         return services;
     }

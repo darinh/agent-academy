@@ -75,7 +75,7 @@ public sealed class CommitChangesHandler : ICommandHandler
             try
             {
                 using var artifactScope = _scopeFactory.CreateScope();
-                var tracker = artifactScope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
+                var tracker = artifactScope.ServiceProvider.GetRequiredService<IRoomArtifactTracker>();
                 var files = await _gitService.GetFilesInCommitAsync(commitSha, context.WorkingDirectory);
                 await tracker.RecordCommitAsync(context.RoomId, context.AgentId, commitSha, files);
             }

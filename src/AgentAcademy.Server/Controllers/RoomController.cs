@@ -23,8 +23,8 @@ public class RoomController : ControllerBase
     private readonly IAgentCatalog _catalog;
     private readonly ILlmUsageTracker _usageTracker;
     private readonly IAgentErrorTracker _errorTracker;
-    private readonly RoomArtifactTracker _artifactTracker;
-    private readonly ArtifactEvaluatorService _evaluator;
+    private readonly IRoomArtifactTracker _artifactTracker;
+    private readonly IArtifactEvaluatorService _evaluator;
     private readonly ILogger<RoomController> _logger;
 
     private static readonly JsonSerializerOptions SseJsonOptions = new()
@@ -40,8 +40,8 @@ public class RoomController : ControllerBase
         IAgentCatalog catalog,
         ILlmUsageTracker usageTracker,
         IAgentErrorTracker errorTracker,
-        RoomArtifactTracker artifactTracker,
-        ArtifactEvaluatorService evaluator,
+        IRoomArtifactTracker artifactTracker,
+        IArtifactEvaluatorService evaluator,
         ILogger<RoomController> logger)
     {
         _roomService = roomService;

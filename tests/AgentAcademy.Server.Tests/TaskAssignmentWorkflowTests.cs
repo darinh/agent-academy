@@ -74,6 +74,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddScoped<AgentLocationService>();
         services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
+        services.AddScoped<IPlanService>(sp => sp.GetRequiredService<PlanService>());
         services.AddScoped<BreakoutRoomService>();
         services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);

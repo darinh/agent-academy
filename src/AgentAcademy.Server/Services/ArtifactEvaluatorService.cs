@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// Evaluates artifact files produced by agents in a room against quality criteria.
 /// Checks file existence, content, syntax validity, and completeness.
 /// </summary>
-public sealed partial class ArtifactEvaluatorService
+public sealed partial class ArtifactEvaluatorService : IArtifactEvaluatorService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<ArtifactEvaluatorService> _logger;

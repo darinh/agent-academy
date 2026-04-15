@@ -285,6 +285,47 @@ public sealed class ServiceRegistrationWiringTests
     }
 
     [Fact]
+    public void AddDomainServices_registers_utility_service_interfaces()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var expectedInterfaces = new[]
+        {
+            typeof(IPlanService),
+            typeof(IRoomArtifactTracker),
+            typeof(IArtifactEvaluatorService),
+        };
+
+        foreach (var iface in expectedInterfaces)
+        {
+            Assert.Contains(services, sd =>
+                sd.ServiceType == iface && sd.Lifetime == ServiceLifetime.Scoped);
+        }
+    }
+
+    [Fact]
+    public void AddDomainServices_utility_interfaces_forward_to_concrete()
+    {
+        var services = new ServiceCollection();
+        services.AddDomainServices();
+
+        var forwardedInterfaces = new[]
+        {
+            typeof(IPlanService),
+            typeof(IRoomArtifactTracker),
+            typeof(IArtifactEvaluatorService),
+        };
+
+        foreach (var iface in forwardedInterfaces)
+        {
+            var descriptor = services.FirstOrDefault(sd => sd.ServiceType == iface);
+            Assert.NotNull(descriptor);
+            Assert.NotNull(descriptor!.ImplementationFactory);
+        }
+    }
+
+    [Fact]
     public void AddDomainServices_interface_forwards_resolve_to_concrete()
     {
         var services = new ServiceCollection();

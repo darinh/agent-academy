@@ -221,7 +221,7 @@ internal sealed class CodeWriteToolWrapper
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var tracker = scope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
+            var tracker = scope.ServiceProvider.GetRequiredService<IRoomArtifactTracker>();
             await tracker.RecordAsync(_roomId, _agentId, filePath, operation);
         }
         catch (Exception ex)
@@ -235,7 +235,7 @@ internal sealed class CodeWriteToolWrapper
         try
         {
             var gitService = scope.ServiceProvider.GetRequiredService<IGitService>();
-            var tracker = scope.ServiceProvider.GetRequiredService<RoomArtifactTracker>();
+            var tracker = scope.ServiceProvider.GetRequiredService<IRoomArtifactTracker>();
             var files = await gitService.GetFilesInCommitAsync(commitSha);
             await tracker.RecordCommitAsync(_roomId, _agentId, commitSha, files);
         }

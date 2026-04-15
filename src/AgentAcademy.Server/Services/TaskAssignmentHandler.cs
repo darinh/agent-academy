@@ -94,7 +94,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
         var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
-        var planService = scope.ServiceProvider.GetRequiredService<PlanService>();
+        var planService = scope.ServiceProvider.GetRequiredService<IPlanService>();
 
         var agent = _catalog.Agents.FirstOrDefault(a =>
             a.Name.Equals(assignment.Agent, StringComparison.OrdinalIgnoreCase) ||

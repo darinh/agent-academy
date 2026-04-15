@@ -110,6 +110,7 @@ public sealed class CommitChangesTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddScoped<RoomArtifactTracker>();
+        services.AddScoped<IRoomArtifactTracker>(sp => sp.GetRequiredService<RoomArtifactTracker>());
         services.AddLogging();
 
         _serviceProvider = services.BuildServiceProvider();
