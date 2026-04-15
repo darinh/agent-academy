@@ -900,31 +900,46 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 ## 11. Task Service Method Index
 
-> **Source**: `src/AgentAcademy.Server/Services/TaskQueryService.cs`, `TaskLifecycleService.cs`, `TaskOrchestrationService.cs`, `BreakoutRoomService.cs`
+> **Source**: `src/AgentAcademy.Server/Services/Contracts/` (interfaces), `src/AgentAcademy.Server/Services/` (implementations)
 
-| Method | Service | Description |
-|--------|---------|-------------|
-| `CreateTaskAsync` | `TaskOrchestrationService` | Creates task with room, plan, agents |
-| `GetTasksAsync` | `TaskQueryService` | Returns all tasks |
-| `FindTaskByTitleAsync` | `TaskQueryService` | Finds latest non-cancelled task by exact title |
-| `AssignTaskAsync` | `TaskQueryService` | Sets assigned agent on task |
-| `UpdateTaskStatusAsync` | `TaskQueryService` | Updates task status |
-| `UpdateTaskBranchAsync` | `TaskQueryService` | Write-once branch assignment |
-| `UpdateTaskPrAsync` | `TaskQueryService` | Records PR info on task |
-| `CompleteTaskAsync` | `TaskOrchestrationService` | Marks task completed with metadata |
-| `ClaimTaskAsync` | `TaskLifecycleService` | Agent claims task (prevents double-claim) |
-| `ReleaseTaskAsync` | `TaskLifecycleService` | Agent releases task |
-| `ApproveTaskAsync` | `TaskLifecycleService` | Approves task, increments ReviewRounds |
-| `RequestChangesAsync` | `TaskLifecycleService` | Requests changes, increments ReviewRounds |
-| `GetReviewQueueAsync` | `TaskQueryService` | Returns tasks awaiting review |
-| `PostTaskNoteAsync` | `TaskOrchestrationService` | Posts note to task's room |
-| `AddTaskCommentAsync` | `TaskLifecycleService` | Adds structured comment |
-| `GetTaskCommentsAsync` | `TaskQueryService` | Returns comments for a task |
-| `GetTaskCommentCountAsync` | `TaskQueryService` | Returns comment count |
+All task services have interface contracts in `Services/Contracts/`. Consumers inject the interface (e.g., `ITaskQueryService`), not the concrete class. `TaskSnapshotFactory` (static) provides pure DTO mapping shared across all services.
+
+| Method | Interface | Description |
+|--------|-----------|-------------|
+| `CreateTaskAsync` | `ITaskOrchestrationService` | Creates task with room, plan, agents |
+| `CompleteTaskAsync` | `ITaskOrchestrationService` | Marks task completed with metadata |
+| `RejectTaskAsync` | `ITaskOrchestrationService` | Reverts completed task or moves to ChangesRequested |
+| `EnsureTaskForBreakoutAsync` | `ITaskOrchestrationService` | Creates or reuses task for breakout |
+| `PostTaskNoteAsync` | `ITaskOrchestrationService` | Posts note to task's room |
+| `GetTasksAsync` | `ITaskQueryService` | Returns all tasks |
+| `GetTaskAsync` | `ITaskQueryService` | Returns single task by ID |
+| `FindTaskByTitleAsync` | `ITaskQueryService` | Finds latest non-cancelled task by exact title |
+| `AssignTaskAsync` | `ITaskQueryService` | Sets assigned agent on task |
+| `UpdateTaskStatusAsync` | `ITaskQueryService` | Updates task status |
+| `UpdateTaskBranchAsync` | `ITaskQueryService` | Write-once branch assignment |
+| `UpdateTaskPrAsync` | `ITaskQueryService` | Records PR info on task |
+| `GetReviewQueueAsync` | `ITaskQueryService` | Returns tasks awaiting review |
+| `GetTaskCommentsAsync` | `ITaskQueryService` | Returns comments for a task |
+| `GetTaskCommentCountAsync` | `ITaskQueryService` | Returns comment count |
+| `ClaimTaskAsync` | `ITaskLifecycleService` | Agent claims task (prevents double-claim) |
+| `ReleaseTaskAsync` | `ITaskLifecycleService` | Agent releases task |
+| `ApproveTaskAsync` | `ITaskLifecycleService` | Approves task, increments ReviewRounds |
+| `RequestChangesAsync` | `ITaskLifecycleService` | Requests changes, increments ReviewRounds |
+| `AddTaskCommentAsync` | `ITaskLifecycleService` | Adds structured comment |
+| `AddDependencyAsync` | `ITaskDependencyService` | Adds dependency with cycle detection |
+| `RemoveDependencyAsync` | `ITaskDependencyService` | Removes a task dependency |
+| `GetBlockingTasksAsync` | `ITaskDependencyService` | Returns tasks blocked by given task |
+| `RecordEvidenceAsync` | `ITaskEvidenceService` | Records a verification check |
+| `CheckGatesAsync` | `ITaskEvidenceService` | Evaluates evidence gates for transition |
+| `CreateTaskItemAsync` | `ITaskItemService` | Creates a breakout-level work item |
+| `UpdateTaskItemStatusAsync` | `ITaskItemService` | Updates work item status |
+| `GetTaskCycleAnalyticsAsync` | `ITaskAnalyticsService` | Computes task cycle effectiveness metrics |
 | `SetBreakoutTaskIdAsync` | `BreakoutRoomService` | Write-once breakout→task link |
 | `GetBreakoutTaskIdAsync` | `BreakoutRoomService` | Gets task ID for breakout |
 | `TransitionBreakoutTaskToInReviewAsync` | `BreakoutRoomService` | Moves breakout task to InReview |
-| `EnsureTaskForBreakoutAsync` | `TaskOrchestrationService` | Creates or reuses task for breakout |
+| `BuildTaskSnapshot` | `TaskSnapshotFactory` (static) | Maps `TaskEntity` → `TaskSnapshot` DTO |
+| `BuildTaskComment` | `TaskSnapshotFactory` (static) | Maps `TaskCommentEntity` → `TaskComment` DTO |
+| `BuildTaskEvidence` | `TaskSnapshotFactory` (static) | Maps `TaskEvidenceEntity` → `TaskEvidence` DTO |
 
 ---
 

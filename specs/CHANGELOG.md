@@ -4,6 +4,10 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **005-workspace-runtime**: Document task service interface contracts (`Services/Contracts/`). Service architecture table now shows interface column and `Scoped + forwarded` registration pattern. Service registration code block updated to reflect `ServiceRegistrationExtensions.AddDomainServices()` with DI forwarding. Added `TaskSnapshotFactory`, `TaskDependencyService`, `TaskAnalyticsService`, `RoomArtifactTracker`, and `ArtifactEvaluatorService` to the service table.
+- **010-task-management**: Task Service Method Index updated — column renamed from "Service" to "Interface", all task service entries now reference their interface contract. Added missing methods: `RejectTaskAsync`, `GetTaskAsync`, `AddDependencyAsync`, `RemoveDependencyAsync`, `GetBlockingTasksAsync`, `RecordEvidenceAsync`, `CheckGatesAsync`, `GetTaskCycleAnalyticsAsync`, and `TaskSnapshotFactory` mapping methods.
+
 ### Added
 - **016-api-reference**: Request/Response Schemas section. Full property definitions for 39+ API types — every request body and response type referenced in the endpoint tables now has a complete schema table with property names, types, nullability, validation constraints, and descriptions. Includes an Enums Reference table listing all 16 enum types with their string values. Organized by domain: Rooms, Direct Messages, Agents, Agent Configuration, Tasks, Commands, Memory System, Notifications, Instruction Templates, Workspace & GitHub, Settings. Known gap #1 resolved.
 
