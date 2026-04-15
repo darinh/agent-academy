@@ -48,7 +48,7 @@ public sealed class AgentTurnRunner
         AgentDefinition catalogAgent,
         IServiceScope scope,
         IMessageService messageService,
-        AgentConfigService configService,
+        IAgentConfigService configService,
         IActivityPublisher activity,
         RoomSnapshot room,
         string roomId,

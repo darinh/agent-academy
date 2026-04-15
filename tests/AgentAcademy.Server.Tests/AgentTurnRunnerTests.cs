@@ -22,7 +22,7 @@ public class AgentTurnRunnerTests : IDisposable
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityPublisher _activityPublisher;
     private readonly IMessageService _messageService;
-    private readonly AgentConfigService _configService;
+    private readonly IAgentConfigService _configService;
     private readonly ConversationSessionService _sessionService;
     private readonly AgentMemoryLoader _memoryLoader;
     private readonly AgentTurnRunner _runner;

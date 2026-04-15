@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,7 +14,7 @@ namespace AgentAcademy.Server.Services;
 ///   2. + InstructionTemplate.Content (if template assigned)
 ///   3. + CustomInstructions (if set)
 /// </summary>
-public sealed class AgentConfigService
+public sealed class AgentConfigService : IAgentConfigService
 {
     private readonly AgentAcademyDbContext _db;
 

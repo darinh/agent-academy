@@ -44,7 +44,7 @@ public sealed class DirectMessageRouter : IDirectMessageRouter
         var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
         var activity = scope.ServiceProvider.GetRequiredService<IActivityPublisher>();
-        var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
+        var configService = scope.ServiceProvider.GetRequiredService<IAgentConfigService>();
         var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 
         var catalogAgent = _catalog.Agents.FirstOrDefault(

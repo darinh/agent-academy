@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,11 +14,11 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/instruction-templates")]
 public class InstructionTemplateController : ControllerBase
 {
-    private readonly AgentConfigService _configService;
+    private readonly IAgentConfigService _configService;
     private readonly ILogger<InstructionTemplateController> _logger;
 
     public InstructionTemplateController(
-        AgentConfigService configService,
+        IAgentConfigService configService,
         ILogger<InstructionTemplateController> logger)
     {
         _configService = configService;

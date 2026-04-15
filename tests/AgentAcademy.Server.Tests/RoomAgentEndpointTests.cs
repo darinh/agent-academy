@@ -27,7 +27,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     private readonly IMessageService _messageService;
     private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ConversationSessionService _sessionService;
-    private readonly AgentConfigService _configService;
+    private readonly IAgentConfigService _configService;
     private readonly AgentCatalogOptions _catalog;
     private readonly string _mainRoomId = "main";
 
