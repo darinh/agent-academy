@@ -55,6 +55,7 @@ public class TaskLifecycleServiceTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddLogging();

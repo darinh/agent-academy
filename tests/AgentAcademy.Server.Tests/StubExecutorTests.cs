@@ -140,6 +140,7 @@ public class AgentExecutorInterfaceTests
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());

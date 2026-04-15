@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,7 +36,7 @@ public sealed class RemoveTaskDependencyHandler : ICommandHandler
             };
         }
 
-        var depService = context.Services.GetRequiredService<TaskDependencyService>();
+        var depService = context.Services.GetRequiredService<ITaskDependencyService>();
 
         try
         {

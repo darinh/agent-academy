@@ -59,11 +59,13 @@ public class TaskEvidenceTests : IDisposable
         services.AddSingleton(catalog);
         services.AddSingleton<IAgentCatalog>(catalog);
         services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<TaskEvidenceService>();
+        services.AddScoped<ITaskEvidenceService>(sp => sp.GetRequiredService<TaskEvidenceService>());
         services.AddScoped<MessageService>();
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();

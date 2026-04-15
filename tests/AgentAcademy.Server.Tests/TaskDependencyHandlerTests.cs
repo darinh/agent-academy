@@ -50,6 +50,7 @@ public sealed class TaskDependencyHandlerTests : IDisposable
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
         services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();

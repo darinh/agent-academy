@@ -4,6 +4,7 @@ using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +40,7 @@ public sealed class ListAgentStatsHandlerTests : IDisposable
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<IAgentCatalog>(TestCatalog);
         services.AddScoped<TaskAnalyticsService>();
+        services.AddScoped<ITaskAnalyticsService>(sp => sp.GetRequiredService<TaskAnalyticsService>());
         _serviceProvider = services.BuildServiceProvider();
 
         using var scope = _serviceProvider.CreateScope();
