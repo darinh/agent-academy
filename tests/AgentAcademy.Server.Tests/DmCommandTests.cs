@@ -117,6 +117,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<CommandAuthorizer>();
         services.AddSingleton<CommandPipeline>();
         services.AddSingleton<GitService>();
+        services.AddSingleton<IGitService>(sp => sp.GetRequiredService<GitService>());
         services.AddSingleton(new WorktreeService(
             Microsoft.Extensions.Logging.Abstractions.NullLogger<WorktreeService>.Instance,
             repositoryRoot: "/tmp/test-repo"));

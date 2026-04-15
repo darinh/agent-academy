@@ -82,6 +82,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<SpecManager>();
         services.AddSingleton<ProjectScanner>();
         services.AddSingleton<GitService>();
+        services.AddSingleton<IGitService>(sp => sp.GetRequiredService<GitService>());
         services.AddSingleton<WorktreeService>();
         services.AddSingleton<GitHubService>(sp =>
             new GitHubService(

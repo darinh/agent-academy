@@ -42,6 +42,10 @@ public sealed class ServiceRegistrationWiringTests
         // IAgentOrchestrator should be registered (alias for AgentOrchestrator)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentOrchestrator));
+
+        // IGitService should be registered (alias for GitService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IGitService));
     }
 
     [Fact]
@@ -246,5 +250,31 @@ public sealed class ServiceRegistrationWiringTests
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentOrchestrator)
             && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_registers_IGitService_interface()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IGitService)
+            && sd.Lifetime == ServiceLifetime.Singleton);
+    }
+
+    [Fact]
+    public void AddAgentPipeline_IGitService_resolves_to_same_GitService_instance()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAgentPipeline();
+        using var provider = services.BuildServiceProvider();
+
+        var concrete = provider.GetRequiredService<GitService>();
+        var iface = provider.GetRequiredService<IGitService>();
+
+        Assert.Same(concrete, iface);
     }
 }

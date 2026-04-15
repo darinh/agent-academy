@@ -14,11 +14,11 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class MergeTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
     private readonly ILogger<MergeTaskHandler> _logger;
 
     public MergeTaskHandler(
-        GitService gitService,
+        IGitService gitService,
         ILogger<MergeTaskHandler> logger)
     {
         _gitService = gitService;

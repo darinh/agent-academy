@@ -31,7 +31,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
     private readonly IAgentCatalog _catalog;
     private readonly IAgentExecutor _executor;
     private readonly SpecManager _specManager;
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
     private readonly WorktreeService _worktreeService;
     private readonly AgentMemoryLoader _memoryLoader;
     private readonly IBreakoutCompletionService _completion;
@@ -44,7 +44,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         IAgentCatalog catalog,
         IAgentExecutor executor,
         SpecManager specManager,
-        GitService gitService,
+        IGitService gitService,
         WorktreeService worktreeService,
         AgentMemoryLoader memoryLoader,
         IBreakoutCompletionService completion,

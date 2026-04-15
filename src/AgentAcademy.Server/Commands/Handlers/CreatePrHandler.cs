@@ -12,10 +12,10 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class CreatePrHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
     private readonly IGitHubService _gitHubService;
 
-    public CreatePrHandler(GitService gitService, IGitHubService gitHubService)
+    public CreatePrHandler(IGitService gitService, IGitHubService gitHubService)
     {
         _gitService = gitService;
         _gitHubService = gitHubService;

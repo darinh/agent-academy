@@ -17,12 +17,12 @@ public sealed class ShellCommandHandler : ICommandHandler
 {
     private static readonly TimeSpan DotnetTimeout = TimeSpan.FromMinutes(10);
 
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<ShellCommandHandler> _logger;
 
     public ShellCommandHandler(
-        GitService gitService,
+        IGitService gitService,
         IHostApplicationLifetime lifetime,
         ILogger<ShellCommandHandler> logger)
     {

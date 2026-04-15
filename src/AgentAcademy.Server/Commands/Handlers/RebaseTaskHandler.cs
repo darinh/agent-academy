@@ -12,9 +12,9 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class RebaseTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
 
-    public RebaseTaskHandler(GitService gitService)
+    public RebaseTaskHandler(IGitService gitService)
     {
         _gitService = gitService;
     }

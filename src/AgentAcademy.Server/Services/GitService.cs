@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// All git operations are serialized via <see cref="_gitLock"/> to prevent
 /// concurrent branch switches from corrupting the working tree.
 /// </summary>
-public partial class GitService
+public partial class GitService : IGitService
 {
     private readonly ILogger<GitService> _logger;
     private readonly string _repositoryRoot;
