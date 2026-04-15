@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,7 +21,7 @@ public sealed class AgentCatalogWatcher : BackgroundService
     private readonly AgentCatalog _catalog;
     private readonly AgentCatalogFileInfo _fileInfo;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ActivityBroadcaster _broadcaster;
+    private readonly IActivityBroadcaster _broadcaster;
     private readonly CopilotSessionPool _sessionPool;
     private readonly ILogger<AgentCatalogWatcher> _logger;
 
@@ -36,7 +37,7 @@ public sealed class AgentCatalogWatcher : BackgroundService
         AgentCatalog catalog,
         AgentCatalogFileInfo fileInfo,
         IServiceScopeFactory scopeFactory,
-        ActivityBroadcaster broadcaster,
+        IActivityBroadcaster broadcaster,
         CopilotSessionPool sessionPool,
         ILogger<AgentCatalogWatcher> logger)
     {

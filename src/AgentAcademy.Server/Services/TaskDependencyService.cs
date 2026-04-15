@@ -15,12 +15,12 @@ public sealed class TaskDependencyService : ITaskDependencyService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskDependencyService> _logger;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
 
     public TaskDependencyService(
         AgentAcademyDbContext db,
         ILogger<TaskDependencyService> logger,
-        ActivityPublisher activity)
+        IActivityPublisher activity)
     {
         _db = db;
         _logger = logger;

@@ -19,7 +19,7 @@ public class SystemController : ControllerBase
     private readonly IRoomService _roomService;
     private readonly IAgentLocationService _agentLocationService;
     private readonly IBreakoutRoomService _breakoutRoomService;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
     private readonly IAgentCatalog _catalog;
     private readonly AgentAcademyDbContext _db;
@@ -33,7 +33,7 @@ public class SystemController : ControllerBase
         IRoomService roomService,
         IAgentLocationService agentLocationService,
         IBreakoutRoomService breakoutRoomService,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         IAgentExecutor executor,
         IAgentCatalog catalog,
         AgentAcademyDbContext db,

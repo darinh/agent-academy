@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 
 namespace AgentAcademy.Server.Services;
@@ -9,12 +10,12 @@ namespace AgentAcademy.Server.Services;
 /// Caller must call SaveChangesAsync on the DbContext to commit the
 /// persisted entity.
 /// </summary>
-public sealed class ActivityPublisher
+public sealed class ActivityPublisher : IActivityPublisher
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly IActivityBroadcaster _activityBus;
 
-    public ActivityPublisher(AgentAcademyDbContext db, ActivityBroadcaster activityBus)
+    public ActivityPublisher(AgentAcademyDbContext db, IActivityBroadcaster activityBus)
     {
         _db = db;
         _activityBus = activityBus;

@@ -2,6 +2,7 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -210,7 +211,7 @@ public sealed class LearningDigestService
             // Publish activity event
             using (var scope = _scopeFactory.CreateScope())
             {
-                var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
+                var activity = scope.ServiceProvider.GetRequiredService<IActivityPublisher>();
                 activity.Publish(
                     ActivityEventType.LearningDigestCompleted,
                     null,

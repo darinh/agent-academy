@@ -459,8 +459,10 @@ public class CopilotExecutorAuthTransitionTests
             var services = new ServiceCollection();
             services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(connection));
             services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<MessageBroadcaster>();
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
             services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
             services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
             services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);

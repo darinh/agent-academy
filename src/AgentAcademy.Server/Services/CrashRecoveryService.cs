@@ -32,7 +32,7 @@ public sealed class CrashRecoveryService : ICrashRecoveryService
     private readonly IBreakoutRoomService _breakouts;
     private readonly IAgentLocationService _agentLocations;
     private readonly IMessageService _messages;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
 
     public CrashRecoveryService(
         AgentAcademyDbContext db,
@@ -40,7 +40,7 @@ public sealed class CrashRecoveryService : ICrashRecoveryService
         IBreakoutRoomService breakouts,
         IAgentLocationService agentLocations,
         IMessageService messages,
-        ActivityPublisher activity)
+        IActivityPublisher activity)
     {
         _db = db;
         _logger = logger;

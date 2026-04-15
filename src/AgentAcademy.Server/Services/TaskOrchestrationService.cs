@@ -15,7 +15,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskOrchestrationService> _logger;
     private readonly IAgentCatalog _catalog;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
     private readonly ITaskLifecycleService _taskLifecycle;
     private readonly ITaskQueryService _taskQueries;
     private readonly IRoomService _rooms;
@@ -31,7 +31,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         AgentAcademyDbContext db,
         ILogger<TaskOrchestrationService> logger,
         IAgentCatalog catalog,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         ITaskLifecycleService taskLifecycle,
         ITaskQueryService taskQueries,
         IRoomService rooms,

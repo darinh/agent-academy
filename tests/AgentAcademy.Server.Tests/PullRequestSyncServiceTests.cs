@@ -104,8 +104,10 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var sc = new ServiceCollection();
         sc.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         sc.AddSingleton<ActivityBroadcaster>();
+        sc.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         sc.AddSingleton<MessageBroadcaster>();
         sc.AddScoped<ActivityPublisher>();
+        sc.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         sc.AddSingleton(new AgentCatalogOptions("main", "Main Room",
             new List<AgentDefinition>
             {

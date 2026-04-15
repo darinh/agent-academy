@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -13,12 +14,12 @@ namespace AgentAcademy.Server.Services;
 public sealed class RoomArtifactTracker
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
     private readonly ILogger<RoomArtifactTracker> _logger;
 
     public RoomArtifactTracker(
         AgentAcademyDbContext db,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         ILogger<RoomArtifactTracker> logger)
     {
         _db = db;

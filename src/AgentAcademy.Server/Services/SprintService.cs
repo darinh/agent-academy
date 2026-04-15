@@ -3,6 +3,7 @@ using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -18,13 +19,13 @@ public sealed class SprintService
     public static ReadOnlyCollection<string> Stages => SprintStageService.Stages;
 
     private readonly AgentAcademyDbContext _db;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly IActivityBroadcaster _activityBus;
     private readonly SystemSettingsService _settings;
     private readonly ILogger<SprintService> _logger;
 
     public SprintService(
         AgentAcademyDbContext db,
-        ActivityBroadcaster activityBus,
+        IActivityBroadcaster activityBus,
         SystemSettingsService settings,
         ILogger<SprintService> logger)
     {

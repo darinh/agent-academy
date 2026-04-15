@@ -17,7 +17,7 @@ public sealed class InitializationService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<InitializationService> _logger;
     private readonly IAgentCatalog _catalog;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
     private readonly ICrashRecoveryService _crashRecovery;
     private readonly IRoomService _rooms;
     private readonly IWorkspaceRoomService _workspaceRooms;
@@ -26,7 +26,7 @@ public sealed class InitializationService
         AgentAcademyDbContext db,
         ILogger<InitializationService> logger,
         IAgentCatalog catalog,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         ICrashRecoveryService crashRecovery,
         IRoomService rooms,
         IWorkspaceRoomService workspaceRooms)

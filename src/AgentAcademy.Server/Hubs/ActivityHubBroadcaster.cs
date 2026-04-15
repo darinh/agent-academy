@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,13 +14,13 @@ namespace AgentAcademy.Server.Hubs;
 /// </summary>
 public sealed class ActivityHubBroadcaster : IHostedService
 {
-    private readonly ActivityBroadcaster _broadcaster;
+    private readonly IActivityBroadcaster _broadcaster;
     private readonly IHubContext<ActivityHub> _hubContext;
     private readonly ILogger<ActivityHubBroadcaster> _logger;
     private Action? _unsubscribe;
 
     public ActivityHubBroadcaster(
-        ActivityBroadcaster broadcaster,
+        IActivityBroadcaster broadcaster,
         IHubContext<ActivityHub> hubContext,
         ILogger<ActivityHubBroadcaster> logger)
     {

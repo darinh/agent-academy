@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ public sealed class RoundContextLoaderTests : IDisposable
         services.AddSingleton(new AgentCatalogOptions("main", "Main Room", []));
         services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<MessageBroadcaster>();
         services.AddSingleton<SpecManager>();
         services.AddSingleton(Substitute.For<IAgentExecutor>());

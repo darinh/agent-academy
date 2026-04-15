@@ -21,11 +21,11 @@ public sealed class TaskEvidenceService : ITaskEvidenceService
     };
 
     private readonly AgentAcademyDbContext _db;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
 
     public TaskEvidenceService(
         AgentAcademyDbContext db,
-        ActivityPublisher activity)
+        IActivityPublisher activity)
     {
         _db = db;
         _activity = activity;

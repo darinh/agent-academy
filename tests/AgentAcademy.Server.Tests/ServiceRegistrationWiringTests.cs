@@ -30,6 +30,10 @@ public sealed class ServiceRegistrationWiringTests
         // IAgentToolRegistry should be registered
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentToolRegistry));
+
+        // IActivityBroadcaster should be registered (alias for ActivityBroadcaster)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IActivityBroadcaster));
     }
 
     [Fact]
@@ -138,6 +142,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ITaskOrchestrationService),
             typeof(ITaskAnalyticsService),
             typeof(ICrashRecoveryService),
+            typeof(IActivityPublisher),
         };
 
         foreach (var iface in expectedInterfaces)
@@ -164,6 +169,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(ITaskOrchestrationService),
             typeof(ITaskAnalyticsService),
             typeof(ICrashRecoveryService),
+            typeof(IActivityPublisher),
         };
 
         foreach (var iface in forwardedInterfaces)

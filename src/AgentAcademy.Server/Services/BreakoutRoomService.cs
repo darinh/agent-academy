@@ -22,7 +22,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<BreakoutRoomService> _logger;
     private readonly IAgentCatalog _catalog;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
     private readonly ConversationSessionService _sessionService;
     private readonly ITaskQueryService _taskQueries;
     private readonly IAgentLocationService _agentLocations;
@@ -31,7 +31,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
         AgentAcademyDbContext db,
         ILogger<BreakoutRoomService> logger,
         IAgentCatalog catalog,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         ConversationSessionService sessionService,
         ITaskQueryService taskQueries,
         IAgentLocationService agentLocations)

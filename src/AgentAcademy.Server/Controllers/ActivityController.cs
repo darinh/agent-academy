@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -18,9 +19,9 @@ public class ActivityController : ControllerBase
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    private readonly ActivityBroadcaster _broadcaster;
+    private readonly IActivityBroadcaster _broadcaster;
 
-    public ActivityController(ActivityBroadcaster broadcaster)
+    public ActivityController(IActivityBroadcaster broadcaster)
     {
         _broadcaster = broadcaster;
     }

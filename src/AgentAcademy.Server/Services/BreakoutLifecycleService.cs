@@ -122,7 +122,7 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
-        var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
+        var activity = scope.ServiceProvider.GetRequiredService<IActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
         var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
         var sessionQueryService = scope.ServiceProvider.GetRequiredService<ConversationSessionQueryService>();
