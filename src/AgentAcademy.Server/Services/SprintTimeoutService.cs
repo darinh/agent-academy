@@ -67,7 +67,7 @@ internal sealed class SprintTimeoutService : BackgroundService
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
-            var stageService = scope.ServiceProvider.GetRequiredService<SprintStageService>();
+            var stageService = scope.ServiceProvider.GetRequiredService<ISprintStageService>();
 
             await CheckSignOffTimeoutsAsync(sprintService, stageService, ct);
             await CheckSprintDurationTimeoutsAsync(sprintService, ct);
@@ -82,7 +82,7 @@ internal sealed class SprintTimeoutService : BackgroundService
         }
     }
 
-    private async Task CheckSignOffTimeoutsAsync(ISprintService sprintService, SprintStageService stageService, CancellationToken ct)
+    private async Task CheckSignOffTimeoutsAsync(ISprintService sprintService, ISprintStageService stageService, CancellationToken ct)
     {
         var stale = await sprintService.GetTimedOutSignOffSprintsAsync(SignOffTimeout, ct);
         if (stale.Count == 0) return;

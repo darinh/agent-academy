@@ -39,7 +39,7 @@ public sealed class AdvanceStageHandler : ICommandHandler
 
         var roomService = context.Services.GetRequiredService<IRoomService>();
         var sprintService = context.Services.GetRequiredService<ISprintService>();
-        var stageService = context.Services.GetRequiredService<SprintStageService>();
+        var stageService = context.Services.GetRequiredService<ISprintStageService>();
         var sessionService = context.Services.GetRequiredService<IConversationSessionService>();
 
         // If no explicit sprintId, resolve from active workspace
