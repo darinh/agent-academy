@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **006-orchestrator**: Extracted 4 interface contracts for infrastructure singletons: `ICopilotClientFactory`, `ICopilotSessionPool`, `ITokenPersistenceService`, `IAgentToolFunctions`. Runtime consumers migrated: CopilotExecutor, AgentCatalogWatcher, AgentToolRegistry, AuthController. Total contracts: 60.
 - **006-orchestrator**: Extracted 5 interface contracts for pipeline singleton services: `ILearningDigestService`, `IRetrospectiveService`, `ISpecManager`, `IProjectScanner`, `IAgentMemoryLoader`. All runtime consumers migrated to interface injection. SpecManager nested records (`SpecSection`, `SpecSearchResult`, `SpecVersionInfo`) promoted to namespace-level types. Total contracts: 56.
 - **015-security-model**: `ActivityHub` now has explicit `[Authorize]` metadata and `/hubs/activity` is explicitly mapped with `.AllowAnonymous()` when auth is disabled, preserving first-run public mode while hardening auth-enabled mode. Known gap #2 resolved.
 - **005-workspace-runtime**: `CrashRecoveryService` now has `ICrashRecoveryService` interface contract (Scoped + forwarded DI pattern). Startup recovery resolution now consumes the interface contract; service architecture table and DI registration snippet updated.
