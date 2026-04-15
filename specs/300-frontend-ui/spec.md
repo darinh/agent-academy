@@ -1201,7 +1201,7 @@ interface RoomEvaluationResponse {
 
 ## Future Work
 
-- Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)
+- ~~Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)~~ **RESOLVED** — `useWorkspace.ts` handles `ArtifactEvaluated` events by incrementing `artifactVersion` counter. `WorkspaceContent.tsx` passes it to `ArtifactsPanel` as `refreshTrigger`, triggering automatic re-fetch of both artifacts and evaluations. Also added `"artifacts"` to `VALID_TABS` for tab persistence.
 - Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
 - ~~Sprint panel: SignalR integration for real-time stage/artifact updates~~ **RESOLVED** — Sprint events carry structured `metadata` payloads (sprintId, stage, action, status). `SprintPanel` applies optimistic updates for stage transitions, sign-off state, and completion. Artifact events trigger targeted fetch with stale-response protection. Debounced reconciliation (1.5s) replaces immediate full refetch. Event deduplication prevents replay issues on reconnect. Committed in this session.
 - ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **RESOLVED** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown. Committed in `08a7447`.

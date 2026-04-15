@@ -111,6 +111,7 @@ function AppShell() {
     retroVersion,
     digestVersion,
     memoryVersion,
+    artifactVersion,
     err,
     busy,
     tab,
@@ -436,6 +437,7 @@ function AppShell() {
                 retroVersion={retroVersion}
                 digestVersion={digestVersion}
                 memoryVersion={memoryVersion}
+                artifactVersion={artifactVersion}
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}

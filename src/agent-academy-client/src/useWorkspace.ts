@@ -44,7 +44,7 @@ const RECOVERY_BANNER_DISMISS_MS = 4_000;
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
 
-const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives"]);
+const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts"]);
 
 function loadTab(): string {
   try {
@@ -98,6 +98,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [retroVersion, setRetroVersion] = useState(0);
   const [digestVersion, setDigestVersion] = useState(0);
   const [memoryVersion, setMemoryVersion] = useState(0);
+  const [artifactVersion, setArtifactVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -251,6 +252,9 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "LearningDigestCompleted":
         setDigestVersion((v) => v + 1);
         setMemoryVersion((v) => v + 1);
+        break;
+      case "ArtifactEvaluated":
+        setArtifactVersion((v) => v + 1);
         break;
     }
   }, []);
@@ -551,6 +555,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     retroVersion,
     digestVersion,
     memoryVersion,
+    artifactVersion,
     err,
     busy,
     tab,

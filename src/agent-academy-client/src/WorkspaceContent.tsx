@@ -50,6 +50,7 @@ export interface WorkspaceContentProps {
   retroVersion: number;
   digestVersion: number;
   memoryVersion: number;
+  artifactVersion: number;
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
@@ -104,7 +105,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
             <CommandsPanel roomId={props.room?.id ?? null} readOnly={props.workspaceLimited} />
           )}
           {tab === "artifacts" && (
-            <ArtifactsPanel roomId={props.room?.id ?? null} />
+            <ArtifactsPanel roomId={props.room?.id ?? null} refreshTrigger={props.artifactVersion} />
           )}
           {tab === "sprint" && <SprintPanel sprintVersion={props.sprintVersion} lastSprintEvent={props.lastSprintEvent} />}
           {tab === "timeline" && (

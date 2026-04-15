@@ -7,6 +7,9 @@ All changes to specifications are documented here.
 ### Added
 - **016-api-reference**: Rate Limiting section documenting three independent mechanisms — Consultant API HTTP-level limiter (global sliding-window, 60 reads / 20 writes per 60s, 429 + Retry-After), per-agent command rate limiter (30 commands/60s, denied envelope in command pipeline), and per-agent hourly quotas (requests/tokens/cost, agent paused on breach). Pagination section documenting three styles — cursor-based `after` (room messages, DM/room SSE streams), limit/offset with total count (sessions, audit, restarts, digests, retrospectives, sprints, deliveries), and limit-only (artifacts, usage/error records, search). Per-endpoint table with defaults and maximums. Known gaps #2 and #3 resolved.
 
+### Changed
+- **300-frontend-ui**: Artifacts panel now auto-refreshes via SignalR. `useWorkspace.ts` handles `ArtifactEvaluated` events → increments `artifactVersion` counter → `WorkspaceContent.tsx` passes as `refreshTrigger` to `ArtifactsPanel`. Also added `"artifacts"` to `VALID_TABS` for tab persistence across page refreshes. Future Work gap resolved.
+
 ### Added
 - **300-frontend-ui**: Artifacts panel (`ArtifactsPanel.tsx`). New sidebar tab showing per-room artifact file operations and quality evaluations. Evaluation cards display per-file scores (existence 40pts, content 20pts, syntax 25pts, completeness 15pts) with color-coded score bars and aggregate quality badge. Collapsible file operations log table. Independent loading states (evaluations read disk, may be slower). Race condition protection on room switch. API: `getRoomArtifacts()`, `getRoomEvaluations()`. Types: `ArtifactRecord`, `EvaluationResult`, `RoomEvaluationResponse`. 25 new tests (2573 total).
 
