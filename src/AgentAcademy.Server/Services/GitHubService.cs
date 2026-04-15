@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.Extensions.Logging;
 
 namespace AgentAcademy.Server.Services;
@@ -9,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// GitHub integration via the gh CLI. Follows the same process-shell pattern
 /// as <see cref="GitService"/> for consistency and testability.
-/// When a <see cref="CopilotTokenProvider"/> is supplied and has a valid token,
+/// When a <see cref="ICopilotTokenProvider"/> is supplied and has a valid token,
 /// gh commands receive the OAuth token via <c>GH_TOKEN</c> environment variable,
 /// enabling PR operations without server-side <c>gh auth login</c>.
 /// </summary>
@@ -18,13 +19,13 @@ public sealed class GitHubService : IGitHubService
     private readonly ILogger<GitHubService> _logger;
     private readonly string _repositoryRoot;
     private readonly string _ghExecutable;
-    private readonly CopilotTokenProvider? _tokenProvider;
+    private readonly ICopilotTokenProvider? _tokenProvider;
 
     public GitHubService(
         ILogger<GitHubService> logger,
         string? repositoryRoot = null,
         string ghExecutable = "gh",
-        CopilotTokenProvider? tokenProvider = null)
+        ICopilotTokenProvider? tokenProvider = null)
     {
         _logger = logger;
         _repositoryRoot = repositoryRoot ?? FindProjectRoot();

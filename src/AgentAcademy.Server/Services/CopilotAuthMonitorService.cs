@@ -1,3 +1,5 @@
+using AgentAcademy.Server.Services.Contracts;
+
 namespace AgentAcademy.Server.Services;
 
 internal sealed class CopilotAuthMonitorService : BackgroundService
@@ -6,14 +8,14 @@ internal sealed class CopilotAuthMonitorService : BackgroundService
 
     private readonly ICopilotAuthProbe _probe;
     private readonly IAgentExecutor _executor;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly ILogger<CopilotAuthMonitorService> _logger;
     private readonly SemaphoreSlim _probeTrigger = new(0, 1);
 
     public CopilotAuthMonitorService(
         ICopilotAuthProbe probe,
         IAgentExecutor executor,
-        CopilotTokenProvider tokenProvider,
+        ICopilotTokenProvider tokenProvider,
         ILogger<CopilotAuthMonitorService> logger)
     {
         _probe = probe;

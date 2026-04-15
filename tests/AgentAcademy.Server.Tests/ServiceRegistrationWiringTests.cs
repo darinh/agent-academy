@@ -34,6 +34,10 @@ public sealed class ServiceRegistrationWiringTests
         // IActivityBroadcaster should be registered (alias for ActivityBroadcaster)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IActivityBroadcaster));
+
+        // ICopilotTokenProvider should be registered (alias for CopilotTokenProvider)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(ICopilotTokenProvider));
     }
 
     [Fact]
