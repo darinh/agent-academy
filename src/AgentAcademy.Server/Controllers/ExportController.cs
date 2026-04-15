@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/export")]
 public class ExportController : ControllerBase
 {
-    private readonly AgentAnalyticsService _analytics;
+    private readonly IAgentAnalyticsService _analytics;
     private readonly ILlmUsageTracker _usageTracker;
     private readonly ConversationExportService _conversationExport;
 
@@ -24,7 +24,7 @@ public class ExportController : ControllerBase
     };
 
     public ExportController(
-        AgentAnalyticsService analytics,
+        IAgentAnalyticsService analytics,
         ILlmUsageTracker usageTracker,
         ConversationExportService conversationExport)
     {

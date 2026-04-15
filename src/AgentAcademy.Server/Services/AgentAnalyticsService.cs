@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// Aggregates per-agent performance metrics from LLM usage, errors, and tasks.
 /// Singleton — uses <see cref="IServiceScopeFactory"/> for DB access.
 /// </summary>
-public sealed class AgentAnalyticsService
+public sealed class AgentAnalyticsService : IAgentAnalyticsService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAgentCatalog _catalog;
