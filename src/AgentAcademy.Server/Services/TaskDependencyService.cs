@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Manages task dependency relationships (DAG). Validates cycle-freedom,
 /// provides blocking queries, and publishes activity events on changes.
 /// </summary>
-public sealed class TaskDependencyService
+public sealed class TaskDependencyService : ITaskDependencyService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskDependencyService> _logger;

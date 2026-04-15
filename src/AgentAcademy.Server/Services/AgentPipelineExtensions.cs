@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -101,6 +102,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<BreakoutCompletionService>();
         services.AddSingleton<BreakoutLifecycleService>();
         services.AddSingleton<TaskAssignmentHandler>();
+        services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
         services.AddSingleton<AgentTurnRunner>();
         services.AddSingleton<ConversationRoundRunner>();
         services.AddSingleton<DirectMessageRouter>();

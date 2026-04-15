@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ namespace AgentAcademy.Server.Services;
 /// Task entity mutations for create/complete/reject are orchestrated by
 /// TaskOrchestrationService which delegates here for the task-state changes.
 /// </summary>
-public sealed partial class TaskLifecycleService
+public sealed partial class TaskLifecycleService : ITaskLifecycleService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskLifecycleService> _logger;

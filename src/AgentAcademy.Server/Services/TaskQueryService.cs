@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Handles task queries and low-coupling task mutations (no room/messaging/activity side-effects).
 /// </summary>
-public sealed class TaskQueryService
+public sealed class TaskQueryService : ITaskQueryService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskQueryService> _logger;

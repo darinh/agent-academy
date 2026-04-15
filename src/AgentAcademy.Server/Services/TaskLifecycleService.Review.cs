@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 
 namespace AgentAcademy.Server.Services;
@@ -143,13 +144,4 @@ public sealed partial class TaskLifecycleService
             TaskId: taskId,
             ReviewerName: reviewerName);
     }
-
-    /// <summary>
-    /// Result of a task rejection, containing the info needed for room/breakout reopen.
-    /// </summary>
-    public sealed record RejectTaskResult(
-        TaskSnapshot Snapshot,
-        string? RoomId,
-        string TaskId,
-        string ReviewerName);
 }

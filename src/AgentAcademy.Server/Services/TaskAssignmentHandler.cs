@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,7 @@ namespace AgentAcademy.Server.Services;
 /// is processed for a given agent at a time. The orchestrator's serialized
 /// queue processing provides this guarantee today.
 /// </summary>
-public sealed class TaskAssignmentHandler
+public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
 {
     private readonly IAgentCatalog _catalog;
     private readonly GitService _gitService;
@@ -42,7 +43,7 @@ public sealed class TaskAssignmentHandler
     /// Planners may create any task type; non-planners may only file bugs
     /// (other types are converted into a proposal posted to the room).
     /// </summary>
-    internal async Task ProcessAssignmentAsync(
+    public async Task ProcessAssignmentAsync(
         IServiceScope scope, AgentDefinition requestedBy, string roomId,
         ParsedTaskAssignment assignment)
     {

@@ -197,7 +197,7 @@ internal static class AgentResponseParser
 // ── Data Transfer Records ───────────────────────────────────────
 
 /// <summary>A parsed TASK ASSIGNMENT: block.</summary>
-internal record ParsedTaskAssignment(
+public record ParsedTaskAssignment(
     string Agent,
     string Title,
     string Description,
