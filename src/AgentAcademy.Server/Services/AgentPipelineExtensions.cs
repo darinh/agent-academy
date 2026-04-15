@@ -32,6 +32,7 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddBroadcasters(this IServiceCollection services)
     {
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<MessageBroadcaster>();
         return services;
     }

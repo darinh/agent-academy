@@ -28,7 +28,7 @@ public sealed class RoomService : IRoomService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<RoomService> _logger;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
     private readonly IMessageService _messages;
     private readonly IRoomSnapshotBuilder _snapshots;
     private readonly PhaseTransitionValidator _phaseValidator;
@@ -36,7 +36,7 @@ public sealed class RoomService : IRoomService
     public RoomService(
         AgentAcademyDbContext db,
         ILogger<RoomService> logger,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         IMessageService messages,
         IRoomSnapshotBuilder snapshots,
         PhaseTransitionValidator phaseValidator)

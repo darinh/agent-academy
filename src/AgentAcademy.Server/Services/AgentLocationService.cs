@@ -14,12 +14,12 @@ public sealed class AgentLocationService : IAgentLocationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly IAgentCatalog _catalog;
-    private readonly ActivityPublisher _activity;
+    private readonly IActivityPublisher _activity;
 
     public AgentLocationService(
         AgentAcademyDbContext db,
         IAgentCatalog catalog,
-        ActivityPublisher activity)
+        IActivityPublisher activity)
     {
         _db = db;
         _catalog = catalog;

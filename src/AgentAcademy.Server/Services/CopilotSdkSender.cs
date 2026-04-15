@@ -1,5 +1,6 @@
 using System.Text;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 
@@ -32,14 +33,14 @@ public sealed class CopilotSdkSender
     private readonly LlmUsageTracker _usageTracker;
     private readonly AgentErrorTracker _errorTracker;
     private readonly AgentQuotaService _quotaService;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly IActivityBroadcaster _activityBus;
 
     public CopilotSdkSender(
         ILogger<CopilotSdkSender> logger,
         LlmUsageTracker usageTracker,
         AgentErrorTracker errorTracker,
         AgentQuotaService quotaService,
-        ActivityBroadcaster activityBus)
+        IActivityBroadcaster activityBus)
     {
         _logger = logger;
         _usageTracker = usageTracker;

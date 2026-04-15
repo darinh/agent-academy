@@ -49,7 +49,9 @@ public sealed class ConversationKickoffTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<IAgentCatalog>(Catalog);
-        services.AddSingleton(new ActivityBroadcaster());
+        var __broadcaster = new ActivityBroadcaster();
+        services.AddSingleton(__broadcaster);
+        services.AddSingleton<IActivityBroadcaster>(__broadcaster);
         services.AddSingleton(new MessageBroadcaster());
         services.AddSingleton<IAgentExecutor>(executor);
         var specManager = new SpecManager(

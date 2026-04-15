@@ -49,7 +49,7 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
             var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
-            var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
+            var activity = scope.ServiceProvider.GetRequiredService<IActivityPublisher>();
             var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
             var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 

@@ -2,6 +2,7 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -86,7 +87,9 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
 
         // Singletons needed by scoped services
         services.AddSingleton<IAgentCatalog>(_catalog);
-        services.AddSingleton(new ActivityBroadcaster());
+        var __broadcaster = new ActivityBroadcaster();
+        services.AddSingleton(__broadcaster);
+        services.AddSingleton<IActivityBroadcaster>(__broadcaster);
         services.AddSingleton(new MessageBroadcaster());
         services.AddSingleton<IAgentExecutor>(_executor);
         services.AddSingleton(new SpecManager(

@@ -3,6 +3,7 @@ using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Services;
@@ -54,10 +55,10 @@ public sealed class SprintStageService
         new HashSet<string>(StringComparer.Ordinal) { "Intake", "Planning" };
 
     private readonly AgentAcademyDbContext _db;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly IActivityBroadcaster _activityBus;
     private readonly ILogger<SprintStageService> _logger;
 
-    public SprintStageService(AgentAcademyDbContext db, ActivityBroadcaster activityBus, ILogger<SprintStageService> logger)
+    public SprintStageService(AgentAcademyDbContext db, IActivityBroadcaster activityBus, ILogger<SprintStageService> logger)
     {
         _db = db;
         _activityBus = activityBus;

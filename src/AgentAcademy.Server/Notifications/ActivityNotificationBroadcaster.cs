@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Notifications;
 
@@ -11,7 +12,7 @@ namespace AgentAcademy.Server.Notifications;
 /// </summary>
 public sealed class ActivityNotificationBroadcaster : IHostedService
 {
-    private readonly ActivityBroadcaster _broadcaster;
+    private readonly IActivityBroadcaster _broadcaster;
     private readonly NotificationManager _notificationManager;
     private readonly ILogger<ActivityNotificationBroadcaster> _logger;
     private Action? _unsubscribe;
@@ -31,7 +32,7 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
     };
 
     public ActivityNotificationBroadcaster(
-        ActivityBroadcaster broadcaster,
+        IActivityBroadcaster broadcaster,
         NotificationManager notificationManager,
         ILogger<ActivityNotificationBroadcaster> logger)
     {

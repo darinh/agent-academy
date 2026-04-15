@@ -16,6 +16,7 @@ public static class ServiceRegistrationExtensions
     {
         // Core domain services (scoped — one per request, uses scoped DbContext)
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
 
         // Task services: registered as concrete + forwarded interface for backward compat.
         // Consumers should migrate from GetRequiredService<TaskXxxService>() to

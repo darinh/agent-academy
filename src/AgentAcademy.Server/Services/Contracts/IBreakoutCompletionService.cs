@@ -44,7 +44,7 @@ public interface IBreakoutCompletionService
         ITaskQueryService taskQueryService,
         IAgentLocationService agentLocationService,
         IRoomService roomService,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         AgentConfigService configService,
         string breakoutRoomId,
         string parentRoomId,

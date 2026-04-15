@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -70,6 +71,7 @@ public class SprintTimeoutServiceTests : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton(_db);
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<ILogger<SprintService>>(NullLogger<SprintService>.Instance);
         services.AddSingleton<ILogger<SprintStageService>>(NullLogger<SprintStageService>.Instance);
         services.AddScoped<SystemSettingsService>();
@@ -416,6 +418,7 @@ public class SprintTimeoutServiceTests : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton(badDb);
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<ILogger<SprintService>>(NullLogger<SprintService>.Instance);
         services.AddSingleton<ILogger<SprintStageService>>(NullLogger<SprintStageService>.Instance);
         services.AddScoped<SystemSettingsService>();
@@ -531,6 +534,7 @@ public class SprintTimeoutServiceTests : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton(_db);
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<ILogger<SprintService>>(NullLogger<SprintService>.Instance);
         services.AddSingleton<ILogger<SprintStageService>>(NullLogger<SprintStageService>.Instance);
         services.AddScoped<SystemSettingsService>();

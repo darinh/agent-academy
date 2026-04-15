@@ -49,7 +49,7 @@ public sealed class AgentTurnRunner
         IServiceScope scope,
         IMessageService messageService,
         AgentConfigService configService,
-        ActivityPublisher activity,
+        IActivityPublisher activity,
         RoomSnapshot room,
         string roomId,
         string? specContext,

@@ -127,7 +127,7 @@ public sealed class RetrospectiveService
                 // Publish activity event
                 using (var scope = _scopeFactory.CreateScope())
                 {
-                    var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
+                    var activity = scope.ServiceProvider.GetRequiredService<IActivityPublisher>();
                     var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
                     var taskEntity = await db.Tasks.FindAsync(taskId);
 

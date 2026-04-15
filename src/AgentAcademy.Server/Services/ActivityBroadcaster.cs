@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 
 namespace AgentAcademy.Server.Services;
@@ -7,7 +8,7 @@ namespace AgentAcademy.Server.Services;
 /// Separated from scoped services so activity state
 /// persists across HTTP requests and subscribers survive request lifetimes.
 /// </summary>
-public sealed class ActivityBroadcaster
+public sealed class ActivityBroadcaster : IActivityBroadcaster
 {
     private readonly List<ActivityEvent> _recentActivity = [];
     private readonly List<Action<ActivityEvent>> _subscribers = [];

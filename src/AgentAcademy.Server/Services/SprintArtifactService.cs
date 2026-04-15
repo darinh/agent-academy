@@ -2,6 +2,7 @@ using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -14,12 +15,12 @@ namespace AgentAcademy.Server.Services;
 public sealed class SprintArtifactService
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly ActivityBroadcaster _activityBus;
+    private readonly IActivityBroadcaster _activityBus;
     private readonly ILogger<SprintArtifactService> _logger;
 
     public SprintArtifactService(
         AgentAcademyDbContext db,
-        ActivityBroadcaster activityBus,
+        IActivityBroadcaster activityBus,
         ILogger<SprintArtifactService> logger)
     {
         _db = db;
