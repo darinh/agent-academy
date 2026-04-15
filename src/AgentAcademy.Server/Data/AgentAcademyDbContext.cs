@@ -24,7 +24,6 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<PlanEntity> Plans => Set<PlanEntity>();
     public DbSet<ActivityEventEntity> ActivityEvents => Set<ActivityEventEntity>();
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
-    public DbSet<AgentWorkspaceEntity> AgentWorkspaces => Set<AgentWorkspaceEntity>();
     public DbSet<CommandAuditEntity> CommandAudits => Set<CommandAuditEntity>();
     public DbSet<AgentMemoryEntity> AgentMemories => Set<AgentMemoryEntity>();
     public DbSet<NotificationConfigEntity> NotificationConfigs => Set<NotificationConfigEntity>();

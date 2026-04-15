@@ -1,13 +1,11 @@
 import type {
   WorkspaceOverview,
-  HealthResult,
   InstanceHealthResult,
   WorkspaceMeta,
   ProjectScanResult,
   OnboardResult,
   BrowseResult,
   PlanContent,
-  ActivityEvent,
   RestartHistoryResponse,
   RestartStatsDto,
   SystemSettings,
@@ -18,10 +16,6 @@ import { apiUrl, request } from "./core";
 
 export function getOverview(): Promise<WorkspaceOverview> {
   return request<WorkspaceOverview>(apiUrl("/api/overview"));
-}
-
-export function getHealth(): Promise<HealthResult> {
-  return request<HealthResult>(apiUrl("/healthz"));
 }
 
 export function getInstanceHealth(): Promise<InstanceHealthResult> {
@@ -36,12 +30,6 @@ export function getRestartHistory(limit = 20, offset = 0): Promise<RestartHistor
 
 export function getRestartStats(hours = 24): Promise<RestartStatsDto> {
   return request<RestartStatsDto>(apiUrl(`/api/system/restarts/stats?hours=${hours}`));
-}
-
-// ── Activity ───────────────────────────────────────────────────────────
-
-export function getRecentActivity(): Promise<ActivityEvent[]> {
-  return request<ActivityEvent[]>(apiUrl("/api/activity/recent"));
 }
 
 // ── Workspace / Project ────────────────────────────────────────────────

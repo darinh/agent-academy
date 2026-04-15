@@ -92,10 +92,6 @@ export function getInstructionTemplates(): Promise<InstructionTemplate[]> {
   return request<InstructionTemplate[]>(apiUrl("/api/instruction-templates"));
 }
 
-export function getInstructionTemplate(id: string): Promise<InstructionTemplate> {
-  return request<InstructionTemplate>(apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`));
-}
-
 export function createInstructionTemplate(
   req: InstructionTemplateRequest,
 ): Promise<InstructionTemplate> {
