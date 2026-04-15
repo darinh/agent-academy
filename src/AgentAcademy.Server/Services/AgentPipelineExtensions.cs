@@ -40,6 +40,7 @@ public static class AgentPipelineExtensions
     private static IServiceCollection AddCopilotTokenServices(this IServiceCollection services)
     {
         services.AddSingleton<CopilotTokenProvider>();
+        services.AddSingleton<ICopilotTokenProvider>(sp => sp.GetRequiredService<CopilotTokenProvider>());
         services.AddSingleton<TokenPersistenceService>();
         services.AddHostedService(sp => sp.GetRequiredService<TokenPersistenceService>());
         return services;
@@ -85,7 +86,7 @@ public static class AgentPipelineExtensions
         services.AddSingleton<GitHubService>(sp =>
             new GitHubService(
                 sp.GetRequiredService<ILogger<GitHubService>>(),
-                tokenProvider: sp.GetRequiredService<CopilotTokenProvider>()));
+                tokenProvider: sp.GetRequiredService<ICopilotTokenProvider>()));
         services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHubService>());
         return services;
     }

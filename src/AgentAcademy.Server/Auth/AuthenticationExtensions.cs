@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
@@ -129,7 +130,7 @@ public static class AuthenticationExtensions
                         if (!string.IsNullOrEmpty(context.AccessToken))
                         {
                             var tokenProvider = context.HttpContext.RequestServices
-                                .GetRequiredService<CopilotTokenProvider>();
+                                .GetRequiredService<ICopilotTokenProvider>();
                             // GitHub App refresh tokens are valid for 6 months (15,811,200 seconds).
                             var refreshTokenExpiry = !string.IsNullOrEmpty(context.RefreshToken)
                                 ? TimeSpan.FromDays(180)

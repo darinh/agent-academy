@@ -1,3 +1,5 @@
+using AgentAcademy.Server.Services.Contracts;
+
 namespace AgentAcademy.Server.Services;
 
 /// <summary>
@@ -6,7 +8,7 @@ namespace AgentAcademy.Server.Services;
 /// GitHub token for the SDK without requiring HttpContext (which is
 /// unavailable during background orchestration).
 /// </summary>
-public sealed class CopilotTokenProvider
+public sealed class CopilotTokenProvider : ICopilotTokenProvider
 {
     private volatile string? _token;
     private volatile string? _refreshToken;

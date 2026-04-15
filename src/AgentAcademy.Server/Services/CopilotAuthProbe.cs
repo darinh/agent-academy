@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -35,13 +36,13 @@ internal interface ICopilotAuthProbe
 internal sealed class GitHubCopilotAuthProbe : ICopilotAuthProbe
 {
     private readonly HttpClient _httpClient;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly IConfiguration _configuration;
     private readonly ILogger<GitHubCopilotAuthProbe> _logger;
 
     public GitHubCopilotAuthProbe(
         HttpClient httpClient,
-        CopilotTokenProvider tokenProvider,
+        ICopilotTokenProvider tokenProvider,
         IConfiguration configuration,
         ILogger<GitHubCopilotAuthProbe> logger)
     {

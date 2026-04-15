@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -19,13 +20,13 @@ namespace AgentAcademy.Server.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly GitHubAuthOptions _authOptions;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly IAgentExecutor _executor;
     private readonly TokenPersistenceService _tokenPersistence;
 
     public AuthController(
         GitHubAuthOptions authOptions,
-        CopilotTokenProvider tokenProvider,
+        ICopilotTokenProvider tokenProvider,
         IAgentExecutor executor,
         TokenPersistenceService tokenPersistence)
     {

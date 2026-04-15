@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using AgentAcademy.Server.Services.Contracts;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -25,7 +26,7 @@ public sealed record ClientAcquisitionResult(CopilotClient? Client, bool WasRecr
 public sealed class CopilotClientFactory : IAsyncDisposable
 {
     private readonly ILogger<CopilotClientFactory> _logger;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly string? _configToken;
     private readonly string? _cliPath;
 
@@ -39,7 +40,7 @@ public sealed class CopilotClientFactory : IAsyncDisposable
     public CopilotClientFactory(
         ILogger<CopilotClientFactory> logger,
         IConfiguration configuration,
-        CopilotTokenProvider tokenProvider)
+        ICopilotTokenProvider tokenProvider)
     {
         _logger = logger;
         _tokenProvider = tokenProvider;

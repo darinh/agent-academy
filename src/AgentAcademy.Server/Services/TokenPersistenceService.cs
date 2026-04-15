@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Persists OAuth tokens to the database (encrypted via Data Protection)
 /// so the server can restore them after a restart without requiring
-/// a browser visit. Subscribes to <see cref="CopilotTokenProvider.TokenChanged"/>
+/// a browser visit. Subscribes to <see cref="ICopilotTokenProvider.TokenChanged"/>
 /// to persist automatically on every token refresh.
 /// </summary>
 public sealed class TokenPersistenceService : IHostedService, IDisposable
@@ -19,7 +20,7 @@ public sealed class TokenPersistenceService : IHostedService, IDisposable
     private const string ExpiresAtKey = "auth:expiresAt";
     private const string RefreshTokenExpiresAtKey = "auth:refreshTokenExpiresAt";
 
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDataProtector _protector;
     private readonly ILogger<TokenPersistenceService> _logger;
@@ -28,7 +29,7 @@ public sealed class TokenPersistenceService : IHostedService, IDisposable
     private volatile bool _disposed;
 
     public TokenPersistenceService(
-        CopilotTokenProvider tokenProvider,
+        ICopilotTokenProvider tokenProvider,
         IServiceScopeFactory scopeFactory,
         IDataProtectionProvider dataProtection,
         ILogger<TokenPersistenceService> logger)
