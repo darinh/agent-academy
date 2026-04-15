@@ -11,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// responses, classifies SDK errors into typed exceptions, and retries
 /// transient/quota failures with exponential backoff.
 /// </summary>
-public sealed class CopilotSdkSender
+public sealed class CopilotSdkSender : ICopilotSdkSender
 {
     private const int TransientMaxRetries = 3;
     private static readonly TimeSpan[] TransientBackoff =

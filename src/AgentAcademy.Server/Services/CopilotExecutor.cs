@@ -47,7 +47,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly ILogger<StubExecutor> _stubLogger;
     private readonly CopilotClientFactory _clientFactory;
     private readonly CopilotSessionPool _sessionPool;
-    private readonly CopilotSdkSender _sender;
+    private readonly ICopilotSdkSender _sender;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly INotificationManager _notificationManager;
     private readonly IAgentToolRegistry _toolRegistry;
@@ -65,7 +65,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         ILogger<StubExecutor> stubLogger,
         CopilotClientFactory clientFactory,
         CopilotSessionPool sessionPool,
-        CopilotSdkSender sender,
+        ICopilotSdkSender sender,
         IServiceScopeFactory scopeFactory,
         INotificationManager notificationManager,
         IAgentToolRegistry toolRegistry,
