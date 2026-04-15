@@ -22,6 +22,9 @@ const MemoryBrowserPanel = lazy(() => import("./MemoryBrowserPanel"));
 const DigestPanel = lazy(() => import("./DigestPanel"));
 const RetrospectivePanel = lazy(() => import("./RetrospectivePanel"));
 const ArtifactsPanel = lazy(() => import("./ArtifactsPanel"));
+const ActivityFeedPanel = lazy(() => import("./ActivityFeedPanel"));
+const SpecSearchPanel = lazy(() => import("./SpecSearchPanel"));
+const AgentKnowledgePanel = lazy(() => import("./AgentKnowledgePanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -142,6 +145,11 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
           {tab === "memories" && (
             <MemoryBrowserPanel agents={props.configuredAgents} refreshTrigger={props.memoryVersion} />
           )}
+          {tab === "knowledge" && (
+            <AgentKnowledgePanel agents={props.configuredAgents} />
+          )}
+          {tab === "activity" && <ActivityFeedPanel />}
+          {tab === "specs" && <SpecSearchPanel />}
           {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} onNavigateToTask={props.onNavigateToTask} />}
           {tab === "retrospectives" && (
             <RetrospectivePanel

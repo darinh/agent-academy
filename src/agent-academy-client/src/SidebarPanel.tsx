@@ -28,10 +28,13 @@ const NAV_ITEMS = [
   { value: "tasks", icon: "📋", label: "Tasks" },
   { value: "artifacts", icon: "📦", label: "Artifacts" },
   { value: "timeline", icon: "⏱️", label: "Timeline" },
+  { value: "activity", icon: "⚡", label: "Activity" },
   { value: "sprint", icon: "🏃", label: "Sprint" },
   { value: "dashboard", icon: "📊", label: "Metrics" },
   { value: "commands", icon: "⌨️", label: "Commands" },
   { value: "memories", icon: "🧠", label: "Memory" },
+  { value: "knowledge", icon: "📖", label: "Knowledge" },
+  { value: "specs", icon: "📜", label: "Specs" },
   { value: "digests", icon: "📚", label: "Digests" },
   { value: "retrospectives", icon: "🔬", label: "Retros" },
 ] as const;
