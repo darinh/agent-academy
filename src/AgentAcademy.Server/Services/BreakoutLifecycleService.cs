@@ -118,7 +118,7 @@ public sealed class BreakoutLifecycleService
         string? taskBranch, string? worktreePath)
     {
         using var scope = _scopeFactory.CreateScope();
-        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
@@ -318,7 +318,7 @@ public sealed class BreakoutLifecycleService
     // ── STUCK DETECTION ────────────────────────────────────────
 
     private async Task HandleStuckDetectedAsync(
-        BreakoutRoomService breakoutRoomService,
+        IBreakoutRoomService breakoutRoomService,
         MessageService messageService,
         ITaskQueryService taskQueryService,
         string breakoutRoomId, string parentRoomId,
@@ -364,7 +364,7 @@ public sealed class BreakoutLifecycleService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
             var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 

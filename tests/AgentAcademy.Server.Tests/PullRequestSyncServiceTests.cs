@@ -132,6 +132,7 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         sc.AddScoped<AgentLocationService>();
         sc.AddScoped<PlanService>();
         sc.AddScoped<BreakoutRoomService>();
+        sc.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         sc.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         sc.AddScoped<TaskItemService>();
         sc.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());

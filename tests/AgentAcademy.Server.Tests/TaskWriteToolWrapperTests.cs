@@ -63,6 +63,7 @@ public sealed class TaskWriteToolWrapperTests : IDisposable
         services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<RoomLifecycleService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddScoped<TaskItemService>();

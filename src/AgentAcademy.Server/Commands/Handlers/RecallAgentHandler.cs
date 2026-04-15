@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,7 +53,7 @@ public sealed class RecallAgentHandler : ICommandHandler
 
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
-        var breakouts = context.Services.GetRequiredService<BreakoutRoomService>();
+        var breakouts = context.Services.GetRequiredService<IBreakoutRoomService>();
         var messages = context.Services.GetRequiredService<MessageService>();
 
         // Resolve the agent by name or ID

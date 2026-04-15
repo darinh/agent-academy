@@ -2,6 +2,7 @@ using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +18,7 @@ public class SystemController : ControllerBase
 {
     private readonly RoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
-    private readonly BreakoutRoomService _breakoutRoomService;
+    private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly ActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
     private readonly IAgentCatalog _catalog;
@@ -31,7 +32,7 @@ public class SystemController : ControllerBase
     public SystemController(
         RoomService roomService,
         AgentLocationService agentLocationService,
-        BreakoutRoomService breakoutRoomService,
+        IBreakoutRoomService breakoutRoomService,
         ActivityPublisher activity,
         IAgentExecutor executor,
         IAgentCatalog catalog,

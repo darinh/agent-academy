@@ -32,7 +32,7 @@ Controllers and command handlers inject focused domain services directly via con
 | `TaskItemService` | `ITaskItemService` | Task item CRUD | Scoped + forwarded | `Services/TaskItemService.cs` |
 | `TaskOrchestrationService` | `ITaskOrchestrationService` | Task creation/completion/rejection coordinating rooms, agents, and lifecycle | Scoped + forwarded | `Services/TaskOrchestrationService.cs` |
 | `TaskAnalyticsService` | `ITaskAnalyticsService` | Task cycle effectiveness metrics | Scoped + forwarded | `Services/TaskAnalyticsService.cs` |
-| `BreakoutRoomService` | — | Breakout room lifecycle, task association, stuck reopening | Scoped | `Services/BreakoutRoomService.cs` |
+| `BreakoutRoomService` | `IBreakoutRoomService` | Breakout room lifecycle, task association, stuck reopening | Scoped + forwarded | `Services/BreakoutRoomService.cs` |
 | `AgentLocationService` | — | Agent location tracking and movement | Scoped | `Services/AgentLocationService.cs` |
 | `PlanService` | — | Plan CRUD with room/breakout validation | Scoped | `Services/PlanService.cs` |
 | `TaskSnapshotFactory` | — (static) | Pure DTO mapping: `TaskEntity` → `TaskSnapshot`, comments, evidence, spec links | Static class | `Services/TaskSnapshotFactory.cs` |

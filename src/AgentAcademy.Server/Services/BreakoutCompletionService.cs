@@ -86,7 +86,7 @@ public sealed class BreakoutCompletionService
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
 
     internal async Task HandleBreakoutCompleteAsync(
-        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, MessageService messageService,
         ITaskItemService taskItemService, ITaskQueryService taskQueryService,
         AgentLocationService agentLocationService, RoomService roomService,
         ActivityPublisher activity, AgentConfigService configService,
@@ -156,7 +156,7 @@ public sealed class BreakoutCompletionService
     }
 
     private async Task<ParsedReviewVerdict?> RunReviewCycleAsync(
-        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, MessageService messageService,
         RoomService roomService,
         ActivityPublisher activity, AgentConfigService configService,
         string parentRoomId, AgentDefinition presentingAgent, string workReport)
@@ -212,7 +212,7 @@ public sealed class BreakoutCompletionService
     }
 
     private async Task HandleReviewRejectionAsync(
-        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, MessageService messageService,
         ITaskItemService taskItemService, ITaskQueryService taskQueryService,
         AgentLocationService agentLocationService, RoomService roomService,
         string breakoutRoomId, string parentRoomId,
@@ -307,7 +307,7 @@ public sealed class BreakoutCompletionService
         await FinalizeBreakoutAsync(breakoutRoomService, breakoutRoomId);
     }
 
-    private async Task FinalizeBreakoutAsync(BreakoutRoomService breakoutRoomService, string breakoutRoomId)
+    private async Task FinalizeBreakoutAsync(IBreakoutRoomService breakoutRoomService, string breakoutRoomId)
     {
         try
         {

@@ -59,6 +59,7 @@ public sealed class TaskDependencyHandlerTests : IDisposable
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddScoped<TaskItemService>();
         services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         services.AddScoped<PhaseTransitionValidator>();

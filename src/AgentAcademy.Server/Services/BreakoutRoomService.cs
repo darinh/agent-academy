@@ -11,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Handles all breakout room operations: creation, closure, queries,
 /// task linking, agent session history, and breakout reopening.
 /// </summary>
-public sealed class BreakoutRoomService
+public sealed class BreakoutRoomService : IBreakoutRoomService
 {
     internal static readonly HashSet<string> TerminalBreakoutStatuses = new(StringComparer.Ordinal)
     {

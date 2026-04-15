@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -28,7 +29,7 @@ public sealed class CrashRecoveryService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<CrashRecoveryService> _logger;
-    private readonly BreakoutRoomService _breakouts;
+    private readonly IBreakoutRoomService _breakouts;
     private readonly AgentLocationService _agentLocations;
     private readonly MessageService _messages;
     private readonly ActivityPublisher _activity;
@@ -36,7 +37,7 @@ public sealed class CrashRecoveryService
     public CrashRecoveryService(
         AgentAcademyDbContext db,
         ILogger<CrashRecoveryService> logger,
-        BreakoutRoomService breakouts,
+        IBreakoutRoomService breakouts,
         AgentLocationService agentLocations,
         MessageService messages,
         ActivityPublisher activity)

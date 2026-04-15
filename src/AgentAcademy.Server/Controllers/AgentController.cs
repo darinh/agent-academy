@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +16,7 @@ namespace AgentAcademy.Server.Controllers;
 public class AgentController : ControllerBase
 {
     private readonly AgentLocationService _agentLocationService;
-    private readonly BreakoutRoomService _breakoutRoomService;
+    private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly IAgentExecutor _executor;
     private readonly IAgentCatalog _catalog;
     private readonly AgentQuotaService _quotaService;
@@ -23,7 +24,7 @@ public class AgentController : ControllerBase
 
     public AgentController(
         AgentLocationService agentLocationService,
-        BreakoutRoomService breakoutRoomService,
+        IBreakoutRoomService breakoutRoomService,
         IAgentExecutor executor,
         IAgentCatalog catalog,
         AgentQuotaService quotaService,

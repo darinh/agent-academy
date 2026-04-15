@@ -74,6 +74,7 @@ public class TaskSystemTests : IDisposable
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
@@ -216,7 +217,7 @@ public class TaskSystemTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -420,7 +421,7 @@ public class TaskSystemTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -447,7 +448,7 @@ public class TaskSystemTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -507,7 +508,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -586,7 +587,7 @@ public class TaskSystemTests : IDisposable
         // Verify agent is back in the parent room
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -618,7 +619,7 @@ public class TaskSystemTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -652,7 +653,7 @@ public class TaskSystemTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -679,7 +680,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1017,7 +1018,7 @@ public class TaskSystemTests : IDisposable
         await EnsureRoom("room-1");
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1042,7 +1043,7 @@ public class TaskSystemTests : IDisposable
         await EnsureRoom("room-1");
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1127,7 +1128,7 @@ public class TaskSystemTests : IDisposable
         // Verify agent is actually in room-2
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1285,7 +1286,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1357,7 +1358,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1385,7 +1386,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1411,7 +1412,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1497,7 +1498,7 @@ public class TaskSystemTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1565,7 +1566,7 @@ public class TaskSystemTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1619,7 +1620,7 @@ public class TaskSystemTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+            var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1660,7 +1661,7 @@ public class TaskSystemTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -1708,7 +1709,7 @@ public class TaskSystemTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();

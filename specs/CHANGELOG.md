@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **005-workspace-runtime**: `BreakoutRoomService` now has `IBreakoutRoomService` interface contract (Scoped + forwarded DI pattern). Service table updated.
 - **005-workspace-runtime**: Fix stale `AgentOrchestrator` references — `ActivityPublisher` is now resolved by `ConversationRoundRunner` and `DirectMessageRouter` (not injected into `AgentOrchestrator`); worktree integration section now references `BreakoutLifecycleService` and `TaskAssignmentHandler` as the actual `WorktreeService` consumers.
 - **007-agent-commands**: Fix stale source reference — command parsing happens in `AgentTurnRunner.cs`, not `AgentOrchestrator.cs`.
 - **009-spec-management**: Fix stale references — `BuildConversationPrompt`, `BuildReviewPrompt`, and `InferMessageKind` now correctly reference `PromptBuilder` and `AgentResponseParser` static classes. `SpecManager` DI injection list updated from `AgentOrchestrator` to `RoundContextLoader`.

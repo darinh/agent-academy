@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,7 @@ internal sealed class TestServiceGraph : IDisposable
     public TaskQueryService TaskQueryService { get; }
     public TaskLifecycleService TaskLifecycleService { get; }
     public TaskDependencyService TaskDependencyService { get; }
-    public BreakoutRoomService BreakoutRoomService { get; }
+    public IBreakoutRoomService BreakoutRoomService { get; }
     public RoomService RoomService { get; }
     public RoomSnapshotBuilder RoomSnapshotBuilder { get; }
     public PhaseTransitionValidator PhaseTransitionValidator { get; }

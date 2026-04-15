@@ -81,6 +81,7 @@ public class BranchWorkflowTests : IDisposable
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
@@ -285,7 +286,7 @@ public class BranchWorkflowTests : IDisposable
         Assert.Equal(mergeCommitSha, RunGitInRepo("rev-parse", "HEAD"));
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -365,7 +366,7 @@ public class BranchWorkflowTests : IDisposable
         Assert.Contains("Merge failed", result.Error!);
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -384,7 +385,7 @@ public class BranchWorkflowTests : IDisposable
         CreateFeatureBranchWithCommit(branchName, "workflow.txt", "full workflow change");
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -602,7 +603,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_CreatesAndLinksTaskForBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -624,7 +625,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_ReturnsExistingLinkedTaskForSameBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -645,7 +646,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_OverlappingBreakoutsGetDistinctTasksAndBranches()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -680,7 +681,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_WithBranchName_PersistsBranchAtomically()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -703,7 +704,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_WithoutBranchName_LeavesNullBranch()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -724,7 +725,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task SetBreakoutTaskId_PersistsLink()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -743,7 +744,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task SetBreakoutTaskId_DifferentExistingLink_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -766,7 +767,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active), branchName: null);
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -786,7 +787,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Approved));
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -808,7 +809,7 @@ public class BranchWorkflowTests : IDisposable
             branchName: "task/test-branch-abc123");
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
@@ -833,7 +834,7 @@ public class BranchWorkflowTests : IDisposable
 
         // APPROVE_TASK should work on InReview tasks
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
         var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();

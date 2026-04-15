@@ -90,7 +90,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
     {
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
         var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
@@ -198,7 +198,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
     private async Task CleanupFailedAssignmentAsync(
         string breakoutRoomId, string? taskId, TaskItem? taskItem,
         string? taskBranch, string? worktreePath, string roomId, string title,
-        BreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, MessageService messageService,
         ITaskQueryService taskQueryService, ITaskItemService taskItemService)
     {
         try

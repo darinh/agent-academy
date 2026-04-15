@@ -67,6 +67,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<RoomService>();
         services.AddScoped<MessageService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<TaskOrchestrationService>();

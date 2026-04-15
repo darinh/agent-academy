@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,13 +14,13 @@ public class PlanController : ControllerBase
 {
     private readonly PlanService _planService;
     private readonly RoomService _roomService;
-    private readonly BreakoutRoomService _breakoutRoomService;
+    private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly ILogger<PlanController> _logger;
 
     public PlanController(
         PlanService planService,
         RoomService roomService,
-        BreakoutRoomService breakoutRoomService,
+        IBreakoutRoomService breakoutRoomService,
         ILogger<PlanController> logger)
     {
         _planService = planService;

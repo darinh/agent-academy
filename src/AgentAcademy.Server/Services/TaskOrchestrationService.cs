@@ -23,7 +23,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
     private readonly RoomLifecycleService _roomLifecycle;
     private readonly AgentLocationService _agentLocations;
     private readonly MessageService _messages;
-    private readonly BreakoutRoomService _breakouts;
+    private readonly IBreakoutRoomService _breakouts;
 
     private const int MaxBulkSize = 50;
 
@@ -39,7 +39,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         RoomLifecycleService roomLifecycle,
         AgentLocationService agentLocations,
         MessageService messages,
-        BreakoutRoomService breakouts)
+        IBreakoutRoomService breakouts)
     {
         _db = db;
         _logger = logger;

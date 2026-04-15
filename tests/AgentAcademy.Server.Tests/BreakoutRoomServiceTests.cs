@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
@@ -17,7 +18,7 @@ public sealed class BreakoutRoomServiceTests : IDisposable
 
     private readonly TestServiceGraph _graph;
     private AgentAcademyDbContext Db => _graph.Db;
-    private BreakoutRoomService Sut => _graph.BreakoutRoomService;
+    private IBreakoutRoomService Sut => _graph.BreakoutRoomService;
 
     public BreakoutRoomServiceTests()
     {
