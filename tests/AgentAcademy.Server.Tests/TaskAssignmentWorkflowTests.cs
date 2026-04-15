@@ -67,6 +67,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
@@ -142,7 +143,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await initialization.InitializeAsync();
             await messages.PostHumanMessageAsync("main", "Assign the backend task.");
         }
@@ -244,7 +245,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await initialization.InitializeAsync();
             await messages.PostHumanMessageAsync("main", "Build the widget please.");
         }

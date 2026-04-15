@@ -4,6 +4,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -28,7 +29,7 @@ public sealed class RoomService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<RoomService> _logger;
     private readonly ActivityPublisher _activity;
-    private readonly MessageService _messages;
+    private readonly IMessageService _messages;
     private readonly RoomSnapshotBuilder _snapshots;
     private readonly PhaseTransitionValidator _phaseValidator;
 
@@ -36,7 +37,7 @@ public sealed class RoomService
         AgentAcademyDbContext db,
         ILogger<RoomService> logger,
         ActivityPublisher activity,
-        MessageService messages,
+        IMessageService messages,
         RoomSnapshotBuilder snapshots,
         PhaseTransitionValidator phaseValidator)
     {

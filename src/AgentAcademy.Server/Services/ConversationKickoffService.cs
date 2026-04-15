@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -12,13 +13,13 @@ namespace AgentAcademy.Server.Services;
 public sealed class ConversationKickoffService
 {
     private readonly AgentAcademyDbContext _db;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly AgentOrchestrator _orchestrator;
     private readonly ILogger<ConversationKickoffService> _logger;
 
     public ConversationKickoffService(
         AgentAcademyDbContext db,
-        MessageService messageService,
+        IMessageService messageService,
         AgentOrchestrator orchestrator,
         ILogger<ConversationKickoffService> logger)
     {

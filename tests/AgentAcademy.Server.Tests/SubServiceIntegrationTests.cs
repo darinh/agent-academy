@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -29,7 +30,7 @@ public class SubServiceIntegrationTests : IDisposable
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
     private readonly TaskLifecycleService _taskLifecycle;
-    private readonly MessageService _messages;
+    private readonly IMessageService _messages;
     private readonly AgentLocationService _agentLocations;
     private readonly BreakoutRoomService _breakouts;
     private readonly PlanService _plans;

@@ -61,6 +61,7 @@ public sealed class ServiceCommandHandlerTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
@@ -149,7 +150,7 @@ public sealed class ServiceCommandHandlerTests : IDisposable
     private async Task PostMessage(string roomId, string content, string senderId = "engineer-1")
     {
         using var scope = _serviceProvider.CreateScope();
-        var msgService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var msgService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         await msgService.PostMessageAsync(new PostMessageRequest(
             RoomId: roomId,
             SenderId: senderId,

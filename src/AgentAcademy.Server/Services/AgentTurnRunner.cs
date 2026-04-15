@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -46,7 +47,7 @@ public sealed class AgentTurnRunner
     public async Task<AgentTurnResult> RunAgentTurnAsync(
         AgentDefinition catalogAgent,
         IServiceScope scope,
-        MessageService messageService,
+        IMessageService messageService,
         AgentConfigService configService,
         ActivityPublisher activity,
         RoomSnapshot room,
@@ -129,7 +130,7 @@ public sealed class AgentTurnRunner
     /// and posts command results as a system message for context visibility.
     /// </summary>
     private async Task ProcessAndPostAgentResponseAsync(
-        MessageService messageService, AgentDefinition agent, string roomId, string response)
+        IMessageService messageService, AgentDefinition agent, string roomId, string response)
     {
         var pipelineResult = await ProcessCommandsAsync(agent, response, roomId);
 
@@ -166,7 +167,7 @@ public sealed class AgentTurnRunner
     }
 
     private async Task PostAgentMessageAsync(
-        MessageService messageService, AgentDefinition agent, string roomId, string content)
+        IMessageService messageService, AgentDefinition agent, string roomId, string content)
     {
         try
         {

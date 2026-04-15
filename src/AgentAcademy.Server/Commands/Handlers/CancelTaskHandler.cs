@@ -67,7 +67,7 @@ public sealed class CancelTaskHandler : ICommandHandler
             _ = bool.TryParse(delStr, out deleteBranch);
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         var task = await taskQueries.GetTaskAsync(taskId);

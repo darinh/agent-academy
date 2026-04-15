@@ -86,7 +86,7 @@ public sealed class BreakoutCompletionService
     // ── BREAKOUT COMPLETION / REVIEW ────────────────────────────
 
     internal async Task HandleBreakoutCompleteAsync(
-        IBreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         ITaskItemService taskItemService, ITaskQueryService taskQueryService,
         AgentLocationService agentLocationService, RoomService roomService,
         ActivityPublisher activity, AgentConfigService configService,
@@ -156,7 +156,7 @@ public sealed class BreakoutCompletionService
     }
 
     private async Task<ParsedReviewVerdict?> RunReviewCycleAsync(
-        IBreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         RoomService roomService,
         ActivityPublisher activity, AgentConfigService configService,
         string parentRoomId, AgentDefinition presentingAgent, string workReport)
@@ -212,7 +212,7 @@ public sealed class BreakoutCompletionService
     }
 
     private async Task HandleReviewRejectionAsync(
-        IBreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         ITaskItemService taskItemService, ITaskQueryService taskQueryService,
         AgentLocationService agentLocationService, RoomService roomService,
         string breakoutRoomId, string parentRoomId,

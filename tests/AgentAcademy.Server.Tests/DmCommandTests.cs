@@ -71,6 +71,7 @@ public class DmCommandTests : IDisposable
         services.AddScoped<TaskLifecycleService>();
         services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
@@ -333,7 +334,7 @@ public class DmCommandTests : IDisposable
     public async Task SendDirectMessage_StoresWithRecipientId()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -354,7 +355,7 @@ public class DmCommandTests : IDisposable
     public async Task SendDirectMessage_PostsSystemNotification()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -374,7 +375,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDirectMessagesForAgent_UnreadOnly_ReturnsReceivedOnly()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -402,7 +403,7 @@ public class DmCommandTests : IDisposable
     public async Task RoomMessages_ExcludeDMs()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -433,7 +434,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadsForHuman_GroupsByAgent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -459,7 +460,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadMessages_ReturnsConversation()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -482,7 +483,7 @@ public class DmCommandTests : IDisposable
     public async Task ConsultantDm_StoresWithConsultantRole()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         await messageService.SendDirectMessageAsync(
@@ -504,7 +505,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadsForHuman_IncludesConsultantMessages()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Consultant DMs agent
@@ -559,7 +560,7 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_MarksAsRead()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         await messageService.SendDirectMessageAsync(
@@ -587,7 +588,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDirectMessages_UnreadOnlyFalse_ReturnsAll()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         await messageService.SendDirectMessageAsync(
@@ -615,7 +616,7 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_OnlyAffectsTargetAgent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Both agents receive a DM
@@ -643,7 +644,7 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_DoesNotAckSenderMessages()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Planner sends DM to engineer
@@ -665,7 +666,7 @@ public class DmCommandTests : IDisposable
     private DmController CreateDmController(ClaimsPrincipal? user = null)
     {
         var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var messageBroadcaster = scope.ServiceProvider.GetRequiredService<MessageBroadcaster>();
         var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
@@ -743,7 +744,7 @@ public class DmCommandTests : IDisposable
         // Seed a consultant message via runtime
         using (var scope = _serviceProvider.CreateScope())
         {
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
             await messageService.SendDirectMessageAsync(
                 "consultant", "Consultant", "Consultant", "planner-1",
@@ -768,7 +769,7 @@ public class DmCommandTests : IDisposable
         // Seed both consultant and agent messages
         using (var scope = _serviceProvider.CreateScope())
         {
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
             await messageService.SendDirectMessageAsync(
                 "consultant", "Consultant", "Consultant", "engineer-1",

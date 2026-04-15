@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -80,7 +81,7 @@ public sealed class DiscordMessageRouter
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await messageService.PostHumanMessageAsync(roomId, message.Content);
             _orchestrator.HandleHumanMessage(roomId);
 
@@ -103,7 +104,7 @@ public sealed class DiscordMessageRouter
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await messageService.PostHumanMessageAsync(agentInfo.RoomId, message.Content);
             _orchestrator.HandleHumanMessage(agentInfo.RoomId);
 

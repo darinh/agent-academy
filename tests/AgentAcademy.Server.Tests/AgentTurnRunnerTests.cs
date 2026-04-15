@@ -2,6 +2,7 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,7 @@ public class AgentTurnRunnerTests : IDisposable
     private readonly AgentAcademyDbContext _db;
     private readonly AgentCatalogOptions _catalog;
     private readonly ActivityPublisher _activityPublisher;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly AgentConfigService _configService;
     private readonly ConversationSessionService _sessionService;
     private readonly AgentMemoryLoader _memoryLoader;

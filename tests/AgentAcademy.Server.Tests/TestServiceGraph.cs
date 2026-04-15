@@ -26,7 +26,7 @@ internal sealed class TestServiceGraph : IDisposable
     public IAgentExecutor Executor { get; }
     public SystemSettingsService SettingsService { get; }
     public ConversationSessionService SessionService { get; }
-    public MessageService MessageService { get; }
+    public IMessageService MessageService { get; }
     public MessageBroadcaster MessageBroadcaster { get; }
     public AgentLocationService AgentLocationService { get; }
     public TaskQueryService TaskQueryService { get; }

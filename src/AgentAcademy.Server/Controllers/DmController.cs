@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Threading.Channels;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,7 +15,7 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class DmController : ControllerBase
 {
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly RoomService _roomService;
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
@@ -27,7 +28,7 @@ public class DmController : ControllerBase
     };
 
     public DmController(
-        MessageService messageService,
+        IMessageService messageService,
         RoomService roomService,
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,

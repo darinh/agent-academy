@@ -15,7 +15,7 @@ public class CollaborationController : ControllerBase
     private readonly ITaskOrchestrationService _taskOrchestration;
     private readonly ITaskQueryService _taskQueries;
     private readonly ITaskDependencyService _taskDependencies;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly RoomService _roomService;
     private readonly IAgentCatalog _catalog;
     private readonly AgentOrchestrator _orchestrator;
@@ -27,7 +27,7 @@ public class CollaborationController : ControllerBase
         ITaskOrchestrationService taskOrchestration,
         ITaskQueryService taskQueries,
         ITaskDependencyService taskDependencies,
-        MessageService messageService,
+        IMessageService messageService,
         RoomService roomService,
         IAgentCatalog catalog,
         AgentOrchestrator orchestrator,

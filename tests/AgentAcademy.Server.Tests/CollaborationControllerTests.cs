@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Tests;
 

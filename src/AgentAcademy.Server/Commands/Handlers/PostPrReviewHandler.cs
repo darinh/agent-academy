@@ -85,7 +85,7 @@ public sealed class PostPrReviewHandler : ICommandHandler
             }
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Load task

@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,7 +56,7 @@ public sealed class DmHandler : ICommandHandler
         CommandEnvelope command, CommandContext context, string message)
     {
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
         var roomService = context.Services.GetRequiredService<RoomService>();
         var notificationManager = context.Services.GetRequiredService<NotificationManager>();
 
@@ -122,7 +123,7 @@ public sealed class DmHandler : ICommandHandler
         CommandEnvelope command, CommandContext context, string recipientId, string message)
     {
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
         var roomService = context.Services.GetRequiredService<RoomService>();
 
         // Validate agent exists (case-insensitive, use canonical ID)

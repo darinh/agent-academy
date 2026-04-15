@@ -40,7 +40,7 @@ public sealed class RebaseTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Validate task exists
@@ -151,7 +151,7 @@ public sealed class RebaseTaskHandler : ICommandHandler
     }
 
     private async Task<CommandEnvelope> HandleRebaseAsync(
-        CommandEnvelope command, TaskSnapshot task, string? roomId, MessageService messages)
+        CommandEnvelope command, TaskSnapshot task, string? roomId, IMessageService messages)
     {
         try
         {

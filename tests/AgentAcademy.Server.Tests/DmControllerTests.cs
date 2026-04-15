@@ -7,6 +7,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Tests;
 

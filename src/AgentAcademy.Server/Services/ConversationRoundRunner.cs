@@ -46,7 +46,7 @@ public sealed class ConversationRoundRunner
 
             using var scope = _scopeFactory.CreateScope();
             var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
             var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
             var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();

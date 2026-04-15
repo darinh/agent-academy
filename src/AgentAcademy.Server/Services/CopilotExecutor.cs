@@ -4,6 +4,7 @@ using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -395,7 +396,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                     RoomId: roomId);
 
             using var scope = _scopeFactory.CreateScope();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await messageService.PostSystemStatusAsync(roomId, roomMessage);
             await _notificationManager.SendToAllAsync(notification, ct);
 

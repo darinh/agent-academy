@@ -37,7 +37,7 @@ public sealed class CreatePrHandler : ICommandHandler
             };
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Load task

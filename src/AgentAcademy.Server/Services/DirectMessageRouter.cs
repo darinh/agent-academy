@@ -1,6 +1,7 @@
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -40,7 +41,7 @@ public sealed class DirectMessageRouter
 
         using var scope = _scopeFactory.CreateScope();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
         var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();

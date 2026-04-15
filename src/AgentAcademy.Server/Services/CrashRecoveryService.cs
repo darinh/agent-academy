@@ -31,7 +31,7 @@ public sealed class CrashRecoveryService
     private readonly ILogger<CrashRecoveryService> _logger;
     private readonly IBreakoutRoomService _breakouts;
     private readonly AgentLocationService _agentLocations;
-    private readonly MessageService _messages;
+    private readonly IMessageService _messages;
     private readonly ActivityPublisher _activity;
 
     public CrashRecoveryService(
@@ -39,7 +39,7 @@ public sealed class CrashRecoveryService
         ILogger<CrashRecoveryService> logger,
         IBreakoutRoomService breakouts,
         AgentLocationService agentLocations,
-        MessageService messages,
+        IMessageService messages,
         ActivityPublisher activity)
     {
         _db = db;

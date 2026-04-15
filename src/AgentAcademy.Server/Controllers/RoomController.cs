@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,7 +18,7 @@ public class RoomController : ControllerBase
 {
     private readonly RoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly MessageBroadcaster _messageBroadcaster;
     private readonly IAgentCatalog _catalog;
     private readonly LlmUsageTracker _usageTracker;
@@ -34,7 +35,7 @@ public class RoomController : ControllerBase
     public RoomController(
         RoomService roomService,
         AgentLocationService agentLocationService,
-        MessageService messageService,
+        IMessageService messageService,
         MessageBroadcaster messageBroadcaster,
         IAgentCatalog catalog,
         LlmUsageTracker usageTracker,

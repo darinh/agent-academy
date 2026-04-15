@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -223,7 +224,7 @@ public sealed class ShellCommandHandler : ICommandHandler
         try
         {
             var catalog = context.Services.GetRequiredService<IAgentCatalog>();
-        var messages = context.Services.GetRequiredService<MessageService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
             await messages.PostSystemStatusAsync(catalog.DefaultRoomId,
                 $"🔄 **Server restarting**: {parsed.Reason} (requested by {context.AgentName} via SHELL)");
         }

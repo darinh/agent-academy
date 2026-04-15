@@ -2,6 +2,7 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -288,7 +289,7 @@ public class UsageApiEndpointTests : IDisposable
     private readonly RoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
     private readonly BreakoutRoomService _breakoutRoomService;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly ActivityPublisher _activityPublisher;
     private readonly AgentCatalogOptions _catalog;
 

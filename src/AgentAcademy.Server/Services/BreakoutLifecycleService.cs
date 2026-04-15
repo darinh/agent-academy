@@ -119,7 +119,7 @@ public sealed class BreakoutLifecycleService
     {
         using var scope = _scopeFactory.CreateScope();
         var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
         var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
@@ -319,7 +319,7 @@ public sealed class BreakoutLifecycleService
 
     private async Task HandleStuckDetectedAsync(
         IBreakoutRoomService breakoutRoomService,
-        MessageService messageService,
+        IMessageService messageService,
         ITaskQueryService taskQueryService,
         string breakoutRoomId, string parentRoomId,
         AgentDefinition agent, string reason)
@@ -365,7 +365,7 @@ public sealed class BreakoutLifecycleService
         {
             using var scope = _scopeFactory.CreateScope();
             var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
             var breakoutName = (await breakoutRoomService.GetBreakoutRoomAsync(breakoutRoomId))?.Name ?? breakoutRoomId;

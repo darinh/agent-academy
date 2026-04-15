@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,7 @@ public class MessageServiceTests : IDisposable
         services.AddSingleton(_catalog);
         services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
@@ -73,11 +75,11 @@ public class MessageServiceTests : IDisposable
         return await Task.FromResult(db);
     }
 
-    private MessageService CreateService()
+    private IMessageService CreateService()
     {
         var scope = _serviceProvider.CreateScope();
         _scopes.Add(scope);
-        return scope.ServiceProvider.GetRequiredService<MessageService>();
+        return scope.ServiceProvider.GetRequiredService<IMessageService>();
     }
 
     private async Task SeedRoomAsync(string roomId, string name = "Test Room", string status = "Active")
@@ -677,7 +679,7 @@ public class MessageServiceTests : IDisposable
         // SaveChangesAsync — the caller is responsible for that. Use the
         // same scope so we can persist the removals.
         using var scope = _serviceProvider.CreateScope();
-        var svc = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var svc = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
 
         await svc.TrimMessagesAsync("room-1");
@@ -713,7 +715,7 @@ public class MessageServiceTests : IDisposable
         }
 
         using var scope = _serviceProvider.CreateScope();
-        var svc = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var svc = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
 
         await svc.TrimMessagesAsync("room-1");

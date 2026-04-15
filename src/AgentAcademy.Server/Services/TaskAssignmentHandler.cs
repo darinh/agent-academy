@@ -47,7 +47,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
         IServiceScope scope, AgentDefinition requestedBy, string roomId,
         ParsedTaskAssignment assignment)
     {
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         if (!await TryGateAssignmentAsync(messageService, requestedBy, roomId, assignment))
             return;
 
@@ -62,7 +62,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
     /// proposal message posted to the room. Returns true if the assignment should proceed.
     /// </summary>
     private async Task<bool> TryGateAssignmentAsync(
-        MessageService messageService, AgentDefinition agent, string roomId,
+        IMessageService messageService, AgentDefinition agent, string roomId,
         ParsedTaskAssignment assignment)
     {
         if (string.Equals(agent.Role, "Planner", StringComparison.OrdinalIgnoreCase))
@@ -89,7 +89,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
         IServiceScope scope, string roomId, ParsedTaskAssignment assignment)
     {
         var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
@@ -198,7 +198,7 @@ public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
     private async Task CleanupFailedAssignmentAsync(
         string breakoutRoomId, string? taskId, TaskItem? taskItem,
         string? taskBranch, string? worktreePath, string roomId, string title,
-        IBreakoutRoomService breakoutRoomService, MessageService messageService,
+        IBreakoutRoomService breakoutRoomService, IMessageService messageService,
         ITaskQueryService taskQueryService, ITaskItemService taskItemService)
     {
         try

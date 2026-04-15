@@ -63,6 +63,7 @@ public class RetrospectiveServiceTests : IDisposable
         services.AddScoped<TaskDependencyService>();
         services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();
         services.AddSingleton<CommandParser>();

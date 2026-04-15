@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Handles all message operations: room messages (agent, human, system),
 /// direct messages, breakout room messages, and message trimming.
 /// </summary>
-public sealed class MessageService
+public sealed class MessageService : IMessageService
 {
     private const int MaxRecentMessages = 200;
 

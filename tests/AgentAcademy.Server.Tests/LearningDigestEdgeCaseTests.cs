@@ -69,6 +69,7 @@ public sealed class LearningDigestEdgeCaseTests : IDisposable
         services.AddScoped<TaskDependencyService>();
         services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();
