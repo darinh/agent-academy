@@ -75,7 +75,7 @@ internal sealed class TaskWriteToolWrapper
             ?? new List<string>();
 
         using var scope = _scopeFactory.CreateScope();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
 
         try
         {
@@ -131,7 +131,7 @@ internal sealed class TaskWriteToolWrapper
 
         using var scope = _scopeFactory.CreateScope();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
 
         try
         {

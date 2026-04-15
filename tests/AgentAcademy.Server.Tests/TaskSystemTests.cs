@@ -88,6 +88,7 @@ public class TaskSystemTests : IDisposable
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
@@ -218,7 +219,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var plan = await plans.GetPlanAsync("room-1");
 
@@ -422,7 +423,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         await taskLifecycle.AddTaskCommentAsync(taskId, "engineer-1", "Hephaestus", TaskCommentType.Comment, "First");
@@ -449,7 +450,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         await taskLifecycle.AddTaskCommentAsync(taskId, "engineer-1", "Hephaestus", TaskCommentType.Comment, "One");
@@ -509,7 +510,7 @@ public class TaskSystemTests : IDisposable
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await agentLocations.MoveAgentAsync("engineer-1", "room-1", AgentState.Idle);
         }
@@ -588,7 +589,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var location = await agentLocations.GetAgentLocationAsync("engineer-1");
 
@@ -620,7 +621,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var room = await rooms.GetRoomAsync("room-2");
 
@@ -654,7 +655,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         await initialization.InitializeAsync();
 
@@ -681,7 +682,7 @@ public class TaskSystemTests : IDisposable
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await agentLocations.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
         }
@@ -1019,7 +1020,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
@@ -1044,7 +1045,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
@@ -1129,7 +1130,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var location = await agentLocations.GetAgentLocationAsync("engineer-1");
         Assert.NotNull(location);
@@ -1287,7 +1288,7 @@ public class TaskSystemTests : IDisposable
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await agentLocations.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
         }
@@ -1359,7 +1360,7 @@ public class TaskSystemTests : IDisposable
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await initialization.InitializeAsync();
             await agentLocations.MoveAgentAsync("engineer-1", "room-2", AgentState.Idle);
@@ -1387,7 +1388,7 @@ public class TaskSystemTests : IDisposable
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await initialization.InitializeAsync();
         }
@@ -1413,7 +1414,7 @@ public class TaskSystemTests : IDisposable
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await initialization.InitializeAsync();
             await agentLocations.MoveAgentAsync("engineer-1", "main", AgentState.Idle);
@@ -1499,7 +1500,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         // Move agent to room first
@@ -1567,7 +1568,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var room = await rooms.GetRoomAsync("room-2");
         Assert.Equal("Sprint 4 planning", room!.Topic);
@@ -1622,7 +1623,7 @@ public class TaskSystemTests : IDisposable
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
             var lifecycle = scope.ServiceProvider.GetRequiredService<RoomLifecycleService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
             await lifecycle.CloseRoomAsync("room-2");
         }
@@ -1662,7 +1663,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await initialization.InitializeAsync();
@@ -1710,7 +1711,7 @@ public class TaskSystemTests : IDisposable
         var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
         var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
         var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         await initialization.InitializeAsync();
 

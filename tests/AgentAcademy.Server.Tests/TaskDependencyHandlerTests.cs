@@ -67,6 +67,7 @@ public sealed class TaskDependencyHandlerTests : IDisposable
         services.AddScoped<CrashRecoveryService>();
         services.AddScoped<InitializationService>();
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ConversationSessionService>();
         services.AddSingleton(Substitute.For<IAgentExecutor>());

@@ -69,6 +69,7 @@ public class AgentToolFunctionsTests : IDisposable
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
@@ -83,7 +84,7 @@ public class AgentToolFunctionsTests : IDisposable
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
@@ -369,6 +370,7 @@ public class AgentWriteToolTests : IDisposable
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
@@ -382,7 +384,7 @@ public class AgentWriteToolTests : IDisposable
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
@@ -1075,7 +1077,7 @@ public class AgentWriteToolTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Test Task",
             Description: "Test task for write tool tests",

@@ -58,7 +58,7 @@ public sealed class RejectTaskHandler : ICommandHandler
             };
         }
 
-        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = context.Services.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         var task = await taskQueries.GetTaskAsync(taskId);

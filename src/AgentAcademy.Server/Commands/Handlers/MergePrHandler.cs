@@ -71,7 +71,7 @@ public sealed class MergePrHandler : ICommandHandler
 
         var messages = context.Services.GetRequiredService<MessageService>();
         var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
-        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = context.Services.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Validate task exists

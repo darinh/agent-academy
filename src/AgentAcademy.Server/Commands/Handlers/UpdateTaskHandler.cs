@@ -55,7 +55,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
             };
         }
 
-        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = context.Services.GetRequiredService<ITaskOrchestrationService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try
