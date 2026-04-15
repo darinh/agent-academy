@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **016-api-reference**: Request/Response Schemas section. Full property definitions for 39+ API types — every request body and response type referenced in the endpoint tables now has a complete schema table with property names, types, nullability, validation constraints, and descriptions. Includes an Enums Reference table listing all 16 enum types with their string values. Organized by domain: Rooms, Direct Messages, Agents, Agent Configuration, Tasks, Commands, Memory System, Notifications, Instruction Templates, Workspace & GitHub, Settings. Known gap #1 resolved.
+
+### Added
 - **016-api-reference**: Rate Limiting section documenting three independent mechanisms — Consultant API HTTP-level limiter (global sliding-window, 60 reads / 20 writes per 60s, 429 + Retry-After), per-agent command rate limiter (30 commands/60s, denied envelope in command pipeline), and per-agent hourly quotas (requests/tokens/cost, agent paused on breach). Pagination section documenting three styles — cursor-based `after` (room messages, DM/room SSE streams), limit/offset with total count (sessions, audit, restarts, digests, retrospectives, sprints, deliveries), and limit-only (artifacts, usage/error records, search). Per-endpoint table with defaults and maximums. Known gaps #2 and #3 resolved.
 
 ### Changed

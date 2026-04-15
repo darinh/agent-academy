@@ -671,6 +671,677 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 
 ---
 
+## Request/Response Schemas
+
+Full property definitions for every request body and response type referenced in the endpoint tables above. Properties listed in declaration order. Types marked **(required)** have validation attributes enforcing non-null/non-empty values.
+
+> **Serialization**: All enums serialize as `camelCase` strings (via `JsonStringEnumConverter`). All `DateTime` values are UTC ISO 8601.
+
+### Enums Reference
+
+Enums used across multiple schemas are listed here once. Each serializes as its string name.
+
+| Enum | Values |
+|------|--------|
+| `CollaborationPhase` | `Intake`, `Planning`, `Discussion`, `Validation`, `Implementation`, `FinalSynthesis` |
+| `RoomStatus` | `Idle`, `Active`, `AttentionRequired`, `Completed`, `Archived` |
+| `TaskStatus` | `Queued`, `Active`, `Blocked`, `AwaitingValidation`, `InReview`, `ChangesRequested`, `Approved`, `Merging`, `Completed`, `Cancelled` |
+| `TaskType` | `Feature`, `Bug`, `Chore`, `Spike` |
+| `TaskPriority` | `Critical` (0), `High` (1), `Medium` (2), `Low` (3) |
+| `TaskSize` | `XS`, `S`, `M`, `L`, `XL` |
+| `PullRequestStatus` | `Open`, `ReviewRequested`, `ChangesRequested`, `Approved`, `Merged`, `Closed` |
+| `WorkstreamStatus` | `NotStarted`, `Ready`, `InProgress`, `Blocked`, `Completed` |
+| `MessageKind` | `System`, `TaskAssignment`, `Coordination`, `Plan`, `Status`, `Review`, `Validation`, `Decision`, `Question`, `Response`, `SpecChangeProposal`, `DirectMessage` |
+| `MessageSenderKind` | `System`, `Agent`, `User` |
+| `DeliveryPriority` | `Low`, `Normal`, `High`, `Urgent` |
+| `AgentAvailability` | `Ready`, `Preferred`, `Active`, `Busy`, `Offline` |
+| `AgentState` | `InRoom`, `Working`, `Presenting`, `Idle`, `Offline` |
+| `CommandStatus` | `Success`, `Error`, `Denied` |
+| `ActivityEventType` | `AgentLoaded`, `AgentCatalogReloaded`, `AgentThinking`, `AgentFinished`, `RoomCreated`, `RoomClosed`, `TaskCreated`, `PhaseChanged`, `MessagePosted`, `MessageSent`, `PresenceUpdated`, `RoomStatusChanged`, `ArtifactEvaluated`, `QualityGateChecked`, `IterationRetried`, `CheckpointCreated`, `AgentErrorOccurred`, `AgentWarningOccurred`, `SubagentStarted`, `SubagentCompleted`, `SubagentFailed`, `AgentPlanChanged`, `AgentSnapshotRewound`, `ToolIntercepted`, `CommandExecuted`, `CommandDenied`, `CommandFailed`, `TaskClaimed`, `TaskReleased`, `TaskApproved`, `TaskRejected`, `TaskChangesRequested`, `TaskStatusUpdated`, `TaskCommentAdded`, `TaskPrStatusChanged`, `AgentRecalled`, `RoomRenamed`, `DirectMessageSent`, `SpecTaskLinked`, `EvidenceRecorded`, `GateChecked`, `SprintStarted`, `SprintStageAdvanced`, `SprintArtifactStored`, `SprintCompleted`, `SprintCancelled`, `TaskUnblocked`, `TaskRetrospectiveCompleted`, `LearningDigestCompleted`, `ContextUsageUpdated` |
+| `ActivitySeverity` | `Info`, `Warning`, `Error` |
+
+### Rooms Domain
+
+#### `RoomSnapshot`
+
+Snapshot of a room's current state. Returned by most room mutation endpoints.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Room ID |
+| `name` | string | No | Display name |
+| `topic` | string | Yes | Room topic/description |
+| `status` | `RoomStatus` | No | Current lifecycle state |
+| `currentPhase` | `CollaborationPhase` | No | Current collaboration phase |
+| `activeTask` | `TaskSnapshot` | Yes | Task currently being worked in this room |
+| `participants` | `AgentPresence[]` | No | Agents present in the room |
+| `recentMessages` | `ChatEnvelope[]` | No | Recent message history |
+| `createdAt` | datetime | No | Room creation timestamp |
+| `updatedAt` | datetime | No | Last modification timestamp |
+| `phaseGates` | `PhasePrerequisiteStatus` | Yes | Per-phase gate status for UI transition buttons |
+
+#### `PhasePrerequisiteStatus`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `gates` | `Dictionary<string, PhaseGate>` | No | Map of phase name → gate status |
+
+#### `PhaseGate`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `allowed` | boolean | No | Whether transition to this phase is permitted |
+| `reason` | string | Yes | Human-readable explanation when not allowed |
+
+#### `ChatEnvelope`
+
+A message in a collaboration room.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Message ID |
+| `roomId` | string | No | Room the message belongs to |
+| `senderId` | string | No | Sender's agent/user ID |
+| `senderName` | string | No | Display name of sender |
+| `senderRole` | string | Yes | Role of sender (e.g., "architect") |
+| `senderKind` | `MessageSenderKind` | No | Origin category: System, Agent, or User |
+| `kind` | `MessageKind` | No | Semantic message type |
+| `content` | string | No | Message body text |
+| `sentAt` | datetime | No | When the message was sent |
+| `correlationId` | string | Yes | Links related messages across a conversation turn |
+| `replyToMessageId` | string | Yes | ID of the message being replied to |
+| `hint` | `DeliveryHint` | Yes | Routing hints for targeted delivery |
+
+#### `DeliveryHint`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `targetRole` | string | Yes | Route to agents with this role |
+| `targetAgentId` | string | Yes | Route to a specific agent |
+| `priority` | `DeliveryPriority` | No | Delivery priority level |
+| `replyRequested` | boolean | No | Whether a reply is expected |
+
+#### `RoomMessagesResponse`
+
+Paginated room message list (cursor-based).
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `messages` | `ChatEnvelope[]` | No | Messages in the page |
+| `hasMore` | boolean | No | Whether more messages exist after this page |
+
+#### `PostMessageRequest`
+
+Post an agent/system message to a room.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `roomId` | string | Yes | max 100 chars | Target room ID |
+| `senderId` | string | Yes | max 100 chars | Sender agent ID |
+| `content` | string | Yes | 1–50,000 chars | Message body |
+| `kind` | `MessageKind` | No | — | Default: `Response` |
+| `correlationId` | string | No | — | Correlation ID for threading |
+| `hint` | `DeliveryHint` | No | — | Delivery routing hints |
+
+#### `HumanMessageRequest`
+
+Post a human message to a room (triggers orchestrator).
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `content` | string | Yes | 1–50,000 chars | Message body |
+
+#### `PhaseTransitionRequest`
+
+Transition a room to a new collaboration phase.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `roomId` | string | Yes | max 100 chars | Target room ID |
+| `targetPhase` | `CollaborationPhase` | Yes | valid enum | Phase to transition to |
+| `reason` | string | No | max 500 chars | Why the transition is happening |
+
+#### `ConversationSessionSnapshot`
+
+Snapshot of a conversation session (epoch) within a room.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Session ID |
+| `roomId` | string | No | Parent room ID |
+| `roomType` | string | No | Room type identifier |
+| `sequenceNumber` | integer | No | Monotonic session counter within the room |
+| `status` | string | No | Session status (e.g., "Active", "Archived") |
+| `summary` | string | Yes | LLM-generated summary (populated on archive) |
+| `messageCount` | integer | No | Number of messages in this session |
+| `createdAt` | datetime | No | Session start time |
+| `archivedAt` | datetime | Yes | When the session was archived |
+| `workspacePath` | string | Yes | Workspace path if scoped to a project |
+
+#### `SessionListResponse`
+
+Paginated session list with total count.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `sessions` | `ConversationSessionSnapshot[]` | No | Sessions in the page |
+| `totalCount` | integer | No | Total matching sessions for pagination |
+
+### Direct Messages Domain
+
+#### `SendDmRequest`
+
+Send a direct message to an agent.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `message` | string | Yes | 1–50,000 chars | Message content |
+
+#### `DmMessage`
+
+A direct message in a DM thread.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Message ID |
+| `senderId` | string | No | Sender ID |
+| `senderName` | string | No | Display name |
+| `senderRole` | string | Yes | Agent role |
+| `content` | string | No | Message body |
+| `sentAt` | datetime | No | When sent |
+| `isFromHuman` | boolean | No | `true` if sent by a human, `false` if sent by agent |
+
+### Agents Domain
+
+#### `AgentDefinition`
+
+Full definition of an agent loaded from the catalog.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Unique agent identifier |
+| `name` | string | No | Display name |
+| `role` | string | No | Agent role (e.g., "architect", "developer") |
+| `summary` | string | No | Short description of the agent's purpose |
+| `startupPrompt` | string | No | System prompt used when the agent starts |
+| `model` | string | Yes | LLM model identifier (null = workspace default) |
+| `capabilityTags` | string[] | No | Tags describing agent capabilities |
+| `enabledTools` | string[] | No | Tool names the agent can use |
+| `autoJoinDefaultRoom` | boolean | No | Whether the agent joins the default room on load |
+| `gitIdentity` | `AgentGitIdentity` | Yes | Git author name/email for commits |
+| `permissions` | `CommandPermissionSet` | Yes | Allowed/denied command patterns |
+| `quota` | `ResourceQuota` | Yes | Per-agent resource limits |
+
+#### `AgentGitIdentity`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `authorName` | string | No | Git commit author name |
+| `authorEmail` | string | No | Git commit author email |
+
+#### `CommandPermissionSet`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `allowed` | string[] | No | Allowed command patterns (supports wildcards like `READ_*`) |
+| `denied` | string[] | No | Denied command patterns (evaluated after allowed) |
+
+#### `ResourceQuota`
+
+Per-agent resource limits. Null values mean unlimited.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `maxRequestsPerHour` | integer | Yes | Max LLM requests per hour |
+| `maxTokensPerHour` | long | Yes | Max tokens per hour |
+| `maxCostPerHour` | decimal | Yes | Max cost per hour (USD) |
+
+#### `AgentPresence`
+
+Real-time presence info for an agent in a room.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `agentId` | string | No | Agent identifier |
+| `name` | string | No | Display name |
+| `role` | string | No | Agent role |
+| `availability` | `AgentAvailability` | No | Current readiness state |
+| `isPreferred` | boolean | No | Whether this agent is preferred for the current task |
+| `lastActivityAt` | datetime | No | Last activity timestamp |
+| `activeCapabilities` | string[] | No | Currently active capability tags |
+
+#### `AgentLocation`
+
+Agent's current position and state within the workspace.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `agentId` | string | No | Agent identifier |
+| `roomId` | string | No | Room the agent is in |
+| `state` | `AgentState` | No | Current physical state |
+| `breakoutRoomId` | string | Yes | Breakout room ID if in a breakout |
+| `updatedAt` | datetime | No | Last state change timestamp |
+
+#### `UpdateLocationRequest`
+
+Move an agent to a room/state.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `roomId` | string | Yes | max 100 chars | Target room ID |
+| `state` | `AgentState` | Yes | valid enum | New agent state |
+| `breakoutRoomId` | string | No | max 100 chars | Breakout room ID |
+
+#### `AppendKnowledgeRequest`
+
+Add a knowledge entry for an agent.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `entry` | string | Yes | 1–10,000 chars | Knowledge text to append |
+
+#### `UpdateQuotaRequest`
+
+Update an agent's resource quotas. Null clears the limit (unlimited).
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `maxRequestsPerHour` | integer | No | 1–100,000 | Max LLM requests per hour |
+| `maxTokensPerHour` | long | No | 1–100,000,000 | Max tokens per hour |
+| `maxCostPerHour` | decimal | No | 0.01–10,000 | Max cost per hour (USD) |
+
+#### `QuotaStatus`
+
+Result of a quota check.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `agentId` | string | No | Agent identifier |
+| `isAllowed` | boolean | No | Whether the agent can proceed |
+| `deniedReason` | string | Yes | Why the agent was denied |
+| `retryAfterSeconds` | integer | Yes | Seconds to wait before retrying |
+| `configuredQuota` | `ResourceQuota` | Yes | The agent's configured limits |
+| `currentUsage` | `AgentUsageWindow` | Yes | Current usage within the quota window |
+
+#### `AgentUsageWindow`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `requestCount` | integer | No | Requests in current window |
+| `totalTokens` | long | No | Tokens consumed in current window |
+| `totalCost` | decimal | No | Cost in current window |
+
+### Agent Configuration
+
+#### `AgentConfigResponse`
+
+Effective agent config with override details.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `agentId` | string | No | Agent identifier |
+| `effectiveModel` | string | No | Resolved model ID (override or catalog default) |
+| `effectiveStartupPrompt` | string | No | Resolved system prompt |
+| `hasOverride` | boolean | No | Whether a config override exists |
+| `override` | `AgentConfigOverrideDto` | Yes | Raw override values if present |
+
+#### `AgentConfigOverrideDto`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `startupPromptOverride` | string | Yes | Custom system prompt |
+| `modelOverride` | string | Yes | Custom model ID |
+| `customInstructions` | string | Yes | Additional instructions appended to prompt |
+| `instructionTemplateId` | string | Yes | Linked template ID |
+| `instructionTemplateName` | string | Yes | Linked template display name |
+| `updatedAt` | datetime | No | Last modification timestamp |
+
+#### `UpsertAgentConfigRequest`
+
+Create or update an agent config override. All fields nullable — `null` clears that override field.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `startupPromptOverride` | string | No | max 100,000 chars | Custom system prompt |
+| `modelOverride` | string | No | max 100 chars | Custom model ID |
+| `customInstructions` | string | No | max 100,000 chars | Additional instructions |
+| `instructionTemplateId` | string | No | max 100 chars | Link to instruction template |
+
+#### `CreateCustomAgentRequest`
+
+Create a custom agent from a prompt.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `name` | string | Yes | max 100 chars | Agent display name |
+| `prompt` | string | Yes | 1–100,000 chars | System prompt for the agent |
+| `model` | string | No | max 100 chars | LLM model ID |
+
+### Tasks Domain
+
+#### `TaskSnapshot`
+
+Full snapshot of a task's state.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Task ID |
+| `title` | string | No | Task title |
+| `description` | string | No | Detailed description |
+| `successCriteria` | string | No | Acceptance criteria |
+| `status` | `TaskStatus` | No | Current lifecycle state |
+| `type` | `TaskType` | No | Feature, Bug, Chore, or Spike |
+| `currentPhase` | `CollaborationPhase` | No | Current collaboration phase |
+| `currentPlan` | string | No | Latest plan text |
+| `validationStatus` | `WorkstreamStatus` | No | Validation workstream progress |
+| `validationSummary` | string | No | Validation workstream notes |
+| `implementationStatus` | `WorkstreamStatus` | No | Implementation workstream progress |
+| `implementationSummary` | string | No | Implementation workstream notes |
+| `preferredRoles` | string[] | No | Preferred agent roles for this task |
+| `createdAt` | datetime | No | Creation timestamp |
+| `updatedAt` | datetime | No | Last update timestamp |
+| `size` | `TaskSize` | Yes | Estimated effort |
+| `startedAt` | datetime | Yes | When work began |
+| `completedAt` | datetime | Yes | When task was completed |
+| `assignedAgentId` | string | Yes | Assigned agent's ID |
+| `assignedAgentName` | string | Yes | Assigned agent's display name |
+| `usedFleet` | boolean | No | Whether multi-model fleet was used |
+| `fleetModels` | string[] | Yes | Models used if fleet was employed |
+| `branchName` | string | Yes | Git branch for this task |
+| `pullRequestUrl` | string | Yes | PR URL |
+| `pullRequestNumber` | integer | Yes | PR number |
+| `pullRequestStatus` | `PullRequestStatus` | Yes | PR review state |
+| `reviewerAgentId` | string | Yes | Agent assigned as reviewer |
+| `reviewRounds` | integer | No | Number of review iterations |
+| `testsCreated` | string[] | Yes | Test file paths created |
+| `commitCount` | integer | No | Number of commits |
+| `mergeCommitSha` | string | Yes | Merge commit SHA |
+| `commentCount` | integer | No | Number of comments |
+| `workspacePath` | string | Yes | Workspace path |
+| `sprintId` | string | Yes | Sprint this task belongs to |
+| `dependsOnTaskIds` | string[] | Yes | IDs of tasks this depends on |
+| `blockingTaskIds` | string[] | Yes | IDs of tasks blocked by this |
+| `priority` | `TaskPriority` | No | Priority level (default: Medium) |
+
+#### `TaskAssignmentRequest`
+
+Create and assign a new task.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `title` | string | Yes | max 200 chars | Task title |
+| `description` | string | Yes | 1–10,000 chars | Detailed description |
+| `successCriteria` | string | Yes | 1–5,000 chars | Acceptance criteria |
+| `roomId` | string | No | max 100 chars | Target room (auto-created if omitted) |
+| `preferredRoles` | string[] | Yes | — | Preferred agent roles |
+| `type` | `TaskType` | No | valid enum | Default: `Feature` |
+| `correlationId` | string | No | — | Correlation ID for tracking |
+| `currentPlan` | string | No | max 50,000 chars | Initial plan text |
+| `priority` | `TaskPriority` | No | valid enum | Default: `Medium` |
+
+#### `TaskAssignmentResult`
+
+Result of creating and assigning a task.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `correlationId` | string | No | Correlation ID for the operation |
+| `room` | `RoomSnapshot` | No | The room where the task was created |
+| `task` | `TaskSnapshot` | No | The created task snapshot |
+| `activity` | `ActivityEvent` | No | Activity event emitted for the creation |
+
+#### `ActivityEvent`
+
+An audit trail event emitted during collaboration.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Event ID |
+| `type` | `ActivityEventType` | No | Event category |
+| `severity` | `ActivitySeverity` | No | Info, Warning, or Error |
+| `roomId` | string | Yes | Associated room ID |
+| `actorId` | string | Yes | Agent/user that triggered the event |
+| `taskId` | string | Yes | Associated task ID |
+| `message` | string | No | Human-readable event description |
+| `correlationId` | string | Yes | Links related events |
+| `occurredAt` | datetime | No | Event timestamp |
+| `metadata` | `Dictionary<string, object>` | Yes | Arbitrary key-value metadata |
+
+#### `AssignTaskRequest`
+
+Assign an agent to an existing task.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `agentId` | string | Yes | max 100 chars | Agent to assign |
+| `agentName` | string | Yes | max 200 chars | Agent display name |
+
+#### `UpdateTaskStatusRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `status` | `TaskStatus` | Yes | valid enum | New task status |
+
+#### `UpdateTaskBranchRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `branchName` | string | Yes | max 300 chars | Git branch name |
+
+#### `UpdateTaskPrRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `url` | string | Yes | valid URL, max 2,000 chars | Pull request URL |
+| `number` | integer | Yes | ≥ 1 | Pull request number |
+| `status` | `PullRequestStatus` | Yes | valid enum | PR review status |
+
+#### `CompleteTaskRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `commitCount` | integer | Yes | 0–100,000 | Number of commits |
+| `testsCreated` | string[] | No | — | Test file paths created |
+
+#### `AddDependencyRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `dependsOnTaskId` | string | Yes | max 200 chars | ID of the dependency target task |
+
+#### `TaskDependencyInfo`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `taskId` | string | No | The task being queried |
+| `dependsOn` | `TaskDependencySummary[]` | No | Tasks this one depends on |
+| `dependedOnBy` | `TaskDependencySummary[]` | No | Tasks that depend on this one |
+
+#### `TaskDependencySummary`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `taskId` | string | No | Dependency target task ID |
+| `title` | string | No | Task title |
+| `status` | `TaskStatus` | No | Current status |
+| `isSatisfied` | boolean | No | Whether the dependency is met (status = Completed) |
+
+#### `BulkUpdateStatusRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `taskIds` | string[] | Yes | ≥ 1 item | Task IDs to update |
+| `status` | `TaskStatus` | Yes | safe statuses only | New status |
+
+#### `BulkAssignRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `taskIds` | string[] | Yes | ≥ 1 item | Task IDs to assign |
+| `agentId` | string | Yes | 1–100 chars | Target agent ID |
+| `agentName` | string | No | max 200 chars | Agent display name |
+
+#### `BulkOperationResult`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `requested` | integer | No | Number of items requested |
+| `succeeded` | integer | No | Items successfully processed |
+| `failed` | integer | No | Items that failed |
+| `updated` | `TaskSnapshot[]` | No | Successfully updated task snapshots |
+| `errors` | `BulkOperationError[]` | No | Per-item errors |
+
+#### `BulkOperationError`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `taskId` | string | No | Task that failed |
+| `code` | string | No | Machine-readable error code |
+| `error` | string | No | Error description |
+
+### Commands Domain
+
+#### `ExecuteCommandRequest`
+
+Execute a command (sync or async).
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `command` | string | Yes | 1–10,000 chars | Command name (e.g., `RUN_BUILD`, `LIST_TASKS`) |
+| `args` | `Dictionary<string, JsonElement>` | No | — | Command arguments as JSON key-value pairs |
+
+#### `CommandEnvelope`
+
+Command execution result envelope.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `command` | string | No | Command name |
+| `args` | `Dictionary<string, object>` | No | Arguments passed |
+| `status` | `CommandStatus` | No | Success, Error, or Denied |
+| `result` | `Dictionary<string, object>` | Yes | Command result payload |
+| `error` | string | Yes | Error message if failed |
+| `correlationId` | string | No | Unique execution ID |
+| `timestamp` | datetime | No | Execution timestamp |
+| `executedBy` | string | No | Agent/user that executed |
+| `errorCode` | string | Yes | Machine-readable error code (see `CommandErrorCode`) |
+| `retryCount` | integer | No | Automatic retry attempts before this result |
+
+### Memory System
+
+#### `MemoryImportRequest`
+
+Bulk import/upsert memories.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `memories` | `MemoryImportEntry[]` | Yes | max 500 items | Memories to import |
+
+#### `MemoryImportEntry`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `agentId` | string | Yes | max 100 chars | Agent the memory belongs to |
+| `category` | string | Yes | max 200 chars | Memory category |
+| `key` | string | Yes | max 200 chars | Unique key within category |
+| `value` | string | Yes | max 500 chars | Memory value |
+| `ttlHours` | integer | No | 1–87,600 | Time-to-live in hours |
+
+### Notifications Domain
+
+#### `ProviderConfigSchema`
+
+Schema describing a notification provider's configuration fields.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `providerId` | string | No | Provider identifier |
+| `displayName` | string | No | Human-readable provider name |
+| `description` | string | No | Provider description |
+| `fields` | `ConfigField[]` | No | Configuration fields |
+
+#### `ConfigField`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `key` | string | No | Configuration key |
+| `label` | string | No | Display label |
+| `type` | string | No | Field type (e.g., "string", "boolean") |
+| `required` | boolean | No | Whether the field is required |
+| `description` | string | Yes | Help text |
+| `placeholder` | string | Yes | Input placeholder |
+
+### Instruction Templates
+
+#### `InstructionTemplateRequest`
+
+Create or update an instruction template.
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `name` | string | Yes | max 200 chars | Template name |
+| `description` | string | No | max 1,000 chars | Template description |
+| `content` | string | Yes | 1–100,000 chars | Template content |
+
+#### `InstructionTemplateResponse`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Template ID |
+| `name` | string | No | Template name |
+| `description` | string | Yes | Template description |
+| `content` | string | No | Template content |
+| `createdAt` | datetime | No | Creation timestamp |
+| `updatedAt` | datetime | No | Last modification timestamp |
+
+### Workspace & GitHub
+
+#### `OnboardResult`
+
+Result of onboarding a project.
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `scan` | `ProjectScanResult` | No | Project scan results |
+| `workspace` | `WorkspaceMeta` | No | Workspace metadata |
+| `specTaskCreated` | boolean | No | Whether a spec-writing task was created |
+| `roomId` | string | Yes | Room ID if a task was created |
+
+#### `ProjectScanResult`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `path` | string | No | Scanned directory path |
+| `projectName` | string | Yes | Detected project name |
+| `techStack` | string[] | No | Detected technologies |
+| `hasSpecs` | boolean | No | Whether specs directory exists |
+| `hasReadme` | boolean | No | Whether README exists |
+| `isGitRepo` | boolean | No | Whether directory is a git repo |
+| `gitBranch` | string | Yes | Current git branch |
+| `detectedFiles` | string[] | No | Notable config/project files found |
+| `repositoryUrl` | string | Yes | Remote repository URL |
+| `defaultBranch` | string | Yes | Default git branch name |
+| `hostProvider` | string | Yes | Git host (e.g., "github") |
+
+#### `GitHubStatusResponse`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `isConfigured` | boolean | No | Whether GitHub integration is configured |
+| `repository` | string | Yes | Repository name |
+| `authSource` | string | No | Auth source (default: "none") |
+
+### Settings
+
+#### `SettingResponse`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `key` | string | No | Setting key |
+| `value` | string | No | Setting value |
+
+---
+
 ## Endpoint Count by Domain
 
 | Domain | Endpoints |
@@ -702,7 +1373,7 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 
 ## Known Gaps
 
-1. **Request/response schemas** — Type names are listed but full property definitions are not included. See domain-specific specs for detailed contracts.
+1. ~~**Request/response schemas**~~ — **Resolved**: Full property definitions for all 39+ request/response types documented in [Request/Response Schemas](#requestresponse-schemas) section, including enums reference, validation constraints, and nullability. See domain-specific specs for behavioral contracts.
 2. ~~**Rate limiting**~~ — **Resolved**: Three independent mechanisms documented — Consultant API HTTP-level limiter (429 + Retry-After), per-agent command rate limiter (denied envelope), and per-agent hourly quotas (agent paused). See [Rate Limiting](#rate-limiting).
 3. ~~**Pagination consistency**~~ — **Resolved**: Three pagination styles documented — cursor-based (`after`), limit/offset with total count, and limit-only. Per-endpoint table with defaults and maximums. See [Pagination](#pagination).
 4. ~~**Room artifacts**~~ — **Resolved**: `GET /api/rooms/{roomId}/artifacts` returns append-only event log of file operations (Created, Updated, Committed) tracked by `RoomArtifactTracker`. Artifacts recorded from `write_file` SDK tool and `COMMIT_CHANGES` command. Per-file commit attribution via `git diff-tree`. 19 new tests.
@@ -712,5 +1383,6 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 
 | Date | Change |
 |------|--------|
+| 2026-04-15 | Add Request/Response Schemas section — full property definitions for 39+ API types — resolves gap 1 |
 | 2026-04-14 | Add Rate Limiting section (3 mechanisms) and Pagination section (3 styles) — resolves gaps 2 and 3 |
 | 2026-04-14 | Initial catalog — 145 endpoints across 26 controllers |
