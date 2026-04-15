@@ -23,7 +23,7 @@ Controllers and command handlers inject focused domain services directly via con
 | `RoomService` | `IRoomService` | Room CRUD, phase transitions, workspace scoping | Scoped + forwarded | `Services/RoomService.cs` |
 | `RoomSnapshotBuilder` | — | Builds read-model snapshots of rooms (messages, task, participants) | Scoped | `Services/RoomSnapshotBuilder.cs` |
 | `WorkspaceRoomService` | — | Workspace–room relationships, default room creation, startup resolution | Scoped | `Services/WorkspaceRoomService.cs` |
-| `RoomLifecycleService` | — | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped | `Services/RoomLifecycleService.cs` |
+| `RoomLifecycleService` | `IRoomLifecycleService` | Room close/reopen/auto-archive/cleanup, agent evacuation | Scoped + forwarded | `Services/RoomLifecycleService.cs` |
 | `MessageService` | `IMessageService` | Room/DM/breakout messaging, message trimming | Scoped + forwarded | `Services/MessageService.cs` |
 | `TaskQueryService` | `ITaskQueryService` | Task queries, assignment, status updates, evidence/spec-link reads | Scoped + forwarded | `Services/TaskQueryService.cs` |
 | `TaskLifecycleService` | `ITaskLifecycleService` | Task creation staging, claim/release/approve/reject | Scoped + forwarded | `Services/TaskLifecycleService.cs` |
@@ -491,6 +491,7 @@ services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
 services.AddScoped<RoomSnapshotBuilder>();
 services.AddScoped<WorkspaceRoomService>();
 services.AddScoped<RoomLifecycleService>();
+services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
 services.AddScoped<AgentConfigService>();
 services.AddScoped<SystemSettingsService>();
 services.AddScoped<ConversationSessionService>();

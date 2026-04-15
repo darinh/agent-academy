@@ -36,7 +36,7 @@ internal sealed class TestServiceGraph : IDisposable
     public IRoomService RoomService { get; }
     public RoomSnapshotBuilder RoomSnapshotBuilder { get; }
     public PhaseTransitionValidator PhaseTransitionValidator { get; }
-    public RoomLifecycleService RoomLifecycleService { get; }
+    public IRoomLifecycleService RoomLifecycleService { get; }
     public WorkspaceRoomService WorkspaceRoomService { get; }
     public PlanService PlanService { get; }
     public SearchService SearchService { get; }

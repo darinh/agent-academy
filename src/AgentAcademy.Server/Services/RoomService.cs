@@ -10,7 +10,7 @@ namespace AgentAcademy.Server.Services;
 
 /// <summary>
 /// Handles room operations: CRUD, queries, phase transitions, and room messages.
-/// Lifecycle operations (close, reopen, archive, cleanup) are on <see cref="RoomLifecycleService"/>.
+/// Lifecycle operations (close, reopen, archive, cleanup) are on <see cref="IRoomLifecycleService"/>.
 /// Snapshot building is on <see cref="RoomSnapshotBuilder"/>.
 /// Workspace–room management is on <see cref="WorkspaceRoomService"/>.
 /// </summary>

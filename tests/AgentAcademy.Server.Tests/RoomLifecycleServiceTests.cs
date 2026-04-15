@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +46,7 @@ public class RoomLifecycleServiceTests : IDisposable
         services.AddSingleton(_catalog);
         services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 

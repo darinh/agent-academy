@@ -37,7 +37,7 @@ public sealed class ReopenRoomHandler : ICommandHandler
         }
 
         var roomService = context.Services.GetRequiredService<IRoomService>();
-        var lifecycle = context.Services.GetRequiredService<RoomLifecycleService>();
+        var lifecycle = context.Services.GetRequiredService<IRoomLifecycleService>();
         var room = await roomService.GetRoomAsync(roomId);
 
         if (room is null)

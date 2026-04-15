@@ -107,6 +107,7 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<SystemSettingsService>();
         services.AddLogging();

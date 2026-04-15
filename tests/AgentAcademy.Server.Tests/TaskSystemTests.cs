@@ -89,6 +89,7 @@ public class TaskSystemTests : IDisposable
         services.AddScoped<WorkspaceRoomService>();
         services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
         services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
@@ -1627,7 +1628,7 @@ public class TaskSystemTests : IDisposable
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
             var plans = scope.ServiceProvider.GetRequiredService<PlanService>();
             var rooms = scope.ServiceProvider.GetRequiredService<RoomService>();
-            var lifecycle = scope.ServiceProvider.GetRequiredService<RoomLifecycleService>();
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IRoomLifecycleService>();
             var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
             var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();

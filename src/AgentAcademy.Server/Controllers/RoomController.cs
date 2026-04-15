@@ -280,7 +280,7 @@ public class RoomController : ControllerBase
     /// POST /api/rooms/cleanup — archive stale rooms where all tasks are complete.
     /// </summary>
     [HttpPost("cleanup")]
-    public async Task<ActionResult> CleanupStaleRooms([FromServices] RoomLifecycleService lifecycleService)
+    public async Task<ActionResult> CleanupStaleRooms([FromServices] IRoomLifecycleService lifecycleService)
     {
         try
         {

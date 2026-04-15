@@ -49,6 +49,7 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<RoomSnapshotBuilder>();
         services.AddScoped<PhaseTransitionValidator>();
         services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<WorkspaceRoomService>();
         services.AddScoped<WorkspaceService>();
         services.AddScoped<SearchService>();
