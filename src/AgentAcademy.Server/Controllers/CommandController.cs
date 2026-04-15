@@ -193,14 +193,12 @@ public sealed class CommandController : ControllerBase
         if (User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var audit = await db.CommandAudits
+        var audit = await WithDbContextAsync(db => db.CommandAudits
             .AsNoTracking()
             .FirstOrDefaultAsync(a =>
                 a.CorrelationId == correlationId &&
                 a.AgentId == HumanAgentId &&
-                a.Source == HumanUiSource);
+                a.Source == HumanUiSource));
 
         if (audit is null)
         {
@@ -279,31 +277,30 @@ public sealed class CommandController : ControllerBase
         Dictionary<string, object?> args,
         string correlationId)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        db.CommandAudits.Add(new CommandAuditEntity
+        await WithDbContextAsync(db =>
         {
-            Id = Guid.NewGuid().ToString("N"),
-            CorrelationId = correlationId,
-            AgentId = HumanAgentId,
-            Source = HumanUiSource,
-            Command = commandName,
-            ArgsJson = JsonSerializer.Serialize(args),
-            Status = PendingAuditStatus,
-            Timestamp = DateTime.UtcNow
+            db.CommandAudits.Add(new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = correlationId,
+                AgentId = HumanAgentId,
+                Source = HumanUiSource,
+                Command = commandName,
+                ArgsJson = JsonSerializer.Serialize(args),
+                Status = PendingAuditStatus,
+                Timestamp = DateTime.UtcNow
+            });
+            return Task.CompletedTask;
         });
-
-        await db.SaveChangesAsync();
     }
 
     private async Task CreateCompletedAuditAsync(CommandEnvelope envelope)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        db.CommandAudits.Add(CreateAuditEntity(envelope));
-        await db.SaveChangesAsync();
+        await WithDbContextAsync(db =>
+        {
+            db.CommandAudits.Add(CreateAuditEntity(envelope));
+            return Task.CompletedTask;
+        });
     }
 
     private async Task CreateConfirmationAuditAsync(
@@ -311,48 +308,60 @@ public sealed class CommandController : ControllerBase
         Dictionary<string, object?> args,
         string correlationId)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        db.CommandAudits.Add(new CommandAuditEntity
+        await WithDbContextAsync(db =>
         {
-            Id = Guid.NewGuid().ToString("N"),
-            CorrelationId = correlationId,
-            AgentId = HumanAgentId,
-            Source = HumanUiSource,
-            Command = commandName,
-            ArgsJson = JsonSerializer.Serialize(args),
-            Status = nameof(CommandStatus.Denied),
-            ErrorCode = CommandErrorCode.ConfirmationRequired,
-            ErrorMessage = "Confirmation required for destructive command",
-            Timestamp = DateTime.UtcNow
+            db.CommandAudits.Add(new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = correlationId,
+                AgentId = HumanAgentId,
+                Source = HumanUiSource,
+                Command = commandName,
+                ArgsJson = JsonSerializer.Serialize(args),
+                Status = nameof(CommandStatus.Denied),
+                ErrorCode = CommandErrorCode.ConfirmationRequired,
+                ErrorMessage = "Confirmation required for destructive command",
+                Timestamp = DateTime.UtcNow
+            });
+            return Task.CompletedTask;
         });
-
-        await db.SaveChangesAsync();
     }
 
     private async Task UpdateAuditAsync(CommandEnvelope envelope)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var audit = await db.CommandAudits.FirstOrDefaultAsync(a =>
-            a.CorrelationId == envelope.CorrelationId &&
-            a.AgentId == HumanAgentId &&
-            a.Source == HumanUiSource);
+        await WithDbContextAsync(async db =>
+        {
+            var audit = await db.CommandAudits.FirstOrDefaultAsync(a =>
+                a.CorrelationId == envelope.CorrelationId &&
+                a.AgentId == HumanAgentId &&
+                a.Source == HumanUiSource);
 
-        if (audit is null)
-        {
-            db.CommandAudits.Add(CreateAuditEntity(envelope));
-        }
-        else
-        {
+            if (audit is null)
+            {
+                db.CommandAudits.Add(CreateAuditEntity(envelope));
+                return;
+            }
+
             audit.Status = envelope.Status.ToString();
             audit.ResultJson = envelope.Result is null ? null : JsonSerializer.Serialize(envelope.Result);
             audit.ErrorMessage = envelope.Error;
             audit.ErrorCode = envelope.ErrorCode;
             audit.Timestamp = envelope.Timestamp;
-        }
+        });
+    }
 
+    private async Task<T> WithDbContextAsync<T>(Func<AgentAcademyDbContext, Task<T>> work)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        return await work(db);
+    }
+
+    private async Task WithDbContextAsync(Func<AgentAcademyDbContext, Task> work)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await work(db);
         await db.SaveChangesAsync();
     }
 
