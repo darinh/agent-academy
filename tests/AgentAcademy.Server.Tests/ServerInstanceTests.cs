@@ -279,7 +279,7 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(ICrashRecoveryService)).Returns(_crashRecovery);
         serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         var orchestrator = CreateOrchestrator(scopeFactory);
@@ -340,7 +340,7 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(ICrashRecoveryService)).Returns(_crashRecovery);
         serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         var orchestrator = CreateOrchestrator(scopeFactory);
@@ -570,7 +570,7 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(ICrashRecoveryService)).Returns(_crashRecovery);
         serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         // Use a stopped orchestrator so ProcessQueueAsync doesn't drain the queue
@@ -615,7 +615,7 @@ public class ServerInstanceTests : IDisposable
         var serviceProvider = Substitute.For<IServiceProvider>();
         scopeFactory.CreateScope().Returns(scope);
         scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(CrashRecoveryService)).Returns(_crashRecovery);
+        serviceProvider.GetService(typeof(ICrashRecoveryService)).Returns(_crashRecovery);
         serviceProvider.GetService(typeof(IRoomService)).Returns(_roomService);
 
         var orchestrator = CreateOrchestrator(scopeFactory);

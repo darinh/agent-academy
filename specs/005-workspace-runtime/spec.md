@@ -14,12 +14,12 @@ Documents the domain services that manage core workspace state — rooms, agents
 
 Controllers and command handlers inject focused domain services directly via constructor injection. There is no facade or intermediary layer.
 
-**Service interface contracts** (`Services/Contracts/`): All seven task services plus room, room lifecycle, room snapshot, workspace-room, message, breakout, and agent location services expose interface contracts. Consumers inject the interface (e.g., `ITaskQueryService`, `IRoomService`, `IRoomSnapshotBuilder`, `IWorkspaceRoomService`), not the concrete class. DI registration uses the forwarding pattern — each concrete type is registered alongside its interface so both resolve to the same scoped instance. See [Service Registration](#service-registration) below.
+**Service interface contracts** (`Services/Contracts/`): All seven task services plus room, room lifecycle, room snapshot, workspace-room, message, breakout, agent location, and crash recovery services expose interface contracts. Consumers inject the interface (e.g., `ITaskQueryService`, `IRoomService`, `IRoomSnapshotBuilder`, `IWorkspaceRoomService`, `ICrashRecoveryService`), not the concrete class. DI registration uses the forwarding pattern — each concrete type is registered alongside its interface so both resolve to the same scoped instance. See [Service Registration](#service-registration) below.
 
 | Service | Interface | Responsibility | Registration | Source |
 |---------|-----------|---------------|--------------|--------|
 | `InitializationService` | — | Startup room/agent seeding, server instance tracking | Scoped | `Services/InitializationService.cs` |
-| `CrashRecoveryService` | — | Crash detection, breakout/agent/task recovery | Scoped | `Services/CrashRecoveryService.cs` |
+| `CrashRecoveryService` | `ICrashRecoveryService` | Crash detection, breakout/agent/task recovery | Scoped + forwarded | `Services/CrashRecoveryService.cs` |
 | `RoomService` | `IRoomService` | Room CRUD, phase transitions, workspace scoping | Scoped + forwarded | `Services/RoomService.cs` |
 | `RoomSnapshotBuilder` | `IRoomSnapshotBuilder` | Builds read-model snapshots of rooms (messages, task, participants) | Scoped + forwarded | `Services/RoomSnapshotBuilder.cs` |
 | `WorkspaceRoomService` | `IWorkspaceRoomService` | Workspace–room relationships, default room creation, startup resolution | Scoped + forwarded | `Services/WorkspaceRoomService.cs` |
@@ -483,6 +483,7 @@ services.AddScoped<AgentLocationService>();
 services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
 services.AddScoped<PlanService>();
 services.AddScoped<CrashRecoveryService>();
+services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
 services.AddScoped<InitializationService>();
 services.AddScoped<BreakoutRoomService>();
 services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
@@ -536,6 +537,7 @@ Each domain service depends on `AgentAcademyDbContext` (scoped) and the specific
 
 ## Revision History
 
+- **2026-04-15**: Extracted `ICrashRecoveryService` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `CrashRecoveryService`.
 - **2026-04-15**: Extracted `IRoomSnapshotBuilder` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `RoomSnapshotBuilder`.
 - **2026-04-15**: Extracted `IWorkspaceRoomService` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `WorkspaceRoomService`.
 - **2026-04-15**: Extracted `IAgentLocationService` interface contract. Updated service table and DI registration for `IRoomService`, `IMessageService`, `IBreakoutRoomService`, `IAgentLocationService` — all now show forwarding pattern.

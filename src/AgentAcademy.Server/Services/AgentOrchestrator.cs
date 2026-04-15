@@ -58,7 +58,7 @@ public sealed class AgentOrchestrator
         }
 
         using var scope = _scopeFactory.CreateScope();
-        var crashRecovery = scope.ServiceProvider.GetRequiredService<CrashRecoveryService>();
+        var crashRecovery = scope.ServiceProvider.GetRequiredService<ICrashRecoveryService>();
         var result = await crashRecovery.RecoverFromCrashAsync(mainRoomId);
 
         _logger.LogWarning(

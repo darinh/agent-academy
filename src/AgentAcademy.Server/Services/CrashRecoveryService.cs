@@ -12,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// detecting unclean shutdowns, closing orphaned breakout rooms,
 /// resetting stuck agents, and resetting abandoned tasks.
 /// </summary>
-public sealed class CrashRecoveryService
+public sealed class CrashRecoveryService : ICrashRecoveryService
 {
     private static readonly HashSet<string> InProgressStatuses = new(StringComparer.Ordinal)
     {
@@ -49,11 +49,6 @@ public sealed class CrashRecoveryService
         _messages = messages;
         _activity = activity;
     }
-
-    public sealed record CrashRecoveryResult(
-        int ClosedBreakoutRooms,
-        int ResetWorkingAgents,
-        int ResetTasks);
 
     /// <summary>
     /// The ID of the current server instance. Set during
