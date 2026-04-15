@@ -36,7 +36,7 @@ public sealed class CompleteSprintHandler : ICommandHandler
         }
 
         var roomService = context.Services.GetRequiredService<IRoomService>();
-        var sprintService = context.Services.GetRequiredService<SprintService>();
+        var sprintService = context.Services.GetRequiredService<ISprintService>();
 
         // Resolve sprint if not explicitly given
         if (string.IsNullOrEmpty(sprintId))

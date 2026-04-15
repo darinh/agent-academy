@@ -38,7 +38,7 @@ public sealed class AdvanceStageHandler : ICommandHandler
         }
 
         var roomService = context.Services.GetRequiredService<IRoomService>();
-        var sprintService = context.Services.GetRequiredService<SprintService>();
+        var sprintService = context.Services.GetRequiredService<ISprintService>();
         var stageService = context.Services.GetRequiredService<SprintStageService>();
         var sessionService = context.Services.GetRequiredService<ConversationSessionService>();
 

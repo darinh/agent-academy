@@ -106,6 +106,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         services.AddScoped<AgentConfigService>();
         services.AddSingleton<SpecManager>();
         services.AddScoped<SprintService>();
+        services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<RoundContextLoader>();
         services.AddSingleton(_executor);

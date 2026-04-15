@@ -14,7 +14,7 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/sprints")]
 public class SprintController : ControllerBase
 {
-    private readonly SprintService _sprintService;
+    private readonly ISprintService _sprintService;
     private readonly SprintStageService _stageService;
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
@@ -23,7 +23,7 @@ public class SprintController : ControllerBase
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
-        SprintService sprintService,
+        ISprintService sprintService,
         SprintStageService stageService,
         SprintArtifactService artifactService,
         SprintMetricsCalculator metricsCalculator,
@@ -86,7 +86,7 @@ public class SprintController : ControllerBase
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (Exception ex)
         {
@@ -111,7 +111,7 @@ public class SprintController : ControllerBase
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (Exception ex)
         {
@@ -161,7 +161,7 @@ public class SprintController : ControllerBase
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (InvalidOperationException ex)
         {
@@ -190,7 +190,7 @@ public class SprintController : ControllerBase
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (InvalidOperationException ex)
         {
@@ -269,7 +269,7 @@ public class SprintController : ControllerBase
                 ToSnapshot(sprint),
                 (await _artifactService.GetSprintArtifactsAsync(sprint.Id))
                     .Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (InvalidOperationException ex)
         {

@@ -24,7 +24,7 @@ public sealed class RoundContextLoader
     private readonly SpecManager _specManager;
     private readonly ConversationSessionQueryService _sessionQuery;
     private readonly IRoomService _roomService;
-    private readonly SprintService _sprintService;
+    private readonly ISprintService _sprintService;
     private readonly SprintArtifactService _artifactService;
     private readonly ILogger<RoundContextLoader> _logger;
 
@@ -32,7 +32,7 @@ public sealed class RoundContextLoader
         SpecManager specManager,
         ConversationSessionQueryService sessionQuery,
         IRoomService roomService,
-        SprintService sprintService,
+        ISprintService sprintService,
         SprintArtifactService artifactService,
         ILogger<RoundContextLoader> logger)
     {

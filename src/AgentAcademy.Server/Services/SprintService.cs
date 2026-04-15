@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// Manages sprint lifecycle: creation, completion, cancellation, and timeout queries.
 /// Stage advancement logic lives in <see cref="SprintStageService"/>.
 /// </summary>
-public sealed class SprintService
+public sealed class SprintService : Contracts.ISprintService
 {
     /// <summary>Read-only view of the sprint stages, delegated to <see cref="SprintStageService"/>.</summary>
     public static ReadOnlyCollection<string> Stages => SprintStageService.Stages;
