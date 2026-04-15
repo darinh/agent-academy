@@ -245,7 +245,7 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 
 ### Assignment Behavior
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`, `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs`
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`, `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs`
 
 - Task assignment creates a `BreakoutRoomEntity` and a `TaskItemEntity` linked to it
 - The orchestrator ensures the breakout room has a persisted `TaskId`; if none exists yet, it creates a new `TaskEntity` for that breakout and stores the link before branch creation continues (`EnsureTaskForBreakoutAsync`)
@@ -809,7 +809,7 @@ When a project is onboarded and has no existing specs (`!scan.HasSpecs`), the sy
    - SuccessCriteria: spec files created and committed
    - PreferredRoles: `["Planner", "TechnicalWriter"]`
 3. Calls `TaskOrchestrationService.CreateTaskAsync(request)`
-4. Triggers `AgentOrchestrator.HandleHumanMessageAsync(roomId)` to kick off agent work
+4. Triggers `AgentOrchestrator.HandleHumanMessage(roomId)` to kick off agent work
 5. Returns `specTaskCreated: true` and `roomId` in `OnboardResult`
 
 `OnboardResult`:
@@ -828,11 +828,11 @@ public record OnboardResult(
 
 ### Task Assignment Flow
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
 
 When a task is created (via `/api/tasks` or auto-spec):
 
-1. Orchestrator evaluates preferred roles
+1. `TaskAssignmentHandler` evaluates preferred roles
 2. Selects the most appropriate named agent
 3. Agent acknowledges task in the room
 4. Creates breakout room and task item (`CreateBreakoutRoomAsync`, `CreateTaskItemAsync`)
@@ -843,7 +843,7 @@ When a task is created (via `/api/tasks` or auto-spec):
 
 ### Task Creation Gating
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-473`
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
 
 Task creation via TASK ASSIGNMENT blocks in agent responses is role-gated:
 - Only agents with the `Planner` role can create tasks
@@ -955,13 +955,13 @@ All task services have interface contracts in `Services/Contracts/`. Consumers i
 8. `SetBreakoutTaskIdAsync` is write-once — same conflict-logging behavior (enforced in code)
 9. **Git operations must succeed before database persistence** — Task/branch metadata must not persist to the database until git operations succeed. This prevents orphaned database records that reference non-existent branches.
 
-   > **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs` lines 605–627 (commit `36e0dda`)
+   > **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
 
-   **Implementation** (`HandleTaskAssignmentAsync`):
-   - `CreateTaskBranchAsync` runs first (line 607)
-   - `BranchExistsAsync` verifies the branch was created (lines 609–610)
-   - Only after git success does `CreateTaskItemAsync` persist to database (lines 614–616)
-   - `EnsureTaskForBreakoutAsync` links the task to the breakout room (lines 618–620)
+   **Implementation** (`HandleTaskAssignmentAsync` in `TaskAssignmentHandler`):
+   - `CreateTaskBranchAsync` runs first
+   - `BranchExistsAsync` verifies the branch was created
+   - Only after git success does `CreateTaskItemAsync` persist to database
+   - `EnsureTaskForBreakoutAsync` links the task to the breakout room
    - If git fails, the catch block cleans up the breakout room but no database records exist to orphan
    - Each catch-block cleanup step is independently guarded with its own try/catch (lines 632–651)
 

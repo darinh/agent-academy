@@ -394,15 +394,15 @@ Controls which agents participate in each stage. See the Stages table above for 
 
 ## Orchestrator Integration
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
+> **Source**: `src/AgentAcademy.Server/Services/RoundContextLoader.cs` (context loading), `src/AgentAcademy.Server/Services/ConversationRoundRunner.cs` (roster filtering)
 
-The orchestrator integrates sprint context into conversation rounds:
+Sprint context is loaded by `RoundContextLoader` and consumed by `ConversationRoundRunner`:
 
-1. **LoadSprintContextAsync**: Loads the active sprint, builds the preamble from stage instructions + prior stage context + overflow. Returns `(Preamble, ActiveStage)`.
+1. **LoadSprintContextAsync** (in `RoundContextLoader`, private): Loads the active sprint, builds the preamble from stage instructions + prior stage context + overflow. Returns `(Preamble, ActiveStage)`.
 
-2. **Prompt injection**: The sprint preamble is passed to `PromptBuilder.BuildConversationPrompt` and included in every agent's prompt for both main room and DM conversations.
+2. **Prompt injection**: The sprint preamble is included in the `RoundContext` record and passed to `PromptBuilder.BuildConversationPrompt` for every agent's prompt in both main room and DM conversations.
 
-3. **Roster filtering**: Before running conversation rounds, the orchestrator:
+3. **Roster filtering**: Before running conversation rounds, `ConversationRoundRunner`:
    - Excludes the planner if their role isn't in the current stage's roster
    - Filters the agent list through `SprintPreambles.FilterByStageRoster`
 

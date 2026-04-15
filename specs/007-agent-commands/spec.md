@@ -587,7 +587,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 - `src/AgentAcademy.Server/Commands/Handlers/` — One handler per command group
 
 **Modified files:**
-- `AgentOrchestrator.cs` — After receiving agent response, run through command parser before posting to room
+- `AgentTurnRunner.cs` — After receiving agent response, run through command parser before posting to room
 - Domain service files — Expose read methods needed by LIST_* commands
 
 **New entities:**

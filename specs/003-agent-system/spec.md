@@ -385,7 +385,7 @@ In `CreatePrimedSessionAsync` (the session factory callback passed to `CopilotSe
 - **`SystemSettingsService`** (`src/AgentAcademy.Server/Services/SystemSettingsService.cs`): Configurable thresholds via `conversation.mainRoomEpochSize` (default 50) and `conversation.breakoutEpochSize` (default 30).
 
 **Epoch rotation flow**:
-1. Before each conversation round, `AgentOrchestrator` calls `CheckAndRotateAsync(roomId)`
+1. Before each conversation round, `ConversationRoundRunner` calls `CheckAndRotateAsync(roomId)`
 2. If message count ≥ threshold, loads session messages and generates an LLM summary
 3. Archives current session with summary, creates new active session
 4. Invalidates all SDK sessions for the room via `InvalidateRoomSessionsAsync()`
@@ -535,11 +535,14 @@ public sealed class AgentConfigService
 **File**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
 **File**: `src/AgentAcademy.Server/Services/AgentTurnRunner.cs`
 
-The orchestrator manages the queue-based message processing loop and conversation round structure. Per-turn agent execution (config resolution, memory/DM loading, prompt building, LLM execution, command processing, message posting, and task assignments) is delegated to `AgentTurnRunner`.
+The orchestrator manages the queue-based message processing loop. `ConversationRoundRunner` handles conversation round structure and agent selection. Per-turn agent execution (config resolution, memory/DM loading, prompt building, LLM execution, command processing, message posting, and task assignments) is delegated to `AgentTurnRunner`.
 
 | Component | Responsibility |
 |-----------|---------------|
-| `AgentOrchestrator` | Queue management, round orchestration, context loading, agent selection |
+| `AgentOrchestrator` | Queue management, message dispatch, startup recovery |
+| `ConversationRoundRunner` | Planner-led conversation rounds, agent selection, sprint stage filtering |
+| `DirectMessageRouter` | DM routing — breakout forwarding or targeted room turns |
+| `RoundContextLoader` | Loads shared per-round context (spec, session, sprint) |
 | `AgentTurnRunner.RunAgentTurnAsync` | Single agent turn: resolve config → load memories/DMs → build prompt → execute → process commands → post message → handle task assignments |
 | `AgentTurnResult` | Immutable return type: resolved `AgentDefinition`, raw response, `IsNonPass` flag |
 

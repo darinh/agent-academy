@@ -142,9 +142,9 @@ The spec system is managed by `SpecManager` (`AgentAcademy.Server.Services.SpecM
 - **`SpecManager.LoadSpecContext()`**: Reads `specs/` directory, extracts heading and purpose from each section's `spec.md`, returns a condensed index for prompt injection
 - **`SpecManager.GetSpecSections()`**: Returns structured metadata (id, heading, summary, file path) for all spec sections
 - **`SpecManager.GetSpecContent(sectionId)`**: Reads the full content of a specific spec section by directory name
-- **`AgentOrchestrator.BuildConversationPrompt()`**: Injects spec context into every conversation prompt when specs exist
-- **`AgentOrchestrator.BuildReviewPrompt()`**: Includes spec context and requests spec accuracy verification in review verdicts
-- **`AgentOrchestrator.InferMessageKind()`**: Maps `TechnicalWriter` role to `SpecChangeProposal` message kind
+- **`PromptBuilder.BuildConversationPrompt()`**: Injects spec context into every conversation prompt when specs exist (called by `AgentTurnRunner`)
+- **`PromptBuilder.BuildReviewPrompt()`**: Includes spec context and requests spec accuracy verification in review verdicts (called by `BreakoutCompletionService`)
+- **`AgentResponseParser.InferMessageKind()`**: Maps `TechnicalWriter` role to `SpecChangeProposal` message kind (called by `AgentTurnRunner`)
 
 ### Agent Spec Awareness
 
@@ -187,7 +187,7 @@ public sealed class SpecManager
 }
 ```
 
-Registered as singleton in DI. Injected into `AgentOrchestrator`, `BreakoutLifecycleService`, and `CollaborationController`.
+Registered as singleton in DI. Injected into `RoundContextLoader`, `BreakoutLifecycleService`, and `CollaborationController`.
 
 ### MessageKind Extension
 

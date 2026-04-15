@@ -69,7 +69,7 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 | Frontend | `agent-academy-client` | React SPA with Fluent UI, SignalR/SSE client, workspace state management |
 | Tests | `AgentAcademy.Server.Tests` | xUnit integration and unit tests |
 | Domain Services | `AgentAcademy.Server` | State management layer: rooms, agents, tasks, messages, activity, plans — injected directly by controllers and handlers |
-| AgentOrchestrator | `AgentAcademy.Server` | Conversation rounds, breakout loops, DM routing, prompt construction |
+| AgentOrchestrator | `AgentAcademy.Server` | Queue-based message dispatch, startup recovery; delegates to ConversationRoundRunner, DirectMessageRouter, and RoundContextLoader |
 | CopilotExecutor | `AgentAcademy.Server` | Copilot SDK sessions, tool registration, circuit breaker, retry logic |
 | CommandPipeline | `AgentAcademy.Server` | Parse → authorize → rate-limit → dispatch → audit for agent commands |
 | NotificationManager | `AgentAcademy.Server` | Multi-provider notification routing (Discord, Slack, Console) |

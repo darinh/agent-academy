@@ -198,7 +198,7 @@ Activity publishing uses a two-layer architecture:
 - `GetRecentActivity()` → delegates to `ActivityBroadcaster`
 - `Subscribe(callback)` → delegates to `ActivityBroadcaster`
 
-Callers that need to publish events (e.g., `TaskOrchestrationService`, `AgentOrchestrator`) inject `ActivityPublisher` directly.
+Callers that need to publish events (e.g., `TaskOrchestrationService`, `ConversationRoundRunner`, `DirectMessageRouter`) resolve `ActivityPublisher` from their scoped DI container.
 
 ### Crash Recovery
 
@@ -249,10 +249,10 @@ Singleton service managing git worktrees for agent-level workspace isolation.
 - `SyncWithGitAsync()` is called on startup to reconcile stale state
 - Worktree cleanup is idempotent and handles already-removed paths gracefully
 
-#### Orchestrator Integration
+#### Service Integration
 
-The `AgentOrchestrator` uses `WorktreeService` to provide each agent with an isolated working directory:
-- When an agent starts a task, `EnsureAgentWorktreeAsync()` provisions a worktree
+`BreakoutLifecycleService` and `TaskAssignmentHandler` use `WorktreeService` to provide each agent with an isolated working directory:
+- When an agent starts a task, `TaskAssignmentHandler` calls `EnsureAgentWorktreeAsync()` to provision a worktree
 - The agent's `CommandContext.WorkingDirectory` is set to the worktree path
 - All git and file operations (build, test, diff, commit) execute within the worktree
 - On task completion/cancellation, the worktree persists for merge operations
