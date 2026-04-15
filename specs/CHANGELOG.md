@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **006-orchestrator**: Documented orchestrator decomposition — `AgentOrchestrator` is now a pure queue manager dispatching to `ConversationRoundRunner` (conversation rounds), `DirectMessageRouter` (DM routing), and `RoundContextLoader` (shared per-round context). Updated Purpose, DI registration, dependency tables, constants ownership, and source references.
 - **005-workspace-runtime**: Document task service interface contracts (`Services/Contracts/`). Service architecture table now shows interface column and `Scoped + forwarded` registration pattern. Service registration code block updated to reflect `ServiceRegistrationExtensions.AddDomainServices()` with DI forwarding. Added `TaskSnapshotFactory`, `TaskDependencyService`, `TaskAnalyticsService`, `RoomArtifactTracker`, and `ArtifactEvaluatorService` to the service table.
 - **010-task-management**: Task Service Method Index updated — column renamed from "Service" to "Interface", all task service entries now reference their interface contract. Added missing methods: `RejectTaskAsync`, `GetTaskAsync`, `AddDependencyAsync`, `RemoveDependencyAsync`, `GetBlockingTasksAsync`, `RecordEvidenceAsync`, `CheckGatesAsync`, `GetTaskCycleAnalyticsAsync`, and `TaskSnapshotFactory` mapping methods.
 

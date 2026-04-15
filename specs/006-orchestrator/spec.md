@@ -2,9 +2,18 @@
 
 ## Purpose
 
-The `AgentOrchestrator` drives the multi-agent conversation lifecycle — from receiving a human message through planner-led rounds, breakout room work, and review cycles. It is the central coordination service that determines which agents speak, when, and in what order.
+The orchestrator subsystem drives the multi-agent conversation lifecycle — from receiving a human message through planner-led rounds, breakout room work, and review cycles. It determines which agents speak, when, and in what order.
 
-Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await patterns and scoped domain service access.
+The subsystem is decomposed into four collaborating services:
+
+| Service | Lifetime | Responsibility |
+|---------|----------|----------------|
+| `AgentOrchestrator` | Singleton | Queue management, message dispatch, startup recovery |
+| `ConversationRoundRunner` | Singleton | Planner-led conversation rounds, agent selection, sprint filtering |
+| `DirectMessageRouter` | Singleton | DM routing — breakout forwarding or targeted room turns |
+| `RoundContextLoader` | Scoped | Loads shared per-round context (spec, session, sprint) |
+
+Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await patterns and scoped domain service access. The monolithic orchestrator was decomposed during a 2026-04-14 refactor to isolate queue management from conversation logic and DM routing.
 
 ## Current Behavior
 
@@ -12,16 +21,23 @@ Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await pat
 
 ### Queue-Based Processing
 
-Human messages and DM triggers are enqueued by room ID. A single processing loop drains the queue, running one conversation round per room. If the orchestrator is already processing, new messages wait in the FIFO queue.
+> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
+
+`AgentOrchestrator` is a pure queue manager. It accepts human messages and DM triggers, enqueues them as `QueueItem` records, and dispatches to `ConversationRoundRunner` or `DirectMessageRouter` for execution. All conversation logic and DM routing have been extracted out.
 
 - Entry point: `HandleHumanMessage(roomId)` — enqueues `{RoomId}` and kicks off `ProcessQueueAsync()`
-- Entry point: `HandleDirectMessage(recipientAgentId)` — resolves the agent's current room, enqueues with dedupe
-- Processing is serialized via `_processing` flag + `_lock` — only one room is processed at a time
-- The orchestrator can be stopped via `Stop()`, which flips `_stopped` and halts queue processing
+- Entry point: `HandleDirectMessage(recipientAgentId)` — enqueues with dedupe (skips if a DM trigger for the same agent is already queued)
+- Processing is serialized via `_processing` flag + `_lock` — only one item is processed at a time
+- Dispatch: items with `TargetAgentId` go to `DirectMessageRouter.RouteAsync()`; room items go to `ConversationRoundRunner.RunRoundsAsync()`
+- The orchestrator can be stopped via `Stop()`, which cancels the `CancellationTokenSource` and halts queue processing
 - **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `RoomService.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
 - **Conversation kickoff on fresh start**: During `WebApplicationExtensions.InitializeAsync()` (step 7), if the main room has no `User` or `Agent` messages and crash recovery did not run, a system kickoff message is posted and the room is enqueued. This bootstraps agent collaboration on a fresh workspace without requiring a manual human message. The check is idempotent — once agents have spoken, subsequent restarts skip the kickoff.
 
 ### Conversation Rounds
+
+> **Source**: `src/AgentAcademy.Server/Services/ConversationRoundRunner.cs`
+
+`ConversationRoundRunner.RunRoundsAsync(roomId, cancellationToken)` executes up to `MaxRoundsPerTrigger` (3) conversation rounds. Each round gets a fresh DI scope to ensure clean `DbContext` state.
 
 Each round in the main collaboration room follows this sequence:
 
@@ -51,7 +67,10 @@ Acceptance Criteria:
 Type: Feature|Bug|Chore|Spike
 ```
 
-The orchestrator:
+`TaskAssignmentHandler` (invoked by `AgentTurnRunner` when it detects `TASK ASSIGNMENT:` blocks in an agent response):
+
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
+
 1. Finds the named agent in the catalog
 2. **Task gating**: Non-planner agents can only create `Bug` tasks. Other task types from non-planners become a proposal message posted to the main room instead of an actual task.
 3. Creates a breakout room for the assigned agent
@@ -97,11 +116,14 @@ The breakout room is closed after review completes.
 
 ### Direct Message Handling
 
-The orchestrator has full DM integration:
+> **Source**: `src/AgentAcademy.Server/Services/DirectMessageRouter.cs`
 
-- `HandleDirectMessage(recipientAgentId)` provides a dedicated queue path for DM-triggered processing
-- If the target agent is in a breakout room, unread DMs are posted into the breakout room as messages and acknowledged
-- In the main room, DMs are injected into the agent's prompt via the conversation prompt builder
+`DirectMessageRouter.RouteAsync(recipientAgentId)` handles DM-triggered agent turns. Creates a fresh DI scope per invocation.
+
+- Resolves the recipient agent from the catalog (logs warning and returns if not found)
+- Applies runtime config overrides via `AgentConfigService.GetEffectiveAgentAsync()`
+- If the target agent is in a breakout room (`AgentState.Working` with `BreakoutRoomId`), unread DMs are posted into the breakout room as system messages and acknowledged — the agent processes them in its next breakout round
+- Otherwise, loads round context via `RoundContextLoader` and runs a targeted turn in the agent's current room (falls back to the first available room or `"main"` if location is unknown)
 - DMs use per-recipient `AcknowledgedAt` tracking to prevent duplication
 
 ### Prompt Building
@@ -119,7 +141,7 @@ Five prompt builders construct context for agent invocations:
 
 ### Epoch-Aware Round Logic
 
-Before the first conversation round (main room) or before each round (breakout rooms), the orchestrator checks if the active conversation session has exceeded the configured message threshold:
+Before the first conversation round (main room) or before each round (breakout rooms), `ConversationRoundRunner` (main room) or `BreakoutLifecycleService` (breakout rooms) checks if the active conversation session has exceeded the configured message threshold:
 
 - Main rooms: default 50 messages (`conversation.mainRoomEpochSize`)
 - Breakout rooms: default 30 messages (`conversation.breakoutEpochSize`)
@@ -136,11 +158,23 @@ If exceeded:
 
 > **Source**: `src/AgentAcademy.Server/Services/SpecManager.cs`
 
-### Sprint Context Loading
+### Round Context Loading
 
-When an active sprint exists, `LoadRoundContextAsync()` (private to `AgentOrchestrator`) consolidates all per-round context loading: spec context/version, session summary, and sprint preamble/stage. Each field is loaded independently with soft-fail to null and a logged warning, ensuring one failure cannot cascade to others. `LoadSprintContextAsync()` (also private) handles the sprint-specific portion — loading stage, prior context, overflow requirements, and building the preamble via `SprintPreambles.BuildPreamble()`. Sprint stage also controls which agent roles participate via `SprintPreambles.IsRoleAllowedInStage()` and `SprintPreambles.FilterByStageRoster()`.
+> **Source**: `src/AgentAcademy.Server/Services/RoundContextLoader.cs`
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:LoadRoundContextAsync`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:LoadSprintContextAsync`, `src/AgentAcademy.Server/Services/SprintPreambles.cs`
+`RoundContextLoader.LoadAsync(roomId)` consolidates all per-round context loading into an immutable `RoundContext` record. Both `ConversationRoundRunner` and `DirectMessageRouter` resolve this service from their scoped container.
+
+Each field is loaded independently with soft-fail to null and a logged warning, ensuring one failure cannot cascade:
+
+| Field | Source | Description |
+|-------|--------|-------------|
+| `SpecContext` | `SpecManager.LoadSpecContextAsync()` | Aggregated spec headings/purpose paragraphs |
+| `SpecVersion` | `SpecManager.GetSpecVersionAsync()` | Current spec version hash |
+| `SessionSummary` | `ConversationSessionQueryService.GetSessionContextAsync()` | Archived session summary for the room |
+| `SprintPreamble` | `SprintPreambles.BuildPreamble()` | Sprint stage context, prior context, overflow requirements |
+| `ActiveSprintStage` | `SprintService.GetActiveSprintAsync()` | Current sprint stage (controls agent role filtering) |
+
+Sprint context loading (`LoadSprintContextAsync`, private) handles stage detection, prior context, overflow requirements from previous sprints, and preamble building. Sprint stage also controls which agent roles participate via `SprintPreambles.IsRoleAllowedInStage()` and `SprintPreambles.FilterByStageRoster()` (applied in `ConversationRoundRunner`).
 
 ### Response Parsing
 
@@ -182,15 +216,22 @@ Agent roles map to `MessageKind` values (via `AgentResponseParser.InferMessageKi
 ### Service Registration
 
 ```csharp
-// Program.cs
+// AgentPipelineExtensions.cs
 builder.Services.AddSingleton<AgentMemoryLoader>();
 builder.Services.AddSingleton<BreakoutLifecycleService>();
 builder.Services.AddSingleton<BreakoutCompletionService>();
 builder.Services.AddSingleton<AgentTurnRunner>();
+builder.Services.AddSingleton<TaskAssignmentHandler>();
+builder.Services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
+builder.Services.AddSingleton<ConversationRoundRunner>();
+builder.Services.AddSingleton<DirectMessageRouter>();
 builder.Services.AddSingleton<AgentOrchestrator>();
+
+// ServiceRegistrationExtensions.cs
+builder.Services.AddScoped<RoundContextLoader>();
 ```
 
-`AgentOrchestrator` and its extracted services are registered as singletons. Per-turn agent execution is delegated to `AgentTurnRunner`. Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`. The orchestrator uses `IServiceScopeFactory` to create scoped service instances (e.g., `RoomService`, `MessageService`, `TaskOrchestrationService`) for each conversation round. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
+`AgentOrchestrator` and its extracted singleton services are registered in `AgentPipelineExtensions`. `RoundContextLoader` is scoped (resolved per-round via `IServiceScopeFactory`). Per-turn agent execution is delegated to `AgentTurnRunner`. Post-loop breakout completion (presenting results, review cycle, fix loops) is handled by `BreakoutCompletionService`. `PromptBuilder` and `AgentResponseParser` are static classes — no DI registration needed.
 
 ### Dependencies
 
@@ -198,29 +239,64 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 
 | Dependency | Lifetime | Purpose |
 |------------|----------|---------|
-| `IServiceScopeFactory` | Singleton | Creates scoped DB contexts per round |
-| `IAgentExecutor` | Singleton | Runs agents against prompts |
-| `ActivityBroadcaster` | Singleton | Publishes thinking/finished events |
-| `SpecManager` | Singleton | Loads spec context for prompts |
-| `CommandPipeline` | Singleton | Processes commands from agent responses |
-| `GitService` | Singleton | Creates task branches, returns to develop |
-| `WorktreeService` | Singleton | Creates/removes worktrees for isolated agent work |
-| `BreakoutLifecycleService` | Singleton | Manages breakout room loop |
-| `BreakoutCompletionService` | Singleton | Post-loop completion, review cycle, agent execution helpers |
-| `AgentTurnRunner` | Singleton | Per-turn agent execution (config, memory, prompt, LLM, commands) |
-| `AgentMemoryLoader` | Singleton | Loads agent memories for prompts |
+| `IServiceScopeFactory` | Singleton | Creates scoped DB contexts for startup recovery |
+| `ConversationRoundRunner` | Singleton | Executes planner-led conversation rounds |
+| `DirectMessageRouter` | Singleton | Routes DM-triggered agent turns |
+| `BreakoutLifecycleService` | Singleton | Manages breakout room loop (stopped on orchestrator Stop) |
 | `ILogger<AgentOrchestrator>` | Singleton | Structured logging |
 
-**Scoped dependencies (resolved per round via `IServiceScopeFactory`)**:
+**ConversationRoundRunner (singleton)**:
+
+| Dependency | Lifetime | Purpose |
+|------------|----------|---------|
+| `IServiceScopeFactory` | Singleton | Creates fresh scoped container per round |
+| `IAgentCatalog` | Singleton | Agent definitions (planner lookup, idle agent enumeration) |
+| `AgentTurnRunner` | Singleton | Per-turn agent execution (config, memory, prompt, LLM, commands) |
+| `ILogger<ConversationRoundRunner>` | Singleton | Structured logging |
+
+**DirectMessageRouter (singleton)**:
+
+| Dependency | Lifetime | Purpose |
+|------------|----------|---------|
+| `IServiceScopeFactory` | Singleton | Creates scoped container per DM routing |
+| `IAgentCatalog` | Singleton | Catalog lookup for recipient agent |
+| `AgentTurnRunner` | Singleton | Runs targeted agent turn |
+| `ILogger<DirectMessageRouter>` | Singleton | Structured logging |
+
+**RoundContextLoader (scoped)**:
+
+| Dependency | Lifetime | Purpose |
+|------------|----------|---------|
+| `SpecManager` | Singleton | Loads spec context for prompts |
+| `ConversationSessionQueryService` | Scoped | Session summary and sprint context |
+| `RoomService` | Scoped | Active workspace path resolution |
+| `SprintService` | Scoped | Active sprint and stage loading |
+| `SprintArtifactService` | Scoped | Overflow requirements from prior sprints |
+| `ILogger<RoundContextLoader>` | Scoped | Structured logging |
+
+**Scoped dependencies resolved per round in `ConversationRoundRunner`**:
 
 | Dependency | Purpose |
 |------------|---------|
-| `RoomService` (scoped) | Room/message/agent state management |
-| `MessageService` (scoped) | Message posting and retrieval |
-| `TaskOrchestrationService` (scoped) | Task creation, completion, rejection |
+| `RoomService` | Room state and active task queries |
+| `MessageService` | Message posting and retrieval |
+| `AgentLocationService` | Agent state and location tracking (Working/Idle/Presenting) |
+| `ITaskItemService` | Active task items for planner context |
+| `ActivityPublisher` | Publishes thinking/finished events |
 | `AgentConfigService` | Runtime agent config overrides (model, prompt, templates) |
-| `ConversationSessionService` | Epoch threshold checks, rotation, and session context |
-| `SprintService` | Active sprint and stage loading |
+| `RoundContextLoader` | Loads spec, session, and sprint context |
+| `ConversationSessionService` | Epoch threshold checks and rotation (round 1 only) |
+
+**Scoped dependencies resolved per invocation in `DirectMessageRouter`**:
+
+| Dependency | Purpose |
+|------------|---------|
+| `RoomService` | Room lookup and fallback resolution |
+| `MessageService` | DM retrieval, breakout forwarding, acknowledgment |
+| `AgentLocationService` | Agent location and breakout room detection |
+| `ActivityPublisher` | Publishes thinking/finished events |
+| `AgentConfigService` | Runtime agent config overrides |
+| `RoundContextLoader` | Loads spec, session, and sprint context |
 
 **BreakoutLifecycleService (singleton)**:
 
@@ -245,7 +321,7 @@ builder.Services.AddSingleton<AgentOrchestrator>();
 
 ### Constants
 
-**AgentOrchestrator**:
+**ConversationRoundRunner**:
 
 | Name | Value | Description |
 |------|-------|-------------|
@@ -300,6 +376,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-15 | Orchestrator decomposition: documented `ConversationRoundRunner` (conversation round execution), `DirectMessageRouter` (DM routing), and `RoundContextLoader` (shared per-round context). Updated `AgentOrchestrator` to reflect its reduced role as a pure queue manager. Updated DI registration, dependency tables, constants ownership, and source references. | spec-006-decomposition-update |
 | 2026-04-14 | Conversation kickoff on fresh start: `WebApplicationExtensions.InitializeAsync()` step 7 posts a system kickoff message and triggers orchestration when the main room has no prior user/agent messages. Idempotent — skips on restart if agents have already spoken. Skips during crash recovery. | platform-review |
 | 2026-04-13 | Spec sync — documented `BreakoutCompletionService` (post-loop completion, review cycle) and `AgentTurnRunner` (per-turn execution) extracted from orchestrator services. Updated DI registration, dependency tables, and source references. | spec-sync-decomposition |
 | 2026-04-11 | Service extraction reconciliation: updated dependencies, constants, and code references to reflect PromptBuilder, AgentResponseParser, AgentMemoryLoader, and BreakoutLifecycleService extractions. Added sprint context, agent config overrides, worktree creation, and response parsing documentation. | spec-006-extraction-reconciliation |
