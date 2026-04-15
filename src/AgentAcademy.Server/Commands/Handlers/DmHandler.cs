@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
@@ -58,7 +59,7 @@ public sealed class DmHandler : ICommandHandler
         var catalog = context.Services.GetRequiredService<IAgentCatalog>();
         var messages = context.Services.GetRequiredService<IMessageService>();
         var roomService = context.Services.GetRequiredService<IRoomService>();
-        var notificationManager = context.Services.GetRequiredService<NotificationManager>();
+        var notificationManager = context.Services.GetRequiredService<INotificationManager>();
 
         var roomId = context.RoomId ?? "main";
 
@@ -162,7 +163,7 @@ public sealed class DmHandler : ICommandHandler
             context.AgentRole ?? "Agent", targetAgent.Id, message, roomId);
 
         // Forward DM to Discord Messages category (channel message, no thread)
-        var notificationManager = context.Services.GetRequiredService<NotificationManager>();
+        var notificationManager = context.Services.GetRequiredService<INotificationManager>();
         var roomName = roomId;
         try
         {

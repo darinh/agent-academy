@@ -6,6 +6,7 @@ using AgentAcademy.Server.HealthChecks;
 using AgentAcademy.Server.Hubs;
 using AgentAcademy.Server.Middleware;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -125,7 +126,7 @@ public static class WebApplicationExtensions
     /// </summary>
     public static void RegisterNotificationProviders(this WebApplication app)
     {
-        var notificationManager = app.Services.GetRequiredService<NotificationManager>();
+        var notificationManager = app.Services.GetRequiredService<INotificationManager>();
         notificationManager.RegisterProvider(app.Services.GetRequiredService<ConsoleNotificationProvider>());
         notificationManager.RegisterProvider(app.Services.GetRequiredService<DiscordNotificationProvider>());
         notificationManager.RegisterProvider(app.Services.GetRequiredService<SlackNotificationProvider>());

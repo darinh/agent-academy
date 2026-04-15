@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Notifications.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Notifications;
@@ -11,12 +12,12 @@ namespace AgentAcademy.Server.Notifications;
 public sealed class NotificationRestoreService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly NotificationManager _notificationManager;
+    private readonly INotificationManager _notificationManager;
     private readonly ILogger<NotificationRestoreService> _logger;
 
     public NotificationRestoreService(
         IServiceScopeFactory scopeFactory,
-        NotificationManager notificationManager,
+        INotificationManager notificationManager,
         ILogger<NotificationRestoreService> logger)
     {
         _scopeFactory = scopeFactory;

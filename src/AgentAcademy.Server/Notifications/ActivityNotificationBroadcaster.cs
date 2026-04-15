@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Services.Contracts;
 
@@ -6,14 +7,14 @@ namespace AgentAcademy.Server.Notifications;
 
 /// <summary>
 /// Hosted service that bridges <see cref="ActivityBroadcaster"/> events
-/// to notification providers via <see cref="NotificationManager"/>.
+/// to notification providers via <see cref="INotificationManager"/>.
 /// Only forwards events that are meaningful as external notifications;
 /// noisy/high-frequency events are filtered out.
 /// </summary>
 public sealed class ActivityNotificationBroadcaster : IHostedService
 {
     private readonly IActivityBroadcaster _broadcaster;
-    private readonly NotificationManager _notificationManager;
+    private readonly INotificationManager _notificationManager;
     private readonly ILogger<ActivityNotificationBroadcaster> _logger;
     private Action? _unsubscribe;
 
@@ -33,7 +34,7 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
 
     public ActivityNotificationBroadcaster(
         IActivityBroadcaster broadcaster,
-        NotificationManager notificationManager,
+        INotificationManager notificationManager,
         ILogger<ActivityNotificationBroadcaster> logger)
     {
         _broadcaster = broadcaster;

@@ -5,6 +5,7 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
@@ -110,6 +111,7 @@ public class DmCommandTests : IDisposable
 
         // Real NotificationManager with no providers (SendAgentQuestionAsync returns false)
         services.AddSingleton<NotificationManager>();
+        services.AddSingleton<INotificationManager>(sp => sp.GetRequiredService<NotificationManager>());
 
         // Real services needed by AgentOrchestrator
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());

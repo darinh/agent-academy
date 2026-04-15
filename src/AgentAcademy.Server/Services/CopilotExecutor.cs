@@ -1,5 +1,6 @@
 using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,7 +49,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly CopilotSessionPool _sessionPool;
     private readonly CopilotSdkSender _sender;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly NotificationManager _notificationManager;
+    private readonly INotificationManager _notificationManager;
     private readonly IAgentToolRegistry _toolRegistry;
     private readonly IAgentErrorTracker _errorTracker;
     private readonly IAgentQuotaService _quotaService;
@@ -66,7 +67,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         CopilotSessionPool sessionPool,
         CopilotSdkSender sender,
         IServiceScopeFactory scopeFactory,
-        NotificationManager notificationManager,
+        INotificationManager notificationManager,
         IAgentToolRegistry toolRegistry,
         IAgentErrorTracker errorTracker,
         IAgentQuotaService quotaService,
