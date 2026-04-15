@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,7 +28,7 @@ public sealed class CheckGatesHandler : ICommandHandler
             };
         }
 
-        var taskEvidence = context.Services.GetRequiredService<TaskEvidenceService>();
+        var taskEvidence = context.Services.GetRequiredService<ITaskEvidenceService>();
 
         try
         {

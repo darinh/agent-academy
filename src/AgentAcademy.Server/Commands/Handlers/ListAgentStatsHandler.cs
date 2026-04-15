@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -37,7 +38,7 @@ public sealed class ListAgentStatsHandler : ICommandHandler
         if (command.Args.TryGetValue("agentId", out var agentObj) && agentObj is string agentStr)
             agentFilter = agentStr;
 
-        var taskAnalytics = context.Services.GetRequiredService<TaskAnalyticsService>();
+        var taskAnalytics = context.Services.GetRequiredService<ITaskAnalyticsService>();
         var analytics = await taskAnalytics.GetTaskCycleAnalyticsAsync(hoursBack);
 
         var agents = analytics.AgentEffectiveness;

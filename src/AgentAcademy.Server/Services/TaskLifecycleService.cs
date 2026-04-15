@@ -20,14 +20,14 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
     private readonly ILogger<TaskLifecycleService> _logger;
     private readonly IAgentCatalog _catalog;
     private readonly ActivityPublisher _activity;
-    private readonly TaskDependencyService _dependencies;
+    private readonly ITaskDependencyService _dependencies;
 
     public TaskLifecycleService(
         AgentAcademyDbContext db,
         ILogger<TaskLifecycleService> logger,
         IAgentCatalog catalog,
         ActivityPublisher activity,
-        TaskDependencyService dependencies)
+        ITaskDependencyService dependencies)
     {
         _db = db;
         _logger = logger;

@@ -14,7 +14,7 @@ public class CollaborationController : ControllerBase
 {
     private readonly ITaskOrchestrationService _taskOrchestration;
     private readonly ITaskQueryService _taskQueries;
-    private readonly TaskDependencyService _taskDependencies;
+    private readonly ITaskDependencyService _taskDependencies;
     private readonly MessageService _messageService;
     private readonly RoomService _roomService;
     private readonly IAgentCatalog _catalog;
@@ -26,7 +26,7 @@ public class CollaborationController : ControllerBase
     public CollaborationController(
         ITaskOrchestrationService taskOrchestration,
         ITaskQueryService taskQueries,
-        TaskDependencyService taskDependencies,
+        ITaskDependencyService taskDependencies,
         MessageService messageService,
         RoomService roomService,
         IAgentCatalog catalog,

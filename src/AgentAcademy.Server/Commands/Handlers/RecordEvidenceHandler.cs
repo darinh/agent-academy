@@ -92,7 +92,7 @@ public sealed class RecordEvidenceHandler : ICommandHandler
         if (command.Args.TryGetValue("output", out var outputObj) && outputObj is string outputStr)
             outputSnippet = outputStr;
 
-        var taskEvidence = context.Services.GetRequiredService<TaskEvidenceService>();
+        var taskEvidence = context.Services.GetRequiredService<ITaskEvidenceService>();
         var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try

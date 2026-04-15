@@ -87,6 +87,7 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
         services.AddSingleton<IAgentCatalog>(_catalog);
         services.AddScoped<ActivityPublisher>();
         services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
         services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();

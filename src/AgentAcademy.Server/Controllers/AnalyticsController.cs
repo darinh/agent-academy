@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,9 +13,9 @@ namespace AgentAcademy.Server.Controllers;
 public class AnalyticsController : ControllerBase
 {
     private readonly AgentAnalyticsService _analytics;
-    private readonly TaskAnalyticsService _taskAnalytics;
+    private readonly ITaskAnalyticsService _taskAnalytics;
 
-    public AnalyticsController(AgentAnalyticsService analytics, TaskAnalyticsService taskAnalytics)
+    public AnalyticsController(AgentAnalyticsService analytics, ITaskAnalyticsService taskAnalytics)
     {
         _analytics = analytics;
         _taskAnalytics = taskAnalytics;

@@ -15,13 +15,13 @@ public sealed class TaskQueryService : ITaskQueryService
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskQueryService> _logger;
     private readonly IAgentCatalog _catalog;
-    private readonly TaskDependencyService _dependencies;
+    private readonly ITaskDependencyService _dependencies;
 
     public TaskQueryService(
         AgentAcademyDbContext db,
         ILogger<TaskQueryService> logger,
         IAgentCatalog catalog,
-        TaskDependencyService dependencies)
+        ITaskDependencyService dependencies)
     {
         _db = db;
         _logger = logger;
