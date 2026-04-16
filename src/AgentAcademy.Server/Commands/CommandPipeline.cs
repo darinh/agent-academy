@@ -25,8 +25,8 @@ public sealed class CommandPipeline
         CommandErrorCode.Internal
     };
 
-    private readonly CommandParser _parser = new();
-    private readonly CommandAuthorizer _authorizer = new();
+    private readonly CommandParser _parser;
+    private readonly CommandAuthorizer _authorizer;
     private readonly CommandRateLimiter _rateLimiter;
     private readonly Dictionary<string, ICommandHandler> _handlers;
     private readonly ILogger<CommandPipeline> _logger;
@@ -34,11 +34,15 @@ public sealed class CommandPipeline
     public CommandPipeline(
         IEnumerable<ICommandHandler> handlers,
         ILogger<CommandPipeline> logger,
-        CommandRateLimiter? rateLimiter = null)
+        CommandRateLimiter? rateLimiter = null,
+        CommandParser? parser = null,
+        CommandAuthorizer? authorizer = null)
     {
         _handlers = handlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
         _rateLimiter = rateLimiter ?? new CommandRateLimiter();
+        _parser = parser ?? new CommandParser();
+        _authorizer = authorizer ?? new CommandAuthorizer();
     }
 
     /// <summary>
