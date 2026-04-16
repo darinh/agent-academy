@@ -67,11 +67,12 @@ declare -A MODULE_FILTERS=(
     ["command-authorizer"]="Commands/CommandAuthorizer.cs|FullyQualifiedName~CommandAuthorizer|FullyQualifiedName~Security"
     ["shell-command"]="Commands/ShellCommand.cs|FullyQualifiedName~ShellCommand|FullyQualifiedName~Security"
     ["prompt-sanitizer"]="Services/PromptSanitizer.cs|FullyQualifiedName~PromptSanitizer|FullyQualifiedName~Security"
-    ["task-lifecycle"]="Services/TaskLifecycleService.cs,Services/TaskLifecycleService.Review.cs,Services/TaskLifecycleService.SpecLinks.cs|FullyQualifiedName~TaskLifecycle"
+    ["task-lifecycle"]="Services/TaskLifecycleService.cs,Services/TaskLifecycleService.Review.cs,Services/TaskLifecycleService.SpecLinks.cs|FullyQualifiedName~TaskLifecycle|FullyQualifiedName~SpecTaskLink"
+    ["search-code"]="Commands/Handlers/SearchCodeHandler.cs|FullyQualifiedName~SearchCode|FullyQualifiedName~PathTraversal"
 )
 
 SECURITY_MODULES=("command-parser" "command-authorizer" "shell-command" "prompt-sanitizer")
-ALL_MODULES=("command-parser" "command-authorizer" "shell-command" "prompt-sanitizer" "task-lifecycle")
+ALL_MODULES=("command-parser" "command-authorizer" "shell-command" "prompt-sanitizer" "task-lifecycle" "search-code")
 
 run_module() {
     local name="$1"

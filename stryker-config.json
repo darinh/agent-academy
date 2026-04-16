@@ -11,6 +11,7 @@
       "Commands/CommandParser.cs",
       "Commands/CommandAuthorizer.cs",
       "Commands/ShellCommand.cs",
+      "Commands/Handlers/SearchCodeHandler.cs",
       "Services/PromptSanitizer.cs",
       "Services/TaskLifecycleService.cs",
       "Services/TaskLifecycleService.Review.cs",
