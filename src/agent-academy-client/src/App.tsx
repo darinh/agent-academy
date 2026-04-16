@@ -222,6 +222,13 @@ function AppShell() {
       : `${roomName} | Agent Academy`;
   }, [room?.name, room?.currentPhase]);
 
+  /* ── Room rename handler (must be declared before early returns to keep hook order stable) ── */
+  const handleRoomRename = useCallback(async (newName: string) => {
+    if (!room) return;
+    await renameRoom(room.id, newName);
+    handleManualRefresh();
+  }, [room, handleManualRefresh]);
+
   /* ── Early returns ── */
   if (auth === null || loading) {
     return (
@@ -259,11 +266,6 @@ function AppShell() {
 
   /* ── Header model ── */
   const isRoomView = tab === "chat" && !!room && !sessionAgent && !selectedBreakout;
-  const handleRoomRename = useCallback(async (newName: string) => {
-    if (!room) return;
-    await renameRoom(room.id, newName);
-    handleManualRefresh();
-  }, [room, handleManualRefresh]);
 
   const headerModel: HeaderModel = {
     title: sessionAgent
