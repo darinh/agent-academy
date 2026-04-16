@@ -1364,19 +1364,6 @@ AgentKnowledgePanel({ agents })
 interface AgentKnowledgeResponse { entries: string[]; }
 ```
 
-## Future Work
-
-- ~~Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)~~ **RESOLVED** — `useWorkspace.ts` handles `ArtifactEvaluated` events by incrementing `artifactVersion` counter. `WorkspaceContent.tsx` passes it to `ArtifactsPanel` as `refreshTrigger`, triggering automatic re-fetch of both artifacts and evaluations. Also added `"artifacts"` to `VALID_TABS` for tab persistence.
-- Real-time updates via SignalR ✅ (implemented — `useActivityHub.ts`)
-- ~~Sprint panel: SignalR integration for real-time stage/artifact updates~~ **RESOLVED** — Sprint events carry structured `metadata` payloads (sprintId, stage, action, status). `SprintPanel` applies optimistic updates for stage transitions, sign-off state, and completion. Artifact events trigger targeted fetch with stale-response protection. Debounced reconciliation (1.5s) replaces immediate full refetch. Event deduplication prevents replay issues on reconnect. Committed in this session.
-- ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **RESOLVED** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown. Committed in `08a7447`.
-- ~~Sprint panel: Sprint metrics (time per stage, artifact word counts)~~ **RESOLVED** — `SprintPanel.tsx` shows time-in-stage durations and artifact word counts. Committed in `9fe6d1f`.
-- ~~SSE activity stream integration~~ **RESOLVED** — `useWorkspace.ts` integrates both SignalR and SSE transports via `aa-transport` localStorage key. `useActivitySSE.ts` hook connects to `/api/activity/stream` with auto-reconnect. `ActivityController.cs` SSE endpoint serializes full `ActivityEvent` including `Metadata` field. Transport selection is transparent — both hooks always mount but only the active one connects (`enabled` parameter). Tests added for both backend (13 tests in `ActivityControllerTests.cs`) and frontend (10 tests in `useActivitySSE.test.ts`).
-- ~~Notification setup wizard (component exists, not yet wired)~~ **RESOLVED** — `NotificationSetupWizard` refactored to multi-provider. Accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and generic fallback. Settings tab routes all providers to the wizard.
-- ~~TaskStatePanel integration~~ **RESOLVED** — `TaskListPanel.tsx` now includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons (Approve/Request Changes/Reject/Merge) wired through `executeCommand` API.
-- ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **RESOLVED** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
-- ~~Session history / resume indicator~~ **RESOLVED** — `SessionHistoryPanel` in dashboard shows session stats, filterable session list with summaries. `ChatPanel` shows "Agents have context from a previous conversation session" banner when archived sessions exist for the current room.
-
 ## Browser Desktop Notifications (`useDesktopNotifications.ts`)
 
 Alerts the human operator via the browser Notification API when the tab is hidden and important activity events occur.
@@ -1424,3 +1411,48 @@ interface DesktopNotificationControls {
   notify: (evt: ActivityEvent) => void;
 }
 ```
+
+## Known Gaps
+
+- ~~Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)~~ **Resolved** — `useWorkspace.ts` handles `ArtifactEvaluated` events by incrementing `artifactVersion` counter. `WorkspaceContent.tsx` passes it to `ArtifactsPanel` as `refreshTrigger`, triggering automatic re-fetch of both artifacts and evaluations. Also added `"artifacts"` to `VALID_TABS` for tab persistence.
+- ~~Real-time updates via SignalR~~ **Resolved** — implemented in `useActivityHub.ts`.
+- ~~Sprint panel: SignalR integration for real-time stage/artifact updates~~ **Resolved** — Sprint events carry structured `metadata` payloads (sprintId, stage, action, status). `SprintPanel` applies optimistic updates for stage transitions, sign-off state, and completion. Artifact events trigger targeted fetch with stale-response protection. Debounced reconciliation (1.5s) replaces immediate full refetch. Event deduplication prevents replay issues on reconnect.
+- ~~Sprint panel: Markdown/JSON rendering for artifact content (currently raw text)~~ **Resolved** — `react-markdown` + `remark-gfm` render artifact content as formatted markdown (`08a7447`).
+- ~~Sprint panel: Sprint metrics (time per stage, artifact word counts)~~ **Resolved** — `SprintPanel.tsx` shows time-in-stage durations and artifact word counts (`9fe6d1f`).
+- ~~SSE activity stream integration~~ **Resolved** — `useWorkspace.ts` integrates both SignalR and SSE transports via `aa-transport` localStorage key. `useActivitySSE.ts` hook connects to `/api/activity/stream` with auto-reconnect. Transport selection is transparent — both hooks always mount but only the active one connects (`enabled` parameter).
+- ~~Notification setup wizard (component exists, not yet wired)~~ **Resolved** — `NotificationSetupWizard` refactored to multi-provider. Accepts `providerId` prop, fetches schema dynamically, supports Discord, Slack, and generic fallback.
+- ~~TaskStatePanel integration~~ **Resolved** — `TaskListPanel.tsx` includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons wired through `executeCommand` API.
+- ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **Resolved** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
+- ~~Session history / resume indicator~~ **Resolved** — `SessionHistoryPanel` in dashboard shows session stats, filterable session list with summaries. `ChatPanel` shows "Agents have context from a previous conversation session" banner when archived sessions exist for the current room.
+- No frontend E2E coverage for the full OAuth login → SignalR connect happy path — **Accepted**: requires a browser (cannot be automated from the server-side test harness). HTTP-level authentication behavior is covered; browser-level SignalR connect is verified manually.
+- No visual regression tests — **Accepted**: component DOM tests in Vitest cover rendering and interaction; no screenshot diffing is currently configured.
+
+## Revision History
+
+### 2026-04-16
+- **Spec hygiene**: Renamed `Future Work` section to `Known Gaps` to match pattern across specs 000–018. Moved `Browser Desktop Notifications` component section ahead of `Known Gaps` so all component sections are contiguous. Added `Revision History` and documented currently accepted gaps (E2E OAuth flow, visual regression).
+
+### 2026-04-15
+- **Added**: Activity Feed, Spec Search, and Agent Knowledge sidebar panels (`4e59e7a`).
+- **Added**: Models tab, notification delivery history, and data export to Settings (`7d82b7a`).
+- **Added**: Frontend API coverage for 25+ uncovered backend endpoints (`ed643a3`).
+- **Sync**: `ActivityEventType` aligned with backend enum (`6e17dd0`).
+- **Docs**: Sidebar panels, settings sub-tabs, and new API endpoints documented (`ad302fe`).
+
+### 2026-04-14
+- **Added**: Artifacts Panel with quality evaluations and file operations log (`80e0516`); SignalR auto-refresh on `ArtifactEvaluated` (`d8f05d0`).
+- **Added**: Context window visibility with real-time usage meters (`244bd8d`).
+- **Added**: Phase transition prerequisites with server-side validation (`71a14f9`).
+- **Added**: Manual session compaction button in `SessionToolbar` (`da38c6f`).
+- **Added**: Task priority (Critical/High/Medium/Low) (`e7f03df`).
+- **Added**: Missing error states, loading indicators, and empty states across panels (`d012e96`).
+- **Added**: Bidirectional cross-panel navigation between Tasks and Retrospectives (`3c0cf2f`, `928b2ce`, `ed7fbc6`).
+- **Added**: Real-time SignalR refresh for `MemoryBrowserPanel` (`6c2223f`).
+- **Fixed**: Error responses standardized to RFC 7807 `ProblemDetails` (`83978a1`).
+- **Fixed**: Keyboard accessibility on `RetrospectivePanel` task-title links (`c5e6293`).
+
+### 2026-04-13 and earlier
+- **Evolution**: Room-centric conversation model, direct messages, sprint system UI, digest panel, worktree status, retrospectives, workspace search, restart history, room stats, keyboard shortcuts dialog, browser desktop notifications. See git history on `src/agent-academy-client/` for the full timeline.
+
+### 2026-04-16 (b) — OAuth / SignalR
+- **Verified**: Unauthenticated `/hubs/activity/negotiate` and `/api/*` return `401` (not `302`) so the SignalR client fails fast instead of following an HTML redirect (`03cfce2`). Browser-level SignalR connect after login remains a manual smoke step.
