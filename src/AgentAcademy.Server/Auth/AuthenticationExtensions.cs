@@ -31,12 +31,16 @@ public static class AuthenticationExtensions
             if (setup.GitHubAuthEnabled && setup.ConsultantAuthEnabled)
             {
                 options.DefaultScheme = "MultiAuth";
-                options.DefaultChallengeScheme = "GitHub";
+                // Challenge via the cookie scheme so unauthenticated API/SignalR
+                // requests get a 401 (via OnRedirectToLogin) instead of a 302 to
+                // GitHub's OAuth authorize URL. The SPA initiates login explicitly
+                // by navigating to /api/auth/login, which Challenges "GitHub".
+                options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             }
             else if (setup.GitHubAuthEnabled)
             {
                 options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = "GitHub";
+                options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             }
             else
             {
