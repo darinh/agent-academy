@@ -321,6 +321,24 @@ public class CommandParserTests
     }
 
     [Fact]
+    public void Parse_WhitespaceOnlyLine_TerminatesArgParsing()
+    {
+        // Kills L107 (|| → &&) and L109 (break removal): a line containing
+        // only whitespace (but not the empty string) is IsNullOrWhiteSpace-true
+        // yet StartsWith("  ")-true. Without the explicit break on whitespace,
+        // such a line would be swallowed as a continuation of the current
+        // arg, and any subsequent indented text would be appended to it.
+        var text = "REMEMBER:\n  Key: my-key\n  Content: first-line\n   \n  stray-continuation";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("my-key", result.Commands[0].Args["Key"]);
+        Assert.Equal("first-line", result.Commands[0].Args["Content"]);
+        Assert.DoesNotContain("stray-continuation", result.Commands[0].Args["Content"]);
+        Assert.Contains("stray-continuation", result.RemainingText);
+    }
+
+    [Fact]
     public void Parse_NoArgCommand_HasEmptyArgs()
     {
         // Kills L155 (&& → ||): when firstLineValue is empty AND args
@@ -464,23 +482,20 @@ public class CommandParserTests
     // ── Mutation-Killing: Replace mutations ───────────────────────
 
     [Fact]
-    public void Parse_SpaceInCommandName_ConvertedToUnderscore()
+    public void Parse_SpaceInKnownCommandName_IsRecognized()
     {
-        // Kills L74 Replace(" ", "_") mutations: multi-word legacy command
-        // names use space in text but underscore internally.
-        // "TASK ASSIGNMENT" is regex-captured with the space, then Replace
-        // converts it. If Replace is broken, the LegacyBlocks check fails
-        // but it still falls through to unknown-command handling. To make
-        // this observable, we'd need a command that has a space AND is in
-        // KnownCommands — which doesn't exist by design. However, verifying
-        // that the captured text with spaces goes through Replace correctly
-        // ensures the code path executes.
-        var text = "TASK ASSIGNMENT:\nContent after";
+        // Kills L74 Replace(" ", "_") mutations: the parser's regex allows
+        // uppercase headers with spaces (e.g. "CREATE PR"), and the Replace
+        // normalizes them to the underscore form in KnownCommands. Mutating
+        // the replacement to "" produces "CREATEPR" which is not a known
+        // command, so the header falls through to RemainingText instead of
+        // being parsed as a command.
+        var text = "CREATE PR: title=Fix";
         var result = _parser.Parse(text);
 
-        // Must not crash and must go to remaining
-        Assert.Empty(result.Commands);
-        Assert.Contains("TASK ASSIGNMENT:", result.RemainingText);
+        Assert.Single(result.Commands);
+        Assert.Equal("CREATE_PR", result.Commands[0].Command);
+        Assert.Equal("Fix", result.Commands[0].Args["title"]);
     }
 
     [Fact]
