@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **018-testing-strategy**: Updated mutation testing scores after test improvement campaign. Overall ~85% (was 61.1%). CommandParser 94.7% (was 51.6%), CommandAuthorizer 100%, PromptSanitizer 100%, TaskLifecycleService 79.2% (was 54.2%). Fixed VsTest hanging by adding per-module `test-case-filter` to runner script.
 - **018-testing-strategy**: Synced test counts to verified actuals. Backend: 170→193 test files, 5,222 tests. Frontend: 116→139 test files, 2,881 tests. Total: 8,103 tests (was ~4,500+). Updated pyramid diagram and distribution section.
 
 ### Added
