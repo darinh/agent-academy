@@ -30,20 +30,21 @@ public sealed class SearchCodeHandler : ICommandHandler
         var projectRoot = FindProjectRoot();
 
         // Build git grep command — respects .gitignore, skips binary files,
-        // only searches tracked files
+        // only searches tracked files. Stdout/stderr are piped (git auto-disables
+        // pager + color when stdout is not a TTY, so no explicit flags needed).
         var psi = new ProcessStartInfo
         {
             FileName = "git",
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = projectRoot
         };
-        psi.ArgumentList.Add("--no-pager");
         psi.ArgumentList.Add("grep");
         psi.ArgumentList.Add("-n");
-        psi.ArgumentList.Add("--color=never");
-        psi.ArgumentList.Add("-I"); // skip binary files
+        // Note: we do not pass -I (skip binary files). git grep emits binary
+        // matches as a single "Binary file X matches" line with no colons, which
+        // our three-column parser already filters out. Omitting -I keeps the
+        // mutation surface minimal.
 
         // Case-insensitive search if requested
         if (command.Args.TryGetValue("ignoreCase", out var icObj) &&
@@ -54,22 +55,22 @@ public sealed class SearchCodeHandler : ICommandHandler
 
         psi.ArgumentList.Add("--max-count");
         psi.ArgumentList.Add(MaxResults.ToString());
+        // -e is required so patterns beginning with '-' aren't interpreted as flags.
         psi.ArgumentList.Add("-e");
         psi.ArgumentList.Add(query);
 
-        // Build pathspec for git grep
+        // Resolve optional path and glob filters. Combine both into a single
+        // pathspec when the path points to a directory; when it points to a file,
+        // the glob is ignored (a single file is already a precise scope).
         string? globFilter = null;
-        string? pathScope = null;
-        var pathScopeIsFile = false;
-
         if (command.Args.TryGetValue("glob", out var globObj) && globObj is string glob && !string.IsNullOrWhiteSpace(glob))
             globFilter = glob;
 
+        (string Relative, bool IsFile)? pathResolved = null;
         if (command.Args.TryGetValue("path", out var pathObj) && pathObj is string subPath && !string.IsNullOrWhiteSpace(subPath))
         {
             var full = Path.GetFullPath(Path.Combine(projectRoot, subPath));
-            var projectRootWithSep = projectRoot.EndsWith(Path.DirectorySeparatorChar)
-                ? projectRoot : projectRoot + Path.DirectorySeparatorChar;
+            var projectRootWithSep = projectRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             if (!full.StartsWith(projectRootWithSep, StringComparison.Ordinal) &&
                 !full.Equals(projectRoot, StringComparison.Ordinal))
             {
@@ -81,7 +82,9 @@ public sealed class SearchCodeHandler : ICommandHandler
                 };
             }
 
-            if (!Directory.Exists(full) && !File.Exists(full))
+            var isDir = Directory.Exists(full);
+            var isFile = File.Exists(full);
+            if (!isDir && !isFile)
             {
                 return command with
                 {
@@ -90,23 +93,24 @@ public sealed class SearchCodeHandler : ICommandHandler
                     Error = $"Path not found: {subPath}. Use paths relative to the project root (e.g., src/AgentAcademy.Server/Commands)."
                 };
             }
-            pathScope = Path.GetRelativePath(projectRoot, full);
-            pathScopeIsFile = File.Exists(full);
+            pathResolved = (Path.GetRelativePath(projectRoot, full), isFile);
         }
 
-        // Combine glob and path into a single pathspec when both are provided
-        if (globFilter is not null || pathScope is not null)
+        if (globFilter is not null || pathResolved is not null)
         {
+            // `--` forces every subsequent arg to be treated as a pathspec. This
+            // is essential because the user-controlled `glob` arg could otherwise
+            // be parsed as a git option (e.g. "--help", "-v", "--no-index").
             psi.ArgumentList.Add("--");
-            if (globFilter is not null && pathScope is not null && !pathScopeIsFile)
+            if (globFilter is not null && pathResolved is { IsFile: false } dirScope)
             {
                 // Combine: only match glob within the directory scope
-                psi.ArgumentList.Add($":(glob){pathScope}/**/{globFilter}");
+                psi.ArgumentList.Add($":(glob){dirScope.Relative}/**/{globFilter}");
             }
-            else if (pathScope is not null)
+            else if (pathResolved is { } fileOrDir)
             {
                 // File path or directory without glob — use directly
-                psi.ArgumentList.Add(pathScope);
+                psi.ArgumentList.Add(fileOrDir.Relative);
             }
             else
             {
@@ -114,66 +118,45 @@ public sealed class SearchCodeHandler : ICommandHandler
             }
         }
 
-        try
+        using var process = Process.Start(psi)!;
+        var output = await process.StandardOutput.ReadToEndAsync();
+
+        // git grep output format: file:line:content. Filter out malformed lines
+        // (git emits binary-match lines as "Binary file X matches" with no colons)
+        // BEFORE capping, so malformed rows can't consume result slots.
+        var allLines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var parsed = allLines
+            .Select(line => line.Split(':', 3))
+            .Where(parts => parts.Length >= 3)
+            .Select(parts => new Dictionary<string, object?>
+            {
+                ["file"] = parts[0],
+                ["line"] = int.TryParse(parts[1], out var ln) ? ln : 0,
+                ["text"] = parts[2].Trim()
+            })
+            .ToList();
+
+        var matches = parsed.Take(MaxResults).ToList();
+        var truncated = parsed.Count > MaxResults;
+
+        var result = new Dictionary<string, object?>
         {
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Execution, Error = "Failed to start search process." };
-            }
+            ["matches"] = matches,
+            ["count"] = matches.Count,
+            ["query"] = query
+        };
 
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            // git grep output format: file:line:content
-            var allLines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            var truncated = allLines.Length > MaxResults;
-            var matches = allLines
-                .Take(MaxResults)
-                .Select(line =>
-                {
-                    var parts = line.Split(':', 3);
-                    if (parts.Length >= 3)
-                    {
-                        return new Dictionary<string, object?>
-                        {
-                            ["file"] = parts[0],
-                            ["line"] = int.TryParse(parts[1], out var ln) ? ln : 0,
-                            ["text"] = parts[2].Trim()
-                        };
-                    }
-                    return new Dictionary<string, object?> { ["text"] = line };
-                })
-                .ToList();
-
-            var result = new Dictionary<string, object?>
-            {
-                ["matches"] = matches,
-                ["count"] = matches.Count,
-                ["query"] = query
-            };
-
-            if (truncated)
-            {
-                result["truncated"] = true;
-                result["hint"] = $"Results capped at {MaxResults}. Narrow your query or add path/glob filters.";
-            }
-
-            return command with
-            {
-                Status = CommandStatus.Success,
-                Result = result
-            };
-        }
-        catch (Exception ex)
+        if (truncated)
         {
-            return command with
-            {
-                Status = CommandStatus.Error,
-                ErrorCode = CommandErrorCode.Execution,
-                Error = $"Search failed: {ex.Message}"
-            };
+            result["truncated"] = true;
+            result["hint"] = $"Results capped at {MaxResults}. Narrow your query or add path/glob filters.";
         }
+
+        return command with
+        {
+            Status = CommandStatus.Success,
+            Result = result
+        };
     }
 
     private static string FindProjectRoot()

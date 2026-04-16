@@ -561,6 +561,146 @@ public sealed class GitCommandHandlerTests : IDisposable
         Assert.Contains("query", resultEmpty.Error!);
     }
 
+    [Fact]
+    public async Task SearchCode_PathNotFound_ErrorMentionsPath()
+    {
+        // Ensures the "Path not found" message includes the offending path and guidance.
+        var handler = new SearchCodeHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SEARCH_CODE", new()
+            {
+                ["query"] = "hello",
+                ["path"] = "missing-module"
+            }), MakeContext());
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+        Assert.Contains("Path not found", result.Error!);
+        Assert.Contains("missing-module", result.Error!);
+        Assert.Contains("src/AgentAcademy.Server", result.Error!);
+    }
+
+    [Fact]
+    public async Task SearchCode_BinaryFile_IsSkipped()
+    {
+        // -I flag in git grep must skip binary files. Craft a tracked "binary" file
+        // whose bytes contain the search term alongside NUL bytes so git detects it
+        // as binary. Without -I, the file would be reported in results.
+        var binPath = Path.Combine(_repoRoot, "payload.bin");
+        var payload = new byte[128];
+        var marker = System.Text.Encoding.ASCII.GetBytes("binarymarkerXYZ");
+        Array.Copy(marker, 0, payload, 10, marker.Length);
+        // Scatter NUL bytes so git treats this as binary
+        for (int i = 50; i < 120; i += 3) payload[i] = 0;
+        File.WriteAllBytes(binPath, payload);
+        RunGit("add", "-A");
+        RunGit("commit", "-m", "test: add binary payload");
+
+        var handler = new SearchCodeHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SEARCH_CODE", new() { ["query"] = "binarymarkerXYZ" }), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = (Dictionary<string, object?>)result.Result!;
+        var matches = (List<Dictionary<string, object?>>)dict["matches"]!;
+        // With -I, the binary file must NOT appear in results.
+        Assert.DoesNotContain(matches, m => m.TryGetValue("file", out var f) && (f as string)?.Contains("payload.bin") == true);
+    }
+
+    [Fact]
+    public async Task SearchCode_QueryWithLeadingDash_FindsMatch()
+    {
+        // Requires `-e` before the pattern so git grep doesn't interpret a
+        // leading dash as an option. Create a file whose content begins with '-'.
+        File.WriteAllText(Path.Combine(_repoRoot, "dashed.txt"), "-dashleading marker\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-m", "test: add dash-leading content");
+
+        var handler = new SearchCodeHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SEARCH_CODE", new() { ["query"] = "-dashleading" }), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = (Dictionary<string, object?>)result.Result!;
+        var matches = (List<Dictionary<string, object?>>)dict["matches"]!;
+        Assert.True((int)dict["count"]! > 0, "Pattern starting with '-' must be matched via -e");
+        Assert.Contains(matches, m => (string)m["file"]! == "dashed.txt");
+    }
+
+    [Fact]
+    public async Task SearchCode_GlobOnly_FiltersAcrossAllDirectories()
+    {
+        // Distinguishes the `psi.ArgumentList.Add(globFilter!)` branch — glob is
+        // supplied without a path, and must still scope results to the glob.
+        File.WriteAllText(Path.Combine(_repoRoot, "glob-only.cs"), "globonly_marker_ABC\n");
+        File.WriteAllText(Path.Combine(_repoRoot, "glob-only.txt"), "globonly_marker_ABC\n");
+        RunGit("add", "-A");
+        RunGit("commit", "-m", "test: glob-only fixtures");
+
+        var handler = new SearchCodeHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SEARCH_CODE", new()
+            {
+                ["query"] = "globonly_marker_ABC",
+                ["glob"] = "*.cs"
+            }), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = (Dictionary<string, object?>)result.Result!;
+        var matches = (List<Dictionary<string, object?>>)dict["matches"]!;
+        Assert.True(matches.Count > 0, "Glob filter must still return matches");
+        Assert.All(matches, m => Assert.EndsWith(".cs", (string)m["file"]!));
+        Assert.DoesNotContain(matches, m => ((string)m["file"]!).EndsWith(".txt"));
+    }
+
+    [Fact]
+    public async Task SearchCode_ExactlyAtCap_IsNotTruncated()
+    {
+        // Boundary test for the strict inequality `allLines.Length > MaxResults`.
+        // Spread exactly 50 matches across multiple files so git grep's per-file
+        // --max-count does not short-circuit, and assert `truncated` is NOT set.
+        // 10 files × 5 matches = 50 total.
+        for (int i = 0; i < 10; i++)
+        {
+            var lines = string.Join("\n", Enumerable.Range(1, 5).Select(j => $"capboundary_marker_{i}_{j}"));
+            File.WriteAllText(Path.Combine(_repoRoot, $"cap-{i}.txt"), lines + "\n");
+        }
+        RunGit("add", "-A");
+        RunGit("commit", "-m", "test: add cap-boundary fixtures");
+
+        var handler = new SearchCodeHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SEARCH_CODE", new() { ["query"] = "capboundary_marker_" }), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = (Dictionary<string, object?>)result.Result!;
+        Assert.Equal(50, (int)dict["count"]!);
+        Assert.False(dict.ContainsKey("truncated"),
+            "Exactly 50 matches must not be flagged as truncated (strict > MaxResults, not >=).");
+        Assert.False(dict.ContainsKey("hint"));
+    }
+
+    [Fact]
+    public async Task SearchCode_GlobStartingWithDash_TreatedAsPathspec()
+    {
+        // Security: the user-controlled `glob` arg must be forced to pathspec
+        // (via `--`), otherwise git would parse values like `-v` as options.
+        // Without `--`, `-v` inverts the match and returns every non-matching
+        // line in the repo (many results). With `--`, it's a literal pathspec
+        // for a non-existent file `-v`, so the result is empty.
+        var handler = new SearchCodeHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SEARCH_CODE", new()
+            {
+                ["query"] = "hello",
+                ["glob"] = "-v"
+            }), MakeContext());
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = (Dictionary<string, object?>)result.Result!;
+        Assert.Equal(0, (int)dict["count"]!);
+    }
+
     // ── RUN_BUILD ────────────────────────────────────────────
 
     [Fact]
