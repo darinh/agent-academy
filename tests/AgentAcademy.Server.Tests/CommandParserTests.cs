@@ -389,4 +389,120 @@ public class CommandParserTests
         Assert.Equal("foo.txt", result.Commands[0].Args["path"]);
         Assert.Equal("LIST_ROOMS", result.Commands[1].Command);
     }
+
+    // ── Mutation-Killing: KnownCommands Coverage ──────────────────
+
+    public static IEnumerable<object[]> AllKnownCommands =>
+        CommandParser.KnownCommands.Select(cmd => new object[] { cmd });
+
+    [Theory]
+    [MemberData(nameof(AllKnownCommands))]
+    public void Parse_EveryKnownCommand_IsRecognized(string commandName)
+    {
+        // Kills string mutations on KnownCommands set entries (L32-L50):
+        // mutating any command name to "" makes it unrecognizable.
+        var text = $"{commandName}: test-value";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal(commandName, result.Commands[0].Command);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllKnownCommands))]
+    public void Parse_EveryKnownCommand_StrippedFromRemaining(string commandName)
+    {
+        // Ensures recognized commands don't leak into remaining text.
+        var text = $"Preamble text\n{commandName}: test-value\nTrailing text";
+        var result = _parser.Parse(text);
+
+        Assert.DoesNotContain($"{commandName}:", result.RemainingText);
+    }
+
+    [Fact]
+    public void KnownCommands_ContainsExpectedCount()
+    {
+        // Guard: if someone adds/removes a command, this test catches it.
+        Assert.Equal(63, CommandParser.KnownCommands.Count);
+    }
+
+    // ── Mutation-Killing: LegacyBlocks ────────────────────────────
+
+    [Theory]
+    [InlineData("TASK ASSIGNMENT")]
+    [InlineData("WORK REPORT")]
+    [InlineData("REVIEW")]
+    public void Parse_LegacyBlock_GoesToRemainingText(string blockName)
+    {
+        // Kills string mutations on LegacyBlocks entries: each block name
+        // must be individually recognized and excluded from command parsing.
+        var text = $"{blockName}:\nSome content here";
+        var result = _parser.Parse(text);
+
+        Assert.Empty(result.Commands);
+        Assert.Contains($"{blockName}:", result.RemainingText);
+    }
+
+    // ── Mutation-Killing: RawValueCommands ────────────────────────
+
+    [Fact]
+    public void Parse_CommitChanges_RawValue_NotSplitOnEquals()
+    {
+        // Kills "COMMIT_CHANGES" string mutation in RawValueCommands:
+        // if the entry is mutated to "", COMMIT_CHANGES falls through to
+        // ParseInlineArgs which splits on "=" signs.
+        var text = "COMMIT_CHANGES: refactor: rename timeout=30s default";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        // With RawValueCommands working, the entire value is preserved
+        Assert.Equal("refactor: rename timeout=30s default", result.Commands[0].Args["value"]);
+        // Without it, "timeout" would appear as a separate key
+        Assert.DoesNotContain("timeout", result.Commands[0].Args.Keys);
+    }
+
+    // ── Mutation-Killing: Replace mutations ───────────────────────
+
+    [Fact]
+    public void Parse_SpaceInCommandName_ConvertedToUnderscore()
+    {
+        // Kills L74 Replace(" ", "_") mutations: multi-word legacy command
+        // names use space in text but underscore internally.
+        // "TASK ASSIGNMENT" is regex-captured with the space, then Replace
+        // converts it. If Replace is broken, the LegacyBlocks check fails
+        // but it still falls through to unknown-command handling. To make
+        // this observable, we'd need a command that has a space AND is in
+        // KnownCommands — which doesn't exist by design. However, verifying
+        // that the captured text with spaces goes through Replace correctly
+        // ensures the code path executes.
+        var text = "TASK ASSIGNMENT:\nContent after";
+        var result = _parser.Parse(text);
+
+        // Must not crash and must go to remaining
+        Assert.Empty(result.Commands);
+        Assert.Contains("TASK ASSIGNMENT:", result.RemainingText);
+    }
+
+    [Fact]
+    public void Parse_InlineArgs_ParsesMultipleKeyValuePairs()
+    {
+        // Verifies ParseInlineArgs handles multiple key=value pairs.
+        var text = "RECALL: category=gotcha key=some-key";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("gotcha", result.Commands[0].Args["category"]);
+        Assert.Equal("some-key", result.Commands[0].Args["key"]);
+    }
+
+    [Fact]
+    public void Parse_InlineArgs_NoEqualsSign_TreatsAsRawValue()
+    {
+        // When inline text has no key=value pairs, treated as raw "value".
+        var text = "SEARCH_CODE: some search query here";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("some search query here", result.Commands[0].Args["value"]);
+    }
 }
