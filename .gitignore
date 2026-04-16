@@ -56,3 +56,6 @@ entities.json
 mempalace.yaml
 .mempalace/
 .worktrees/
+
+# BenchmarkDotNet artifacts
+BenchmarkDotNet.Artifacts/

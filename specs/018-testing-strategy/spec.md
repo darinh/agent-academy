@@ -422,7 +422,7 @@ Examples:
 ### Missing Coverage
 
 1. ~~**API Contract Tests**: No OpenAPI/Swagger validation tests. Controllers are tested via unit tests, not contract-driven tests.~~ **Resolved** — 35 OpenAPI contract tests via `WebApplicationFactory` + `ApiContractFixture` validate Swagger doc generation, route coverage, response schemas, and endpoint roundtrips.
-2. **Performance Tests**: No load tests, stress tests, or benchmark suites.
+2. ~~**Performance Tests**: No load tests, stress tests, or benchmark suites.~~ **Resolved** — BenchmarkDotNet micro-benchmark suite in `tests/AgentAcademy.Server.Benchmarks/`. 5 benchmark classes covering: `CommandParser.Parse` (regex + string splitting, 5 scenarios), `CommandAuthorizer.Authorize` (permission matching, 5 scenarios), `PromptBuilder` (conversation/breakout/review prompt composition, 5 scenarios), `SpecManager` (search, relevance loading, tokenization, content hashing — parameterized by corpus size 5/20 sections, 11 methods), `TaskDependencyService` (BFS cycle detection + dependency queries over in-memory SQLite — parameterized by graph size 10/50/200 tasks, 4 methods). All benchmarks use `[MemoryDiagnoser]` for allocation tracking. Runner script: `scripts/run-benchmarks.sh`. Results exported to `BenchmarkDotNet.Artifacts/`.
 3. ~~**Security Tests**: No dedicated security test suite (e.g., OWASP Top 10 validation).~~ **Resolved** — 97 security tests in `tests/AgentAcademy.Server.Tests/Security/` covering path traversal (ReadFileHandler, CodeWriteToolWrapper, SearchCodeHandler, FilesystemController), shell command sandboxing (ShellCommand.TryParse injection attacks), prompt injection defenses (PromptSanitizer edge cases, Unicode control chars), input validation (API endpoint boundaries, auth enforcement), and documented accepted risks (symlink traversal per spec 015 §9.2). Also fixed SearchCodeHandler silently broadening search scope on out-of-root paths.
 4. **Mutation Testing**: No mutation coverage (e.g., Stryker.NET).
 
@@ -436,6 +436,12 @@ Examples:
 - **Frontend**: Factory functions per test file (no shared fixture library)
 
 ## Revision History
+
+### 2026-04-16
+- **Added**: BenchmarkDotNet performance benchmark suite (`tests/AgentAcademy.Server.Benchmarks/`)
+- **Benchmarks**: CommandParser, CommandAuthorizer, PromptBuilder, SpecManager (parameterized), TaskDependencyService (parameterized)
+- **Infrastructure**: Runner script (`scripts/run-benchmarks.sh`), `InternalsVisibleTo` for benchmark project
+- **Resolved**: Known Gap #2 (Performance Tests)
 
 ### 2026-04-14 (b)
 - **Added**: CI coverage reporting — automated collection and job summaries
