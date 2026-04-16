@@ -16,6 +16,8 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddCommandSystem(this IServiceCollection services)
     {
+        services.AddSingleton<CommandParser>();
+        services.AddSingleton<CommandAuthorizer>();
         services.AddSingleton<CommandRateLimiter>();
         services.AddSingleton<CommandPipeline>();
 
