@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **005-workspace-runtime / 013-sprint-system**: Room participant list now reflects the current phase's roster. `RoomSnapshotBuilder.BuildParticipants` filters by `room.CurrentPhase` using the roster defined in `SprintPreambles.IsRoleAllowedInStage`. Intake rooms show only Planner-role agents; Planning adds Architect; Discussion adds SoftwareEngineer + TechnicalWriter; Validation / Implementation / FinalSynthesis remain permissive. The snapshot filter aligns the UI / Consultant API view with the existing turn-selection filter in `ConversationRoundRunner`. Fixes #52.
 - **300-frontend-ui**: Spec hygiene — renamed `Future Work` section to `Known Gaps` to match pattern across specs 000–018; moved `Browser Desktop Notifications` ahead of `Known Gaps` so all component panel sections are contiguous; added `Revision History` summarizing recent frontend changes; documented accepted gaps (E2E OAuth flow, visual regression).
 - **018-testing-strategy**: Updated mutation testing scores after test improvement campaign. Overall ~85% (was 61.1%). CommandParser 94.7% (was 51.6%), CommandAuthorizer 100%, PromptSanitizer 100%, TaskLifecycleService 79.2% (was 54.2%). Fixed VsTest hanging by adding per-module `test-case-filter` to runner script.
 - **018-testing-strategy**: Synced test counts to verified actuals. Backend: 170→193 test files, 5,222 tests. Frontend: 116→139 test files, 2,881 tests. Total: 8,103 tests (was ~4,500+). Updated pyramid diagram and distribution section.
