@@ -75,6 +75,7 @@ ALL_MODULES=("command-parser" "command-authorizer" "shell-command" "prompt-sanit
 
 run_module() {
     local name="$1"
+    local extra_args="${2:-}"
     local spec="${MODULE_FILTERS[$name]}"
     local mutate_files="${spec%%|*}"
     local test_filter="${spec#*|}"
@@ -108,7 +109,8 @@ run_module() {
 CONF
 
     cd "$TEST_DIR"
-    dotnet stryker --config-file "$config_file" $PROJECT_ARG $OUTPUT_ARG 2>&1 | \
+    # shellcheck disable=SC2086
+    dotnet stryker --config-file "$config_file" $PROJECT_ARG $OUTPUT_ARG $extra_args 2>&1 | \
         grep -E "mutation score|Killed|Survived|INF.*Time Elapsed|failed"
     local exit_code=${PIPESTATUS[0]}
 
@@ -139,9 +141,64 @@ case "$MODE" in
         ;;
     since)
         echo "📊 Running mutation testing on changes since $SINCE_REF..."
-        cd "$TEST_DIR"
-        dotnet stryker $PROJECT_ARG $OUTPUT_ARG --since "$SINCE_REF" 2>&1
-        FINAL_EXIT=$?
+
+        # Validate the ref exists
+        if ! git rev-parse --verify "$SINCE_REF" >/dev/null 2>&1; then
+            echo "  ❌ Invalid git ref: $SINCE_REF"
+            exit 1
+        fi
+
+        # Find changed C# files in the server project
+        changed_files=$(git diff --name-only "$SINCE_REF" -- 'src/AgentAcademy.Server/**/*.cs' | \
+            sed 's|src/AgentAcademy.Server/||')
+
+        if [[ -z "$changed_files" ]]; then
+            echo "  No C# server files changed since $SINCE_REF"
+            exit 0
+        fi
+
+        echo "  Changed files:"
+        echo "$changed_files" | sed 's/^/    /'
+
+        # Map changed files to known modules
+        matched_modules=()
+        unmatched_files=()
+
+        while IFS= read -r file; do
+            found=false
+            for mod in "${ALL_MODULES[@]}"; do
+                spec="${MODULE_FILTERS[$mod]}"
+                mutate_files="${spec%%|*}"
+                if echo "$mutate_files" | tr ',' '\n' | grep -qF "$file"; then
+                    # Add module only if not already in list
+                    already=false
+                    for m in "${matched_modules[@]+"${matched_modules[@]}"}"; do
+                        [[ "$m" == "$mod" ]] && already=true && break
+                    done
+                    $already || matched_modules+=("$mod")
+                    found=true
+                    break
+                fi
+            done
+            $found || unmatched_files+=("$file")
+        done <<< "$changed_files"
+
+        if [[ ${#unmatched_files[@]} -gt 0 ]]; then
+            echo ""
+            echo "  ⚠ Files not covered by any module filter (skipped):"
+            printf '    %s\n' "${unmatched_files[@]}"
+        fi
+
+        if [[ ${#matched_modules[@]} -eq 0 ]]; then
+            echo "  No changed files match known modules. Nothing to mutate."
+            exit 0
+        fi
+
+        echo ""
+        echo "  Running modules: ${matched_modules[*]}"
+        for mod in "${matched_modules[@]}"; do
+            run_module "$mod" "--since $SINCE_REF" || FINAL_EXIT=1
+        done
         ;;
 esac
 
