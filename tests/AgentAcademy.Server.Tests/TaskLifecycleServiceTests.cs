@@ -1274,4 +1274,223 @@ public class TaskLifecycleServiceTests : IDisposable
         Assert.DoesNotContain("...", evt.Message);
         Assert.Contains(exactTitle, evt.Message);
     }
+
+    [Fact]
+    public async Task ClaimTask_BlockedByDependency_ThrowsWithBlockerInfo()
+    {
+        // Kills L54 string mutations: error message must contain blocker details.
+        var (svc, db) = CreateScope();
+        var blocker = SeedTask(db, id: "blocker-1", status: nameof(TaskStatus.Active));
+        blocker.Title = "Blocker Task";
+        var dependent = SeedTask(db, id: "dependent-1", status: nameof(TaskStatus.Queued));
+
+        // Create dependency: dependent-1 depends on blocker-1
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "dependent-1",
+            DependsOnTaskId = "blocker-1"
+        });
+        db.SaveChanges();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ClaimTaskAsync("dependent-1", "engineer-1", "Hephaestus"));
+
+        Assert.Contains("dependent-1", ex.Message);
+        Assert.Contains("Blocker Task", ex.Message);
+        Assert.Contains("unmet dependencies", ex.Message);
+    }
+
+    [Fact]
+    public async Task ClaimTask_CatalogAgent_UsesCanonicalId()
+    {
+        // Kills L64 null coalescing (agent?.Id ?? agentId): when agent IS in
+        // catalog, the canonical ID from catalog should be used.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        var result = await svc.ClaimTaskAsync("task-1", "engineer-1", "AnyName");
+
+        // Catalog has engineer-1 → should use catalog's ID
+        Assert.Equal("engineer-1", result.AssignedAgentId);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_ErrorFallsBackToAgentId_WhenNameNull()
+    {
+        // Kills L98 null coalescing (remove right) on release path.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "other-agent", assignedAgentName: null);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ReleaseTaskAsync("task-1", "engineer-1"));
+
+        Assert.Contains("other-agent", ex.Message);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_ReleasedName_UsesDisplayNameThenFallback()
+    {
+        // Kills L100 null coalescing: released name should prefer
+        // AssignedAgentName, fall back to agentId parameter.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "engineer-1", assignedAgentName: null);
+
+        await svc.ReleaseTaskAsync("task-1", "engineer-1");
+
+        var evt = await db.ActivityEvents
+            .FirstAsync(e => e.Type == nameof(ActivityEventType.TaskReleased));
+        // With name=null, should use the agentId "engineer-1"
+        Assert.Contains("engineer-1", evt.Message);
+    }
+
+    [Fact]
+    public async Task SyncPrStatus_PublishesPrStatusChangedEvent()
+    {
+        // Kills L119 string mutation and L129 Publish statement removal.
+        var (svc, db) = CreateScope();
+        SeedTask(db, pullRequestStatus: "Open", pullRequestNumber: 42);
+
+        await svc.SyncTaskPrStatusAsync("task-1", PullRequestStatus.Merged);
+
+        var evt = await db.ActivityEvents
+            .FirstAsync(e => e.Type == nameof(ActivityEventType.TaskPrStatusChanged));
+        Assert.Contains("Open", evt.Message);
+        Assert.Contains("Merged", evt.Message);
+        Assert.Contains("#42", evt.Message);
+    }
+
+    [Fact]
+    public async Task AddComment_GeneratesNonEmptyId()
+    {
+        // Kills L150 string mutation on Guid format ("N" → "").
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        var comment = await svc.AddTaskCommentAsync(
+            "task-1", "engineer-1", "Hephaestus",
+            TaskCommentType.Finding, "test");
+
+        Assert.NotEmpty(comment.Id);
+        Assert.Equal(32, comment.Id.Length); // "N" format = 32 hex chars, no dashes
+    }
+
+    [Fact]
+    public void StageNewTask_CreatesAssignmentMessage()
+    {
+        // Kills L181/L183/L186/L205/L207 string mutations in CreateMessageEntity:
+        // messages must have proper sender identity.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Test", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-msg");
+        db.SaveChanges();
+
+        var messages = db.Messages.Where(m => m.RoomId == RoomId).ToList();
+        Assert.True(messages.Count >= 2); // assignment + plan messages
+        foreach (var msg in messages)
+        {
+            Assert.Equal("system", msg.SenderId);
+            Assert.Equal("System", msg.SenderName);
+            Assert.Equal(nameof(MessageSenderKind.System), msg.SenderKind);
+            Assert.NotNull(msg.Id);
+            Assert.NotEmpty(msg.Id);
+        }
+    }
+
+    [Fact]
+    public void StageNewTask_AssignmentMessageContainsTitle()
+    {
+        // Kills L241 $"" mutation on assignment message content.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Design the schema", Description: "Create tables", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-content");
+        db.SaveChanges();
+
+        var assignMsg = db.Messages
+            .First(m => m.Kind == nameof(MessageKind.TaskAssignment) && m.RoomId == RoomId);
+        Assert.Contains("Design the schema", assignMsg.Content);
+        Assert.Contains("Create tables", assignMsg.Content);
+    }
+
+    [Fact]
+    public void StageNewTask_PlanMessageMentionsPlanning()
+    {
+        // Kills L247 $"" mutation on plan message content.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Test", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-plan-msg");
+        db.SaveChanges();
+
+        var planMsg = db.Messages
+            .First(m => m.Kind == nameof(MessageKind.Coordination) && m.RoomId == RoomId);
+        Assert.Contains("Planning", planMsg.Content);
+    }
+
+    [Fact]
+    public void StageNewTask_ActivityEventContainsTitle()
+    {
+        // Kills L254/L258 $"" mutations on activity publish message.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Build the API", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-title");
+        db.SaveChanges();
+
+        var evt = db.ActivityEvents
+            .First(e => e.Type == nameof(ActivityEventType.TaskCreated));
+        Assert.Contains("Build the API", evt.Message);
+    }
+
+    [Fact]
+    public async Task AssociateWithSprint_NullWorkspace_ReturnsEarly()
+    {
+        // Kills L272 statement removal: null workspace must short-circuit
+        // without querying for sprints.
+        var (svc, db) = CreateScope();
+
+        var request = new TaskAssignmentRequest(
+            Title: "Test", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+        var (task, _) = svc.StageNewTask(request, RoomId, null, false, "corr-null-ws");
+        db.SaveChanges();
+
+        // Should return early without error or matching any sprint
+        await svc.AssociateTaskWithActiveSprintAsync(task.Id, null);
+
+        var taskEntity = db.Tasks.Local.First(t => t.Id == task.Id);
+        Assert.Null(taskEntity.SprintId);
+    }
+
+    [Fact]
+    public async Task CompleteTask_UnblockedTaskEventContainsTitle()
+    {
+        // Kills L294 $"" mutation on unblock event message.
+        var (svc, db) = CreateScope();
+        var blocker = SeedTask(db, id: "blocker-2", status: nameof(TaskStatus.Active));
+        var dependent = SeedTask(db, id: "dependent-2", status: nameof(TaskStatus.Queued));
+        dependent.Title = "Downstream Feature";
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "dependent-2",
+            DependsOnTaskId = "blocker-2"
+        });
+        db.SaveChanges();
+
+        await svc.CompleteTaskCoreAsync("blocker-2", commitCount: 3);
+
+        var evt = await db.ActivityEvents
+            .FirstOrDefaultAsync(e => e.Type == nameof(ActivityEventType.TaskUnblocked));
+        Assert.NotNull(evt);
+        Assert.Contains("Downstream Feature", evt!.Message);
+    }
 }

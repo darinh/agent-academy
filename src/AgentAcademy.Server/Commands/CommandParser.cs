@@ -11,19 +11,6 @@ namespace AgentAcademy.Server.Commands;
 /// </summary>
 public sealed class CommandParser
 {
-    // Matches: COMMAND_NAME: single-line args
-    // Or:      COMMAND_NAME:\n  Key: value\n  Key: value
-    private static readonly Regex CommandPattern = new(
-        @"^([A-Z][A-Z0-9_]+):\s*(.*?)(?=\n[A-Z][A-Z0-9_]+:|\n\n|\z)",
-        RegexOptions.Multiline | RegexOptions.Singleline
-    );
-
-    // Multi-line arg: Key: value (indented under a command)
-    private static readonly Regex ArgLinePattern = new(
-        @"^\s{2,}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)",
-        RegexOptions.Multiline
-    );
-
     // Legacy blocks that should NOT be parsed as commands
     private static readonly HashSet<string> LegacyBlocks = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -40,7 +27,7 @@ public sealed class CommandParser
     };
 
     // Known command names — prevents false positives from random UPPERCASE: text
-    private static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "READ_FILE", "SEARCH_CODE", "LIST_ROOMS", "LIST_AGENTS", "LIST_TASKS",
         "REMEMBER", "RECALL", "LIST_MEMORIES", "FORGET", "EXPORT_MEMORIES", "IMPORT_MEMORIES",
