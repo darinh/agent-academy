@@ -386,14 +386,16 @@ The SQLite database has no row-level security, tenant IDs, or per-user data part
 
 ### 8.1 CORS
 
-**File**: `Program.cs:28-36`
+**File**: `Startup/ServiceCollectionStartupExtensions.cs:39-50`
+
+Configurable via `Cors:Origins` (array) in `appsettings.json` or environment variables (`Cors__Origins__0`, `Cors__Origins__1`, etc.). Falls back to `["http://localhost:5173"]` when not set.
 
 Default policy:
-- Allowed origin: `http://localhost:5173` (Vite dev server)
+- Allowed origins: configured array (default: `http://localhost:5173`)
 - Allowed: any header, any method
 - Credentials: allowed
 
-**Production note**: The CORS origin must be updated for any non-localhost deployment.
+**Production**: Set `Cors:Origins` to the public frontend URL(s). Example environment variable: `Cors__Origins__0=https://academy.example.com`.
 
 ### 8.2 SignalR
 
@@ -511,12 +513,12 @@ When adding new features, verify:
 ## Known Gaps
 
 1. **No symlink resolution in path validation** — Mitigated by agents' inability to create symlinks. Would require `Path.GetFullPath` on the resolved symlink target. Low priority.
-2. **CORS locked to localhost:5173** — Must be updated for any non-localhost deployment. Consider making the origin configurable.
-3. **No OS-level resource limits on agent processes** — CPU/memory limits would require containerization or cgroup integration. Out of scope for v1.
+2. **No OS-level resource limits on agent processes** — CPU/memory limits would require containerization or cgroup integration. Out of scope for v1.
 
 ## Revision History
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-16 | Documented CORS configurability via `Cors:Origins` config; added explicit config to `appsettings.json`; resolved Known Gap #2 (CORS). | 015-security-model |
 | 2026-04-15 | Added explicit `[Authorize]` on `ActivityHub` and documented auth-disabled `.AllowAnonymous()` mapping for `/hubs/activity`; resolved Known Gap #2. | 015-security-model |
 | 2026-04-14 | Initial spec — consolidated from codebase survey of auth, authorization, agent boundaries, prompt injection, rate limiting, data protection, and input validation. | 015-security-model |

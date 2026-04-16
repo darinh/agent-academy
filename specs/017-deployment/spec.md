@@ -494,7 +494,7 @@ server {
 }
 ```
 
-> **CORS note**: When deploying behind a reverse proxy, update `GitHub:FrontendUrl` in appsettings to match the public URL, and update the CORS origin in `Program.cs` or via configuration override.
+> **CORS note**: When deploying behind a reverse proxy, set `Cors:Origins` in appsettings (or `Cors__Origins__0` env var) to the public frontend URL, and update `GitHub:FrontendUrl` to match.
 
 ### Database Considerations
 

@@ -5,6 +5,8 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **015-security-model**: Documented CORS configurability via `Cors:Origins` config array. Added explicit `Cors` section to `appsettings.json`. Updated file reference from stale `Program.cs` to `Startup/ServiceCollectionStartupExtensions.cs`. Resolved Known Gap #2 (CORS locked to localhost).
+- **017-deployment**: Updated CORS note to reference `Cors:Origins` config instead of stale `Program.cs` instruction.
 - **300-frontend-ui**: Updated component tree to reflect 16 sidebar nav items (was showing old tab bar list). Updated SettingsPanel from 6 to 7 tabs (added Models). Added 3 new sidebar panel sections (ActivityFeedPanel, SpecSearchPanel, AgentKnowledgePanel). Added 3 new settings sub-component sections (ModelsTab, NotificationDeliveriesSection, DataExportSection). Added 8 new API endpoints to the contract table. All sections include data flow, types, and UI descriptions verified against source.
 
 ### Changed
