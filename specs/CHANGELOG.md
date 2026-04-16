@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **018-testing-strategy**: Synced test counts to verified actuals. Backend: 170→193 test files, 5,222 tests. Frontend: 116→139 test files, 2,881 tests. Total: 8,103 tests (was ~4,500+). Updated pyramid diagram and distribution section.
+
 ### Added
 - **017-deployment**: Added agent-runner Docker profile with .NET SDK 8, Node.js 20, and Git for fully containerized agent execution. Dockerfile `--target runner` / docker-compose `--profile runner`. Resolved Known Gap #5.
 

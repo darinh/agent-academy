@@ -6,7 +6,7 @@ Documents the testing strategy for Agent Academy based on existing test infrastr
 
 ## Status
 
-**Implemented** — Documents existing testing infrastructure discovered during spec coverage survey (2026-04-14).
+**Implemented** — Documents existing testing infrastructure. Last verified: 2026-04-16.
 
 ## Test Pyramid
 
@@ -18,23 +18,23 @@ Agent Academy follows a standard test pyramid with emphasis on unit tests:
       /------\
      / Integ  \       ~35 tests (WebApplicationFactory contract tests)
     /----------\
-   /    Unit    \     ~4,550+ tests (xUnit + Vitest)
+   /    Unit    \     ~8,050+ tests (xUnit + Vitest)
   /--------------\
 ```
 
 ### Distribution
 
 **Backend** (xUnit):
-- **Unit Tests**: 170 test files (tests/AgentAcademy.Server.Tests/*.cs)
+- **Unit Tests**: 193 test files (tests/AgentAcademy.Server.Tests/*.cs)
 - **Integration Tests**: 2 files using in-memory SQLite and DI container
   - `SubServiceIntegrationTests.cs` — service layer integration
   - `PullRequestSyncServiceTests.cs` — GitHub API integration
 
 **Frontend** (Vitest + Playwright):
-- **Unit Tests**: 116 test files (src/agent-academy-client/src/**/*.test.{ts,tsx})
+- **Unit Tests**: 139 test files (src/agent-academy-client/src/**/*.test.{ts,tsx})
 - **E2E Tests**: 18 Playwright specs (src/agent-academy-client/e2e/*.spec.ts)
 
-**Total Test Count**: ~4,500+ tests across both stacks (exact count varies as tests are added).
+**Total Test Count**: 8,103 tests across both stacks (5,222 backend + 2,881 frontend). Exact count varies as tests are added.
 
 ## Backend Testing (xUnit)
 
