@@ -52,7 +52,7 @@ vi.mock("../sprint/sprintConstants", () => ({
         : type,
 }));
 vi.mock("../panelUtils", () => ({
-  formatElapsed: (iso: string) => "2h ago",
+  formatElapsed: () => "2h ago",
 }));
 
 import ArtifactList from "../sprint/ArtifactList";

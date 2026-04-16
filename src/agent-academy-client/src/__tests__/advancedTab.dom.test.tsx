@@ -7,9 +7,9 @@
  * desktop notifications section, settings save flow.
  */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 
 vi.mock("../api", () => ({
@@ -26,7 +26,7 @@ vi.mock("@fluentui/react-components", () => ({
       {children}
     </button>
   ),
-  Spinner: ({ label, size }: any) => <span data-testid="spinner">{label ?? "Loading..."}</span>,
+  Spinner: ({ label }: any) => <span data-testid="spinner">{label ?? "Loading..."}</span>,
   makeStyles: () => () => ({}),
   shorthands: new Proxy({}, { get: () => () => ({}) }),
 }));
