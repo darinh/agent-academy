@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **018-testing-strategy**: Resolved Known Gap #3 (Security Tests). Added 97 security tests in `tests/AgentAcademy.Server.Tests/Security/` covering path traversal, shell command sandboxing, prompt injection defenses, input validation, and auth enforcement. Fixed SearchCodeHandler silently broadening search scope on out-of-root paths (now returns Denied).
+
+### Changed
 - **015-security-model**: Documented CORS configurability via `Cors:Origins` config array. Added explicit `Cors` section to `appsettings.json`. Updated file reference from stale `Program.cs` to `Startup/ServiceCollectionStartupExtensions.cs`. Resolved Known Gap #2 (CORS locked to localhost).
 - **017-deployment**: Updated CORS note to reference `Cors:Origins` config instead of stale `Program.cs` instruction.
 - **300-frontend-ui**: Updated component tree to reflect 16 sidebar nav items (was showing old tab bar list). Updated SettingsPanel from 6 to 7 tabs (added Models). Added 3 new sidebar panel sections (ActivityFeedPanel, SpecSearchPanel, AgentKnowledgePanel). Added 3 new settings sub-component sections (ModelsTab, NotificationDeliveriesSection, DataExportSection). Added 8 new API endpoints to the contract table. All sections include data flow, types, and UI descriptions verified against source.
