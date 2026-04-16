@@ -979,4 +979,299 @@ public class TaskLifecycleServiceTests : IDisposable
         Assert.Contains("implements", TaskLifecycleService.ValidLinkTypes);
         Assert.Contains("IMPLEMENTS", TaskLifecycleService.ValidLinkTypes);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Mutation-Killing: Behavioral Mutants
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ClaimTask_UnknownAgent_DoesNotThrow()
+    {
+        // Kills L63 (FirstOrDefault → First): when agentId is not in the
+        // catalog, FirstOrDefault returns null gracefully. First would throw.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        var result = await svc.ClaimTaskAsync("task-1", "unknown-agent", "Unknown Agent");
+
+        Assert.Equal("unknown-agent", result.AssignedAgentId);
+        Assert.Equal("Unknown Agent", result.AssignedAgentName);
+    }
+
+    [Fact]
+    public async Task ClaimTask_PreservesExistingStartedAt()
+    {
+        // Kills L74 (??= → =): when a Queued task already has StartedAt,
+        // the ??= operator preserves it. The = mutation would overwrite.
+        var (svc, db) = CreateScope();
+        var originalStart = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var entity = SeedTask(db, status: nameof(TaskStatus.Queued));
+        entity.StartedAt = originalStart;
+        db.SaveChanges();
+
+        await svc.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus");
+
+        var updated = await db.Tasks.FindAsync("task-1");
+        Assert.Equal(originalStart, updated!.StartedAt);
+    }
+
+    [Fact]
+    public async Task ClaimTask_PublishesTaskClaimedEvent()
+    {
+        // Kills L77 (statement removal): Publish for TaskClaimed must execute.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus");
+
+        var events = await db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.TaskClaimed))
+            .ToListAsync();
+        Assert.Single(events);
+        Assert.Contains("Hephaestus", events[0].Message);
+        Assert.Equal("task-1", events[0].TaskId);
+    }
+
+    [Fact]
+    public async Task ClaimTask_ErrorMessageShowsDisplayName()
+    {
+        // Kills L61 null coalescing mutations: error message should prefer
+        // AssignedAgentName, falling back to AssignedAgentId.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "other-agent", assignedAgentName: "Other Agent");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus"));
+
+        Assert.Contains("Other Agent", ex.Message);
+    }
+
+    [Fact]
+    public async Task ClaimTask_ErrorFallsBackToAgentId_WhenNameNull()
+    {
+        // Kills L61 null coalescing (remove right): when name is null,
+        // error must show the agentId instead.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "other-agent", assignedAgentName: null);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus"));
+
+        Assert.Contains("other-agent", ex.Message);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_PublishesTaskReleasedEvent()
+    {
+        // Kills L105 (statement removal): Publish for TaskReleased must execute.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "engineer-1", assignedAgentName: "Hephaestus");
+
+        await svc.ReleaseTaskAsync("task-1", "engineer-1");
+
+        var events = await db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.TaskReleased))
+            .ToListAsync();
+        Assert.Single(events);
+        Assert.Contains("Hephaestus", events[0].Message);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_PersistsChanges()
+    {
+        // Kills L108 (statement removal of SaveChangesAsync): changes must be saved.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "engineer-1", assignedAgentName: "Hephaestus");
+
+        await svc.ReleaseTaskAsync("task-1", "engineer-1");
+
+        // Verify in a fresh scope to confirm DB persistence
+        var (_, db2) = CreateScope();
+        var entity = await db2.Tasks.FindAsync("task-1");
+        Assert.Null(entity!.AssignedAgentId);
+        Assert.Null(entity.AssignedAgentName);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_ErrorShowsDisplayNameOrId()
+    {
+        // Kills L98 null coalescing mutations: wrong agent error should
+        // show the display name of the actual claimant.
+        var (svc, db) = CreateScope();
+        SeedTask(db, assignedAgentId: "other-agent", assignedAgentName: "Other Agent");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ReleaseTaskAsync("task-1", "engineer-1"));
+
+        Assert.Contains("Other Agent", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddComment_PublishesActivityEvent()
+    {
+        // Kills L160 (statement removal): Publish for TaskCommentAdded must execute.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.AddTaskCommentAsync("task-1", "engineer-1", "Hephaestus",
+            TaskCommentType.Finding, "Found a bug");
+
+        var events = await db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.TaskCommentAdded))
+            .ToListAsync();
+        Assert.Single(events);
+        Assert.Contains("finding", events[0].Message);
+    }
+
+    [Fact]
+    public void StageNewTask_PublishesRoomCreatedWhenNewRoom()
+    {
+        // Kills L251 (negate) + L253 (statement removal): RoomCreated
+        // event should only appear when isNewRoom=true.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Test", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, isNewRoom: true, "corr-new");
+        db.SaveChanges();
+
+        var events = db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.RoomCreated))
+            .ToList();
+        Assert.Single(events);
+    }
+
+    [Fact]
+    public void StageNewTask_DoesNotPublishRoomCreatedWhenNotNewRoom()
+    {
+        // Kills L251 (negate !(isNewRoom)): must NOT publish RoomCreated
+        // when isNewRoom is false.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Test", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, isNewRoom: false, "corr-old");
+        db.SaveChanges();
+
+        var events = db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.RoomCreated))
+            .ToList();
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void StageNewTask_PublishesPhaseChangedEvent()
+    {
+        // Kills L260 (statement removal): PhaseChanged event must be published.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "Test", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-phase");
+        db.SaveChanges();
+
+        var events = db.ActivityEvents
+            .Where(e => e.Type == nameof(ActivityEventType.PhaseChanged))
+            .ToList();
+        Assert.Single(events);
+        Assert.Contains("Planning", events[0].Message);
+    }
+
+    [Fact]
+    public async Task AssociateWithSprint_DoesNotMatchWrongWorkspace()
+    {
+        // Kills L275 (&& → ||): the query must require BOTH matching
+        // workspace AND active status — not just one of them.
+        var (svc, db) = CreateScope();
+
+        // Sprint is Active but for a DIFFERENT workspace
+        db.Sprints.Add(new SprintEntity
+        {
+            Id = "sprint-wrong",
+            Number = 1,
+            WorkspacePath = "/other/workspace",
+            Status = "Active",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        var request = new TaskAssignmentRequest(
+            Title: "Sprint task", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+        var (task, _) = svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-ws");
+
+        await svc.AssociateTaskWithActiveSprintAsync(task.Id, WorkspacePath);
+
+        var taskEntity = db.Tasks.Local.First(t => t.Id == task.Id);
+        Assert.Null(taskEntity.SprintId);
+    }
+
+    [Fact]
+    public async Task AssociateWithSprint_DoesNotMatchInactiveSprintForWorkspace()
+    {
+        // Kills L275 variant: sprint at correct workspace but not Active.
+        var (svc, db) = CreateScope();
+
+        db.Sprints.Add(new SprintEntity
+        {
+            Id = "sprint-done",
+            Number = 1,
+            WorkspacePath = WorkspacePath,
+            Status = "Completed",
+            CreatedAt = DateTime.UtcNow
+        });
+        db.SaveChanges();
+
+        var request = new TaskAssignmentRequest(
+            Title: "Sprint task", Description: "Desc", SuccessCriteria: "Done",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+        var (task, _) = svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-inactive");
+
+        await svc.AssociateTaskWithActiveSprintAsync(task.Id, WorkspacePath);
+
+        var taskEntity = db.Tasks.Local.First(t => t.Id == task.Id);
+        Assert.Null(taskEntity.SprintId);
+    }
+
+    [Fact]
+    public async Task ClaimTask_ActivityMessage_TruncatesLongTitle()
+    {
+        // Kills L361 (conditional mutation + equality mutation): Truncate
+        // must shorten strings exceeding maxLength.
+        var (svc, db) = CreateScope();
+        var longTitle = new string('A', 200);
+        var entity = SeedTask(db);
+        entity.Title = longTitle;
+        db.SaveChanges();
+
+        await svc.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus");
+
+        var evt = await db.ActivityEvents
+            .FirstAsync(e => e.Type == nameof(ActivityEventType.TaskClaimed));
+        // The title should be truncated (80 chars) with "..." suffix
+        Assert.Contains("...", evt.Message);
+        Assert.True(evt.Message.Length < longTitle.Length + 50);
+    }
+
+    [Fact]
+    public async Task ClaimTask_ActivityMessage_DoesNotTruncateShortTitle()
+    {
+        // Kills L361 equality mutation (< vs <=): a title exactly at the
+        // limit should NOT be truncated.
+        var (svc, db) = CreateScope();
+        var exactTitle = new string('B', 80);
+        var entity = SeedTask(db);
+        entity.Title = exactTitle;
+        db.SaveChanges();
+
+        await svc.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus");
+
+        var evt = await db.ActivityEvents
+            .FirstAsync(e => e.Type == nameof(ActivityEventType.TaskClaimed));
+        Assert.DoesNotContain("...", evt.Message);
+        Assert.Contains(exactTitle, evt.Message);
+    }
 }

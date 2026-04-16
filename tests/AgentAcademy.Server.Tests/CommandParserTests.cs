@@ -256,4 +256,137 @@ public class CommandParserTests
         var result = _parser.Parse(text);
         Assert.Single(result.Commands);
     }
+
+    // ── Mutation-Killing: Behavioral Mutants ───────────────────
+
+    [Fact]
+    public void Parse_LegacyBlock_DoesNotSkipFollowingLine()
+    {
+        // Kills L95 (continue removal): without continue, the line after
+        // TASK ASSIGNMENT gets double-incremented and skipped.
+        var text = "TASK ASSIGNMENT:\nThis line must survive\nLIST_ROOMS:";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("LIST_ROOMS", result.Commands[0].Command);
+        Assert.Contains("This line must survive", result.RemainingText);
+        // Legacy block line appears exactly once
+        Assert.Single(result.RemainingText.Split('\n')
+            .Where(l => l.Contains("TASK ASSIGNMENT:")));
+    }
+
+    [Fact]
+    public void Parse_ContinuationLineRequiresCurrentArgKey()
+    {
+        // Kills L135 (&& → ||): without currentArgKey, an indented non-key
+        // line should break arg parsing, not be treated as continuation.
+        var text = "READ_FILE:\n  not a key value pair\n  path: foo.txt";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        // With correct &&: the first indented line doesn't match arg pattern,
+        // no currentArgKey exists, so parser breaks. "path: foo.txt" not parsed as arg.
+        Assert.DoesNotContain("path", result.Commands[0].Args.Keys);
+    }
+
+    [Fact]
+    public void Parse_MultiLineContinuation_PreservesNewlines()
+    {
+        // Kills L138 (AppendLine removal): continuation lines need
+        // newlines between them.
+        var text = "SET_PLAN:\n  Content: Line One\n    Line Two\n    Line Three";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        var content = result.Commands[0].Args["Content"];
+        Assert.Contains("\n", content);
+        Assert.Contains("Line Two", content);
+        Assert.Contains("Line Three", content);
+    }
+
+    [Fact]
+    public void Parse_NonContinuationLine_BreaksArgParsing()
+    {
+        // Kills L143 (break removal): a line that is not an arg pattern,
+        // not a continuation, and not blank should stop arg parsing.
+        var text = "READ_FILE:\n  path: foo.txt\nNot an arg line\n  other: bar";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("foo.txt", result.Commands[0].Args["path"]);
+        // "other" should NOT be parsed as an arg for READ_FILE
+        Assert.DoesNotContain("other", result.Commands[0].Args.Keys);
+        // The non-continuation line should be in remaining text
+        Assert.Contains("Not an arg line", result.RemainingText);
+    }
+
+    [Fact]
+    public void Parse_NoArgCommand_HasEmptyArgs()
+    {
+        // Kills L155 (&& → ||): when firstLineValue is empty AND args
+        // is empty, the || mutation enters the inline-args block and
+        // creates a spurious "value" = "" entry.
+        var text = "LIST_ROOMS:";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Empty(result.Commands[0].Args);
+    }
+
+    [Fact]
+    public void Parse_MultiLineArgs_IgnoreFirstLineValue()
+    {
+        // Kills L155 variant: when multi-line args exist, the first-line
+        // value should NOT also be processed as inline args.
+        var text = "REMEMBER: ignore=this\n  Category: pattern\n  Key: test-key";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("pattern", result.Commands[0].Args["Category"]);
+        Assert.Equal("test-key", result.Commands[0].Args["Key"]);
+        // The first-line "ignore=this" should not create additional args
+        Assert.DoesNotContain("ignore", result.Commands[0].Args.Keys);
+    }
+
+    [Fact]
+    public void Parse_CommitChanges_TreatsValueAsRawText()
+    {
+        // Verifies RawValueCommands prevents splitting on key=value.
+        var text = "COMMIT_CHANGES: fix: set timeout=30s for retries";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("COMMIT_CHANGES", result.Commands[0].Command);
+        Assert.Equal("fix: set timeout=30s for retries", result.Commands[0].Args["value"]);
+        // "timeout" should NOT be split as a key
+        Assert.DoesNotContain("timeout", result.Commands[0].Args.Keys);
+    }
+
+    [Fact]
+    public void Parse_CommandFollowedByBlankLine_TerminatesArgs()
+    {
+        // Robustness: blank line must terminate arg parsing so subsequent
+        // text goes to remaining. (L120/L122 mutants are equivalent —
+        // the fallback break at L143 produces identical behavior.)
+        var text = "READ_FILE:\n  path: foo.txt\n\nThis is remaining text";
+        var result = _parser.Parse(text);
+
+        Assert.Single(result.Commands);
+        Assert.Equal("foo.txt", result.Commands[0].Args["path"]);
+        Assert.Contains("This is remaining text", result.RemainingText);
+    }
+
+    [Fact]
+    public void Parse_CommandFollowedByAnotherCommand_TerminatesArgs()
+    {
+        // Robustness: next command header terminates arg parsing for
+        // the current command and starts a new one.
+        var text = "READ_FILE:\n  path: foo.txt\nLIST_ROOMS:";
+        var result = _parser.Parse(text);
+
+        Assert.Equal(2, result.Commands.Count);
+        Assert.Equal("READ_FILE", result.Commands[0].Command);
+        Assert.Equal("foo.txt", result.Commands[0].Args["path"]);
+        Assert.Equal("LIST_ROOMS", result.Commands[1].Command);
+    }
 }
