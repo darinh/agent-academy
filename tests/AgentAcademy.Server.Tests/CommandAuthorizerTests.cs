@@ -85,6 +85,19 @@ public class CommandAuthorizerTests
     }
 
     [Fact]
+    public void Authorize_EmptyPatternInAllowList_DoesNotMatchAnyCommand()
+    {
+        var agent = MakeAgent(permissions: new CommandPermissionSet(
+            Allowed: new List<string> { "" },
+            Denied: new List<string>()));
+
+        var result = _authorizer.Authorize(MakeCommand("ANY_COMMAND"), agent);
+
+        Assert.NotNull(result);
+        Assert.Equal(CommandStatus.Denied, result.Status);
+    }
+
+    [Fact]
     public void Authorize_WildcardDoesNotMatchDifferentPrefix()
     {
         var agent = MakeAgent(permissions: new CommandPermissionSet(
