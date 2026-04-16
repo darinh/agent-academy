@@ -6,19 +6,12 @@ namespace AgentAcademy.Server.Commands;
 
 /// <summary>
 /// Extracts structured commands from agent text responses.
-/// Commands use COMMAND_NAME: syntax. Coexists with legacy
-/// TASK ASSIGNMENT/WORK REPORT/REVIEW blocks.
+/// Commands use COMMAND_NAME: syntax. Any uppercase header that is not in
+/// <see cref="KnownCommands"/> (including legacy TASK ASSIGNMENT /
+/// WORK REPORT / REVIEW blocks) passes through untouched to RemainingText.
 /// </summary>
 public sealed class CommandParser
 {
-    // Legacy blocks that should NOT be parsed as commands
-    private static readonly HashSet<string> LegacyBlocks = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "TASK ASSIGNMENT",
-        "WORK REPORT",
-        "REVIEW"
-    };
-
     // Commands whose inline value is always raw text, never key=value pairs.
     // Prevents ParseInlineArgs from splitting commit messages like "fix: set timeout=30s".
     private static readonly HashSet<string> RawValueCommands = new(StringComparer.OrdinalIgnoreCase)
@@ -74,15 +67,9 @@ public sealed class CommandParser
                 var commandName = match.Groups[1].Value.Replace(" ", "_");
                 var firstLineValue = match.Groups[2].Value.Trim();
 
-                // Skip legacy blocks
-                if (LegacyBlocks.Contains(commandName.Replace("_", " ")))
-                {
-                    remaining.AppendLine(line);
-                    i++;
-                    continue;
-                }
-
-                // Skip unknown commands (prevents false positives)
+                // Skip unknown commands (prevents false positives).
+                // Legacy blocks like "TASK ASSIGNMENT" flow through this path
+                // unchanged — they are not known commands, so they go to remaining.
                 if (!KnownCommands.Contains(commandName))
                 {
                     remaining.AppendLine(line);
