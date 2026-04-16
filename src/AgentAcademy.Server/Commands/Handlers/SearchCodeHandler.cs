@@ -70,21 +70,28 @@ public sealed class SearchCodeHandler : ICommandHandler
             var full = Path.GetFullPath(Path.Combine(projectRoot, subPath));
             var projectRootWithSep = projectRoot.EndsWith(Path.DirectorySeparatorChar)
                 ? projectRoot : projectRoot + Path.DirectorySeparatorChar;
-            if (full.StartsWith(projectRootWithSep, StringComparison.Ordinal) ||
-                full.Equals(projectRoot, StringComparison.Ordinal))
+            if (!full.StartsWith(projectRootWithSep, StringComparison.Ordinal) &&
+                !full.Equals(projectRoot, StringComparison.Ordinal))
             {
-                if (!Directory.Exists(full) && !File.Exists(full))
+                return command with
                 {
-                    return command with
-                    {
-                        Status = CommandStatus.Error,
-                        ErrorCode = CommandErrorCode.NotFound,
-                        Error = $"Path not found: {subPath}. Use paths relative to the project root (e.g., src/AgentAcademy.Server/Commands)."
-                    };
-                }
-                pathScope = Path.GetRelativePath(projectRoot, full);
-                pathScopeIsFile = File.Exists(full);
+                    Status = CommandStatus.Denied,
+                    ErrorCode = CommandErrorCode.Permission,
+                    Error = "Path traversal denied: search path must be within the project directory."
+                };
             }
+
+            if (!Directory.Exists(full) && !File.Exists(full))
+            {
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.NotFound,
+                    Error = $"Path not found: {subPath}. Use paths relative to the project root (e.g., src/AgentAcademy.Server/Commands)."
+                };
+            }
+            pathScope = Path.GetRelativePath(projectRoot, full);
+            pathScopeIsFile = File.Exists(full);
         }
 
         // Combine glob and path into a single pathspec when both are provided
