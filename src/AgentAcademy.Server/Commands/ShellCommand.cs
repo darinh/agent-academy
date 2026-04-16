@@ -50,7 +50,7 @@ internal sealed record ShellCommand(
             "restart-server" => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value", "reason" },
             "dotnet-build" => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value" },
             "dotnet-test" => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value" },
-            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value" }
+            _ => throw new InvalidOperationException($"Unreachable: '{normalizedOperation}' passed SupportedOperations guard but has no allowlist case.")
         };
 
         var unexpectedArgs = args.Keys

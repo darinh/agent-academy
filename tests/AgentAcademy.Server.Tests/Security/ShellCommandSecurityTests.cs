@@ -265,4 +265,147 @@ public sealed class ShellCommandSecurityTests
         Assert.True(ShellCommand.TryParse(args, out var cmd, out _));
         Assert.Equal("dotnet-build", cmd!.Operation);
     }
+
+    // ── Operation/value precedence (null-coalesce direction) ───────
+
+    [Fact]
+    public void TryParse_BothOperationAndValue_OperationTakesPrecedence()
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["operation"] = "dotnet-build",
+            ["value"] = "dotnet-test"
+        };
+
+        Assert.True(ShellCommand.TryParse(args, out var cmd, out _));
+        Assert.Equal("dotnet-build", cmd!.Operation);
+    }
+
+    // ── Unsupported operation error content & ordering ─────────────
+
+    [Fact]
+    public void TryParse_UnsupportedOperation_ErrorHasExactFormat()
+    {
+        var args = new Dictionary<string, object?> { ["operation"] = "bogus" };
+
+        Assert.False(ShellCommand.TryParse(args, out _, out var error));
+        Assert.Equal(
+            "Unsupported SHELL operation 'bogus'. Supported operations: dotnet-build, dotnet-test, git-checkout, git-commit, git-stash-pop, restart-server.",
+            error);
+    }
+
+    // ── Per-operation argument allowlist ───────────────────────────
+    // Each of the 6 operations lists its allowed optional args. Extra args must be rejected,
+    // allowed args must be accepted (when required ones are provided).
+
+    [Theory]
+    // git-stash-pop allows: operation, value, branch — rejects message, reason
+    [InlineData("git-stash-pop", "message", "text", "branch", "feat/ok")]
+    [InlineData("git-stash-pop", "reason", "text", "branch", "feat/ok")]
+    // git-checkout allows: operation, value, branch — rejects message, reason
+    [InlineData("git-checkout", "message", "text", "branch", "feat/ok")]
+    [InlineData("git-checkout", "reason", "text", "branch", "feat/ok")]
+    // git-commit allows: operation, value, message — rejects branch, reason
+    [InlineData("git-commit", "branch", "feat/ok", "message", "msg")]
+    [InlineData("git-commit", "reason", "text", "message", "msg")]
+    // restart-server allows: operation, value, reason — rejects branch, message
+    [InlineData("restart-server", "branch", "feat/ok", "reason", "why")]
+    [InlineData("restart-server", "message", "text", "reason", "why")]
+    // dotnet-build allows only: operation, value
+    [InlineData("dotnet-build", "branch", "feat/ok", null, null)]
+    [InlineData("dotnet-build", "message", "text", null, null)]
+    [InlineData("dotnet-build", "reason", "text", null, null)]
+    // dotnet-test allows only: operation, value
+    [InlineData("dotnet-test", "branch", "feat/ok", null, null)]
+    [InlineData("dotnet-test", "message", "text", null, null)]
+    [InlineData("dotnet-test", "reason", "text", null, null)]
+    public void TryParse_DisallowedArgForOperation_Rejected(
+        string operation, string badKey, string badValue, string? requiredKey, string? requiredValue)
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["operation"] = operation,
+            [badKey] = badValue
+        };
+        if (requiredKey is not null)
+            args[requiredKey] = requiredValue;
+
+        Assert.False(ShellCommand.TryParse(args, out _, out var error));
+        Assert.Contains("Unsupported argument(s) for operation", error!);
+        Assert.Contains(badKey, error!);
+    }
+
+    [Theory]
+    // Each operation with its allowed optional arg (operation key only, value key, plus op-specific)
+    [InlineData("git-stash-pop", "branch", "feat/ok")]
+    [InlineData("git-checkout", "branch", "feat/ok")]
+    [InlineData("git-commit", "message", "msg")]
+    [InlineData("restart-server", "reason", "why")]
+    public void TryParse_AllowedArgForOperation_Accepted(string operation, string key, string value)
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["operation"] = operation,
+            [key] = value
+        };
+
+        Assert.True(ShellCommand.TryParse(args, out var cmd, out _));
+        Assert.Equal(operation, cmd!.Operation);
+    }
+
+    [Theory]
+    // The "value" alias is in the allowlist for every operation (carrying the op name).
+    [InlineData("git-stash-pop", "branch", "feat/ok")]
+    [InlineData("git-checkout", "branch", "feat/ok")]
+    [InlineData("git-commit", "message", "msg")]
+    [InlineData("restart-server", "reason", "why")]
+    [InlineData("dotnet-build", null, null)]
+    [InlineData("dotnet-test", null, null)]
+    public void TryParse_ValueKeyAlias_AllowedAlongsideRequiredArgs(string operation, string? reqKey, string? reqValue)
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["value"] = operation
+        };
+        if (reqKey is not null)
+            args[reqKey] = reqValue;
+
+        Assert.True(ShellCommand.TryParse(args, out var cmd, out _));
+        Assert.Equal(operation, cmd!.Operation);
+    }
+
+    // ── Unexpected-argument error: alphabetical ordering ───────────
+
+    [Fact]
+    public void TryParse_MultipleUnexpectedArgs_SortedAlphabetically()
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["operation"] = "git-checkout",
+            ["branch"] = "main",
+            ["zzz"] = "x",
+            ["aaa"] = "y",
+            ["mmm"] = "z"
+        };
+
+        Assert.False(ShellCommand.TryParse(args, out _, out var error));
+        Assert.Equal(
+            "Unsupported argument(s) for operation 'git-checkout': aaa, mmm, zzz",
+            error);
+    }
+
+    // ── Boundary for restart-server reason length (> vs >=) ────────
+
+    [Fact]
+    public void TryParse_RestartServer_BoundaryReason_Accepted()
+    {
+        var args = new Dictionary<string, object?>
+        {
+            ["operation"] = "restart-server",
+            ["reason"] = new string('r', 1000)
+        };
+
+        Assert.True(ShellCommand.TryParse(args, out var cmd, out _));
+        Assert.Equal(1000, cmd!.Reason!.Length);
+    }
 }
