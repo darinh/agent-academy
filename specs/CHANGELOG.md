@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **018-testing-strategy**: Resolved Known Gap #2 (Performance Tests). BenchmarkDotNet micro-benchmark suite in `tests/AgentAcademy.Server.Benchmarks/` covering CommandParser, CommandAuthorizer, PromptBuilder, SpecManager (parameterized by corpus size), and TaskDependencyService (parameterized by graph size). All benchmarks include memory allocation tracking. Runner script: `scripts/run-benchmarks.sh`.
+
 ### Changed
 - **018-testing-strategy**: Resolved Known Gap #3 (Security Tests). Added 97 security tests in `tests/AgentAcademy.Server.Tests/Security/` covering path traversal, shell command sandboxing, prompt injection defenses, input validation, and auth enforcement. Fixed SearchCodeHandler silently broadening search scope on out-of-root paths (now returns Denied).
 
