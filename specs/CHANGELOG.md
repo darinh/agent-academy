@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **018-testing-strategy**: Resolved Known Gap #4 (Mutation Testing). Stryker.NET 4.14.1 installed as local dotnet tool. Configuration targets 7 critical source files (CommandParser, CommandAuthorizer, ShellCommand, PromptSanitizer, TaskLifecycleService × 3). Initial score: 72.21% overall, security modules at 100%. Runner script: `scripts/run-mutation-tests.sh`. Added empty-pattern test for CommandAuthorizer to kill surviving mutant.
+
+### Added
 - **018-testing-strategy**: Resolved Known Gap #2 (Performance Tests). BenchmarkDotNet micro-benchmark suite in `tests/AgentAcademy.Server.Benchmarks/` covering CommandParser, CommandAuthorizer, PromptBuilder, SpecManager (parameterized by corpus size), and TaskDependencyService (parameterized by graph size). All benchmarks include memory allocation tracking. Runner script: `scripts/run-benchmarks.sh`.
 
 ### Changed

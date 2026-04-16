@@ -417,6 +417,57 @@ Examples:
   - CI mode: `workers: 1` (sequential to avoid port conflicts)
   - Local: `workers: undefined` (parallel)
 
+## Mutation Testing
+
+Mutation testing validates that tests detect behavioral changes — not just line coverage but real fault detection. Uses [Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) 4.14.1.
+
+### Setup
+
+- **Tool**: `dotnet-stryker` installed as local tool (`.config/dotnet-tools.json`)
+- **Config**: `stryker-config.json` (project root)
+- **Runner**: `scripts/run-mutation-tests.sh`
+- **Output**: `StrykerOutput/reports/` (HTML + JSON reports, gitignored)
+
+### Targeted Modules
+
+Mutation testing focuses on security-critical and business-logic files:
+
+| File | Mutants | Score | Notes |
+|------|---------|-------|-------|
+| `Commands/CommandAuthorizer.cs` | 22 | **100%** | Permission matching, deny-overrides logic |
+| `Services/PromptSanitizer.cs` | 16 | **100%** | Injection defense, Unicode control char stripping |
+| `Commands/ShellCommand.cs` | 103 | **86%** | Shell command parsing and sandboxing |
+| `Services/TaskLifecycleService.Review.cs` | 85 | **82%** | PR review workflow |
+| `Services/TaskLifecycleService.SpecLinks.cs` | 39 | **74%** | Spec-task traceability |
+| `Services/TaskLifecycleService.cs` | 123 | **63%** | Core task state machine |
+| `Commands/CommandParser.cs` | 134 | **59%** | Command parsing (string mutation dominant) |
+
+**Overall**: 72.21% (529 assessed: 375 killed, 7 timeout, 140 survived, 7 no coverage)
+
+### Thresholds
+
+- **Break** (CI fails): 50%
+- **Low** (warning): 60%
+- **High** (target): 80%
+
+### Running
+
+```bash
+scripts/run-mutation-tests.sh              # Full run (~45 min)
+scripts/run-mutation-tests.sh --security   # Security modules only (~10 min)
+scripts/run-mutation-tests.sh --since develop  # Only changed files
+```
+
+### Survivor Analysis
+
+Most surviving mutants are low-risk categories:
+- **String mutations** (89/140): Log messages, error strings, format strings mutated to `""`. Tests verify behavior, not message content.
+- **Statement mutations** (16/140): Logging statements removed. No behavioral impact.
+- **Null coalescing mutations** (15/140): Fallback value swaps in defensive code paths.
+- **Linq method mutations** (6/140): `FirstOrDefault()` → `First()`, `OrderBy()` → `OrderByDescending()`.
+
+Priority for improvement: `CommandParser` (59%) and `TaskLifecycleService` (63%) — both have behavioral survivors beyond string mutations.
+
 ## Known Gaps
 
 ### Missing Coverage
@@ -424,7 +475,7 @@ Examples:
 1. ~~**API Contract Tests**: No OpenAPI/Swagger validation tests. Controllers are tested via unit tests, not contract-driven tests.~~ **Resolved** — 35 OpenAPI contract tests via `WebApplicationFactory` + `ApiContractFixture` validate Swagger doc generation, route coverage, response schemas, and endpoint roundtrips.
 2. ~~**Performance Tests**: No load tests, stress tests, or benchmark suites.~~ **Resolved** — BenchmarkDotNet micro-benchmark suite in `tests/AgentAcademy.Server.Benchmarks/`. 5 benchmark classes covering: `CommandParser.Parse` (regex + string splitting, 5 scenarios), `CommandAuthorizer.Authorize` (permission matching, 5 scenarios), `PromptBuilder` (conversation/breakout/review prompt composition, 5 scenarios), `SpecManager` (search, relevance loading, tokenization, content hashing — parameterized by corpus size 5/20 sections, 11 methods), `TaskDependencyService` (BFS cycle detection + dependency queries over in-memory SQLite — parameterized by graph size 10/50/200 tasks, 4 methods). All benchmarks use `[MemoryDiagnoser]` for allocation tracking. Runner script: `scripts/run-benchmarks.sh`. Results exported to `BenchmarkDotNet.Artifacts/`.
 3. ~~**Security Tests**: No dedicated security test suite (e.g., OWASP Top 10 validation).~~ **Resolved** — 97 security tests in `tests/AgentAcademy.Server.Tests/Security/` covering path traversal (ReadFileHandler, CodeWriteToolWrapper, SearchCodeHandler, FilesystemController), shell command sandboxing (ShellCommand.TryParse injection attacks), prompt injection defenses (PromptSanitizer edge cases, Unicode control chars), input validation (API endpoint boundaries, auth enforcement), and documented accepted risks (symlink traversal per spec 015 §9.2). Also fixed SearchCodeHandler silently broadening search scope on out-of-root paths.
-4. **Mutation Testing**: No mutation coverage (e.g., Stryker.NET).
+4. ~~**Mutation Testing**: No mutation coverage (e.g., Stryker.NET).~~ **Resolved** — Stryker.NET 4.14.1 installed as a local dotnet tool (`.config/dotnet-tools.json`). Configuration at `stryker-config.json` targets 7 critical source files: `CommandParser`, `CommandAuthorizer`, `ShellCommand`, `PromptSanitizer`, and `TaskLifecycleService` (3 partials). Runner script: `scripts/run-mutation-tests.sh` with `--full`, `--security`, and `--since` modes. Initial results: 72.21% overall (529 mutants assessed, 375 killed, 7 timeout). Security-critical files (`CommandAuthorizer`, `PromptSanitizer`) at 100%. Remaining survivors are predominantly string mutations on log/error messages and statement mutations on non-behavioral code. Reports: `StrykerOutput/reports/` (HTML + JSON). Thresholds: break=50%, low=60%, high=80%.
 
 ### Coverage Reporting in CI
 
@@ -436,6 +487,13 @@ Examples:
 - **Frontend**: Factory functions per test file (no shared fixture library)
 
 ## Revision History
+
+### 2026-04-16
+- **Added**: Stryker.NET mutation testing (`stryker-config.json`, `scripts/run-mutation-tests.sh`)
+- **Tool**: Stryker.NET 4.14.1 as local dotnet tool, targets 7 critical source files
+- **Results**: 72.21% overall; security modules (CommandAuthorizer, PromptSanitizer) at 100%
+- **Test**: Added `Authorize_EmptyPatternInAllowList_DoesNotMatchAnyCommand` to kill surviving mutant
+- **Resolved**: Known Gap #4 (Mutation Testing)
 
 ### 2026-04-16
 - **Added**: BenchmarkDotNet performance benchmark suite (`tests/AgentAcademy.Server.Benchmarks/`)
