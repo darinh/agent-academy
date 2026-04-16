@@ -309,6 +309,230 @@ public sealed class TaskLifecycleReviewTests : IDisposable
         Assert.Contains("unknown-agent", messages[0].Content);
     }
 
+    // ──────────────── ACTIVITY EVENT PUBLISHING ────────────────
+
+    [Fact]
+    public async Task ApproveTask_PublishesActivityWithReviewerAndTitle()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.InReview), roomId: "room-act-1");
+        await CreateRoomAsync("room-act-1");
+
+        await _svc.TaskLifecycleService.ApproveTaskAsync(task.Id, Reviewer.Id);
+
+        var evt = await _svc.Db.ActivityEvents
+            .Where(e => e.TaskId == task.Id && e.Type == nameof(ActivityEventType.TaskApproved))
+            .SingleAsync();
+        Assert.Contains("Athena", evt.Message);
+        Assert.Contains("approved task", evt.Message);
+        Assert.Contains(task.Title, evt.Message);
+    }
+
+    [Fact]
+    public async Task RequestChanges_PublishesActivityWithReviewerAndTitle()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.InReview), roomId: "room-act-2");
+        await CreateRoomAsync("room-act-2");
+
+        await _svc.TaskLifecycleService.RequestChangesAsync(
+            task.Id, Reviewer.Id, "Please fix");
+
+        var evt = await _svc.Db.ActivityEvents
+            .Where(e => e.TaskId == task.Id && e.Type == nameof(ActivityEventType.TaskChangesRequested))
+            .SingleAsync();
+        Assert.Contains("Athena", evt.Message);
+        Assert.Contains("requested changes", evt.Message);
+        Assert.Contains(task.Title, evt.Message);
+    }
+
+    [Fact]
+    public async Task RejectTaskCore_PublishesActivityWithReviewerAndTitle()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Approved), roomId: "room-act-3");
+        await CreateRoomAsync("room-act-3");
+
+        await _svc.TaskLifecycleService.RejectTaskCoreAsync(
+            task.Id, Reviewer.Id, "Regression");
+        await _svc.Db.SaveChangesAsync();
+
+        var evt = await _svc.Db.ActivityEvents
+            .Where(e => e.TaskId == task.Id && e.Type == nameof(ActivityEventType.TaskRejected))
+            .SingleAsync();
+        Assert.Contains("Athena", evt.Message);
+        Assert.Contains("rejected task", evt.Message);
+        Assert.Contains(task.Title, evt.Message);
+    }
+
+    // ──────────────── MESSAGE CONTENT + NAME RESOLUTION (RequestChanges / Reject) ────────────────
+
+    [Fact]
+    public async Task RequestChanges_ResolvesReviewerNameFromCatalog()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.InReview), roomId: "room-name-1");
+        await CreateRoomAsync("room-name-1");
+
+        await _svc.TaskLifecycleService.RequestChangesAsync(task.Id, Reviewer.Id, "Fix");
+
+        var message = await _svc.Db.Messages
+            .Where(m => m.RoomId == "room-name-1" && m.Kind == nameof(MessageKind.Review))
+            .SingleAsync();
+        Assert.Contains("Athena", message.Content);
+        Assert.DoesNotContain(Reviewer.Id, message.Content);
+    }
+
+    [Fact]
+    public async Task RequestChanges_UnknownReviewerId_FallsBackToId()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.InReview), roomId: "room-name-2");
+        await CreateRoomAsync("room-name-2");
+
+        await _svc.TaskLifecycleService.RequestChangesAsync(task.Id, "unknown-agent", "Fix");
+
+        var message = await _svc.Db.Messages
+            .Where(m => m.RoomId == "room-name-2" && m.Kind == nameof(MessageKind.Review))
+            .SingleAsync();
+        Assert.Contains("unknown-agent", message.Content);
+    }
+
+    [Fact]
+    public async Task RejectTaskCore_ResolvesReviewerNameFromCatalog()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Approved), roomId: "room-name-3");
+        await CreateRoomAsync("room-name-3");
+
+        await _svc.TaskLifecycleService.RejectTaskCoreAsync(task.Id, Reviewer.Id, "Nope");
+        await _svc.Db.SaveChangesAsync();
+
+        var message = await _svc.Db.Messages
+            .Where(m => m.RoomId == "room-name-3" && m.Kind == nameof(MessageKind.Review))
+            .SingleAsync();
+        Assert.Contains("Athena", message.Content);
+        Assert.DoesNotContain(Reviewer.Id, message.Content);
+    }
+
+    [Fact]
+    public async Task RejectTaskCore_UnknownReviewerId_FallsBackToId()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Approved), roomId: "room-name-4");
+        await CreateRoomAsync("room-name-4");
+
+        var result = await _svc.TaskLifecycleService.RejectTaskCoreAsync(
+            task.Id, "unknown-agent", "Nope");
+        await _svc.Db.SaveChangesAsync();
+
+        Assert.Equal("unknown-agent", result.ReviewerName);
+        var message = await _svc.Db.Messages
+            .Where(m => m.RoomId == "room-name-4" && m.Kind == nameof(MessageKind.Review))
+            .SingleAsync();
+        Assert.Contains("unknown-agent", message.Content);
+    }
+
+    // ──────────────── REJECT REVERT-NOTE FORMAT ────────────────
+
+    [Fact]
+    public async Task RejectTaskCore_WithoutRevertSha_MessageExactFormat()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Approved), roomId: "room-fmt-1");
+        await CreateRoomAsync("room-fmt-1");
+
+        await _svc.TaskLifecycleService.RejectTaskCoreAsync(
+            task.Id, Reviewer.Id, "Missing tests");
+        await _svc.Db.SaveChangesAsync();
+
+        var message = await _svc.Db.Messages
+            .Where(m => m.RoomId == "room-fmt-1" && m.Kind == nameof(MessageKind.Review))
+            .SingleAsync();
+        // Exact content kills both the "Stryker was here!" substitution in the empty
+        // statusNote branch and the `true?...:""` condition-always-true mutation.
+        Assert.Equal($"❌ **Rejected** by Athena\n\nMissing tests", message.Content);
+    }
+
+    [Fact]
+    public async Task RejectTaskCore_WithRevertSha_MessageExactFormat()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Completed), roomId: "room-fmt-2");
+        await CreateRoomAsync("room-fmt-2");
+
+        await _svc.TaskLifecycleService.RejectTaskCoreAsync(
+            task.Id, Reviewer.Id, "Bug found", revertCommitSha: "abc123");
+        await _svc.Db.SaveChangesAsync();
+
+        var message = await _svc.Db.Messages
+            .Where(m => m.RoomId == "room-fmt-2" && m.Kind == nameof(MessageKind.Review))
+            .SingleAsync();
+        Assert.Equal($"❌ **Rejected** by Athena (merge reverted)\n\nBug found", message.Content);
+    }
+
+    // ──────────────── REVIEW-ROUNDS INCREMENT ON REJECT ────────────────
+
+    [Fact]
+    public async Task RejectTaskCore_IncrementsReviewRounds()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Approved), reviewRounds: 2);
+
+        await _svc.TaskLifecycleService.RejectTaskCoreAsync(task.Id, Reviewer.Id, "Nope");
+        await _svc.Db.SaveChangesAsync();
+
+        var entity = await _svc.Db.Tasks.FindAsync(task.Id);
+        Assert.Equal(3, entity!.ReviewRounds);
+    }
+
+    [Fact]
+    public async Task RequestChanges_IncrementsReviewRounds()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.InReview), reviewRounds: 1);
+
+        await _svc.TaskLifecycleService.RequestChangesAsync(task.Id, Reviewer.Id, "Fix");
+
+        var entity = await _svc.Db.Tasks.FindAsync(task.Id);
+        Assert.Equal(2, entity!.ReviewRounds);
+    }
+
+    // ──────────────── ERROR MESSAGE CONTENT ────────────────
+
+    [Fact]
+    public async Task RequestChanges_NonExistentTask_ThrowsWithMessage()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _svc.TaskLifecycleService.RequestChangesAsync(
+                "non-existent", Reviewer.Id, "Fix"));
+        Assert.Contains("non-existent", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task RequestChanges_FromActiveState_ThrowsWithMessage()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.Active));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _svc.TaskLifecycleService.RequestChangesAsync(
+                task.Id, Reviewer.Id, "Fix"));
+        Assert.Contains("must be InReview or AwaitingValidation", ex.Message);
+        Assert.Contains("Active", ex.Message);
+    }
+
+    [Fact]
+    public async Task RejectTaskCore_NonExistentTask_ThrowsWithMessage()
+    {
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _svc.TaskLifecycleService.RejectTaskCoreAsync(
+                "non-existent", Reviewer.Id, "Nope"));
+        Assert.Contains("non-existent", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task RejectTaskCore_FromInReviewState_ThrowsWithMessage()
+    {
+        var task = await CreateTaskAsync(nameof(TaskStatus.InReview));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _svc.TaskLifecycleService.RejectTaskCoreAsync(
+                task.Id, Reviewer.Id, "Nope"));
+        Assert.Contains("must be Approved or Completed", ex.Message);
+        Assert.Contains("InReview", ex.Message);
+    }
+
     // ──────────────── HELPERS ────────────────
 
     private async Task<TaskEntity> CreateTaskAsync(

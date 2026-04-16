@@ -240,6 +240,234 @@ public class SpecTaskLinkTests : IDisposable
             taskLifecycle.LinkTaskToSpecAsync(taskId, "", "engineer-1", "Hephaestus"));
     }
 
+    // ── Mutation-kill coverage for TaskLifecycleService.SpecLinks.cs ──
+
+    [Fact]
+    public async Task LinkTaskToSpec_EmptyTaskId_ThrowsWithMessage()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            taskLifecycle.LinkTaskToSpecAsync("", "003-agent-system", "engineer-1", "Hephaestus"));
+        Assert.Contains("taskId", ex.Message);
+        Assert.Contains("required", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_EmptySpecSectionId_ThrowsWithMessage()
+    {
+        var taskId = await CreateTestTask();
+
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            taskLifecycle.LinkTaskToSpecAsync(taskId, "", "engineer-1", "Hephaestus"));
+        Assert.Contains("specSectionId", ex.Message);
+        Assert.Contains("required", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_InvalidLinkType_ThrowsWithValidTypesList()
+    {
+        var taskId = await CreateTestTask();
+
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            taskLifecycle.LinkTaskToSpecAsync(taskId, "003-agent-system", "engineer-1", "Hephaestus",
+                linkType: "Nope"));
+        // Kills whole-string mutation to "" and separator-string mutation to "":
+        Assert.Contains("Valid types:", ex.Message);
+        Assert.Contains("Implements", ex.Message);
+        Assert.Contains("Modifies", ex.Message);
+        Assert.Contains(", ", ex.Message); // the join separator must remain
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_TaskNotFound_ThrowsWithTaskId()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            taskLifecycle.LinkTaskToSpecAsync(
+                "missing-task-xyz", "003-agent-system", "engineer-1", "Hephaestus"));
+        Assert.Contains("missing-task-xyz", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_Upsert_NullNote_PreservesExistingNote()
+    {
+        var taskId = await CreateTestTask();
+
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        await taskLifecycle.LinkTaskToSpecAsync(
+            taskId, "003-agent-system", "engineer-1", "Hephaestus",
+            linkType: "Implements", note: "original note");
+
+        var updated = await taskLifecycle.LinkTaskToSpecAsync(
+            taskId, "003-agent-system", "reviewer-1", "Socrates",
+            linkType: "Fixes", note: null);
+
+        // `note ?? existing.Note` must keep the original when note is null.
+        // Kills: "Null coalescing (remove right)" and "Null coalescing (left to right)".
+        Assert.Equal("original note", updated.Note);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_Upsert_NewNote_OverwritesExistingNote()
+    {
+        var taskId = await CreateTestTask();
+
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        await taskLifecycle.LinkTaskToSpecAsync(
+            taskId, "003-agent-system", "engineer-1", "Hephaestus",
+            linkType: "Implements", note: "original note");
+
+        var updated = await taskLifecycle.LinkTaskToSpecAsync(
+            taskId, "003-agent-system", "reviewer-1", "Socrates",
+            linkType: "Fixes", note: "new note");
+
+        // Kills the "Null coalescing (left to right)" mutation which would keep "original note".
+        Assert.Equal("new note", updated.Note);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_CreatesLink_PersistsToDatabase()
+    {
+        var taskId = await CreateTestTask();
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+            await taskLifecycle.LinkTaskToSpecAsync(
+                taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        }
+
+        // Fresh scope + fresh DbContext — kills statement-mutation removing SaveChangesAsync()
+        // on the create path (L69), since an untracked in-memory entity would not survive.
+        using var readScope = _serviceProvider.CreateScope();
+        var db = readScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var persisted = await db.SpecTaskLinks
+            .SingleAsync(l => l.TaskId == taskId && l.SpecSectionId == "003-agent-system");
+        Assert.Equal("Implements", persisted.LinkType);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_Upsert_PersistsUpdatedValuesToDatabase()
+    {
+        var taskId = await CreateTestTask();
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+            await taskLifecycle.LinkTaskToSpecAsync(
+                taskId, "003-agent-system", "engineer-1", "Hephaestus",
+                linkType: "Implements");
+        }
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+            await taskLifecycle.LinkTaskToSpecAsync(
+                taskId, "003-agent-system", "reviewer-1", "Socrates",
+                linkType: "Fixes", note: "updated");
+        }
+
+        // Kills the statement-mutation removing SaveChangesAsync() on the update path.
+        using var readScope = _serviceProvider.CreateScope();
+        var db = readScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var persisted = await db.SpecTaskLinks
+            .SingleAsync(l => l.TaskId == taskId && l.SpecSectionId == "003-agent-system");
+        Assert.Equal("Fixes", persisted.LinkType);
+        Assert.Equal("updated", persisted.Note);
+        Assert.Equal("reviewer-1", persisted.LinkedByAgentId);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_GeneratedId_IsGuidNFormat()
+    {
+        var taskId = await CreateTestTask();
+
+        using var scope = _serviceProvider.CreateScope();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+
+        var link = await taskLifecycle.LinkTaskToSpecAsync(
+            taskId, "003-agent-system", "engineer-1", "Hephaestus");
+
+        // Guid.NewGuid().ToString("N")[..12] → 12 hex chars, no dashes.
+        // Kills string mutation replacing "N" with "" (default format adds dashes).
+        Assert.Equal(12, link.Id.Length);
+        Assert.DoesNotContain("-", link.Id);
+        Assert.Matches("^[0-9a-f]{12}$", link.Id);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_CreatesLink_PublishesActivityWithMessage()
+    {
+        var taskId = await CreateTestTask();
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+            await taskLifecycle.LinkTaskToSpecAsync(
+                taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        }
+
+        using var readScope = _serviceProvider.CreateScope();
+        var db = readScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var evt = await db.ActivityEvents
+            .Where(e => e.TaskId == taskId
+                        && e.Type == nameof(ActivityEventType.SpecTaskLinked))
+            .SingleAsync();
+        // Kills the statement-mutation removing `Publish(...)` on the create path (L87),
+        // and the interpolated-string mutation on L88.
+        Assert.Contains("Hephaestus", evt.Message);
+        Assert.Contains("003-agent-system", evt.Message);
+        Assert.Contains("linked spec", evt.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_Upsert_PublishesActivityWithUpdatedMessage()
+    {
+        var taskId = await CreateTestTask();
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+            await taskLifecycle.LinkTaskToSpecAsync(
+                taskId, "003-agent-system", "engineer-1", "Hephaestus");
+        }
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+            await taskLifecycle.LinkTaskToSpecAsync(
+                taskId, "003-agent-system", "reviewer-1", "Socrates",
+                linkType: "Fixes");
+        }
+
+        using var readScope = _serviceProvider.CreateScope();
+        var db = readScope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var events = await db.ActivityEvents
+            .Where(e => e.TaskId == taskId
+                        && e.Type == nameof(ActivityEventType.SpecTaskLinked))
+            .OrderBy(e => e.OccurredAt)
+            .ToListAsync();
+        Assert.Equal(2, events.Count);
+        // Kills the statement mutation removing `Publish(...)` on the update path (L67)
+        // and the interpolated-string mutation on L68.
+        Assert.Contains("Socrates", events[1].Message);
+        Assert.Contains("updated spec link", events[1].Message);
+        Assert.Contains("003-agent-system", events[1].Message);
+    }
+
     // ── WorkspaceRuntime.UnlinkTaskFromSpecAsync ──────────────
 
     [Fact]
