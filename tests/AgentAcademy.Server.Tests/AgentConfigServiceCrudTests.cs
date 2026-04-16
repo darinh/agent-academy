@@ -63,7 +63,7 @@ public class AgentConfigServiceCrudTests : IDisposable
         _db.AgentConfigs.Add(new AgentConfigEntity
         {
             AgentId = "crud-agent-1",
-            ModelOverride = "claude-opus-4.6",
+            ModelOverride = "claude-opus-4.7",
             CustomInstructions = "Be thorough.",
             UpdatedAt = DateTime.UtcNow
         });
@@ -72,7 +72,7 @@ public class AgentConfigServiceCrudTests : IDisposable
         var result = await _service.GetConfigOverrideAsync("crud-agent-1");
 
         Assert.NotNull(result);
-        Assert.Equal("claude-opus-4.6", result!.ModelOverride);
+        Assert.Equal("claude-opus-4.7", result!.ModelOverride);
         Assert.Equal("Be thorough.", result.CustomInstructions);
     }
 

@@ -307,7 +307,7 @@ When a task transitions to `InReview`:
 
 Socrates may use multiple models for review depth:
 
-1. **Primary review**: Socrates's own model (`claude-opus-4.6`)
+1. **Primary review**: Socrates's own model (`claude-opus-4.7`)
 2. **Cross-model review**: Socrates may invoke additional models as fleet reviewers:
    - `gpt-5.4` for logic/correctness
    - `claude-sonnet-4.5` for style/architecture

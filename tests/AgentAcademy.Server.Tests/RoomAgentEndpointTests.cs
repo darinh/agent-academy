@@ -356,11 +356,11 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
-            new CreateCustomAgentRequest("My Agent", "Prompt", "claude-opus-4.6"));
+            new CreateCustomAgentRequest("My Agent", "Prompt", "claude-opus-4.7"));
 
         var created = Assert.IsType<CreatedAtActionResult>(result.Result);
         var agent = Assert.IsType<AgentDefinition>(created.Value);
-        Assert.Equal("claude-opus-4.6", agent.Model);
+        Assert.Equal("claude-opus-4.7", agent.Model);
     }
 
     [Fact]

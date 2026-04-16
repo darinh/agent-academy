@@ -110,7 +110,7 @@
                     "code"
                 ],
                 "AutoJoinDefaultRoom": true,
-                "Model": "claude-opus-4.6",
+                "Model": "claude-opus-4.7",
                 "GitIdentity": {
                     "AuthorName": "Archimedes (Architect)",
                     "AuthorEmail": "archimedes@agent-academy.local"
@@ -311,7 +311,7 @@
                     "memory"
                 ],
                 "AutoJoinDefaultRoom": true,
-                "Model": "claude-opus-4.6",
+                "Model": "claude-opus-4.7",
                 "GitIdentity": {
                     "AuthorName": "Socrates (Reviewer)",
                     "AuthorEmail": "socrates@agent-academy.local"

@@ -319,7 +319,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
         var config = new SessionConfig
         {
-            Model = agent.Model ?? "claude-opus-4.6",
+            Model = agent.Model ?? "claude-opus-4.7",
             Streaming = true,
             Tools = [.. tools],
             OnPermissionRequest = PermissionHandler.ApproveAll,

@@ -585,7 +585,7 @@ The agent catalog (`AgentCatalogOptions`) is used by domain services for identit
 ```json
 {
   "agentId": "planner-1",
-  "effectiveModel": "claude-opus-4.6",
+  "effectiveModel": "claude-opus-4.7",
   "effectiveStartupPrompt": "...(merged prompt)...",
   "hasOverride": true,
   "override": {

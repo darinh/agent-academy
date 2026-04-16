@@ -151,7 +151,7 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
     role: "architect",
     summary: "System architect agent",
     startupPrompt: "You are an architect.",
-    model: "claude-opus-4.6",
+    model: "claude-opus-4.7",
     capabilityTags: ["design"],
     enabledTools: ["search-code"],
     autoJoinDefaultRoom: true,
