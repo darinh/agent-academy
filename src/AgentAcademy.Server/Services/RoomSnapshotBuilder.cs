@@ -66,7 +66,7 @@ public sealed class RoomSnapshotBuilder : IRoomSnapshotBuilder
         var preferredRoles = activeTask?.PreferredRoles ?? [];
         var locations = preloadedLocations
             ?? await _db.AgentLocations.Where(l => l.RoomId == room.Id).ToListAsync();
-        var participants = BuildParticipants(locations, preferredRoles);
+        var participants = BuildParticipants(locations, preferredRoles, room.CurrentPhase);
 
         var phaseGates = await _phaseValidator.GetGatesAsync(room.Id);
 
@@ -86,12 +86,14 @@ public sealed class RoomSnapshotBuilder : IRoomSnapshotBuilder
     }
 
     internal List<AgentPresence> BuildParticipants(
-        List<AgentLocationEntity> locations, List<string> preferredRoles)
+        List<AgentLocationEntity> locations, List<string> preferredRoles, string? currentPhase = null)
     {
         var agentMap = _catalog.Agents.ToDictionary(a => a.Id);
 
         return locations
             .Where(l => agentMap.ContainsKey(l.AgentId) && l.BreakoutRoomId is null)
+            .Where(l => currentPhase is null
+                || SprintPreambles.IsRoleAllowedInStage(agentMap[l.AgentId].Role, currentPhase))
             .Select(l =>
             {
                 var a = agentMap[l.AgentId];
