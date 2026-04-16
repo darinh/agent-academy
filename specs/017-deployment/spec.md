@@ -376,9 +376,16 @@ sudo systemctl status agent-academy
 
 ### Containerized Deployment (Docker)
 
-An alternative to systemd deployment. The multi-stage `Dockerfile` builds both frontend and backend into a single image that serves the SPA from the .NET process.
+An alternative to systemd deployment. The multi-stage `Dockerfile` provides two deployment profiles:
 
-**Architecture:**
+| Profile | Image | Size | Agent Execution | Use Case |
+|---------|-------|------|-----------------|----------|
+| **App-only** (default) | `agent-academy` | ~250 MB | ❌ No | Web UI + API only; agents run on host via Consultant API |
+| **Runner** | `agent-academy-runner` | ~1.2 GB | ✅ Yes | Fully containerized — web UI, API, and agent execution |
+
+Both profiles are mutually exclusive — run one or the other, not both.
+
+#### App-Only Profile (Default)
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -399,10 +406,8 @@ An alternative to systemd deployment. The multi-stage `Dockerfile` builds both f
 └──────────────────────────────────────────────────┘
 ```
 
-**Build and run:**
-
 ```bash
-# Build the image
+# Build (default target)
 docker build -t agent-academy .
 
 # Run with docker-compose (recommended)
@@ -417,37 +422,112 @@ docker run -d \
   agent-academy
 ```
 
-**Multi-stage build process:**
+**Limitations:** This profile runs the web API and serves the frontend but does **not** include agent execution capabilities — no .NET SDK, Node.js, or git worktree management. Agent execution requires a host machine with these tools, communicating with the containerized API via the Consultant API.
+
+#### Runner Profile (Full Agent Execution)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Docker Container (agent-academy-runner)                  │
+│                                                           │
+│  Tools: .NET SDK 8 │ Node.js 20 │ Git │ Copilot SDK     │
+│                                                           │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │  ASP.NET Core 8 (Kestrel, port 8080)              │   │
+│  │  ├── REST API + SignalR + SPA (same as app-only)  │   │
+│  │  ├── Agent execution (ShellCommandHandler)        │   │
+│  │  │   ├── dotnet build / dotnet test               │   │
+│  │  │   ├── git worktree management                  │   │
+│  │  │   └── npm commands                             │   │
+│  │  └── Copilot SDK (LLM ↔ agent tool calls)        │   │
+│  └───────────────┬───────────────────────────────────┘   │
+│                  │                                        │
+│  Volume: /data   │        Bind mount: /workspace         │
+│  ├── agent-academy.db    ├── AgentAcademy.sln            │
+│  └── data-protection-    ├── src/                        │
+│      keys/               ├── tests/                      │
+│                          └── .worktrees/                  │
+└──────────────────────────────────────────────────────────┘
+```
+
+```bash
+# Build the runner image
+docker build --target runner -t agent-academy-runner .
+
+# Run with docker-compose (recommended)
+docker compose --profile runner up -d runner
+
+# Or run directly
+docker run -d \
+  --name agent-academy-runner \
+  -p 8081:8080 \
+  -v aa-data:/data \
+  -v /path/to/agent-academy:/workspace \
+  -e ConsultantApi__SharedSecret="your-secret" \
+  -e Copilot__GitHubToken="ghp_..." \
+  --user "$(id -u):$(id -g)" \
+  agent-academy-runner
+```
+
+**Key differences from app-only:**
+
+| Capability | App-Only | Runner |
+|-----------|----------|--------|
+| Web UI + API | ✅ | ✅ |
+| .NET SDK (`dotnet build`/`test`) | ❌ | ✅ |
+| Node.js 20 (`npm` commands) | ❌ | ✅ |
+| Git (worktrees, branches) | ❌ | ✅ |
+| Copilot SDK (bundled binary) | ❌ | ✅ |
+| Base image | aspnet:8.0 | sdk:8.0 + node:20-slim |
+| Non-root user shell | /sbin/nologin | /bin/bash |
+| Working directory | /app | /workspace |
+
+**Workspace bind mount:** The runner container sets `WORKDIR /workspace` so that `FindProjectRoot()` (used by `GitService`, `WorktreeService`, `AgentToolFunctions`, and `ShellCommandHandler`) discovers `AgentAcademy.sln` in the mounted project source. The bind mount must contain a valid git repository with `AgentAcademy.sln` at its root.
+
+**File permissions:** The docker-compose `runner` service sets `user: "${RUNNER_UID:-1000}:${RUNNER_GID:-1000}"` to match host file ownership. UID 1000 is the default first user on most Linux systems. Override via `.env` or environment:
+
+```bash
+# Check your UID/GID
+id -u  # → e.g., 1000
+id -g  # → e.g., 1000
+
+# Override in .env if different
+echo "RUNNER_UID=$(id -u)" >> .env
+echo "RUNNER_GID=$(id -g)" >> .env
+```
+
+**Copilot authentication:** The runner needs a GitHub token for LLM access. Options (in priority order):
+1. `Copilot__GitHubToken` environment variable — set via docker-compose or `-e` flag
+2. GitHub OAuth login via the web UI — token captured at runtime
+3. Copilot CLI auth state — mount `~/.config/github-copilot/` to `/home/appuser/.config/github-copilot/`
+
+**Git safe directory:** The Dockerfile configures `git config --system --add safe.directory /workspace` so git operations work in the bind-mounted directory regardless of file ownership.
+
+#### Multi-stage Build Process
 
 1. `build-frontend` (node:20-alpine): `npm ci` + `npm run build` → produces `dist/`
 2. `build-backend` (dotnet/sdk:8.0): `dotnet publish` → produces published DLLs
-3. `runtime` (dotnet/aspnet:8.0): copies published output + frontend dist into wwwroot
+3. `runner` (dotnet/sdk:8.0 + node:20-slim): full agent execution environment (~1.2 GB)
+4. `runtime` (dotnet/aspnet:8.0): lightweight app-only image (~250 MB) — **default target**
 
-**Image size:** ~250 MB (aspnet runtime + curl for healthcheck)
+The `runtime` stage is intentionally last so that `docker build .` (without `--target`) produces the lightweight app-only image.
 
-**docker-compose.yml** provides:
-- Named volume `aa-data` for SQLite database and DataProtection keys
-- Environment variable configuration for GitHub OAuth, Consultant API, Discord
-- Health check using the `/health` endpoint
-- Restart policy: `unless-stopped`
+#### docker-compose.yml
 
-**Data persistence:**
+Common configuration (environment variables, healthcheck) is shared via YAML anchors (`x-common-env`, `x-common-healthcheck`). Two services:
+
+- `app` — default, starts with `docker compose up`
+- `runner` — requires `--profile runner`, starts with `docker compose --profile runner up runner`
+
+**Port mapping:** The `app` service defaults to host port `8080` (`AA_PORT`). The `runner` service defaults to host port `8081` (`AA_RUNNER_PORT`). This avoids port collision if both are started simultaneously, though they are intended to be used as alternative deployment modes.
+
+**Data persistence** (both profiles):
 
 | Path | Purpose | Persistence |
 |------|---------|-------------|
 | `/data/agent-academy.db` | SQLite database (+ WAL/SHM sidecars) | Named volume `aa-data` |
 | `/data/data-protection-keys/` | ASP.NET DataProtection keys (auth cookies) | Named volume `aa-data` |
-
-**Limitations:**
-
-This is an **app-only container** — it runs the web API and serves the frontend, but does **not** include agent execution capabilities:
-
-- No .NET SDK (cannot run `dotnet build`/`dotnet test` inside the container)
-- No Node.js (cannot run `npm test`)
-- No Copilot CLI (cannot execute agents)
-- No git worktree management
-
-Agent execution requires a host machine with these tools, communicating with the containerized API via the Consultant API. A future "runner" profile may package these tools for fully containerized agent execution.
+| `/workspace` (runner only) | Project source for agent execution | Bind mount from host |
 
 ### Reverse Proxy (nginx)
 
@@ -664,7 +744,7 @@ See [002 — Development Workflow](../002-development-workflow/spec.md) for the 
 2. **No infrastructure-as-code**: Server provisioning is manual. Consider Terraform/Ansible for repeatable deployments.
 3. **No automated production deployment**: CI builds and tests but does not deploy. The `main` branch triggers version bump + tag, but the actual deployment step is manual.
 4. **Single-machine only**: SQLite constrains the architecture to one server. Scaling horizontally would require a database migration to PostgreSQL and a distributed message bus for SignalR.
-5. **No agent-runner container**: The Docker image is app-only. A future "runner" profile with .NET SDK, Node.js, Git, and Copilot CLI would enable fully containerized agent execution.
+5. ~~**No agent-runner container**~~: ✅ Resolved — Runner profile added to Dockerfile (`--target runner`) and docker-compose.yml (`--profile runner`). Includes .NET SDK 8, Node.js 20, and Git. ~1.2 GB image with full agent execution capabilities. Copilot auth via environment variable or OAuth.
 
 ---
 
@@ -672,6 +752,7 @@ See [002 — Development Workflow](../002-development-workflow/spec.md) for the 
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-16 | Added runner profile to Dockerfile and docker-compose.yml; resolved known gap #5; refactored compose with YAML anchors | Anvil (Copilot) |
 | 2026-04-14 | Added Dockerfile, docker-compose, containerized deployment section; resolved known gap #1; added gap #5 (runner profile) | Anvil (Copilot) |
 | 2026-04-14 | Added /health readiness probe, updated monitoring section, resolved known gap #4 | Anvil (Copilot) |
 | 2026-04-14 | Initial spec — prerequisites, configuration, local dev, CI/CD, production deployment, operations, troubleshooting | Anvil (Copilot) |
