@@ -5,6 +5,13 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **013-sprint-system §Role roster + "Room phase sync", 005-workspace-runtime §Phase-scoped room membership + §Phase Management**: Documented sprint-driven room phase mirror (resolves #57). NEW_CAPABILITY (code + spec):
+  - `SprintStageService.AdvanceStageAsync` and `ApproveAdvanceAsync` now mirror the new `sprint.CurrentStage` onto every `RoomEntity` in the same workspace (`Room.WorkspacePath == sprint.WorkspacePath`) whose `CurrentPhase` differs. Sync bypasses `PhasePrerequisiteValidator`, does not emit coordination messages, does not mutate per-task `CurrentPhase`, and is idempotent. Each updated room emits a `PhaseChanged` activity event tagged with `source: "sprint-sync"` and `sprintId`. Advancing to `FinalSynthesis` also sets `room.Status = Completed` to match `RoomService.TransitionPhaseAsync` semantics. Sign-off-requested / rejected / timeout paths do not trigger sync (stage is unchanged).
+  - The human-only endpoint `POST /api/rooms/{id}/phase` (→ `RoomService.TransitionPhaseAsync`) remains the per-room manual-override path (drift repair, rooms without an active sprint).
+  - Spec 013 "Role roster" updated to remove the note that phase/stage drift was unresolved; new "Room phase sync" paragraph captures the full contract.
+  - Spec 005 "Phase-scoped room membership" updated to note that sprint-stage advancement now re-rosters snapshots across the workspace. "Phase Management" section adds "Two drivers for `room.CurrentPhase`" subsection (human per-room override vs sprint-driven workspace mirror).
+
+### Changed
 - **005-workspace-runtime §Room Management, 013-sprint-system §Role roster**: Documented phase-scoped room membership as a presentation-layer contract (closes #53, resolved by #52's presentation-layer fix). BUG_FIX_SPEC:
   - Spec 005 `RoomSnapshot` participant description updated from "agents whose current location matches the room, with preferred-role flag" to include the `SprintPreambles.IsRoleAllowedInStage` filter keyed on `room.CurrentPhase`, and added a new "Phase-scoped room membership" paragraph explaining that `AgentLocations` records are *not* mutated on phase transition — the filter is reapplied on every snapshot. `RoomService.TransitionPhaseAsync` updates `room.CurrentPhase` (which drives snapshot re-filtering); `SprintStageService.AdvanceStageAsync` updates `sprint.CurrentStage` only (does not update room phase — phase/stage sync tracked in #57).
   - Spec 013 "Role roster" expanded to name both filter points (`ConversationRoundRunner` keyed on `sprint.CurrentStage` for turn selection, `RoomSnapshotBuilder` keyed on `room.CurrentPhase` for snapshots) and cross-reference spec 005 for the data-layer semantics.

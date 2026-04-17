@@ -166,6 +166,8 @@ public sealed class SprintStageService : ISprintStageService
                 ["forced"] = force,
             });
 
+        await SyncWorkspaceRoomsToStageAsync(sprint.WorkspacePath, sprintId, sprint.CurrentStage);
+
         await _db.SaveChangesAsync();
         FlushEvents();
 
@@ -205,6 +207,8 @@ public sealed class SprintStageService : ISprintStageService
                 ["currentStage"] = sprint.CurrentStage,
                 ["awaitingSignOff"] = false,
             });
+
+        await SyncWorkspaceRoomsToStageAsync(sprint.WorkspacePath, sprintId, sprint.CurrentStage);
 
         await _db.SaveChangesAsync();
         FlushEvents();
@@ -366,19 +370,85 @@ public sealed class SprintStageService : ISprintStageService
             BlockingDetails: details);
     }
 
+    // ── Room Phase Sync ─────────────────────────────────────────
+
+    /// <summary>
+    /// Mirrors the sprint's new stage to every room in the same workspace whose
+    /// phase differs. Keeps the presentation-layer filters (RoomSnapshotBuilder,
+    /// conversation round selection) from diverging when agents drive the sprint
+    /// stage machine via ADVANCE_STAGE. See <see cref="Services.RoomService.TransitionPhaseAsync"/>
+    /// for the human-driven per-room override path; this sync intentionally
+    /// bypasses phase prerequisite validation because the sprint is the
+    /// authoritative driver once it has advanced. Emits a <c>PhaseChanged</c>
+    /// activity event per updated room for observability.
+    /// </summary>
+    private async Task SyncWorkspaceRoomsToStageAsync(string workspacePath, string sprintId, string newStage)
+    {
+        if (string.IsNullOrEmpty(workspacePath))
+            return;
+
+        // Skip rooms the sync must not revive:
+        //   - Archived: terminal historical state; sync would silently unarchive them.
+        //   - Completed: already wrapped up (possibly by a prior sprint in this workspace);
+        //     advancing a new sprint's stage should not reactivate old rooms.
+        // This also preserves the invariant that Status=Completed implies phase=FinalSynthesis
+        // by refusing to move a Completed room back to a non-terminal phase.
+        var archivedStatus = nameof(RoomStatus.Archived);
+        var completedStatus = nameof(RoomStatus.Completed);
+
+        var rooms = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath
+                && r.CurrentPhase != newStage
+                && r.Status != archivedStatus
+                && r.Status != completedStatus)
+            .ToListAsync();
+
+        if (rooms.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+        var isTerminal = string.Equals(newStage, nameof(CollaborationPhase.FinalSynthesis), StringComparison.Ordinal);
+
+        foreach (var room in rooms)
+        {
+            var oldPhase = room.CurrentPhase;
+            room.CurrentPhase = newStage;
+            room.UpdatedAt = now;
+            if (isTerminal)
+                room.Status = completedStatus;
+
+            QueueEvent(ActivityEventType.PhaseChanged,
+                $"Room '{room.Name}' phase synced to sprint stage: {oldPhase} → {newStage}",
+                new Dictionary<string, object?>
+                {
+                    ["roomId"] = room.Id,
+                    ["previousPhase"] = oldPhase,
+                    ["currentPhase"] = newStage,
+                    ["source"] = "sprint-sync",
+                    ["sprintId"] = sprintId,
+                },
+                roomId: room.Id);
+        }
+
+        _logger.LogInformation(
+            "Synced {Count} room(s) in workspace '{Workspace}' to sprint stage '{Stage}'",
+            rooms.Count, workspacePath, newStage);
+    }
+
     // ── Event Publishing ────────────────────────────────────────
 
     private readonly List<ActivityEvent> _pendingEvents = [];
 
     private void QueueEvent(
         ActivityEventType type, string message,
-        Dictionary<string, object?>? metadata = null)
+        Dictionary<string, object?>? metadata = null,
+        string? roomId = null)
     {
         var evt = new ActivityEvent(
             Id: Guid.NewGuid().ToString("N"),
             Type: type,
             Severity: ActivitySeverity.Info,
-            RoomId: null,
+            RoomId: roomId,
             ActorId: null,
             TaskId: null,
             Message: message,

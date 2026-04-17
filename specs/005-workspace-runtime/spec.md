@@ -101,7 +101,7 @@ Each `RoomSnapshot` includes:
 - Recent messages (last 200 from DB)
 - Active task (most recent active task for the room)
 
-**Phase-scoped room membership** (design decision, 2026-04-17): Room membership is phase-scoped at the **presentation layer**, not the data layer. `AgentLocations` records the agent's *assigned* room and persists across phase transitions; `RoomSnapshotBuilder.BuildParticipants` applies the phase-roster filter (keyed on `room.CurrentPhase`) when building snapshots, and `ConversationRoundRunner` applies the roster filter (keyed on the active sprint stage) to turn selection. `RoomService.TransitionPhaseAsync` therefore does **not** mutate `AgentLocations` — updating `room.CurrentPhase` causes subsequent snapshots to reflect the new roster automatically. `SprintStageService.AdvanceStageAsync` updates `sprint.CurrentStage` but does not update `room.CurrentPhase`; snapshot filtering follows the room's phase, so stage advancement alone does not re-roster the snapshot. The phase/stage dual-tracking question is tracked in issue #57. See `SprintPreambles.IsRoleAllowedInStage` for the per-stage role map.
+**Phase-scoped room membership** (design decision, 2026-04-17): Room membership is phase-scoped at the **presentation layer**, not the data layer. `AgentLocations` records the agent's *assigned* room and persists across phase transitions; `RoomSnapshotBuilder.BuildParticipants` applies the phase-roster filter (keyed on `room.CurrentPhase`) when building snapshots, and `ConversationRoundRunner` applies the roster filter (keyed on the active sprint stage) to turn selection. `RoomService.TransitionPhaseAsync` therefore does **not** mutate `AgentLocations` — updating `room.CurrentPhase` causes subsequent snapshots to reflect the new roster automatically. `SprintStageService.AdvanceStageAsync` and `ApproveAdvanceAsync` mirror the new sprint stage onto every room in the same workspace (see spec 013 → "Room phase sync"), so agent-driven stage advancement automatically re-rosters snapshots across the workspace. See `SprintPreambles.IsRoleAllowedInStage` for the per-stage role map.
 
 ### Task Management
 
@@ -150,6 +150,10 @@ Behavior:
 - Updates active task's `CurrentPhase` if one exists
 
 No phase state machine — any phase can transition to any other phase.
+
+**Two drivers for `room.CurrentPhase`**:
+1. **Human-driven per-room override** via `POST /api/rooms/{id}/phase` → `RoomService.TransitionPhaseAsync`. Runs the phase prerequisite validator, creates a coordination message, and updates the active task's phase. Used for ad-hoc adjustments to a single room.
+2. **Sprint-driven workspace mirror** via `SprintStageService.AdvanceStageAsync` / `ApproveAdvanceAsync`. When an agent (or human) advances the sprint stage, every room in `sprint.WorkspacePath` whose phase differs is updated silently to match the new stage. Emits a `PhaseChanged` activity event with `source: "sprint-sync"` per room. Bypasses the phase prerequisite validator (the sprint is the authoritative driver). See spec 013 → "Room phase sync" for the full contract.
 
 ### Agent Location
 
