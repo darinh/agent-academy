@@ -141,7 +141,7 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         var worktreeService = new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/fake-repo");
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, _catalog, _executor, specManager,
-            gitService, worktreeService, memoryLoader,
+            gitService, memoryLoader,
             breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
 

@@ -177,7 +177,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, _catalog, _executor, new SpecManager(),
             _gitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             memoryLoader, breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
 
@@ -279,7 +278,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var breakoutLifecycle2 = new BreakoutLifecycleService(
             scopeFactory2, _catalog, _executor, new SpecManager(),
             mockGitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             memoryLoader2, breakoutCompletion2,
             NullLogger<BreakoutLifecycleService>.Instance);
 

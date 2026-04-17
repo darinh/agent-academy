@@ -24,6 +24,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
     private readonly IAgentLocationService _agentLocations;
     private readonly IMessageService _messages;
     private readonly IBreakoutRoomService _breakouts;
+    private readonly IWorktreeService? _worktrees;
 
     private const int MaxBulkSize = 50;
 
@@ -39,7 +40,8 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         IRoomLifecycleService roomLifecycle,
         IAgentLocationService agentLocations,
         IMessageService messages,
-        IBreakoutRoomService breakouts)
+        IBreakoutRoomService breakouts,
+        IWorktreeService? worktrees = null)
     {
         _db = db;
         _logger = logger;
@@ -53,6 +55,7 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         _agentLocations = agentLocations;
         _messages = messages;
         _breakouts = breakouts;
+        _worktrees = worktrees;
     }
 
     /// <summary>
@@ -142,6 +145,9 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
 
     /// <summary>
     /// Completes a task and auto-archives its room if all tasks in it are terminal.
+    /// Also disposes the task's git worktree — per spec 005 §Workspace Isolation,
+    /// the worktree persists through the breakout lifecycle and is only cleaned
+    /// up when the task reaches a terminal state.
     /// </summary>
     public async Task<TaskSnapshot> CompleteTaskAsync(
         string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
@@ -154,7 +160,35 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
             await _roomLifecycle.TryAutoArchiveRoomAsync(roomId);
         }
 
+        await TryRemoveTaskWorktreeAsync(snapshot.BranchName, taskId);
+
         return snapshot;
+    }
+
+    /// <summary>
+    /// Best-effort worktree removal for a task reaching a terminal state.
+    /// Failures are logged but do not propagate — the task status change
+    /// has already been persisted and a lingering worktree can be cleaned
+    /// up later via CLEANUP_WORKTREES.
+    /// </summary>
+    private async Task TryRemoveTaskWorktreeAsync(string? branchName, string taskId)
+    {
+        if (string.IsNullOrWhiteSpace(branchName) || _worktrees is null)
+            return;
+
+        try
+        {
+            await _worktrees.RemoveWorktreeAsync(branchName);
+            _logger.LogInformation(
+                "Removed worktree for terminal task {TaskId} on branch {Branch}",
+                taskId, branchName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to remove worktree for terminal task {TaskId} on branch {Branch}",
+                taskId, branchName);
+        }
     }
 
     /// <summary>

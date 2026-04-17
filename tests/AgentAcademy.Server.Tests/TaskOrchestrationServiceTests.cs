@@ -6,6 +6,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
 
 namespace AgentAcademy.Server.Tests;
@@ -17,6 +18,7 @@ public class TaskOrchestrationServiceTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentCatalogOptions _catalog;
+    private readonly IWorktreeService _worktreeService = NSubstitute.Substitute.For<IWorktreeService>();
 
     private const string DefaultRoomId = "main-room";
     private const string DefaultRoomName = "Main Collaboration Room";
@@ -84,6 +86,7 @@ public class TaskOrchestrationServiceTests : IDisposable
         services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
+        services.AddSingleton<IWorktreeService>(_worktreeService);
         services.AddSingleton<IAgentExecutor, StubExecutor>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
@@ -750,6 +753,53 @@ public class TaskOrchestrationServiceTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => svc.CompleteTaskAsync("nonexistent", commitCount: 0));
+    }
+
+    [Fact]
+    public async Task CompleteTask_RemovesWorktreeForBranch()
+    {
+        // Regression for #65 — worktree disposal is owned by task-terminal transitions.
+        _worktreeService.ClearReceivedCalls();
+        var (svc, db) = CreateScope();
+        var task = SeedTask(db, id: "worktree-complete-task");
+        task.BranchName = "task/worktree-complete-task";
+        await db.SaveChangesAsync();
+
+        await svc.CompleteTaskAsync("worktree-complete-task", commitCount: 1);
+
+        await _worktreeService.Received(1)
+            .RemoveWorktreeAsync("task/worktree-complete-task");
+    }
+
+    [Fact]
+    public async Task CompleteTask_SkipsWorktreeRemovalWhenNoBranchName()
+    {
+        _worktreeService.ClearReceivedCalls();
+        var (svc, db) = CreateScope();
+        SeedTask(db, id: "worktree-no-branch-task");
+
+        await svc.CompleteTaskAsync("worktree-no-branch-task", commitCount: 0);
+
+        await _worktreeService.DidNotReceive().RemoveWorktreeAsync(Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task CompleteTask_SurvivesWorktreeRemovalFailure()
+    {
+        // Worktree disposal is best-effort — failures must not abort task completion.
+        _worktreeService.ClearReceivedCalls();
+        _worktreeService.RemoveWorktreeAsync(Arg.Any<string>())
+            .Returns(_ => Task.FromException(new InvalidOperationException("boom")));
+
+        var (svc, db) = CreateScope();
+        var task = SeedTask(db, id: "worktree-fail-task");
+        task.BranchName = "task/worktree-fail-task";
+        await db.SaveChangesAsync();
+
+        var snapshot = await svc.CompleteTaskAsync("worktree-fail-task", commitCount: 1);
+
+        Assert.Equal(TaskStatus.Completed, snapshot.Status);
+        _worktreeService.RemoveWorktreeAsync(Arg.Any<string>()).Returns(Task.CompletedTask);
     }
 
     // ═══════════════════════════════════════════════════════════════

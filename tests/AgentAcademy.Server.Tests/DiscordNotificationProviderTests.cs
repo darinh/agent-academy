@@ -397,7 +397,7 @@ public class DiscordNotificationProviderTests
             scopeFactory, catalog, executor, specManager, pipeline,
             memoryLoader, Substitute.For<ILogger<BreakoutCompletionService>>());
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, catalog, executor, specManager, gitService, worktreeService,
+            scopeFactory, catalog, executor, specManager, gitService,
             memoryLoader, breakoutCompletion,
             Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
