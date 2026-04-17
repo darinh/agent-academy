@@ -16,6 +16,13 @@ namespace AgentAcademy.Server.Auth;
 public static class AuthenticationExtensions
 {
     /// <summary>
+    /// Name of the cookie that carries the authenticated user session. Shared
+    /// with the CSRF protection middleware so it can detect cookie-authenticated
+    /// browser requests without taking a dependency on the CookieAuthenticationOptions.
+    /// </summary>
+    public const string AuthCookieName = "AgentAcademy.Auth";
+
+    /// <summary>
     /// Registers GitHub OAuth, Consultant key auth, and authorization policies
     /// based on the precomputed <see cref="AppAuthSetup"/>.
     /// </summary>
@@ -98,7 +105,7 @@ public static class AuthenticationExtensions
             {
                 options.LoginPath = "/api/auth/login";
                 options.LogoutPath = "/api/auth/logout";
-                options.Cookie.Name = "AgentAcademy.Auth";
+                options.Cookie.Name = AuthCookieName;
                 options.Cookie.HttpOnly = true;
                 options.Cookie.SameSite = sameSite;
                 options.Cookie.SecurePolicy = securePolicy;

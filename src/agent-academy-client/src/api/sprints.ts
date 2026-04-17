@@ -9,11 +9,11 @@ import type {
   SprintMetrics,
   SprintMetricsSummary,
 } from "./types";
-import { apiUrl, request, extractApiError } from "./core";
+import { apiUrl, request, extractApiError, csrfHeaders } from "./core";
 import type { ProblemDetails, ApiError } from "./core";
 
 export async function getActiveSprint(): Promise<SprintDetailResponse | null> {
-  const res = await fetch(apiUrl("/api/sprints/active"), { credentials: "include" });
+  const res = await fetch(apiUrl("/api/sprints/active"), { credentials: "include", headers: { ...csrfHeaders } });
   if (res.status === 204) return null;
   if (!res.ok) throw new Error("Failed to fetch active sprint");
   return res.json() as Promise<SprintDetailResponse>;
@@ -52,6 +52,7 @@ export async function startSprint(): Promise<SprintDetailResponse> {
   const res = await fetch(apiUrl("/api/sprints"), {
     method: "POST",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
@@ -64,6 +65,7 @@ export async function advanceSprint(id: string): Promise<SprintDetailResponse> {
   const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/advance`), {
     method: "POST",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
@@ -77,6 +79,7 @@ export async function completeSprint(id: string, force = false): Promise<SprintS
   const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/complete${qs}`), {
     method: "POST",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
@@ -89,6 +92,7 @@ export async function cancelSprint(id: string): Promise<SprintSnapshot> {
   const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/cancel`), {
     method: "POST",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
@@ -101,6 +105,7 @@ export async function approveSprintAdvance(id: string): Promise<SprintDetailResp
   const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/approve-advance`), {
     method: "POST",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
@@ -113,6 +118,7 @@ export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
   const res = await fetch(apiUrl(`/api/sprints/${encodeURIComponent(id)}/reject-advance`), {
     method: "POST",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as (ProblemDetails & ApiError) | null;
@@ -124,7 +130,7 @@ export async function rejectSprintAdvance(id: string): Promise<SprintSnapshot> {
 // ── Sprint Schedule ───────────────────────────────────────────────────
 
 export async function getSprintSchedule(): Promise<SprintScheduleResponse | null> {
-  const res = await fetch(apiUrl("/api/sprints/schedule"), { credentials: "include" });
+  const res = await fetch(apiUrl("/api/sprints/schedule"), { credentials: "include", headers: { ...csrfHeaders } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to fetch sprint schedule");
   return res.json() as Promise<SprintScheduleResponse>;
@@ -136,7 +142,7 @@ export async function upsertSprintSchedule(
   const res = await fetch(apiUrl("/api/sprints/schedule"), {
     method: "PUT",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeaders },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -150,6 +156,7 @@ export async function deleteSprintSchedule(): Promise<void> {
   const res = await fetch(apiUrl("/api/sprints/schedule"), {
     method: "DELETE",
     credentials: "include",
+    headers: { ...csrfHeaders },
   });
   if (res.status === 404) return;
   if (!res.ok) throw new Error("Failed to delete sprint schedule");
