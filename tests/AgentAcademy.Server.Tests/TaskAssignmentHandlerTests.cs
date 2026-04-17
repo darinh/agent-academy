@@ -289,6 +289,8 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
     private static void InitializeRepository(string path)
     {
         RunGit(path, "init");
+        RunGit(path, "config user.email \"tests@agent-academy.local\"");
+        RunGit(path, "config user.name \"Agent Academy Tests\"");
         RunGit(path, "checkout -b develop");
         File.WriteAllText(Path.Combine(path, "README.md"), "# Test");
         RunGit(path, "add .");
