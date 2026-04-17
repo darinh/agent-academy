@@ -189,6 +189,9 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
 
         var preferredRoles = request.PreferredRoles
             .Select(r => r.Trim())
+            // Stryker disable once String : equivalent mutant — `(r!="")`.
+            // `.Trim()` above throws NRE on null entries, so r is never null here;
+            // thus `(r!="")` is behaviourally identical to `!string.IsNullOrEmpty(r)`.
             .Where(r => !string.IsNullOrEmpty(r))
             .Distinct()
             .ToList();
