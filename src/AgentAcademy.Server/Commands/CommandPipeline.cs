@@ -41,7 +41,9 @@ public sealed class CommandPipeline
         _handlers = handlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
         _rateLimiter = rateLimiter ?? new CommandRateLimiter();
+        // Stryker disable once all : CommandParser is sealed and stateless — two `new CommandParser()` instances are behaviourally indistinguishable, so removing the null-coalesce left side is equivalent. Tests verifying a custom parser were used cannot be written without removing sealed/adding an interface.
         _parser = parser ?? new CommandParser();
+        // Stryker disable once all : CommandAuthorizer is sealed and stateless (only static rule tables) — two instances behave identically, so removing the null-coalesce left side is equivalent.
         _authorizer = authorizer ?? new CommandAuthorizer();
     }
 
@@ -62,6 +64,7 @@ public sealed class CommandPipeline
         if (parseResult.Commands.Count == 0)
             return new CommandPipelineResult(new List<CommandEnvelope>(), responseText);
 
+        // Stryker disable once all : diagnostic log template — mutating the message string or removing the log call has no observable behaviour (loggers are captured via NullLogger in tests).
         _logger.LogInformation(
             "Agent {AgentId} issued {Count} command(s): {Commands}",
             agentId,
@@ -100,11 +103,15 @@ public sealed class CommandPipeline
             var denied = _authorizer.Authorize(envelope, agent);
             if (denied != null)
             {
+                // Stryker disable all : defensive fallback — the real CommandAuthorizer.Deny() always populates ErrorCode=Permission, so denied.ErrorCode is never null in practice. The ternary only fires if a future authorizer path forgets to set ErrorCode; mutating this branch produces identical output given the current authorizer contract.
                 var deniedWithCode = denied.ErrorCode is null
                     ? denied with { ErrorCode = CommandErrorCode.Permission }
                     : denied;
+                // Stryker restore all
+                // Stryker disable all : diagnostic log template — no observable behaviour.
                 _logger.LogWarning("Command {Command} denied for agent {AgentId}: {Error}",
                     parsed.Command, agentId, deniedWithCode.Error);
+                // Stryker restore all
                 await AuditAsync(deniedWithCode, roomId, scopedServices);
                 results.Add(deniedWithCode);
                 continue;
@@ -140,9 +147,11 @@ public sealed class CommandPipeline
                         ["retryWith"] = "confirm=true"
                     }
                 };
+                // Stryker disable all : diagnostic log template — no observable behaviour.
                 _logger.LogInformation(
                     "Destructive command {Command} by {AgentId} requires confirmation",
                     parsed.Command, agentId);
+                // Stryker restore all
                 await AuditAsync(confirmRequired, roomId, scopedServices);
                 results.Add(confirmRequired);
                 continue;
@@ -157,9 +166,11 @@ public sealed class CommandPipeline
                     ErrorCode = CommandErrorCode.RateLimit,
                     Error = $"Rate limit exceeded. Try again in {retryAfterSeconds}s."
                 };
+                // Stryker disable all : diagnostic log template — no observable behaviour.
                 _logger.LogWarning(
                     "Command {Command} rate-limited for agent {AgentId}: retry after {Seconds}s",
                     parsed.Command, agentId, retryAfterSeconds);
+                // Stryker restore all
                 await AuditAsync(rateLimited, roomId, scopedServices);
                 results.Add(rateLimited);
                 continue;
@@ -172,13 +183,17 @@ public sealed class CommandPipeline
                 await AuditAsync(result, roomId, scopedServices);
                 results.Add(result);
 
+                // Stryker disable all : diagnostic log template — no observable behaviour. The retry-count conditional inside the template only affects the log message text.
                 _logger.LogInformation("Command {Command} executed by {AgentId}: {Status}{Retries}",
                     parsed.Command, agentId, result.Status,
                     result.RetryCount > 0 ? $" (after {result.RetryCount} retries)" : "");
+                // Stryker restore all
             }
             catch (Exception ex)
             {
+                // Stryker disable all : diagnostic log template — no observable behaviour.
                 _logger.LogError(ex, "Command {Command} failed for agent {AgentId}", parsed.Command, agentId);
+                // Stryker restore all
                 var error = envelope with
                 {
                     Status = CommandStatus.Error,
