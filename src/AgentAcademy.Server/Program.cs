@@ -71,6 +71,7 @@ var app = builder.Build();
 await app.InitializeAsync();
 app.ConfigureShutdownHook();
 app.RegisterNotificationProviders();
+app.LogAuthConfiguration(authSetup);
 app.ConfigureHttpPipeline(authSetup, consultantRateLimits);
 
 app.Run();

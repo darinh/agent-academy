@@ -23,7 +23,7 @@ The human operator currently acts as a middleman between the CLI agent (which ha
 ### Authentication: Shared Secret Header
 
 - **Mechanism**: `X-Consultant-Key` header containing a pre-shared secret
-- **Configuration**: `ConsultantApi:SharedSecret` in `appsettings.json` or `CONSULTANT_API__SHARED_SECRET` environment variable
+- **Configuration**: `ConsultantApi:SharedSecret` in `appsettings.json` or `ConsultantApi__SharedSecret` environment variable
 - **Identity**: Authenticated as a `Consultant` principal with `SenderKind = User`, `SenderId = "consultant"`, `SenderName = "Consultant"`
 - **Scope**: Grants access to the same endpoints as an authenticated human user
 - **Migration path**: The auth handler is a standard ASP.NET Core authentication scheme. When a real OAuth2 provider (e.g., Entra ID) is needed, add it as another scheme alongside this one. No endpoint changes required.

@@ -93,7 +93,7 @@ All security enforcement happens server-side. The browser client and agents are 
 
 **Identity**: `SenderKind = User`, `SenderId = "consultant"`, `SenderName = "Consultant"`. The consultant has the same API access as an authenticated human user.
 
-**Configuration**: `ConsultantApi:SharedSecret` in `appsettings.json`, user-secrets, or `CONSULTANTAPI__SHAREDSECRET` environment variable. If not configured, the consultant auth scheme is not registered — the endpoint simply doesn't exist.
+**Configuration**: `ConsultantApi:SharedSecret` in `appsettings.json`, user-secrets, or `ConsultantApi__SharedSecret` environment variable. If not configured, the consultant auth scheme is not registered — the endpoint simply doesn't exist.
 
 **Accepted limitations**:
 - No token rotation, nonce, or replay protection — acceptable for localhost-only deployment
@@ -374,7 +374,7 @@ The SQLite database has no row-level security, tenant IDs, or per-user data part
 | Secret | Source | Priority |
 |--------|--------|----------|
 | GitHub OAuth Client ID/Secret | `GitHub:ClientId`, `GitHub:ClientSecret` in config/user-secrets | App config |
-| Consultant shared secret | `ConsultantApi:SharedSecret` or `CONSULTANTAPI__SHAREDSECRET` env var | App config |
+| Consultant shared secret | `ConsultantApi:SharedSecret` or `ConsultantApi__SharedSecret` env var | App config |
 | Copilot GitHub token | `CopilotTokenProvider` (OAuth flow), or fallback: `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN` env vars | Runtime |
 | Data Protection keys | File system (`~/.aspnet/DataProtection-Keys`) | Auto-managed |
 

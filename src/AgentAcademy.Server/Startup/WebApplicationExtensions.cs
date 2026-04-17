@@ -133,6 +133,23 @@ public static class WebApplicationExtensions
     }
 
     /// <summary>
+    /// Emits a single startup log line summarizing which authentication schemes
+    /// are active and — crucially — why a scheme is disabled when its config is
+    /// missing. Operators running via docker-compose previously had no signal
+    /// that a misspelled env var had silently disabled consultant auth; this
+    /// closes that gap (issue #61).
+    /// </summary>
+    public static void LogAuthConfiguration(this WebApplication app, AppAuthSetup authSetup)
+    {
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+        logger.LogInformation(
+            "Auth configuration: GitHub OAuth={GitHubState}, Consultant API={ConsultantState}",
+            authSetup.GitHubAuthEnabled ? "enabled" : "disabled (GitHub:ClientId and/or GitHub:ClientSecret not set)",
+            authSetup.ConsultantAuthEnabled ? "enabled" : "disabled (ConsultantApi:SharedSecret not set — export ConsultantApi__SharedSecret to enable)");
+    }
+
+    /// <summary>
     /// Configures the HTTP middleware + endpoint pipeline.
     /// Keeps Program.cs focused on composition while preserving ordering.
     /// </summary>
