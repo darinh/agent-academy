@@ -385,6 +385,30 @@ public sealed class AgentToolFunctions : IAgentToolFunctions
         ];
     }
 
+    /// <summary>
+    /// Creates <see cref="AIFunction"/> instances for the "spec-write" tool group.
+    /// These tools write files to the <c>specs/</c> directory only and are
+    /// scoped to the calling agent. Typically granted to the Technical Writer
+    /// role (Thucydides) so the spec corpus can be maintained by its owner
+    /// without granting general code-write access.
+    /// </summary>
+    public IReadOnlyList<AIFunction> CreateSpecWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
+    {
+        var wrapper = new CodeWriteToolWrapper(
+            _scopeFactory, _logger, agentId, agentName, gitIdentity, roomId,
+            allowedRoot: "specs",
+            protectedPaths: CodeWriteToolWrapper.SpecWriteProtectedPaths);
+        return
+        [
+            AIFunctionFactory.Create(wrapper.WriteFileAsync, "write_file",
+                "Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
+                "The file is automatically staged for commit. Paths must be within specs/ and relative to the project root."),
+            AIFunctionFactory.Create(wrapper.CommitChangesAsync, "commit_changes",
+                "Commit all staged changes with a conventional commit message. Use after write_file to persist your changes. " +
+                "Returns the commit SHA on success."),
+        ];
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     internal static string FindProjectRoot()

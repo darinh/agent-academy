@@ -377,6 +377,7 @@
                     "chat",
                     "task-state",
                     "code",
+                    "spec-write",
                     "task-write",
                     "memory"
                 ],

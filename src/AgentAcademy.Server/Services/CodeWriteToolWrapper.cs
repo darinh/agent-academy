@@ -8,21 +8,15 @@ using Microsoft.Extensions.Logging;
 namespace AgentAcademy.Server.Services;
 
 /// <summary>
-/// Wrapper that captures agent identity for code-write tool functions.
-/// Enforces path restrictions: files must be within <c>src/</c> and cannot
-/// modify protected infrastructure files.
+/// Wrapper that captures agent identity for write-capable tool functions.
+/// Enforces path restrictions: files must be within <see cref="AllowedRoot"/>
+/// (e.g. <c>src/</c> for code-write, <c>specs/</c> for spec-write) and cannot
+/// modify the configured protected infrastructure files.
 /// </summary>
 internal sealed class CodeWriteToolWrapper
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger _logger;
-    private readonly string _agentId;
-    private readonly string _agentName;
-    private readonly AgentGitIdentity? _gitIdentity;
-    private readonly string? _roomId;
-
-    // Files that agents must never modify (core infrastructure).
-    private static readonly string[] ProtectedPaths =
+    // Files that agents with code-write access must never modify (core infrastructure).
+    internal static readonly IReadOnlyList<string> CodeWriteProtectedPaths =
     [
         "Services/AgentToolFunctions.cs",
         "Services/AgentToolRegistry.cs",
@@ -33,11 +27,37 @@ internal sealed class CodeWriteToolWrapper
         "Program.cs",
     ];
 
+    // Spec-write has no protected files inside specs/ — Thucydides owns the whole spec corpus.
+    internal static readonly IReadOnlyList<string> SpecWriteProtectedPaths = Array.Empty<string>();
+
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger _logger;
+    private readonly string _agentId;
+    private readonly string _agentName;
+    private readonly AgentGitIdentity? _gitIdentity;
+    private readonly string? _roomId;
+    private readonly string _allowedRoot;
+    private readonly IReadOnlyList<string> _protectedPaths;
+
+    /// <summary>
+    /// Root directory (relative to the project root) that writes are restricted to.
+    /// Always stored without a trailing separator.
+    /// </summary>
+    internal string AllowedRoot => _allowedRoot;
+
     private const int MaxContentLength = 100_000; // 100 KB
 
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
+        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, "src", CodeWriteProtectedPaths)
+    {
+    }
+
+    internal CodeWriteToolWrapper(
+        IServiceScopeFactory scopeFactory, ILogger logger,
+        string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
+        string allowedRoot, IReadOnlyList<string> protectedPaths)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -45,18 +65,24 @@ internal sealed class CodeWriteToolWrapper
         _agentName = agentName;
         _gitIdentity = gitIdentity;
         _roomId = roomId;
+
+        if (string.IsNullOrWhiteSpace(allowedRoot))
+            throw new ArgumentException("allowedRoot is required.", nameof(allowedRoot));
+
+        _allowedRoot = allowedRoot.Trim().Replace('\\', '/').TrimEnd('/');
+        _protectedPaths = protectedPaths ?? Array.Empty<string>();
     }
 
     [Description("Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
-                 "The file is automatically staged for commit. Paths must be within src/ and relative to the project root.")]
+                 "The file is automatically staged for commit. Paths must be within the allowed root directory (see tool description) and relative to the project root.")]
     internal async Task<string> WriteFileAsync(
-        [Description("File path relative to the project root (e.g., src/AgentAcademy.Server/Models/MyModel.cs)")]
+        [Description("File path relative to the project root (e.g., src/AgentAcademy.Server/Models/MyModel.cs for code-write, or specs/300-frontend-ui/spec.md for spec-write)")]
         string path,
         [Description("The full content to write to the file")]
         string content)
     {
-        _logger.LogInformation("Tool call: write_file by {AgentId} (path={Path}, length={Length})",
-            _agentId, path, content?.Length ?? 0);
+        _logger.LogInformation("Tool call: write_file by {AgentId} (path={Path}, length={Length}, allowedRoot={Root})",
+            _agentId, path, content?.Length ?? 0, _allowedRoot);
 
         if (string.IsNullOrWhiteSpace(path))
             return "Error: path is required.";
@@ -77,15 +103,30 @@ internal sealed class CodeWriteToolWrapper
         if (!fullPath.StartsWith(rootWithSep, StringComparison.Ordinal))
             return "Error: Path traversal denied — file must be within the project directory.";
 
-        // Restrict writes to src/ directory only
+        // Restrict writes to the configured allowed root directory only.
+        // Use case-sensitive comparison so that on case-sensitive filesystems (Linux CI)
+        // a path like "Specs/foo" does not pass the "specs/" check.
         var relativePath = Path.GetRelativePath(projectRoot, fullPath);
-        if (!relativePath.StartsWith("src" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            return "Error: Writes are restricted to the src/ directory. Cannot write to: " + relativePath;
+        var allowedPrefix = _allowedRoot + Path.DirectorySeparatorChar;
+        if (!relativePath.StartsWith(allowedPrefix, StringComparison.Ordinal))
+            return $"Error: Writes are restricted to the {_allowedRoot}/ directory. Cannot write to: " + relativePath;
+
+        // Defence-in-depth: reject any path whose existing directory chain contains a symlink
+        // or reparse point. A lexical prefix check is not sufficient because a symlink like
+        // `specs/escape -> ../src` would pass the string check but write outside the allowed root.
+        var symlinkViolation = DetectSymlinkEscape(projectRoot, fullPath);
+        if (symlinkViolation is not null)
+        {
+            _logger.LogWarning(
+                "Agent {AgentId} attempted to write through symlinked path: {Path} (symlink at {SymlinkPath})",
+                _agentId, relativePath, symlinkViolation);
+            return $"Error: Path contains a symlink ({symlinkViolation}); writes through symlinks are not allowed.";
+        }
 
         // Block protected infrastructure files
         // Normalize separators to forward slashes for cross-platform comparison
         var normalizedRelative = relativePath.Replace('\\', '/');
-        foreach (var protectedPath in ProtectedPaths)
+        foreach (var protectedPath in _protectedPaths)
         {
             if (normalizedRelative.EndsWith(protectedPath, StringComparison.OrdinalIgnoreCase))
             {
@@ -183,6 +224,20 @@ internal sealed class CodeWriteToolWrapper
         if (message.Length > 5000)
             return "Error: Commit message exceeds 5000 characters.";
 
+        var projectRoot = AgentToolFunctions.FindProjectRoot();
+
+        // Scope enforcement: refuse to commit if any staged path is outside _allowedRoot
+        // or matches a protected infrastructure file. This prevents an agent holding
+        // (e.g.) spec-write from committing src/ files that another flow happened to stage.
+        var scopeViolation = await ValidateStagedPathsAsync(projectRoot);
+        if (scopeViolation is not null)
+        {
+            _logger.LogWarning(
+                "Agent {AgentId} blocked from committing out-of-scope staged paths: {Violation}",
+                _agentId, scopeViolation);
+            return $"Error: Commit blocked — staged changes outside {_allowedRoot}/ scope: {scopeViolation}. Unstage those paths before committing.";
+        }
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -242,6 +297,142 @@ internal sealed class CodeWriteToolWrapper
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record commit artifacts for {Sha}", commitSha);
+        }
+    }
+
+    /// <summary>
+    /// Walks the directory chain from <paramref name="projectRoot"/> down to
+    /// the deepest existing ancestor of <paramref name="fullPath"/> and returns
+    /// the first component that is a symbolic link (or reparse point). Returns
+    /// <c>null</c> when no symlinks are present in the chain. The file itself
+    /// is also checked if it already exists.
+    /// </summary>
+    private static string? DetectSymlinkEscape(string projectRoot, string fullPath)
+    {
+        var normalizedRoot = projectRoot.TrimEnd(Path.DirectorySeparatorChar);
+        var current = fullPath;
+
+        // Collect all ancestors that still live under the project root, deepest first.
+        var components = new List<string>();
+        while (!string.IsNullOrEmpty(current)
+               && current.Length > normalizedRoot.Length
+               && current.StartsWith(normalizedRoot, StringComparison.Ordinal))
+        {
+            components.Add(current);
+            var parent = Path.GetDirectoryName(current);
+            if (parent is null || parent == current) break;
+            current = parent;
+        }
+
+        // Check each existing component — symlinks/reparse points are not allowed inside the scope.
+        // Use File.GetAttributes (lstat-semantics on .NET — does not follow links) so that
+        // dangling symlinks are still detected as ReparsePoint rather than silently skipped.
+        foreach (var component in components)
+        {
+            FileAttributes attrs;
+            try
+            {
+                attrs = File.GetAttributes(component);
+            }
+            catch (FileNotFoundException)
+            {
+                continue; // truly non-existent path component — nothing to check
+            }
+            catch (DirectoryNotFoundException)
+            {
+                continue;
+            }
+            catch (IOException)
+            {
+                // Unreadable / broken — refuse rather than allow.
+                return Path.GetRelativePath(projectRoot, component);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Path.GetRelativePath(projectRoot, component);
+            }
+
+            if ((attrs & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+                return Path.GetRelativePath(projectRoot, component);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns a human-readable violation string if any currently staged path is
+    /// outside <see cref="_allowedRoot"/> or matches a protected-file rule, or
+    /// <c>null</c> if all staged paths are in scope.
+    /// </summary>
+    private async Task<string?> ValidateStagedPathsAsync(string projectRoot)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                WorkingDirectory = projectRoot
+            };
+            psi.ArgumentList.Add("diff");
+            psi.ArgumentList.Add("--cached");
+            psi.ArgumentList.Add("--name-only");
+            psi.ArgumentList.Add("-z"); // NUL-delimited output — safe against paths containing newlines or shell-special chars
+
+            using var process = Process.Start(psi);
+            if (process is null)
+                return null; // best-effort — if git can't start, let the commit proceed and surface the error there
+
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0)
+                return null;
+
+            var allowedPrefix = _allowedRoot + "/";
+            var outOfScope = new List<string>();
+            var protectedHits = new List<string>();
+
+            // git diff --cached -z emits NUL-delimited paths with no quoting.
+            foreach (var raw in stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var staged = raw.Replace('\\', '/');
+                if (string.IsNullOrEmpty(staged)) continue;
+
+                // Case-sensitive comparison — matches Linux filesystem semantics.
+                if (!staged.StartsWith(allowedPrefix, StringComparison.Ordinal))
+                {
+                    outOfScope.Add(staged);
+                    continue;
+                }
+
+                foreach (var protectedPath in _protectedPaths)
+                {
+                    if (staged.EndsWith(protectedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        protectedHits.Add(staged);
+                        break;
+                    }
+                }
+            }
+
+            if (outOfScope.Count > 0 || protectedHits.Count > 0)
+            {
+                var parts = new List<string>();
+                if (outOfScope.Count > 0)
+                    parts.Add(string.Join(", ", outOfScope.Take(5)) + (outOfScope.Count > 5 ? $" (+{outOfScope.Count - 5} more)" : ""));
+                if (protectedHits.Count > 0)
+                    parts.Add("protected: " + string.Join(", ", protectedHits));
+                return string.Join("; ", parts);
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Staged-paths validation failed; allowing commit to proceed and surface git errors directly");
+            return null;
         }
     }
 }
