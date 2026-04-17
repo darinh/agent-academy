@@ -1493,4 +1493,264 @@ public class TaskLifecycleServiceTests : IDisposable
         Assert.NotNull(evt);
         Assert.Contains("Downstream Feature", evt!.Message);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Mutation-coverage tests (raise score to 100% on the core partial)
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ClaimTask_MissingTask_ErrorMessageContainsTaskId()
+    {
+        // Kills L48 string mutation: error message must name the missing task.
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ClaimTaskAsync("missing-id-xyz", "engineer-1", "Hephaestus"));
+
+        Assert.Contains("missing-id-xyz", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task ClaimTask_MultipleBlockers_ErrorUsesCommaSeparator()
+    {
+        // Kills L54 ", " → "" separator mutation: multiple blockers must be
+        // delimited so both are visible and distinguishable.
+        var (svc, db) = CreateScope();
+        var b1 = SeedTask(db, id: "blocker-A", status: nameof(TaskStatus.Active));
+        b1.Title = "Alpha Blocker";
+        var b2 = SeedTask(db, id: "blocker-B", status: nameof(TaskStatus.Active));
+        b2.Title = "Beta Blocker";
+        SeedTask(db, id: "dependent-multi", status: nameof(TaskStatus.Queued));
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "dependent-multi",
+            DependsOnTaskId = "blocker-A"
+        });
+        db.TaskDependencies.Add(new TaskDependencyEntity
+        {
+            TaskId = "dependent-multi",
+            DependsOnTaskId = "blocker-B"
+        });
+        db.SaveChanges();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ClaimTaskAsync("dependent-multi", "engineer-1", "Hephaestus"));
+
+        Assert.Contains("Alpha Blocker", ex.Message);
+        Assert.Contains("Beta Blocker", ex.Message);
+        Assert.Contains(", ", ex.Message);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_MissingTask_ErrorMessageContainsTaskId()
+    {
+        // Kills L90 string mutation: missing-task error must name the id.
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ReleaseTaskAsync("ghost-task-123", "engineer-1"));
+
+        Assert.Contains("ghost-task-123", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task ReleaseTask_Unclaimed_ErrorMentionsNotClaimed()
+    {
+        // Kills L93 statement removal (the throw) AND L94 string mutation:
+        // unclaimed task must throw with a distinguishable "not currently
+        // claimed by any agent" message — not the wrong-agent message.
+        var (svc, db) = CreateScope();
+        SeedTask(db); // AssignedAgentId = null
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.ReleaseTaskAsync("task-1", "engineer-1"));
+
+        Assert.Contains("not currently claimed", ex.Message);
+        Assert.Contains("task-1", ex.Message);
+    }
+
+    [Fact]
+    public async Task SyncPrStatus_MissingTask_ErrorMessageContainsTaskId()
+    {
+        // Kills L119 string mutation: missing-task error must name the id.
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.SyncTaskPrStatusAsync("pr-ghost", PullRequestStatus.Open));
+
+        Assert.Contains("pr-ghost", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task SyncPrStatus_FromNull_ActivityMessageUsesNoneFallback()
+    {
+        // Kills L125 string mutation "None" → "": when the task has no prior
+        // PR status, the activity event must show "None" as the old value.
+        var (svc, db) = CreateScope();
+        SeedTask(db, pullRequestStatus: null, pullRequestNumber: 77);
+
+        await svc.SyncTaskPrStatusAsync("task-1", PullRequestStatus.Open);
+
+        var evt = await db.ActivityEvents
+            .FirstAsync(e => e.Type == nameof(ActivityEventType.TaskPrStatusChanged));
+        Assert.Contains("None", evt.Message);
+        Assert.Contains("Open", evt.Message);
+    }
+
+    [Fact]
+    public async Task AddTaskComment_MissingTask_ErrorMessageContainsTaskId()
+    {
+        // Kills L146 string mutation: missing-task error must name the id.
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.AddTaskCommentAsync(
+                "comment-ghost", "engineer-1", "Hephaestus",
+                TaskCommentType.Finding, "x"));
+
+        Assert.Contains("comment-ghost", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public void StageNewTask_EmptyTitle_ErrorMessageMentionsTitle()
+    {
+        // Kills L181 string mutation: validation error must say "Title".
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "",
+            Description: "desc",
+            SuccessCriteria: "c",
+            RoomId: null,
+            PreferredRoles: [],
+            Type: TaskType.Feature);
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => svc.StageNewTask(request, RoomId, null, false, "c"));
+
+        Assert.Contains("Title", ex.Message);
+    }
+
+    [Fact]
+    public void StageNewTask_EmptyDescription_ErrorMessageMentionsDescription()
+    {
+        // Kills L183 string mutation: validation error must say "Description".
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "t",
+            Description: "",
+            SuccessCriteria: "c",
+            RoomId: null,
+            PreferredRoles: [],
+            Type: TaskType.Feature);
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => svc.StageNewTask(request, RoomId, null, false, "c"));
+
+        Assert.Contains("Description", ex.Message);
+    }
+
+    [Fact]
+    public void StageNewTask_TaskIdUsesNFormat()
+    {
+        // Kills L186 string mutation "N" → "": task id must be N-format
+        // (32 hex chars, no dashes), not the default D format.
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "t", Description: "d", SuccessCriteria: "c",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        var (task, _) = svc.StageNewTask(request, RoomId, null, false, "corr-id");
+
+        Assert.Equal(32, task.Id.Length);
+        Assert.DoesNotContain('-', task.Id);
+    }
+
+    [Fact]
+    public void StageNewTask_SnapshotHasCanonicalValidationSummary()
+    {
+        // Kills L205 string mutation: initial ValidationSummary must match
+        // the documented placeholder so downstream status displays are correct.
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "t", Description: "d", SuccessCriteria: "c",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        var (task, _) = svc.StageNewTask(request, RoomId, null, false, "corr-vs");
+
+        Assert.Equal("Pending reviewer and validator feedback.", task.ValidationSummary);
+    }
+
+    [Fact]
+    public void StageNewTask_SnapshotHasCanonicalImplementationSummary()
+    {
+        // Kills L207 string mutation: initial ImplementationSummary must match
+        // the documented placeholder.
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "t", Description: "d", SuccessCriteria: "c",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        var (task, _) = svc.StageNewTask(request, RoomId, null, false, "corr-is");
+
+        Assert.Equal("Implementation has not started yet.", task.ImplementationSummary);
+    }
+
+    [Fact]
+    public void StageNewTask_RoomCreatedEvent_ContainsRoomCreatedForTaskPrefix()
+    {
+        // Kills L254 $"" mutation: the RoomCreated activity event message
+        // must name the task so operators can trace origin.
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "New Onboarding Feature",
+            Description: "d", SuccessCriteria: "c",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, null, isNewRoom: true, "corr-room");
+        db.SaveChanges();
+
+        var evt = db.ActivityEvents
+            .First(e => e.Type == nameof(ActivityEventType.RoomCreated));
+        Assert.Contains("Room created for task:", evt.Message);
+        Assert.Contains("New Onboarding Feature", evt.Message);
+    }
+
+    [Fact]
+    public async Task CompleteTask_MissingTask_ErrorMessageContainsTaskId()
+    {
+        // Kills L294 string mutation: missing-task error must name the id.
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.CompleteTaskCoreAsync("complete-ghost", 1));
+
+        Assert.Contains("complete-ghost", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public void StageNewTask_StagedMessagesUseNFormatIds()
+    {
+        // Kills L347 string mutation "N" → "" in CreateMessageEntity: message
+        // ids must be N-format (32 hex chars, no dashes).
+        var (svc, db) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "t", Description: "d", SuccessCriteria: "c",
+            RoomId: null, PreferredRoles: [], Type: TaskType.Feature);
+
+        svc.StageNewTask(request, RoomId, null, false, "corr-msg-id");
+        db.SaveChanges();
+
+        var messages = db.Messages.Where(m => m.RoomId == RoomId).ToList();
+        Assert.NotEmpty(messages);
+        foreach (var msg in messages)
+        {
+            Assert.Equal(32, msg.Id.Length);
+            Assert.DoesNotContain('-', msg.Id);
+        }
+    }
 }

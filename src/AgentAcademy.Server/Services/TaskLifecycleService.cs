@@ -61,7 +61,9 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
                 $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
 
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
-        entity.AssignedAgentId = agent?.Id ?? agentId;
+        // agent?.Id is always agentId here (FirstOrDefault filters by a.Id == agentId),
+        // so the canonical id is just agentId. Name may differ.
+        entity.AssignedAgentId = agentId;
         entity.AssignedAgentName = agent?.Name ?? agentName;
 
         var now = DateTime.UtcNow;
@@ -269,15 +271,17 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
     /// </summary>
     public async Task AssociateTaskWithActiveSprintAsync(string taskId, string? workspacePath)
     {
-        if (workspacePath is null) return;
-
+        // Note: no early return needed for null workspacePath — SprintEntity.WorkspacePath
+        // has a NOT NULL constraint, so the query below cannot match when workspacePath
+        // is null (EF translates `== null` to `IS NULL`, which no row satisfies).
         var activeSprint = await _db.Sprints
             .FirstOrDefaultAsync(s => s.WorkspacePath == workspacePath && s.Status == "Active");
 
         if (activeSprint is not null)
         {
-            var taskEntity = _db.Tasks.Local.FirstOrDefault(t => t.Id == taskId)
-                ?? await _db.Tasks.FindAsync(taskId);
+            // FindAsync checks the context state manager first, so it returns
+            // the staged (Added) entity from Local without issuing a DB query.
+            var taskEntity = await _db.Tasks.FindAsync(taskId);
             if (taskEntity is not null)
                 taskEntity.SprintId = activeSprint.Id;
         }
