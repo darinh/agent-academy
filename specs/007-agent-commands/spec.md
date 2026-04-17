@@ -224,6 +224,9 @@ These formalize existing capabilities with audit trails and structured output.
 #### Code & Spec
 `OPEN_SPEC`, `SEARCH_SPEC`, `OPEN_COMPONENT`, `FIND_REFERENCES`
 
+#### GitHub Integration
+~~`CREATE_PR`~~, ~~`POST_PR_REVIEW`~~, ~~`GET_PR_REVIEWS`~~, ~~`MERGE_PR`~~ *(all implemented — see spec 010 §5 GitHub Integration for argument schemas, permission gates, and preconditions)*
+
 #### Backend Execution
 `RUN_FRONTEND_BUILD`, `RUN_TYPECHECK`, `RUN_SERVER`, `CALL_ENDPOINT`, `TAIL_LOGS`, `SHOW_CONFIG`
 

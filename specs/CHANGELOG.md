@@ -5,6 +5,14 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **010-task-management §Overview / §11 Task Service Method Index, 007-agent-commands §Tier 2, 016-api-reference §7.2 / §Request Schemas**: Documented the shipped GitHub PR workflow (fixes #69). BUG_FIX_SPEC:
+  - Spec 010 §Overview line 22 previously said "current implementation does not use GitHub PRs" — rewritten to describe both merge paths (local `MERGE_TASK` squash and GitHub `CREATE_PR` → `POST_PR_REVIEW` → `MERGE_PR`) with a cross-reference to §5 GitHub Integration, which already documents the full command schemas.
+  - Spec 010 §11 Task Service Method Index: added `SyncTaskPrStatusAsync` (`ITaskLifecycleService`, publishes `TaskPrStatusChanged` activity event) and `UpdateTaskPriorityAsync` (`ITaskQueryService`).
+  - Spec 007 §Tier 2: added `GitHub Integration` sub-section listing `CREATE_PR`, `POST_PR_REVIEW`, `GET_PR_REVIEWS`, `MERGE_PR` as implemented (full docs live in spec 010 §5).
+  - Spec 016 §7.2: added `PUT /api/tasks/{taskId}/priority` route entry and new `UpdateTaskPriorityRequest` schema (matches `CollaborationController.UpdateTaskPriority` / `UpdateTaskPriorityRequest` record).
+  - Note: `TaskPrStatusChanged` was already present in the `ActivityEventType` enum listing in spec 001 §Enumerations (line 48) — the issue's ask for that item was stale.
+
+### Changed
 - **007-agent-commands §Permission Model**: Renamed the second `SoftwareEngineer` row from `Prometheus` to `Athena` to match `src/AgentAcademy.Server/Config/agents.json` (agent id `software-engineer-2`, `Name: "Athena"`, `Role: SoftwareEngineer`, permissions identical to Hephaestus). BUG_FIX_SPEC — the roster shipped as Aristotle / Archimedes / Hephaestus / Athena / Socrates / Thucydides (six agents); Aristotle's startup prompt in `agents.json` names Athena as the Frontend Engineer teammate. The spec roster was stale from an early draft that used the codename "Prometheus" for SWE-2. Spec 007 §Permission Model now matches config. Fixes #70.
 
 ### Added

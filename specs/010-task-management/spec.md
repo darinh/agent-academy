@@ -19,7 +19,11 @@ When agents work on tasks, they follow a branch-based local squash-merge workflo
 
 All of this is visible in the frontend: a task list below the Main Collaboration Room showing in-progress, incomplete, and completed work with rich metadata.
 
-> **Note**: The system also includes metadata fields for GitHub PR integration (`PullRequestNumber`, `PullRequestUrl`, `PullRequestStatus`), but the current implementation does not use GitHub PRs. Tasks are merged via local `MERGE_TASK` command which invokes `GitService.SquashMergeAsync()` (see `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`).
+> **Note**: Tasks support two merge paths that can be used interchangeably:
+> 1. **Local squash-merge** — `MERGE_TASK` invokes `GitService.SquashMergeAsync()` (`src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`). Fast; no remote interaction.
+> 2. **GitHub PR workflow** — `CREATE_PR` pushes the task branch and opens a PR; `POST_PR_REVIEW` / `GET_PR_REVIEWS` drive review; `MERGE_PR` merges the PR and syncs status back to the task (`src/AgentAcademy.Server/Commands/Handlers/MergePrHandler.cs`, `src/AgentAcademy.Server/Services/PullRequestSyncService.cs`). Task entities carry `PullRequestNumber`, `PullRequestUrl`, `PullRequestStatus` for this path.
+>
+> See §5 GitHub Integration for the full PR command reference.
 
 ---
 
@@ -918,6 +922,7 @@ All task services have interface contracts in `Services/Contracts/`. Consumers i
 | `UpdateTaskStatusAsync` | `ITaskQueryService` | Updates task status |
 | `UpdateTaskBranchAsync` | `ITaskQueryService` | Write-once branch assignment |
 | `UpdateTaskPrAsync` | `ITaskQueryService` | Records PR info on task |
+| `UpdateTaskPriorityAsync` | `ITaskQueryService` | Updates task priority |
 | `GetReviewQueueAsync` | `ITaskQueryService` | Returns tasks awaiting review |
 | `GetTaskCommentsAsync` | `ITaskQueryService` | Returns comments for a task |
 | `GetTaskCommentCountAsync` | `ITaskQueryService` | Returns comment count |
@@ -926,6 +931,7 @@ All task services have interface contracts in `Services/Contracts/`. Consumers i
 | `ApproveTaskAsync` | `ITaskLifecycleService` | Approves task, increments ReviewRounds |
 | `RequestChangesAsync` | `ITaskLifecycleService` | Requests changes, increments ReviewRounds |
 | `AddTaskCommentAsync` | `ITaskLifecycleService` | Adds structured comment |
+| `SyncTaskPrStatusAsync` | `ITaskLifecycleService` | Syncs GitHub PR status back onto task, publishes `TaskPrStatusChanged` activity event |
 | `AddDependencyAsync` | `ITaskDependencyService` | Adds dependency with cycle detection |
 | `RemoveDependencyAsync` | `ITaskDependencyService` | Removes a task dependency |
 | `GetBlockingTasksAsync` | `ITaskDependencyService` | Returns tasks blocked by given task |
