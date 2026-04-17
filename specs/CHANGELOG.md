@@ -5,6 +5,14 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **014-database-schema §1 Workspace / §4 Tasks / §Index Summary / §Foreign Key Relationships / §Migration History / §Revision History**: Corrected entity drift (fixes #68). BUG_FIX_SPEC:
+  - Removed `AgentWorkspaceEntity` section and `agent_workspaces` table references from the ER diagram, §1 entity list, index summary, and FK table — the table was dropped in migration `20260415213027_DropAgentWorkspacesTable` (2026-04-15). Replaced with a one-line note that per-agent worktrees are tracked on disk (`.agent-worktrees/`).
+  - Added `tasks.Priority` column (int, default `2`=Medium; 0=Critical, 1=High, 2=Medium, 3=Low) and `idx_tasks_priority` index to §4 Tasks, per migration `20260414175753_AddTaskPriority`. Tasks index count updated 7 → 8.
+  - Corrected `PreferredRoles` storage description on `TaskEntity` from "Comma-separated role preferences" to JSON array (default `"[]"`), matching `TaskEntity.cs`.
+  - Migration History table: added `AddTaskPriority` (2026-04-14) and `DropAgentWorkspacesTable` (2026-04-15); updated summary from "31 migrations through sprint schedules (2026-04-14)" to "43 migrations through `DropAgentWorkspacesTable` (2026-04-15)" and corrected the §Database Provider migration count from `31` → `43` (total includes migrations that were already merged between 2026-04-14 and today; the spec had been stale).
+  - Entity count kept at 31: `AgentWorkspaceEntity` was dropped but the same number of net entities remain in `AgentAcademyDbContext` (31 `DbSet<>`s) because unrelated entities were added in the same window.
+
+### Changed
 - **010-task-management §Overview / §11 Task Service Method Index, 007-agent-commands §Tier 2, 016-api-reference §7.2 / §Request Schemas**: Documented the shipped GitHub PR workflow (fixes #69). BUG_FIX_SPEC:
   - Spec 010 §Overview line 22 previously said "current implementation does not use GitHub PRs" — rewritten to describe both merge paths (local `MERGE_TASK` squash and GitHub `CREATE_PR` → `POST_PR_REVIEW` → `MERGE_PR`) with a cross-reference to §5 GitHub Integration, which already documents the full command schemas.
   - Spec 010 §11 Task Service Method Index: added `SyncTaskPrStatusAsync` (`ITaskLifecycleService`, publishes `TaskPrStatusChanged` activity event) and `UpdateTaskPriorityAsync` (`ITaskQueryService`).
