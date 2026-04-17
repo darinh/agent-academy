@@ -39,11 +39,11 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 | `DisconnectAsync()` | `Task` | Tear down connection |
 | `SendNotificationAsync()` | `Task<bool>` | Deliver a notification message |
 | `RequestInputAsync()` | `Task<UserResponse?>` | Collect user input (null if unsupported) |
-| `SendAgentQuestionAsync()` | `Task<(bool, string?)>` | Send agent question to human; returns sent status + error detail |
+| `SendAgentQuestionAsync()` | `Task<bool>` | Send agent's question to the human; returns `true` if any provider delivered it |
 | `SendDirectMessageAsync()` | `Task<bool>` | Send a direct message notification (e.g., to Discord channel) |
 | `GetConfigSchema()` | `ProviderConfigSchema` | Describe required configuration fields |
-| `OnRoomRenamedAsync()` | `Task` | Update external resources on room rename (default: no-op) |
-| `OnRoomClosedAsync()` | `Task` | Clean up external resources on room archive (default: no-op) |
+| `OnRoomRenamedAsync(roomId, newName)` | `Task` | Update external resources on room rename (default: no-op) |
+| `OnRoomClosedAsync(roomId)` | `Task` | Clean up external resources on room archive (default: no-op) |
 
 ### NotificationManager
 
@@ -51,7 +51,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 - **Fan-out delivery**: `SendToAllAsync` sends to every connected provider
 - **Failure isolation**: Individual provider failures are logged, never propagated
 - **Input collection**: `RequestInputFromAnyAsync` iterates connected providers (order not guaranteed — uses `ConcurrentDictionary.Values`), returns first non-null response
-- **Agent questions**: `SendAgentQuestionAsync` returns `(bool Sent, string? Error)` tuple — surfaces actual provider errors instead of generic failure messages; tries all providers before failing
+- **Agent questions**: `SendAgentQuestionAsync` iterates providers and returns `true` if any provider successfully delivered the question; provider-level errors are logged but not returned to the caller.
 
 ### Built-in Provider: Console
 
