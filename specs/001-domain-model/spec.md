@@ -14,12 +14,12 @@ Types are ported from the v1 TypeScript definitions (`local-agent-host/shared/sr
 | File | Types | Status |
 |------|-------|--------|
 | `Models/Enums.cs` | All enumerations (except `NotificationType`) | ✅ Implemented |
-| `Models/Agents.cs` | AgentGitIdentity, AgentDefinition, AgentPresence, AgentLocation, AgentCatalogOptions | ✅ Implemented |
-| `Models/Rooms.cs` | RoomSnapshot, BreakoutRoom, ChatEnvelope, DeliveryHint, RoomMessagesResponse, ConversationSessionSnapshot, SessionListResponse, SessionStats | ✅ Implemented |
-| `Models/Tasks.cs` | TaskSnapshot, TaskItem, TaskAssignmentRequest, TaskAssignmentResult, TaskComment, SpecTaskLink | ✅ Implemented |
+| `Models/Agents.cs` | AgentGitIdentity, ResourceQuota, AgentDefinition, AgentPresence, AgentLocation, AgentCatalogOptions, IAgentCatalog | ✅ Implemented |
+| `Models/Rooms.cs` | RoomSnapshot, BreakoutRoom, ChatEnvelope, DeliveryHint, RoomMessagesResponse, ConversationSessionSnapshot, SessionListResponse, SessionStats, PhaseGate, PhasePrerequisiteStatus | ✅ Implemented |
+| `Models/Tasks.cs` | TaskSnapshot, TaskItem, TaskAssignmentRequest, TaskAssignmentResult, TaskComment, SpecTaskLink, TaskEvidence, GateCheckResult, TaskDependencyInfo, TaskDependencySummary, BulkUpdateStatusRequest, BulkAssignRequest, BulkOperationResult, BulkOperationError | ✅ Implemented |
 | `Models/Activity.cs` | ActivityEvent, WorkspaceOverview | ✅ Implemented |
 | `Models/Evaluation.cs` | EvaluationResult, ArtifactRecord, MetricsEntry, MetricsSummary | ✅ Implemented |
-| `Models/System.cs` | HealthResult, CopilotStatusValues, AuthUserInfo, AuthStatusResult, HealthCheckResponse, ModelInfo, PermissionPolicy, DependencyStatus, UsageSummary, ErrorRecord, ErrorSummary, ErrorCountByType, ErrorCountByAgent, AgentUsageSummary, LlmUsageRecord, PlanContent, InstanceHealthResult | ✅ Implemented |
+| `Models/System.cs` | HealthResult, CopilotStatusValues, AuthUserInfo, AuthStatusResult, HealthCheckResponse, ModelInfo, PermissionPolicy, DependencyStatus, UsageSummary, ErrorRecord, ErrorSummary, ErrorCountByType, ErrorCountByAgent, AgentUsageSummary, LlmUsageRecord, AgentUsageWindow, AgentContextUsage, QuotaStatus, PlanContent, InstanceHealthResult, WorktreeStatusSnapshot | ✅ Implemented |
 | `Models/Projects.cs` | ProjectScanResult, WorkspaceMeta | ✅ Implemented |
 | `Models/Notifications.cs` | NotificationType (enum), NotificationMessage, InputRequest, UserResponse, ProviderConfigSchema, ConfigField, AgentQuestion | ✅ Implemented |
 | `Models/AgentMemory.cs` | AgentMemory | ✅ Implemented |
@@ -42,7 +42,8 @@ public enum TaskStatus { Queued, Active, Blocked, AwaitingValidation, InReview, 
 public enum TaskType { Feature, Bug, Chore, Spike }
 public enum TaskSize { XS, S, M, L, XL }
 public enum PullRequestStatus { Open, ReviewRequested, ChangesRequested, Approved, Merged, Closed }
-public enum TaskCommentType { Comment, Finding, Evidence, Blocker }
+public enum TaskCommentType { Comment, Finding, Evidence, Blocker, Retrospective }
+public enum TaskPriority { Critical = 0, High = 1, Medium = 2, Low = 3 }  // lower int = higher urgency
 public enum WorkstreamStatus { NotStarted, Ready, InProgress, Blocked, Completed }
 public enum RoomStatus { Idle, Active, AttentionRequired, Completed, Archived }
 public enum ActivityEventType { AgentLoaded, AgentThinking, AgentFinished, RoomCreated, RoomClosed, TaskCreated, PhaseChanged, MessagePosted, MessageSent, PresenceUpdated, RoomStatusChanged, ArtifactEvaluated, QualityGateChecked, IterationRetried, CheckpointCreated, AgentErrorOccurred, AgentWarningOccurred, SubagentStarted, SubagentCompleted, SubagentFailed, AgentPlanChanged, AgentSnapshotRewound, ToolIntercepted, CommandExecuted, CommandDenied, CommandFailed, TaskClaimed, TaskReleased, TaskApproved, TaskRejected, TaskChangesRequested, TaskStatusUpdated, TaskCommentAdded, TaskPrStatusChanged, AgentRecalled, RoomRenamed, DirectMessageSent, SpecTaskLinked }
@@ -51,6 +52,7 @@ public enum AgentState { InRoom, Working, Presenting, Idle }
 public enum TaskItemStatus { Pending, Active, Done, Rejected }
 public enum CommandStatus { Success, Error, Denied }
 public enum SpecLinkType { Implements, Modifies, Fixes, References }
+public enum EvidencePhase { Baseline, After, Review }
 // In Models/Notifications.cs:
 public enum NotificationType { AgentThinking, NeedsInput, TaskComplete, TaskFailed, SpecReview, Error }
 ```
@@ -61,16 +63,28 @@ public enum NotificationType { AgentThinking, NeedsInput, TaskComplete, TaskFail
 
 ```csharp
 public record AgentGitIdentity(string AuthorName, string AuthorEmail);
-public record AgentDefinition(string Id, string Name, string Role, string Summary, string StartupPrompt, string? Model, List<string> CapabilityTags, List<string> EnabledTools, bool AutoJoinDefaultRoom, AgentGitIdentity? GitIdentity = null, CommandPermissionSet? Permissions = null);
+public record ResourceQuota(int? MaxRequestsPerHour, long? MaxTokensPerHour, decimal? MaxCostPerHour);
+public record AgentDefinition(string Id, string Name, string Role, string Summary, string StartupPrompt, string? Model, List<string> CapabilityTags, List<string> EnabledTools, bool AutoJoinDefaultRoom, AgentGitIdentity? GitIdentity = null, CommandPermissionSet? Permissions = null, ResourceQuota? Quota = null);
 public record AgentPresence(string AgentId, string Name, string Role, AgentAvailability Availability, bool IsPreferred, DateTime LastActivityAt, List<string> ActiveCapabilities);
 public record AgentLocation(string AgentId, string RoomId, AgentState State, string? BreakoutRoomId, DateTime UpdatedAt);
-public record AgentCatalogOptions(string DefaultRoomId, string DefaultRoomName, List<AgentDefinition> Agents);
+public record AgentCatalogOptions(string DefaultRoomId, string DefaultRoomName, List<AgentDefinition> Agents) : IAgentCatalog;
+
+public interface IAgentCatalog
+{
+    string DefaultRoomId { get; }
+    string DefaultRoomName { get; }
+    IReadOnlyList<AgentDefinition> Agents { get; }
+}
 ```
+
+> **Source**: `src/AgentAcademy.Shared/Models/Agents.cs`
+>
+> **Note**: `ResourceQuota` values are nullable — null means unlimited. Token/cost quotas are best-effort (checked pre-call against recent DB records; concurrent calls may slightly overshoot). `IAgentCatalog` is the read-only view consumers inject; the underlying data may swap at runtime when the catalog is hot-reloaded.
 
 ### Room Types
 
 ```csharp
-public record RoomSnapshot(string Id, string Name, string? Topic, RoomStatus Status, CollaborationPhase CurrentPhase, TaskSnapshot? ActiveTask, List<AgentPresence> Participants, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
+public record RoomSnapshot(string Id, string Name, string? Topic, RoomStatus Status, CollaborationPhase CurrentPhase, TaskSnapshot? ActiveTask, List<AgentPresence> Participants, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt, PhasePrerequisiteStatus? PhaseGates = null);
 public record BreakoutRoom(string Id, string Name, string ParentRoomId, string AssignedAgentId, List<TaskItem> Tasks, RoomStatus Status, List<ChatEnvelope> RecentMessages, DateTime CreatedAt, DateTime UpdatedAt);
 public record ChatEnvelope(string Id, string RoomId, string SenderId, string SenderName, string? SenderRole, MessageSenderKind SenderKind, MessageKind Kind, string Content, DateTime SentAt, string? CorrelationId = null, string? ReplyToMessageId = null, DeliveryHint? Hint = null);
 public record DeliveryHint(string? TargetRole, string? TargetAgentId, DeliveryPriority Priority, bool ReplyRequested);
@@ -78,9 +92,13 @@ public record RoomMessagesResponse(List<ChatEnvelope> Messages, bool HasMore);
 public record ConversationSessionSnapshot(string Id, string RoomId, string RoomType, int SequenceNumber, string Status, string? Summary, int MessageCount, DateTime CreatedAt, DateTime? ArchivedAt, string? WorkspacePath = null);
 public record SessionListResponse(List<ConversationSessionSnapshot> Sessions, int TotalCount);
 public record SessionStats(int TotalSessions, int ActiveSessions, int ArchivedSessions, int TotalMessages);
+public record PhaseGate(bool Allowed, string? Reason = null);
+public record PhasePrerequisiteStatus(Dictionary<string, PhaseGate> Gates);
 ```
 
 > **Source**: `src/AgentAcademy.Shared/Models/Rooms.cs`
+>
+> **Note**: `RoomSnapshot.PhaseGates` is populated on read so the UI can disable transition buttons without a separate API call. The `Gates` dictionary is keyed by `CollaborationPhase` string value.
 
 ### Task Types
 
@@ -129,6 +147,20 @@ public record TaskAssignmentRequest(string Title, string Description, string Suc
 public record TaskAssignmentResult(string CorrelationId, RoomSnapshot Room, TaskSnapshot Task, ActivityEvent Activity);
 public record TaskComment(string Id, string TaskId, string AgentId, string AgentName, TaskCommentType CommentType, string Content, DateTime CreatedAt);
 public record SpecTaskLink(string Id, string TaskId, string SpecSectionId, SpecLinkType LinkType, string LinkedByAgentId, string LinkedByAgentName, string? Note, DateTime CreatedAt);
+
+// Evidence ledger — structured verification checks recorded against a task.
+public record TaskEvidence(string Id, string TaskId, EvidencePhase Phase, string CheckName, string Tool, string? Command, int? ExitCode, string? OutputSnippet, bool Passed, string AgentId, string AgentName, DateTime CreatedAt);
+public record GateCheckResult(string TaskId, string CurrentPhase, string TargetPhase, bool Met, int RequiredChecks, int PassedChecks, List<string> MissingChecks, List<TaskEvidence> Evidence);
+
+// Dependency graph views for a task.
+public record TaskDependencyInfo(string TaskId, List<TaskDependencySummary> DependsOn, List<TaskDependencySummary> DependedOnBy);
+public record TaskDependencySummary(string TaskId, string Title, TaskStatus Status, bool IsSatisfied);
+
+// Bulk operation payloads. BulkUpdateStatusRequest restricts `Status` to safe values (Queued, Active, Blocked, AwaitingValidation, InReview).
+public record BulkUpdateStatusRequest(List<string> TaskIds, TaskStatus Status);
+public record BulkAssignRequest(List<string> TaskIds, string AgentId, string? AgentName = null);
+public record BulkOperationResult(int Requested, int Succeeded, int Failed, List<TaskSnapshot> Updated, List<BulkOperationError> Errors);
+public record BulkOperationError(string TaskId, string Code, string Error);
 ```
 
 > **Source**: `src/AgentAcademy.Shared/Models/Tasks.cs`
@@ -152,7 +184,7 @@ public record MetricsSummary(int TotalRounds, int TotalArtifacts, int PhaseTrans
 ### System Types
 
 ```csharp
-public record HealthResult(string Status, string Uptime, DateTime Timestamp);
+public record HealthResult(string Status, string Uptime, DateTime Timestamp, string Message = "Agent Academy backend is healthy.");
 public record HealthCheckResponse(string Status, List<DependencyStatus> Dependencies, double Uptime, DateTime Timestamp);
 public record ModelInfo(string Id, string Name);
 public record PermissionPolicy(bool AllowFileAccess, bool AllowMcpServers, bool AllowShellExecution, bool AllowUrlFetch, List<string> AllowedToolCategories);
@@ -164,6 +196,12 @@ public record ErrorCountByType(string ErrorType, int Count);
 public record ErrorCountByAgent(string AgentId, int Count);
 public record AgentUsageSummary(string AgentId, long TotalInputTokens, long TotalOutputTokens, double TotalCost, int RequestCount);
 public record LlmUsageRecord(string Id, string AgentId, string? RoomId, string? Model, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens, double? Cost, int? DurationMs, string? ReasoningEffort, DateTime RecordedAt);
+
+// Quota enforcement — aggregated usage window, current context usage, and allow/deny result.
+public record AgentUsageWindow(int RequestCount, long TotalTokens, decimal TotalCost);
+public record AgentContextUsage(string AgentId, string? RoomId, string? Model, long CurrentTokens, long MaxTokens, double Percentage, DateTime UpdatedAt);
+public record QuotaStatus(string AgentId, bool IsAllowed, string? DeniedReason, int? RetryAfterSeconds, ResourceQuota? ConfiguredQuota, AgentUsageWindow? CurrentUsage);
+
 public record PlanContent(string Content);
 
 // Auth status types (for /api/auth/status endpoint)
@@ -179,14 +217,30 @@ public record AuthStatusResult(bool AuthEnabled, bool Authenticated, string Copi
 
 // Instance health for client reconnect protocol
 public record InstanceHealthResult(string InstanceId, DateTime StartedAt, string Version, bool CrashDetected, bool ExecutorOperational, bool AuthFailed, string CircuitBreakerState = "Closed");
+
+// Git worktree status, enriched with linked task and agent info.
+public record WorktreeStatusSnapshot(
+    string Branch, string RelativePath, DateTimeOffset CreatedAt,
+    bool StatusAvailable, string? Error,
+    int TotalDirtyFiles, List<string> DirtyFilesPreview,
+    int FilesChanged, int Insertions, int Deletions,
+    string? LastCommitSha, string? LastCommitMessage, string? LastCommitAuthor, DateTimeOffset? LastCommitDate,
+    string? TaskId, string? TaskTitle, string? TaskStatus,
+    string? AgentId, string? AgentName);
 ```
+
+> **Source**: `src/AgentAcademy.Shared/Models/System.cs`
 
 ### Project Types
 
 ```csharp
-public record ProjectScanResult(string Path, string? ProjectName, List<string> TechStack, bool HasSpecs, bool HasReadme, bool IsGitRepo, string? GitBranch, List<string> DetectedFiles);
-public record WorkspaceMeta(string Path, string? ProjectName, DateTime? LastAccessedAt = null);
+public record ProjectScanResult(string Path, string? ProjectName, List<string> TechStack, bool HasSpecs, bool HasReadme, bool IsGitRepo, string? GitBranch, List<string> DetectedFiles, string? RepositoryUrl = null, string? DefaultBranch = null, string? HostProvider = null);
+public record WorkspaceMeta(string Path, string? ProjectName, DateTime? LastAccessedAt = null, string? RepositoryUrl = null, string? DefaultBranch = null, string? HostProvider = null);
 ```
+
+> **Source**: `src/AgentAcademy.Shared/Models/Projects.cs`
+>
+> **Note**: `RepositoryUrl`, `DefaultBranch`, and `HostProvider` are populated when a project is scanned from a git repo. `HostProvider` is a short identifier (e.g., `github`, `gitlab`) derived from the remote URL.
 
 ### Notification Types
 
@@ -214,6 +268,7 @@ public record AgentMemory(string AgentId, string Category, string Key, string Va
 public record CommandEnvelope(string Command, Dictionary<string, object?> Args, CommandStatus Status, Dictionary<string, object?>? Result, string? Error, string CorrelationId, DateTime Timestamp, string ExecutedBy)
 {
     public string? ErrorCode { get; init; }
+    public int RetryCount { get; init; }  // automatic retry attempts before this result; 0 = first attempt
 }
 
 public static class CommandErrorCode
@@ -226,6 +281,7 @@ public static class CommandErrorCode
     public const string Execution = "EXECUTION";
     public const string Internal = "INTERNAL";
     public const string RateLimit = "RATE_LIMIT";
+    public const string ConfirmationRequired = "CONFIRMATION_REQUIRED";  // destructive command requires confirm=true
     // IsRetryable() returns true for RateLimit, Timeout, Internal
     // Infer(string message) maps exception messages to error codes heuristically
 }
@@ -488,3 +544,4 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 | 2026-04-08 | Added WorkspacePath to TaskSnapshot and ConversationSessionSnapshot. Added project-scoping pattern section. Added idx_tasks_workspace and idx_conversation_sessions_workspace indexes. | project-scoping |
 | 2026-04-11 | Added DataAnnotations validation to all API request types. 31 validation tests. Closed validation known gap. | add-request-validation |
 | 2026-04-14 | Extracted 31 inline entity configurations from `OnModelCreating` into 10 `IEntityTypeConfiguration<T>` files in `Data/Configurations/`. DbContext reduced from 623 to 54 lines. Uses `ApplyConfigurationsFromAssembly`. | dbcontext-refactor |
+| 2026-04-17 | Documented shipped records/fields missing from spec 001: `ResourceQuota`, `IAgentCatalog`, `PhaseGate`, `PhasePrerequisiteStatus`, `RoomSnapshot.PhaseGates`, `AgentDefinition.Quota`, `TaskEvidence`, `GateCheckResult`, `TaskDependencyInfo/Summary`, bulk task ops, `AgentUsageWindow`, `AgentContextUsage`, `QuotaStatus`, `WorktreeStatusSnapshot`, `HealthResult.Message`, `ProjectScanResult`/`WorkspaceMeta` git metadata fields, `CommandEnvelope.RetryCount`, `CommandErrorCode.ConfirmationRequired`, `TaskPriority` + `EvidencePhase` enums, `TaskCommentType.Retrospective`. | spec-001-missing-records |
