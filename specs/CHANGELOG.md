@@ -5,6 +5,11 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **005-workspace-runtime §Room Management, 013-sprint-system §Role roster**: Documented phase-scoped room membership as a presentation-layer contract (closes #53, resolved by #52's presentation-layer fix). BUG_FIX_SPEC:
+  - Spec 005 `RoomSnapshot` participant description updated from "agents whose current location matches the room, with preferred-role flag" to include the `SprintPreambles.IsRoleAllowedInStage` filter keyed on `room.CurrentPhase`, and added a new "Phase-scoped room membership" paragraph explaining that `AgentLocations` records are *not* mutated on phase transition — the filter is reapplied on every snapshot. `RoomService.TransitionPhaseAsync` updates `room.CurrentPhase` (which drives snapshot re-filtering); `SprintStageService.AdvanceStageAsync` updates `sprint.CurrentStage` only (does not update room phase — phase/stage sync tracked in #57).
+  - Spec 013 "Role roster" expanded to name both filter points (`ConversationRoundRunner` keyed on `sprint.CurrentStage` for turn selection, `RoomSnapshotBuilder` keyed on `room.CurrentPhase` for snapshots) and cross-reference spec 005 for the data-layer semantics.
+
+### Changed
 - **014-database-schema §1 Workspace / §4 Tasks / §Index Summary / §Foreign Key Relationships / §Migration History / §Revision History**: Corrected entity drift (fixes #68). BUG_FIX_SPEC:
   - Removed `AgentWorkspaceEntity` section and `agent_workspaces` table references from the ER diagram, §1 entity list, index summary, and FK table — the table was dropped in migration `20260415213027_DropAgentWorkspacesTable` (2026-04-15). Replaced with a one-line note that per-agent worktrees are tracked on disk (`.agent-worktrees/`).
   - Added `tasks.Priority` column (int, default `2`=Medium; 0=Critical, 1=High, 2=Medium, 3=Low) and `idx_tasks_priority` index to §4 Tasks, per migration `20260414175753_AddTaskPriority`. Tasks index count updated 7 → 8.

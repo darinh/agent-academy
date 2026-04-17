@@ -97,9 +97,11 @@ Configured agents (v1 port):
 **Room cleanup API**: `POST /api/rooms/cleanup` triggers `CleanupStaleRoomsAsync`. Returns `{ "archivedCount": N }`. `GET /api/rooms?includeArchived=true` includes archived rooms.
 
 Each `RoomSnapshot` includes:
-- Participants (built from `AgentLocationEntity` records — agents whose current location matches the room, with preferred-role flag from the active task)
+- Participants (built from `AgentLocationEntity` records — agents whose current location matches the room, filtered by the room's current phase roster via `SprintPreambles.IsRoleAllowedInStage`, with preferred-role flag from the active task). Agents configured for the room but outside the current phase's roster are excluded from the snapshot; they remain in `AgentLocations` unchanged.
 - Recent messages (last 200 from DB)
 - Active task (most recent active task for the room)
+
+**Phase-scoped room membership** (design decision, 2026-04-17): Room membership is phase-scoped at the **presentation layer**, not the data layer. `AgentLocations` records the agent's *assigned* room and persists across phase transitions; `RoomSnapshotBuilder.BuildParticipants` applies the phase-roster filter (keyed on `room.CurrentPhase`) when building snapshots, and `ConversationRoundRunner` applies the roster filter (keyed on the active sprint stage) to turn selection. `RoomService.TransitionPhaseAsync` therefore does **not** mutate `AgentLocations` — updating `room.CurrentPhase` causes subsequent snapshots to reflect the new roster automatically. `SprintStageService.AdvanceStageAsync` updates `sprint.CurrentStage` but does not update `room.CurrentPhase`; snapshot filtering follows the room's phase, so stage advancement alone does not re-roster the snapshot. The phase/stage dual-tracking question is tracked in issue #57. See `SprintPreambles.IsRoleAllowedInStage` for the per-stage role map.
 
 ### Task Management
 
