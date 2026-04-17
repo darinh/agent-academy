@@ -399,7 +399,7 @@ public sealed class BreakoutRoomService : IBreakoutRoomService
         var activeSessionId = activeSession?.Id;
 
         var filteredMessages = entity.Messages?
-            .Where(m => activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null)
+            .Where(m => m.SessionId == null || m.SessionId == activeSessionId)
             .OrderBy(m => m.SentAt)
             ?? Enumerable.Empty<BreakoutMessageEntity>();
 

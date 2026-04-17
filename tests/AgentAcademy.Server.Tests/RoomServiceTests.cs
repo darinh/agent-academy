@@ -396,15 +396,55 @@ public class RoomServiceTests : IDisposable
             "Session A msg", baseTime, sessionId: "session-a"));
         db.Messages.Add(MakeMessage("r1", "agent-1", "Agent", nameof(MessageSenderKind.Agent),
             "Session B msg", baseTime.AddMinutes(1), sessionId: "session-b"));
-        // User messages should always be included regardless of session
+        // Per spec 005 §Message Management: legacy untagged messages (SessionId == null)
+        // are always included. But user messages tagged with a different session must NOT
+        // leak through — regression guard for #64.
         db.Messages.Add(MakeMessage("r1", "human", "Human", nameof(MessageSenderKind.User),
-            "Human msg", baseTime.AddMinutes(2)));
+            "Legacy untagged human msg", baseTime.AddMinutes(2)));
+        db.Messages.Add(MakeMessage("r1", "human", "Human", nameof(MessageSenderKind.User),
+            "Session B human msg", baseTime.AddMinutes(3), sessionId: "session-b"));
+        db.Messages.Add(MakeMessage("r1", "human", "Human", nameof(MessageSenderKind.User),
+            "Session A human msg", baseTime.AddMinutes(4), sessionId: "session-a"));
         await db.SaveChangesAsync();
 
         var (messages, _) = await svc.GetRoomMessagesAsync("r1", sessionId: "session-a");
 
-        Assert.Contains(messages, m => m.Content == "Session A msg");
-        Assert.Contains(messages, m => m.Content == "Human msg");
+        var contents = messages.Select(m => m.Content).ToList();
+        Assert.Contains("Session A msg", contents);
+        Assert.Contains("Session A human msg", contents);
+        Assert.Contains("Legacy untagged human msg", contents);
+        Assert.DoesNotContain("Session B msg", contents);
+        Assert.DoesNotContain("Session B human msg", contents);
+    }
+
+    [Fact]
+    public async Task GetRoomMessagesAsync_NoActiveSession_ReturnsOnlyUntaggedMessages()
+    {
+        // Regression guard for #64: when no Active ConversationSession exists and the
+        // caller passes no explicit sessionId, GetRoomMessagesAsync must NOT fall back
+        // to returning full cross-session history. Only legacy untagged messages should
+        // be returned.
+        using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
+
+        db.Rooms.Add(MakeRoom("r1", "Room"));
+        var baseTime = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        db.Messages.Add(MakeMessage("r1", "agent-1", "Agent", nameof(MessageSenderKind.Agent),
+            "Archived agent msg", baseTime, sessionId: "session-archived"));
+        db.Messages.Add(MakeMessage("r1", "human", "Human", nameof(MessageSenderKind.User),
+            "Archived human msg", baseTime.AddMinutes(1), sessionId: "session-archived"));
+        db.Messages.Add(MakeMessage("r1", "human", "Human", nameof(MessageSenderKind.User),
+            "Legacy untagged msg", baseTime.AddMinutes(2)));
+        // No ConversationSession with Status == "Active" exists for this room.
+        await db.SaveChangesAsync();
+
+        var (messages, _) = await svc.GetRoomMessagesAsync("r1");
+
+        var contents = messages.Select(m => m.Content).ToList();
+        Assert.Contains("Legacy untagged msg", contents);
+        Assert.DoesNotContain("Archived agent msg", contents);
+        Assert.DoesNotContain("Archived human msg", contents);
     }
 
     // ── GetProjectNameForRoomAsync ────────────────────────────────

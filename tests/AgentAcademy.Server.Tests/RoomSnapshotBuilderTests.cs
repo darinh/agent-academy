@@ -185,8 +185,57 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
         var contents = snapshot.RecentMessages.Select(m => m.Content).ToList();
         Assert.Contains("active-session", contents);
         Assert.Contains("no-session", contents);
-        Assert.Contains("user-msg", contents);
         Assert.DoesNotContain("old-session", contents);
+        // Per spec 005 §Message Management: user messages from prior sessions must NOT
+        // leak into the current room snapshot. Regression test for #64.
+        Assert.DoesNotContain("user-msg", contents);
+    }
+
+    [Fact]
+    public async Task BuildSnapshot_DoesNotLeakUserMessagesFromPriorSession()
+    {
+        // Regression test for #64: a new sprint session in a room that has user
+        // messages from a prior session must not return those old user messages.
+        var room = SeedRoom();
+        var priorSession = SeedSession(room.Id, "Archived");
+        var currentSession = SeedSession(room.Id, "Active");
+
+        SeedMessage(room.Id, "prior-user-msg", sessionId: priorSession.Id,
+            senderKind: nameof(MessageSenderKind.User));
+        SeedMessage(room.Id, "prior-agent-msg", sessionId: priorSession.Id,
+            senderKind: nameof(MessageSenderKind.Agent));
+        SeedMessage(room.Id, "current-user-msg", sessionId: currentSession.Id,
+            senderKind: nameof(MessageSenderKind.User));
+
+        var snapshot = await Sut.BuildRoomSnapshotAsync(room);
+
+        var contents = snapshot.RecentMessages.Select(m => m.Content).ToList();
+        Assert.Contains("current-user-msg", contents);
+        Assert.DoesNotContain("prior-user-msg", contents);
+        Assert.DoesNotContain("prior-agent-msg", contents);
+    }
+
+    [Fact]
+    public async Task BuildSnapshot_NoActiveSession_ReturnsOnlyUntaggedMessages()
+    {
+        // Regression guard for #64: when no Active ConversationSession exists
+        // (real state after ArchiveAllActiveSessionsAsync), the snapshot must NOT
+        // fall back to returning all cross-session history. Only legacy untagged
+        // messages should be returned.
+        var room = SeedRoom();
+        var archivedSession = SeedSession(room.Id, "Archived");
+
+        SeedMessage(room.Id, "archived-agent", sessionId: archivedSession.Id);
+        SeedMessage(room.Id, "archived-user", sessionId: archivedSession.Id,
+            senderKind: nameof(MessageSenderKind.User));
+        SeedMessage(room.Id, "legacy-untagged", sessionId: null);
+
+        var snapshot = await Sut.BuildRoomSnapshotAsync(room);
+
+        var contents = snapshot.RecentMessages.Select(m => m.Content).ToList();
+        Assert.Contains("legacy-untagged", contents);
+        Assert.DoesNotContain("archived-agent", contents);
+        Assert.DoesNotContain("archived-user", contents);
     }
 
     [Fact]
