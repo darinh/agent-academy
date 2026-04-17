@@ -14,7 +14,7 @@ namespace AgentAcademy.Server.Services;
 /// <item><c>task-state</c> — list_tasks, list_rooms, show_agents (read-only, shared)</item>
 /// <item><c>code</c> — read_file, search_code (read-only, shared)</item>
 /// <item><c>code-write</c> — write_file (per-agent, SoftwareEngineer only; writes restricted to <c>src/</c>)</item>
-/// <item><c>spec-write</c> — write_file (per-agent, TechnicalWriter only; writes restricted to <c>specs/</c>)</item>
+/// <item><c>spec-write</c> — write_file (per-agent, TechnicalWriter only; writes restricted to <c>specs/</c> and <c>docs/</c>)</item>
 /// <item><c>task-write</c> — create_task, update_task_status, add_task_comment (per-agent)</item>
 /// <item><c>memory</c> — remember, recall (per-agent)</item>
 /// </list>
