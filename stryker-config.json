@@ -10,6 +10,7 @@
     "mutate": [
       "Commands/CommandParser.cs",
       "Commands/CommandAuthorizer.cs",
+      "Commands/CommandPipeline.cs",
       "Commands/ShellCommand.cs",
       "Commands/Handlers/SearchCodeHandler.cs",
       "Services/PromptSanitizer.cs",
