@@ -61,7 +61,7 @@ Stale memories:
 
 ### LastAccessedAt Tracking
 
-Every read path (RECALL, LIST_MEMORIES, prompt injection via `LoadAgentMemoriesAsync`) updates `LastAccessedAt` for all returned memories. This is best-effort and batched per agent for efficiency.
+Every read path (RECALL, LIST_MEMORIES, prompt injection via `AgentMemoryLoader.LoadAsync`) updates `LastAccessedAt` for all returned memories. This is best-effort and batched per agent for efficiency.
 
 ## Data Model
 
