@@ -380,6 +380,7 @@ See [003 — Agent Execution System](../003-agent-system/spec.md) for agent life
 |--------|-------|-------------|--------|---------|
 | PUT | `/api/tasks/{taskId}/assign` | Assign agent to task | body: `AssignTaskRequest` | `TaskSnapshot` |
 | PUT | `/api/tasks/{taskId}/status` | Update task status | body: `UpdateTaskStatusRequest` | `TaskSnapshot` |
+| PUT | `/api/tasks/{taskId}/priority` | Update task priority | body: `UpdateTaskPriorityRequest` | `TaskSnapshot` |
 | PUT | `/api/tasks/{taskId}/branch` | Record branch name | body: `UpdateTaskBranchRequest` | `TaskSnapshot` |
 | PUT | `/api/tasks/{taskId}/pr` | Record PR info | body: `UpdateTaskPrRequest` | `TaskSnapshot` |
 | PUT | `/api/tasks/{taskId}/complete` | Mark task complete | body: `CompleteTaskRequest` | `TaskSnapshot` |
@@ -1121,6 +1122,12 @@ Assign an agent to an existing task.
 | Property | Type | Required | Constraints | Description |
 |----------|------|----------|-------------|-------------|
 | `status` | `TaskStatus` | Yes | valid enum | New task status |
+
+#### `UpdateTaskPriorityRequest`
+
+| Property | Type | Required | Constraints | Description |
+|----------|------|----------|-------------|-------------|
+| `priority` | `TaskPriority` | Yes | valid enum | New task priority (`Critical`, `High`, `Medium`, `Low`) |
 
 #### `UpdateTaskBranchRequest`
 
