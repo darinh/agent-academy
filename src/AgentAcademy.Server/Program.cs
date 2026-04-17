@@ -18,6 +18,7 @@ builder.Services
 
 var authSetup = AppAuthSetup.FromConfiguration(builder.Configuration);
 builder.Services.AddAppAuthentication(authSetup);
+builder.Services.AddSingleton(authSetup);
 builder.Services.AddSingleton(new GitHubAuthOptions(authSetup.GitHubAuthEnabled, authSetup.GitHubFrontendUrl));
 
 var consultantRateLimits = builder.Configuration

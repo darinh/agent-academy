@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
@@ -19,10 +20,12 @@ public sealed class RetrospectiveController : ControllerBase
     private const int PreviewLength = 200;
 
     private readonly AgentAcademyDbContext _db;
+    private readonly AppAuthSetup _authSetup;
 
-    public RetrospectiveController(AgentAcademyDbContext db)
+    public RetrospectiveController(AgentAcademyDbContext db, AppAuthSetup authSetup)
     {
         _db = db;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -36,7 +39,7 @@ public sealed class RetrospectiveController : ControllerBase
         [FromQuery] int offset = 0,
         CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         limit = Math.Clamp(limit, 1, 100);
@@ -83,7 +86,7 @@ public sealed class RetrospectiveController : ControllerBase
     [HttpGet("{commentId}")]
     public async Task<IActionResult> Get(string commentId, CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var result = await _db.TaskComments.AsNoTracking()
@@ -116,7 +119,7 @@ public sealed class RetrospectiveController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> Stats(CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         // Load lightweight projection for client-side aggregation

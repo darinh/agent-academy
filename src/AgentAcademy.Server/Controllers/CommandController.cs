@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -69,15 +70,18 @@ public sealed class CommandController : ControllerBase
     private readonly Dictionary<string, ICommandHandler> _handlers;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CommandController> _logger;
+    private readonly AppAuthSetup _authSetup;
 
     public CommandController(
         IEnumerable<ICommandHandler> handlers,
         IServiceScopeFactory scopeFactory,
-        ILogger<CommandController> logger)
+        ILogger<CommandController> logger,
+        AppAuthSetup authSetup)
     {
         _handlers = handlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -87,7 +91,7 @@ public sealed class CommandController : ControllerBase
     [HttpGet("metadata")]
     public IActionResult GetMetadata()
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var metadata = HumanCommandRegistry.GetAll()
@@ -103,7 +107,7 @@ public sealed class CommandController : ControllerBase
     [HttpPost("execute")]
     public async Task<IActionResult> Execute([FromBody] ExecuteCommandRequest? request)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (request is null)
@@ -190,7 +194,7 @@ public sealed class CommandController : ControllerBase
     [HttpGet("{correlationId}")]
     public async Task<IActionResult> GetStatus(string correlationId)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var audit = await WithDbContextAsync(db => db.CommandAudits

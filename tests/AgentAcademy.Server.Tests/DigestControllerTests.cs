@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -27,7 +28,7 @@ public sealed class DigestControllerTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _controller = new DigestController(_db);
+        _controller = new DigestController(_db, new AppAuthSetup(true, false, "http://localhost:5173"));
         SetAuthenticated(true);
     }
 
@@ -104,6 +105,18 @@ public sealed class DigestControllerTests : IDisposable
         SetAuthenticated(false);
         var result = await _controller.List();
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task List_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new DigestController(_db, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.List();
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]

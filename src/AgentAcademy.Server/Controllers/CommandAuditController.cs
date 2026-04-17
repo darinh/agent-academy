@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,10 +13,12 @@ namespace AgentAcademy.Server.Controllers;
 public sealed class CommandAuditController : ControllerBase
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AppAuthSetup _authSetup;
 
-    public CommandAuditController(IServiceScopeFactory scopeFactory)
+    public CommandAuditController(IServiceScopeFactory scopeFactory, AppAuthSetup authSetup)
     {
         _scopeFactory = scopeFactory;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -30,7 +33,7 @@ public sealed class CommandAuditController : ControllerBase
         [FromQuery] int limit = 50,
         [FromQuery] int offset = 0)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
@@ -98,7 +101,7 @@ public sealed class CommandAuditController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetAuditStats([FromQuery] int? hoursBack = null)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))

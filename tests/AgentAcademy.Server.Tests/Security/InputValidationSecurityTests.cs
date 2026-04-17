@@ -22,11 +22,12 @@ public sealed class InputValidationSecurityTests : IClassFixture<ApiContractFixt
     private static StringContent Json(object payload) =>
         new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-    // ── Command execution — auth enforcement ──────────────────────
-    // CommandController has an explicit User.Identity?.IsAuthenticated check.
-    // With auth disabled (test fixture), requests are unauthenticated, so the
-    // endpoint returns 401 BEFORE reaching validation/allowlist logic. This is
-    // correct defense-in-depth behavior.
+    // ── Command execution — validation and allowlist enforcement ─────
+    // The test fixture runs with auth disabled (first-run public-access mode).
+    // In this mode, the explicit User.Identity?.IsAuthenticated check in
+    // CommandController is bypassed (fix: #59), so requests reach the
+    // validation and allowlist logic. Only commands on the AllowedCommands
+    // list are executable; everything else returns 403 Forbidden.
 
     [Fact]
     public async Task Execute_EmptyCommand_Returns400_ViaModelValidation()
@@ -40,28 +41,29 @@ public sealed class InputValidationSecurityTests : IClassFixture<ApiContractFixt
     }
 
     [Fact]
-    public async Task Execute_NullPayload_Returns401_AuthGate()
+    public async Task Execute_NullPayload_Returns400_ViaBodyValidation()
     {
-        // Null payload passes model binding (nullable param), so the method body
-        // executes and the auth check fires first → 401
+        // Null payload is rejected by the [Required] body binding before
+        // the method body executes → 400.
         var response = await _client.PostAsync("/api/commands/execute",
             new StringContent("null", Encoding.UTF8, "application/json"));
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task Execute_CommandsBlocked_WhenUnauthenticated()
+    public async Task Execute_DisallowedCommands_Return403_ViaAllowlist()
     {
-        // Even with a valid payload, the explicit auth check prevents execution
-        var commands = new[] { "SHELL", "LIST_TASKS", "RUN_BUILD", "RESTART_SERVER" };
+        // Dangerous or non-human commands are blocked by the AllowedCommands
+        // allowlist with a 403 Forbidden, regardless of auth state.
+        var disallowed = new[] { "SHELL", "RUN_BUILD", "RESTART_SERVER" };
 
-        foreach (var cmd in commands)
+        foreach (var cmd in disallowed)
         {
             var response = await _client.PostAsync("/api/commands/execute",
                 Json(new { command = cmd, args = new { } }));
 
-            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
     }
 

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -18,6 +19,7 @@ public class MemoryController : ControllerBase
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<MemoryController> _logger;
+    private readonly AppAuthSetup _authSetup;
 
     /// <summary>Max entries per import request to prevent payload abuse.</summary>
     internal const int MaxImportEntries = 500;
@@ -25,10 +27,11 @@ public class MemoryController : ControllerBase
     /// <summary>Max error messages returned in import response.</summary>
     private const int MaxReportedErrors = 50;
 
-    public MemoryController(AgentAcademyDbContext db, ILogger<MemoryController> logger)
+    public MemoryController(AgentAcademyDbContext db, ILogger<MemoryController> logger, AppAuthSetup authSetup)
     {
         _db = db;
         _logger = logger;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -38,7 +41,7 @@ public class MemoryController : ControllerBase
     [HttpGet("export")]
     public async Task<IActionResult> Export([FromQuery] string? agentId, [FromQuery] string? category)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
@@ -75,7 +78,7 @@ public class MemoryController : ControllerBase
     [HttpPost("import")]
     public async Task<IActionResult> Import([FromBody] MemoryImportRequest? request)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (request?.Memories is null || request.Memories.Count == 0)
@@ -165,7 +168,7 @@ public class MemoryController : ControllerBase
     [HttpDelete("expired")]
     public async Task<IActionResult> CleanupExpired([FromQuery] string? agentId)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
@@ -198,7 +201,7 @@ public class MemoryController : ControllerBase
         [FromQuery] bool includeExpired = false,
         CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
@@ -249,7 +252,7 @@ public class MemoryController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> Stats([FromQuery] string? agentId, CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
@@ -286,7 +289,7 @@ public class MemoryController : ControllerBase
     [HttpDelete]
     public async Task<IActionResult> Delete([FromQuery] string? agentId, [FromQuery] string? key, CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
