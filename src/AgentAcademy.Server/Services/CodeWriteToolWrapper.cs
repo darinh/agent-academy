@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,21 +37,29 @@ internal sealed class CodeWriteToolWrapper
     private readonly string _agentName;
     private readonly AgentGitIdentity? _gitIdentity;
     private readonly string? _roomId;
-    private readonly string _allowedRoot;
+    private readonly IReadOnlyList<string> _allowedRoots;
     private readonly IReadOnlyList<string> _protectedPaths;
 
     /// <summary>
-    /// Root directory (relative to the project root) that writes are restricted to.
+    /// The first configured root. Retained for call-sites (and tests) that treat the wrapper
+    /// as having a single root. For multi-root configurations prefer <see cref="AllowedRoots"/>.
     /// Always stored without a trailing separator.
     /// </summary>
-    internal string AllowedRoot => _allowedRoot;
+    internal string AllowedRoot => _allowedRoots[0];
+
+    /// <summary>
+    /// All root directories (relative to the project root) that writes are permitted under.
+    /// Stored without trailing separators, normalized to forward slashes. Checks accept a
+    /// write if the target path lies under any one of these roots.
+    /// </summary>
+    internal IReadOnlyList<string> AllowedRoots => _allowedRoots;
 
     private const int MaxContentLength = 100_000; // 100 KB
 
     internal CodeWriteToolWrapper(
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
-        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, "src", CodeWriteProtectedPaths)
+        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId, new[] { "src" }, CodeWriteProtectedPaths)
     {
     }
 
@@ -58,6 +67,27 @@ internal sealed class CodeWriteToolWrapper
         IServiceScopeFactory scopeFactory, ILogger logger,
         string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
         string allowedRoot, IReadOnlyList<string> protectedPaths)
+        : this(scopeFactory, logger, agentId, agentName, gitIdentity, roomId,
+               ValidateSingleRoot(allowedRoot), protectedPaths)
+    {
+    }
+
+    /// <summary>
+    /// Preserves the historical validation contract for the single-root constructor —
+    /// the caller sees <c>ArgumentException</c> with <c>ParamName = "allowedRoot"</c> and
+    /// the original message — while still delegating storage to the multi-root overload.
+    /// </summary>
+    private static IReadOnlyList<string> ValidateSingleRoot(string allowedRoot)
+    {
+        if (string.IsNullOrWhiteSpace(allowedRoot))
+            throw new ArgumentException("allowedRoot is required.", nameof(allowedRoot));
+        return new[] { allowedRoot };
+    }
+
+    internal CodeWriteToolWrapper(
+        IServiceScopeFactory scopeFactory, ILogger logger,
+        string agentId, string agentName, AgentGitIdentity? gitIdentity, string? roomId,
+        IReadOnlyList<string> allowedRoots, IReadOnlyList<string> protectedPaths)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -66,12 +96,46 @@ internal sealed class CodeWriteToolWrapper
         _gitIdentity = gitIdentity;
         _roomId = roomId;
 
-        if (string.IsNullOrWhiteSpace(allowedRoot))
-            throw new ArgumentException("allowedRoot is required.", nameof(allowedRoot));
+        if (allowedRoots is null || allowedRoots.Count == 0)
+            throw new ArgumentException("At least one allowed root is required.", nameof(allowedRoots));
 
-        _allowedRoot = allowedRoot.Trim().Replace('\\', '/').TrimEnd('/');
+        var normalized = new List<string>(allowedRoots.Count);
+        foreach (var root in allowedRoots)
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                throw new ArgumentException("allowed roots must not contain null, empty, or whitespace entries.", nameof(allowedRoots));
+            var canonical = root.Trim().Replace('\\', '/').TrimEnd('/');
+            if (canonical.Length == 0)
+                throw new ArgumentException("allowed roots must not contain entries that normalize to empty.", nameof(allowedRoots));
+            if (!normalized.Contains(canonical, StringComparer.Ordinal))
+                normalized.Add(canonical);
+        }
+
+        _allowedRoots = normalized;
         _protectedPaths = protectedPaths ?? Array.Empty<string>();
     }
+
+    /// <summary>
+    /// Human-readable list of the configured roots with trailing slashes
+    /// — used in error messages (e.g. <c>"specs/, docs/"</c>).
+    /// </summary>
+    private string FormatRootsForDisplay() => string.Join(", ", _allowedRoots.Select(r => r + "/"));
+
+    /// <summary>
+    /// Error-message fragment describing the configured scope in grammatically-correct English.
+    /// Single root: <c>"the specs/ directory"</c>. Multi-root: <c>"any of: specs/, docs/"</c>.
+    /// </summary>
+    private string DescribeScope() => _allowedRoots.Count == 1
+        ? $"the {_allowedRoots[0]}/ directory"
+        : $"any of: {FormatRootsForDisplay()}";
+
+    /// <summary>
+    /// Commit-scope variant preserving the historical wording <c>"specs/ scope"</c> for the
+    /// single-root case. Multi-root configurations use a readable listing.
+    /// </summary>
+    private string DescribeCommitScope() => _allowedRoots.Count == 1
+        ? $"{_allowedRoots[0]}/ scope"
+        : $"scope ({FormatRootsForDisplay()})";
 
     [Description("Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
                  "The file is automatically staged for commit. Paths must be within the allowed root directory (see tool description) and relative to the project root.")]
@@ -81,8 +145,8 @@ internal sealed class CodeWriteToolWrapper
         [Description("The full content to write to the file")]
         string content)
     {
-        _logger.LogInformation("Tool call: write_file by {AgentId} (path={Path}, length={Length}, allowedRoot={Root})",
-            _agentId, path, content?.Length ?? 0, _allowedRoot);
+        _logger.LogInformation("Tool call: write_file by {AgentId} (path={Path}, length={Length}, allowedRoots={Roots})",
+            _agentId, path, content?.Length ?? 0, FormatRootsForDisplay());
 
         if (string.IsNullOrWhiteSpace(path))
             return "Error: path is required.";
@@ -103,13 +167,12 @@ internal sealed class CodeWriteToolWrapper
         if (!fullPath.StartsWith(rootWithSep, StringComparison.Ordinal))
             return "Error: Path traversal denied — file must be within the project directory.";
 
-        // Restrict writes to the configured allowed root directory only.
+        // Restrict writes to one of the configured allowed root directories.
         // Use case-sensitive comparison so that on case-sensitive filesystems (Linux CI)
         // a path like "Specs/foo" does not pass the "specs/" check.
         var relativePath = Path.GetRelativePath(projectRoot, fullPath);
-        var allowedPrefix = _allowedRoot + Path.DirectorySeparatorChar;
-        if (!relativePath.StartsWith(allowedPrefix, StringComparison.Ordinal))
-            return $"Error: Writes are restricted to the {_allowedRoot}/ directory. Cannot write to: " + relativePath;
+        if (!IsUnderAllowedRoot(relativePath))
+            return $"Error: Writes are restricted to {DescribeScope()}. Cannot write to: " + relativePath;
 
         // Defence-in-depth: reject any path whose existing directory chain contains a symlink
         // or reparse point. A lexical prefix check is not sufficient because a symlink like
@@ -235,7 +298,7 @@ internal sealed class CodeWriteToolWrapper
             _logger.LogWarning(
                 "Agent {AgentId} blocked from committing out-of-scope staged paths: {Violation}",
                 _agentId, scopeViolation);
-            return $"Error: Commit blocked — staged changes outside {_allowedRoot}/ scope: {scopeViolation}. Unstage those paths before committing.";
+            return $"Error: Commit blocked — staged changes outside {DescribeCommitScope()}: {scopeViolation}. Unstage those paths before committing.";
         }
 
         try
@@ -298,6 +361,22 @@ internal sealed class CodeWriteToolWrapper
         {
             _logger.LogWarning(ex, "Failed to record commit artifacts for {Sha}", commitSha);
         }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="relativePath"/> (relative to the project
+    /// root) lies under any one of the configured allowed roots. Uses the platform-native
+    /// directory separator because callers pass a path produced by <see cref="Path.GetRelativePath"/>.
+    /// </summary>
+    private bool IsUnderAllowedRoot(string relativePath)
+    {
+        foreach (var root in _allowedRoots)
+        {
+            var allowedPrefix = root + Path.DirectorySeparatorChar;
+            if (relativePath.StartsWith(allowedPrefix, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -390,7 +469,7 @@ internal sealed class CodeWriteToolWrapper
             if (process.ExitCode != 0)
                 return null;
 
-            var allowedPrefix = _allowedRoot + "/";
+            var allowedPrefixes = _allowedRoots.Select(r => r + "/").ToArray();
             var outOfScope = new List<string>();
             var protectedHits = new List<string>();
 
@@ -401,7 +480,16 @@ internal sealed class CodeWriteToolWrapper
                 if (string.IsNullOrEmpty(staged)) continue;
 
                 // Case-sensitive comparison — matches Linux filesystem semantics.
-                if (!staged.StartsWith(allowedPrefix, StringComparison.Ordinal))
+                var matched = false;
+                foreach (var prefix in allowedPrefixes)
+                {
+                    if (staged.StartsWith(prefix, StringComparison.Ordinal))
+                    {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched)
                 {
                     outOfScope.Add(staged);
                     continue;
