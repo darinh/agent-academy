@@ -32,7 +32,6 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
     private readonly IAgentExecutor _executor;
     private readonly ISpecManager _specManager;
     private readonly IGitService _gitService;
-    private readonly IWorktreeService _worktreeService;
     private readonly IAgentMemoryLoader _memoryLoader;
     private readonly IBreakoutCompletionService _completion;
     private readonly ILogger<BreakoutLifecycleService> _logger;
@@ -45,7 +44,6 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         IAgentExecutor executor,
         ISpecManager specManager,
         IGitService gitService,
-        IWorktreeService worktreeService,
         IAgentMemoryLoader memoryLoader,
         IBreakoutCompletionService completion,
         ILogger<BreakoutLifecycleService> logger)
@@ -55,7 +53,6 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
         _executor = executor;
         _specManager = specManager;
         _gitService = gitService;
-        _worktreeService = worktreeService;
         _memoryLoader = memoryLoader;
         _completion = completion;
         _logger = logger;
@@ -98,15 +95,14 @@ public sealed class BreakoutLifecycleService : IBreakoutLifecycleService
                     _logger.LogWarning(ex, "Failed to dispose worktree client for {Path}", worktreePath);
                 }
 
-                try
-                {
-                    await _worktreeService.RemoveWorktreeAsync(taskBranch);
-                    _logger.LogInformation("Cleaned up worktree for {Branch} on breakout exit", taskBranch);
-                }
-                catch (Exception wtEx)
-                {
-                    _logger.LogWarning(wtEx, "Failed to clean up worktree for {Branch} on breakout exit", taskBranch);
-                }
+                // NOTE: The filesystem worktree itself is NOT removed here — spec 005
+                // §Workspace Isolation says the worktree persists past task
+                // completion/cancellation for merge operations and to support
+                // breakout reopen after review rejection. Worktree disposal is
+                // owned by task terminal transitions: TaskOrchestrationService
+                // .CompleteTaskAsync (on merge) and CancelTaskHandler (on
+                // CANCEL_TASK). Only the Copilot client subprocess, which is
+                // scoped to the breakout session, is disposed here.
             }
         }
     }

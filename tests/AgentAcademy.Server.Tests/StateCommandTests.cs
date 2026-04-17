@@ -638,7 +638,7 @@ public class StateCommandTests : IDisposable
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK",
             new() { ["taskId"] = taskId, ["reason"] = "No longer needed" },
             "planner-1", "Aristotle");
@@ -655,7 +655,7 @@ public class StateCommandTests : IDisposable
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
         ctx = ctx with { AgentRole = "Reviewer" };
@@ -677,7 +677,7 @@ public class StateCommandTests : IDisposable
     {
         var taskId = await CreateTestTask();
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK",
             new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus");
 
@@ -692,7 +692,7 @@ public class StateCommandTests : IDisposable
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK",
             new() { ["taskId"] = taskId, ["reason"] = "Consultant cleanup" },
             "human", "Human");
@@ -708,7 +708,7 @@ public class StateCommandTests : IDisposable
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Cancelled));
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
         ctx = ctx with { AgentRole = "Reviewer" };
@@ -724,7 +724,7 @@ public class StateCommandTests : IDisposable
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Completed));
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates");
         ctx = ctx with { AgentRole = "Reviewer" };
@@ -738,7 +738,7 @@ public class StateCommandTests : IDisposable
     public async Task CancelTask_Error_MissingTaskId()
     {
         var gitService = new GitService(NullLogger<GitService>.Instance, "/tmp");
-        var handler = new CancelTaskHandler(gitService);
+        var handler = new CancelTaskHandler(gitService, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var (cmd, ctx) = MakeCommand("CANCEL_TASK", new(), "reviewer-1", "Socrates");
         ctx = ctx with { AgentRole = "Reviewer" };
 
@@ -746,6 +746,42 @@ public class StateCommandTests : IDisposable
 
         Assert.Equal(CommandStatus.Error, result.Status);
         Assert.Contains("taskId", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CancelTask_RemovesWorktreeBeforeDeletingBranch()
+    {
+        // Regression for #65 — git refuses to delete a branch that has an active
+        // worktree, so the worktree must be removed first.
+        var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var task = await db.Tasks.FindAsync(taskId);
+            task!.BranchName = $"task/{taskId}";
+            await db.SaveChangesAsync();
+        }
+
+        var gitService = Substitute.For<IGitService>();
+        var worktreeService = Substitute.For<IWorktreeService>();
+        var callOrder = new List<string>();
+        worktreeService.RemoveWorktreeAsync(Arg.Any<string>())
+            .Returns(ci => { callOrder.Add("worktree"); return Task.CompletedTask; });
+        gitService.DeleteBranchAsync(Arg.Any<string>())
+            .Returns(ci => { callOrder.Add("branch"); return Task.CompletedTask; });
+
+        var handler = new CancelTaskHandler(gitService, worktreeService);
+        var (cmd, ctx) = MakeCommand("CANCEL_TASK",
+            new() { ["taskId"] = taskId, ["deleteBranch"] = "true" },
+            "planner-1", "Aristotle");
+        ctx = ctx with { AgentRole = "Planner" };
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        Assert.Equal(new[] { "worktree", "branch" }, callOrder);
+        await worktreeService.Received(1).RemoveWorktreeAsync($"task/{taskId}");
+        await gitService.Received(1).DeleteBranchAsync($"task/{taskId}");
     }
 
     // ── Helpers ─────────────────────────────────────────────────

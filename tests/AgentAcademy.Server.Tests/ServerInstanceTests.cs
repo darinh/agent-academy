@@ -101,7 +101,6 @@ public class ServerInstanceTests : IDisposable
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, _catalog, executor, new SpecManager(),
             new GitService(NullLogger<GitService>.Instance),
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
             memoryLoader, breakoutCompletion, NullLogger<BreakoutLifecycleService>.Instance);
         var taskAssignment = new TaskAssignmentHandler(
             _catalog, new GitService(NullLogger<GitService>.Instance),
@@ -709,7 +708,7 @@ public class RestartHistoryApiTests : IDisposable
         var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, actPub, messageService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
         var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, actPub);
         var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, actPub, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, actPub));
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts);
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, actPub, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);

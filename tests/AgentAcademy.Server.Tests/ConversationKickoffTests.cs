@@ -96,7 +96,7 @@ public sealed class ConversationKickoffTests : IDisposable
         var worktreeService = new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/fake-repo");
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, Catalog, executor, specManager,
-            gitService, worktreeService, memoryLoader,
+            gitService, memoryLoader,
             breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
         _orchestrator = new AgentOrchestrator(

@@ -103,7 +103,7 @@ public class SubServiceIntegrationTests : IDisposable
         _workspaceRooms = new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activityPublisher);
         _roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, _activityPublisher);
         _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms, _workspaceRooms);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _taskQueries, _rooms, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), _roomLifecycle, _agentLocations, _messages, _breakouts);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _taskQueries, _rooms, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), _roomLifecycle, _agentLocations, _messages, _breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
     }
 
     public void Dispose()

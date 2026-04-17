@@ -72,7 +72,7 @@ public sealed class TaskAssignmentHandlerTests : IDisposable
             memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         _breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, _catalog, executor, specManager,
-            _gitService, _worktreeService, memoryLoader, completion,
+            _gitService, memoryLoader, completion,
             NullLogger<BreakoutLifecycleService>.Instance);
 
         _handler = new TaskAssignmentHandler(

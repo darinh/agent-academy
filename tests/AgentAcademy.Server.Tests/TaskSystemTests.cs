@@ -107,6 +107,7 @@ public class TaskSystemTests : IDisposable
         services.AddScoped<TaskOrchestrationService>();
         services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
+        services.AddSingleton<IWorktreeService>(NSubstitute.Substitute.For<IWorktreeService>());
         services.AddScoped<SystemSettingsService>();
         services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());

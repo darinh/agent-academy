@@ -123,7 +123,8 @@ internal sealed class TestServiceGraph : IDisposable
         TaskOrchestrationService = new TaskOrchestrationService(
             Db, NullLogger<TaskOrchestrationService>.Instance, Catalog,
             ActivityPublisher, TaskLifecycleService, TaskQueryService, RoomService, RoomSnapshotBuilder,
-            RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService);
+            RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService,
+            Substitute.For<IWorktreeService>());
 
         ProjectScanner = new ProjectScanner();
         WorkspaceService = new WorkspaceService(Db, NullLogger<WorkspaceService>.Instance);
@@ -147,7 +148,7 @@ internal sealed class TestServiceGraph : IDisposable
             memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
             scopeFactory, Catalog, Executor, SpecManager,
-            gitService, worktreeService, memoryLoader, breakoutCompletion,
+            gitService, memoryLoader, breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
         var taskAssignment = new TaskAssignmentHandler(
             Catalog, gitService, worktreeService, breakoutLifecycle,

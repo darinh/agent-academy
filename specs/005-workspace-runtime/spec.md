@@ -164,7 +164,7 @@ Agent must be in catalog. Room existence is not validated (matches v1).
 > **Source**: `src/AgentAcademy.Server/Services/BreakoutRoomService.cs`
 
 - `BreakoutRoomService.CreateBreakoutRoomAsync(parentRoomId, agentId, name)` → creates breakout, moves agent to Working
-- `BreakoutRoomService.CloseBreakoutRoomAsync(breakoutId)` → moves agent to Idle, deletes breakout + messages
+- `BreakoutRoomService.CloseBreakoutRoomAsync(breakoutId)` → moves agent to Idle and archives the breakout (`Status = Archived`); messages are retained for audit
 - `BreakoutRoomService.GetBreakoutRoomsAsync(parentRoomId)` → list for parent room
 
 ### Plan Management
@@ -255,7 +255,7 @@ Singleton service managing git worktrees for agent-level workspace isolation.
 - When an agent starts a task, `TaskAssignmentHandler` calls `EnsureAgentWorktreeAsync()` to provision a worktree
 - The agent's `CommandContext.WorkingDirectory` is set to the worktree path
 - All git and file operations (build, test, diff, commit) execute within the worktree
-- On task completion/cancellation, the worktree persists for merge operations
+- On task completion/cancellation, the worktree is disposed by the task-terminal owner: `TaskOrchestrationService.CompleteTaskAsync` (on merge/complete) and `CancelTaskHandler` (on cancel, before the branch delete so `git branch -D` succeeds). The worktree persists through breakout close/reopen cycles (e.g., task rejection → breakout reopen) — `BreakoutLifecycleService` disposes only the per-breakout Copilot subprocess, not the filesystem worktree.
 
 #### Database Fields
 

@@ -13,10 +13,12 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class CancelTaskHandler : ICommandHandler
 {
     private readonly IGitService _gitService;
+    private readonly IWorktreeService? _worktreeService;
 
-    public CancelTaskHandler(IGitService gitService)
+    public CancelTaskHandler(IGitService gitService, IWorktreeService? worktreeService = null)
     {
         _gitService = gitService;
+        _worktreeService = worktreeService;
     }
 
     public string CommandName => "CANCEL_TASK";
@@ -96,10 +98,26 @@ public sealed class CancelTaskHandler : ICommandHandler
         {
             await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
 
-            // Clean up the task branch if requested (default: yes)
+            // Clean up the task branch if requested (default: yes).
+            // Per spec 005 §Workspace Isolation the worktree persists through
+            // the breakout lifecycle and is only disposed on task terminal
+            // transition — here at cancellation, before deleting the branch
+            // (git refuses to delete a branch checked out in a worktree).
             string? deletedBranch = null;
             if (deleteBranch && !string.IsNullOrWhiteSpace(task.BranchName))
             {
+                if (_worktreeService is not null)
+                {
+                    try
+                    {
+                        await _worktreeService.RemoveWorktreeAsync(task.BranchName);
+                    }
+                    catch
+                    {
+                        // Worktree may already be gone or never existed — not fatal
+                    }
+                }
+
                 try
                 {
                     await _gitService.DeleteBranchAsync(task.BranchName);
