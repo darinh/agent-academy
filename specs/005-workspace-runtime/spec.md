@@ -214,7 +214,7 @@ On startup, `AgentOrchestrator.HandleStartupRecoveryAsync` checks `CrashRecovery
 
 1. **Close all active breakout rooms** — queries for non-terminal breakout rooms and calls `CloseBreakoutRoomAsync` with `BreakoutRoomCloseReason.ClosedByRecovery`
 2. **Reset stuck agents** — finds agents in `Working` state whose `BreakoutRoomId` is null or doesn't match an active breakout, moves them to `Idle` via `MoveAgentAsync`
-3. **Reset orphaned tasks** — finds tasks with in-progress status (`Active`, `AwaitingValidation`, `InReview`) whose assignee agent is no longer in an active breakout, clears their `AssignedAgentId` and `AssignedAgentName`
+3. **Reset orphaned tasks** — finds tasks with in-progress status (`Active`, `InReview`, `ChangesRequested`, `Approved`, `Merging`, `AwaitingValidation`) whose assignee agent is no longer in an active breakout, clears their `AssignedAgentId` and `AssignedAgentName`
 4. **Post recovery notification** — if any recovery actions occurred, posts a system message to the main room with counts (e.g., "Closed 2 breakout room(s), reset 1 stuck agent(s), and reset 1 stuck task(s)"). Uses `CurrentInstanceId` as a correlation ID to prevent duplicate notifications on multiple startup calls.
 
 **Return type**: `CrashRecoveryResult(ClosedBreakoutRooms, ResetWorkingAgents, ResetTasks)` — a sealed record with the counts from each recovery step.
@@ -232,17 +232,17 @@ Each agent gets its own filesystem checkout via `git worktree` to enable concurr
 Singleton service managing git worktrees for agent-level workspace isolation.
 
 **Core API:**
-- `CreateWorktreeAsync(branch)` — creates a linked worktree at `{repoRoot}/.worktrees/{branch}`
+- `CreateWorktreeAsync(branch)` — creates a linked worktree at `{repoRoot}/.worktrees/{safeName}-{hash}`, where `safeName` is the sanitized branch name and `hash` is an 8-char hex of the raw branch name. The hash makes colliding sanitized names (e.g. `feat/x` vs `feat_x`) resolve to distinct directories.
 - `RemoveWorktreeAsync(branch)` — removes the worktree and prunes git metadata
 - `GetWorktreePath(branch)` — returns the filesystem path for a branch's worktree, or null
 - `GetActiveWorktrees()` — returns all tracked worktree entries
 - `ListGitWorktreesAsync()` — parses `git worktree list --porcelain` for ground truth
-- `CleanupAllWorktreesAsync()` — removes all managed worktrees (used on shutdown/recovery)
-- `SyncWithGitAsync()` — reconciles internal tracking with actual git worktree state
+- `CleanupAllWorktreesAsync()` — available for shutdown/recovery cleanup. **Not currently wired** into the startup or shutdown pipeline (`WebApplicationExtensions.ConfigureShutdownHook()`) — treat as a manual/test-only entry point.
+- `SyncWithGitAsync()` — reconciles internal tracking with actual git worktree state. **Not currently wired** into startup; callers must invoke it explicitly when reconciliation is required.
 
 **Agent worktree management:**
-- `EnsureAgentWorktreeAsync(workspacePath, projectName, agentId, branch)` — creates or reuses an agent-specific worktree. Naming convention: `.worktrees/{projectName}-{agentId}`
-- `GetAgentWorktreePath(projectName, agentId, workspacePath?)` — resolves an agent's worktree path
+- `EnsureAgentWorktreeAsync(workspacePath, projectName, agentId, branch)` — creates or reuses an agent-specific worktree (helper for callers that need idempotent provisioning; `TaskAssignmentHandler` currently uses `CreateWorktreeAsync` with a task-specific branch instead).
+- `GetAgentWorktreePath(projectName, agentId, workspacePath?)` — resolves an agent's worktree path. Paths live under `~/projects/{safeName}-worktrees[-{pathHash}]/{safeAgent}` (outside the repo, not under `.worktrees/`). The optional `workspacePath` adds an 8-char hash suffix so multiple checkouts of the same project name don't collide.
 - `RemoveAgentWorktreeAsync(workspacePath, projectName, agentId)` — removes an agent's worktree
 
 **Key types:**
@@ -250,15 +250,14 @@ Singleton service managing git worktrees for agent-level workspace isolation.
 - `GitWorktreeEntry(Path, Head, Branch, Bare)` — parsed git worktree state
 
 **Invariants:**
-- Worktrees are stored under `{repoRoot}/.worktrees/` (gitignored)
-- Each agent gets at most one worktree per project
-- `SyncWithGitAsync()` is called on startup to reconcile stale state
+- Branch worktrees live under `{repoRoot}/.worktrees/` (gitignored); agent worktrees live under `~/projects/{project}-worktrees[-{hash}]/` (outside the repo)
+- Each agent gets at most one worktree per project (per workspace-path hash)
 - Worktree cleanup is idempotent and handles already-removed paths gracefully
 
 #### Service Integration
 
 `BreakoutLifecycleService` and `TaskAssignmentHandler` use `WorktreeService` to provide each agent with an isolated working directory:
-- When an agent starts a task, `TaskAssignmentHandler` calls `EnsureAgentWorktreeAsync()` to provision a worktree
+- When an agent starts a task, `TaskAssignmentHandler` calls `CreateWorktreeAsync(taskBranch)` to provision a worktree for the task's branch (with fallback to the shared checkout if worktree creation fails)
 - The agent's `CommandContext.WorkingDirectory` is set to the worktree path
 - All git and file operations (build, test, diff, commit) execute within the worktree
 - On task completion/cancellation, the worktree is disposed by the task-terminal owner: `TaskOrchestrationService.CompleteTaskAsync` (on merge/complete) and `CancelTaskHandler` (on cancel, before the branch delete so `git branch -D` succeeds). The worktree persists through breakout close/reopen cycles (e.g., task rejection → breakout reopen) — `BreakoutLifecycleService` disposes only the per-breakout Copilot subprocess, not the filesystem worktree.
