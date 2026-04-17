@@ -118,10 +118,14 @@ public record TaskSnapshot(
     int CommitCount = 0,
     string? MergeCommitSha = null,
     int CommentCount = 0,
-    string? WorkspacePath = null
+    string? WorkspacePath = null,
+    string? SprintId = null,
+    List<string>? DependsOnTaskIds = null,
+    List<string>? BlockingTaskIds = null,
+    TaskPriority Priority = TaskPriority.Medium
 );
 public record TaskItem(string Id, string Title, string Description, TaskItemStatus Status, string AssignedTo, string RoomId, string? BreakoutRoomId, string? Evidence, string? Feedback, DateTime CreatedAt, DateTime UpdatedAt);
-public record TaskAssignmentRequest(string Title, string Description, string SuccessCriteria, string? RoomId, List<string> PreferredRoles, TaskType Type = TaskType.Feature, string? CorrelationId = null, string? CurrentPlan = null);
+public record TaskAssignmentRequest(string Title, string Description, string SuccessCriteria, string? RoomId, List<string> PreferredRoles, TaskType Type = TaskType.Feature, string? CorrelationId = null, string? CurrentPlan = null, TaskPriority Priority = TaskPriority.Medium);
 public record TaskAssignmentResult(string CorrelationId, RoomSnapshot Room, TaskSnapshot Task, ActivityEvent Activity);
 public record TaskComment(string Id, string TaskId, string AgentId, string AgentName, TaskCommentType CommentType, string Content, DateTime CreatedAt);
 public record SpecTaskLink(string Id, string TaskId, string SpecSectionId, SpecLinkType LinkType, string LinkedByAgentId, string LinkedByAgentName, string? Note, DateTime CreatedAt);
@@ -141,7 +145,7 @@ public record WorkspaceOverview(List<AgentDefinition> ConfiguredAgents, List<Roo
 ```csharp
 public record EvaluationResult(string FilePath, double Score, bool Exists, bool NonEmpty, bool SyntaxValid, bool Complete, List<string> Issues);
 public record ArtifactRecord(string AgentId, string RoomId, string FilePath, string Operation, DateTime Timestamp);
-public record MetricsEntry(DateTime Timestamp, string Type, int Round, string Phase, string Agent, Dictionary<string, object> Data);
+public record MetricsEntry(DateTime Timestamp, string Type, int Round, string Phase, string Agent, Dictionary<string, JsonElement> Data);
 public record MetricsSummary(int TotalRounds, int TotalArtifacts, int PhaseTransitions, double AverageScore, List<MetricsEntry> Entries);
 ```
 

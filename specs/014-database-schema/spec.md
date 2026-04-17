@@ -131,7 +131,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | Id | string | **PK** | Room identifier |
 | Name | string | | Display name |
 | Topic | string? | | Room topic/description |
-| Status | string | | `Active`, `Archived` |
+| Status | string | | `Idle`, `Active`, `AttentionRequired`, `Completed`, `Archived` (see `RoomStatus` enum) |
 | CurrentPhase | string | | Conversation phase |
 | WorkspacePath | string? | | Owning workspace path |
 | CreatedAt | DateTime | | Creation timestamp |
@@ -189,7 +189,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | ParentRoomId | string | FK → `rooms.Id` (Cascade) | Parent room |
 | AssignedAgentId | string | | Agent working in breakout |
 | Status | string | | `Active`, `Closed` |
-| CloseReason | string? | | `Completed`, `Failed`, `ManualClose`, `Timeout` |
+| CloseReason | string? | | See `BreakoutRoomCloseReason`: `Completed`, `Recalled`, `Cancelled`, `StuckDetected`, `ClosedByRecovery`, `Failed` |
 | TaskId | string? | | Linked task |
 | CreatedAt | DateTime | | Creation timestamp |
 | UpdatedAt | DateTime | | Last update |
@@ -228,8 +228,8 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | Title | string | | Task title |
 | Description | string | | Full description |
 | SuccessCriteria | string | | Acceptance criteria |
-| Status | string | | `Pending`, `InProgress`, `InReview`, `Completed`, `Cancelled` |
-| Type | string | | `Feature`, `Bug`, `Refactor`, etc. |
+| Status | string | | See `TaskStatus` enum: `Queued`, `Active`, `Blocked`, `AwaitingValidation`, `InReview`, `ChangesRequested`, `Approved`, `Merging`, `Completed`, `Cancelled` |
+| Type | string | | See `TaskType` enum: `Feature`, `Bug`, `Chore`, `Spike` |
 | CurrentPhase | string | | Workflow phase |
 | CurrentPlan | string | | Agent's implementation plan |
 | ValidationStatus | string | | Validation outcome |
@@ -242,7 +242,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | WorkspacePath | string? | | Workspace scope |
 | CreatedAt | DateTime | | Creation timestamp |
 | UpdatedAt | DateTime | | Last update |
-| Size | string? | | `Small`, `Medium`, `Large` |
+| Size | string? | | See `TaskSize` enum: `XS`, `S`, `M`, `L`, `XL` |
 | StartedAt | DateTime? | | Work start time |
 | CompletedAt | DateTime? | | Completion time |
 | AssignedAgentId | string? | | Assigned agent |
@@ -285,7 +285,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | TaskId | string | FK → `tasks.Id` (Cascade) | Owning task |
 | AgentId | string | | Commenting agent |
 | AgentName | string | | Agent display name |
-| CommentType | string | | `Retrospective`, `Review`, `Note`, etc. |
+| CommentType | string | | See `TaskCommentType` enum: `Comment`, `Finding`, `Evidence`, `Blocker`, `Retrospective` |
 | Content | string | | Comment body |
 | CreatedAt | DateTime | | Creation timestamp |
 
@@ -422,7 +422,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 |--------|------|------------|-------------|
 | AgentId | string | **PK** | Agent identifier |
 | RoomId | string | | Current room |
-| State | string | | `Idle`, `Active`, `InBreakout` |
+| State | string | | See `AgentState` enum: `InRoom`, `Working`, `Presenting`, `Idle`, `Offline` (stored as string) |
 | BreakoutRoomId | string? | | Current breakout room |
 | UpdatedAt | DateTime | | Last update |
 
@@ -539,7 +539,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | Source | string? | | Command source |
 | Command | string | | Command name |
 | ArgsJson | string | | Arguments as JSON |
-| Status | string | | `Success`, `Failed`, `Denied` |
+| Status | string | | See `CommandStatus` enum: `Success`, `Error`, `Denied` |
 | ResultJson | string? | | Result as JSON |
 | ErrorMessage | string? | | Error details |
 | ErrorCode | string? | | Error classification |
@@ -640,7 +640,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | RoomId | string? | | Room context |
 | AgentId | string? | | Agent context |
 | ProviderId | string | | Provider that delivered |
-| Status | string | | `Sent`, `Failed` |
+| Status | string | | `Delivered`, `Failed`, `Skipped` (see `NotificationDeliveryTracker`) |
 | Error | string? | | Error details |
 | AttemptedAt | DateTime | | Delivery attempt timestamp |
 

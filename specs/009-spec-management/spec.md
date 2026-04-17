@@ -180,6 +180,8 @@ public sealed class SpecManager
     public SpecManager(string? specsDir = null, ILogger<SpecManager>? logger = null);
     public Task<string?> LoadSpecContextAsync();
     public Task<string?> LoadSpecContextForTaskAsync(IEnumerable<string> linkedSectionIds);
+    public Task<string?> LoadSpecContextWithRelevanceAsync(string? searchQuery, IEnumerable<string>? linkedSectionIds = null, CancellationToken ct = default);
+    public Task<List<SpecSearchResult>> SearchSpecsAsync(string query, int maxResults = 5, CancellationToken ct = default);
     public Task<List<SpecSection>> GetSpecSectionsAsync();
     public Task<string?> GetSpecContentAsync(string sectionId);
     public Task<SpecVersionInfo?> GetSpecVersionAsync();

@@ -204,7 +204,7 @@ All other list endpoints return the full collection. These are bounded by design
 | Method | Route | Description | Params | Returns |
 |--------|-------|-------------|--------|---------|
 | GET | `/` | Service info and endpoint list | — | `200` JSON |
-| GET | `/healthz` | Liveness probe (basic) | — | `200 "Healthy"` |
+| GET | `/healthz` | Liveness probe (basic) | — | `200` `HealthResult { Status, Uptime, Timestamp, Message }` |
 | GET | `/health` | Readiness probe (checks DB + executor) | — | `200` / `503` JSON |
 | GET | `/api/health/instance` | Instance-level health and status | — | `InstanceHealth` |
 | GET | `/api/overview` | Workspace overview (agents, rooms, tasks, sprint) | — | `WorkspaceOverview` |
@@ -295,7 +295,8 @@ See [005 — Domain Services Layer](../005-workspace-runtime/spec.md) for worksp
 | GET | `/api/rooms/{roomId}/usage/agents` | Per-agent usage breakdown | — | `List<AgentUsageSummary>` |
 | GET | `/api/rooms/{roomId}/usage/records` | Recent usage records | `?agentId` `?limit` | `List<LlmUsageRecord>` |
 | GET | `/api/rooms/{roomId}/errors` | Room error records | `?limit` | `List<ErrorRecord>` |
-| GET | `/api/rooms/{roomId}/artifacts` | Room artifacts (placeholder) | — | `[]` |
+| GET | `/api/rooms/{roomId}/artifacts` | Append-only log of file operations (Created/Updated/Committed) tracked by `RoomArtifactTracker` | `?limit=100` | `List<ArtifactRecord>` |
+| GET | `/api/rooms/{roomId}/context-usage` | Latest context-window usage per agent in the room | — | `List<AgentContextUsage>` |
 | GET | `/api/rooms/{roomId}/evaluations` | Artifact quality evaluations | — | `{ artifacts: EvaluationResult[], aggregateScore: double }` |
 
 ### 4.7 Sessions

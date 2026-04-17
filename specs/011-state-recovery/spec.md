@@ -83,14 +83,14 @@ The `InitializationService` and `CrashRecoveryService` manage instance lifecycle
 5. Proceed with existing initialization (default room, agents, welcome message)
 6. Resolve the authoritative main room for the active workspace, if any
 7. If `CrashDetected = true`, ask `AgentOrchestrator` to run startup recovery before normal work resumes
-8. Startup recovery closes every active breakout via `CloseBreakoutRoomAsync(..., ClosedByRecovery)`, resets any lingering `Working` agents to `Idle`, and posts a main-room system message beginning with `"System recovered from crash"`
+8. Startup recovery closes every active breakout via `CloseBreakoutRoomAsync(..., ClosedByRecovery)`, resets any lingering `Working` agents to `Idle`, clears `AssignedAgentId`/`AssignedAgentName` on orphaned in-progress tasks (see spec 005 §Crash Recovery for the full status list), and posts a main-room system message beginning with `"System recovered from crash"`
 
-**On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `Program.cs`):
+**On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `WebApplicationExtensions.ConfigureShutdownHook()`, wired from `Program.cs`):
 1. Locate the current instance (by `CurrentInstanceId`)
 2. Set `ShutdownAt = DateTime.UtcNow`
 3. Set `ExitCode = Environment.ExitCode`
 
-**Files**: `src/AgentAcademy.Server/Services/InitializationService.cs`, `src/AgentAcademy.Server/Services/CrashRecoveryService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Program.cs`
+**Files**: `src/AgentAcademy.Server/Services/InitializationService.cs`, `src/AgentAcademy.Server/Services/CrashRecoveryService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Startup/WebApplicationExtensions.cs`, `src/AgentAcademy.Server/Program.cs`
 
 ### 4. Client Reconnect Protocol
 

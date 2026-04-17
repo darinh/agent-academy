@@ -95,8 +95,7 @@ ASP.NET Core's standard configuration binding applies. Environment variables use
     "DefaultConnection": "Data Source=agent-academy.db"
   },
   "GitHub": {
-    "AppId": "",           // GitHub App ID (required for OAuth)
-    "ClientId": "",        // GitHub OAuth Client ID
+    "ClientId": "",        // GitHub OAuth Client ID (read by AppAuthSetup)
     "ClientSecret": "",    // GitHub OAuth Client Secret (🔐 use env var in production)
     "CallbackPath": "/api/auth/callback",
     "FrontendUrl": "http://localhost:5173"   // Redirect target after OAuth
@@ -649,7 +648,7 @@ git worktree prune
 
 **Log output**: Standard ASP.NET Core logging to stdout/stderr. Use `journalctl -u agent-academy -f` with systemd.
 
-**LLM usage tracking**: The `LlmUsageTracker` service records token consumption per agent per model. Query via `GET /api/settings/llm-usage` or directly from the `llm_usage_records` table.
+**LLM usage tracking**: The `LlmUsageTracker` service records token consumption per agent per model. Query via `GET /api/usage` (global summary) or `GET /api/usage/records` (recent records) — see spec 016 §Usage. Records are stored in the `llm_usage` table.
 
 ### Backup & Restore
 

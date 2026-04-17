@@ -858,12 +858,12 @@ Task creation via TASK ASSIGNMENT blocks in agent responses is role-gated:
 
 When task status → `InReview`:
 
-1. Activity event: `TaskReviewRequested`
-2. Socrates receives the event
-3. Socrates fetches diff using `SHOW_DIFF` command
-4. Socrates performs review
-5. Socrates posts review in room
-6. Task status updated based on outcome (via `APPROVE_TASK` or `REQUEST_CHANGES`)
+1. `BreakoutCompletionService` transitions the breakout task to `InReview` (via `TransitionBreakoutTaskToInReviewAsync`)
+2. A system status message is posted to the parent room announcing the InReview transition and the branch name
+3. No dedicated activity event is published on the InReview transition itself. `ActivityEventType.TaskStatusUpdated` is the generic status-change event used elsewhere in the task lifecycle, but the InReview transition path (`BreakoutCompletionService.TransitionBreakoutTaskToInReviewAsync` → `TaskQueryService.UpdateTaskStatusAsync`) does not emit it.
+4. Socrates (or a human reviewer) uses `SHOW_DIFF` on the task branch to inspect changes
+5. Reviewer posts findings and approves via `APPROVE_TASK` or sends back via `REQUEST_CHANGES`
+6. Status is updated accordingly; `MERGE_TASK` follows an approval to bring the branch into `develop`
 
 ### Agent Communication
 
@@ -935,6 +935,11 @@ All task services have interface contracts in `Services/Contracts/`. Consumers i
 | `AddDependencyAsync` | `ITaskDependencyService` | Adds dependency with cycle detection |
 | `RemoveDependencyAsync` | `ITaskDependencyService` | Removes a task dependency |
 | `GetBlockingTasksAsync` | `ITaskDependencyService` | Returns tasks blocked by given task |
+| `BulkUpdateStatusAsync` | `ITaskOrchestrationService` / `ITaskQueryService` | Bulk status transition for a list of task IDs, returns `BulkOperationResult` |
+| `BulkAssignAsync` | `ITaskOrchestrationService` / `ITaskQueryService` | Bulk assignment for a list of task IDs, returns `BulkOperationResult` |
+| `LinkTaskToSpecAsync` | `ITaskLifecycleService` | Links a task to a spec section; publishes `SpecTaskLinked` activity event |
+| `GetSpecLinksForTaskAsync` | `ITaskQueryService` | Returns all spec links for a task |
+| `GetTasksForSpecAsync` | `ITaskQueryService` | Returns all tasks linked to a spec section |
 | `RecordEvidenceAsync` | `ITaskEvidenceService` | Records a verification check |
 | `CheckGatesAsync` | `ITaskEvidenceService` | Evaluates evidence gates for transition |
 | `CreateTaskItemAsync` | `ITaskItemService` | Creates a breakout-level work item |
