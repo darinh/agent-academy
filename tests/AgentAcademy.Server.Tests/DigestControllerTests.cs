@@ -236,6 +236,19 @@ public sealed class DigestControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Get_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var digest = SeedDigest(summary: "auth-disabled get");
+        var openController = new DigestController(_db, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Get(digest.Id);
+        Assert.IsNotType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
     public async Task Get_NotFound_Returns404()
     {
         var result = await _controller.Get(999);
@@ -286,6 +299,18 @@ public sealed class DigestControllerTests : IDisposable
         SetAuthenticated(false);
         var result = await _controller.Stats();
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Stats_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new DigestController(_db, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Stats();
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]

@@ -154,6 +154,24 @@ public sealed class MemoryControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Import_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Import(new MemoryController.MemoryImportRequest
+        {
+            Memories = [new MemoryController.MemoryImportEntry
+            {
+                AgentId = "a1", Key = "k1", Category = "decision", Value = "v1"
+            }]
+        });
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
     public async Task Import_NullRequest_ReturnsBadRequest()
     {
         var result = await _controller.Import(null);
@@ -323,6 +341,18 @@ public sealed class MemoryControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task CleanupExpired_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.CleanupExpired(agentId: "a1");
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
     public async Task CleanupExpired_MissingAgentId_ReturnsBadRequest()
     {
         var result = await _controller.CleanupExpired(agentId: null);
@@ -371,6 +401,18 @@ public sealed class MemoryControllerTests : IDisposable
         SetAuthenticated(false);
         var result = await _controller.Browse(agentId: "agent1", category: null, search: null);
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Browse_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Browse(agentId: "agent1", category: null, search: null);
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]
@@ -485,6 +527,18 @@ public sealed class MemoryControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Stats_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Stats(agentId: "agent1");
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
     public async Task Stats_MissingAgentId_ReturnsBadRequest()
     {
         var result = await _controller.Stats(agentId: null);
@@ -525,6 +579,25 @@ public sealed class MemoryControllerTests : IDisposable
         SetAuthenticated(false);
         var result = await _controller.Delete(agentId: "agent1", key: "k1");
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Delete_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var now = DateTime.UtcNow;
+        _db.AgentMemories.Add(new AgentMemoryEntity
+        {
+            AgentId = "agent1", Key = "k-open", Category = "decision", Value = "v", CreatedAt = now,
+        });
+        await _db.SaveChangesAsync();
+
+        var openController = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Delete(agentId: "agent1", key: "k-open");
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]

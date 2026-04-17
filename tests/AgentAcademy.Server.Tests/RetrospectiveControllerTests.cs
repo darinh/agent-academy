@@ -362,6 +362,20 @@ public sealed class RetrospectiveControllerTests : IDisposable
         Assert.IsType<UnauthorizedObjectResult>(result);
     }
 
+    [Fact]
+    public async Task Get_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var task = SeedTask(title: "Auth-disabled get");
+        var retro = SeedRetrospective(taskId: task.Id);
+        var openController = new RetrospectiveController(_db, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Get(retro.Id);
+        Assert.IsNotType<UnauthorizedObjectResult>(result);
+    }
+
     // ── Stats ────────────────────────────────────────────────
 
     [Fact]
@@ -441,6 +455,18 @@ public sealed class RetrospectiveControllerTests : IDisposable
         SetAuthenticated(false);
         var result = await _controller.Stats();
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Stats_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new RetrospectiveController(_db, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Stats();
+        Assert.IsType<OkObjectResult>(result);
     }
 
     // ── Edge cases (test backfill) ──────────────────────────────
