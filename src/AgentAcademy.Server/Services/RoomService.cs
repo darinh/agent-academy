@@ -125,10 +125,12 @@ public sealed class RoomService : IRoomService
             targetSessionId = activeSession?.Id;
         }
 
+        // Per spec 005 §Message Management: only the active session's messages plus
+        // legacy untagged messages. When no active session exists (targetSessionId == null),
+        // return ONLY legacy untagged messages — do not leak prior-session history (#64).
         IQueryable<MessageEntity> query = _db.Messages
             .Where(m => m.RoomId == roomId && m.RecipientId == null
-                && (targetSessionId == null || m.SessionId == targetSessionId
-                    || m.SessionId == null || m.SenderKind == nameof(MessageSenderKind.User)));
+                && (m.SessionId == null || m.SessionId == targetSessionId));
 
         if (!string.IsNullOrEmpty(afterMessageId))
         {
