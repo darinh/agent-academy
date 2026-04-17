@@ -860,7 +860,7 @@ When task status → `InReview`:
 
 1. `BreakoutCompletionService` transitions the breakout task to `InReview` (via `TransitionBreakoutTaskToInReviewAsync`)
 2. A system status message is posted to the parent room announcing the InReview transition and the branch name
-3. `TaskStatusChanged` activity event is published (there is no dedicated `TaskReviewRequested` event)
+3. No dedicated activity event is published on the InReview transition itself. `ActivityEventType.TaskStatusUpdated` is the generic status-change event used elsewhere in the task lifecycle, but the InReview transition path (`BreakoutCompletionService.TransitionBreakoutTaskToInReviewAsync` → `TaskQueryService.UpdateTaskStatusAsync`) does not emit it.
 4. Socrates (or a human reviewer) uses `SHOW_DIFF` on the task branch to inspect changes
 5. Reviewer posts findings and approves via `APPROVE_TASK` or sends back via `REQUEST_CHANGES`
 6. Status is updated accordingly; `MERGE_TASK` follows an approval to bring the branch into `develop`

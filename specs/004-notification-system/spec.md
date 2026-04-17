@@ -51,7 +51,7 @@ Defines the pluggable notification provider architecture for Agent Academy. Noti
 - **Fan-out delivery**: `SendToAllAsync` sends to every connected provider
 - **Failure isolation**: Individual provider failures are logged, never propagated
 - **Input collection**: `RequestInputFromAnyAsync` iterates connected providers (order not guaranteed — uses `ConcurrentDictionary.Values`), returns first non-null response
-- **Agent questions**: `SendAgentQuestionAsync` iterates providers and returns `true` if any provider successfully delivered the question; provider-level errors are logged but not returned to the caller.
+- **Agent questions**: `INotificationProvider.SendAgentQuestionAsync` returns `Task<bool>` (per-provider send-success). `NotificationManager.SendAgentQuestionAsync` wraps the fan-out and returns `Task<(bool Sent, string? Error)>` — it tries every connected provider, records per-attempt errors via `NotificationDeliveryTracker`, and surfaces the last error to the caller so handlers can present specific failure detail to the agent instead of a generic "no provider" message.
 
 ### Built-in Provider: Console
 

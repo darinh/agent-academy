@@ -290,12 +290,12 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 |-------|-------|------|--------|
 | `task-state` | `list_tasks`, `list_rooms`, `show_agents` | Read-only (shared) | All agents |
 | `code` | `read_file`, `search_code` | Read-only (shared) | All agents (Planner, Architect, Engineers, Reviewer, Writer) |
-| `code-write` | `commit_changes` | Write (per-agent) | Engineers (agents with code-write permission, e.g. Prometheus/Hephaestus/Hermes) |
+| `code-write` | `write_file`, `commit_changes` | Write (per-agent) | Engineers (agents with code-write permission, e.g. Prometheus/Hephaestus/Hermes) |
 | `task-write` | `create_task`, `update_task_status`, `add_task_comment` | Write (per-agent) | All agents |
 | `memory` | `remember`, `recall` | Write/Read (per-agent) | All agents |
 | `chat` | (platform concept, not an SDK tool) | — | All agents |
 
-> Tool groups are resolved by `AgentToolRegistry` based on `AgentDefinition.EnabledTools`. The `task-write`, `code-write`, and `memory` groups are contextual (created per-agent) because their handlers need the calling agent's identity for audit/scoping. The `commit_changes` SDK tool is registered in `AgentToolFunctions.cs` and invokes the agent's commit flow in its working directory (worktree-scoped).
+> Tool groups are resolved by `AgentToolRegistry` based on `AgentDefinition.EnabledTools`. The `task-write`, `code-write`, and `memory` groups are contextual (created per-agent) because their handlers need the calling agent's identity for audit/scoping. The `write_file` and `commit_changes` SDK tools are registered in `AgentToolFunctions.cs` and invoke the agent's file write / commit flow in its working directory (worktree-scoped).
 
 #### Tool Functions
 
