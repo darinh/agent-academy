@@ -179,6 +179,11 @@ public static class WebApplicationExtensions
 
         app.UseCors();
 
+        // CSRF protection runs AFTER CORS (so preflight OPTIONS is already
+        // short-circuited) and BEFORE authentication — we only need to check
+        // for the cookie on the request, not a fully-materialized principal.
+        app.UseMiddleware<CsrfProtectionMiddleware>();
+
         if (authSetup.AnyAuthEnabled)
         {
             app.UseAuthentication();

@@ -80,6 +80,8 @@ All security enforcement happens server-side. The browser client and agents are 
 - `SameSite = None` — required for cross-origin requests from the Vite dev server
 - Sliding expiration with configurable lifetime
 
+**CSRF protection**: Because `SameSite = None` allows the browser to attach the auth cookie to cross-origin requests, mutating requests are additionally gated by the CSRF middleware described in §2.5.
+
 ### 2.2 Consultant Key (Secondary — CLI Agents)
 
 **Files**: `Auth/ConsultantKeyAuthHandler.cs`, `Auth/ConsultantRateLimitSettings.cs`
@@ -119,6 +121,31 @@ When neither GitHub OAuth credentials nor a consultant shared secret is configur
 **Rationale**: Simplifies local development and first-run setup. The system is designed for single-user localhost operation.
 
 **Invariant**: Auth-disabled mode is determined at startup and cannot change at runtime. The presence/absence of `GitHub:ClientId` and `ConsultantApi:SharedSecret` is the gate.
+
+### 2.5 CSRF Protection (Cookie-Authenticated Endpoints)
+
+**File**: `Middleware/CsrfProtectionMiddleware.cs`
+
+**Threat**: The production auth cookie is `SameSite = None` (§2.1). That means browsers attach it to cross-origin requests. CORS with `AllowCredentials` + an explicit origin allowlist blocks `fetch(..., { credentials: "include" })` from unlisted origins, but it does **not** block simple HTML form POSTs — browsers send those cross-origin by default and will include the cookie. Without additional defense, an attacker-controlled page could submit a form to any mutating endpoint and act as the signed-in user.
+
+**Defense (header check)**: A middleware registered between `UseCors` and `UseAuthentication` rejects mutating requests (POST/PUT/PATCH/DELETE) that satisfy all of:
+
+1. The auth cookie (`AgentAcademy.Auth`) is present on the request, AND
+2. The `X-Requested-With` header is absent, AND
+3. The request does NOT carry the `X-Consultant-Key` header (that scheme is bearer-style and has no browser CSRF surface).
+
+Rejections return `403 Forbidden` with a `ProblemDetails` body carrying `code: "CSRF_HEADER_REQUIRED"`. Requests missing the cookie are not rejected here — downstream authorization handles them.
+
+**Why the header suffices**: `X-Requested-With` is not on the CORS safelist, so setting it forces the browser to issue a preflight. The existing origin allowlist (`services.AddCors`) then blocks unlisted origins at the preflight stage, and the forged request never reaches the server. A cross-origin HTML form cannot set custom headers, so it cannot forge.
+
+**SPA integration**: `src/agent-academy-client/src/api/core.ts` exports `csrfHeaders = { "X-Requested-With": "XMLHttpRequest" }` and the shared `request()` helper applies it to every call. Direct `fetch()` call sites (sprints, workspace) import and spread `csrfHeaders` on all mutating requests. SignalR automatically sends `X-Requested-With: XMLHttpRequest` on its transport requests.
+
+**Exempt endpoints**: Only GET/HEAD/OPTIONS/TRACE are exempt by method. OAuth redirects (`/api/auth/login`, GitHub's `/signin-github` callback) are GETs and therefore exempt. There is no explicit path allowlist — the cookie-presence gate is sufficient.
+
+**Accepted limitations**:
+- Not a rotating CSRF token — the server only verifies the header is present, not its value. The real enforcement is the browser's CORS preflight, backed by the origin allowlist.
+- Defense assumes the origin allowlist is correctly configured (§2.1 cross-origin requirement). If the allowlist is widened without also tightening this middleware, protection weakens.
+- Does not protect non-browser clients that reuse a user's exported cookie jar — those callers have already bypassed the browser trust model.
 
 ---
 
