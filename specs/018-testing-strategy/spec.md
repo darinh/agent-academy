@@ -234,6 +234,35 @@ npm test
 npm run test:watch
 ```
 
+### Testing Fluent UI v9 Dialogs
+
+Fluent UI v9's `Dialog` renders content asynchronously via a portal with an open/close animation. Synchronous `getByRole` queries against dialog interiors are flake-prone — the dialog element can be present while its children are still mounting. Use `findByRole` (async, auto-retrying) with an explicit 5000ms timeout in both positions: waiting for the dialog and resolving interactive elements inside it.
+
+**Flake-resistant pattern** (used by `agentConfigCard.dom.test.tsx` and `projectSelectorPage.dom.test.tsx` after PRs #83 and #84):
+
+```typescript
+// ✅ GOOD — async all the way
+const dialog = await screen.findByRole("dialog", { timeout: 5000 });
+const confirmBtn = await within(dialog).findByRole("button", { name: /confirm/i });
+await user.click(confirmBtn);
+```
+
+**Anti-patterns that cause flakes:**
+
+```typescript
+// ❌ BAD — sync getByRole on dialog interior can race animation
+const dialog = await screen.findByRole("dialog");
+await user.click(within(dialog).getByRole("button", { name: /confirm/i }));
+
+// ❌ BAD — waitFor + sync within() collapses to the same race
+await waitFor(() => {
+  const dialog = screen.getByRole("dialog");
+  within(dialog).getByRole("button", { name: /confirm/i }); // sync probe inside waitFor
+});
+```
+
+Bumping `asyncUtilTimeout` in the testing-library config does **not** rescue synchronous `within(...).getByRole` probes — it only affects `findBy*` / `waitFor`. Always use `findByRole` for elements inside dialogs that appear after an open transition.
+
 ### E2E Testing (Playwright)
 
 **Configuration**: `src/agent-academy-client/playwright.config.ts`
@@ -489,6 +518,9 @@ Security-critical modules (`CommandAuthorizer`, `PromptSanitizer`) maintain **10
 - **Frontend**: Factory functions per test file (no shared fixture library)
 
 ## Revision History
+
+### 2026-04-17
+- **Added**: "Testing Fluent UI v9 Dialogs" subsection under Frontend Unit Testing. Documents the flake-resistant pattern (async `findByRole` with 5000ms timeout for both the dialog and interior elements) and the sync anti-patterns that caused the flakes fixed in PRs #83 and #84. Notes that `asyncUtilTimeout` does not rescue sync `within().getByRole` probes.
 
 ### 2026-04-16 (d)
 - **Added**: `search-code` module to mutation testing suite — SearchCodeHandler.cs (83.2%, 101 mutants).
