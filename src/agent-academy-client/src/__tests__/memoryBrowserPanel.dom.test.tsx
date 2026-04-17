@@ -320,9 +320,12 @@ describe("MemoryBrowserPanel", () => {
         wrap(createElement(MemoryBrowserPanel, { agents: makeAgents(), refreshTrigger: 0 })),
       );
       await waitFor(() => expect(mockBrowse).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(mockStats).toHaveBeenCalledTimes(1));
 
       // Stats should be visible after initial load
-      expect(screen.getByText("4 active")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("4 active")).toBeInTheDocument();
+      });
 
       // Next refresh: browse fails, stats succeeds (Promise.allSettled)
       mockBrowse.mockRejectedValue(new Error("Network timeout"));
