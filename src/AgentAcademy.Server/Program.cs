@@ -17,7 +17,7 @@ builder.Services
 // ── Authentication & Rate Limiting ──────────────────────────────────────────
 
 var authSetup = AppAuthSetup.FromConfiguration(builder.Configuration);
-builder.Services.AddAppAuthentication(authSetup);
+builder.Services.AddAppAuthentication(authSetup, builder.Environment);
 builder.Services.AddSingleton(authSetup);
 builder.Services.AddSingleton(new GitHubAuthOptions(authSetup.GitHubAuthEnabled, authSetup.GitHubFrontendUrl));
 

@@ -21,7 +21,8 @@ public static class AuthenticationExtensions
     /// </summary>
     public static IServiceCollection AddAppAuthentication(
         this IServiceCollection services,
-        AppAuthSetup setup)
+        AppAuthSetup setup,
+        IWebHostEnvironment environment)
     {
         if (!setup.AnyAuthEnabled)
             return services;
@@ -50,7 +51,7 @@ public static class AuthenticationExtensions
 
         if (setup.GitHubAuthEnabled)
         {
-            AddGitHubOAuth(authBuilder, setup);
+            AddGitHubOAuth(authBuilder, setup, environment);
         }
 
         if (setup.ConsultantAuthEnabled)
@@ -76,8 +77,22 @@ public static class AuthenticationExtensions
 
     private static void AddGitHubOAuth(
         AuthenticationBuilder authBuilder,
-        AppAuthSetup setup)
+        AppAuthSetup setup,
+        IWebHostEnvironment environment)
     {
+        // Spec 015 §2.1: auth cookie is HttpOnly + SameSite=None + Secure=true
+        // in production so it survives cross-site redirects from the GitHub
+        // OAuth callback and is usable from the SPA over HTTPS. Browsers drop
+        // Secure cookies over plain HTTP and drop SameSite=None cookies that
+        // lack Secure, so Development relaxes both: SameAsRequest (emits the
+        // Secure attribute only when the request itself is HTTPS) and
+        // SameSite=Lax (dev SPA proxies /api through Vite at the same origin).
+        var isDevelopment = environment.IsDevelopment();
+        var sameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None;
+        var securePolicy = isDevelopment
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+
         authBuilder
             .AddCookie(options =>
             {
@@ -85,7 +100,8 @@ public static class AuthenticationExtensions
                 options.LogoutPath = "/api/auth/logout";
                 options.Cookie.Name = "AgentAcademy.Auth";
                 options.Cookie.HttpOnly = true;
-                options.Cookie.SameSite = SameSiteMode.Lax;
+                options.Cookie.SameSite = sameSite;
+                options.Cookie.SecurePolicy = securePolicy;
                 options.ExpireTimeSpan = TimeSpan.FromDays(7);
                 options.SlidingExpiration = true;
 
