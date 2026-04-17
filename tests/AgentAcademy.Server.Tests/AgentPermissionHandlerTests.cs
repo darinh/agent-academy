@@ -64,7 +64,6 @@ public sealed class AgentPermissionHandlerTests
         var result = await handler(MakeRequest(kind), MakeInvocation(sessionId));
 
         Assert.Equal(PermissionRequestResultKind.DeniedByRules, result.Kind);
-        AgentPermissionHandler.ClearSession(sessionId);
     }
 
     // ── No tools registered → approve all ───────────────────────
@@ -83,54 +82,45 @@ public sealed class AgentPermissionHandlerTests
         Assert.Equal(PermissionRequestResultKind.Approved, result.Kind);
     }
 
-    // ── Denial log escalation ───────────────────────────────────
+    // ── Denial log escalation (per-closure) ─────────────────────
 
     [Fact]
     public async Task Create_DenialLogging_FirstThreeAtWarning()
     {
         var mockLogger = Substitute.For<ILogger>();
-        var sessionId = $"log-test-{Guid.NewGuid():N}";
         var handler = AgentPermissionHandler.Create(
             new HashSet<string> { "some-tool" }, mockLogger);
 
         // Fire 3 denials
         for (var i = 0; i < 3; i++)
-            await handler(MakeRequest("shell"), MakeInvocation(sessionId));
+            await handler(MakeRequest("shell"), MakeInvocation());
 
-        // Verify 3 Warning-level log calls
         mockLogger.Received(3).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
-
-        AgentPermissionHandler.ClearSession(sessionId);
     }
 
     [Fact]
     public async Task Create_DenialLogging_FourthAtWarningWithSuppression()
     {
         var mockLogger = Substitute.For<ILogger>();
-        // Enable all log levels
         mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var sessionId = $"log-test-4th-{Guid.NewGuid():N}";
         var handler = AgentPermissionHandler.Create(
             new HashSet<string> { "some-tool" }, mockLogger);
 
-        // Fire 4 denials
         for (var i = 0; i < 4; i++)
-            await handler(MakeRequest("shell"), MakeInvocation(sessionId));
+            await handler(MakeRequest("shell"), MakeInvocation());
 
-        // 4 Warning calls total (3 regular + 1 suppression)
+        // 4 Warning calls total (3 regular + 1 suppression notice).
         mockLogger.Received(4).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
-
-        AgentPermissionHandler.ClearSession(sessionId);
     }
 
     [Fact]
@@ -138,15 +128,13 @@ public sealed class AgentPermissionHandlerTests
     {
         var mockLogger = Substitute.For<ILogger>();
         mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var sessionId = $"log-test-5th-{Guid.NewGuid():N}";
         var handler = AgentPermissionHandler.Create(
             new HashSet<string> { "some-tool" }, mockLogger);
 
-        // Fire 6 denials
         for (var i = 0; i < 6; i++)
-            await handler(MakeRequest("shell"), MakeInvocation(sessionId));
+            await handler(MakeRequest("shell"), MakeInvocation());
 
-        // 4 Warning (first 3 + suppression at 4th), 2 Debug (5th + 6th)
+        // 4 Warning (first 3 + suppression at 4th), 2 Debug (5th + 6th).
         mockLogger.Received(4).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
@@ -160,46 +148,58 @@ public sealed class AgentPermissionHandlerTests
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
-
-        AgentPermissionHandler.ClearSession(sessionId);
     }
 
-    // ── ClearSession ────────────────────────────────────────────
+    // ── Per-closure state (new behavior) ─────────────────────────
 
     [Fact]
-    public async Task ClearSession_ResetsDenialCount()
+    public async Task Create_DenialCount_IsPerHandlerInstance()
     {
-        var mockLogger = Substitute.For<ILogger>();
-        mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var sessionId = $"clear-test-{Guid.NewGuid():N}";
-        var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, mockLogger);
+        // Each Create() call returns a handler with its own denial counter,
+        // scoped to that session and GC'd with it. Two handlers do not share
+        // state, even when invoked with the same sessionId.
+        var loggerA = Substitute.For<ILogger>();
+        loggerA.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var loggerB = Substitute.For<ILogger>();
+        loggerB.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
-        // Fire 5 denials (past suppression threshold)
-        for (var i = 0; i < 5; i++)
-            await handler(MakeRequest("shell"), MakeInvocation(sessionId));
+        var handlerA = AgentPermissionHandler.Create(
+            new HashSet<string> { "some-tool" }, loggerA);
+        var handlerB = AgentPermissionHandler.Create(
+            new HashSet<string> { "some-tool" }, loggerB);
 
-        // Clear and fire again — should log at Warning (count reset)
-        AgentPermissionHandler.ClearSession(sessionId);
-        mockLogger.ClearReceivedCalls();
+        // Fire 4 denials on handler A — should see 4 Warning logs
+        // (3 escalating + 1 suppression notice).
+        for (var i = 0; i < 4; i++)
+            await handlerA(MakeRequest("shell"), MakeInvocation("shared-session"));
 
-        await handler(MakeRequest("shell"), MakeInvocation(sessionId));
-
-        mockLogger.Received(1).Log(
+        loggerA.Received(4).Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception?>(),
             Arg.Any<Func<object, Exception?, string>>());
 
-        AgentPermissionHandler.ClearSession(sessionId);
+        // Handler B has a fresh counter — first denial logs at Warning #1.
+        await handlerB(MakeRequest("shell"), MakeInvocation("shared-session"));
+
+        loggerB.Received(1).Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception?>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     [Fact]
-    public void ClearSession_NonexistentSession_DoesNotThrow()
+    public void ClearSession_IsObsoleteNoOp()
     {
-        // Should be a no-op for unknown sessions
-        AgentPermissionHandler.ClearSession("nonexistent-" + Guid.NewGuid());
+        // ClearSession is retained for backward compatibility but no longer
+        // affects any handler — denial counters are closure-local.
+#pragma warning disable CS0618
+        AgentPermissionHandler.ClearSession("anything");
+        AgentPermissionHandler.ClearSession(string.Empty);
+#pragma warning restore CS0618
     }
 
     // ── Null session ID ─────────────────────────────────────────
@@ -214,7 +214,5 @@ public sealed class AgentPermissionHandlerTests
         var result = await handler(MakeRequest("shell"), MakeInvocation(null));
 
         Assert.Equal(PermissionRequestResultKind.DeniedByRules, result.Kind);
-        // Clean up the "unknown" fallback session bucket
-        AgentPermissionHandler.ClearSession("unknown");
     }
 }
