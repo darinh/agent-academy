@@ -50,6 +50,7 @@ internal sealed record ShellCommand(
             "restart-server" => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value", "reason" },
             "dotnet-build" => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value" },
             "dotnet-test" => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "operation", "value" },
+            // Stryker disable once all : defensive unreachable — guarded by SupportedOperations.Contains check above; only reachable if a new operation is added to SupportedOperations without adding a case here. Mutating the diagnostic message has no observable behaviour.
             _ => throw new InvalidOperationException($"Unreachable: '{normalizedOperation}' passed SupportedOperations guard but has no allowlist case.")
         };
 
