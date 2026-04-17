@@ -9,7 +9,12 @@ x-common-env: &common-env
   GitHub__ClientSecret: ${GITHUB_CLIENT_SECRET:-}
   GitHub__FrontendUrl: ${GITHUB_FRONTEND_URL:-http://localhost:8080}
   # Consultant API (optional — for external agent access)
-  ConsultantApi__SharedSecret: ${CONSULTANT_SHARED_SECRET:-}
+  # Env var name matches the .NET config key (`:` → `__`) for consistency
+  # between host-side docs and in-container config binding. The second
+  # fallback preserves backward compatibility for deployments that were
+  # configured with the legacy `CONSULTANT_SHARED_SECRET` host var name;
+  # this alias will be removed in a future release.
+  ConsultantApi__SharedSecret: ${ConsultantApi__SharedSecret:-${CONSULTANT_SHARED_SECRET:-}}
   # Discord notifications (optional)
   Discord__BotToken: ${DISCORD_BOT_TOKEN:-}
   Discord__GuildId: ${DISCORD_GUILD_ID:-}
