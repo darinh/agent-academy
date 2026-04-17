@@ -580,9 +580,12 @@ describe("AgentConfigCard (interactive)", () => {
       mockGetQuota.mockResolvedValueOnce(makeQuota());
       // Click the "Remove Limits" button to open dialog
       fireEvent.click(screen.getByRole("button", { name: /Remove Limits/ }));
-      // Scope to dialog portal for the confirmation button
+      // Scope to dialog portal for the confirmation button — use findBy* so
+      // we wait for the dialog content (not just the portal div) to render
+      // under heavy parallel test load.
       const dialog = await screen.findByRole("dialog");
-      await user.click(within(dialog).getByRole("button", { name: /Remove Limits/ }));
+      const confirmBtn = await within(dialog).findByRole("button", { name: /Remove Limits/ });
+      await user.click(confirmBtn);
       await waitFor(() => {
         expect(mockRemoveQuota).toHaveBeenCalledWith("architect");
       });
