@@ -36,7 +36,7 @@ Stages advance forward only — there is no mechanism to revert to a previous st
 
 **Human sign-off**: Intake and Planning stages enter an `AwaitingSignOff` state when agents request advancement. A human must approve (advancing to the next stage) or reject (keeping the sprint at the current stage for revision). Other stages advance immediately.
 
-**Role roster**: The orchestrator filters agents per stage. Agents whose role is not in the roster for the current stage are excluded from conversation rounds. Stages not listed in the roster map (Validation, Implementation, FinalSynthesis) admit all roles.
+**Role roster**: The orchestrator filters agents per stage at **two presentation points** — conversation turn selection (`ConversationRoundRunner` keyed on `sprint.CurrentStage` via `SprintPreambles.FilterByStageRoster`) and room participant snapshots (`RoomSnapshotBuilder.BuildParticipants` keyed on `room.CurrentPhase` via `SprintPreambles.IsRoleAllowedInStage`). Agents whose role is not in the roster are excluded from conversation rounds and hidden from snapshots for that stage/phase. Stages not listed in the roster map (Validation, Implementation, FinalSynthesis) admit all roles. Roster filtering is a presentation-layer contract: `AgentLocations` records are *not* mutated on phase transition — the filter is reapplied on every snapshot/round. Note that `sprint.CurrentStage` and `room.CurrentPhase` are tracked independently; keeping them in sync is the subject of issue #57. See `specs/005-workspace-runtime/spec.md` ("Phase-scoped room membership") for the data-layer semantics.
 
 ### Sprint States
 
