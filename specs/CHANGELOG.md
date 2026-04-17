@@ -4,6 +4,9 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **007-agent-commands §Permission Model**: Renamed the second `SoftwareEngineer` row from `Prometheus` to `Athena` to match `src/AgentAcademy.Server/Config/agents.json` (agent id `software-engineer-2`, `Name: "Athena"`, `Role: SoftwareEngineer`, permissions identical to Hephaestus). BUG_FIX_SPEC — the roster shipped as Aristotle / Archimedes / Hephaestus / Athena / Socrates / Thucydides (six agents); Aristotle's startup prompt in `agents.json` names Athena as the Frontend Engineer teammate. The spec roster was stale from an early draft that used the codename "Prometheus" for SWE-2. Spec 007 §Permission Model now matches config. Fixes #70.
+
 ### Added
 - **015-security-model §2.5**: New CSRF protection section documenting `CsrfProtectionMiddleware` — a header-check defense (`X-Requested-With`) that blocks cross-origin form POSTs against cookie-authenticated browser requests. Registered between `UseCors` and `UseAuthentication`. Exempts safe methods, consultant-key auth, and requests that lack the auth cookie. §2.1 cookie config cross-references the new section. SPA wired via `csrfHeaders` export in `api/core.ts`, consumed by the shared `request()` helper and by direct `fetch()` call sites in `api/sprints.ts` and `api/workspace.ts`. SignalR already sends the header natively. Fixes #80.
 

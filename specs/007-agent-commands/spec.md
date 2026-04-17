@@ -93,7 +93,7 @@ Per-agent permission boundaries:
 | Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, allowlisted `SHELL` operations | Arbitrary code execution |
 | Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT`, `QUERY_EVIDENCE`, `CHECK_GATES` | Code execution |
 | Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES` | Spec write, task approve |
-| Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
+| Athena | SoftwareEngineer | Same as Hephaestus | Same |
 | Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, allowlisted `SHELL` operations | File write, arbitrary code execution |
 | Thucydides | TechnicalWriter | Spec read/write, file read, `ADD_TASK_COMMENT`, `QUERY_EVIDENCE`, `CHECK_GATES` | Code execution, task approve |
 
