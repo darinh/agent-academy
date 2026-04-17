@@ -30,10 +30,11 @@ public sealed class SpecManager : Contracts.ISpecManager
     private readonly string _specsDir;
     private readonly ILogger<SpecManager>? _logger;
 
-    // Cached content hash to avoid recomputing on every call
+    // Cached content hash to avoid recomputing on every call.
+    // Invalidation key is a signature covering every spec file's (path, mtime, length) —
+    // editing any file (even an older one) changes the signature.
     private string? _cachedContentHash;
-    private DateTime _cacheTimestamp;
-    private int _cacheFileCount;
+    private string? _cacheSignature;
 
     /// <summary>
     /// Creates a SpecManager that reads from the given specs directory.
@@ -427,9 +428,9 @@ public sealed class SpecManager : Contracts.ISpecManager
     {
         if (!Directory.Exists(_specsDir)) return "";
 
-        // Check if cache is still valid (file count + newest write time unchanged)
-        var (newestWrite, fileCount) = GetSpecFileMetadata();
-        if (_cachedContentHash is not null && newestWrite == _cacheTimestamp && fileCount == _cacheFileCount)
+        // Check if cache is still valid — signature covers every spec file's mtime + size.
+        var signature = ComputeCacheSignature();
+        if (_cachedContentHash is not null && signature == _cacheSignature)
             return _cachedContentHash;
 
         try
@@ -459,8 +460,7 @@ public sealed class SpecManager : Contracts.ISpecManager
             var hash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant()[..12];
 
             _cachedContentHash = hash;
-            _cacheTimestamp = newestWrite;
-            _cacheFileCount = fileCount;
+            _cacheSignature = signature;
             return hash;
         }
         catch
@@ -504,20 +504,22 @@ public sealed class SpecManager : Contracts.ISpecManager
             .Count(d => File.Exists(Path.Combine(d, "spec.md")));
     }
 
-    private (DateTime NewestWrite, int FileCount) GetSpecFileMetadata()
+    /// <summary>
+    /// Builds a stable signature over every spec file's (path, mtime_ticks, length).
+    /// Editing any file — including older ones — changes the signature and invalidates the cache.
+    /// </summary>
+    private string ComputeCacheSignature()
     {
-        if (!Directory.Exists(_specsDir)) return (DateTime.MinValue, 0);
+        if (!Directory.Exists(_specsDir)) return "empty";
 
-        var newest = DateTime.MinValue;
-        var count = 0;
-        foreach (var dir in Directory.GetDirectories(_specsDir))
+        var entries = new List<string>();
+        foreach (var dir in Directory.GetDirectories(_specsDir).OrderBy(d => d, StringComparer.Ordinal))
         {
             var specFile = Path.Combine(dir, "spec.md");
             if (!File.Exists(specFile)) continue;
-            count++;
-            var writeTime = File.GetLastWriteTimeUtc(specFile);
-            if (writeTime > newest) newest = writeTime;
+            var info = new FileInfo(specFile);
+            entries.Add($"{specFile}|{info.LastWriteTimeUtc.Ticks}|{info.Length}");
         }
-        return (newest, count);
+        return string.Join(";", entries);
     }
 }

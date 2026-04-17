@@ -362,6 +362,36 @@ public class SpecManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task ComputeContentHashAsync_DetectsEditToOlderFile_WhenNewestMtimeUnchanged()
+    {
+        // Regression: previous cache invalidation used (newestMtime, count), so edits to an
+        // older file left the cache key stable and served stale content. See issue #63.
+        CreateSpec("000-overview", "# Overview\n\n## Purpose\nOriginal.");
+        CreateSpec("014-recent", "# Recent\n\n## Purpose\nNewer file.");
+
+        // Force deterministic mtimes: 000-overview older, 014-recent newest.
+        var older = Path.Combine(_tempDir, "000-overview", "spec.md");
+        var newest = Path.Combine(_tempDir, "014-recent", "spec.md");
+        var olderMtime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var newestMtime = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(older, olderMtime);
+        File.SetLastWriteTimeUtc(newest, newestMtime);
+
+        var manager = new SpecManager(_tempDir);
+        var hash1 = await manager.ComputeContentHashAsync();
+
+        // Edit the older file. Bump its mtime but keep it still older than the newest file.
+        File.WriteAllText(older, "# Overview\n\n## Purpose\nEdited in place.");
+        File.SetLastWriteTimeUtc(older, olderMtime.AddSeconds(1));
+        // Keep the newest file untouched.
+        File.SetLastWriteTimeUtc(newest, newestMtime);
+
+        var hash2 = await manager.ComputeContentHashAsync();
+
+        Assert.NotEqual(hash1, hash2);
+    }
+
+    [Fact]
     public async Task ComputeContentHashAsync_InvalidatesCacheOnFileDeletion()
     {
         CreateSpec("000-overview", "# Overview\n\n## Purpose\nTest 1.");
