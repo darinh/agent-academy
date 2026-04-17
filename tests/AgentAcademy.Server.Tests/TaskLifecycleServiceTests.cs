@@ -953,6 +953,218 @@ public class TaskLifecycleServiceTests : IDisposable
                 "nonexistent", "spec-section-1", "engineer-1", "Hephaestus", "Implements"));
     }
 
+    // ── Mutation-kill coverage for SpecLinks validation messages, upsert
+    //    branching, note coalescing, Guid format, and publish side-effects.
+
+    [Fact]
+    public async Task LinkTaskToSpec_EmptyTaskId_MessageMentionsTaskId()
+    {
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => svc.LinkTaskToSpecAsync(
+                "", "spec-section-1", "engineer-1", "Hephaestus", "Implements"));
+        Assert.Contains("taskId", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_EmptySpecSectionId_MessageMentionsSpecSectionId()
+    {
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => svc.LinkTaskToSpecAsync(
+                "task-1", "", "engineer-1", "Hephaestus", "Implements"));
+        Assert.Contains("specSectionId", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_InvalidType_MessageListsValidTypes()
+    {
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => svc.LinkTaskToSpecAsync(
+                "task-1", "spec-section-1", "engineer-1", "Hephaestus", "BogusType"));
+        Assert.Contains("Invalid link type", ex.Message);
+        Assert.Contains("BogusType", ex.Message);
+        Assert.Contains("Implements", ex.Message);
+        // Kills the `", "` → `""` separator mutation: with the empty separator the
+        // valid types would concatenate with no delimiter.
+        Assert.Contains(", ", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_MissingTask_MessageIncludesTaskId()
+    {
+        var (svc, _) = CreateScope();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => svc.LinkTaskToSpecAsync(
+                "missing-xyz", "spec-section-1", "engineer-1", "Hephaestus", "Implements"));
+        Assert.Contains("missing-xyz", ex.Message);
+        Assert.Contains("not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_SameTaskDifferentSpec_CreatesSecondLink()
+    {
+        // Kills the `&&` → `||` logical mutation on the upsert lookup:
+        // with OR, the second call would see the first link (same TaskId) and UPDATE
+        // instead of INSERT, leaving only 1 row.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-A", "engineer-1", "Hephaestus", "Implements");
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-B", "engineer-1", "Hephaestus", "Implements");
+
+        var links = await db.SpecTaskLinks
+            .Where(l => l.TaskId == "task-1")
+            .ToListAsync();
+        Assert.Equal(2, links.Count);
+        Assert.Contains(links, l => l.SpecSectionId == "spec-A");
+        Assert.Contains(links, l => l.SpecSectionId == "spec-B");
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_UpdateWithNewNote_OverwritesExistingNote()
+    {
+        // Kills `note ?? existing.Note` → `existing.Note ?? note` (swap)
+        // and      → `existing.Note`     (remove-left).
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "engineer-1", "Hephaestus",
+            "Implements", "old-note");
+        var result = await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "reviewer-1", "Socrates",
+            "Fixes", "new-note");
+
+        Assert.Equal("new-note", result.Note);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_UpdateWithNullNote_PreservesExistingNote()
+    {
+        // Kills `note ?? existing.Note` → `note` (remove-right):
+        // with right-only, null note would overwrite a non-null existing note.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "engineer-1", "Hephaestus",
+            "Implements", "keep-me");
+        var result = await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "reviewer-1", "Socrates",
+            "Fixes", note: null);
+
+        Assert.Equal("keep-me", result.Note);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_CreatesNewLink_PublishesSpecTaskLinkedActivity()
+    {
+        // Kills the Publish statement-removal and $""-message mutants on the create path.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "engineer-1", "Hephaestus", "Implements");
+
+        var evt = await db.ActivityEvents
+            .Where(e => e.TaskId == "task-1"
+                        && e.Type == nameof(ActivityEventType.SpecTaskLinked))
+            .OrderByDescending(e => e.OccurredAt)
+            .FirstOrDefaultAsync();
+        Assert.NotNull(evt);
+        Assert.Contains("linked spec", evt!.Message);
+        Assert.Contains("spec-section-1", evt.Message);
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_UpdatesLink_PublishesUpdatedActivity()
+    {
+        // Kills the Publish statement-removal and $""-message mutants on the update path.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "engineer-1", "Hephaestus", "Implements");
+        await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "reviewer-1", "Socrates", "Fixes");
+
+        var updateEvents = await db.ActivityEvents
+            .Where(e => e.TaskId == "task-1"
+                        && e.Type == nameof(ActivityEventType.SpecTaskLinked)
+                        && e.Message.Contains("updated spec link"))
+            .ToListAsync();
+        Assert.NotEmpty(updateEvents);
+        Assert.Contains(updateEvents, e => e.Message.Contains("spec-section-1"));
+    }
+
+    [Fact]
+    public async Task LinkTaskToSpec_NewLink_IdIsHex12NoHyphens()
+    {
+        // Kills the `Guid.NewGuid().ToString("N")` → `ToString("")` mutation:
+        // "N" = 32 hex no hyphens; default ("") produces "D" format "xxxxxxxx-xxxx-...".
+        // The 12-char prefix of "D" format contains a hyphen at position 8.
+        var (svc, db) = CreateScope();
+        SeedTask(db);
+
+        var link = await svc.LinkTaskToSpecAsync(
+            "task-1", "spec-section-1", "engineer-1", "Hephaestus", "Implements");
+
+        var stored = await db.SpecTaskLinks
+            .FirstAsync(l => l.TaskId == "task-1" && l.SpecSectionId == "spec-section-1");
+        Assert.Equal(12, stored.Id.Length);
+        Assert.DoesNotContain("-", stored.Id);
+        Assert.Matches("^[0-9a-f]{12}$", stored.Id);
+    }
+
+    // ── Mutation-kill coverage for StageNewTask preferredRoles filtering (line 192).
+
+    [Fact]
+    public void StageNewTask_PreferredRoles_KeepsNonEmptyRoles()
+    {
+        // Kills `!string.IsNullOrEmpty(r)` → `string.IsNullOrEmpty(r)` (negation):
+        // with the negation, valid roles would be dropped leaving an empty list.
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "T", Description: "D", SuccessCriteria: "S",
+            RoomId: null,
+            PreferredRoles: ["SoftwareEngineer", "Reviewer"],
+            Type: TaskType.Feature);
+
+        var (task, _) = svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-roles-a");
+
+        Assert.Contains("SoftwareEngineer", task.PreferredRoles);
+        Assert.Contains("Reviewer", task.PreferredRoles);
+        Assert.Equal(2, task.PreferredRoles.Count);
+    }
+
+    [Fact]
+    public void StageNewTask_PreferredRoles_FiltersWhitespaceOnlyEntries()
+    {
+        // Kills `!string.IsNullOrEmpty(r)` → `(r != null)`:
+        // after `.Trim()`, whitespace becomes "" (never null), so `(r != null)`
+        // is always true and would keep the empty string in the list.
+        var (svc, _) = CreateScope();
+        var request = new TaskAssignmentRequest(
+            Title: "T", Description: "D", SuccessCriteria: "S",
+            RoomId: null,
+            PreferredRoles: ["SoftwareEngineer", "   ", "\t"],
+            Type: TaskType.Feature);
+
+        var (task, _) = svc.StageNewTask(request, RoomId, WorkspacePath, false, "corr-roles-b");
+
+        Assert.Equal(["SoftwareEngineer"], task.PreferredRoles);
+        Assert.DoesNotContain("", task.PreferredRoles);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ValidLinkTypes
     // ═══════════════════════════════════════════════════════════════

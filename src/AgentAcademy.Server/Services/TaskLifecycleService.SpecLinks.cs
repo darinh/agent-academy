@@ -41,6 +41,10 @@ public sealed partial class TaskLifecycleService
             return await UpsertSpecLinkCoreAsync(
                 task, taskId, specSectionId, agentId, agentName, linkType, note);
         }
+        // Stryker disable all : concurrency retry path — requires a race between
+        // the FirstOrDefaultAsync check and the SaveChangesAsync INSERT (two
+        // concurrent writers). Cannot be deterministically triggered from
+        // in-memory SQLite unit tests; kept as defensive recovery.
         catch (DbUpdateException)
         {
             // Concurrent insert hit unique constraint — reload and update
@@ -48,6 +52,7 @@ public sealed partial class TaskLifecycleService
             return await UpsertSpecLinkCoreAsync(
                 task, taskId, specSectionId, agentId, agentName, linkType, note);
         }
+        // Stryker restore all
     }
 
     private async Task<SpecTaskLink> UpsertSpecLinkCoreAsync(
