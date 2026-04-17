@@ -12,7 +12,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 
 - **Engine**: SQLite
 - **ORM**: Entity Framework Core 8
-- **Schema management**: Code-first migrations (31 migrations as of 2026-04-14)
+- **Schema management**: Code-first migrations (43 migrations as of 2026-04-15)
 - **DbContext**: `AgentAcademyDbContext` — applies configurations from `IEntityTypeConfiguration<T>` classes via assembly scanning
 - **FTS**: SQLite FTS5 virtual tables for full-text search (agent memories, messages/tasks)
 
@@ -21,11 +21,11 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 ## Entity Relationship Diagram
 
 ```
-┌─────────────────┐       ┌──────────────────┐       ┌──────────────────────┐
-│  WorkspaceEntity │◄──────│AgentWorkspaceEntity│     │ SprintScheduleEntity  │
-│  PK: Path        │ 1   * │PK: {WorkspacePath, │     │ PK: Id                │
-│                  │       │     AgentId}       │     │ UK: WorkspacePath     │
-└─────────────────┘        └──────────────────┘      └───────────────────────┘
+┌─────────────────┐                                   ┌──────────────────────┐
+│  WorkspaceEntity │                                   │ SprintScheduleEntity  │
+│  PK: Path        │                                   │ PK: Id                │
+│                  │                                   │ UK: WorkspacePath     │
+└─────────────────┘                                   └───────────────────────┘
 
 ┌─────────────────┐                           ┌──────────────────────┐
 │  SprintEntity    │◄─────────────────────────│  SprintArtifactEntity │
@@ -116,22 +116,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | DefaultBranch | string? | | Git default branch |
 | HostProvider | string? | | Git host (e.g., "github") |
 
-**Navigation**: `List<AgentWorkspaceEntity> AgentWorktrees`
-
-#### AgentWorkspaceEntity
-
-> Table: `agent_workspaces`
-
-| Column | Type | Constraint | Description |
-|--------|------|------------|-------------|
-| WorkspacePath | string | **PK** (composite) | FK → `workspaces.Path` (Cascade) |
-| AgentId | string | **PK** (composite) | Agent identifier |
-| WorktreePath | string? | | Filesystem path to agent's git worktree |
-| CurrentBranch | string? | | Agent's current branch |
-| CreatedAt | DateTime | | Creation timestamp |
-| LastAccessedAt | DateTime? | | Last access timestamp |
-
-**Indexes**: `idx_agent_workspaces_agent` (AgentId)
+> Note: Per-agent worktrees are tracked on disk under `.agent-worktrees/` within each workspace; there is no `agent_workspaces` table in the current schema (dropped 2026-04-15, migration `DropAgentWorkspacesTable`).
 
 ---
 
@@ -251,7 +236,8 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | ValidationSummary | string | | Validation details |
 | ImplementationStatus | string | | Implementation outcome |
 | ImplementationSummary | string | | Implementation details |
-| PreferredRoles | string | | Comma-separated role preferences |
+| PreferredRoles | string | | JSON array of role preferences (default `"[]"`) |
+| Priority | int | | Priority level: 0=Critical, 1=High, 2=Medium (default), 3=Low. Stored as int for correct sort order. |
 | RoomId | string? | FK → `rooms.Id` (SetNull) | Owning room |
 | WorkspacePath | string? | | Workspace scope |
 | CreatedAt | DateTime | | Creation timestamp |
@@ -275,7 +261,7 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 | SprintId | string? | FK → `sprints.Id` (SetNull) | Associated sprint |
 
 **Navigation**: `RoomEntity? Room`, `SprintEntity? Sprint`, `ICollection<TaskDependencyEntity> Dependencies`, `ICollection<TaskDependencyEntity> Dependents`
-**Indexes**: `idx_tasks_room`, `idx_tasks_agent`, `idx_tasks_status`, `idx_tasks_sprint`, `idx_tasks_workspace`, `idx_tasks_created`, `idx_tasks_completed`
+**Indexes**: `idx_tasks_room`, `idx_tasks_agent`, `idx_tasks_status`, `idx_tasks_sprint`, `idx_tasks_workspace`, `idx_tasks_created`, `idx_tasks_completed`, `idx_tasks_priority`
 
 #### TaskDependencyEntity
 
@@ -731,7 +717,7 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 
 | Table | Index Count | Notable Indexes |
 |-------|-------------|-----------------|
-| tasks | 7 | status, agent, sprint, workspace, created, completed |
+| tasks | 8 | status, agent, sprint, workspace, created, completed, priority |
 | agent_memories | 3 | agent, category, expires |
 | agent_errors | 4 | agent, room, time, type |
 | llm_usage | 4 | agent, room, time, composite agent+time |
@@ -760,7 +746,6 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 
 | From | Column | To | On Delete |
 |------|--------|----|-----------|
-| agent_workspaces | WorkspacePath | workspaces.Path | Cascade |
 | messages | RoomId | rooms.Id | Cascade |
 | breakout_rooms | ParentRoomId | rooms.Id | Cascade |
 | breakout_messages | BreakoutRoomId | breakout_rooms.Id | Cascade |
@@ -782,7 +767,7 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 
 ## Migration History
 
-31 migrations from initial schema (2026-03-27) through sprint schedules (2026-04-14). Key milestones:
+43 migrations from initial schema (2026-03-27) through `DropAgentWorkspacesTable` (2026-04-15). Key milestones:
 
 | Migration | Date | Description |
 |-----------|------|-------------|
@@ -809,6 +794,8 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 | AddTaskDependencies | 2026-04-13 | Task dependency graph |
 | AddLearningDigests | 2026-04-13 | Learning digest and source entities |
 | AddSprintSchedules | 2026-04-14 | Sprint auto-scheduling |
+| AddTaskPriority | 2026-04-14 | `tasks.Priority` int column (default 2=Medium) + `idx_tasks_priority` |
+| DropAgentWorkspacesTable | 2026-04-15 | Removed `agent_workspaces` table; per-agent worktrees tracked on disk |
 
 ## Known Gaps
 
@@ -822,4 +809,5 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 
 | Date | Change |
 |------|--------|
+| 2026-04-17 | Removed `AgentWorkspaceEntity` / `agent_workspaces` table (dropped); added `tasks.Priority` column + `idx_tasks_priority`; corrected `PreferredRoles` storage to JSON array (fixes #68) |
 | 2026-04-14 | Initial schema catalog — 31 entities, 31 migrations |
