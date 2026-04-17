@@ -16,46 +16,63 @@ The Agent Academy frontend is a single-page React application that provides the 
 
 ```
 App.tsx (FluentProvider + AppShell)
+├── StatusBanners.tsx (always-rendered wrapper: err / switchError / RecoveryBanner / CircuitBreakerBanner / connectionDetail)
 ├── ProjectSelectorPage.tsx (when no active workspace)
 │   ├── LoadExistingSection
 │   ├── OnboardSection
-│   └── CreateSection
-└── Shell (when workspace is active)
+│   ├── CreateSection
+│   └── UserBadge (top-right footer of the page)
+└── Shell (when workspace is active, `div.shell` with sidebar + main)
     ├── SidebarPanel.tsx
-    │   ├── Room list (each card shows agents in that room via agentLocations)
+    │   ├── Nav rail (overview, search, directMessages, plan, tasks, artifacts, timeline, activity, sprint, dashboard, commands, memories, knowledge, specs, digests, retrospectives)
+    │   ├── Rooms section — each card shows phase dot + room name + participant count (agents per room are NOT rendered on the card)
+    │   ├── Agents section — flat list of configured agents with status dot, name, and optional thinking spinner; clicking an agent sets `selectedWorkspaceId = "agent:{id}"` (entry point for `AgentSessionPanel`)
     │   ├── Inline room creation (+ button → name input → Enter to create)
-    │   ├── Per-agent thinking spinner (spinning ring around status dot)
-    │   └── Switch Project button
-    └── Main workspace
-        ├── Workspace header + phase pill + UserBadge
-        ├── Sidebar nav (overview, search, directMessages, plan, tasks, artifacts, timeline, activity, sprint, dashboard, commands, memories, knowledge, specs, digests, retrospectives)
-        └── Tab content panels
-            ├── ChatPanel.tsx (room-centric conversation with session management)
-            ├── TaskListPanel.tsx
-            ├── PlanPanel.tsx
-            ├── CommandsPanel.tsx
-            ├── TimelinePanel.tsx
-            ├── DashboardPanel.tsx
-            │   ├── AgentAnalyticsPanel.tsx (per-agent performance metrics)
-            │   └── WorktreeStatusPanel.tsx (live worktree health widget)
-            ├── MemoryBrowserPanel.tsx (per-agent memory browser with search, categories, delete)
-            ├── DigestPanel.tsx (learning digest history and detail)
-            ├── RetrospectivePanel.tsx (retrospective history, agent filter, detail view)
-            ├── WorkspaceOverviewPanel.tsx
-            ├── DmPanel.tsx (Telegram-style DM conversations)
-            ├── SprintPanel.tsx (sprint lifecycle viewer)
-            ├── SettingsPanel.tsx (tabbed settings: agents, templates, notifications, github, models, advanced)
-            │   ├── ModelsTab.tsx (LLM model list with executor status)
-            │   ├── NotificationDeliveriesSection.tsx (delivery history + stats)
-            │   └── DataExportSection.tsx (agent config + usage export)
-            ├── ActivityFeedPanel.tsx (standalone activity feed with severity badges)
-            ├── SpecSearchPanel.tsx (full-text spec search with debounced input)
-            ├── AgentKnowledgePanel.tsx (per-agent knowledge browser with agent selector)
-            ├── AgentSessionPanel.tsx (per-agent session inspector)
-            ├── CommandPalette.tsx (Cmd+K overlay)
-            ├── KeyboardShortcutsDialog.tsx (? key shortcut help)
-            ├── RecoveryBanner.tsx (crash recovery notification)
-            └── CircuitBreakerBanner.tsx (auth degradation warning)
+    │   ├── Workspace switcher (Switch Project button)
+    │   └── UserBadge (sidebar footer — login/logout + settings access)
+    │   *Note: `breakoutRooms` is accepted as a prop but not rendered as a dedicated section. Breakout rooms are reached via the Search panel (which tags results with a `breakout` source badge); selecting one sets `selectedWorkspaceId` to the breakout id and drives the read-only `ChatPanel` branch below.*
+    └── main.workspace
+        ├── WorkspaceHeader.tsx — title + meta + phase pill + circuit breaker chip + rename affordance (no UserBadge)
+        ├── Limited-mode banner (rendered inline when `copilotStatus = "degraded"`)
+        ├── WorkspaceToolbar.tsx — rendered only when a room view is active (chat phase controls + filter toggles); hidden in breakout/agent-session views
+        └── Content area — mutually exclusive branches:
+            ├── AgentSessionPanel.tsx — when `selectedWorkspaceId.startsWith("agent:")`; inspects a single agent's sessions across rooms
+            ├── ChatPanel.tsx (read-only breakout) — when `selectedWorkspaceId` matches a breakout room id; renders the breakout's recent messages with `readOnly` and a synthetic room shape
+            └── WorkspaceContent.tsx (default) — hosts the active tab:
+                ├── ChatPanel.tsx (room-centric conversation with session management)
+                ├── TaskListPanel.tsx
+                ├── PlanPanel.tsx
+                ├── CommandsPanel.tsx
+                ├── TimelinePanel.tsx
+                ├── DashboardPanel.tsx
+                │   ├── WorktreeStatusPanel.tsx (live worktree health widget)
+                │   ├── AgentAnalyticsPanel.tsx (per-agent performance metrics)
+                │   ├── TaskAnalyticsPanel.tsx (task cycle analytics)
+                │   ├── UsagePanel.tsx (LLM usage / cost)
+                │   ├── ErrorsPanel.tsx (recent error feed with circuit-breaker context)
+                │   ├── AuditLogPanel.tsx (recent audit log entries)
+                │   ├── SessionHistoryPanel.tsx (recent agent sessions)
+                │   └── RestartHistoryPanel.tsx (server restart history)
+                ├── MemoryBrowserPanel.tsx (per-agent memory browser with search, categories, delete)
+                ├── DigestPanel.tsx (learning digest history and detail)
+                ├── RetrospectivePanel.tsx (retrospective history, agent filter, detail view)
+                ├── WorkspaceOverviewPanel.tsx
+                ├── DmPanel.tsx (Telegram-style DM conversations)
+                ├── SprintPanel.tsx (sprint lifecycle viewer)
+                ├── ActivityFeedPanel.tsx (standalone activity feed with severity badges)
+                ├── SpecSearchPanel.tsx (full-text spec search with debounced input)
+                └── AgentKnowledgePanel.tsx (per-agent knowledge browser with agent selector)
+
+Overlays (rendered at root, outside the sidebar/main split):
+    ├── SettingsPanel.tsx — full-screen tabbed settings (opened via UserBadge → settings)
+    │   ├── Tabs (in render order): Custom Agents, Built-in Agents, Templates, Notifications, Models, GitHub, Advanced
+    │   ├── ModelsTab.tsx (LLM model list with executor status)
+    │   ├── NotificationDeliveriesSection.tsx (delivery history + stats)
+    │   └── DataExportSection.tsx (agent config + usage export)
+    ├── CommandPalette.tsx (Cmd+K overlay)
+    ├── KeyboardShortcutsDialog.tsx (? key shortcut help)
+    ├── ConfirmDialog.tsx (logout confirmation)
+    └── Toaster (Fluent UI, bottom-end)
 ```
 
 ## State Management
@@ -68,8 +85,8 @@ Central hook that owns all workspace state. Components receive state and callbac
 - `ov` — `WorkspaceOverview` from `/api/overview`
 - `recentActivity` — activity feed
 - `roomId` — selected room
-- `thinkingByRoom` — `Map<roomId, Map<agentId, {name, role}>>` populated by SignalR `AgentThinking`/`AgentFinished` events
-- `connectionStatus` — SignalR connection state (`"connected"` | `"connecting"` | `"reconnecting"` | `"disconnected"`)
+- `thinkingByRoom` — `Map<roomId, Map<agentId, {name, role}>>` populated by `AgentThinking`/`AgentFinished` events from the active activity transport (SignalR or SSE)
+- `connectionStatus` — activity-transport connection state (`"connected"` | `"connecting"` | `"reconnecting"` | `"disconnected"`); driven by whichever of `useActivityHub` / `useActivitySSE` is enabled
 - `err`, `busy` — error/loading state
 - `tab` — active tab (persisted in localStorage)
 - `sidebarOpen` — sidebar collapse state (persisted in localStorage)
@@ -80,7 +97,7 @@ Central hook that owns all workspace state. Components receive state and callbac
 - `activity` — filtered activity for current room
 - `thinkingAgentList` — thinking agents for the current room (derived from `thinkingByRoom`)
 
-**Refresh:** Polls `/api/overview` every 120 seconds as a fallback. Primary updates arrive via SignalR (`useActivityHub` hook). On refresh, stale thinking entries are reconciled against `agentLocations` (agents no longer in Working state are cleared).
+**Refresh:** Polls `/api/overview` every 120 seconds as a fallback. Primary updates arrive via the active activity transport (SignalR by default, SSE when `aa-transport = "sse"` — see §*Activity Transport Selection*). On refresh, stale thinking entries are reconciled against `agentLocations` (agents no longer in Working state are cleared).
 
 ### Workspace Gating (App.tsx)
 
@@ -162,7 +179,7 @@ All types are defined in `api.ts`. The client adapts to the server's response sh
 | `/api/sprints/{id}/cancel` | POST | Cancel an active sprint |
 | `/api/sprints/{id}/artifacts` | GET | Get artifacts for a sprint (optional `stage` filter) |
 | `/api/analytics/agents` | GET | Per-agent performance metrics (optional `hoursBack` query param, 1–8760) |
-| `/api/analytics/agents/{agentId}` | GET | Agent detail drill-down (optional `hoursBack`, `requestLimit`, `errorLimit`, `taskLimit`) |
+| `/api/analytics/agents/{agentId}` | GET | Agent detail drill-down (optional `hoursBack` only — `requestLimit`/`errorLimit`/`taskLimit` are **not** accepted by the client; server-side defaults govern per-list truncation) |
 | `/api/search` | GET | Full-text search across messages and tasks (required `q`, optional `scope`, `messageLimit`, `taskLimit`) |
 | `/api/activity/recent` | GET | Recent activity events (optional `limit`, default 50) |
 | `/api/models` | GET | Available LLM models and executor status |
@@ -236,9 +253,18 @@ Each agent role still maps to accent/foreground/avatar colors:
 
 ## Real-Time Updates
 
-### SignalR Integration (`useActivityHub.ts`)
+### Activity Transport Selection (`useWorkspace.ts`)
 
-The frontend connects to the server's SignalR hub at `/hubs/activity` via `@microsoft/signalr`. The Vite dev server proxies WebSocket connections to the backend on port 5066 (`ws: true` for `/hubs`).
+The frontend supports **two interchangeable transports** for the live activity stream and chooses between them at mount time:
+
+- **SignalR** (default) — `useActivityHub` connects to `/hubs/activity` via `@microsoft/signalr`.
+- **SSE** (opt-in fallback) — `useActivitySSE` connects to `GET /api/activity/stream` via `EventSource`.
+
+The choice is controlled by the `aa-transport` key in `localStorage` (values `"signalr"` | `"sse"`; default `"signalr"`). `useWorkspace` instantiates *both* hooks but only enables one; the other returns `"disconnected"` and holds no connection. The active transport's `ConnectionStatus` becomes the `connectionStatus` value the rest of the UI consumes.
+
+The Vite dev server proxies WebSocket connections (for SignalR) and the `/api/activity/stream` SSE endpoint to the backend on port 5066.
+
+### SignalR Integration (`useActivityHub.ts`)
 
 **Connection lifecycle:**
 - Auto-reconnect with backoff: `[0, 2s, 5s, 10s, 30s]`
@@ -246,21 +272,35 @@ The frontend connects to the server's SignalR hub at `/hubs/activity` via `@micr
 - Connection status exposed as `ConnectionStatus` type
 - ChatPanel status bar shows live connection state with color indicators
 
-**Event handling in `useWorkspace`:**
+**Single-channel contract:** The hub exposes exactly one method — `activityEvent` — and the client subscribes with `connection.on("activityEvent", handler)`. All event *types* are multiplexed through this one channel; the discriminator is `evt.type` on the payload. The SSE transport mirrors this contract: `EventSource.addEventListener("activityEvent", …)`.
 
-| Event Type | Action |
-|------------|--------|
-| `AgentThinking` | Add agent to `thinkingByRoom` map (scoped by `roomId`) |
-| `AgentFinished` | Remove agent from `thinkingByRoom` map |
-| `MessagePosted` | Trigger refresh |
-| `RoomCreated` | Trigger refresh |
-| `TaskCreated` | Trigger refresh |
-| `PhaseChanged` | Trigger refresh |
-| `PresenceUpdated` | Trigger refresh |
-| `SprintStarted` | Extract metadata → optimistic update + reconcile |
-| `SprintStageAdvanced` | Extract metadata → optimistic update + reconcile |
-| `SprintArtifactStored` | Extract metadata → targeted artifact fetch + reconcile |
-| `SprintCompleted` | Extract metadata → optimistic update + reconcile |
+**Event dispatch in `useWorkspace`:**
+
+`handleActivityEvent` is a single `switch (evt.type)` (see `useWorkspace.ts`). Each case is one of three shapes:
+
+| Event Type | Action in `useWorkspace` |
+|------------|---------|
+| `AgentThinking` | Add agent to `thinkingByRoom` (scoped by `roomId`) |
+| `AgentFinished` | Remove agent from `thinkingByRoom` |
+| `ContextUsageUpdated` | Update `contextByRoom` map from `evt.metadata` (model/currentTokens/maxTokens/percentage) |
+| `MessagePosted` | Trigger overview refresh |
+| `RoomCreated` | Trigger overview refresh |
+| `TaskCreated` | Trigger overview refresh |
+| `PhaseChanged` | Trigger overview refresh |
+| `PresenceUpdated` | Trigger overview refresh |
+| `DirectMessageSent` | Trigger overview refresh |
+| `TaskPrStatusChanged` | Trigger overview refresh |
+| `TaskUnblocked` | Trigger overview refresh |
+| `AgentErrorOccurred` | Trigger overview refresh |
+| `AgentWarningOccurred` | Trigger overview refresh |
+| `SubagentFailed` | Trigger overview refresh |
+| `SubagentCompleted` | Trigger overview refresh |
+| `SprintStarted` / `SprintStageAdvanced` / `SprintArtifactStored` / `SprintCompleted` / `SprintCancelled` | Deduplicate against `processedSprintEventIds` (capped at 200, pruned to 100), store metadata in `lastSprintEvent`, and bump `sprintVersion` so `SprintPanel` can react. `useWorkspace` does **not** perform sprint optimistic updates or targeted artifact fetches — those live in `SprintPanel` (see below). |
+| `TaskRetrospectiveCompleted` | Bump `retroVersion` so `RetrospectivePanel` re-fetches |
+| `LearningDigestCompleted` | Bump `digestVersion` and `memoryVersion` so `DigestPanel` and `MemoryBrowserPanel` re-fetch |
+| `ArtifactEvaluated` | Bump `artifactVersion` so `ArtifactsPanel` re-fetches |
+
+Any other `evt.type` values fall through the `switch` and are ignored by `useWorkspace` itself; the raw event is still forwarded to the `onActivityEvent` callback provided by `App.tsx` for toast/desktop notification handling.
 
 ### Sprint Real-Time Updates
 
@@ -279,16 +319,19 @@ Sprint events carry structured `metadata` payloads on `ActivityEvent` (added as 
 - **Optimistic updates**: Stage transitions, sign-off state, and completion status are applied immediately from metadata without waiting for an API response.
 - **Targeted artifact fetch**: Artifact events trigger `getSprintArtifacts(sprintId, stage)` for just the affected stage, with a sequence counter to discard stale responses from out-of-order fetches.
 - **Debounced reconciliation**: A 1.5-second trailing reconciliation fetch replaces the previous immediate full-refetch-on-every-event pattern, reducing API load during rapid sprint activity.
-- **Event deduplication**: Processed event IDs are tracked in a `Set` (capped at 200 entries) to prevent duplicate processing on SSE reconnect replay.
+- **Event deduplication (panel-local)**: `SprintPanel` compares `lastSprintEvent.eventId` to a `lastHandledEventRef` so the same `lastSprintEvent` does not drive more than one optimistic/fetch cycle. (The *transport-level* dedupe — `processedSprintEventIds` capped at 200 entries — lives in `useWorkspace` and prevents SSE reconnect replays from re-incrementing `sprintVersion` in the first place.)
 - **Fallback**: If an event arrives without metadata (e.g., from a pre-upgrade server), the fallback `sprintVersion` path triggers a full refetch.
 
 ### Sidebar Agent Display
 
-Each room card in the sidebar shows the agents currently located in that room, determined by `agentLocations` data (not the synthetic participant list). Agents are displayed below the room name, separated by a horizontal line, with a colored status dot and name.
+The sidebar has two distinct render surfaces for agents:
 
-When an agent is in the thinking state (populated via SignalR events), a spinning ring animates around their status dot in the same color. The spinning ring uses a CSS `@keyframes` animation (`aa-spin`) with a wrapper DOM element (Griffel does not support `::after` pseudo-elements with border properties).
+- **Room cards (`SidebarPanel.tsx`)** render only a phase dot, the room name, and a participant count. They do **not** enumerate agents; `agentLocations` is not consulted for card content.
+- **Agents section** (flat list below the rooms list) is where each configured agent is rendered with a colored status dot and name, optionally decorated with a thinking spinner. Clicking an agent sets `selectedWorkspaceId = "agent:{id}"`, which switches the main content branch to `AgentSessionPanel`.
 
-Thinking state is tracked per room (`thinkingByRoom` map), so spinners appear correctly across all room cards — not just the selected room.
+When an agent is in the thinking state (populated via activity-transport events), a spinning ring animates around their status dot in the same color. The spinning ring uses a CSS `@keyframes` animation (`aa-spin`) with a wrapper DOM element (Griffel does not support `::after` pseudo-elements with border properties).
+
+Thinking state is tracked per room (`thinkingByRoom` map) and aggregated for the agents list so spinners reflect activity across all rooms, not just the selected one.
 
 ### Context Window Visibility (`ContextMeter.tsx`)
 
@@ -461,7 +504,7 @@ Each room contains conversation sessions (epochs). The ChatPanel toolbar include
 
 ### Connection Status Bar
 
-The status bar shows live SignalR connection state with color indicators (connected/connecting/reconnecting/disconnected).
+The status bar shows live activity-transport connection state with color indicators (connected/connecting/reconnecting/disconnected). The same `connectionStatus` value is produced by `useWorkspace` regardless of whether SignalR or SSE is the active transport.
 
 ## Direct Messages (`DmPanel.tsx`)
 
@@ -490,7 +533,17 @@ The sidebar Rooms section includes inline room creation:
 
 ## Settings Panel (`SettingsPanel.tsx`)
 
-The Settings panel is a full tabbed configuration page with seven tabs:
+The Settings panel is a full-screen tabbed configuration overlay with seven tabs, rendered in this order:
+
+1. **Custom Agents** — user-created agents
+2. **Built-in Agents** — catalog agents
+3. **Templates** — reusable prompt fragments
+4. **Notifications** — provider setup + delivery history
+5. **Models** — LLM model list + executor status
+6. **GitHub** — GitHub integration / PR capability
+7. **Advanced** — system-level settings + data export
+
+Note: "Custom" and "Built-in" agents are kept as two distinct tabs rather than a single consolidated Agents tab. The `activeTab` state is a string id (`"custom-agents"`, `"built-in"`, `"templates"`, `"notifications"`, `"models"`, `"github"`, `"advanced"`), and the default on open is `"custom-agents"`.
 
 ### Custom Agents Tab
 
