@@ -326,7 +326,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             Model = agent.Model ?? "claude-opus-4.7",
             Streaming = true,
             Tools = [.. tools],
-            OnPermissionRequest = PermissionHandler.ApproveAll,
+            OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger),
         };
 
         if (tools.Count > 0)

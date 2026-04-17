@@ -344,7 +344,9 @@ Maps `AgentDefinition.EnabledTools` group names to `AIFunction` instances. Read-
 - Approves all permissions when no tools are registered (backward-compatible)
 - Approves only safe permission kinds (`custom-tool`, `read`, `tool`) when tools are registered
 - Denies dangerous permission kinds (`shell`, `write`, `url`, `mcp`) with `DeniedByRules`
-- Logs all approved and denied permission requests for diagnostics
+- Logs all approved and denied permission requests for diagnostics (first 3 denials at Warning, 4th as a suppression notice, subsequent at Debug)
+
+The denial counter is **closure-local** — each `Create` call allocates its own `DenialState` captured by the returned delegate, so state is scoped to exactly one Copilot session and garbage-collected together with it. No static dictionary accumulates across session churn. `ClearSession(string)` is retained as an `[Obsolete]` no-op for source compatibility.
 
 Note: The SDK's `write` permission kind refers to file write operations by the SDK itself, not our custom tool write operations. Our custom tools (including write tools) use the `custom-tool` or `tool` permission kind.
 
@@ -367,7 +369,7 @@ In `CreatePrimedSessionAsync` (the session factory callback passed to `CopilotSe
 | `AgentToolRegistryTests` | 17 | Group resolution (static + contextual), dedup, case-insensitive, all tool names, planner/engineer config, task-write/memory groups, no-agentId fallback |
 | `AgentToolFunctionsTests` | 15 | Tool creation, list_tasks/rooms/agents execution, read_file (happy path, not found, path traversal, directory, line range), search_code (results, no results, glob filter, path traversal), FindProjectRoot |
 | `AgentWriteToolTests` | 23 | create_task (valid, missing title, invalid type, with type), update_task_status (valid, invalid, blocker, blocker+status, note, nonexistent, no args), add_task_comment (valid, finding type, invalid type, nonexistent), remember (create, upsert, TTL, invalid category, invalid TTL), recall (empty, after remember, by category, by key, agent isolation, shared visibility, expired exclusion, expired inclusion) |
-| `AgentPermissionHandlerTests` | 7 | No-tools approval, tool-call approval, read approval, shell denial, write denial, URL denial, multiple safe kinds |
+| `AgentPermissionHandlerTests` | 10 | No-tools approval, safe-kind approval (case-insensitive), unsafe-kind denial (shell/write/url/execute/unknown), denial log escalation (Warning→suppression→Debug), per-closure denial state, `ClearSession` obsolete no-op, null session-id fallback |
 
 ### Conversation Session Management
 

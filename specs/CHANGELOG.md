@@ -5,6 +5,9 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Changed
+- **003-agent-system**: `CopilotExecutor.CreatePrimedSessionAsync` now wires `OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger)` instead of `PermissionHandler.ApproveAll`. The permission guardrail described in spec 003 §101 / line 284 was defined and unit-tested but never actually invoked — every agent session approved every permission kind (shell, write, url, mcp). Fixes #62. Also refactored `AgentPermissionHandler` denial-count tracking to closure-local state (each `Create` call owns a `DenialState` captured by the returned delegate) so the counter GCs with the session; the static `ConcurrentDictionary` is removed and `ClearSession(string)` is retained as an `[Obsolete]` no-op. Removes an unbounded-growth risk that would otherwise have been activated by wiring the handler in production.
+
+### Changed
 - **005-workspace-runtime**: Aligned breakout worktree lifecycle with task-terminal ownership (fixes #65). BUG_FIX_CODE: `BreakoutLifecycleService.RunBreakoutLifecycleAsync` no longer removes the filesystem worktree when the breakout exits — worktree disposal is now owned by `TaskOrchestrationService.CompleteTaskAsync` (on merge/complete) and `CancelTaskHandler` (on cancel, before `git branch -D` so the branch delete succeeds). This keeps the worktree available across rejection→reopen cycles and avoids orphaned branches. `BreakoutLifecycleService` still disposes the breakout-scoped Copilot subprocess. BUG_FIX_SPEC §167: `CloseBreakoutRoomAsync` archives the breakout (preserves messages); the spec previously said "deletes breakout + messages", which contradicted the implementation. §258 was clarified to describe task-terminal worktree ownership explicitly.
 
 ### Changed
