@@ -103,7 +103,7 @@ Key behaviors:
 - **Per-worktree CopilotClient** *(CopilotClientFactory)*: When an agent works in a git worktree (breakout room), a dedicated `CopilotClient` is created with `Cwd` set to the worktree directory, ensuring the CLI's built-in tools operate in the correct filesystem location. Worktree clients are stored in a `ConcurrentDictionary<string, CopilotClient>` keyed by path. Lifecycle: created on first use per worktree path, disposed when the breakout room closes, and all worktree clients are disposed on token rotation. `EnsureWorktreeClientAsync` avoids deadlocks by returning `null` (caller falls back to the default client) rather than calling `EnsureClientAsync` while holding the lock.
 - **Streaming aggregation** *(CopilotSdkSender)*: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
 - **Session priming** *(CopilotExecutor)*: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity via `CreatePrimedSessionAsync` (the factory callback passed to the pool). The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
-- **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
+- **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"claude-opus-4.7"` (see `CopilotExecutor.cs`).
 - **TTL cleanup**: Sessions expire after 10 minutes of inactivity; a background timer runs every 2 minutes.
 - **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails (after retry exhaustion), delegates to `StubExecutor`.
 - **Circuit breaker**: Prevents burning through retries when the API is consistently failing. Global (not per-agent) since all agents share the same token. States: Closed (normal flow), Open (immediate fallback, no retries), HalfOpen (one probe allowed after cooldown). Trips after 5 consecutive failures (quota, transient, or unknown — auth errors do NOT trip the circuit). Cooldown: 60 seconds before probing. Auto-resets on token change. State exposed via `GET /api/health/instance` (`CircuitBreakerState` field) and `IAgentExecutor.CircuitBreakerState`. Open-circuit events are recorded in `AgentErrors` with type `circuit_open`.
@@ -290,9 +290,12 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 |-------|-------|------|--------|
 | `task-state` | `list_tasks`, `list_rooms`, `show_agents` | Read-only (shared) | All agents |
 | `code` | `read_file`, `search_code` | Read-only (shared) | All agents (Planner, Architect, Engineers, Reviewer, Writer) |
+| `code-write` | `commit_changes` | Write (per-agent) | Engineers (agents with code-write permission, e.g. Prometheus/Hephaestus/Hermes) |
 | `task-write` | `create_task`, `update_task_status`, `add_task_comment` | Write (per-agent) | All agents |
 | `memory` | `remember`, `recall` | Write/Read (per-agent) | All agents |
 | `chat` | (platform concept, not an SDK tool) | — | All agents |
+
+> Tool groups are resolved by `AgentToolRegistry` based on `AgentDefinition.EnabledTools`. The `task-write`, `code-write`, and `memory` groups are contextual (created per-agent) because their handlers need the calling agent's identity for audit/scoping. The `commit_changes` SDK tool is registered in `AgentToolFunctions.cs` and invokes the agent's commit flow in its working directory (worktree-scoped).
 
 #### Tool Functions
 
