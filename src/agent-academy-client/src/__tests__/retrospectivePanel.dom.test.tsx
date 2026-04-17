@@ -415,8 +415,13 @@ describe("RetrospectivePanel", () => {
         ],
       });
       renderPanel();
+      // Wait for stats-derived options to render, not just the combobox shell
+      // (the select exists from first render with only "All agents" — the
+      // agent options arrive after the stats fetch resolves, and asserting
+      // before that is the root cause of CI flakiness).
       await waitFor(() => {
-        expect(screen.getByRole("combobox", { name: /filter by agent/i })).toBeInTheDocument();
+        const select = screen.getByRole("combobox", { name: /filter by agent/i });
+        expect(select.querySelectorAll("option")).toHaveLength(3);
       });
 
       const select = screen.getByRole("combobox", { name: /filter by agent/i });
@@ -435,8 +440,11 @@ describe("RetrospectivePanel", () => {
         ],
       });
       renderPanel();
+      // Wait for the specific "c1" option, not just the combobox — otherwise
+      // user.selectOptions runs before the option exists in the DOM.
       await waitFor(() => {
-        expect(screen.getByRole("combobox", { name: /filter by agent/i })).toBeInTheDocument();
+        const select = screen.getByRole("combobox", { name: /filter by agent/i });
+        expect(select.querySelector('option[value="c1"]')).not.toBeNull();
       });
 
       const user = userEvent.setup();
@@ -469,7 +477,12 @@ describe("RetrospectivePanel", () => {
         expect(screen.getByText(/bcrypt cost factor/)).toBeInTheDocument();
       });
 
-      // Change filter
+      // Change filter — wait for the option to exist before selecting
+      // (stats promise may resolve after the retros promise).
+      await waitFor(() => {
+        const sel = screen.getByRole("combobox", { name: /filter by agent/i });
+        expect(sel.querySelector('option[value="c1"]')).not.toBeNull();
+      });
       const select = screen.getByRole("combobox", { name: /filter by agent/i });
       await user.selectOptions(select, "c1");
 
