@@ -155,12 +155,17 @@ public sealed class TaskOrchestrationService : ITaskOrchestrationService
         var (snapshot, roomId) = await _taskLifecycle.CompleteTaskCoreAsync(
             taskId, commitCount, testsCreated, mergeCommitSha);
 
-        if (!string.IsNullOrEmpty(roomId))
+        try
         {
-            await _roomLifecycle.TryAutoArchiveRoomAsync(roomId);
+            if (!string.IsNullOrEmpty(roomId))
+            {
+                await _roomLifecycle.TryAutoArchiveRoomAsync(roomId);
+            }
         }
-
-        await TryRemoveTaskWorktreeAsync(snapshot.BranchName, taskId);
+        finally
+        {
+            await TryRemoveTaskWorktreeAsync(snapshot.BranchName, taskId);
+        }
 
         return snapshot;
     }
