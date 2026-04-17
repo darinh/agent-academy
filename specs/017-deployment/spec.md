@@ -648,7 +648,7 @@ git worktree prune
 
 **Log output**: Standard ASP.NET Core logging to stdout/stderr. Use `journalctl -u agent-academy -f` with systemd.
 
-**LLM usage tracking**: The `LlmUsageTracker` service records token consumption per agent per model. Query via `GET /api/settings/llm-usage` or directly from the `llm_usage_records` table.
+**LLM usage tracking**: The `LlmUsageTracker` service records token consumption per agent per model. Query via `GET /api/usage` (global summary) or `GET /api/usage/records` (recent records) — see spec 016 §Usage. Records are stored in the `llm_usage` table.
 
 ### Backup & Restore
 
