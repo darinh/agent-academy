@@ -369,6 +369,43 @@ public class AgentToolRegistryComprehensiveTests
     }
 
     [Fact]
+    public void GetToolsForAgent_SpecWriteGroup_ReturnsWriteTools()
+    {
+        // spec-write is a separate contextual group scoped to specs/.
+        // It exposes the same tool names (write_file, commit_changes) as code-write
+        // but is resolved via CreateSpecWriteTools.
+        var registry = CreateRegistry();
+        var tools = registry.GetToolsForAgent(["spec-write"], AgentId, AgentName);
+
+        Assert.Equal(2, tools.Count);
+        Assert.Contains(tools, t => t.Name == "write_file");
+        Assert.Contains(tools, t => t.Name == "commit_changes");
+    }
+
+    [Fact]
+    public void GetToolsForAgent_SpecWriteGroup_RequiresAgentId()
+    {
+        // Contextual groups silently skip when agentId is missing.
+        var registry = CreateRegistry();
+        var tools = registry.GetToolsForAgent(["spec-write"]);
+
+        Assert.Empty(tools);
+    }
+
+    [Fact]
+    public void GetToolsForAgent_SpecWriteAndCodeWriteTogether_DeDupesToolNames()
+    {
+        // Both groups expose write_file and commit_changes. The registry
+        // deduplicates by tool name — an agent holding both should see each
+        // tool once (the first one wins).
+        var registry = CreateRegistry();
+        var tools = registry.GetToolsForAgent(["code-write", "spec-write"], AgentId, AgentName);
+
+        Assert.Equal(2, tools.Count);
+        Assert.Equal(tools.Select(t => t.Name).Distinct().Count(), tools.Count);
+    }
+
+    [Fact]
     public void Constructor_WithEmptyCatalog_StillInitializes()
     {
         var emptyCatalog = new AgentCatalogOptions("main", "Main", []);

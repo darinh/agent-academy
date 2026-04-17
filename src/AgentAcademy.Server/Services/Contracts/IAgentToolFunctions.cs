@@ -36,4 +36,11 @@ public interface IAgentToolFunctions
     /// Creates AIFunction instances for the "code-write" tool group.
     /// </summary>
     IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null);
+
+    /// <summary>
+    /// Creates AIFunction instances for the "spec-write" tool group.
+    /// Writes are restricted to the <c>specs/</c> directory. Typically granted
+    /// to the Technical Writer (Thucydides).
+    /// </summary>
+    IReadOnlyList<AIFunction> CreateSpecWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null);
 }
