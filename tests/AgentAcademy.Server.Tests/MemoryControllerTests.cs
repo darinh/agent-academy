@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -28,7 +29,7 @@ public sealed class MemoryControllerTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _controller = new MemoryController(_db, NullLogger<MemoryController>.Instance);
+        _controller = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(true, false, "http://localhost:5173"));
         SetAuthenticated(true);
     }
 
@@ -60,6 +61,18 @@ public sealed class MemoryControllerTests : IDisposable
         SetAuthenticated(false);
         var result = await _controller.Export(agentId: "agent1", category: null);
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Export_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var openController = new MemoryController(_db, NullLogger<MemoryController>.Instance, new AppAuthSetup(false, false, "http://localhost:5173"));
+        openController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+        var result = await openController.Export(agentId: "agent1", category: null);
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]

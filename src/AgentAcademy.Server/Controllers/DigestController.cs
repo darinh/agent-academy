@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using Microsoft.AspNetCore.Mvc;
@@ -14,10 +15,12 @@ namespace AgentAcademy.Server.Controllers;
 public sealed class DigestController : ControllerBase
 {
     private readonly AgentAcademyDbContext _db;
+    private readonly AppAuthSetup _authSetup;
 
-    public DigestController(AgentAcademyDbContext db)
+    public DigestController(AgentAcademyDbContext db, AppAuthSetup authSetup)
     {
         _db = db;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -30,7 +33,7 @@ public sealed class DigestController : ControllerBase
         [FromQuery] int offset = 0,
         CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         limit = Math.Clamp(limit, 1, 100);
@@ -70,7 +73,7 @@ public sealed class DigestController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Get(int id, CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var digest = await _db.LearningDigests
@@ -113,7 +116,7 @@ public sealed class DigestController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> Stats(CancellationToken ct = default)
     {
-        if (User.Identity?.IsAuthenticated != true)
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var query = _db.LearningDigests.AsNoTracking();

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
@@ -72,6 +73,25 @@ public sealed class CommandControllerTests : IDisposable
         var result = await controller.Execute(new ExecuteCommandRequest("LIST_ROOMS", null));
 
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task Execute_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var handler = new CapturingHandler("LIST_ROOMS");
+        var controller = new CommandController(
+            new[] { handler },
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<CommandController>.Instance,
+            new AppAuthSetup(false, false, "http://localhost:5173"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        var result = await controller.Execute(new ExecuteCommandRequest("LIST_ROOMS", null));
+
+        Assert.IsNotType<UnauthorizedObjectResult>(result);
     }
 
     [Fact]
@@ -489,7 +509,8 @@ public sealed class CommandControllerTests : IDisposable
         var controller = new CommandController(
             handlers,
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<CommandController>.Instance);
+            NullLogger<CommandController>.Instance,
+            new AppAuthSetup(true, false, "http://localhost:5173"));
 
         controller.ControllerContext = new ControllerContext
         {
@@ -505,7 +526,8 @@ public sealed class CommandControllerTests : IDisposable
     private CommandAuditController CreateAuditController(bool authenticated = true)
     {
         var controller = new CommandAuditController(
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>());
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new AppAuthSetup(true, false, "http://localhost:5173"));
 
         controller.ControllerContext = new ControllerContext
         {
