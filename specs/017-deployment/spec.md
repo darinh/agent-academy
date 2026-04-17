@@ -95,8 +95,7 @@ ASP.NET Core's standard configuration binding applies. Environment variables use
     "DefaultConnection": "Data Source=agent-academy.db"
   },
   "GitHub": {
-    "AppId": "",           // GitHub App ID (required for OAuth)
-    "ClientId": "",        // GitHub OAuth Client ID
+    "ClientId": "",        // GitHub OAuth Client ID (read by AppAuthSetup)
     "ClientSecret": "",    // GitHub OAuth Client Secret (🔐 use env var in production)
     "CallbackPath": "/api/auth/callback",
     "FrontendUrl": "http://localhost:5173"   // Redirect target after OAuth
