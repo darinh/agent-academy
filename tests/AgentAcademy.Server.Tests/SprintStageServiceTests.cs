@@ -1157,6 +1157,7 @@ public class SprintStageServiceTests : IDisposable
         await _service.AdvanceStageAsync("sprint-1", force: true);
 
         var evt = await _db.ActivityEvents
+            .Where(e => e.Type == ActivityEventType.SprintStageAdvanced.ToString())
             .OrderByDescending(e => e.OccurredAt)
             .FirstOrDefaultAsync();
         Assert.NotNull(evt);
@@ -1201,5 +1202,212 @@ public class SprintStageServiceTests : IDisposable
             () => _service.AdvanceStageAsync("sprint-1", force: true));
 
         Assert.Contains("ValidationReport", ex.Message);
+    }
+
+    // ── Room Phase Sync (issue #57) ─────────────────────────────
+
+    private async Task SeedRoomAsync(
+        string id, string workspacePath, string phase = "Intake",
+        string status = "Active", string name = "Main")
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = id,
+            Name = name,
+            WorkspacePath = workspacePath,
+            CurrentPhase = phase,
+            Status = status,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task AdvanceStage_NonSignOff_SyncsWorkspaceRoomPhase()
+    {
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Discussion");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var reloaded = await _db.Rooms.FindAsync("room-1");
+        Assert.NotNull(reloaded);
+        Assert.Equal("Validation", reloaded.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SyncsMultipleRoomsInSameWorkspace()
+    {
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Discussion", name: "Main");
+        await SeedRoomAsync("room-2", sprint.WorkspacePath, phase: "Discussion", name: "Breakout");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var rooms = await _db.Rooms.OrderBy(r => r.Id).ToListAsync();
+        Assert.Equal(2, rooms.Count);
+        Assert.All(rooms, r => Assert.Equal("Validation", r.CurrentPhase));
+    }
+
+    [Fact]
+    public async Task AdvanceStage_DoesNotTouchRoomsInOtherWorkspaces()
+    {
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-mine", sprint.WorkspacePath, phase: "Discussion");
+        await SeedRoomAsync("room-other", "/tmp/other-workspace", phase: "Discussion");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var mine = await _db.Rooms.FindAsync("room-mine");
+        var other = await _db.Rooms.FindAsync("room-other");
+        Assert.Equal("Validation", mine!.CurrentPhase);
+        Assert.Equal("Discussion", other!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SignOffRequested_DoesNotSyncRooms()
+    {
+        // Intake → Planning triggers sign-off; sprint.CurrentStage does not actually change yet.
+        var sprint = await SeedSprintAsync(stage: "Intake");
+        await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Intake");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var room = await _db.Rooms.FindAsync("room-1");
+        Assert.Equal("Intake", room!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_SyncsWorkspaceRoomPhase()
+    {
+        var sprint = await SeedSprintAsync(
+            stage: "Intake", awaitingSignOff: true, pendingStage: "Planning");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Intake");
+
+        await _service.ApproveAdvanceAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var room = await _db.Rooms.FindAsync("room-1");
+        Assert.Equal("Planning", room!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task RejectAdvance_DoesNotSyncRooms()
+    {
+        var sprint = await SeedSprintAsync(
+            stage: "Intake", awaitingSignOff: true, pendingStage: "Planning");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Intake");
+
+        await _service.RejectAdvanceAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var room = await _db.Rooms.FindAsync("room-1");
+        Assert.Equal("Intake", room!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SkipsRoomsAlreadyAtTargetPhase()
+    {
+        // If a room has already been manually transitioned (drift repair), the
+        // sync should be idempotent and not emit a spurious PhaseChanged event.
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Validation");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var phaseChangedEvents = await _db.ActivityEvents
+            .Where(e => e.Type == ActivityEventType.PhaseChanged.ToString())
+            .ToListAsync();
+        Assert.Empty(phaseChangedEvents);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_ToFinalSynthesis_MarksRoomsCompleted()
+    {
+        // Mirror the RoomService.TransitionPhaseAsync semantics: hitting
+        // FinalSynthesis sets room.Status = Completed.
+        var sprint = await SeedSprintAsync(stage: "Implementation");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Implementation", status: "Active");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var room = await _db.Rooms.FindAsync("room-1");
+        Assert.Equal("FinalSynthesis", room!.CurrentPhase);
+        Assert.Equal("Completed", room.Status);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SyncsRooms_EmitsPhaseChangedEventWithRoomId()
+    {
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Discussion");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var phaseEvent = await _db.ActivityEvents
+            .SingleAsync(e => e.Type == ActivityEventType.PhaseChanged.ToString());
+        Assert.Equal("room-1", phaseEvent.RoomId);
+        Assert.Contains("sprint-sync", phaseEvent.MetadataJson ?? "");
+        Assert.Contains("Discussion", phaseEvent.MetadataJson ?? "");
+        Assert.Contains("Validation", phaseEvent.MetadataJson ?? "");
+    }
+
+    [Fact]
+    public async Task AdvanceStage_NoRoomsInWorkspace_DoesNotThrow()
+    {
+        // Sprint with no rooms attached; sync should be a no-op.
+        await SeedSprintAsync(stage: "Discussion");
+
+        var result = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("Validation", result.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SkipsArchivedRooms()
+    {
+        // Archived rooms are terminal historical state. Sync must not unarchive them
+        // or overwrite their phase — that would silently revive old rooms.
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-archived", sprint.WorkspacePath, phase: "Discussion", status: "Archived");
+        await SeedRoomAsync("room-live", sprint.WorkspacePath, phase: "Discussion", status: "Active");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var archived = await _db.Rooms.FindAsync("room-archived");
+        var live = await _db.Rooms.FindAsync("room-live");
+        Assert.Equal("Discussion", archived!.CurrentPhase);
+        Assert.Equal("Archived", archived.Status);
+        Assert.Equal("Validation", live!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SkipsCompletedRooms_PreservesStatusPhaseInvariant()
+    {
+        // A Completed room (e.g., from a prior sprint that hit FinalSynthesis in this
+        // workspace) must not be dragged back to a non-terminal phase. Preserves the
+        // invariant: Status=Completed ⇒ phase=FinalSynthesis.
+        var sprint = await SeedSprintAsync(stage: "Discussion");
+        await SeedRoomAsync("room-done", sprint.WorkspacePath, phase: "FinalSynthesis", status: "Completed");
+        await SeedRoomAsync("room-live", sprint.WorkspacePath, phase: "Discussion", status: "Active");
+
+        await _service.AdvanceStageAsync("sprint-1");
+
+        _db.ChangeTracker.Clear();
+        var done = await _db.Rooms.FindAsync("room-done");
+        var live = await _db.Rooms.FindAsync("room-live");
+        Assert.Equal("FinalSynthesis", done!.CurrentPhase);
+        Assert.Equal("Completed", done.Status);
+        Assert.Equal("Validation", live!.CurrentPhase);
     }
 }
