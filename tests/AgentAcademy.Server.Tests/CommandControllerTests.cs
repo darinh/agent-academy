@@ -186,6 +186,44 @@ public sealed class CommandControllerTests : IDisposable
     }
 
     [Fact]
+    public void GetMetadata_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var handler = new CapturingHandler("LIST_ROOMS");
+        var controller = new CommandController(
+            new[] { (ICommandHandler)handler },
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<CommandController>.Instance,
+            new AppAuthSetup(false, false, "http://localhost:5173"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        var result = controller.GetMetadata();
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetStatus_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var handler = new CapturingHandler("LIST_ROOMS");
+        var controller = new CommandController(
+            new[] { (ICommandHandler)handler },
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<CommandController>.Instance,
+            new AppAuthSetup(false, false, "http://localhost:5173"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        var result = await controller.GetStatus("nonexistent-correlation-id");
+
+        Assert.IsNotType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
     public void GetMetadata_OnlyReturnsAllowlistedCommands()
     {
         var controller = CreateController(new CapturingHandler("LIST_ROOMS"));
@@ -358,6 +396,22 @@ public sealed class CommandControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task GetAuditLog_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var controller = new CommandAuditController(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new AppAuthSetup(false, false, "http://localhost:5173"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        var result = await controller.GetAuditLog();
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
     public async Task GetAuditLog_OrdersNewestFirst()
     {
         await SeedAuditRecords();
@@ -433,6 +487,22 @@ public sealed class CommandControllerTests : IDisposable
         var result = await controller.GetAuditStats();
 
         Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetAuditStats_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
+    {
+        var controller = new CommandAuditController(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new AppAuthSetup(false, false, "http://localhost:5173"));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
+        };
+
+        var result = await controller.GetAuditStats();
+
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]
