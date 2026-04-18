@@ -173,7 +173,11 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
     private async Task<List<AgentDefinition>> GetIdleAgentsInRoomAsync(
         IAgentLocationService agentLocationService, string roomId)
     {
-        var result = new List<AgentDefinition>();
+        // Capture each candidate's last-activity timestamp so we can return
+        // them in LRU order (oldest UpdatedAt first). Without this, callers
+        // using `.Take(N)` always pick the same first N agents in catalog
+        // order, starving any agent positioned later in the catalog.
+        var candidates = new List<(AgentDefinition Agent, DateTime LastActivity)>();
         foreach (var agent in _catalog.Agents)
         {
             var loc = await agentLocationService.GetAgentLocationAsync(agent.Id);
@@ -183,9 +187,18 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                  loc.State == AgentState.InRoom ||
                  loc.State == AgentState.Presenting))
             {
-                result.Add(agent);
+                candidates.Add((agent, loc.UpdatedAt));
             }
         }
-        return result;
+
+        // Stable sort by last-activity ascending (least-recently-active first).
+        // OrderBy is stable in .NET, so ties (e.g., agents with identical
+        // UpdatedAt timestamps from initialization) preserve catalog order —
+        // keeping behavior deterministic for tests while still rotating once
+        // any agent runs and bumps its timestamp.
+        return candidates
+            .OrderBy(c => c.LastActivity)
+            .Select(c => c.Agent)
+            .ToList();
     }
 }

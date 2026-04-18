@@ -288,6 +288,44 @@ public sealed class TaskQueryService : ITaskQueryService
     }
 
     /// <summary>
+    /// Atomically transitions a task from Approved → Merging using a single
+    /// SQL UPDATE with a status predicate. Returns true if the row was updated
+    /// (this caller won the claim), false if the task was not in Approved
+    /// status. This prevents the classic check-then-set race where two
+    /// concurrent MERGE_TASK handlers both observe Approved and proceed to
+    /// squash-merge — only one will see rowsAffected > 0.
+    /// </summary>
+    public async Task<bool> TryClaimForMergeAsync(string taskId)
+    {
+        var now = DateTime.UtcNow;
+        var approvedStatus = nameof(Shared.Models.TaskStatus.Approved);
+        var mergingStatus = nameof(Shared.Models.TaskStatus.Merging);
+
+        var rowsAffected = await _db.Tasks
+            .Where(t => t.Id == taskId && t.Status == approvedStatus)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.Status, mergingStatus)
+                .SetProperty(t => t.UpdatedAt, now));
+
+        if (rowsAffected > 0)
+        {
+            // ExecuteUpdate bypasses the change tracker, so any previously
+            // loaded entity for this task is now stale (still says Approved
+            // with an Approved snapshot). Detach it so the next read in this
+            // scope (e.g. failure rollback's FindAsync) goes back to the DB
+            // and sees the Merging status — without this, EF compares against
+            // the stale Approved snapshot and skips the rollback UPDATE.
+            var tracked = _db.Tasks.Local.FirstOrDefault(t => t.Id == taskId);
+            if (tracked is not null)
+            {
+                _db.Entry(tracked).State = EntityState.Detached;
+            }
+        }
+
+        return rowsAffected > 0;
+    }
+
+    /// <summary>
     /// Updates a task's priority level.
     /// </summary>
     public async Task<TaskSnapshot> UpdateTaskPriorityAsync(string taskId, TaskPriority priority)

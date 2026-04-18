@@ -73,7 +73,9 @@ public sealed class InitializationServiceTests : IDisposable
             _db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activity);
     }
 
-    private InitializationService CreateSut(AgentCatalogOptions? catalogOverride = null)
+    private InitializationService CreateSut(
+        AgentCatalogOptions? catalogOverride = null,
+        IWorktreeService? worktrees = null)
     {
         var cat = catalogOverride ?? _catalog;
         return new InitializationService(
@@ -83,7 +85,8 @@ public sealed class InitializationServiceTests : IDisposable
             _activity,
             _crashRecovery,
             _roomService,
-            _workspaceRoomService);
+            _workspaceRoomService,
+            worktrees);
     }
 
     public void Dispose()
@@ -325,5 +328,52 @@ public sealed class InitializationServiceTests : IDisposable
         var locations = await _db.AgentLocations.ToListAsync();
         Assert.All(locations, l => Assert.Equal("main-room", l.RoomId));
         Assert.All(locations, l => Assert.Equal(nameof(AgentState.Idle), l.State));
+    }
+
+    // ── 13. Worktree sync on startup ──────────────────────────────────
+    // Regression for the audit gap: SyncWithGitAsync existed but was never
+    // called in production, so on server restart the in-memory worktree
+    // tracking dictionary was empty until something queried git directly.
+
+    [Fact]
+    public async Task Initialize_WithWorktreeService_CallsSyncWithGitAsync()
+    {
+        var worktrees = Substitute.For<IWorktreeService>();
+        var sut = CreateSut(worktrees: worktrees);
+
+        await sut.InitializeAsync();
+
+        await worktrees.Received(1).SyncWithGitAsync();
+    }
+
+    [Fact]
+    public async Task Initialize_WithoutWorktreeService_StillSucceeds()
+    {
+        // IWorktreeService is optional in the InitializationService ctor so
+        // unit tests that don't care about worktrees keep working unchanged.
+        var sut = CreateSut(worktrees: null);
+
+        await sut.InitializeAsync(); // must not throw
+
+        var room = await _db.Rooms.FindAsync("main-room");
+        Assert.NotNull(room);
+    }
+
+    [Fact]
+    public async Task Initialize_WorktreeSyncThrows_DoesNotFailInitialization()
+    {
+        // Sync failures during startup should be logged and swallowed —
+        // the rest of init (rooms, agent locations, crash recovery) must
+        // still complete so the server can come up.
+        var worktrees = Substitute.For<IWorktreeService>();
+        worktrees.SyncWithGitAsync().Returns(Task.FromException(new InvalidOperationException("git is unhappy")));
+        var sut = CreateSut(worktrees: worktrees);
+
+        await sut.InitializeAsync(); // must not throw
+
+        var room = await _db.Rooms.FindAsync("main-room");
+        Assert.NotNull(room);
+        var locations = await _db.AgentLocations.CountAsync();
+        Assert.Equal(_catalog.Agents.Count, locations);
     }
 }

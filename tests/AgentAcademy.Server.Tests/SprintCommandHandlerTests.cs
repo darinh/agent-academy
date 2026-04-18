@@ -347,6 +347,74 @@ public class SprintCommandHandlerTests : IDisposable
         Assert.Equal(true, dict["forced"]);
     }
 
+    [Fact]
+    public async Task AdvanceStage_AgentPath_RotatesSessionsForAllWorkspaceRooms()
+    {
+        // Regression for the agent-path stage advance only rotating the
+        // current room's session. Mirrors the HTTP path
+        // (SprintController.ApproveAdvance) which calls
+        // RotateWorkspaceSessionsForStageAsync to give every room in the
+        // workspace a fresh session boundary at the new stage.
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
+
+        // Validation → FinalSynthesis is a non-sign-off transition, so the
+        // handler runs the rotation branch (sign-off branch returns early).
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Validation";
+        await artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
+
+        // Three rooms in TestWorkspace plus one in a different workspace and
+        // one archived — only the active TestWorkspace rooms should rotate.
+        db.Rooms.AddRange(
+            new RoomEntity { Id = "room-a", Name = "A", Status = "Active",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-b", Name = "B", Status = "Active",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-c", Name = "C", Status = "Active",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-other-workspace", Name = "Other", Status = "Active",
+                WorkspacePath = "/tmp/other-workspace", CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-archived", Name = "Old", Status = "Archived",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        // context.RoomId = "main" — pre-fix the handler only rotated this
+        // single room. Post-fix it rotates all workspace rooms regardless of
+        // the room the command came from.
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE"), CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("Validation", dict["previousStage"]);
+        Assert.Equal("Implementation", dict["currentStage"]);
+
+        // Verify each non-archived room in TestWorkspace got a session tagged
+        // with the new sprint + stage.
+        await using var verifyDb = new AgentAcademyDbContext(
+            new DbContextOptionsBuilder<AgentAcademyDbContext>().UseSqlite(_connection).Options);
+        var sessions = await verifyDb.ConversationSessions
+            .Where(s => s.SprintId == sprint.Id && s.SprintStage == "Implementation")
+            .ToListAsync();
+
+        var rotatedRoomIds = sessions.Select(s => s.RoomId).ToHashSet();
+        Assert.Contains("room-a", rotatedRoomIds);
+        Assert.Contains("room-b", rotatedRoomIds);
+        Assert.Contains("room-c", rotatedRoomIds);
+        // Archived room and other-workspace room must NOT be rotated.
+        Assert.DoesNotContain("room-archived", rotatedRoomIds);
+        Assert.DoesNotContain("room-other-workspace", rotatedRoomIds);
+    }
+
     // ── STORE_ARTIFACT ───────────────────────────────────────────
 
     [Fact]
