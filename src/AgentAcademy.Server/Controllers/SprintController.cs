@@ -20,6 +20,7 @@ public class SprintController : ControllerBase
     private readonly ISprintMetricsCalculator _metricsCalculator;
     private readonly ISprintScheduleService _scheduleService;
     private readonly IRoomService _roomService;
+    private readonly IConversationSessionService _sessionService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
@@ -29,6 +30,7 @@ public class SprintController : ControllerBase
         ISprintMetricsCalculator metricsCalculator,
         ISprintScheduleService scheduleService,
         IRoomService roomService,
+        IConversationSessionService sessionService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
@@ -37,6 +39,7 @@ public class SprintController : ControllerBase
         _metricsCalculator = metricsCalculator;
         _scheduleService = scheduleService;
         _roomService = roomService;
+        _sessionService = sessionService;
         _logger = logger;
     }
 
@@ -265,6 +268,27 @@ public class SprintController : ControllerBase
             if (ownerError is not null) return ownerError;
 
             var sprint = await _stageService.ApproveAdvanceAsync(id);
+
+            // Per spec 013 §Stage Advancement: rotate the conversation session
+            // for every room in the sprint's workspace so each stage gets a
+            // clean session boundary. Without this, approve-path advances
+            // leave rooms on the previous stage's session and bleed context
+            // across iterations. Mirrors what AdvanceStageHandler does for
+            // the agent-driven path.
+            try
+            {
+                await _sessionService.RotateWorkspaceSessionsForStageAsync(
+                    sprint.WorkspacePath, sprint.Id, sprint.CurrentStage);
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: stage already advanced; log and continue so the
+                // user sees a successful approval.
+                _logger.LogWarning(ex,
+                    "Failed to rotate sessions after approving sprint {SprintId} → {Stage}",
+                    sprint.Id, sprint.CurrentStage);
+            }
+
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 (await _artifactService.GetSprintArtifactsAsync(sprint.Id))

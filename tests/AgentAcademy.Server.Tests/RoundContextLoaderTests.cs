@@ -174,6 +174,75 @@ public sealed class RoundContextLoaderTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task LoadAsync_LoadsSprintFromRoomsWorkspace_NotGloballyActiveWorkspace()
+    {
+        // Regression: RoundContextLoader.LoadSprintContextAsync used to call
+        // GetActiveWorkspacePathAsync(), which returns the GLOBAL active
+        // workspace. When the user was conversing in a room owned by a
+        // non-active workspace, the sprint lookup returned null, the
+        // ActiveSprintStage filter was skipped, and ALL agents would speak
+        // in Intake instead of just the planner. The fix scopes the
+        // workspace lookup to the room's own WorkspacePath.
+        const string activeWorkspace = "/tmp/workspace-active";
+        const string otherWorkspace = "/tmp/workspace-other";
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+            // The globally-active workspace has NO sprint of its own —
+            // we want to prove sprint context comes from the room's workspace.
+            db.Workspaces.Add(new WorkspaceEntity
+            {
+                Path = activeWorkspace,
+                ProjectName = "Active",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            });
+            db.Workspaces.Add(new WorkspaceEntity
+            {
+                Path = otherWorkspace,
+                ProjectName = "Other",
+                IsActive = false,
+                CreatedAt = DateTime.UtcNow,
+            });
+
+            // Room belongs to the OTHER (non-active) workspace.
+            db.Rooms.Add(new RoomEntity
+            {
+                Id = "room-in-other",
+                Name = "Other Room",
+                WorkspacePath = otherWorkspace,
+            });
+
+            // Sprint exists only on the OTHER workspace.
+            db.Sprints.Add(new SprintEntity
+            {
+                Id = "sprint-other",
+                Number = 7,
+                WorkspacePath = otherWorkspace,
+                CurrentStage = "Intake",
+                Status = "Active",
+                CreatedAt = DateTime.UtcNow,
+            });
+
+            await db.SaveChangesAsync();
+        }
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var sut = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
+            var ctx = await sut.LoadAsync("room-in-other");
+
+            // Before the fix: ctx.SprintPreamble == null, ctx.ActiveSprintStage == null
+            // because the loader picked the active workspace (which had no sprint).
+            Assert.NotNull(ctx.SprintPreamble);
+            Assert.Contains("SPRINT #7", ctx.SprintPreamble);
+            Assert.Equal("Intake", ctx.ActiveSprintStage);
+        }
+    }
+
     public void Dispose()
     {
         _serviceProvider.Dispose();

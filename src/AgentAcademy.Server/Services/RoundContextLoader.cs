@@ -92,7 +92,12 @@ public sealed class RoundContextLoader
 
     private async Task<(string? Preamble, string? ActiveStage)> LoadSprintContextAsync(string roomId)
     {
-        var workspacePath = await _roomService.GetActiveWorkspacePathAsync();
+        // Use the room's own workspace, NOT the globally active workspace.
+        // A user may be conversing in a room owned by workspace A while
+        // workspace B is the "active" one; loading B's sprint here would
+        // either return null or return the wrong sprint and cause the stage
+        // roster filter to be skipped (Bug: intake should be Aristotle-only).
+        var workspacePath = await _roomService.GetWorkspacePathForRoomAsync(roomId);
         if (workspacePath is null) return (null, null);
 
         var sprint = await _sprintService.GetActiveSprintAsync(workspacePath);

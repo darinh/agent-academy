@@ -219,6 +219,87 @@ public class AgentToolFunctionsTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadFile_SymlinkPointingOutsideRoot_ReturnsDenied()
+    {
+        // Regression: Path.GetFullPath only canonicalizes . and .. — it does
+        // NOT follow symlinks. Without symlink resolution, an attacker (or a
+        // confused agent) could create a symlink inside the repo whose
+        // target is /etc/passwd and read arbitrary files. The fix walks the
+        // resolved final target via FileSystemInfo.ResolveLinkTarget(true)
+        // and rejects when the target falls outside the project root.
+        if (OperatingSystem.IsWindows())
+        {
+            // Symlink creation requires elevated privileges on Windows;
+            // skip rather than emit a misleading false positive.
+            return;
+        }
+
+        var projectRoot = AgentToolFunctions.FindProjectRoot();
+        var linkPath = Path.Combine(projectRoot, $"__test_symlink_{Guid.NewGuid():N}");
+
+        try
+        {
+            // Pick a target that always exists outside the repo. /etc/hostname
+            // is readable by all users on Linux; this avoids relying on
+            // /etc/passwd-style assumptions while still exercising the escape.
+            const string outsideTarget = "/etc/hostname";
+            if (!File.Exists(outsideTarget))
+                return; // platform doesn't expose the file; no point asserting
+
+            File.CreateSymbolicLink(linkPath, outsideTarget);
+
+            var tools = _toolFunctions.CreateCodeTools();
+            var readFile = tools.Single(t => t.Name == "read_file");
+
+            var result = await readFile.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments(
+                new Dictionary<string, object?>
+                {
+                    ["path"] = Path.GetFileName(linkPath),
+                }));
+            var text = result?.ToString() ?? "";
+
+            Assert.Contains("denied", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("symlink", text, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { File.Delete(linkPath); } catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
+    public async Task ReadFile_SymlinkPointingInsideRoot_IsAllowed()
+    {
+        // Counter-regression: legitimate in-repo symlinks must keep working.
+        if (OperatingSystem.IsWindows()) return;
+
+        var projectRoot = AgentToolFunctions.FindProjectRoot();
+        var linkPath = Path.Combine(projectRoot, $"__test_symlink_{Guid.NewGuid():N}");
+        var target = Path.Combine(projectRoot, "AgentAcademy.sln");
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, target);
+
+            var tools = _toolFunctions.CreateCodeTools();
+            var readFile = tools.Single(t => t.Name == "read_file");
+
+            var result = await readFile.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments(
+                new Dictionary<string, object?>
+                {
+                    ["path"] = Path.GetFileName(linkPath),
+                }));
+            var text = result?.ToString() ?? "";
+
+            Assert.DoesNotContain("denied", text, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { File.Delete(linkPath); } catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
     public async Task ReadFile_Directory_ListsEntries()
     {
         var tools = _toolFunctions.CreateCodeTools();

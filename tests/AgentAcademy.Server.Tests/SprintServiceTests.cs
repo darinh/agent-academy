@@ -975,4 +975,73 @@ public class SprintServiceTests : IDisposable
         Assert.NotNull(third);
         Assert.Equal(3, third.Number);
     }
+
+    // ── Room Phase Sync on Sprint Creation ──────────────────────
+
+    [Fact]
+    public async Task CreateSprint_SyncsExistingRoomsToIntakePhase()
+    {
+        // Regression: a fresh sprint at "Intake" used to leave existing rooms
+        // at their stale CurrentPhase (e.g. Implementation from a prior
+        // sprint), so the room snapshot's stage filter applied the wrong
+        // phase and the Intake-only constraint was violated even before any
+        // round began.
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "stale-room",
+            Name = "Stale Room",
+            WorkspacePath = TestWorkspace,
+            CurrentPhase = "Implementation",
+            Status = nameof(RoomStatus.Active),
+        });
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "other-workspace-room",
+            Name = "Other Room",
+            WorkspacePath = "/tmp/other-workspace",
+            CurrentPhase = "Implementation",
+            Status = nameof(RoomStatus.Active),
+        });
+        await _db.SaveChangesAsync();
+
+        await _service.CreateSprintAsync(TestWorkspace);
+
+        var stale = await _db.Rooms.FindAsync("stale-room");
+        Assert.NotNull(stale);
+        Assert.Equal("Intake", stale!.CurrentPhase);
+
+        // Sync is workspace-scoped — the other workspace's room is untouched.
+        var other = await _db.Rooms.FindAsync("other-workspace-room");
+        Assert.NotNull(other);
+        Assert.Equal("Implementation", other!.CurrentPhase);
+    }
+
+    [Fact]
+    public async Task CreateSprint_DoesNotSyncArchivedOrCompletedRooms()
+    {
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "archived-room",
+            Name = "Archived",
+            WorkspacePath = TestWorkspace,
+            CurrentPhase = "Implementation",
+            Status = nameof(RoomStatus.Archived),
+        });
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "completed-room",
+            Name = "Completed",
+            WorkspacePath = TestWorkspace,
+            CurrentPhase = "FinalSynthesis",
+            Status = nameof(RoomStatus.Completed),
+        });
+        await _db.SaveChangesAsync();
+
+        await _service.CreateSprintAsync(TestWorkspace);
+
+        var archived = await _db.Rooms.FindAsync("archived-room");
+        var completed = await _db.Rooms.FindAsync("completed-room");
+        Assert.Equal("Implementation", archived!.CurrentPhase);
+        Assert.Equal("FinalSynthesis", completed!.CurrentPhase);
+    }
 }

@@ -191,12 +191,22 @@ public sealed class AgentToolFunctions : IAgentToolFunctions
         var projectRoot = FindProjectRoot();
         var fullPath = Path.GetFullPath(Path.Combine(projectRoot, path));
 
-        // Security: path must be within the project directory
+        // Security: path must be within the project directory.
         var rootWithSep = projectRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         if (!fullPath.StartsWith(rootWithSep, StringComparison.Ordinal) &&
             !fullPath.Equals(projectRoot, StringComparison.Ordinal))
         {
             return "Error: Path traversal denied — file must be within the project directory.";
+        }
+
+        // Security: also reject if any path segment is a symlink whose final
+        // target falls outside the project root. Path.GetFullPath only
+        // canonicalizes . and .. — it does NOT follow symlinks. Without this
+        // check, `repo/innocent-link` → `/etc/passwd` would pass the prefix
+        // test above and exfiltrate arbitrary files.
+        if (!IsResolvedPathInsideRoot(fullPath, projectRoot))
+        {
+            return "Error: Path traversal denied — symlink target is outside the project directory.";
         }
 
         if (Directory.Exists(fullPath))
@@ -422,5 +432,60 @@ public sealed class AgentToolFunctions : IAgentToolFunctions
         }
         throw new InvalidOperationException(
             "AgentAcademy.sln not found — cannot determine project root for tool sandboxing.");
+    }
+
+    /// <summary>
+    /// Resolves any symlinks in <paramref name="fullPath"/> and reports whether
+    /// the final canonical target lies within <paramref name="projectRoot"/>.
+    /// Walks the path so an intermediate-segment symlink (e.g. a subdir that
+    /// links outside the repo) is also caught. Returns true when the path
+    /// does not exist (caller will report "not found"), so this method only
+    /// blocks confirmed escapes.
+    /// </summary>
+    internal static bool IsResolvedPathInsideRoot(string fullPath, string projectRoot)
+    {
+        try
+        {
+            var rootCanonical = ResolveCanonical(projectRoot);
+            if (rootCanonical is null) return true; // can't validate; defer to other checks
+
+            // If the file/dir doesn't exist yet, fall back to the deepest existing
+            // ancestor for symlink resolution. This still catches "ancestor is a
+            // symlink" escapes while not blocking legitimate not-found responses.
+            string? probe = fullPath;
+            while (probe is not null && !File.Exists(probe) && !Directory.Exists(probe))
+            {
+                probe = Path.GetDirectoryName(probe);
+            }
+            if (probe is null) return true;
+
+            var targetCanonical = ResolveCanonical(probe);
+            if (targetCanonical is null) return true;
+
+            var rootWithSep = rootCanonical.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            return targetCanonical.Equals(rootCanonical, StringComparison.Ordinal)
+                || targetCanonical.StartsWith(rootWithSep, StringComparison.Ordinal);
+        }
+        catch
+        {
+            // On any unexpected I/O error, deny rather than allow.
+            return false;
+        }
+    }
+
+    private static string? ResolveCanonical(string path)
+    {
+        // FileSystemInfo.ResolveLinkTarget(returnFinalTarget: true) follows
+        // an arbitrarily long symlink chain. Path.GetFullPath then normalizes
+        // any relative target. Returns null if the path doesn't refer to an
+        // existing entry (caller decides what to do).
+        FileSystemInfo? info = Directory.Exists(path)
+            ? new DirectoryInfo(path)
+            : File.Exists(path) ? new FileInfo(path) : null;
+        if (info is null) return null;
+
+        var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
+        var finalPath = resolved?.FullName ?? info.FullName;
+        return Path.GetFullPath(finalPath);
     }
 }

@@ -61,25 +61,49 @@ public sealed partial class TaskLifecycleService : ITaskLifecycleService
                 $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
 
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
-        // agent?.Id is always agentId here (FirstOrDefault filters by a.Id == agentId),
-        // so the canonical id is just agentId. Name may differ.
-        entity.AssignedAgentId = agentId;
-        entity.AssignedAgentName = agent?.Name ?? agentName;
+        var canonicalName = agent?.Name ?? agentName;
 
         var now = DateTime.UtcNow;
-        entity.UpdatedAt = now;
+        var nextStatus = entity.Status == nameof(Shared.Models.TaskStatus.Queued)
+            ? nameof(Shared.Models.TaskStatus.Active)
+            : entity.Status;
+        var startedAt = entity.StartedAt ?? (nextStatus == nameof(Shared.Models.TaskStatus.Active) ? now : (DateTime?)null);
 
-        // Auto-activate queued tasks when claimed
-        if (entity.Status == nameof(Shared.Models.TaskStatus.Queued))
+        // Atomic conditional claim: only succeeds if the row is still
+        // unclaimed (or already owned by this agent — idempotent re-claim).
+        // This eliminates the TOCTOU race where two agents both read
+        // AssignedAgentId == null and both succeed when SaveChangesAsync runs.
+        // ExecuteUpdateAsync issues a single UPDATE ... WHERE that the
+        // database executes atomically.
+        var rowsAffected = await _db.Tasks
+            .Where(t => t.Id == taskId
+                && (t.AssignedAgentId == null || t.AssignedAgentId == "" || t.AssignedAgentId == agentId))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.AssignedAgentId, agentId)
+                .SetProperty(t => t.AssignedAgentName, canonicalName)
+                .SetProperty(t => t.UpdatedAt, now)
+                .SetProperty(t => t.Status, nextStatus)
+                .SetProperty(t => t.StartedAt, startedAt));
+
+        if (rowsAffected == 0)
         {
-            entity.Status = nameof(Shared.Models.TaskStatus.Active);
-            entity.StartedAt ??= now;
+            // Lost the race — re-read to surface the actual current owner.
+            await _db.Entry(entity).ReloadAsync();
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
         }
+
+        // Refresh the in-memory entity so downstream callers see the new state.
+        await _db.Entry(entity).ReloadAsync();
 
         Publish(ActivityEventType.TaskClaimed, entity.RoomId, agentId, taskId,
             $"{entity.AssignedAgentName} claimed task: {Truncate(entity.Title, 80)}");
 
+        // ExecuteUpdateAsync above persisted the task row, but Publish only
+        // adds the activity event to the change tracker — flush it now so
+        // observers and audit logs see the claim.
         await _db.SaveChangesAsync();
+
         return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 

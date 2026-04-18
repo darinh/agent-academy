@@ -112,6 +112,14 @@ public sealed class SprintService : Contracts.ISprintService
                 ["trigger"] = trigger, // null when manually started, "auto" when auto-started
             });
 
+        // Sync existing rooms to the new sprint's initial stage. Without this,
+        // rooms that were previously at e.g. Implementation keep that stale
+        // CurrentPhase even though a fresh sprint just started at Intake,
+        // and downstream room snapshot / stage roster filters apply the wrong
+        // phase. Mirrors SprintStageService.SyncWorkspaceRoomsToStageAsync,
+        // skipping Archived/Completed rooms.
+        await SyncRoomsToInitialStageAsync(workspacePath, sprint.Id, Stages[0]);
+
         try
         {
             await _db.SaveChangesAsync();
@@ -374,6 +382,56 @@ public sealed class SprintService : Contracts.ISprintService
     }
 
     // ── Event Helpers ────────────────────────────────────────────
+
+    /// <summary>
+    /// Syncs all rooms in the workspace to the new sprint's initial stage,
+    /// queuing PhaseChanged events. Mirrors
+    /// <c>SprintStageService.SyncWorkspaceRoomsToStageAsync</c> but is invoked
+    /// at sprint creation time so a fresh sprint at Intake correctly resets
+    /// rooms whose CurrentPhase still reflects a prior sprint's later stage.
+    /// Skips Archived and Completed rooms so the sync cannot revive terminal
+    /// state. Queues changes onto the same EF change-tracker as the sprint
+    /// row; the caller is responsible for SaveChangesAsync + FlushEvents.
+    /// </summary>
+    private async Task SyncRoomsToInitialStageAsync(string workspacePath, string sprintId, string newStage)
+    {
+        if (string.IsNullOrEmpty(workspacePath)) return;
+
+        var archivedStatus = nameof(RoomStatus.Archived);
+        var completedStatus = nameof(RoomStatus.Completed);
+
+        var rooms = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath
+                && r.CurrentPhase != newStage
+                && r.Status != archivedStatus
+                && r.Status != completedStatus)
+            .ToListAsync();
+
+        if (rooms.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        foreach (var room in rooms)
+        {
+            var oldPhase = room.CurrentPhase;
+            room.CurrentPhase = newStage;
+            room.UpdatedAt = now;
+
+            QueueEvent(ActivityEventType.PhaseChanged, room.Id, null, null,
+                $"Room '{room.Name}' phase synced to new sprint stage: {oldPhase} → {newStage}",
+                new Dictionary<string, object?>
+                {
+                    ["roomId"] = room.Id,
+                    ["previousPhase"] = oldPhase,
+                    ["currentPhase"] = newStage,
+                    ["source"] = "sprint-create",
+                    ["sprintId"] = sprintId,
+                });
+        }
+
+        _logger.LogInformation(
+            "Sprint create synced {Count} room(s) in workspace '{Workspace}' to stage '{Stage}'",
+            rooms.Count, workspacePath, newStage);
+    }
 
     private readonly List<ActivityEvent> _pendingEvents = [];
 
