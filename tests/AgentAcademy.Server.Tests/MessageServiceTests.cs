@@ -593,6 +593,64 @@ public class MessageServiceTests : IDisposable
         Assert.True(threads[0].LastMessage.Length <= 104); // 100 chars + "…"
     }
 
+    [Fact]
+    public async Task GetDmThreadsForHumanAsync_ChattyAgentDoesNotHideQuietThreads()
+    {
+        // Regression: prior implementation took the 500 most-recent DMs and grouped after.
+        // A single chatty thread (e.g. one stuck agent flooding messages) could push every
+        // other DM thread out of the window, making quiet threads invisible to the human.
+        // The fix paginates by thread, so per-thread aggregation happens at the DB layer.
+        await SeedRoomAsync("room-1");
+
+        var baseTime = DateTime.UtcNow.AddHours(-1);
+
+        // Quiet thread: one DM, oldest in time.
+        await SeedDirectMessageAsync("quiet-agent", "Quiet", "human", "Quiet thread message",
+            "room-1", sentAt: baseTime);
+
+        // Chatty thread: 600 DMs, all newer than the quiet thread.
+        for (var i = 0; i < 600; i++)
+        {
+            await SeedDirectMessageAsync("chatty-agent", "Chatty", "human", $"flood {i}",
+                "room-1", sentAt: baseTime.AddSeconds(i + 1));
+        }
+
+        var svc = CreateService();
+        var threads = await svc.GetDmThreadsForHumanAsync();
+
+        Assert.Equal(2, threads.Count);
+        Assert.Contains(threads, t => t.AgentId == "quiet-agent");
+        Assert.Contains(threads, t => t.AgentId == "chatty-agent");
+
+        var chatty = threads.First(t => t.AgentId == "chatty-agent");
+        Assert.Equal(600, chatty.MessageCount);
+
+        var quiet = threads.First(t => t.AgentId == "quiet-agent");
+        Assert.Equal(1, quiet.MessageCount);
+        Assert.Equal("Quiet thread message", quiet.LastMessage);
+    }
+
+    [Fact]
+    public async Task GetDmThreadsForHumanAsync_LastMessagePreviewIsThreadLatest()
+    {
+        // Ensure the LastMessage preview corresponds to the most recent message
+        // in that specific thread, not whichever message happened to land first
+        // in the global recent-message window.
+        await SeedRoomAsync("room-1");
+
+        await SeedDirectMessageAsync("human", "Human", "planner-1", "first",
+            "room-1", sentAt: DateTime.UtcNow.AddMinutes(-10));
+        await SeedDirectMessageAsync("planner-1", "Aristotle", "human", "second-newer",
+            "room-1", sentAt: DateTime.UtcNow.AddMinutes(-1));
+
+        var svc = CreateService();
+        var threads = await svc.GetDmThreadsForHumanAsync();
+
+        Assert.Single(threads);
+        Assert.Equal("second-newer", threads[0].LastMessage);
+        Assert.Equal(2, threads[0].MessageCount);
+    }
+
     // ── GetDmThreadMessagesAsync ─────────────────────────────────
 
     [Fact]
