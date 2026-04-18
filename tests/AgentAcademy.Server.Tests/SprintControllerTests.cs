@@ -292,6 +292,85 @@ public class SprintControllerTests : IDisposable
         Assert.IsType<ConflictObjectResult>(result);
     }
 
+    // Regression: spec 013 §Stage Advancement requires every stage-advance code
+    // path to rotate workspace conversation sessions so each stage gets a clean
+    // session boundary. AdvanceStageHandler (agent path) and ApproveAdvance
+    // (HTTP approve path) both did this; AdvanceSprint (HTTP advance path) did
+    // not, leaving rooms stuck on the previous stage's session. See PR #106
+    // spec sync that surfaced this divergence.
+    [Fact]
+    public async Task AdvanceSprint_RealAdvance_RotatesWorkspaceSessions()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        // Jump straight to Discussion — Discussion → Validation requires neither
+        // sign-off nor an artifact gate, so the controller advance is a real
+        // stage change (the only path where rotation is supposed to fire).
+        sprint.CurrentStage = nameof(SprintStage.Discussion);
+        await _db.SaveChangesAsync();
+
+        // Seed a non-archived room in the workspace so RotateWorkspaceSessions
+        // has something to act on.
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-1",
+            Name = "Main",
+            WorkspacePath = TestWorkspace,
+            Status = "Idle",
+            CurrentPhase = "Intake",
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.AdvanceSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(SprintStage.Validation, body.Sprint.CurrentStage);
+
+        // Evidence of rotation: a fresh conversation session exists for the
+        // workspace room tagged with the new sprint stage.
+        var rotatedSession = await _db.ConversationSessions
+            .FirstOrDefaultAsync(s => s.RoomId == "room-1"
+                && s.SprintId == sprint.Id
+                && s.SprintStage == nameof(SprintStage.Validation));
+        Assert.NotNull(rotatedSession);
+    }
+
+    // Sign-off path: AdvanceSprint that enters AwaitingSignOff must NOT rotate
+    // — the stage didn't actually change, and ApproveAdvance will rotate when
+    // the human approves.
+    [Fact]
+    public async Task AdvanceSprint_AwaitingSignOff_DoesNotRotateWorkspaceSessions()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _artifactService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-signoff",
+            Name = "Main",
+            WorkspacePath = TestWorkspace,
+            Status = "Idle",
+            CurrentPhase = "Intake",
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.AdvanceSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.True(body.Sprint.AwaitingSignOff);
+        Assert.Equal(SprintStage.Intake, body.Sprint.CurrentStage);
+
+        // No rotated session should have been created — the stage didn't change.
+        var anySession = await _db.ConversationSessions
+            .AnyAsync(s => s.RoomId == "room-signoff" && s.SprintId == sprint.Id);
+        Assert.False(anySession,
+            "AdvanceSprint must not rotate sessions while sprint is awaiting sign-off; ApproveAdvance handles that.");
+    }
+
     // ── CompleteSprint ──────────────────────────────────────────
 
     [Fact]
