@@ -376,50 +376,93 @@ public sealed class MessageService : IMessageService
     }
 
     /// <summary>
+     /// Maximum number of DM threads returned by <see cref="GetDmThreadsForHumanAsync"/>.
+     /// Threads are aggregated per agent first (so a chatty agent cannot drown out quieter
+     /// threads), then the most recent <see cref="MaxDmThreads"/> threads are returned.
+     /// </summary>
+    internal const int MaxDmThreads = 200;
+
+    /// <summary>
     /// Returns DM thread summaries for the human user, grouped by agent.
     /// </summary>
+    /// <remarks>
+    /// Aggregates per-thread on the database side so that a single high-volume thread
+    /// cannot push quieter threads off the result. The full-message-count, latest
+    /// timestamp, and latest-message preview are computed from a single SQL snapshot
+    /// (one aggregate query + one bounded content lookup), avoiding both the N+1
+    /// per-thread round-trip and the read-tearing window the previous two-query
+    /// implementation had.
+    /// </remarks>
     public async Task<List<DmThreadSummary>> GetDmThreadsForHumanAsync()
     {
-        var humanDms = await _db.Messages
+        // Aggregate query: per-thread MessageCount, LastMessageAt, and the Id of the
+        // most recent message in that thread. EF Core 8 translates the inner
+        // OrderByDescending(...).Select(...).FirstOrDefault() to a correlated subquery.
+        // Pulling only the message Id (not the full row) keeps the projection narrow.
+        var threadAggregates = await _db.Messages
             .Where(m => m.RecipientId != null &&
                         (HumanSideSenderIds.Contains(m.RecipientId) ||
                          HumanSideSenderIds.Contains(m.SenderId)))
-            .OrderByDescending(m => m.SentAt)
-            .Take(500)
+            .Select(m => new
+            {
+                ThreadKey = HumanSideSenderIds.Contains(m.SenderId) ? m.RecipientId! : m.SenderId,
+                m.SentAt,
+                m.Id
+            })
+            .GroupBy(x => x.ThreadKey)
+            .Select(g => new
+            {
+                AgentId = g.Key,
+                LastMessageAt = g.Max(x => x.SentAt),
+                MessageCount = g.Count(),
+                LastMessageId = g
+                    .OrderByDescending(x => x.SentAt)
+                    .ThenByDescending(x => x.Id)
+                    .Select(x => x.Id)
+                    .FirstOrDefault()
+            })
+            .OrderByDescending(x => x.LastMessageAt)
+            .Take(MaxDmThreads)
             .ToListAsync();
 
-        var threads = new Dictionary<string, DmThreadSummary>(StringComparer.OrdinalIgnoreCase);
+        if (threadAggregates.Count == 0)
+            return new List<DmThreadSummary>();
 
-        foreach (var dm in humanDms)
+        // Bulk-fetch the preview content for the picked message Ids in one round-trip.
+        var lastMessageIds = threadAggregates
+            .Where(a => a.LastMessageId != null)
+            .Select(a => a.LastMessageId!)
+            .ToList();
+
+        var contentById = await _db.Messages
+            .Where(m => lastMessageIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.Content })
+            .ToDictionaryAsync(x => x.Id, x => x.Content, StringComparer.Ordinal);
+
+        var threads = new List<DmThreadSummary>(threadAggregates.Count);
+        foreach (var agg in threadAggregates)
         {
-            var agentId = HumanSideSenderIds.Contains(dm.SenderId) ? dm.RecipientId! : dm.SenderId;
-
-            if (!threads.ContainsKey(agentId))
+            var preview = "";
+            if (agg.LastMessageId != null && contentById.TryGetValue(agg.LastMessageId, out var content))
             {
-                var agent = _catalog.Agents.FirstOrDefault(
-                    a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
-                var agentName = agent?.Name ?? agentId;
-                var agentRole = agent?.Role ?? "Agent";
-
-                threads[agentId] = new DmThreadSummary(
-                    AgentId: agentId,
-                    AgentName: agentName,
-                    AgentRole: agentRole,
-                    LastMessage: dm.Content.Length > 100 ? dm.Content[..100] + "…" : dm.Content,
-                    LastMessageAt: dm.SentAt,
-                    MessageCount: 0
-                );
+                preview = content.Length > 100 ? content[..100] + "…" : content;
             }
 
-            threads[agentId] = threads[agentId] with
-            {
-                MessageCount = threads[agentId].MessageCount + 1
-            };
+            var agent = _catalog.Agents.FirstOrDefault(
+                a => string.Equals(a.Id, agg.AgentId, StringComparison.OrdinalIgnoreCase));
+            var agentName = agent?.Name ?? agg.AgentId;
+            var agentRole = agent?.Role ?? "Agent";
+
+            threads.Add(new DmThreadSummary(
+                AgentId: agg.AgentId,
+                AgentName: agentName,
+                AgentRole: agentRole,
+                LastMessage: preview,
+                LastMessageAt: agg.LastMessageAt,
+                MessageCount: agg.MessageCount));
         }
 
-        return threads.Values
-            .OrderByDescending(t => t.LastMessageAt)
-            .ToList();
+        return threads;
     }
 
     /// <summary>

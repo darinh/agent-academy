@@ -64,11 +64,11 @@ public sealed class ImportMemoriesHandler : ICommandHandler
                 continue;
             }
 
-            if (entry.Value.Length > 500)
+            if (entry.Value.Length > MemoryValueLimits.MaxValueChars)
             {
                 skipped++;
                 if (errors.Count < MaxReportedErrors)
-                    errors.Add($"Skipped '{entry.Key}': value exceeds 500 character limit ({entry.Value.Length} chars)");
+                    errors.Add($"Skipped '{entry.Key}': value exceeds {MemoryValueLimits.MaxValueChars} character limit ({entry.Value.Length} chars)");
                 continue;
             }
 

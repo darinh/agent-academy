@@ -132,6 +132,28 @@ public sealed class MemoryToolWrapperTests : IDisposable
         Assert.Contains("ttl must be between 1 and 87600", result);
     }
 
+    [Fact]
+    public async Task RememberAsync_ValueAtLimit_Succeeds()
+    {
+        var value = new string('a', 500);
+        var result = await _wrapper.RememberAsync("k", value, "pattern");
+        Assert.StartsWith("Memory created", result);
+    }
+
+    [Fact]
+    public async Task RememberAsync_ValueExceedsLimit_ReturnsError()
+    {
+        var value = new string('a', 501);
+        var result = await _wrapper.RememberAsync("k", value, "pattern");
+        Assert.Contains("exceeds the 500-character limit", result);
+        Assert.Contains("received 501", result);
+
+        // And the memory must NOT have been written.
+        using var scope = _sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        Assert.Null(await db.AgentMemories.FindAsync(AgentId, "k"));
+    }
+
     // ── RememberAsync: Create and update ────────────────────────
 
     [Fact]
