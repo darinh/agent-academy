@@ -40,6 +40,8 @@ internal sealed class MemoryToolWrapper
             return "Error: key is required.";
         if (string.IsNullOrWhiteSpace(value))
             return "Error: value is required.";
+        if (value.Length > MemoryValueLimits.MaxValueChars)
+            return $"Error: value exceeds the {MemoryValueLimits.MaxValueChars}-character limit (received {value.Length}). Trim or split the memory.";
         if (string.IsNullOrWhiteSpace(category))
             return "Error: category is required.";
 

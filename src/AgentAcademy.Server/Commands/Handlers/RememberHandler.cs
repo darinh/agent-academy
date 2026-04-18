@@ -30,6 +30,9 @@ public sealed class RememberHandler : ICommandHandler
         if (!command.Args.TryGetValue("value", out var valueObj) || valueObj is not string value || string.IsNullOrWhiteSpace(value))
             return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = "Missing required argument: value" };
 
+        if (value.Length > MemoryValueLimits.MaxValueChars)
+            return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = $"value exceeds the {MemoryValueLimits.MaxValueChars}-character limit (received {value.Length}). Trim or split the memory." };
+
         if (!command.Args.TryGetValue("category", out var catObj) || catObj is not string category || string.IsNullOrWhiteSpace(category))
             return command with { Status = CommandStatus.Error, ErrorCode = CommandErrorCode.Validation, Error = "Missing required argument: category" };
 
