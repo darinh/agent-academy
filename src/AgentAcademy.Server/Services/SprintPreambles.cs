@@ -38,6 +38,14 @@ public static class SprintPreambles
                 RequirementsDocument artifact that clearly defines what needs to be built,
                 success criteria, and constraints. Ask clarifying questions. Do not propose
                 solutions yet — focus on understanding the problem space.
+
+                **HOW TO ADVANCE (Planner only — Aristotle):**
+                1. When the human has provided enough information that requirements are clear
+                   (or explicitly says to proceed), synthesize them into a RequirementsDocument.
+                2. Run: `STORE_ARTIFACT: Type=RequirementsDocument Content=<the document>`
+                3. Then run: `ADVANCE_STAGE:` — this requires human sign-off; wait for approval.
+                Do not ask permission to draft the requirements — drafting IS your job. Only the
+                ADVANCE_STAGE call needs the artifact gate satisfied first.
                 """,
 
             ["Planning"] = """
@@ -46,6 +54,12 @@ public static class SprintPreambles
                 produce a SprintPlan artifact that breaks work into concrete tasks with
                 assignments, dependencies, and risk assessments. Consider architecture
                 implications and identify unknowns that need resolution.
+
+                **HOW TO ADVANCE (Planner only — Aristotle):**
+                1. Collaborate with the team on task breakdown, then synthesize the plan.
+                2. Run: `STORE_ARTIFACT: Type=SprintPlan Content=<plan including task list,
+                   assignments, deps, risks>`
+                3. Then run: `ADVANCE_STAGE:` — this requires human sign-off.
                 """,
 
             ["Discussion"] = """
@@ -54,6 +68,11 @@ public static class SprintPreambles
                 challenge assumptions, identify risks, and refine the approach. All
                 perspectives matter — raise concerns now before implementation begins.
                 No code review happens at this stage.
+
+                **HOW TO ADVANCE (Planner only — Aristotle):**
+                When discussion has converged (no new objections in the last round, or all
+                raised risks have an owner / mitigation in the plan), run: `ADVANCE_STAGE:`.
+                No artifact is required to leave Discussion; no human sign-off is required.
                 """,
 
             ["Validation"] = """
@@ -62,6 +81,12 @@ public static class SprintPreambles
                 for completeness, feasibility, and alignment with requirements. Produce
                 a ValidationReport artifact summarizing findings. Flag any blockers.
                 This is the last gate before code is written.
+
+                **HOW TO ADVANCE (Planner only — Aristotle):**
+                1. Once reviewers have weighed in, synthesize the findings.
+                2. Run: `STORE_ARTIFACT: Type=ValidationReport Content=<findings, blockers,
+                   go/no-go recommendation>`
+                3. Then run: `ADVANCE_STAGE:` to enter Implementation. No human sign-off.
                 """,
 
             ["Implementation"] = """
@@ -85,6 +110,10 @@ public static class SprintPreambles
                 - Each task should have tests. Use CHECK_GATES to verify evidence.
                 - The Planner coordinates priorities and unblocks dependencies.
                 - All code goes through PR review before merging.
+
+                **HOW TO ADVANCE (Planner only — Aristotle):**
+                When all planned tasks are merged (or explicitly deferred to overflow), run
+                `ADVANCE_STAGE:` to enter FinalSynthesis. No artifact gate; no human sign-off.
                 """,
 
             ["FinalSynthesis"] = """
@@ -94,6 +123,14 @@ public static class SprintPreambles
                 outcomes, lessons learned, and any overflow items that should carry
                 to the next sprint. If work remains, create an OverflowRequirements
                 artifact.
+
+                **HOW TO COMPLETE (Planner only — Aristotle):**
+                1. If incomplete work exists, run:
+                   `STORE_ARTIFACT: Type=OverflowRequirements Content=<remaining items>`
+                2. Run: `STORE_ARTIFACT: Type=SprintReport Content=<outcomes, lessons,
+                   overflow summary>`
+                3. Then run: `COMPLETE_SPRINT:` to finalize. The next sprint will auto-start
+                   if scheduling is enabled and will inherit any overflow you stored.
                 """,
         };
 
