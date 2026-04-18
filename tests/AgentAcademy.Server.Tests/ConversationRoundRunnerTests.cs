@@ -190,6 +190,22 @@ public sealed class ConversationRoundRunnerTests : IDisposable
         await db.SaveChangesAsync();
     }
 
+    private async Task SeedAgentLocationWithUpdatedAtAsync(
+        string agentId, string roomId, DateTime updatedAt,
+        string state = "Idle")
+    {
+        using var db = CreateDb();
+        db.AgentLocations.Add(new AgentLocationEntity
+        {
+            AgentId = agentId,
+            RoomId = roomId,
+            State = state,
+            BreakoutRoomId = null,
+            UpdatedAt = updatedAt
+        });
+        await db.SaveChangesAsync();
+    }
+
     private void SetupTurnRunner(Func<AgentDefinition, AgentTurnResult> resultFactory)
     {
         _turnCalls.Clear();
@@ -424,6 +440,79 @@ public sealed class ConversationRoundRunnerTests : IDisposable
         // At most 1 more agent may have started before cancellation was checked
         Assert.True(_turnCalls.Count <= 2,
             $"Expected at most 2 turns (planner + possibly 1 agent before cancel check), got {_turnCalls.Count}");
+    }
+
+    [Fact]
+    public async Task IdleFallback_PicksLeastRecentlyActiveFirst_NotCatalogOrder()
+    {
+        // Regression for the fairness bug in GetIdleAgentsInRoomAsync: prior
+        // to LRU ordering, callers using `.Take(3)` on idle fallback always
+        // selected the same first 3 catalog agents and starved any agent
+        // positioned later in the catalog. We seed 4 idle agents with
+        // explicit UpdatedAt timestamps and verify the OLDEST three run
+        // (not the first three by catalog order).
+        await SeedRoomAsync();
+
+        // Catalog order: planner-1, engineer-1, reviewer-1, designer-1, writer-1.
+        // Pre-fix would always pick engineer-1, reviewer-1, designer-1
+        // (first 3 non-planner). Post-fix picks LRU.
+        var now = DateTime.UtcNow;
+        await SeedAgentLocationAsync("engineer-1", "main"); // most recent (default UtcNow)
+        await SeedAgentLocationWithUpdatedAtAsync("reviewer-1", "main", now.AddMinutes(-5));
+        await SeedAgentLocationWithUpdatedAtAsync("designer-1", "main", now.AddMinutes(-10));
+        await SeedAgentLocationWithUpdatedAtAsync("writer-1", "main", now.AddMinutes(-15));  // OLDEST
+
+        SetupTurnRunner(_ => new AgentTurnResult(_, "PASS", IsNonPass: false));
+
+        await _runner.RunRoundsAsync("main");
+
+        var nonPlannerCalls = _turnCalls
+            .Where(c => c.Agent.Id != "planner-1")
+            .Select(c => c.Agent.Id)
+            .ToList();
+
+        // 4 idle agents, capped at 3 by Take(3). The 3 oldest should run:
+        // writer-1 (-15), designer-1 (-10), reviewer-1 (-5).
+        // engineer-1 is the most recent and should be SKIPPED (proves
+        // catalog-order bias is gone — engineer-1 is first in catalog but
+        // last by recency).
+        Assert.Equal(3, nonPlannerCalls.Count);
+        Assert.Contains("writer-1", nonPlannerCalls);
+        Assert.Contains("designer-1", nonPlannerCalls);
+        Assert.Contains("reviewer-1", nonPlannerCalls);
+        Assert.DoesNotContain("engineer-1", nonPlannerCalls);
+    }
+
+    [Fact]
+    public async Task IdleFallback_TiedTimestamps_PreservesCatalogOrder()
+    {
+        // OrderBy is stable in .NET, so when multiple agents have identical
+        // UpdatedAt (e.g., fresh from initialization seeding) the original
+        // catalog order is preserved. This keeps behavior deterministic for
+        // single-shot tests and prevents the LRU change from introducing
+        // nondeterminism in the common case.
+        await SeedRoomAsync();
+        var fixedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await SeedAgentLocationWithUpdatedAtAsync("engineer-1", "main", fixedAt);
+        await SeedAgentLocationWithUpdatedAtAsync("reviewer-1", "main", fixedAt);
+        await SeedAgentLocationWithUpdatedAtAsync("designer-1", "main", fixedAt);
+        await SeedAgentLocationWithUpdatedAtAsync("writer-1", "main", fixedAt);
+
+        SetupTurnRunner(_ => new AgentTurnResult(_, "PASS", IsNonPass: false));
+
+        await _runner.RunRoundsAsync("main");
+
+        var nonPlannerCalls = _turnCalls
+            .Where(c => c.Agent.Id != "planner-1")
+            .Select(c => c.Agent.Id)
+            .ToList();
+
+        // Catalog order: planner, engineer, reviewer, designer, writer.
+        // First 3 non-planner = engineer-1, reviewer-1, designer-1.
+        Assert.Equal(3, nonPlannerCalls.Count);
+        Assert.Equal("engineer-1", nonPlannerCalls[0]);
+        Assert.Equal("reviewer-1", nonPlannerCalls[1]);
+        Assert.Equal("designer-1", nonPlannerCalls[2]);
     }
 
     [Fact]
