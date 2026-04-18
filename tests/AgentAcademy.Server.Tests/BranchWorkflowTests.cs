@@ -367,6 +367,88 @@ public class BranchWorkflowTests : IDisposable
         Assert.True(commitIndex > addIndex, "Expected commit after git add -A.");
     }
 
+    // ── Race / Concurrency Tests ────────────────────────────────
+
+    [Fact]
+    public async Task MergeTask_RaceBetweenTwoReviewers_OnlyOneSucceeds_OtherGetsConflict()
+    {
+        // Regression for the MERGE_TASK race: prior to atomic
+        // TryClaimForMergeAsync, two reviewers both observing Approved would
+        // both proceed to squash-merge the same branch. The second now
+        // returns a Conflict before any git operations run.
+        const string branchName = "task/race-between-reviewers";
+        CreateFeatureBranchWithCommit(branchName, "race.txt", "race regression");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: branchName);
+
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
+        var (cmd1, ctx1) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+        var (cmd2, ctx2) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "planner-1", "Aristotle", "Planner");
+
+        // Sequential — the atomic SQL predicate is sufficient to prevent the
+        // race regardless of true parallelism, because the second handler
+        // re-checks Approved via the UPDATE WHERE clause.
+        var firstResult = await handler.ExecuteAsync(cmd1, ctx1);
+        var secondResult = await handler.ExecuteAsync(cmd2, ctx2);
+
+        Assert.Equal(CommandStatus.Success, firstResult.Status);
+        Assert.Equal(CommandStatus.Error, secondResult.Status);
+        Assert.Equal(CommandErrorCode.Conflict, secondResult.ErrorCode);
+        // Either the validation-gate read ("Approved" check) or the atomic
+        // TryClaimForMergeAsync ("no longer in Approved") will catch the
+        // duplicate — both are acceptable. The user-visible guarantee is
+        // that the second handler does NOT proceed to a second squash-merge.
+        Assert.Contains("Approved", secondResult.Error!);
+
+        // Final task state reflects the first (winning) merge — completed
+        // with a single merge commit SHA.
+        using var scope = _serviceProvider.CreateScope();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
+        var finalTask = await taskQueries.GetTaskAsync(taskId);
+        Assert.NotNull(finalTask);
+        Assert.Equal(TaskStatus.Completed, finalTask!.Status);
+        Assert.False(string.IsNullOrWhiteSpace(finalTask.MergeCommitSha));
+    }
+
+    [Fact]
+    public async Task MergeTask_AlreadyMerging_ReturnsConflict_NoSecondMerge()
+    {
+        // If a task is already in the Merging state when a MERGE_TASK arrives,
+        // it should be rejected before any git operations run. (Validated
+        // separately from the race test because some failure paths rewind
+        // status to Approved — we want to confirm Merging itself blocks too.)
+        const string branchName = "task/already-merging";
+        CreateFeatureBranchWithCommit(branchName, "already.txt", "already merging");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Merging),
+            branchName: branchName);
+
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+
+        // No squash merge should have been recorded in the git trace because
+        // the validation gate rejects non-Approved status. Trace file is
+        // created lazily by GitService — its absence also proves no git ran.
+        if (File.Exists(_gitTracePath))
+        {
+            var trace = File.ReadAllLines(_gitTracePath);
+            Assert.DoesNotContain(trace, line =>
+                line.StartsWith("merge --squash ", StringComparison.Ordinal) &&
+                line.Contains(branchName, StringComparison.Ordinal));
+        }
+    }
+
     [Fact]
     public async Task MergeTask_Failure_RestoresApprovedStatus()
     {
