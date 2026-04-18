@@ -208,6 +208,61 @@ public class TaskLifecycleServiceTests : IDisposable
         Assert.Equal("Hephaestus", result.AssignedAgentName);
     }
 
+    [Fact]
+    public async Task ClaimTask_ConcurrentClaims_OnlyOneAgentSucceeds()
+    {
+        // Regression: ClaimTaskAsync used to read AssignedAgentId, do an
+        // in-memory null-check, then write. Two parallel claims would both
+        // see "unassigned" and both successfully save — the spec promises
+        // double-claim prevention. The fix uses an atomic conditional
+        // ExecuteUpdateAsync (`WHERE AssignedAgentId IS NULL OR = me`).
+        var (_, seedDb) = CreateScope();
+        SeedTask(seedDb, status: nameof(TaskStatus.Queued));
+
+        // Each claim must run in its own DI scope so the underlying DbContext
+        // is independent (mirroring per-request scoping in the live system).
+        var (svcA, _) = CreateScope();
+        var (svcB, _) = CreateScope();
+
+        var taskA = svcA.ClaimTaskAsync("task-1", "engineer-1", "Hephaestus");
+        var taskB = svcB.ClaimTaskAsync("task-1", "planner-1", "Aristotle");
+
+        // One must throw; the other must succeed. Order isn't deterministic.
+        var results = await Task.WhenAll(
+            WrapResultAsync(taskA),
+            WrapResultAsync(taskB));
+
+        var successes = results.Count(r => r.Succeeded);
+        var failures = results.Count(r => !r.Succeeded);
+
+        Assert.Equal(1, successes);
+        Assert.Equal(1, failures);
+
+        // Verify DB state: exactly one owner, and the failure surfaces the
+        // existing-claim message rather than silently overwriting.
+        var (_, verifyDb) = CreateScope();
+        var stored = await verifyDb.Tasks.FindAsync("task-1");
+        Assert.NotNull(stored);
+        Assert.False(string.IsNullOrEmpty(stored!.AssignedAgentId));
+        var winner = stored.AssignedAgentId;
+        var failureMessage = results.Single(r => !r.Succeeded).ErrorMessage!;
+        Assert.Contains(stored.AssignedAgentName!, failureMessage, StringComparison.Ordinal);
+        Assert.True(winner is "engineer-1" or "planner-1");
+    }
+
+    private static async Task<(bool Succeeded, string? ErrorMessage)> WrapResultAsync(Task<TaskSnapshot> claim)
+    {
+        try
+        {
+            await claim;
+            return (true, null);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // ReleaseTaskAsync
     // ═══════════════════════════════════════════════════════════════
