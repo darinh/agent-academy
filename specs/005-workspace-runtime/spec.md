@@ -238,7 +238,7 @@ Singleton service managing git worktrees for agent-level workspace isolation.
 - `GetActiveWorktrees()` — returns all tracked worktree entries
 - `ListGitWorktreesAsync()` — parses `git worktree list --porcelain` for ground truth
 - `CleanupAllWorktreesAsync()` — available for shutdown/recovery cleanup. **Not currently wired** into the startup or shutdown pipeline (`WebApplicationExtensions.ConfigureShutdownHook()`) — treat as a manual/test-only entry point.
-- `SyncWithGitAsync()` — reconciles internal tracking with actual git worktree state. **Not currently wired** into startup; callers must invoke it explicitly when reconciliation is required.
+- `SyncWithGitAsync()` — reconciles internal tracking with actual git worktree state. **Wired into startup** via `InitializationService.InitializeAsync` (called at the end of init; failures are logged and swallowed so a sync error does not block other startup work). Callers may also invoke it explicitly when reconciliation is required outside startup.
 
 **Agent worktree management:**
 - `EnsureAgentWorktreeAsync(workspacePath, projectName, agentId, branch)` — creates or reuses an agent-specific worktree (helper for callers that need idempotent provisioning; `TaskAssignmentHandler` currently uses `CreateWorktreeAsync` with a task-specific branch instead).
@@ -542,6 +542,7 @@ Each domain service depends on `AgentAcademyDbContext` (scoped) and the specific
 
 ## Revision History
 
+- **2026-04-18**: Spec sync — `WorktreeService.SyncWithGitAsync()` is now wired into `InitializationService.InitializeAsync` (no longer "not currently wired"). Reflects audit fix #105 (post-restart worktree tracking reconciliation). | Anvil
 - **2026-04-15**: Extracted `ICrashRecoveryService` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `CrashRecoveryService`.
 - **2026-04-15**: Extracted `IRoomSnapshotBuilder` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `RoomSnapshotBuilder`.
 - **2026-04-15**: Extracted `IWorkspaceRoomService` interface contract. Updated service architecture text, service table, and DI registration snippet to show scoped + forwarded registration for `WorkspaceRoomService`.

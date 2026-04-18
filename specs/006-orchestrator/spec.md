@@ -47,7 +47,7 @@ Each round in the main collaboration room follows this sequence:
 4. **Sprint stage filtering**: When an active sprint exists, agents are filtered by `SprintPreambles.FilterByStageRoster()` — only roles allowed in the current stage participate
 5. **Planner first**: The agent with role `"Planner"` runs first, with instructions to tag other agents or create TASK ASSIGNMENT blocks. Planner is skipped if excluded by sprint stage.
 6. **Tagged agents**: Agents @-mentioned in the planner's response run next (up to `AgentResponseParser.MaxTaggedAgents = 6`)
-7. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run (excluding the planner)
+7. **Fallback to idle**: If no agents were tagged, up to 3 idle agents in the room run (excluding the planner). Candidates are ordered by `AgentLocation.UpdatedAt` ascending (least-recently-active first) so the fallback rotates through the full set rather than always picking the first three in catalog order. `OrderBy` is stable, so ties preserve catalog order — keeping behaviour deterministic before any activity bumps timestamps.
 8. **Sequential execution**: Agents run one at a time so each sees prior responses. Agents in `Working` state (in breakout) are skipped.
 9. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed (via `AgentResponseParser.IsPassResponse`)
 10. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
@@ -378,6 +378,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-18 | Spec sync — documented LRU ordering for the idle-agent fallback in the conversation round (`GetIdleAgentsInRoomAsync` orders candidates by `AgentLocation.UpdatedAt` ascending; ties preserve catalog order via stable sort). Reflects audit fix #105 preventing starvation when more than 3 idle agents share a room. | Anvil |
 | 2026-04-15 | Interface extraction sprint: extracted 16 new interface contracts across sprint services (`ISprintArtifactService`, `ISprintMetricsCalculator`, `ISprintScheduleService`), conversation services (`IConversationKickoffService`, `IConversationSessionQueryService`, `IConversationExportService`), utility services (`IRoomArtifactTracker`, `IArtifactEvaluatorService`, `IPlanService`), and infrastructure services (`ISearchService`, `ISystemSettingsService`, `IWorkspaceService`, `IInitializationService`, `IPhaseTransitionValidator`). All consumers migrated to interfaces. | interface-extraction-sprint |
 | 2026-04-15 | Extracted `IAgentTurnRunner` interface contract. Updated DI registration (concrete + forwarding), dependency tables for `ConversationRoundRunner` and `DirectMessageRouter` to show `IAgentTurnRunner`. | refactor/agent-turn-runner-contract |
 | 2026-04-15 | Extracted `IBreakoutCompletionService` contract from `BreakoutCompletionService`. Updated DI registration and dependency table to show interface-forwarded consumption in `BreakoutLifecycleService`. | service-contract-stabilization |
