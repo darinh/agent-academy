@@ -79,4 +79,13 @@ public interface IRoomService
     /// Returns the path of the currently active workspace, or null if none.
     /// </summary>
     Task<string?> GetActiveWorkspacePathAsync();
+
+    /// <summary>
+    /// Returns the workspace path that owns the given room, or null if the
+    /// room does not exist or has no workspace. Use this instead of
+    /// <see cref="GetActiveWorkspacePathAsync"/> when you need the workspace
+    /// for a specific room — the room's workspace is not always the globally
+    /// active one.
+    /// </summary>
+    Task<string?> GetWorkspacePathForRoomAsync(string roomId);
 }

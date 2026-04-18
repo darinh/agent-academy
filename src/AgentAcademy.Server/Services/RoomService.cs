@@ -125,12 +125,18 @@ public sealed class RoomService : IRoomService
             targetSessionId = activeSession?.Id;
         }
 
-        // Per spec 005 §Message Management: only the active session's messages plus
-        // legacy untagged messages. When no active session exists (targetSessionId == null),
-        // return ONLY legacy untagged messages — do not leak prior-session history (#64).
+        // Per spec 012 §Get Room Messages: include sessionless messages, the
+        // active session's messages, AND any User (human/consultant) messages
+        // from prior sessions so consultant/human messages are always visible
+        // regardless of session boundaries. The original spec 005 §Message
+        // Management read narrower (issue #64) and is now subsumed by the
+        // explicit User-always-visible contract in spec 012.
+        var userKind = nameof(MessageSenderKind.User);
         IQueryable<MessageEntity> query = _db.Messages
             .Where(m => m.RoomId == roomId && m.RecipientId == null
-                && (m.SessionId == null || m.SessionId == targetSessionId));
+                && (m.SessionId == null
+                    || m.SessionId == targetSessionId
+                    || m.SenderKind == userKind));
 
         if (!string.IsNullOrEmpty(afterMessageId))
         {
@@ -158,6 +164,19 @@ public sealed class RoomService : IRoomService
             messages = messages.Take(limit).ToList();
 
         return (messages.Select(RoomSnapshotBuilder.BuildChatEnvelope).ToList(), hasMore);
+    }
+
+    /// <summary>
+    /// Returns the workspace path that owns the given room, or null when
+    /// the room is missing or has no workspace association. Resolves via
+    /// roomId → RoomEntity.WorkspacePath. Use instead of the global active
+    /// workspace lookup when scoping work to a specific room.
+    /// </summary>
+    public async Task<string?> GetWorkspacePathForRoomAsync(string roomId)
+    {
+        if (string.IsNullOrWhiteSpace(roomId)) return null;
+        var room = await _db.Rooms.FindAsync(roomId);
+        return string.IsNullOrWhiteSpace(room?.WorkspacePath) ? null : room.WorkspacePath;
     }
 
     /// <summary>
