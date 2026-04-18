@@ -189,6 +189,35 @@ public class SprintController : ControllerBase
             if (ownerError is not null) return ownerError;
 
             var sprint = await _stageService.AdvanceStageAsync(id, force);
+
+            // Per spec 013 §Stage Advancement: rotate the conversation session
+            // for every room in the sprint's workspace so each stage gets a
+            // clean session boundary. Mirrors AdvanceStageHandler (agent path)
+            // and ApproveAdvance (HTTP approve path) — without this, the HTTP
+            // advance path would leave rooms stuck on the previous stage's
+            // session and bleed context across stages.
+            //
+            // Skip when the sprint is now AwaitingSignOff: the stage didn't
+            // actually change yet (a human still has to approve), so rotating
+            // sessions here would create empty sessions that ApproveAdvance
+            // would immediately rotate again.
+            if (!sprint.AwaitingSignOff)
+            {
+                try
+                {
+                    await _sessionService.RotateWorkspaceSessionsForStageAsync(
+                        sprint.WorkspacePath, sprint.Id, sprint.CurrentStage);
+                }
+                catch (Exception ex)
+                {
+                    // Non-fatal: stage already advanced; log and continue so
+                    // the user sees a successful advance.
+                    _logger.LogWarning(ex,
+                        "Failed to rotate sessions after advancing sprint {SprintId} → {Stage}",
+                        sprint.Id, sprint.CurrentStage);
+                }
+            }
+
             var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
