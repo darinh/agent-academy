@@ -135,8 +135,24 @@ public sealed class MergeTaskHandler : ICommandHandler
 
         try
         {
-            // Set task to Merging status before git ops
-            await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
+            // Atomically claim Approved → Merging. If two MERGE_TASK handlers
+            // race after the validation check above, only one will win this
+            // claim — the loser returns Conflict instead of double-merging.
+            var claimed = await taskQueries.TryClaimForMergeAsync(taskId);
+            if (!claimed)
+            {
+                // Re-read for an accurate error message — task likely transitioned
+                // to Merging or Completed between the validation read and the claim.
+                var current = await taskQueries.GetTaskAsync(taskId);
+                var actualStatus = current?.Status.ToString() ?? "unknown";
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Conflict,
+                    Error = $"Task is no longer in Approved status (current: {actualStatus}). " +
+                            "Another merge may have started concurrently."
+                };
+            }
 
             var commitMessage = BuildCommitMessage(task.Type, task.Title);
             var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage, context.GitIdentity);

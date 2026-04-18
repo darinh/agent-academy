@@ -21,6 +21,7 @@ public sealed class InitializationService : IInitializationService
     private readonly ICrashRecoveryService _crashRecovery;
     private readonly IRoomService _rooms;
     private readonly IWorkspaceRoomService _workspaceRooms;
+    private readonly IWorktreeService? _worktrees;
 
     public InitializationService(
         AgentAcademyDbContext db,
@@ -29,7 +30,8 @@ public sealed class InitializationService : IInitializationService
         IActivityPublisher activity,
         ICrashRecoveryService crashRecovery,
         IRoomService rooms,
-        IWorkspaceRoomService workspaceRooms)
+        IWorkspaceRoomService workspaceRooms,
+        IWorktreeService? worktrees = null)
     {
         _db = db;
         _logger = logger;
@@ -38,6 +40,7 @@ public sealed class InitializationService : IInitializationService
         _crashRecovery = crashRecovery;
         _rooms = rooms;
         _workspaceRooms = workspaceRooms;
+        _worktrees = worktrees;
     }
 
     /// <summary>
@@ -120,6 +123,25 @@ public sealed class InitializationService : IInitializationService
         }
 
         await _db.SaveChangesAsync();
+
+        // Reconcile in-memory worktree tracking with what git actually has on
+        // disk. Without this, worktrees created in a previous server lifecycle
+        // are unknown to WorktreeService until something queries git directly,
+        // so GetActiveWorktrees() returns stale/empty data and the
+        // LIST_WORKTREES admin command misses them. Optional dependency so
+        // tests that don't register IWorktreeService keep working.
+        if (_worktrees is not null)
+        {
+            try
+            {
+                await _worktrees.SyncWithGitAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to sync worktree tracking with git on startup; in-memory state may be stale until next sync.");
+            }
+        }
     }
 
     private async Task<string?> GetActiveWorkspacePathAsync()

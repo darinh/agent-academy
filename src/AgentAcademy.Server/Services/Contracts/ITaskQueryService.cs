@@ -99,6 +99,15 @@ public interface ITaskQueryService
     Task<TaskSnapshot> UpdateTaskStatusAsync(string taskId, Shared.Models.TaskStatus status);
 
     /// <summary>
+    /// Atomically transitions a task from <see cref="Shared.Models.TaskStatus.Approved"/>
+    /// to <see cref="Shared.Models.TaskStatus.Merging"/>. Returns <c>true</c> if this
+    /// caller won the claim, <c>false</c> if the task was not in Approved status
+    /// (already merging, already completed, or never approved). Used to serialize
+    /// concurrent <c>MERGE_TASK</c> handlers so a task is squash-merged at most once.
+    /// </summary>
+    Task<bool> TryClaimForMergeAsync(string taskId);
+
+    /// <summary>
     /// Updates a task's priority level.
     /// </summary>
     /// <exception cref="InvalidOperationException">Task not found.</exception>

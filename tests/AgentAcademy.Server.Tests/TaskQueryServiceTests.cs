@@ -5,6 +5,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -1751,5 +1752,78 @@ public class TaskQueryServiceTests : IDisposable
 
         var result = await _sut.GetActiveWorkspacePathAsync();
         Assert.Equal("/ws/active", result);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // TryClaimForMergeAsync — atomic Approved → Merging transition
+    // Regression coverage for the MERGE_TASK race that allowed two
+    // concurrent reviewers to both squash-merge the same branch.
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task TryClaimForMerge_ApprovedTask_ClaimsAndTransitionsToMerging()
+    {
+        _db.Tasks.Add(CreateTask("t-approved", "Approved task", status: nameof(TaskStatus.Approved)));
+        await _db.SaveChangesAsync();
+
+        var claimed = await _sut.TryClaimForMergeAsync("t-approved");
+
+        Assert.True(claimed);
+
+        // Re-read directly from DB to bypass any cached entity state.
+        await using var verifyCtx = new AgentAcademyDbContext(
+            new DbContextOptionsBuilder<AgentAcademyDbContext>().UseSqlite(_connection).Options);
+        var fresh = await verifyCtx.Tasks.FindAsync("t-approved");
+        Assert.NotNull(fresh);
+        Assert.Equal(nameof(TaskStatus.Merging), fresh!.Status);
+    }
+
+    [Fact]
+    public async Task TryClaimForMerge_NonexistentTask_ReturnsFalse()
+    {
+        var claimed = await _sut.TryClaimForMergeAsync("no-such-task");
+        Assert.False(claimed);
+    }
+
+    [Theory]
+    [InlineData(nameof(TaskStatus.Active))]
+    [InlineData(nameof(TaskStatus.InReview))]
+    [InlineData(nameof(TaskStatus.Merging))]
+    [InlineData(nameof(TaskStatus.Completed))]
+    [InlineData(nameof(TaskStatus.Cancelled))]
+    public async Task TryClaimForMerge_NotApproved_ReturnsFalseAndPreservesStatus(string startingStatus)
+    {
+        _db.Tasks.Add(CreateTask("t-x", "Wrong status task", status: startingStatus));
+        await _db.SaveChangesAsync();
+
+        var claimed = await _sut.TryClaimForMergeAsync("t-x");
+
+        Assert.False(claimed);
+
+        await using var verifyCtx = new AgentAcademyDbContext(
+            new DbContextOptionsBuilder<AgentAcademyDbContext>().UseSqlite(_connection).Options);
+        var fresh = await verifyCtx.Tasks.FindAsync("t-x");
+        Assert.NotNull(fresh);
+        Assert.Equal(startingStatus, fresh!.Status);
+    }
+
+    [Fact]
+    public async Task TryClaimForMerge_CalledTwice_OnlyFirstCallWins()
+    {
+        // Simulates the merge race: two reviewers both observed Approved and
+        // are now both attempting to claim the merge. Only one should win.
+        _db.Tasks.Add(CreateTask("t-race", "Race task", status: nameof(TaskStatus.Approved)));
+        await _db.SaveChangesAsync();
+
+        var first = await _sut.TryClaimForMergeAsync("t-race");
+        var second = await _sut.TryClaimForMergeAsync("t-race");
+
+        Assert.True(first);
+        Assert.False(second);
+
+        await using var verifyCtx = new AgentAcademyDbContext(
+            new DbContextOptionsBuilder<AgentAcademyDbContext>().UseSqlite(_connection).Options);
+        var fresh = await verifyCtx.Tasks.FindAsync("t-race");
+        Assert.Equal(nameof(TaskStatus.Merging), fresh!.Status);
     }
 }

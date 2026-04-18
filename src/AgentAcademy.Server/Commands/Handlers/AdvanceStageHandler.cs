@@ -95,21 +95,23 @@ public sealed class AdvanceStageHandler : ICommandHandler
                 };
             }
 
-            // Create a new conversation session for the new stage.
-            // Non-fatal: stage advancement succeeds even if session creation fails
-            // (matches graceful degradation pattern used throughout sprint context loading).
+            // Rotate conversation sessions for every room in the sprint's
+            // workspace so each stage gets a clean session boundary. Mirrors
+            // the HTTP approve path (SprintController.ApproveAdvance) which
+            // calls the same method — without this, agent-driven advances
+            // leave other rooms stuck on the previous stage's session and
+            // bleed context across iterations (spec 013 §Stage Advancement).
+            // Non-fatal: stage already advanced; failures are surfaced as a
+            // warning so the command succeeds end-to-end.
             string? sessionWarning = null;
-            if (!string.IsNullOrEmpty(context.RoomId))
+            try
             {
-                try
-                {
-                    await sessionService.CreateSessionForStageAsync(
-                        context.RoomId, sprint.Id, sprint.CurrentStage);
-                }
-                catch (Exception)
-                {
-                    sessionWarning = "Stage advanced but new conversation session could not be created.";
-                }
+                await sessionService.RotateWorkspaceSessionsForStageAsync(
+                    sprint.WorkspacePath, sprint.Id, sprint.CurrentStage);
+            }
+            catch (Exception)
+            {
+                sessionWarning = "Stage advanced but workspace conversation sessions could not be rotated.";
             }
 
             return command with
