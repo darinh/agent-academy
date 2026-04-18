@@ -262,9 +262,12 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 2. The existing reviewer cycle can still post review feedback in the collaboration room, but task approval remains an explicit command transition
 3. Reviewer approves via `APPROVE_TASK` → task status moves to `Approved`
 4. Reviewer (or Planner) executes `MERGE_TASK` command
-5. `MERGE_TASK` squash-merges the task branch to `develop`
-6. On successful merge → task status moves to `Completed`, merge commit SHA recorded on TaskEntity
-7. On merge conflict → merge is aborted, the task returns to `Approved`, and an error is returned to the caller
+5. `MERGE_TASK` atomically transitions `Approved → Merging` via `ITaskQueryService.TryClaimForMergeAsync` (a single SQL `UPDATE` predicated on `Status = 'Approved'`). If two `MERGE_TASK` handlers race after the up-front validation read, only one wins the claim — the loser returns `CommandErrorCode.Conflict` instead of double-merging the same branch.
+6. The winning handler squash-merges the task branch to `develop`
+7. On successful merge → task status moves to `Completed`, merge commit SHA recorded on TaskEntity
+8. On merge conflict → merge is aborted, the task returns to `Approved`, and an error is returned to the caller
+
+> **Source**: `src/AgentAcademy.Server/Services/TaskQueryService.cs` (`TryClaimForMergeAsync` — uses `ExecuteUpdateAsync` then detaches the tracked entity so subsequent `UpdateTaskStatusAsync` calls in the same scope see the new status), `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs:138-156`
 
 ### Task Identity on Assignment
 
@@ -347,10 +350,12 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 1. Socrates issues APPROVE_TASK command
 2. Task status → Approved
 3. Socrates or Aristotle issues MERGE_TASK: TaskId={id}
-4. GitService.SquashMergeAsync(branchName, commitMessage) executes with commit subject `{prefix}{task.Title}`
-5. Task updated: CompletedAt, MergeCommitSha, CommitCount
-6. Task status → Completed
-7. System posts success message to room
+4. Atomic claim: TryClaimForMergeAsync flips Approved → Merging in a single SQL UPDATE predicated on Status='Approved'.
+   • Concurrent MERGE_TASK handlers race here; the loser returns CommandErrorCode.Conflict instead of double-merging.
+5. GitService.SquashMergeAsync(branchName, commitMessage) executes with commit subject `{prefix}{task.Title}`
+6. Task updated: CompletedAt, MergeCommitSha, CommitCount
+7. Task status → Completed
+8. System posts success message to room
 ```
 
 `{prefix}` is derived from `TaskEntity.Type`: `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, `Spike -> docs: `.
@@ -998,6 +1003,7 @@ All task services have interface contracts in `Services/Contracts/`. Consumers i
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-18 | Spec sync — Post-Approval Merge flow (both Completion Flow and Post-Approval Merge subsections) now documents the atomic `Approved → Merging` claim via `ITaskQueryService.TryClaimForMergeAsync` (single SQL `UPDATE` predicated on status). Closes the double-merge race window from audit fix #105. Note added on `ExecuteUpdateAsync` detach requirement. | Anvil |
 | 2026-04-15 | Task Service Method Index updated: column renamed to "Interface", all entries reference interface contracts. Added missing methods (RejectTaskAsync, GetTaskAsync, dependency/evidence/analytics methods, TaskSnapshotFactory mappings). | Anvil |
 | 2026-04-14 | Task priority: `TaskPriority` enum (Critical/High/Medium/Low), int DB storage for correct sort order, `PUT /api/tasks/{id}/priority` endpoint, `UPDATE_TASK` command priority arg, `create_task` tool priority param, priority-first sort in `GetTasksAsync`, breakout sub-task priority inheritance, `PromptBuilder` includes priority in agent context. 20 new tests (4622 total). | Anvil |
 | 2026-04-13 | Bulk task operations: `POST /api/tasks/bulk/status` and `/api/tasks/bulk/assign` endpoints. Safe-status subset, max 50, dedup, partial-success. Frontend multi-select with bulk action bar. 12 backend + 10 frontend tests. | Anvil |

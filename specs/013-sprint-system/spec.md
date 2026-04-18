@@ -270,7 +270,7 @@ public record SprintReport(string Summary, List<string> Delivered,
 
 ## Service Layer
 
-> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs` (380 lines), `src/AgentAcademy.Server/Services/SprintStageService.cs` (341 lines), `src/AgentAcademy.Server/Services/SprintArtifactService.cs` (265 lines), `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs` (289 lines)
+> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs`, `src/AgentAcademy.Server/Services/SprintStageService.cs`, `src/AgentAcademy.Server/Services/SprintArtifactService.cs`, `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs`
 
 ### SprintService
 
@@ -358,7 +358,7 @@ Stage timing is derived from `SprintStageAdvanced` events in the activity log. F
 
 ## Stage Preambles & Role Roster
 
-> **Source**: `src/AgentAcademy.Server/Services/SprintPreambles.cs` (162 lines)
+> **Source**: `src/AgentAcademy.Server/Services/SprintPreambles.cs`
 
 ### SprintPreambles (static class)
 
@@ -408,7 +408,7 @@ Sprint context is loaded by `RoundContextLoader` and consumed by `ConversationRo
    - Excludes the planner if their role isn't in the current stage's roster
    - Filters the agent list through `SprintPreambles.FilterByStageRoster`
 
-4. **Session management**: When `ADVANCE_STAGE` is executed, `ConversationSessionService.CreateSessionForStageAsync` archives the current session and creates a new one tagged with the sprint ID and stage. This provides clean context boundaries per stage.
+4. **Session management**: When `ADVANCE_STAGE` is executed (agent path) or a sign-off is approved via `POST /api/sprints/{id}/approve-advance` (HTTP path), `ConversationSessionService.RotateWorkspaceSessionsForStageAsync` archives the current session and creates a new one tagged with the sprint ID and stage **for every active room in the workspace** (not just the room the command came from). Both code paths use this rotation so per-room session boundaries stay aligned with stage transitions. *Known gap*: the non-approval HTTP endpoint `POST /api/sprints/{id}/advance` does **not** currently rotate — see ADVANCE_STAGE handler note below.
 
 ### Sprint Context in Sessions
 
@@ -420,7 +420,7 @@ Sprint context is loaded by `RoundContextLoader` and consumed by `ConversationRo
 
 ## REST API
 
-> **Source**: `src/AgentAcademy.Server/Controllers/SprintController.cs` (341 lines)
+> **Source**: `src/AgentAcademy.Server/Controllers/SprintController.cs`
 
 All endpoints require authentication (cookie auth or consultant key) when auth is configured. If no auth provider is enabled (e.g., local development without OAuth), the authorization fallback policy is not registered and endpoints are accessible without credentials. This is a system-wide pattern, not sprint-specific.
 
@@ -482,7 +482,9 @@ Query parameters:
 **Handler**: `AdvanceStageHandler`
 **Args**: `SprintId` (optional — resolves from active workspace if omitted), `Force` (optional boolean — skips stage prerequisites, not artifact gates or sign-off)
 **Agent permissions**: Planner only (Aristotle). Human/Consultant access via REST API.
-**Behavior**: Advances the sprint to the next stage. Validates artifact gate. Checks stage prerequisites (e.g., Implementation requires all tasks completed/cancelled) — skipped if `Force=true`. If sign-off required, enters AwaitingSignOff. On success, creates a new conversation session for the new stage (best-effort — failure becomes a warning, not a rollback). Forced advancement records `forced=true` in activity event metadata.
+**Behavior**: Advances the sprint to the next stage. Validates artifact gate. Checks stage prerequisites (e.g., Implementation requires all tasks completed/cancelled) — skipped if `Force=true`. If sign-off required, enters AwaitingSignOff. On success, rotates conversation sessions for the new stage across **every active room in the workspace** via `ConversationSessionService.RotateWorkspaceSessionsForStageAsync` — matching the human-approved sign-off path (`SprintController.ApproveAdvance`) so agent-initiated and human-approved advancement produce identical session boundaries (best-effort — failure becomes a warning, not a rollback). Forced advancement records `forced=true` in activity event metadata.
+
+> **Note**: The non-approval HTTP endpoint `POST /api/sprints/{id}/advance` (`SprintController.AdvanceSprint`) currently does **not** call `RotateWorkspaceSessionsForStageAsync`. This is a divergence from the agent path and the approve-advance path: a human directly advancing a non-sign-off-gated stage via REST will not get fresh per-room sessions for the new stage. Treat as a known gap pending follow-up.
 **Result**: `{ sprintId, number, previousStage, currentStage, pendingStage?, awaitingSignOff, forced, warning?, message }`
 
 ### STORE_ARTIFACT
@@ -513,7 +515,7 @@ Query parameters:
 
 ## Frontend
 
-> **Source**: `src/agent-academy-client/src/SprintPanel.tsx` (1148 lines)
+> **Source**: `src/agent-academy-client/src/SprintPanel.tsx`
 
 ### SprintPanel Component
 
@@ -641,6 +643,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-18 | Spec sync — `ADVANCE_STAGE` (agent path) now rotates conversation sessions across **every active room in the workspace** via `ConversationSessionService.RotateWorkspaceSessionsForStageAsync`, matching `SprintController.ApproveAdvance` (sign-off approval HTTP path). Updates orchestrator integration §4 and ADVANCE_STAGE handler description. Reflects audit fix #105 (rooms outside the originating room previously stayed on the prior stage's session). Also flagged a divergence: the non-approval HTTP endpoint `POST /api/sprints/{id}/advance` does not call rotate — known gap. Removed stale hardcoded line counts from source pointers to prevent re-drift. | Anvil |
 | 2026-04-13 | Cron-scheduled sprints — `SprintSchedulerService` background service evaluates cron expressions on a 60s timer. `SprintScheduleEntity` stores per-workspace schedules with IANA timezone, outcome tracking (`started`/`skipped_active`/`error`). REST: `GET/PUT/DELETE /api/sprints/schedule` scoped to active workspace. Cronos 0.8.4 for cron parsing. 23 new tests. | feat/scheduled-sprints |
 | 2026-04-13 | Sprint auto-start on completion — `sprint.autoStartOnCompletion` system setting. `CompleteSprintAsync` auto-creates next sprint when enabled. `CreateSprintAsync` gains optional `trigger` param for event metadata. Frontend toggle in Settings → Advanced. 8 backend + 5 frontend tests. | feat/sprint-auto-start |
 | 2026-04-13 | Stage prerequisites — Implementation stage requires all sprint tasks to be Completed/Cancelled before advancement. Force flag skips prerequisites (not artifact gates or sign-off). `AdvanceStageAsync(sprintId, force)`, `PrerequisiteResult` record, reuses `RoomLifecycleService.TerminalTaskStatuses`. REST: `?force=true`. Command: `Force: true`. Forced events include `forced=true` in metadata. 12 new tests. | feat/stage-prerequisites |

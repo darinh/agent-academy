@@ -84,6 +84,7 @@ The `InitializationService` and `CrashRecoveryService` manage instance lifecycle
 6. Resolve the authoritative main room for the active workspace, if any
 7. If `CrashDetected = true`, ask `AgentOrchestrator` to run startup recovery before normal work resumes
 8. Startup recovery closes every active breakout via `CloseBreakoutRoomAsync(..., ClosedByRecovery)`, resets any lingering `Working` agents to `Idle`, clears `AssignedAgentId`/`AssignedAgentName` on orphaned in-progress tasks (see spec 005 §Crash Recovery for the full status list), and posts a main-room system message beginning with `"System recovered from crash"`
+9. Reconcile in-memory worktree tracking with the on-disk git state via `IWorktreeService.SyncWithGitAsync()` so post-restart worktree listings, breakout reopen, and cleanup reflect reality (failures are logged and swallowed so a sync error does not block init from completing)
 
 **On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `WebApplicationExtensions.ConfigureShutdownHook()`, wired from `Program.cs`):
 1. Locate the current instance (by `CurrentInstanceId`)
@@ -403,6 +404,7 @@ Result: Server exits with code 75, wrapper restarts process
 
 ## Revision History
 
+- **2026-04-18**: Spec sync — startup recovery now reconciles in-memory worktree tracking with the on-disk git state via `IWorktreeService.SyncWithGitAsync()` (added as step 9 of `InitializeAsync`; failures logged and swallowed). Reflects audit fix #105. | Anvil
 - **2026-04-04**: Restart history UI. `RestartHistoryPanel` component in Dashboard shows 24h stats (crashes, restarts, clean shutdowns, running) and paginated server instance table with shutdown-reason badges and crash-recovery indicators. Uses `Promise.allSettled` for independent endpoint failure, `useRef`-based request sequencing to prevent stale response races, inline error banners on failed refresh, and offset clamping when total shrinks. API types and functions added to `api.ts`. 9 new frontend tests.
 - **2026-04-04**: Server-side restart rate limiting and restart history API. `RestartServerHandler` enforces max 10 intentional restarts per hour with `SemaphoreSlim`-guarded check against `ServerInstances` table. New endpoints: `GET /api/system/restarts` (paginated instance history with derived shutdown reason) and `GET /api/system/restarts/stats` (aggregated counts by type with configurable time window, SQL-level aggregation). Adversarial review by GPT-5.3 Codex found 3 issues: race condition (fixed with semaphore), stats window logic (fixed ShutdownAt-based filtering), memory materialization (pushed to SQL). 18 new tests.
 - **2026-04-04**: Implemented breakout stuck-detection. `AgentOrchestrator.RunBreakoutLoopAsync` tracks consecutive idle rounds (zero commands parsed) and enforces absolute max-round cap. On detection: closes breakout with `StuckDetected`, marks linked task as `Blocked`, notifies parent room. Thresholds: `MaxConsecutiveIdleRounds=5`, `MaxBreakoutRounds=200`. 3 new tests. Updated Known Gaps.
