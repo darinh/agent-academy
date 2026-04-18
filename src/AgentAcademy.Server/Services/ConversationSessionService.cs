@@ -226,6 +226,50 @@ public sealed class ConversationSessionService : IConversationSessionService
     }
 
     /// <summary>
+    /// Rotates conversation sessions for every non-archived/non-completed room
+    /// in the workspace. Used by sprint-stage advance paths so all rooms in
+    /// a workspace get a clean session boundary when the sprint moves stage —
+    /// without this, the human approve path leaves rooms stuck on the prior
+    /// stage's session and stage context bleeds across iterations
+    /// (spec 013 §Stage Advancement).
+    /// </summary>
+    public async Task<int> RotateWorkspaceSessionsForStageAsync(
+        string workspacePath, string sprintId, string stage)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sprintId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+
+        var archivedStatus = nameof(RoomStatus.Archived);
+        var completedStatus = nameof(RoomStatus.Completed);
+
+        var rooms = await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath
+                && r.Status != archivedStatus
+                && r.Status != completedStatus)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var rotated = 0;
+        foreach (var roomId in rooms)
+        {
+            try
+            {
+                await CreateSessionForStageAsync(roomId, sprintId, stage);
+                rotated++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to rotate session for room {RoomId} on sprint {SprintId} stage {Stage}",
+                    roomId, sprintId, stage);
+            }
+        }
+
+        return rotated;
+    }
+
+    /// <summary>
     /// Archives all active conversation sessions with LLM summaries.
     /// Called before workspace switch so agents can resume context when
     /// the user returns to this project. Empty sessions (no messages)

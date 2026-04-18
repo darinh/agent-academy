@@ -43,6 +43,19 @@ public interface IConversationSessionService
         string roomId, string sprintId, string stage, string roomType = "Main");
 
     /// <summary>
+    /// Rotates conversation sessions for every non-archived/non-completed room
+    /// in the workspace by calling
+    /// <see cref="CreateSessionForStageAsync(string,string,string,string)"/>
+    /// for each. Used by the sprint-stage advance paths so that an entire
+    /// workspace's rooms get a clean session boundary when the sprint moves.
+    /// Returns the number of rooms that were rotated. Failures for individual
+    /// rooms are logged and skipped — the caller cannot easily roll back, and
+    /// the per-room rotation is idempotent on retry.
+    /// </summary>
+    Task<int> RotateWorkspaceSessionsForStageAsync(
+        string workspacePath, string sprintId, string stage);
+
+    /// <summary>
     /// Archives all active conversation sessions with LLM summaries.
     /// Returns the number of sessions archived.
     /// </summary>
