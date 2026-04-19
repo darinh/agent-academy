@@ -6,22 +6,70 @@ Every artifact carries a thin envelope so the store doesn't need to consult the 
 
 ## Common envelope
 
-Every artifact file (`<sha256>.json` in the store) has this top-level shape:
+Every artifact in the store is split across **two files** that share a filename stem (the content hash):
+
+| File | Purpose | Hash-bound? |
+|---|---|---|
+| `artifacts/<sha256>.json` | Canonical envelope — identity-defining | ✅ entire file |
+| `artifacts/<sha256>.meta.json` | Lineage and provenance — advisory only | ❌ never |
+
+### Hash-bound envelope (`<sha256>.json`)
 
 ```json
 {
-  "schema": "<schema_id>",
-  "schema_version": "1",
-  "produced_by_phase": "<phase_id>",
-  "task_id": "<benchmark_task_id>",
-  "input_hashes": ["<sha256>", "..."],
-  "body": { /* schema-specific payload — see below */ }
+  "artifactType": "<schema_id>",
+  "schemaVersion": "1",
+  "producedByPhase": "<phase_id>",
+  "payload": { /* schema-specific payload — see below */ }
 }
 ```
 
-`body` is the only field the LLM produces. The executor wraps it with the envelope before hashing and storing.
+`payload` is the only field the LLM produces. The executor wraps it with the three identity fields and writes the canonicalized result.
 
-> **Hashing rule:** the artifact hash is `sha256` of the canonicalized full envelope (sorted keys, no whitespace, UTF-8). Hashing the envelope (not just `body`) means input lineage participates in identity — two phase runs that produce identical bodies from different inputs will (correctly) produce different artifacts.
+### Advisory metadata (`<sha256>.meta.json`)
+
+```json
+{
+  "derivedFrom": ["<sha256>", "..."],
+  "inputHashes": ["<sha256>", "..."],
+  "producedAt": "2026-04-19T17:00:00Z",
+  "attemptNumber": 1
+}
+```
+
+**No `hash` key.** The filename stem IS the hash. **No duplication of envelope fields** (`artifactType`, `schemaVersion`, `producedByPhase`). Promoting any field from this file into identity is a breaking change and requires a new `schemaVersion`.
+
+### Hash-bound vs advisory — frozen table
+
+| Field | Location | Hash-bound? |
+|---|---|---|
+| `artifactType` | `<hash>.json` | ✅ |
+| `schemaVersion` | `<hash>.json` | ✅ |
+| `producedByPhase` | `<hash>.json` | ✅ |
+| `payload` | `<hash>.json` | ✅ |
+| `derivedFrom` | `<hash>.meta.json` | ❌ advisory |
+| `inputHashes` | `<hash>.meta.json` | ❌ advisory |
+| `producedAt` | `<hash>.meta.json` | ❌ advisory |
+| `attemptNumber` | `<hash>.meta.json` | ❌ advisory |
+
+### Hashing rule
+
+`hash = sha256(canonical_json(envelope))` where `envelope` is the four-field object above and `canonical_json` = sorted keys, no whitespace, UTF-8.
+
+Inputs and lineage are **deliberately excluded** from the hash. Two phase runs that produce byte-identical envelopes from different inputs collapse to the same artifact (correct deduplication); their differing lineage is preserved separately in `.meta.json`.
+
+### Verifiability from disk alone
+
+A reviewer with only the `artifacts/` directory can verify every artifact without consulting `phase-runs.json`, `.meta.json`, or any other file:
+
+```
+for f in artifacts/*.json:                       # skip .meta.json
+    expected_hash = filename_stem(f)
+    actual_hash   = sha256(canonical_json(load(f)))
+    assert expected_hash == actual_hash
+```
+
+If `.meta.json` is missing, lost, or corrupted, identity is unaffected.
 
 ---
 
