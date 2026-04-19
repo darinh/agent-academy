@@ -32,7 +32,7 @@
 - [ ] Document references `NotificationManager` constructor parameters: `ILogger<NotificationManager>`, `NotificationDeliveryTracker?`
 - [ ] Document describes `ConcurrentDictionary<string, INotificationProvider>` as storage mechanism
 - [ ] Document explains `StringComparer.OrdinalIgnoreCase` for provider ID lookups
-- [ ] Document describes all 7 public methods: `RegisterProvider`, `GetProvider`, `GetAllProviders`, `SendToAllAsync`, `RequestInputFromAnyAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`, `NotifyRoomClosedAsync`
+- [ ] Document describes all 9 public methods: `RegisterProvider`, `GetProvider`, `GetAllProviders`, `SendToAllAsync`, `RequestInputFromAnyAsync`, `SendAgentQuestionAsync`, `SendDirectMessageDisplayAsync`, `NotifyRoomRenamedAsync`, `NotifyRoomClosedAsync`
 
 ### 3. API Reference Quality
 For each public method, document must include:

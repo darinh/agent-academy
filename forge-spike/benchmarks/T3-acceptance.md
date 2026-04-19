@@ -20,12 +20,12 @@
 ## Refactoring Requirements
 
 ### 1. Extract Retry Logic Abstraction
-**Current state**: Retry logic is inline in 4 different methods via `NotificationRetryPolicy.ExecuteAsync` calls
+**Current state**: Retry logic is inline in 5 different methods via `NotificationRetryPolicy.ExecuteAsync` calls
 
 **Required refactoring**:
 - [ ] Extract a private helper method `ExecuteWithRetryAsync<T>` that wraps retry logic
 - [ ] Method signature: `private async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken)`
-- [ ] Replace all 4 inline `NotificationRetryPolicy.ExecuteAsync` calls with calls to this helper
+- [ ] Replace all 5 inline `NotificationRetryPolicy.ExecuteAsync` calls with calls to this helper
 - [ ] Preserve all existing behavior: retry logic, logging, cancellation handling
 
 **Lines affected** (approximately):
