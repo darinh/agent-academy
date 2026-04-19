@@ -57,97 +57,127 @@ Artifact writes are additionally idempotent: if `<hash>.json` already exists, ve
 
 ## Schemas of the metadata files
 
-### `run.json`
+> **Source of truth for trace shapes:** the trace contract locked in the design session (Athena+Socrates) on 2026-04-19. The schemas below conform to that contract. Any deviation is a bug — fix the code, not the contract.
+
+### Directory layout note
+
+The executor writes both **per-phase scratch files** (for resume/incremental progress) AND a **top-level rollup** (the consumer-facing trace contract):
+
+| File | Purpose | Audience |
+|---|---|---|
+| `run.json` | Run-level identity + terminal status | Reviewers, UI, contract |
+| `phase-runs.json` | Ordered array of phase records | Reviewers, UI, contract |
+| `phases/NN-<id>/phase-run.json` | Per-phase scratch, written incrementally | Executor (resume) |
+| `phases/NN-<id>/attempts/NN/*` | Per-attempt raw I/O | Debugging only |
+
+The top-level `phase-runs.json` is regenerated from per-phase scratch on every transition; it is the authoritative trace artifact. Per-phase scratch may be deleted post-run without loss.
+
+### `run.json` (locked contract)
 
 ```json
 {
-  "run_id": "R_01HX...",
-  "task_id": "T1-mcp-server",
-  "methodology_hash": "sha256:...",
-  "status": "Pending|Running|Succeeded|Failed|Aborted",
-  "created_at": "2026-04-19T...Z",
-  "started_at": "2026-04-19T...Z",
-  "ended_at": "2026-04-19T...Z|null",
-  "control_seed": "string (rng seed for tie-breaking; recorded for reproducibility)",
-  "phases": [
-    { "phase_id": "requirements", "dir": "01-requirements", "status": "Succeeded" },
-    { "phase_id": "contract",     "dir": "02-contract",     "status": "Succeeded" },
-    { "phase_id": "function_design", "dir": "03-function-design", "status": "Pending" },
-    { "phase_id": "implement",    "dir": "04-implement",    "status": "Pending" },
-    { "phase_id": "verify",       "dir": "05-verify",       "status": "Pending" }
-  ],
-  "totals": {
-    "tokens_in": 0,
-    "tokens_out": 0,
-    "wall_clock_seconds": 0,
-    "usd_estimate": 0.0
+  "runId": "R_01HX...",
+  "taskId": "T1-mcp-server",
+  "methodologyVersion": "1",
+  "startedAt": "2026-04-19T...Z",
+  "endedAt":   "2026-04-19T...Z",
+  "outcome":        "Succeeded|Failed|Aborted",
+  "controlOutcome": "Succeeded|Failed|null",
+  "pipelineTokens": { "in": 0, "out": 0 },
+  "controlTokens":  { "in": 0, "out": 0 },
+  "costRatio": 1.0,
+  "finalArtifactHashes": {
+    "requirements":    "sha256:...",
+    "contract":        "sha256:...",
+    "function_design": "sha256:...",
+    "implementation":  "sha256:...",
+    "review":          "sha256:..."
   }
 }
 ```
 
-### `phase-run.json`
+### `phase-runs.json` (locked contract — array)
+
+```json
+[
+  {
+    "phaseId": "requirements",
+    "artifactType": "requirements",
+    "stateTransitions": [
+      { "from": null,        "to": "Pending",   "at": "..." },
+      { "from": "Pending",   "to": "Running",   "at": "..." },
+      { "from": "Running",   "to": "Succeeded", "at": "..." }
+    ],
+    "attempts": [
+      {
+        "attemptNumber": 1,
+        "status": "Accepted|Rejected|Errored",
+        "artifactHash": "sha256:...|null",
+        "validatorResults": [ /* see Validator result below */ ],
+        "tokens":   { "in": 0, "out": 0 },
+        "latencyMs": 0,
+        "model":    "claude-sonnet-4.5",
+        "startedAt": "...",
+        "endedAt":   "..."
+      }
+    ],
+    "inputArtifactHashes":  ["sha256:..."],
+    "outputArtifactHashes": ["sha256:..."]
+  }
+]
+```
+
+`stateTransitions` is **append-only**. The current state is the `to` of the last entry.
+
+### Validator result (locked contract)
+
+Every entry in `attempt.validatorResults[]`:
 
 ```json
 {
-  "phase_id": "requirements",
-  "status": "Pending|Running|Succeeded|Failed",
-  "input_artifact_hashes": ["sha256:..."],
-  "output_artifact_hash": "sha256:...|null",
-  "attempts": [
-    {
-      "n": 1,
-      "status": "Accepted|Rejected|Errored",
-      "error_kind": "null|llm_error|parse_error|timeout|interrupted",
-      "validator_failures": [
-        { "validator": "structural|semantic|cross_artifact", "message": "string" }
-      ],
-      "artifact_hash": "sha256:...|null",
-      "tokens_in": 0,
-      "tokens_out": 0,
-      "latency_ms": 0,
-      "model": "claude-sonnet-4.5",
-      "started_at": "...",
-      "ended_at": "..."
-    }
-  ]
+  "phase":    "structural|semantic|cross-artifact",
+  "code":     "STABLE_SCREAMING_SNAKE",
+  "severity": "error|warning|info",
+  "blocking": true,
+
+  "path":           "<optional jsonpath into payload>",
+  "evidence":       "<optional short string>",
+  "attemptNumber":  1,
+  "advisoryReason": "<optional human prose>",
+  "blockingReason": "<optional human prose>"
 }
 ```
 
-### `attempt/meta.json` (per-attempt)
-Same shape as one entry of `attempts[]` above. Duplicated here as the source of truth for the attempt; `phase-run.json.attempts[]` is the rolled-up index, written after the attempt finalizes.
+**Authoritative fields** (machine-consumed): `phase`, `code`, `severity`, `blocking`. Reason fields are advisory prose only — never parsed.
 
-### `attempt/validator-report.json`
+**Gate rule:** `blocking = (phase != "semantic") || (code in phase.predeclaredBlockingCodes)`. `predeclaredBlockingCodes` is the SOLE mechanism by which a semantic result becomes blocking; it only applies to `phase="semantic"`.
+
+**Retry rule:** `shouldRetry = attempt.validatorResults.any(r => r.blocking)`. Retry budget = 3 attempts/phase, fresh session each, amendments carry only validator failures (no prior output).
+
+### `review-summary.json` (locked contract — comparison metadata only)
+
 ```json
 {
-  "structural": { "passed": true, "failures": [] },
-  "semantic":   { "passed": true, "failures": [], "judge_model": "claude-haiku-4.5", "judge_tokens_in": 0, "judge_tokens_out": 0 },
-  "cross_artifact": { "passed": true, "failures": [] }
+  "runId": "R_01HX...",
+  "taskId": "T1-mcp-server",
+  "pipelineOutcome": "Succeeded|Failed",
+  "controlOutcome":  "Succeeded|Failed|null",
+  "costRatio": 1.0,
+  "blindReviewInputs": { "a": "blind-review-input/a.md", "b": "blind-review-input/b.md" },
+  "sealedLabelMap":    "blind-review-input/.labels.sealed"
 }
 ```
 
-### `review-summary.json` (terminal, written when Run reaches terminal state)
-```json
-{
-  "run_id": "R_01HX...",
-  "task_id": "T1-mcp-server",
-  "verdict": "Succeeded|Failed",
-  "phases": [
-    { "phase_id": "requirements", "attempts_used": 1, "final_artifact_hash": "sha256:...", "tokens": 1234 },
-    ...
-  ],
-  "implementation_files": [ "<repo-relative paths from implementation/v1 artifact>" ],
-  "self_review_verdict": "pass|fail|needs_revision",
-  "totals": { "tokens_in": 0, "tokens_out": 0, "wall_clock_seconds": 0, "usd_estimate": 0.0 },
-  "blind_review_bundle": "blind/T1-pipeline.json"
-}
-```
+**No artifact payloads. No verdict text.** The blind review inputs are separate files; the sealed label map maps `{a,b} → {pipeline,control}` and is opened only after Socrates posts the verdict.
 
-### `trace.log` (NDJSON, append-only)
-One JSON object per line. Schema:
-```json
-{ "ts": "...", "event": "run.started|phase.started|attempt.started|attempt.llm_call|attempt.validated|attempt.accepted|attempt.rejected|phase.succeeded|phase.failed|run.succeeded|run.failed", "details": {...} }
-```
-Used for live observation and post-hoc debugging. Not load-bearing — `run.json` and `phase-run.json` are the source of truth.
+### Executor scratch (not part of the trace contract)
+
+The following files are written for executor convenience and debugging. They are **not** part of the trace contract; consumers must not depend on their shapes.
+
+- `phases/NN-<id>/phase-run.json` — per-phase incremental scratch; rolled up into top-level `phase-runs.json`.
+- `phases/NN-<id>/attempts/NN/prompt.txt`, `response.raw.txt`, `response.parsed.json` — raw LLM I/O.
+- `phases/NN-<id>/attempts/NN/meta.json` — same shape as one entry of `phase-runs[].attempts[]`.
+- `trace.log` — NDJSON event log for live observation. Source of truth is `phase-runs.json`, not this.
 
 ## Blind review bundle (for Socrates)
 
