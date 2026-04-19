@@ -1,0 +1,42 @@
+{
+  "id": "spike-default-v1",
+  "description": "Hardcoded 5-layer methodology for the Forge Pipeline Engine spike. Single attempt budget per phase, no fan-out, no parallel reviews. Used unchanged across all 3 benchmark tasks.",
+  "max_attempts_default": 3,
+  "phases": [
+    {
+      "id": "requirements",
+      "goal": "Decompose the task brief into testable functional and non-functional requirements, prioritized user outcomes, explicit out-of-scope, and any open questions the downstream phases must answer.",
+      "inputs": [],
+      "output_schema": "requirements/v1",
+      "instructions": "Read the task brief carefully. Produce a complete requirements artifact even if the brief is terse — make assumptions explicit in `open_questions[].assumed_answer` rather than refusing. Every functional requirement MUST be observable as pass/fail from the eventual outputs. Do not specify implementation choices (technologies, libraries, internal structure) — those belong to later phases."
+    },
+    {
+      "id": "contract",
+      "goal": "Define the external interface the implementation must satisfy: function/class signatures, data shapes, invariants, error behaviors, and worked examples.",
+      "inputs": ["requirements"],
+      "output_schema": "contract/v1",
+      "instructions": "Treat the requirements as ground truth. Every must-priority FR must be satisfied by at least one interface. Provide concrete signatures (no `???`). Include at least one example per must-priority FR demonstrating input → output. Do not describe internal components — only what an external caller sees."
+    },
+    {
+      "id": "function_design",
+      "goal": "Decompose the contract into internal components, their responsibilities, dependencies, data flow, and error handling.",
+      "inputs": ["requirements", "contract"],
+      "output_schema": "function_design/v1",
+      "instructions": "Produce a DAG of components. Each component must have a single, narrow responsibility expressible in one sentence. Every interface from the contract must be implemented by at least one component. Do not write code — only structural design. Defer hard decisions explicitly via `deferred_decisions[]` rather than hand-waving."
+    },
+    {
+      "id": "implement",
+      "goal": "Produce the file contents that realize the function design.",
+      "inputs": ["contract", "function_design"],
+      "output_schema": "implementation/v1",
+      "instructions": "Output complete, runnable file contents — no placeholders, no `// TODO`, no `pass # implement`. Every component from the function design must be implemented in at least one file. Use the contract's signatures verbatim. Choose languages/frameworks that fit the task brief; be conservative."
+    },
+    {
+      "id": "verify",
+      "goal": "Adversarially review the implementation against requirements, contract, design, and invariants. Identify defects.",
+      "inputs": ["requirements", "contract", "function_design", "implementation"],
+      "output_schema": "review/v1",
+      "instructions": "Adopt an adversarial stance: assume the implementation is wrong until you can show it satisfies each must-priority FR with concrete evidence (file path, line range, or example I/O trace). For each invariant, name the file/function that enforces it. Surface every defect you find — minor included. Verdict `pass` requires zero `critical` defects AND every must-priority FR has a passing check."
+    }
+  ]
+}
