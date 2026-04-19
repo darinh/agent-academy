@@ -98,6 +98,8 @@ The top-level `phase-runs.json` is regenerated from per-phase scratch on every t
 
 **`finalArtifactHashes` is a map keyed by `phaseId`, not a positional array.** Skipped or retried phases must not break consumer joins; a viewer renders by key lookup.
 
+**Omit-key rule:** if a phase produced no terminal artifact (skipped, errored without output, or rejected on final attempt), **omit its key entirely** from `finalArtifactHashes`. Do not emit `null` or `""`. Missing key means "no terminal artifact for that phase"; sentinel values create special cases for every consumer.
+
 **Phase-id casing convention:** phase ids (`requirements`, `contract`, `function_design`, `implementation`, `review`) are **snake_case identifiers**, not camelCase. They appear identically as `phaseId` and `artifactType` values in `phase-runs.json` and as keys in `finalArtifactHashes`. Do not "normalize" them to camelCase — they are stable string IDs, not field names.
 
 ### `phase-runs.json` (locked contract — array)
@@ -132,6 +134,8 @@ The top-level `phase-runs.json` is regenerated from per-phase scratch on every t
 ```
 
 `stateTransitions` is **append-only**. The current state is the `to` of the last entry.
+
+**`attempts[].artifactHash` is explicitly nullable, never omitted.** `attempts[]` is a record of what happened, including failures; every attempt object includes the field. Use `null` when the attempt produced no artifact (rejected, errored, or amend with no output). Use a `sha256:...` string when an artifact was produced — even if the attempt was later rejected, the artifact still exists in the store. `outputArtifactHashes` at the phase level lists only accepted artifacts.
 
 ### Validator result (locked contract)
 
