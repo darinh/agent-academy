@@ -96,6 +96,10 @@ The top-level `phase-runs.json` is regenerated from per-phase scratch on every t
 }
 ```
 
+**`finalArtifactHashes` is a map keyed by `phaseId`, not a positional array.** Skipped or retried phases must not break consumer joins; a viewer renders by key lookup.
+
+**Phase-id casing convention:** phase ids (`requirements`, `contract`, `function_design`, `implementation`, `review`) are **snake_case identifiers**, not camelCase. They appear identically as `phaseId` and `artifactType` values in `phase-runs.json` and as keys in `finalArtifactHashes`. Do not "normalize" them to camelCase — they are stable string IDs, not field names.
+
 ### `phase-runs.json` (locked contract — array)
 
 ```json
