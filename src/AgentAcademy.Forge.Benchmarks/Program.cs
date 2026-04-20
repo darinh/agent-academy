@@ -6,17 +6,21 @@ using AgentAcademy.Forge.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+// --- Flag parsing ---
+var seededDefectMode = args.Any(a => a.Equals("--seeded-defects", StringComparison.OrdinalIgnoreCase));
+var positionalArgs = args.Where(a => !a.StartsWith("--")).ToArray();
+
 // --- Configuration ---
-var methodologyPath = args.Length > 0
-    ? args[0]
+var methodologyPath = positionalArgs.Length > 0
+    ? positionalArgs[0]
     : Path.Combine(FindRepoRoot(), "docs", "forge-spike", "methodology.json");
 
-var forgeRunsRoot = args.Length > 1
-    ? args[1]
+var forgeRunsRoot = positionalArgs.Length > 1
+    ? positionalArgs[1]
     : Path.Combine(FindRepoRoot(), "forge-runs");
 
-var taskFilter = args.Length > 2
-    ? args[2].ToUpperInvariant()
+var taskFilter = positionalArgs.Length > 2
+    ? positionalArgs[2].ToUpperInvariant()
     : null; // Run all tasks if not specified
 
 // --- Load methodology ---
@@ -61,6 +65,67 @@ var provider = services.BuildServiceProvider();
 var runner = provider.GetRequiredService<PipelineRunner>();
 
 Console.WriteLine();
+
+// --- Seeded-defect mode ---
+if (seededDefectMode)
+{
+    Console.WriteLine("═══ SEEDED-DEFECT BENCHMARKS ═══");
+    Console.WriteLine($"Running {SeededDefectCatalog.All.Count} seeded defect cases against live LLM");
+    Console.WriteLine();
+
+    var seededMethodology = new MethodologyDefinition
+    {
+        Id = "seeded-defect-v1",
+        Phases =
+        [
+            new PhaseDefinition
+            {
+                Id = "implementation",
+                Goal = "Implement the solution",
+                Inputs = [],
+                OutputSchema = "implementation/v1",
+                Instructions = "Build it."
+            }
+        ],
+        Fidelity = new FidelityConfig { TargetPhase = "implementation" }
+    };
+
+    var seededRunner = provider.GetRequiredService<SeededDefectRunner>();
+    var report = await seededRunner.RunAsync(SeededDefectCatalog.All, seededMethodology);
+
+    Console.WriteLine();
+    Console.WriteLine("═══ SEEDED-DEFECT RESULTS ═══");
+    Console.WriteLine();
+
+    foreach (var result in report.Results)
+    {
+        var icon = result.Inconclusive ? "⚠" : result.MatchCorrect && result.DriftCodesDetected ? "✅" : "❌";
+        Console.WriteLine($"  {icon} {result.DefectId}: expected={result.ExpectedMatch}, actual={result.ActualMatch ?? "N/A"}, " +
+                          $"match={result.MatchCorrect}, codes={result.DriftCodesDetected}");
+        if (result.ActualDriftCodes.Count > 0)
+            Console.WriteLine($"       detected: [{string.Join(", ", result.ActualDriftCodes)}]");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("═══ DETECTION RATES ═══");
+    Console.WriteLine($"  Blocking:  {report.BlockingDetectionRate:P0} (threshold: 80%) {(report.MeetsBlockingThreshold ? "✅" : "❌")}");
+    Console.WriteLine($"  Advisory:  {report.AdvisoryDetectionRate:P0} (threshold: 60%) {(report.MeetsAdvisoryThreshold ? "✅" : "❌")}");
+    Console.WriteLine($"  Match accuracy: {report.OverallMatchAccuracy:P0}");
+    Console.WriteLine($"  False positive: {report.FalsePositiveRate:P0}");
+    Console.WriteLine($"  Inconclusive:   {report.InconclusiveCount}");
+    Console.WriteLine();
+
+    if (report.PerCodeRecall.Count > 0)
+    {
+        Console.WriteLine("  Per-code recall:");
+        foreach (var (code, recall) in report.PerCodeRecall.OrderBy(kv => kv.Key))
+        {
+            Console.WriteLine($"    {code}: {recall:P0}");
+        }
+    }
+
+    return report.MeetsBlockingThreshold && report.MeetsAdvisoryThreshold ? 0 : 1;
+}
 
 // --- Select tasks ---
 var allTasks = new[] { BenchmarkTasks.T1, BenchmarkTasks.T2, BenchmarkTasks.T3 };

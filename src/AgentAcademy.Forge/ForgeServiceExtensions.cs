@@ -45,6 +45,7 @@ public static class ForgeServiceExtensions
         services.AddSingleton<ControlExecutor>();
         services.AddSingleton<SourceIntentGenerator>();
         services.AddSingleton<FidelityExecutor>();
+        services.AddSingleton<SeededDefectRunner>();
         services.AddSingleton<PipelineRunner>();
 
         return services;

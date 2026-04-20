@@ -622,6 +622,50 @@ Adding a 6th code requires a methodology version bump. The `DriftCode` enum enfo
 - Source-intent generation failure is non-fatal — the pipeline continues without fidelity checking.
 - Fidelity phase is skipped when the pipeline fails or aborts.
 
+### Seeded-Defect Benchmarks
+
+Controlled test cases with intentionally injected drift for measuring fidelity detection accuracy. Required to validate the LLM-judge hypothesis per the spike falsifiability statement.
+
+**Components:**
+- `SeededDefect` (record in `Models/SeededDefect.cs`) — pairs a source-intent artifact with a drifted output artifact and declares the expected fidelity verdict (ground truth).
+- `SeededDefectCatalog` (`Execution/SeededDefectCatalog.cs`) — frozen catalog of 7 cases covering all 5 drift codes.
+- `SeededDefectRunner` (`Execution/SeededDefectRunner.cs`) — runs cases through `FidelityExecutor`, compares verdicts to ground truth, computes detection rates.
+- `SeededDefectReport` (record in `Models/SeededDefect.cs`) — aggregated results with per-category and per-code metrics.
+
+**Catalog cases:**
+
+| ID | Drift Code | Category | Expected Match | Description |
+|----|-----------|----------|---------------|-------------|
+| SD-OMIT | OMITTED_CONSTRAINT | blocking | FAIL | Per-IP rate limiting dropped |
+| SD-INVENT | INVENTED_REQUIREMENT | advisory | PARTIAL | Web dashboard added to CLI calculator |
+| SD-BROAD | SCOPE_BROADENED | advisory | PARTIAL | PDF export, syntax highlighting added to Markdown converter |
+| SD-NARROW | SCOPE_NARROWED | advisory | PARTIAL | Auth and caching omitted from HTTP client |
+| SD-WEAKEN | CONSTRAINT_WEAKENED | blocking | FAIL | Hard 429 rejection weakened to warning log |
+| SD-CLEAN | (none) | clean | PASS | Faithful stack implementation |
+| SD-MULTI | OMITTED_CONSTRAINT + SCOPE_BROADENED | diagnostic | FAIL | Multiple drift in schema validator |
+
+**Metrics:**
+- **Blocking detection rate**: fraction of blocking defects correctly detected (threshold: ≥80%).
+- **Advisory detection rate**: fraction of advisory defects where drift codes were detected (threshold: ≥60%).
+- **Overall match accuracy**: fraction of threshold-bearing cases (blocking + advisory + clean) where `overall_match` was correct.
+- **False positive rate**: fraction of clean cases where drift was incorrectly reported.
+- **Per-code recall**: per drift code detection rate (reported, not currently thresholded).
+- **Inconclusive count**: cases where the LLM failed to produce a verdict (infrastructure failure).
+
+**Design decisions:**
+- Artifacts are pre-fabricated and frozen — only the fidelity LLM judge is called. This isolates fidelity detection accuracy from pipeline quality.
+- The `SeededDefectRunner` uses `FidelityExecutor` directly, not `PipelineRunner`, since we're testing fidelity detection specifically.
+- The diagnostic category (multi-drift) is excluded from threshold calculations because multi-code cases make the denominator ambiguous.
+- Inconclusive results (LLM failure, parse error) count as benchmark failures — they are excluded from rates but the count is reported.
+- Implementation artifacts use placeholder `implements_component_ids` since cross-artifact validation against `function_design` is not what we're testing.
+
+**Running seeded-defect benchmarks:**
+```bash
+dotnet run --project src/AgentAcademy.Forge.Benchmarks -- --seeded-defects
+```
+
+Returns exit code 0 if both thresholds are met, 1 otherwise.
+
 ## Invariants
 
 1. **Content identity**: An artifact's hash is `sha256(canonical_json(envelope))`. The same logical content always produces the same hash. Different content never produces the same hash (collision detection raises an exception).
@@ -647,7 +691,7 @@ Adding a 6th code requires a methodology version bump. The `DriftCode` enum enfo
 6. ~~**No crash recovery**~~: Resolved. `PipelineRunner.ResumeAsync` rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts, and resumes from the first non-succeeded phase. See Crash Recovery section above.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
 8. **Schema evolution**: All schemas are frozen at v1 (now 7 schemas). No migration or versioning strategy exists for schema changes.
-9. **Seeded-defect benchmarks**: No controlled test cases with injected drift for measuring fidelity detection accuracy. Required to validate the LLM-judge hypothesis per the spike falsifiability statement.
+9. ~~**Seeded-defect benchmarks**~~: Resolved. `SeededDefectCatalog` provides 7 frozen test cases (covering all 5 drift codes) with ground-truth verdicts. `SeededDefectRunner` runs them through `FidelityExecutor` and computes detection rates with thresholds (80% blocking, 60% advisory). See Seeded-Defect Benchmarks section above.
 
 ## Revision History
 
@@ -663,3 +707,4 @@ Adding a 6th code requires a methodology version bump. The `DriftCode` enum enfo
 | 2026-04-20 | Control arm — single-shot A/B benchmarking baseline, closes Known Gap #7 | `feat/forge-control-arm` |
 | 2026-04-20 | Crash recovery — resume-from-snapshot logic, closes Known Gap #6 | `feat/forge-crash-recovery` |
 | 2026-04-20 | Intent fidelity — source-intent schema, fidelity phase, drift taxonomy, closes Known Gap #3 | `feat/forge-intent-fidelity` |
+| 2026-04-20 | Seeded-defect benchmarks — 7 frozen cases, detection rate metrics, benchmark runner, closes Known Gap #9 | `feat/forge-seeded-defect-benchmarks` |
