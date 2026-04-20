@@ -1347,4 +1347,103 @@ public sealed class PipelineRunnerTests : IDisposable
         // so we just check the outcome is either succeeded (unpriced) or aborted (priced)
         Assert.Contains(result.Outcome, new[] { "succeeded", "aborted", "failed" });
     }
+
+    // --- Wave Scheduling Edge Cases ---
+
+    [Fact]
+    public void BuildExecutionWaves_EmptyPhases_ReturnsEmpty()
+    {
+        var waves = PipelineRunner.BuildExecutionWaves(
+            Array.Empty<PhaseDefinition>(),
+            new HashSet<string>(StringComparer.Ordinal));
+
+        Assert.Empty(waves);
+    }
+
+    [Fact]
+    public void BuildExecutionWaves_AllCompleted_ReturnsEmpty()
+    {
+        var completed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "alpha", "beta", "gamma", "delta"
+        };
+        var available = new HashSet<string>(completed, StringComparer.Ordinal);
+
+        var waves = PipelineRunner.BuildExecutionWaves(
+            DiamondMethodology.Phases, available, completed);
+
+        Assert.Empty(waves);
+    }
+
+    [Fact]
+    public void BuildExecutionWaves_UnresolvableDependency_StopsScheduling()
+    {
+        // Phase depends on "phantom" which no phase produces and isn't available
+        var phases = new List<PhaseDefinition>
+        {
+            new()
+            {
+                Id = "alpha",
+                Goal = "Start",
+                Inputs = [],
+                OutputSchema = "requirements/v1",
+                Instructions = "Go."
+            },
+            new()
+            {
+                Id = "stuck",
+                Goal = "Depends on phantom",
+                Inputs = ["phantom"],
+                OutputSchema = "requirements/v1",
+                Instructions = "Never runs."
+            }
+        };
+
+        var waves = PipelineRunner.BuildExecutionWaves(
+            phases, new HashSet<string>(StringComparer.Ordinal));
+
+        // Alpha can run, but "stuck" depends on "phantom" which is never produced
+        Assert.Single(waves);
+        Assert.Single(waves[0]);
+        Assert.Equal("alpha", waves[0][0].Phase.Id);
+    }
+
+    [Fact]
+    public void BuildExecutionWaves_MultipleRoots_GroupedInFirstWave()
+    {
+        var phases = new List<PhaseDefinition>
+        {
+            new() { Id = "a", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" },
+            new() { Id = "b", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" },
+            new() { Id = "c", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" },
+            new() { Id = "merge", Goal = "G", Inputs = ["a", "b", "c"], OutputSchema = "requirements/v1", Instructions = "I" }
+        };
+
+        var waves = PipelineRunner.BuildExecutionWaves(
+            phases, new HashSet<string>(StringComparer.Ordinal));
+
+        Assert.Equal(2, waves.Count);
+        Assert.Equal(3, waves[0].Count);
+        var rootIds = waves[0].Select(w => w.Phase.Id).OrderBy(id => id).ToList();
+        Assert.Equal(["a", "b", "c"], rootIds);
+        Assert.Single(waves[1]);
+        Assert.Equal("merge", waves[1][0].Phase.Id);
+    }
+
+    [Fact]
+    public void BuildExecutionWaves_CircularDependency_StopsScheduling()
+    {
+        // A → B → A (circular) — both phases should remain unschedulable
+        var phases = new List<PhaseDefinition>
+        {
+            new() { Id = "a", Goal = "G", Inputs = ["b"], OutputSchema = "requirements/v1", Instructions = "I" },
+            new() { Id = "b", Goal = "G", Inputs = ["a"], OutputSchema = "requirements/v1", Instructions = "I" }
+        };
+
+        var waves = PipelineRunner.BuildExecutionWaves(
+            phases, new HashSet<string>(StringComparer.Ordinal));
+
+        // Neither phase can be scheduled — both have unsatisfied deps
+        Assert.Empty(waves);
+    }
 }

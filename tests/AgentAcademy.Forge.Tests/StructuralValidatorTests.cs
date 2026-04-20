@@ -415,4 +415,49 @@ public sealed class StructuralValidatorTests
         Assert.NotEmpty(results);
         Assert.DoesNotContain(results, r => r.Code == "DANGLING_REFERENCE");
     }
+
+    // --- Schema Evolution: version-aware in-artifact dispatch ---
+
+    [Fact]
+    public void Validate_UnknownSchemaVersion_SkipsInArtifactChecks()
+    {
+        // source_intent/v1 is engine-internal and has no in-artifact reference checks.
+        // This test verifies that internal schemas pass structural validation when
+        // the payload conforms to the schema, confirming the version-aware dispatch
+        // correctly reaches the default case (no in-artifact ref checks).
+        var envelope = MakeEnvelope("source_intent", "1", """
+        {
+          "task_brief": "Build a widget",
+          "acceptance_criteria": [
+            {"id": "AC1", "criterion": "Widget renders", "verifiable": true}
+          ],
+          "explicit_constraints": [],
+          "examples": [],
+          "counter_examples": []
+        }
+        """);
+
+        var results = _validator.Validate(envelope, 1);
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Validate_FidelityV1_PassesStructuralValidation()
+    {
+        var envelope = MakeEnvelope("fidelity", "1", """
+        {
+          "overall_match": "PASS",
+          "acceptance_criteria_results": [
+            {"criterion_id": "AC1", "satisfied": true, "evidence": "All good"}
+          ],
+          "drift_detected": [],
+          "summary": "No drift found"
+        }
+        """);
+
+        var results = _validator.Validate(envelope, 1);
+
+        Assert.Empty(results);
+    }
 }

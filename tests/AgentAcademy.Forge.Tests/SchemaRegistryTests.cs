@@ -277,4 +277,82 @@ public sealed class SchemaRegistryTests
         Assert.Equal(SchemaStatus.Active, entry.Status);
         Assert.False(entry.IsInternal);
     }
+
+    // --- Schema Evolution: edge cases ---
+
+    [Fact]
+    public void ValidateMethodology_EmptyPhases_ReturnsNoDiagnostics()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "empty-v1",
+            Phases = []
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public void ValidateMethodology_MultipleInvalidSchemas_ReturnsAllDiagnostics()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "multi-bad-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "p1", Goal = "G", Inputs = [], OutputSchema = "fake/v99", Instructions = "I" },
+                new PhaseDefinition { Id = "p2", Goal = "G", Inputs = ["p1"], OutputSchema = "also_fake/v1", Instructions = "I" }
+            },
+            Control = new ControlConfig { TargetSchema = "control_fake/v1" }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Equal(3, diagnostics.Count);
+        Assert.All(diagnostics, d => Assert.Equal(SchemaValidationSeverity.Error, d.Severity));
+        Assert.Contains(diagnostics, d => d.PhaseId == "p1" && d.SchemaId == "fake/v99");
+        Assert.Contains(diagnostics, d => d.PhaseId == "p2" && d.SchemaId == "also_fake/v1");
+        Assert.Contains(diagnostics, d => d.PhaseId == "control" && d.SchemaId == "control_fake/v1");
+    }
+
+    [Fact]
+    public void ValidateMethodology_NullControl_SkipsControlValidation()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "no-control-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "req", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" }
+            },
+            Control = null
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Theory]
+    [InlineData("requirements")]
+    [InlineData("contract")]
+    [InlineData("function_design")]
+    [InlineData("implementation")]
+    [InlineData("review")]
+    [InlineData("source_intent")]
+    [InlineData("fidelity")]
+    public void GetSchemasByType_ReturnsOrderedByVersion(string artifactType)
+    {
+        var schemas = _registry.GetSchemasByType(artifactType);
+
+        Assert.NotEmpty(schemas);
+        for (int i = 1; i < schemas.Count; i++)
+        {
+            var prev = int.Parse(schemas[i - 1].SchemaVersion);
+            var curr = int.Parse(schemas[i].SchemaVersion);
+            Assert.True(prev <= curr, $"Schema versions not ordered: {prev} > {curr}");
+        }
+    }
 }

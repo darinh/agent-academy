@@ -353,6 +353,113 @@ public sealed class SeededDefectTests : IDisposable
         Assert.Equal(0.0, report.PerCodeRecall["CONSTRAINT_WEAKENED"]);
     }
 
+    // ── Additional Coverage: edge cases and mixed scenarios ──
+
+    [Fact]
+    public void Catalog_AllDefects_HaveNonEmptyDescriptions()
+    {
+        foreach (var defect in SeededDefectCatalog.All)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(defect.Description),
+                $"Defect {defect.Id} has empty description");
+        }
+    }
+
+    [Fact]
+    public void BuildReport_EmptyInputs_ReturnsDefaults()
+    {
+        var report = SeededDefectRunner.BuildReport(
+            Array.Empty<SeededDefect>(),
+            Array.Empty<SeededDefectResult>());
+
+        Assert.Equal(1.0, report.BlockingDetectionRate);
+        Assert.Equal(1.0, report.AdvisoryDetectionRate);
+        Assert.Equal(1.0, report.OverallMatchAccuracy);
+        Assert.Equal(0.0, report.FalsePositiveRate);
+        Assert.Equal(0, report.InconclusiveCount);
+        Assert.Empty(report.PerCodeRecall);
+    }
+
+    [Fact]
+    public void BuildReport_MixedDetection_CalculatesPartialRates()
+    {
+        // SD-OMIT (blocking) detected, SD-WEAKEN (blocking) missed,
+        // SD-INVENT (advisory) detected, SD-CLEAN clean correct
+        var defects = new List<SeededDefect>
+        {
+            SeededDefectCatalog.OmittedConstraint,
+            SeededDefectCatalog.ConstraintWeakened,
+            SeededDefectCatalog.InventedRequirement,
+            SeededDefectCatalog.CleanPass
+        };
+
+        var results = new List<SeededDefectResult>
+        {
+            new()
+            {
+                DefectId = "SD-OMIT",
+                ExpectedMatch = "FAIL",
+                ActualMatch = "FAIL",
+                ExpectedDriftCodes = ["OMITTED_CONSTRAINT"],
+                ActualDriftCodes = ["OMITTED_CONSTRAINT"],
+                MatchCorrect = true,
+                DriftCodesDetected = true,
+                FidelityStatus = PhaseRunStatus.Succeeded,
+                Inconclusive = false
+            },
+            new()
+            {
+                DefectId = "SD-WEAKEN",
+                ExpectedMatch = "FAIL",
+                ActualMatch = "PASS",
+                ExpectedDriftCodes = ["CONSTRAINT_WEAKENED"],
+                ActualDriftCodes = [],
+                MatchCorrect = false,
+                DriftCodesDetected = false,
+                FidelityStatus = PhaseRunStatus.Succeeded,
+                Inconclusive = false
+            },
+            new()
+            {
+                DefectId = "SD-INVENT",
+                ExpectedMatch = "PARTIAL",
+                ActualMatch = "PARTIAL",
+                ExpectedDriftCodes = ["INVENTED_REQUIREMENT"],
+                ActualDriftCodes = ["INVENTED_REQUIREMENT"],
+                MatchCorrect = true,
+                DriftCodesDetected = true,
+                FidelityStatus = PhaseRunStatus.Succeeded,
+                Inconclusive = false
+            },
+            new()
+            {
+                DefectId = "SD-CLEAN",
+                ExpectedMatch = "PASS",
+                ActualMatch = "PASS",
+                ExpectedDriftCodes = [],
+                ActualDriftCodes = [],
+                MatchCorrect = true,
+                DriftCodesDetected = true,
+                FidelityStatus = PhaseRunStatus.Succeeded,
+                Inconclusive = false
+            }
+        };
+
+        var report = SeededDefectRunner.BuildReport(defects, results);
+
+        // Blocking: 1 detected / 2 total = 0.5
+        Assert.Equal(0.5, report.BlockingDetectionRate);
+        // Advisory: 1 detected / 1 total = 1.0
+        Assert.Equal(1.0, report.AdvisoryDetectionRate);
+        // Overall match accuracy: 3 correct / 4 threshold-bearing = 0.75
+        Assert.Equal(0.75, report.OverallMatchAccuracy);
+        // Clean case correct → 0 false positives
+        Assert.Equal(0.0, report.FalsePositiveRate);
+        // Thresholds: blocking needs ≥ 0.80 → fails (0.5), advisory needs ≥ 0.60 → passes (1.0)
+        Assert.False(report.MeetsBlockingThreshold);
+        Assert.True(report.MeetsAdvisoryThreshold);
+    }
+
     // ── Runner Integration Tests (with stub LLM) ──
 
     [Fact]

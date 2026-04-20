@@ -413,4 +413,66 @@ public sealed class CrossArtifactValidatorTests
         var results = _validator.Validate(envelope, new Dictionary<string, ArtifactEnvelope>(), 1);
         Assert.Empty(results);
     }
+
+    // --- Schema Evolution: version-aware dispatch ---
+
+    [Fact]
+    public void KnownType_UnknownVersion_ReturnsEmpty()
+    {
+        // requirements/v2 doesn't exist yet — the version-aware dispatch should hit the default case
+        var envelope = MakeEnvelope("requirements", "2", """
+        {
+          "task_summary": "test",
+          "user_outcomes": [{"id": "U1", "outcome": "test", "priority": "must"}],
+          "functional_requirements": [{"id": "FR1", "statement": "test", "outcome_ids": ["U1"]}],
+          "non_functional_requirements": [],
+          "out_of_scope": [],
+          "open_questions": []
+        }
+        """);
+
+        var inputs = new Dictionary<string, ArtifactEnvelope>();
+        var results = _validator.Validate(envelope, inputs, 1);
+
+        // v2 schema not recognized → default case → empty (no cross-artifact checks applied)
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public void Contract_V1_DispatchesCorrectly()
+    {
+        // Confirm that contract/v1 still dispatches through the version-aware path
+        var req = MakeEnvelope("requirements", "1", """
+        {
+          "task_summary": "test",
+          "user_outcomes": [{"id": "U1", "outcome": "test", "priority": "must"}],
+          "functional_requirements": [{"id": "FR1", "statement": "test", "outcome_ids": ["U1"]}],
+          "non_functional_requirements": [],
+          "out_of_scope": [],
+          "open_questions": []
+        }
+        """);
+
+        // Interface references FR_MISSING which doesn't exist in requirements
+        var contract = MakeEnvelope("contract", "1", """
+        {
+          "components": [
+            {"id": "C1", "name": "Api", "responsibility": "handle requests", "fr_ids": ["FR1"]}
+          ],
+          "interfaces": [
+            {"name": "POST /api/data", "from": "C1", "to": "C1", "satisfies_fr_ids": ["FR_MISSING"], "contract": "Accepts JSON"}
+          ],
+          "data_models": [],
+          "invariants": [],
+          "deployment_constraints": []
+        }
+        """);
+
+        var inputs = new Dictionary<string, ArtifactEnvelope> { { "requirements", req } };
+        var results = _validator.Validate(contract, inputs, 1);
+
+        // FR_MISSING is a dangling reference via satisfies_fr_ids → should produce findings
+        Assert.NotEmpty(results);
+        Assert.Contains(results, r => r.Code == "CROSS_ARTIFACT_DANGLING_REF");
+    }
 }
