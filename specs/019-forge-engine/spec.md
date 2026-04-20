@@ -75,17 +75,22 @@ Defines the standalone pipeline engine that transforms a task brief into validat
 ### Pipeline Execution Flow
 
 1. **Initialize**: `PipelineRunner.ExecuteAsync()` generates a run ID (`R_` + ULID), writes `run.json`, `task.json`, and `methodology.json` to the run store.
-2. **Iterate phases**: For each phase in `MethodologyDefinition.Phases` (in declared order):
-   a. Resolve inputs by looking up accepted artifact hashes from prior phases via `IArtifactStore`.
-   b. Delegate to `PhaseExecutor.ExecuteAsync()`.
-3. **Phase attempt loop** (max attempts configurable per-phase or methodology-wide, default 3):
+2. **Schedule waves**: `BuildExecutionWaves` computes a topological schedule from phase dependency declarations. Phases whose inputs are all satisfied by prior waves execute concurrently within a wave.
+3. **Execute waves**: For each wave:
+   a. All phases in the wave execute concurrently via `Task.WhenAll`.
+   b. Each phase resolves inputs by looking up accepted artifact hashes from prior phases.
+   c. Each phase delegates to `PhaseExecutor.ExecuteAsync()`.
+   d. After all phases in the wave complete, results are processed in methodology order (deterministic trace ordering).
+   e. If any phase in the wave failed, the pipeline stops — no subsequent waves execute.
+   f. Budget is checked between waves; within a wave, all phases share the pre-wave budget snapshot.
+4. **Phase attempt loop** (max attempts configurable per-phase or methodology-wide, default 3):
    a. **Prompt**: `PromptBuilder` renders the user message with task, phase, schema, inputs, and amendment notes.
    b. **Generate**: `ILlmClient.GenerateAsync()` with configurable model (see Model Configuration below), temperature 0.2, JSON mode enabled.
    c. **Parse**: `AttemptResponseParser` extracts `{"body": ...}` and wraps into `ArtifactEnvelope`.
    d. **Validate**: `ValidatorPipeline` runs three tiers. If blocking findings: reject, generate amendment notes for next attempt.
    e. **Persist**: Write artifact to `IArtifactStore`, update phase-run scratch in `IRunStore`, record attempt files.
-4. **Finalize**: On all phases succeeded, read accepted artifacts and populate `RunTrace.FinalArtifactHashes`. On any phase exhausting attempts, mark run as Failed.
-5. **Cancellation**: Via `CancellationToken` — writes Aborted state and exits cleanly.
+5. **Finalize**: On all waves completed successfully, read accepted artifacts and populate `RunTrace.FinalArtifactHashes`. On any phase exhausting attempts, mark run as Failed.
+6. **Cancellation**: Via `CancellationToken` — writes Aborted state and exits cleanly.
 
 ### State Machines
 
@@ -161,7 +166,7 @@ A `MethodologyDefinition` is a JSON document that declares the ordered phases:
 }
 ```
 
-Each phase declares its `inputs` (prior phase IDs), `output_schema` (schema registry key), `goal`, and `instructions`. Phases execute sequentially — there is no parallelism.
+Each phase declares its `inputs` (prior phase IDs), `output_schema` (schema registry key), `goal`, and `instructions`. Phases that share no dependency chain execute in parallel via wave scheduling — see Parallel Execution below.
 
 ### Model Configuration
 
@@ -445,15 +450,16 @@ Snapshot writes are atomic (temp file → rename). `run.json` is snapshotted aft
 **Algorithm:**
 1. Read `run.json`. If outcome is terminal (succeeded/failed/aborted) → return as-is (idempotent).
 2. Read `task.json` and `methodology.json` (frozen at run start).
-3. Scan per-phase scratch files in methodology order:
-   - **Succeeded** phases: skip, read accepted artifact from store, accumulate tokens/cost.
-   - **Failed** phases: terminal — classify as `failed` or `aborted` (if cost ≥ budget).
-   - **Running/Pending** phases: crashed mid-execution. Tokens/cost from persisted attempts are accumulated for budget accuracy, but the phase is re-executed from attempt 1.
-   - **Missing** scratch file: phase never started, execute normally.
-4. Budget guard: if accumulated cost ≥ budget before resuming, abort immediately.
-5. Continue execution from the first non-succeeded phase with pre-populated artifact map and token/cost accumulators.
-6. If pipeline succeeded and control arm has no outcome, re-run control arm.
-7. Append `run_resumed` event to `trace.log` with completed phase IDs, resume index, and accumulated cost.
+3. Scan ALL per-phase scratch files (not just up to the first gap — wave execution means later phases may have completed while earlier ones crashed):
+   - **Succeeded** phases: read accepted artifact from store, accumulate tokens/cost.
+   - **Failed** phases: record terminal state for run classification.
+   - **Running/Pending** phases: crashed mid-execution. Tokens/cost from persisted attempts are accumulated for budget accuracy, but the phase is re-executed.
+   - **Missing** scratch file: phase never started, will be scheduled in wave planning.
+4. Restore source-intent artifact: if `runTrace.SourceIntentArtifactHash` is persisted, reload from artifact store and seed into accepted artifacts. This ensures resumed runs maintain fidelity grounding.
+5. Budget guard: if accumulated cost ≥ budget before resuming, abort immediately.
+6. Build wave schedule from remaining (non-completed) phases and continue execution with pre-populated artifact map and token/cost accumulators.
+7. If pipeline succeeded and control arm has no outcome, re-run control arm.
+8. Append `run_resumed` event to `trace.log` with completed phase IDs, pending phase count, and accumulated cost.
 
 **Invariants:**
 - Idempotent: calling `ResumeAsync` on a terminal run is a no-op.
@@ -461,6 +467,41 @@ Snapshot writes are atomic (temp file → rename). `run.json` is snapshotted aft
 - Inconsistency-safe: if a succeeded phase's artifact is missing from the artifact store, `ResumeAsync` throws `InvalidOperationException` (store corruption, not a resumable state).
 
 **Known limitation:** When a "running" phase is re-executed on resume, its old attempt data (prompt.txt, response files) remains on disk in the attempt directories, but the phase scratch file (`phase-run.json`) is overwritten with the new execution's trace. The run-level `PipelineTokens` and `PipelineCost` correctly include the cost of those pre-crash attempts, but the `phase-runs.json` rollup does not — there is a minor audit discrepancy for resumed runs.
+
+### Parallel Execution
+
+`PipelineRunner` uses wave-based scheduling to execute independent phases concurrently. Parallelism is automatic — the runner derives the execution schedule from the phase dependency graph declared in `Inputs`.
+
+**Wave scheduling** (`BuildExecutionWaves`, internal static):
+Uses a Kahn's algorithm variant. Repeatedly finds phases whose inputs are all in the "available" artifact set, groups them as a wave, adds their IDs to "available", and repeats until all phases are scheduled.
+
+```
+Example — standard 5-phase methodology (strict chain):
+  Wave 0: [requirements]
+  Wave 1: [contract]
+  Wave 2: [function_design]
+  Wave 3: [implementation]
+  Wave 4: [review]
+  → Sequential execution (identical to pre-parallelism behavior)
+
+Example — diamond dependency (A → [B, C] → D):
+  Wave 0: [A]
+  Wave 1: [B, C]  ← concurrent
+  Wave 2: [D]
+  → B and C execute in parallel via Task.WhenAll
+```
+
+**Execution semantics:**
+- **Within a wave**: All phases execute concurrently via `Task.WhenAll`. Each phase receives an immutable snapshot of accepted artifacts from prior waves.
+- **Between waves**: Results are merged single-threaded. Budget is checked. If any phase in the wave failed, the pipeline fails — no subsequent waves execute.
+- **Failure handling**: No fail-fast within a wave. All phases run to completion (avoids cancellation/abort misclassification). The "let the wave finish" approach keeps the run state machine unambiguous.
+- **Budget enforcement**: Budget is checked between waves, not within. All phases in a wave share the pre-wave budget snapshot. Total cost may exceed budget by at most one wave's worth of spend.
+- **Trace ordering**: Results within a wave are sorted by original methodology index for deterministic `phase-runs.json` output.
+- **Single-phase optimization**: Waves with exactly one phase skip `Task.WhenAll` overhead and execute directly.
+
+**Source-intent injection**: When fidelity is configured, `source_intent` is added to the available artifact set before wave planning and injected into the first methodology phase's declared inputs. This ensures the first phase is schedulable even when it declares a `source_intent` dependency.
+
+**Resume compatibility**: `RebuildStateFromSnapshotsAsync` scans ALL methodology phases (not just up to the first gap) to handle partial wave completion correctly. Completed phase IDs are passed to `BuildExecutionWaves` which skips them, scheduling only remaining phases.
 
 ### LLM Abstraction
 
@@ -687,7 +728,7 @@ Returns exit code 0 if both thresholds are met, 1 otherwise.
 2. **No live benchmark results**: Benchmarks require `OPENAI_API_KEY`; results have not been collected yet.
 3. ~~**Intent fidelity**~~: Resolved. `SourceIntentGenerator` creates a structured source-intent artifact from the task brief (verbatim preservation + extracted criteria). `FidelityExecutor` runs a terminal comparison against the target phase output with zero intermediate artifact access. Closed 5-code drift taxonomy (`DriftCode` enum). See Intent Fidelity section above.
 4. ~~**No cost tracking**~~: Resolved. `CostCalculator` provides per-model pricing, per-attempt cost on traces, run-level `PipelineCost`, and optional `budget` enforcement on methodology. See Cost Tracking section above.
-5. **No parallelism**: Phases execute sequentially. The methodology model supports inputs that could enable parallel execution, but the runner doesn't exploit it.
+5. ~~**No parallelism**~~: Resolved. `BuildExecutionWaves` computes a topological schedule from phase dependency declarations. Phases in the same wave execute concurrently via `Task.WhenAll`. Budget enforcement is between waves. Sequential methodologies produce single-phase waves (identical behavior to pre-parallelism). See Parallel Execution section above.
 6. ~~**No crash recovery**~~: Resolved. `PipelineRunner.ResumeAsync` rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts, and resumes from the first non-succeeded phase. See Crash Recovery section above.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
 8. **Schema evolution**: All schemas are frozen at v1 (now 7 schemas). No migration or versioning strategy exists for schema changes.
@@ -708,3 +749,4 @@ Returns exit code 0 if both thresholds are met, 1 otherwise.
 | 2026-04-20 | Crash recovery — resume-from-snapshot logic, closes Known Gap #6 | `feat/forge-crash-recovery` |
 | 2026-04-20 | Intent fidelity — source-intent schema, fidelity phase, drift taxonomy, closes Known Gap #3 | `feat/forge-intent-fidelity` |
 | 2026-04-20 | Seeded-defect benchmarks — 7 frozen cases, detection rate metrics, benchmark runner, closes Known Gap #9 | `feat/forge-seeded-defect-benchmarks` |
+| 2026-04-20 | Parallel phase execution — wave-based scheduling, resume source-intent fix, closes Known Gap #5 | `feat/forge-parallel-phases` |

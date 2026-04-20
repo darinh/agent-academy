@@ -219,7 +219,7 @@ public sealed class PipelineRunner
             @event = "run_resumed",
             at = _timeProvider.GetUtcNow().UtcDateTime,
             completedPhases = resumeState.CompletedPhaseIds,
-            resumeFromIndex = resumeState.ResumeFromPhaseIndex,
+            pendingPhaseCount = methodology.Phases.Count - resumeState.CompletedPhaseIds.Count,
             accumulatedCost = resumeState.AccumulatedCost
         }, ct);
 
@@ -280,17 +280,37 @@ public sealed class PipelineRunner
             return runTrace;
         }
 
-        // 6. Continue execution from the first non-succeeded phase
+        // 6. Restore source-intent artifact if it was generated in the original run
+        ArtifactEnvelope? sourceIntentEnvelope = null;
+        if (runTrace.SourceIntentArtifactHash is not null)
+        {
+            var siHash = StripHashPrefix(runTrace.SourceIntentArtifactHash);
+            sourceIntentEnvelope = await _artifactStore.ReadAsync(siHash, ct);
+            if (sourceIntentEnvelope is not null)
+            {
+                resumeState.AcceptedArtifacts["source_intent"] = sourceIntentEnvelope;
+            }
+            else
+            {
+                _logger.LogWarning("Resume {RunId}: source-intent artifact {Hash} not found, continuing without fidelity grounding",
+                    runId, runTrace.SourceIntentArtifactHash[..Math.Min(runTrace.SourceIntentArtifactHash.Length, 16)]);
+            }
+        }
+
+        // 7. Continue execution from uncompleted phases
         runTrace = runTrace with { Outcome = "running" };
         await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
 
+        var completedPhaseIds = new HashSet<string>(resumeState.CompletedPhaseIds, StringComparer.Ordinal);
+
         var pipelineResult = await ExecutePipelinePhasesAsync(
             runId, task, methodology, runTrace, ct,
-            startPhaseIndex: resumeState.ResumeFromPhaseIndex,
             initialAcceptedArtifacts: resumeState.AcceptedArtifacts,
+            completedPhaseIds: completedPhaseIds,
             initialTokensIn: resumeState.AccumulatedTokensIn,
             initialTokensOut: resumeState.AccumulatedTokensOut,
-            initialCost: resumeState.AccumulatedCost);
+            initialCost: resumeState.AccumulatedCost,
+            sourceIntentEnvelope: sourceIntentEnvelope);
 
         runTrace = pipelineResult.RunTrace;
         var phaseRunTraces = MergePhaseRunTraces(resumeState.PhaseRunTraces, pipelineResult.PhaseRunTraces);
@@ -312,10 +332,11 @@ public sealed class PipelineRunner
     }
 
     /// <summary>
-    /// Execute methodology phases in order, optionally starting from a given index
-    /// with pre-accumulated state (for crash recovery resume).
-    /// When a source-intent envelope is provided, it is injected as an input to the
-    /// first methodology phase (requirements) for grounding.
+    /// Execute methodology phases using wave-based parallel scheduling.
+    /// Phases whose dependencies are all satisfied run concurrently within a wave.
+    /// Budget is enforced between waves; within a wave all phases share the pre-wave budget snapshot.
+    /// When a source-intent envelope is provided, it is seeded into the accepted artifacts
+    /// and injected into the first methodology phase's inputs for grounding.
     /// </summary>
     private async Task<PipelinePhaseResult> ExecutePipelinePhasesAsync(
         string runId,
@@ -323,8 +344,8 @@ public sealed class PipelineRunner
         MethodologyDefinition methodology,
         RunTrace runTrace,
         CancellationToken ct,
-        int startPhaseIndex = 0,
         Dictionary<string, ArtifactEnvelope>? initialAcceptedArtifacts = null,
+        HashSet<string>? completedPhaseIds = null,
         int initialTokensIn = 0,
         int initialTokensOut = 0,
         decimal initialCost = 0m,
@@ -342,121 +363,107 @@ public sealed class PipelineRunner
             acceptedArtifacts["source_intent"] = sourceIntentEnvelope;
         }
 
+        // Inject source_intent into the first phase's declared inputs if not already present
+        var phases = PreparePhaseInputs(methodology.Phases, sourceIntentEnvelope);
+
+        // Build available artifact IDs: completed phase IDs + any external artifacts (e.g. source_intent)
+        var availableArtifactIds = new HashSet<string>(acceptedArtifacts.Keys, StringComparer.Ordinal);
+
+        var waves = BuildExecutionWaves(phases, availableArtifactIds, completedPhaseIds);
+
         try
         {
-            for (var i = startPhaseIndex; i < methodology.Phases.Count; i++)
+            foreach (var wave in waves)
             {
                 ct.ThrowIfCancellationRequested();
 
-                var phase = methodology.Phases[i];
-
-                // If source-intent is available and this is the first phase (typically requirements),
-                // inject source_intent into the phase's inputs list
-                if (sourceIntentEnvelope is not null && i == 0 && !phase.Inputs.Contains("source_intent"))
+                // Pre-wave budget check
+                if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value)
                 {
-                    phase = phase with { Inputs = new List<string>(phase.Inputs) { "source_intent" } };
-                }
-
-                _logger.LogInformation("Pipeline run {RunId}: starting phase {PhaseIndex}/{Total} ({PhaseId})",
-                    runId, i + 1, methodology.Phases.Count, phase.Id);
-
-                // Resolve input artifacts for this phase
-                var inputArtifacts = ResolveInputArtifacts(phase, acceptedArtifacts);
-                if (inputArtifacts is null)
-                {
-                    _logger.LogError("Pipeline run {RunId}: phase {PhaseId} has unresolved inputs",
-                        runId, phase.Id);
-
-                    var failedPhaseTrace = CreateInputsMissingTrace(phase, _timeProvider);
-                    phaseRunTraces.Add(failedPhaseTrace);
-
-                    return FinalizePhases(runTrace, "failed", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
-                }
-
-                // Compute remaining budget for this phase
-                decimal? budgetRemaining = methodology.Budget.HasValue
-                    ? methodology.Budget.Value - totalCost
-                    : null;
-
-                // Execute the phase
-                var result = await _phaseExecutor.ExecuteAsync(
-                    runId, i, phase, methodology, task, inputArtifacts, budgetRemaining, ct);
-
-                phaseRunTraces.Add(result.PhaseRunTrace);
-
-                // Accumulate tokens and cost from all attempts
-                foreach (var attempt in result.PhaseRunTrace.Attempts)
-                {
-                    totalTokensIn += attempt.Tokens.In;
-                    totalTokensOut += attempt.Tokens.Out;
-                    if (attempt.JudgeTokens is not null)
-                    {
-                        totalTokensIn += attempt.JudgeTokens.In;
-                        totalTokensOut += attempt.JudgeTokens.Out;
-                    }
-                    totalCost += attempt.Cost ?? 0;
-                }
-
-                if (result.Status == PhaseRunStatus.Failed)
-                {
-                    // Check if failure was due to budget exhaustion
-                    if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value)
-                    {
-                        _logger.LogWarning("Pipeline run {RunId}: aborted — budget exhausted (${Cost:F4} / ${Budget:F4})",
-                            runId, totalCost, methodology.Budget.Value);
-
-                        var abortResult = FinalizePhases(runTrace, "aborted", phaseRunTraces,
-                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
-                        abortResult = abortResult with
-                        {
-                            RunTrace = abortResult.RunTrace with { AbortReason = "budget_exceeded" }
-                        };
-                        return abortResult;
-                    }
-
-                    _logger.LogWarning("Pipeline run {RunId}: phase {PhaseId} failed after all attempts",
-                        runId, phase.Id);
-
-                    return FinalizePhases(runTrace, "failed", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
-                }
-
-                // Phase succeeded — read the accepted artifact from the store
-                if (result.AcceptedArtifactHash is not null)
-                {
-                    var envelope = await _artifactStore.ReadAsync(result.AcceptedArtifactHash, ct);
-                    if (envelope is null)
-                    {
-                        _logger.LogError("Pipeline run {RunId}: accepted artifact {Hash} not found in store",
-                            runId, result.AcceptedArtifactHash[..12]);
-
-                        return FinalizePhases(runTrace, "failed", phaseRunTraces,
-                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
-                    }
-
-                    acceptedArtifacts[phase.Id] = envelope;
-                }
-
-                _logger.LogInformation("Pipeline run {RunId}: phase {PhaseId} succeeded", runId, phase.Id);
-
-                // Budget check between phases (even after success)
-                if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value && i < methodology.Phases.Count - 1)
-                {
-                    _logger.LogWarning("Pipeline run {RunId}: aborted between phases — budget exceeded (${Cost:F4} / ${Budget:F4})",
+                    _logger.LogWarning("Pipeline run {RunId}: aborted before wave — budget exceeded (${Cost:F4} / ${Budget:F4})",
                         runId, totalCost, methodology.Budget.Value);
 
                     var abortResult = FinalizePhases(runTrace, "aborted", phaseRunTraces,
                         acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
-                    abortResult = abortResult with
+                    return abortResult with
                     {
                         RunTrace = abortResult.RunTrace with { AbortReason = "budget_exceeded" }
                     };
-                    return abortResult;
+                }
+
+                decimal? budgetRemaining = methodology.Budget.HasValue
+                    ? methodology.Budget.Value - totalCost
+                    : null;
+
+                // Execute all phases in this wave concurrently
+                var waveResults = await ExecuteWaveAsync(
+                    runId, wave, methodology, task, acceptedArtifacts, budgetRemaining, ct);
+
+                // Process results in methodology order (deterministic trace ordering)
+                var sortedResults = waveResults.OrderBy(r => r.PhaseIndex).ToList();
+                var anyFailed = false;
+
+                foreach (var waveResult in sortedResults)
+                {
+                    phaseRunTraces.Add(waveResult.ExecutorResult.PhaseRunTrace);
+
+                    // Accumulate tokens and cost from all attempts
+                    foreach (var attempt in waveResult.ExecutorResult.PhaseRunTrace.Attempts)
+                    {
+                        totalTokensIn += attempt.Tokens.In;
+                        totalTokensOut += attempt.Tokens.Out;
+                        if (attempt.JudgeTokens is not null)
+                        {
+                            totalTokensIn += attempt.JudgeTokens.In;
+                            totalTokensOut += attempt.JudgeTokens.Out;
+                        }
+                        totalCost += attempt.Cost ?? 0;
+                    }
+
+                    if (waveResult.ExecutorResult.Status == PhaseRunStatus.Failed)
+                    {
+                        _logger.LogWarning("Pipeline run {RunId}: phase {PhaseId} failed after all attempts",
+                            runId, waveResult.Phase.Id);
+                        anyFailed = true;
+                        continue;
+                    }
+
+                    // Phase succeeded — read the accepted artifact from the store
+                    if (waveResult.ExecutorResult.AcceptedArtifactHash is not null)
+                    {
+                        var envelope = await _artifactStore.ReadAsync(waveResult.ExecutorResult.AcceptedArtifactHash, ct);
+                        if (envelope is null)
+                        {
+                            _logger.LogError("Pipeline run {RunId}: accepted artifact {Hash} not found in store",
+                                runId, waveResult.ExecutorResult.AcceptedArtifactHash[..12]);
+                            anyFailed = true;
+                            continue;
+                        }
+
+                        acceptedArtifacts[waveResult.Phase.Id] = envelope;
+                    }
+
+                    _logger.LogInformation("Pipeline run {RunId}: phase {PhaseId} succeeded", runId, waveResult.Phase.Id);
+                }
+
+                if (anyFailed)
+                {
+                    if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value)
+                    {
+                        var abortResult = FinalizePhases(runTrace, "aborted", phaseRunTraces,
+                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
+                        return abortResult with
+                        {
+                            RunTrace = abortResult.RunTrace with { AbortReason = "budget_exceeded" }
+                        };
+                    }
+
+                    return FinalizePhases(runTrace, "failed", phaseRunTraces,
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
                 }
             }
 
-            // All phases succeeded
+            // All waves completed successfully
             return FinalizePhases(runTrace, "succeeded", phaseRunTraces,
                 acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
         }
@@ -467,6 +474,148 @@ public sealed class PipelineRunner
             return FinalizePhases(runTrace, "aborted", phaseRunTraces,
                 acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
         }
+    }
+
+    /// <summary>
+    /// Execute all phases in a wave concurrently. Each phase resolves its own inputs
+    /// from the pre-wave accepted artifacts snapshot. Results are collected after all
+    /// phases complete (no fail-fast — avoids cancellation/abort misclassification).
+    /// </summary>
+    private async Task<List<WavePhaseResult>> ExecuteWaveAsync(
+        string runId,
+        IReadOnlyList<(int Index, PhaseDefinition Phase)> wave,
+        MethodologyDefinition methodology,
+        TaskBrief task,
+        IReadOnlyDictionary<string, ArtifactEnvelope> acceptedArtifacts,
+        decimal? budgetRemaining,
+        CancellationToken ct)
+    {
+        if (wave.Count == 1)
+        {
+            // Single-phase wave — skip Task.WhenAll overhead
+            var (index, phase) = wave[0];
+            var result = await ExecuteSinglePhaseAsync(runId, index, phase, methodology, task, acceptedArtifacts, budgetRemaining, ct);
+            return [result];
+        }
+
+        _logger.LogInformation("Pipeline run {RunId}: starting wave of {Count} phases ({PhaseIds})",
+            runId, wave.Count, string.Join(", ", wave.Select(w => w.Phase.Id)));
+
+        var tasks = wave.Select(w =>
+            ExecuteSinglePhaseAsync(runId, w.Index, w.Phase, methodology, task, acceptedArtifacts, budgetRemaining, ct)
+        ).ToList();
+
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Execute a single phase: resolve inputs, run via PhaseExecutor, return result.
+    /// Returns a synthetic failure result if inputs cannot be resolved.
+    /// </summary>
+    private async Task<WavePhaseResult> ExecuteSinglePhaseAsync(
+        string runId,
+        int phaseIndex,
+        PhaseDefinition phase,
+        MethodologyDefinition methodology,
+        TaskBrief task,
+        IReadOnlyDictionary<string, ArtifactEnvelope> acceptedArtifacts,
+        decimal? budgetRemaining,
+        CancellationToken ct)
+    {
+        _logger.LogInformation("Pipeline run {RunId}: starting phase {PhaseIndex}/{Total} ({PhaseId})",
+            runId, phaseIndex + 1, methodology.Phases.Count, phase.Id);
+
+        var inputArtifacts = ResolveInputArtifacts(phase, acceptedArtifacts);
+        if (inputArtifacts is null)
+        {
+            _logger.LogError("Pipeline run {RunId}: phase {PhaseId} has unresolved inputs", runId, phase.Id);
+            var failedTrace = CreateInputsMissingTrace(phase, _timeProvider);
+            return new WavePhaseResult(phaseIndex, phase,
+                new PhaseExecutorResult { PhaseRunTrace = failedTrace, Status = PhaseRunStatus.Failed });
+        }
+
+        var result = await _phaseExecutor.ExecuteAsync(
+            runId, phaseIndex, phase, methodology, task, inputArtifacts, budgetRemaining, ct);
+
+        return new WavePhaseResult(phaseIndex, phase, result);
+    }
+
+    /// <summary>
+    /// Inject source_intent into the first methodology phase's inputs if source-intent is available
+    /// and the phase doesn't already declare it. Returns a new list with the modified phase.
+    /// </summary>
+    private static IReadOnlyList<PhaseDefinition> PreparePhaseInputs(
+        IReadOnlyList<PhaseDefinition> phases,
+        ArtifactEnvelope? sourceIntentEnvelope)
+    {
+        if (sourceIntentEnvelope is null || phases.Count == 0)
+            return phases;
+
+        var firstPhase = phases[0];
+        if (firstPhase.Inputs.Contains("source_intent"))
+            return phases;
+
+        var modified = new List<PhaseDefinition>(phases);
+        modified[0] = firstPhase with { Inputs = new List<string>(firstPhase.Inputs) { "source_intent" } };
+        return modified;
+    }
+
+    /// <summary>
+    /// Build a wave-based execution schedule from the methodology phases.
+    /// Groups phases into waves where all phases in a wave have their inputs
+    /// satisfied by available artifacts or phases in earlier waves.
+    /// Phases in <paramref name="completedPhaseIds"/> are skipped.
+    /// </summary>
+    /// <remarks>
+    /// Uses Kahn's algorithm variant: repeatedly find phases whose inputs are all
+    /// in the "available" set, add them as a wave, then add their IDs to "available".
+    /// </remarks>
+    internal static List<List<(int Index, PhaseDefinition Phase)>> BuildExecutionWaves(
+        IReadOnlyList<PhaseDefinition> phases,
+        HashSet<string> availableArtifactIds,
+        HashSet<string>? completedPhaseIds = null)
+    {
+        var waves = new List<List<(int Index, PhaseDefinition Phase)>>();
+        var available = new HashSet<string>(availableArtifactIds, StringComparer.Ordinal);
+        var scheduled = new HashSet<string>(completedPhaseIds ?? [], StringComparer.Ordinal);
+
+        // Build index of phases remaining to schedule
+        var remaining = new List<(int Index, PhaseDefinition Phase)>();
+        for (var i = 0; i < phases.Count; i++)
+        {
+            if (!scheduled.Contains(phases[i].Id))
+                remaining.Add((i, phases[i]));
+        }
+
+        while (remaining.Count > 0)
+        {
+            var wave = new List<(int Index, PhaseDefinition Phase)>();
+
+            foreach (var entry in remaining)
+            {
+                if (entry.Phase.Inputs.All(input => available.Contains(input)))
+                    wave.Add(entry);
+            }
+
+            if (wave.Count == 0)
+            {
+                // Remaining phases have unresolvable dependencies — treat as unschedulable
+                break;
+            }
+
+            waves.Add(wave);
+
+            foreach (var entry in wave)
+            {
+                available.Add(entry.Phase.Id);
+                scheduled.Add(entry.Phase.Id);
+            }
+
+            remaining.RemoveAll(e => scheduled.Contains(e.Phase.Id));
+        }
+
+        return waves;
     }
 
     /// <summary>
@@ -608,7 +757,7 @@ public sealed class PipelineRunner
     /// </summary>
     private static Dictionary<string, ArtifactEnvelope>? ResolveInputArtifacts(
         PhaseDefinition phase,
-        Dictionary<string, ArtifactEnvelope> acceptedArtifacts)
+        IReadOnlyDictionary<string, ArtifactEnvelope> acceptedArtifacts)
     {
         var inputs = new Dictionary<string, ArtifactEnvelope>(StringComparer.Ordinal);
 
@@ -682,9 +831,9 @@ public sealed class PipelineRunner
 
     /// <summary>
     /// Rebuild pipeline state from per-phase scratch files.
-    /// Scans all phases in methodology order, accumulates tokens/cost from every
-    /// persisted attempt (including running and failed phases), and determines
-    /// the resume point.
+    /// Scans ALL phases in the methodology (not just up to the first gap) to handle
+    /// parallel execution where later phases may have completed while earlier ones crashed.
+    /// Accumulates tokens/cost from every persisted attempt and determines completed vs pending phases.
     /// </summary>
     private async Task<ResumeState> RebuildStateFromSnapshotsAsync(
         string runId,
@@ -698,20 +847,16 @@ public sealed class PipelineRunner
         var totalTokensIn = 0;
         var totalTokensOut = 0;
         var totalCost = 0m;
-        int resumeFromIndex = 0;
         string? terminalPhaseOutcome = null;
 
+        // Scan ALL phases — don't stop at the first gap (parallel execution means later phases may have completed)
         for (var i = 0; i < methodology.Phases.Count; i++)
         {
             var phase = methodology.Phases[i];
             var phaseRun = await _runStore.ReadPhaseRunScratchAsync(runId, i, phase.Id, ct);
 
             if (phaseRun is null)
-            {
-                // Phase never started — resume from here
-                resumeFromIndex = i;
-                break;
-            }
+                continue; // Phase never started — will be scheduled in wave planning
 
             // Accumulate tokens/cost from ALL persisted attempts in this phase
             foreach (var attempt in phaseRun.Attempts)
@@ -726,17 +871,14 @@ public sealed class PipelineRunner
                 totalCost += attempt.Cost ?? 0;
             }
 
-            // Determine phase terminal state from last state transition
             var lastTransition = phaseRun.StateTransitions.LastOrDefault();
             var phaseTerminalState = lastTransition?.To;
 
             if (phaseTerminalState == "succeeded")
             {
-                // Read the accepted artifact from the store
                 if (phaseRun.OutputArtifactHashes.Count > 0)
                 {
                     var prefixedHash = phaseRun.OutputArtifactHashes[0];
-                    // Artifact store uses raw hex hashes; strip the sha256: prefix
                     var rawHash = StripHashPrefix(prefixedHash);
                     var envelope = await _artifactStore.ReadAsync(rawHash, ct);
                     if (envelope is null)
@@ -752,22 +894,17 @@ public sealed class PipelineRunner
 
                 completedPhaseIds.Add(phase.Id);
                 phaseRunTraces.Add(phaseRun);
-                resumeFromIndex = i + 1;
             }
             else if (phaseTerminalState == "failed")
             {
-                // Phase terminal — pipeline can't continue
                 phaseRunTraces.Add(phaseRun);
                 terminalPhaseOutcome = "failed";
-                resumeFromIndex = i + 1; // Past the failed phase
-                break;
             }
+            // "running" or "pending" phases are not added to completedPhaseIds — they'll be re-executed via wave scheduling
             else
             {
-                // Phase was "running" or "pending" (crashed mid-execution)
-                // Re-execute from this phase. Tokens/cost already accumulated above.
-                resumeFromIndex = i;
-                break;
+                _logger.LogInformation("Resume {RunId}: phase '{PhaseId}' was in state '{State}' — will re-execute",
+                    runId, phase.Id, phaseTerminalState ?? "unknown");
             }
         }
 
@@ -780,7 +917,6 @@ public sealed class PipelineRunner
             AccumulatedTokensIn = totalTokensIn,
             AccumulatedTokensOut = totalTokensOut,
             AccumulatedCost = totalCost,
-            ResumeFromPhaseIndex = resumeFromIndex,
             TerminalPhaseOutcome = terminalPhaseOutcome
         };
     }
@@ -876,9 +1012,12 @@ internal sealed record ResumeState
     public required int AccumulatedTokensOut { get; init; }
     public required decimal AccumulatedCost { get; init; }
 
-    /// <summary>Index of the first phase to (re-)execute.</summary>
-    public required int ResumeFromPhaseIndex { get; init; }
-
     /// <summary>If a phase reached a terminal failure state, the outcome string ("failed"). Null if no terminal failure.</summary>
     public string? TerminalPhaseOutcome { get; init; }
 }
+
+/// <summary>
+/// Result of executing a single phase within a wave. Carries the original methodology index
+/// for deterministic ordering in trace output.
+/// </summary>
+internal sealed record WavePhaseResult(int PhaseIndex, PhaseDefinition Phase, PhaseExecutorResult ExecutorResult);
