@@ -73,6 +73,8 @@ Agent Academy is a multi-agent collaboration platform that orchestrates AI agent
 | CopilotExecutor | `AgentAcademy.Server` | Copilot SDK sessions, tool registration, circuit breaker, retry logic |
 | CommandPipeline | `AgentAcademy.Server` | Parse → authorize → rate-limit → dispatch → audit for agent commands |
 | NotificationManager | `AgentAcademy.Server` | Multi-provider notification routing (Discord, Slack, Console) |
+| Forge Pipeline Engine | `AgentAcademy.Forge` | Standalone pipeline engine: transforms task briefs into validated artifacts through LLM-driven phases (see [019](../019-forge-engine/spec.md)) |
+| Forge Benchmarks | `AgentAcademy.Forge.Benchmarks` | Console runner for executing benchmark tasks against the Forge pipeline |
 
 ## Design Principles
 

@@ -4,6 +4,10 @@ All changes to specifications are documented here.
 
 ## [Unreleased]
 
+### Added
+- **019-forge-engine**: New spec documenting the standalone Forge Pipeline Engine (`AgentAcademy.Forge`). Covers: pipeline execution flow, three-tier validation cascade (structural → semantic → cross-artifact), content-addressed artifact storage, five frozen schemas (requirements/v1 through review/v1), LLM abstraction, prompt envelope, run storage layout, DI registration, and benchmark infrastructure. Written from implemented code — all claims are verifiable.
+- **000-system-overview §Component Responsibilities**: Added Forge Pipeline Engine and Forge Benchmarks entries.
+
 ### Changed
 - **005-workspace-runtime / 011-state-recovery**: `WorktreeService.SyncWithGitAsync()` is now wired into `InitializationService.InitializeAsync` (added as step 9 of startup). Removed the stale "not currently wired" disclaimer in spec 005. Reflects audit fix #105 — post-restart worktree tracking previously stayed empty until something queried git directly, breaking worktree listings, breakout reopen, and cleanup. Failures during sync are logged and swallowed so they don't block the rest of init.
 - **006-orchestrator §Conversation Round**: Idle-agent fallback now documents LRU ordering (`AgentLocation.UpdatedAt` ascending, stable for ties → catalog order). Reflects audit fix #105 preventing starvation of agents past index 3 in the catalog when more than 3 idle agents share a room.

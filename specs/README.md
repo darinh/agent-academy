@@ -25,6 +25,7 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [016](./016-api-reference/spec.md) | API Reference | Implemented |
 | [017](./017-deployment/spec.md) | Deployment & Operations | Implemented |
 | [018](./018-testing-strategy/spec.md) | Testing Strategy | Implemented |
+| [019](./019-forge-engine/spec.md) | Forge Pipeline Engine | Implemented |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
 
 ## Conventions
@@ -63,7 +64,7 @@ After every code change:
 **Last Survey**: 2026-04-16
 
 ### Summary
-- **Total Sections**: 20 specification documents (~10,000+ lines)
+- **Total Sections**: 21 specification documents (~11,000+ lines)
 - **Coverage Score**: 95/100 — Excellent
 - **All Features**: Documented with implementation status
 - **Backend Coverage**: 90% (domain model, commands, agents, tasks exhaustive)
