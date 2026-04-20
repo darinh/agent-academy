@@ -207,7 +207,7 @@ All other list endpoints return the full collection. These are bounded by design
 | GET | `/healthz` | Liveness probe (basic) | — | `200` `HealthResult { Status, Uptime, Timestamp, Message }` |
 | GET | `/health` | Readiness probe (checks DB + executor) | — | `200` / `503` JSON |
 | GET | `/api/health/instance` | Instance-level health and status | — | `InstanceHealth` |
-| GET | `/api/overview` | Workspace overview (agents, rooms, tasks, sprint) | — | `WorkspaceOverview` |
+| GET | `/api/overview` | Workspace overview (agents, rooms, tasks, sprint, goal cards) | — | `WorkspaceOverview` |
 | GET | `/api/agents/configured` | All configured agents (catalog + custom) | — | `List<AgentDefinition>` |
 | GET | `/api/models` | Available LLM models and executor status | — | model list |
 | POST | `/api/system/reload-catalog` | Trigger manual agent catalog reload | — | `200` / error |
@@ -1412,6 +1412,21 @@ Result of onboarding a project.
 |----------|------|----------|-------------|
 | `taskId` | string | Yes | Task to link (validated exists; fails if already linked) |
 
+#### `GoalCardSummary`
+
+Returned as `GoalCards` field of `WorkspaceOverview` from `GET /api/overview`. Aggregate counts computed by `IGoalCardService.GetSummaryAsync()` via a single SQL `GroupBy` query.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `total` | int | Total goal cards across all statuses |
+| `active` | int | Cards with status `Active` |
+| `challenged` | int | Cards with status `Challenged` |
+| `completed` | int | Cards with status `Completed` |
+| `abandoned` | int | Cards with status `Abandoned` |
+| `verdictProceed` | int | Cards with verdict `Proceed` |
+| `verdictProceedWithCaveat` | int | Cards with verdict `ProceedWithCaveat` |
+| `verdictChallenge` | int | Cards with verdict `Challenge` |
+
 ---
 
 ### Settings
@@ -1470,4 +1485,5 @@ Result of onboarding a project.
 | 2026-04-15 | Add Request/Response Schemas section — full property definitions for 39+ API types — resolves gap 1 |
 | 2026-04-14 | Add Rate Limiting section (3 mechanisms) and Pagination section (3 styles) — resolves gaps 2 and 3 |
 | 2026-04-14 | Initial catalog — 145 endpoints across 26 controllers |
+| 2026-04-20 | Added `GoalCardSummary` schema. Updated `GET /api/overview` description to include goal card summary. Schema count 4→5 in Goal Cards domain. |
 | 2026-04-20 | Added §24 Goal Cards: 4 endpoints (list, get, update status, attach to task), 4 schemas (GoalCard, CreateGoalCardRequest, UpdateGoalCardStatusRequest, AttachGoalCardToTaskRequest), 2 enums (GoalCardVerdict, GoalCardStatus), GoalCardCreated/GoalCardChallenged activity events. Endpoint count 141→145. |
