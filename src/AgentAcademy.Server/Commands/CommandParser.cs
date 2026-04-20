@@ -40,7 +40,13 @@ public sealed class CommandParser
         "LIST_WORKTREES", "CLEANUP_WORKTREES", "LIST_AGENT_STATS",
         "RETURN_TO_MAIN", "INVITE_TO_ROOM", "ROOM_TOPIC",
         "REBASE_TASK", "CREATE_TASK_ITEM", "UPDATE_TASK_ITEM",
-        "GENERATE_DIGEST"
+        "GENERATE_DIGEST",
+        // Tier 2A — Task Workflow
+        "TASK_STATUS", "SHOW_TASK_HISTORY", "SHOW_DEPENDENCIES", "REQUEST_REVIEW", "WHOAMI",
+        // Tier 2 — Goal Cards, Task Items, List Commands
+        "CREATE_GOAL_CARD", "UPDATE_GOAL_CARD_STATUS", "LIST_TASK_ITEMS", "LIST_COMMANDS",
+        // Tier 2B — Communication
+        "MENTION_TASK_OWNER", "BROADCAST_TO_ROOM"
     };
 
     /// <summary>
