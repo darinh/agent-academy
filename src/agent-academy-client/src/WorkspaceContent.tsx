@@ -25,6 +25,7 @@ const ArtifactsPanel = lazy(() => import("./ArtifactsPanel"));
 const ActivityFeedPanel = lazy(() => import("./ActivityFeedPanel"));
 const SpecSearchPanel = lazy(() => import("./SpecSearchPanel"));
 const AgentKnowledgePanel = lazy(() => import("./AgentKnowledgePanel"));
+const GoalCardPanel = lazy(() => import("./GoalCardPanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -54,6 +55,7 @@ export interface WorkspaceContentProps {
   digestVersion: number;
   memoryVersion: number;
   artifactVersion: number;
+  goalCardVersion: number;
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
@@ -157,6 +159,13 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onNavigateToTask={props.onNavigateToTask}
               filterTaskId={props.retroFilterTaskId}
               onClearTaskFilter={props.onClearRetroTaskFilter}
+            />
+          )}
+          {tab === "goalCards" && (
+            <GoalCardPanel
+              roomId={props.room?.id}
+              refreshTrigger={props.goalCardVersion}
+              onNavigateToTask={props.onNavigateToTask}
             />
           )}
         </section>

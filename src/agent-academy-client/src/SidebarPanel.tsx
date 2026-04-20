@@ -37,6 +37,7 @@ const NAV_ITEMS = [
   { value: "specs", icon: "📜", label: "Specs" },
   { value: "digests", icon: "📚", label: "Digests" },
   { value: "retrospectives", icon: "🔬", label: "Retros" },
+  { value: "goalCards", icon: "🎯", label: "Goals" },
 ] as const;
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */

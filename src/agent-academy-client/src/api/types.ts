@@ -151,7 +151,9 @@ export type ActivityEventType =
   | "TaskUnblocked"
   | "TaskRetrospectiveCompleted"
   | "LearningDigestCompleted"
-  | "ContextUsageUpdated";
+  | "ContextUsageUpdated"
+  | "GoalCardCreated"
+  | "GoalCardChallenged";
 
 export interface ActivityEvent {
   id: string;

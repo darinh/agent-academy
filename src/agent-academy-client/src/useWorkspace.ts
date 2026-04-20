@@ -46,7 +46,7 @@ const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
 const SIDEBAR_PIN_KEY = "aa-sidebar-pinned";
 const NARROW_VIEWPORT_PX = 900;
 
-const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts"]);
+const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts", "goalCards"]);
 
 function loadTab(): string {
   try {
@@ -120,6 +120,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [digestVersion, setDigestVersion] = useState(0);
   const [memoryVersion, setMemoryVersion] = useState(0);
   const [artifactVersion, setArtifactVersion] = useState(0);
+  const [goalCardVersion, setGoalCardVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -276,6 +277,10 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
         break;
       case "ArtifactEvaluated":
         setArtifactVersion((v) => v + 1);
+        break;
+      case "GoalCardCreated":
+      case "GoalCardChallenged":
+        setGoalCardVersion((v) => v + 1);
         break;
     }
   }, []);
@@ -590,6 +595,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     digestVersion,
     memoryVersion,
     artifactVersion,
+    goalCardVersion,
     err,
     busy,
     tab,

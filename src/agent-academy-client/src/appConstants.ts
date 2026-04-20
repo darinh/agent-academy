@@ -17,6 +17,7 @@ export const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
   memories: { title: "Agent Memory", meta: "Knowledge base" },
   digests: { title: "Learning Digests", meta: "Knowledge synthesis" },
   artifacts: { title: "Artifacts", meta: "Agent file operations & quality" },
+  goalCards: { title: "Goal Cards", meta: "Agent intent tracking" },
 };
 
 export const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
@@ -29,6 +30,7 @@ export const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
   "SubagentCompleted",
   "TaskRetrospectiveCompleted",
   "LearningDigestCompleted",
+  "GoalCardChallenged",
 ]);
 
 export function toastIntent(evt: ActivityEvent): "error" | "warning" | "info" {
