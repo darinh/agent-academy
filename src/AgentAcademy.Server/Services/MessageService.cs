@@ -567,17 +567,28 @@ public sealed class MessageService : IMessageService
     }
 
     /// <summary>
-    /// Trims room messages to the most recent <see cref="MaxRecentMessages"/>.
+    /// Trims the active session's messages to <see cref="MaxRecentMessages"/>.
+    /// Only trims messages from the current active session and legacy untagged
+    /// messages. Archived session messages are never deleted — they are the
+    /// historical record for session browsing and export.
     /// </summary>
     public async Task TrimMessagesAsync(string roomId)
     {
-        var messageCount = await _db.Messages.CountAsync(m => m.RoomId == roomId && m.RecipientId == null);
+        var activeSession = await _db.ConversationSessions
+            .Where(s => s.RoomId == roomId && s.Status == "Active")
+            .Select(s => s.Id)
+            .FirstOrDefaultAsync();
+
+        var messageCount = await _db.Messages
+            .CountAsync(m => m.RoomId == roomId && m.RecipientId == null
+                && (m.SessionId == null || m.SessionId == activeSession));
         var totalAfterSave = messageCount + 1;
 
         if (totalAfterSave <= MaxRecentMessages) return;
 
         var toRemove = await _db.Messages
-            .Where(m => m.RoomId == roomId && m.RecipientId == null)
+            .Where(m => m.RoomId == roomId && m.RecipientId == null
+                && (m.SessionId == null || m.SessionId == activeSession))
             .OrderBy(m => m.SentAt)
             .Take(totalAfterSave - MaxRecentMessages)
             .ToListAsync();

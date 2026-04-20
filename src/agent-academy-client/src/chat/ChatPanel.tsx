@@ -53,7 +53,14 @@ const ChatPanel = memo(function ChatPanel(props: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [humanMsg, setHumanMsg] = useState("");
   const [sending, setSending] = useState(false);
-  const [expandedMsgs, setExpandedMsgs] = useState<Set<string>>(new Set());
+
+  // Expand state: defaultExpanded determines the base state for all messages.
+  // overrides tracks messages the user has manually toggled to the opposite.
+  const [defaultExpanded, setDefaultExpanded] = useState(() => {
+    try { return localStorage.getItem("aa-default-expand") === "true"; } catch { return false; }
+  });
+  const [overrides, setOverrides] = useState<Set<string>>(new Set());
+
   const [localHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
   const hiddenFilters = props.hiddenFilters ?? localHiddenFilters;
   const [hasArchivedContext, setHasArchivedContext] = useState(false);
@@ -86,8 +93,8 @@ const ChatPanel = memo(function ChatPanel(props: {
     } else {
       setHumanMsg(loadChatDraft(room.id));
     }
-    setExpandedMsgs(new Set());
-  }, [readOnly, room]);
+    setOverrides(new Set());
+  }, [readOnly, room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check if this room has archived session context
   useEffect(() => {
@@ -183,14 +190,14 @@ const ChatPanel = memo(function ChatPanel(props: {
     prevMsgCountRef.current = newCount;
   }, [filteredMessages.length]);
 
-  // Always scroll on room change or thinking state change; reset indicator state
+  // Scroll to bottom on room change only; reset indicator state
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
     setShowNewMsgIndicator(false);
     isNearBottomRef.current = true;
     prevMsgCountRef.current = filteredMessages.length;
-  }, [room?.id, thinkingAgents.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [room?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -198,13 +205,26 @@ const ChatPanel = memo(function ChatPanel(props: {
     setShowNewMsgIndicator(false);
   }, []);
 
+  const isExpanded = useCallback((id: string) => {
+    return overrides.has(id) ? !defaultExpanded : defaultExpanded;
+  }, [overrides, defaultExpanded]);
+
   const toggleExpand = useCallback((id: string) => {
-    setExpandedMsgs((cur) => {
+    setOverrides((cur) => {
       const next = new Set(cur);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }, []);
+
+  const handleToggleDefaultExpand = useCallback(() => {
+    setDefaultExpanded((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("aa-default-expand", String(next)); } catch { /* */ }
+      return next;
+    });
+    setOverrides(new Set());
   }, []);
 
   const doSend = useCallback(async () => {
@@ -247,6 +267,8 @@ const ChatPanel = memo(function ChatPanel(props: {
           agentLocations={agentLocations}
           onToggleAgent={props.onToggleAgent}
           onCreateSession={props.onCreateSession}
+          defaultExpanded={defaultExpanded}
+          onToggleDefaultExpand={handleToggleDefaultExpand}
         />
       )}
 
@@ -309,7 +331,7 @@ const ChatPanel = memo(function ChatPanel(props: {
           </div>
         ) : filteredMessages.length ? (
           filteredMessages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} expanded={expandedMsgs.has(msg.id)} onToggle={toggleExpand} />
+            <MessageBubble key={msg.id} message={msg} expanded={isExpanded(msg.id)} onToggle={toggleExpand} />
           ))
         ) : (
           <EmptyState

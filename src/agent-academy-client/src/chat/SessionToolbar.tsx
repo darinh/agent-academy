@@ -13,6 +13,8 @@ interface SessionToolbarProps {
   onToggleAgent?: (roomId: string, agentId: string, present: boolean) => void;
   onCreateSession?: (roomId: string) => void;
   onCompacted?: () => void;
+  defaultExpanded?: boolean;
+  onToggleDefaultExpand?: () => void;
 }
 
 export const SessionToolbar = memo(function SessionToolbar({
@@ -26,6 +28,8 @@ export const SessionToolbar = memo(function SessionToolbar({
   onToggleAgent,
   onCreateSession,
   onCompacted,
+  defaultExpanded,
+  onToggleDefaultExpand,
 }: SessionToolbarProps) {
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -209,6 +213,19 @@ export const SessionToolbar = memo(function SessionToolbar({
         >
           {compactResult}
         </span>
+      )}
+      {onToggleDefaultExpand && (
+        <button
+          onClick={onToggleDefaultExpand}
+          title={defaultExpanded ? "Collapse all messages by default" : "Expand all messages by default"}
+          style={{
+            background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+            borderRadius: "4px", padding: "3px 10px", color: "inherit", cursor: "pointer",
+            fontSize: "12px", whiteSpace: "nowrap",
+          }}
+        >
+          {defaultExpanded ? "⊟ Collapse" : "⊞ Expand"}
+        </button>
       )}
       <div ref={exportRef} style={{ position: "relative", marginLeft: "auto" }}>
         <button

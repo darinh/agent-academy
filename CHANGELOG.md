@@ -5,6 +5,16 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ## Unreleased
 
+### Fixes
+
+- **005-workspace-runtime / 300-frontend-ui**: Fix archived session messages not showing agent messages. Root cause: `TrimMessagesAsync` deleted messages across all sessions indiscriminately, and the query leaked User messages cross-session into archived views. Fix: trim only active session messages (never delete archived session history); when an explicit sessionId is requested, return only that session's messages without cross-session leaking. Aligns `GetRoomMessagesAsync` with `RoomSnapshotBuilder` contract.
+- **300-frontend-ui**: Fix expanded messages auto-collapsing when new messages arrive. Root cause: `setExpandedMsgs` reset effect depended on `room` object reference (which changes on every poll) instead of `room?.id`. Also removed `thinkingAgents.length` from scroll-to-bottom effect so agent thinking state changes no longer force-scroll the viewport.
+
+### Features
+
+- **300-frontend-ui**: Expand/collapse all toggle for chat messages. "⊞ Expand" / "⊟ Collapse" button in SessionToolbar controls default expand state (persisted in localStorage). Per-message toggles override the default. State model: `defaultExpanded` boolean + `overrides` set (messages toggled opposite to default).
+- **300-frontend-ui**: Improved sidebar collapse behavior. Collapsed mode shows nav icons with tooltips (not just room dots). « / » toggle button always visible. Thumbtack pin button: when unpinned, sidebar auto-collapses on narrow viewports (< 900px) via `matchMedia`. Pin state persisted in localStorage.
+
 ### Features
 
 - **019-forge-engine**: Crash recovery (`PipelineRunner.ResumeAsync`). Rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts (including crashed phases), resumes from first non-succeeded phase. Budget guard prevents overspend on resume. Idempotent for terminal runs. `IRunStore` gains `ReadTaskAsync`/`ReadMethodologyAsync`. 8 new tests (254 forge tests total). Closes Known Gap #6.

@@ -384,12 +384,11 @@ public class RoomServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetRoomMessagesAsync_FiltersAgentMessagesBySession_AndIncludesAllUserMessages()
+    public async Task GetRoomMessagesAsync_ExplicitSession_ReturnsOnlyThatSessionMessages()
     {
-        // Per spec 012 §Get Room Messages: human/consultant (User) messages
-        // are always visible regardless of session boundaries; agent messages
-        // are session-scoped. Legacy untagged messages (SessionId == null)
-        // are also always included.
+        // When an explicit sessionId is provided (archived session view),
+        // only that session's messages are returned — no cross-session
+        // User leaking, no legacy untagged messages.
         using var scope = CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -411,23 +410,22 @@ public class RoomServiceTests : IDisposable
         var (messages, _) = await svc.GetRoomMessagesAsync("r1", sessionId: "session-a");
 
         var contents = messages.Select(m => m.Content).ToList();
-        // Agent message from this session: included.
+        // Messages from the requested session: included (both agent and user).
         Assert.Contains("Session A msg", contents);
-        // All user messages: included regardless of session.
         Assert.Contains("Session A human msg", contents);
-        Assert.Contains("Session B human msg", contents);
-        Assert.Contains("Legacy untagged human msg", contents);
-        // Agent message from a different session: excluded.
+        // Messages from other sessions: excluded.
+        Assert.DoesNotContain("Session B human msg", contents);
         Assert.DoesNotContain("Session B msg", contents);
+        // Legacy untagged: excluded from explicit session view.
+        Assert.DoesNotContain("Legacy untagged human msg", contents);
     }
 
     [Fact]
-    public async Task GetRoomMessagesAsync_NoActiveSession_ReturnsUntaggedAndAllUserMessages()
+    public async Task GetRoomMessagesAsync_NoActiveSession_ReturnsOnlyUntaggedMessages()
     {
-        // Per spec 012: user messages are always visible. When no Active
-        // session exists, the agent-message scope collapses to just legacy
-        // untagged messages, but human messages from prior sessions are
-        // still surfaced so consultants/humans never lose their own history.
+        // When no Active session exists and no explicit sessionId is given,
+        // only legacy untagged messages are returned. Prior session messages
+        // (both agent and user) are not leaked into the active view.
         using var scope = CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         var svc = scope.ServiceProvider.GetRequiredService<RoomService>();
@@ -440,16 +438,14 @@ public class RoomServiceTests : IDisposable
             "Archived human msg", baseTime.AddMinutes(1), sessionId: "session-archived"));
         db.Messages.Add(MakeMessage("r1", "human", "Human", nameof(MessageSenderKind.User),
             "Legacy untagged msg", baseTime.AddMinutes(2)));
-        // No ConversationSession with Status == "Active" exists for this room.
         await db.SaveChangesAsync();
 
         var (messages, _) = await svc.GetRoomMessagesAsync("r1");
 
         var contents = messages.Select(m => m.Content).ToList();
         Assert.Contains("Legacy untagged msg", contents);
-        // Human message from a prior session: visible per spec 012.
-        Assert.Contains("Archived human msg", contents);
-        // Agent message from a prior session: still excluded.
+        // Prior session messages: excluded (matches RoomSnapshotBuilder).
+        Assert.DoesNotContain("Archived human msg", contents);
         Assert.DoesNotContain("Archived agent msg", contents);
     }
 

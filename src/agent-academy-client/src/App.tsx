@@ -118,9 +118,11 @@ function AppShell() {
     tab,
     setTab,
     sidebarOpen,
+    sidebarPinned,
     handleRoomSelect,
     handleManualRefresh,
     handleToggleSidebar,
+    handleToggleSidebarPin,
     handleSendMessage,
     handlePhaseTransition,
   } = useWorkspace({ onActivityEvent: handleActivityToast });
@@ -329,6 +331,7 @@ function AppShell() {
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
           <SidebarPanel
             sidebarOpen={sidebarOpen}
+            sidebarPinned={sidebarPinned}
             busy={busy}
             rooms={ov.rooms}
             room={selectedWorkspaceId ? null : room}
@@ -339,6 +342,7 @@ function AppShell() {
             thinkingByRoomIds={thinkingByRoomIds}
             onRefresh={handleManualRefresh}
             onToggleSidebar={handleToggleSidebar}
+            onToggleSidebarPin={handleToggleSidebarPin}
             onSelectRoom={wrappedRoomSelect}
             onSelectWorkspace={handleWorkspaceSelect}
             onCreateRoom={handleCreateRoom}

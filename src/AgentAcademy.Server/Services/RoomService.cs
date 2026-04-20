@@ -105,7 +105,11 @@ public sealed class RoomService : IRoomService
 
     /// <summary>
     /// Returns messages in a room with cursor-based pagination.
-    /// Only returns non-DM messages from the active conversation session.
+    /// Returns non-DM messages scoped to a conversation session.
+    /// When <paramref name="sessionId"/> is explicit, returns only that
+    /// session's messages (archived view). When null, returns the active
+    /// session plus legacy untagged messages (live view), matching the
+    /// same contract as <see cref="RoomSnapshotBuilder"/>.
     /// </summary>
     public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
         string roomId, string? afterMessageId = null, int limit = 50, string? sessionId = null)
@@ -116,27 +120,29 @@ public sealed class RoomService : IRoomService
         if (room is null)
             throw new InvalidOperationException($"Room '{roomId}' not found.");
 
-        string? targetSessionId = sessionId;
-        if (targetSessionId is null)
+        IQueryable<MessageEntity> query;
+
+        if (sessionId is not null)
         {
+            // Archived/explicit session view: only messages from that session.
+            // No cross-session User leaking, no legacy untagged messages.
+            query = _db.Messages
+                .Where(m => m.RoomId == roomId && m.RecipientId == null
+                    && m.SessionId == sessionId);
+        }
+        else
+        {
+            // Live/active view: active session + legacy untagged messages.
+            // Matches RoomSnapshotBuilder contract (spec 005 §Message Management).
             var activeSession = await _db.ConversationSessions
                 .Where(s => s.RoomId == roomId && s.Status == "Active")
                 .FirstOrDefaultAsync();
-            targetSessionId = activeSession?.Id;
-        }
+            var activeSessionId = activeSession?.Id;
 
-        // Per spec 012 §Get Room Messages: include sessionless messages, the
-        // active session's messages, AND any User (human/consultant) messages
-        // from prior sessions so consultant/human messages are always visible
-        // regardless of session boundaries. The original spec 005 §Message
-        // Management read narrower (issue #64) and is now subsumed by the
-        // explicit User-always-visible contract in spec 012.
-        var userKind = nameof(MessageSenderKind.User);
-        IQueryable<MessageEntity> query = _db.Messages
-            .Where(m => m.RoomId == roomId && m.RecipientId == null
-                && (m.SessionId == null
-                    || m.SessionId == targetSessionId
-                    || m.SenderKind == userKind));
+            query = _db.Messages
+                .Where(m => m.RoomId == roomId && m.RecipientId == null
+                    && (m.SessionId == null || m.SessionId == activeSessionId));
+        }
 
         if (!string.IsNullOrEmpty(afterMessageId))
         {

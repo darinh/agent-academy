@@ -43,6 +43,7 @@ const NAV_ITEMS = [
 
 const SidebarPanel = memo(function SidebarPanel(props: {
   sidebarOpen: boolean;
+  sidebarPinned?: boolean;
   busy: boolean;
   rooms: RoomSnapshot[];
   room: RoomSnapshot | null;
@@ -55,6 +56,7 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onViewChange: (view: string) => void;
   onRefresh: () => void;
   onToggleSidebar: () => void;
+  onToggleSidebarPin?: () => void;
   onSelectRoom: (roomId: string) => void;
   onSelectWorkspace: (breakoutId: string) => void;
   onCreateRoom?: (name: string) => void;
@@ -110,16 +112,43 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           <div className={s.sidebarUtilityRow}>
             {props.busy && <Spinner size="tiny" />}
             {props.sidebarOpen && (
+              <>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  className={s.sidebarIconButton}
+                  onClick={props.onRefresh}
+                  aria-label="Refresh"
+                >
+                  ↻
+                </Button>
+                {props.onToggleSidebarPin && (
+                  <Tooltip content={props.sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"} relationship="label">
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      className={s.sidebarIconButton}
+                      onClick={props.onToggleSidebarPin}
+                      aria-label={props.sidebarPinned ? "Unpin sidebar" : "Pin sidebar"}
+                      style={{ fontSize: "13px", transform: props.sidebarPinned ? "rotate(0deg)" : "rotate(45deg)" }}
+                    >
+                      📌
+                    </Button>
+                  </Tooltip>
+                )}
+              </>
+            )}
+            <Tooltip content={props.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"} relationship="label">
               <Button
                 appearance="subtle"
                 size="small"
                 className={s.sidebarIconButton}
-                onClick={props.onRefresh}
-                aria-label="Refresh"
+                onClick={props.onToggleSidebar}
+                aria-label={props.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
               >
-                ↻
+                {props.sidebarOpen ? "«" : "»"}
               </Button>
-            )}
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -293,17 +322,24 @@ const SidebarPanel = memo(function SidebarPanel(props: {
         </div>
       ) : (
         <div className={s.compactSidebar}>
-          <Tooltip content="Expand sidebar" relationship="label" positioning="after">
-            <Button
-              appearance="subtle"
-              size="small"
-              className={s.compactButton}
-              onClick={props.onToggleSidebar}
-              aria-label="Expand sidebar"
-            >
-              ▷
-            </Button>
-          </Tooltip>
+          {/* Nav icons in collapsed mode */}
+          {NAV_ITEMS.map((item) => (
+            <Tooltip key={item.value} content={item.label} relationship="label" positioning="after">
+              <button
+                className={mergeClasses(s.compactButton, props.activeView === item.value ? s.compactButtonActive : undefined)}
+                onClick={() => { props.onViewChange(item.value); props.onToggleSidebar(); }}
+                aria-label={item.label}
+                type="button"
+              >
+                {item.icon}
+              </button>
+            </Tooltip>
+          ))}
+
+          {/* Divider */}
+          <div style={{ borderTop: "1px solid var(--aa-border)", margin: "4px 6px" }} />
+
+          {/* Room dots */}
           {props.rooms.map((candidate) => {
             const dotColor = phaseDotColor(candidate.currentPhase);
             const tooltipText = compactRoomTooltip(candidate);

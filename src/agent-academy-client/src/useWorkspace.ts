@@ -43,6 +43,8 @@ const RECOVERY_BANNER_DISMISS_MS = 4_000;
 
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
+const SIDEBAR_PIN_KEY = "aa-sidebar-pinned";
+const NARROW_VIEWPORT_PX = 900;
 
 const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts"]);
 
@@ -54,6 +56,9 @@ function loadTab(): string {
 }
 function loadSidebar(): boolean {
   try { return localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "false"; } catch { return true; }
+}
+function loadSidebarPin(): boolean {
+  try { return localStorage.getItem(SIDEBAR_PIN_KEY) !== "false"; } catch { return true; }
 }
 function loadTransport(): ActivityTransport {
   try {
@@ -90,6 +95,22 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBannerState | null>(null);
   const [tab, setTabRaw] = useState<string>(loadTab);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
+  const [sidebarPinned, setSidebarPinned] = useState(loadSidebarPin);
+
+  // Auto-collapse on narrow viewport when unpinned
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia(`(max-width: ${NARROW_VIEWPORT_PX}px)`);
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches && !loadSidebarPin()) {
+        setSidebarOpen(false);
+        try { localStorage.setItem(SIDEBAR_STORAGE_KEY, "false"); } catch { /* */ }
+      }
+    };
+    handler(mq);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Thinking state keyed by roomId → Map<agentId, info>
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
   // Context usage keyed by roomId → Map<agentId, AgentContextUsage>
@@ -499,6 +520,19 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     });
   }, []);
 
+  const handleToggleSidebarPin = useCallback(() => {
+    setSidebarPinned((cur) => {
+      const next = !cur;
+      try { localStorage.setItem(SIDEBAR_PIN_KEY, String(next)); } catch { /* quota */ }
+      // When unpinning on a narrow viewport, auto-collapse
+      if (!next && typeof window !== "undefined" && window.innerWidth <= NARROW_VIEWPORT_PX) {
+        setSidebarOpen(false);
+        try { localStorage.setItem(SIDEBAR_STORAGE_KEY, "false"); } catch { /* */ }
+      }
+      return next;
+    });
+  }, []);
+
   const handleTaskSubmit = useCallback(async (draft: TaskDraft) => {
     setErr("");
     try {
@@ -561,11 +595,13 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     tab,
     setTab,
     sidebarOpen,
+    sidebarPinned,
     roomSummary,
     handleRoomSelect,
     handlePhaseTransition,
     handleManualRefresh,
     handleToggleSidebar,
+    handleToggleSidebarPin,
     handleTaskSubmit,
     handleSendMessage,
   };
