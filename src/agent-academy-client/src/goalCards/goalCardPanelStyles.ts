@@ -177,4 +177,39 @@ export const useGoalCardPanelStyles = makeStyles({
       textDecoration: "underline",
     },
   },
+  actionRow: {
+    display: "flex",
+    alignItems: "center",
+    ...shorthands.gap("8px"),
+    ...shorthands.padding("6px", "0"),
+    ...shorthands.borderTop("1px", "solid", "rgba(255,255,255,0.06)"),
+    flexWrap: "wrap",
+  },
+  actionPrimary: {
+    fontFamily: "var(--aa-mono)",
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "var(--aa-cyan, #5b8def)",
+    ...shorthands.border("1px", "solid", "var(--aa-cyan, #5b8def)"),
+    ...shorthands.borderRadius("4px"),
+    "&:hover": {
+      backgroundColor: "rgba(91, 141, 239, 0.12)",
+    },
+  },
+  actionDanger: {
+    fontFamily: "var(--aa-mono)",
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "var(--aa-err, #f85149)",
+    ...shorthands.border("1px", "solid", "var(--aa-err, #f85149)"),
+    ...shorthands.borderRadius("4px"),
+    "&:hover": {
+      backgroundColor: "rgba(248, 81, 73, 0.12)",
+    },
+  },
+  mutateError: {
+    fontSize: "11px",
+    fontFamily: "var(--aa-mono)",
+    color: "var(--aa-err, #f85149)",
+  },
 });

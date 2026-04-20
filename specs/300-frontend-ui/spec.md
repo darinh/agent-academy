@@ -1473,7 +1473,7 @@ interface DesktopNotificationControls {
 
 ## Goal Card Panel (`GoalCardPanel.tsx`)
 
-Dashboard for viewing agent intent artifacts (goal cards). Read-only in v1.
+Dashboard for viewing and managing agent intent artifacts (goal cards).
 
 ### Props
 
@@ -1492,6 +1492,7 @@ interface GoalCardPanelProps {
 3. Stats computed from unfiltered card set
 4. `refreshTrigger` (from `goalCardVersion` in `useWorkspace.ts`) fires re-fetch on real-time events
 5. Duplicate-fetch prevention via `prevTriggerRef` — only re-fetches when trigger value actually changes
+6. Status mutations via `PATCH /api/goal-cards/{id}/status` with optimistic update and per-card rollback on failure
 
 ### UI
 
@@ -1499,7 +1500,12 @@ interface GoalCardPanelProps {
 - **Filter bar**: Status chips (All/Active/Challenged/Completed/Abandoned) + Verdict chips (All Verdicts/Proceed/Caveat/Challenge)
 - **Card list**: Expandable cards with:
   - **Collapsed**: Agent name, status badge, verdict badge, task link, timestamp, truncated task description
-  - **Expanded**: Full task description, intent, divergence, steelman, strawman, 3-column fresh-eyes grid, metadata (ID, prompt version, updated timestamp)
+  - **Expanded**: Full task description, intent, divergence, steelman, strawman, 3-column fresh-eyes grid, status action buttons, metadata (ID, prompt version, updated timestamp)
+- **Status actions** (expanded cards only, context-sensitive):
+  - Active → "Complete" (primary) / "Abandon" (danger)
+  - Challenged → "Reactivate" (primary) / "Abandon" (danger)
+  - Completed / Abandoned → no actions (terminal states)
+  - Per-card mutation tracking (loading indicator) and per-card error display with rollback on API failure
 - Task link navigates to Tasks panel via `onNavigateToTask`
 
 ### Types
@@ -1535,7 +1541,7 @@ interface GoalCard {
 - ~~TaskStatePanel integration~~ **Resolved** — `TaskListPanel.tsx` includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons wired through `executeCommand` API.
 - ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **Resolved** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
 - ~~Session history / resume indicator~~ **Resolved** — `SessionHistoryPanel` in dashboard shows session stats, filterable session list with summaries. `ChatPanel` shows "Agents have context from a previous conversation session" banner when archived sessions exist for the current room.
-- Goal Card dashboard: Status mutation UI (mark cards as Completed/Abandoned) — currently read-only. Operators can use the REST API directly.
+- ~~Goal Card dashboard: Status mutation UI (mark cards as Completed/Abandoned) — currently read-only. Operators can use the REST API directly.~~ **Resolved** — Expanded card view shows context-sensitive action buttons: Active cards → "Complete" / "Abandon"; Challenged cards → "Reactivate" / "Abandon"; terminal states (Completed/Abandoned) show no buttons. Optimistic update with per-card rollback on API failure. Per-card error display and mutation tracking.
 - ~~Goal Card dashboard: Room overview API enrichment — goal card summary data in the `/api/overview` response for at-a-glance visibility.~~ **Resolved** — `WorkspaceOverview.GoalCards` (`GoalCardSummary`) returned from `GET /api/overview`. `DashboardPanel` renders a "Goal Cards" stat card (total + active/challenged label) and a conditional breakdown section (status rows with V3Badge + verdict summary line) when `goalCards.total > 0`. 10 frontend DOM tests.
 - No frontend E2E coverage for the full OAuth login → SignalR connect happy path — **Accepted**: requires a browser (cannot be automated from the server-side test harness). HTTP-level authentication behavior is covered; browser-level SignalR connect is verified manually.
 - No visual regression tests — **Accepted**: component DOM tests in Vitest cover rendering and interaction; no screenshot diffing is currently configured.
@@ -1545,6 +1551,7 @@ interface GoalCard {
 ### 2026-04-20
 - **Added**: Goal Card Panel (`GoalCardPanel.tsx`) — read-only dashboard for agent intent artifacts. Room-scoped, client-side filtered (status + verdict), expandable card detail, task navigation. Styles in `goalCards/`. API module in `api/goalCards.ts`. Real-time refresh via `goalCardVersion` on `GoalCardCreated`/`GoalCardChallenged` events. Sidebar nav entry "Goals" (🎯). `GoalCardChallenged` added to toast events. Known gaps documented for status mutation UI and overview API enrichment.
 - **Added**: DashboardPanel goal card stat card (total + "N active, M challenged" label) and conditional breakdown section (Active/Challenged/Completed/Abandoned status rows with V3Badge + verdict summary). Renders only when `goalCards.total > 0`. Data from `WorkspaceOverview.GoalCards` (`GoalCardSummary`). Resolves known gap: overview API enrichment. 10 DOM tests.
+- **Added**: Goal Card status mutation UI — expanded cards show context-sensitive action buttons (Active → Complete/Abandon, Challenged → Reactivate/Abandon, terminal states → no buttons). Optimistic update with per-card rollback on API failure. Per-card error display and mutation tracking. Resolves known gap: status mutation UI. 8 DOM tests.
 
 ### 2026-04-16
 - **Spec hygiene**: Renamed `Future Work` section to `Known Gaps` to match pattern across specs 000–018. Moved `Browser Desktop Notifications` component section ahead of `Known Gaps` so all component sections are contiguous. Added `Revision History` and documented currently accepted gaps (E2E OAuth flow, visual regression).

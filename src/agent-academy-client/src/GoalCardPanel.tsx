@@ -10,6 +10,7 @@ import SkeletonLoader from "./SkeletonLoader";
 import { formatTimestamp } from "./panelUtils";
 import {
   getGoalCards,
+  updateGoalCardStatus,
   type GoalCard,
   type GoalCardStatus,
   type GoalCardVerdict,
@@ -34,6 +35,24 @@ function verdictBadge(verdict: GoalCardVerdict): { color: BadgeColor; label: str
     case "ProceedWithCaveat": return { color: "review", label: "Caveat" };
     case "Challenge":         return { color: "err", label: "Challenge" };
     default:                  return { color: "muted", label: verdict };
+  }
+}
+
+// ── Status transitions ──────────────────────────────────────────────────
+
+interface StatusAction { label: string; target: GoalCardStatus; appearance: "primary" | "danger" }
+
+function getStatusActions(status: GoalCardStatus): StatusAction[] {
+  switch (status) {
+    case "Active":     return [
+      { label: "Complete", target: "Completed", appearance: "primary" },
+      { label: "Abandon", target: "Abandoned", appearance: "danger" },
+    ];
+    case "Challenged": return [
+      { label: "Reactivate", target: "Active", appearance: "primary" },
+      { label: "Abandon", target: "Abandoned", appearance: "danger" },
+    ];
+    default:           return [];
   }
 }
 
@@ -78,6 +97,8 @@ export default function GoalCardPanel({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [mutatingCards, setMutatingCards] = useState<Record<string, boolean>>({});
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
   const fetchIdRef = useRef(0);
   const prevTriggerRef = useRef(refreshTrigger);
 
@@ -98,6 +119,35 @@ export default function GoalCardPanel({
       if (fetchIdRef.current === id) setLoading(false);
     }
   }, [roomId]);
+
+  const handleStatusChange = useCallback(async (cardId: string, newStatus: GoalCardStatus) => {
+    setMutatingCards((m) => ({ ...m, [cardId]: true }));
+    setCardErrors((e) => { const { [cardId]: _, ...rest } = e; return rest; });
+    // Capture previous card for targeted rollback
+    let prevCard: GoalCard | undefined;
+    setCards((cs) => cs.map((c) => {
+      if (c.id === cardId) {
+        prevCard = c;
+        return { ...c, status: newStatus, updatedAt: new Date().toISOString() };
+      }
+      return c;
+    }));
+    try {
+      const updated = await updateGoalCardStatus(cardId, newStatus);
+      setCards((cs) => cs.map((c) => (c.id === cardId ? updated : c)));
+    } catch (err) {
+      // Revert only the affected card
+      if (prevCard) {
+        setCards((cs) => cs.map((c) => (c.id === cardId ? prevCard! : c)));
+      }
+      setCardErrors((e) => ({
+        ...e,
+        [cardId]: err instanceof Error ? err.message : "Status update failed",
+      }));
+    } finally {
+      setMutatingCards((m) => { const { [cardId]: _, ...rest } = m; return rest; });
+    }
+  }, []);
 
   useEffect(() => { fetchCards(); }, [fetchCards]);
   useEffect(() => {
@@ -312,6 +362,30 @@ export default function GoalCardPanel({
                         </div>
                       </div>
                     </div>
+                    {/* Status actions */}
+                    {(() => {
+                      const actions = getStatusActions(card.status);
+                      if (actions.length === 0) return null;
+                      return (
+                        <div className={s.actionRow}>
+                          {actions.map((a) => (
+                            <Button
+                              key={a.target}
+                              size="small"
+                              appearance="subtle"
+                              className={a.appearance === "danger" ? s.actionDanger : s.actionPrimary}
+                              disabled={!!mutatingCards[card.id]}
+                              onClick={(e) => { e.stopPropagation(); handleStatusChange(card.id, a.target); }}
+                            >
+                              {mutatingCards[card.id] ? "…" : a.label}
+                            </Button>
+                          ))}
+                          {cardErrors[card.id] && !mutatingCards[card.id] && (
+                            <span className={s.mutateError}>{cardErrors[card.id]}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
                       <span style={{ fontFamily: "var(--aa-mono)", fontSize: "10px", color: "var(--aa-soft)" }}>
                         ID: {card.id}

@@ -24,9 +24,11 @@ import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
 // ── Mocks ──────────────────────────────────────────────────────────────
 
 const mockGetGoalCards = vi.fn();
+const mockUpdateGoalCardStatus = vi.fn();
 
 vi.mock("../api", () => ({
   getGoalCards: (...args: unknown[]) => mockGetGoalCards(...args),
+  updateGoalCardStatus: (...args: unknown[]) => mockUpdateGoalCardStatus(...args),
 }));
 
 vi.mock("../V3Badge", () => ({
@@ -775,6 +777,155 @@ describe("GoalCardPanel (interactive)", () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(screen.queryByText("Stale")).not.toBeInTheDocument();
       expect(screen.getByText("Latest")).toBeInTheDocument();
+    });
+  });
+
+  // ── Status mutation ──
+
+  describe("status mutation", () => {
+    it("shows Complete and Abandon buttons for Active cards when expanded", async () => {
+      mockGetGoalCards.mockResolvedValue([makeCard({ status: "Active" })]);
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      // Expand the card
+      await user.click(screen.getByText("Architect"));
+      expect(screen.getByText("Complete")).toBeInTheDocument();
+      expect(screen.getByText("Abandon")).toBeInTheDocument();
+    });
+
+    it("shows Reactivate and Abandon buttons for Challenged cards when expanded", async () => {
+      mockGetGoalCards.mockResolvedValue([
+        makeCard({ status: "Challenged" }),
+      ]);
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Architect"));
+      expect(screen.getByText("Reactivate")).toBeInTheDocument();
+      expect(screen.getByText("Abandon")).toBeInTheDocument();
+    });
+
+    it("shows no action buttons for Completed cards", async () => {
+      mockGetGoalCards.mockResolvedValue([
+        makeCard({ status: "Completed" }),
+      ]);
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Architect"));
+      expect(screen.queryByText("Complete")).not.toBeInTheDocument();
+      expect(screen.queryByText("Abandon")).not.toBeInTheDocument();
+      expect(screen.queryByText("Reactivate")).not.toBeInTheDocument();
+    });
+
+    it("shows no action buttons for Abandoned cards", async () => {
+      mockGetGoalCards.mockResolvedValue([
+        makeCard({ status: "Abandoned" }),
+      ]);
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Architect"));
+      expect(screen.queryByText("Complete")).not.toBeInTheDocument();
+      expect(screen.queryByText("Abandon")).not.toBeInTheDocument();
+      expect(screen.queryByText("Reactivate")).not.toBeInTheDocument();
+    });
+
+    it("optimistically updates status badge on Complete click", async () => {
+      const card = makeCard({ status: "Active" });
+      mockGetGoalCards.mockResolvedValue([card]);
+      mockUpdateGoalCardStatus.mockResolvedValue({
+        ...card,
+        status: "Completed",
+        updatedAt: "2026-04-20T19:00:00Z",
+      });
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      // Expand and click Complete
+      await user.click(screen.getByText("Architect"));
+      await user.click(screen.getByText("Complete"));
+
+      // Badge should update
+      await waitFor(() => {
+        expect(screen.getByTestId("badge-done")).toBeInTheDocument();
+      });
+      expect(mockUpdateGoalCardStatus).toHaveBeenCalledWith("gc-1", "Completed");
+    });
+
+    it("reverts on API failure and shows error message", async () => {
+      const card = makeCard({ status: "Active" });
+      mockGetGoalCards.mockResolvedValue([card]);
+      mockUpdateGoalCardStatus.mockRejectedValue(new Error("Server error"));
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Architect"));
+      await user.click(screen.getByText("Complete"));
+
+      // Should revert to Active badge and show error
+      await waitFor(() => {
+        expect(screen.getByText("Server error")).toBeInTheDocument();
+      });
+      expect(screen.getByTestId("badge-active")).toBeInTheDocument();
+    });
+
+    it("calls API with correct args for Abandon", async () => {
+      const card = makeCard({ status: "Active" });
+      mockGetGoalCards.mockResolvedValue([card]);
+      mockUpdateGoalCardStatus.mockResolvedValue({
+        ...card,
+        status: "Abandoned",
+      });
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText("Architect"));
+      await user.click(screen.getByText("Abandon"));
+
+      await waitFor(() => {
+        expect(mockUpdateGoalCardStatus).toHaveBeenCalledWith("gc-1", "Abandoned");
+      });
+    });
+
+    it("does not expand/collapse card when action button is clicked", async () => {
+      mockGetGoalCards.mockResolvedValue([makeCard({ status: "Active", intent: "Auth flow" })]);
+      mockUpdateGoalCardStatus.mockResolvedValue(makeCard({ status: "Completed" }));
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Architect")).toBeInTheDocument();
+      });
+
+      // Expand
+      await user.click(screen.getByText("Architect"));
+      expect(screen.getByText("Auth flow")).toBeInTheDocument();
+
+      // Click Complete — card should stay expanded (stopPropagation)
+      await user.click(screen.getByText("Complete"));
+      expect(screen.getByText("Intent")).toBeInTheDocument();
     });
   });
 });
