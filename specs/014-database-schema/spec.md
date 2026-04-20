@@ -479,6 +479,39 @@ Consolidated entity relationship reference for Agent Academy's SQLite database. 
 
 **Indexes**: `idx_agent_errors_agent`, `idx_agent_errors_room`, `idx_agent_errors_time`, `idx_agent_errors_type`
 
+#### GoalCardEntity
+
+> Table: `goal_cards` — Structured intent artifacts that agents create before starting significant work. Content is immutable after creation; only status transitions.
+
+| Column | Type | Constraint | Description |
+|--------|------|------------|-------------|
+| Id | string | **PK** | Goal card identifier (12-char GUID prefix) |
+| AgentId | string | Required | Agent that created this card |
+| AgentName | string | Required | Agent display name at creation time |
+| RoomId | string | FK → `rooms.Id` (Cascade) | Room context where the work is happening |
+| TaskId | string? | FK → `tasks.Id` (SetNull) | Associated task (nullable — cards may precede task creation) |
+| TaskDescription | string | Required | What the user/system asked for |
+| Intent | string | Required | Why the agent believes the user wants it |
+| Divergence | string | Required | Whether task and intent point the same direction |
+| Steelman | string | Required | One paragraph defending the work |
+| Strawman | string | Required | One paragraph attacking the work |
+| Verdict | string | Required, default "Proceed" | `Proceed`, `ProceedWithCaveat`, `Challenge` |
+| FreshEyes1 | string | Required | "If I had no context, would this request make sense?" |
+| FreshEyes2 | string | Required | "Is there any part that would not move toward the bigger goal?" |
+| FreshEyes3 | string | Required | "Would a thoughtful peer ask 'why are we doing this?'" |
+| PromptVersion | int | Required, default 1 | Prompt template version (for future schema evolution) |
+| Status | string | Required, default "Active" | `Active`, `Completed`, `Challenged`, `Abandoned` |
+| CreatedAt | DateTime | Required | Creation timestamp |
+| UpdatedAt | DateTime | Required | Last status update timestamp |
+
+**Indexes**: `idx_goal_cards_room`, `idx_goal_cards_agent`, `idx_goal_cards_task`, `idx_goal_cards_status`, `idx_goal_cards_verdict`, `idx_goal_cards_created`
+
+**Status state machine**:
+- Active → Completed | Challenged | Abandoned
+- Challenged → Active | Abandoned
+- Completed → *(terminal)*
+- Abandoned → *(terminal)*
+
 ---
 
 ### 7. Sessions
@@ -764,10 +797,12 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 | agent_configs | InstructionTemplateId | instruction_templates.Id | SetNull |
 | learning_digests → sources | DigestId | learning_digests.Id | Cascade |
 | learning_digest_sources | RetrospectiveCommentId | task_comments.Id | Cascade |
+| goal_cards | RoomId | rooms.Id | Cascade |
+| goal_cards | TaskId | tasks.Id | SetNull |
 
 ## Migration History
 
-43 migrations from initial schema (2026-03-27) through `DropAgentWorkspacesTable` (2026-04-15). Key milestones:
+43 migrations from initial schema (2026-03-27) through `AddGoalCards` (2026-04-20). Key milestones:
 
 | Migration | Date | Description |
 |-----------|------|-------------|
@@ -796,6 +831,7 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 | AddSprintSchedules | 2026-04-14 | Sprint auto-scheduling |
 | AddTaskPriority | 2026-04-14 | `tasks.Priority` int column (default 2=Medium) + `idx_tasks_priority` |
 | DropAgentWorkspacesTable | 2026-04-15 | Removed `agent_workspaces` table; per-agent worktrees tracked on disk |
+| AddGoalCards | 2026-04-20 | Goal card entity with 6 indexes, Room FK (cascade), Task FK (set null) |
 
 ## Known Gaps
 
@@ -810,4 +846,5 @@ FTS tables are maintained by triggers that sync inserts/updates/deletes from the
 | Date | Change |
 |------|--------|
 | 2026-04-17 | Removed `AgentWorkspaceEntity` / `agent_workspaces` table (dropped); added `tasks.Priority` column + `idx_tasks_priority`; corrected `PreferredRoles` storage to JSON array (fixes #68) |
+| 2026-04-20 | Added `GoalCardEntity` / `goal_cards` table with 6 indexes, Room FK (cascade), Task FK (set null), status state machine documentation |
 | 2026-04-14 | Initial schema catalog — 31 entities, 31 migrations |

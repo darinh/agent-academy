@@ -27,6 +27,7 @@ Types are ported from the v1 TypeScript definitions (`local-agent-host/shared/sr
 | `Models/DirectMessages.cs` | DmThreadSummary, DmMessage | ✅ Implemented |
 | `Models/HumanCommands.cs` | HumanCommandFieldMetadata, HumanCommandMetadata | ✅ Implemented |
 | `Models/Requests.cs` | PostMessageRequest, PhaseTransitionRequest | ✅ Implemented |
+| `Models/GoalCards.cs` | GoalCard, CreateGoalCardRequest, UpdateGoalCardStatusRequest | ✅ Implemented |
 
 ### Enumerations
 
@@ -46,13 +47,15 @@ public enum TaskCommentType { Comment, Finding, Evidence, Blocker, Retrospective
 public enum TaskPriority { Critical = 0, High = 1, Medium = 2, Low = 3 }  // lower int = higher urgency
 public enum WorkstreamStatus { NotStarted, Ready, InProgress, Blocked, Completed }
 public enum RoomStatus { Idle, Active, AttentionRequired, Completed, Archived }
-public enum ActivityEventType { AgentLoaded, AgentThinking, AgentFinished, RoomCreated, RoomClosed, TaskCreated, PhaseChanged, MessagePosted, MessageSent, PresenceUpdated, RoomStatusChanged, ArtifactEvaluated, QualityGateChecked, IterationRetried, CheckpointCreated, AgentErrorOccurred, AgentWarningOccurred, SubagentStarted, SubagentCompleted, SubagentFailed, AgentPlanChanged, AgentSnapshotRewound, ToolIntercepted, CommandExecuted, CommandDenied, CommandFailed, TaskClaimed, TaskReleased, TaskApproved, TaskRejected, TaskChangesRequested, TaskStatusUpdated, TaskCommentAdded, TaskPrStatusChanged, AgentRecalled, RoomRenamed, DirectMessageSent, SpecTaskLinked }
+public enum ActivityEventType { AgentLoaded, AgentThinking, AgentFinished, RoomCreated, RoomClosed, TaskCreated, PhaseChanged, MessagePosted, MessageSent, PresenceUpdated, RoomStatusChanged, ArtifactEvaluated, QualityGateChecked, IterationRetried, CheckpointCreated, AgentErrorOccurred, AgentWarningOccurred, SubagentStarted, SubagentCompleted, SubagentFailed, AgentPlanChanged, AgentSnapshotRewound, ToolIntercepted, CommandExecuted, CommandDenied, CommandFailed, TaskClaimed, TaskReleased, TaskApproved, TaskRejected, TaskChangesRequested, TaskStatusUpdated, TaskCommentAdded, TaskPrStatusChanged, AgentRecalled, RoomRenamed, DirectMessageSent, SpecTaskLinked, GoalCardCreated, GoalCardChallenged }
 public enum ActivitySeverity { Info, Warning, Error }
 public enum AgentState { InRoom, Working, Presenting, Idle }
 public enum TaskItemStatus { Pending, Active, Done, Rejected }
 public enum CommandStatus { Success, Error, Denied }
 public enum SpecLinkType { Implements, Modifies, Fixes, References }
 public enum EvidencePhase { Baseline, After, Review }
+public enum GoalCardVerdict { Proceed, ProceedWithCaveat, Challenge }
+public enum GoalCardStatus { Active, Completed, Challenged, Abandoned }
 // In Models/Notifications.cs:
 public enum NotificationType { AgentThinking, NeedsInput, TaskComplete, TaskFailed, SpecReview, Error }
 ```
@@ -320,6 +323,35 @@ public record PhaseTransitionRequest(string RoomId, CollaborationPhase TargetPha
 
 > **Source**: `src/AgentAcademy.Shared/Models/Requests.cs`
 
+### Goal Card Types
+
+```csharp
+/// Snapshot of a goal card — the structured intent artifact an agent creates
+/// before starting significant work. Content is immutable after creation.
+public record GoalCard(
+    string Id, string AgentId, string AgentName, string RoomId, string? TaskId,
+    string TaskDescription, string Intent, string Divergence,
+    string Steelman, string Strawman, GoalCardVerdict Verdict,
+    string FreshEyes1, string FreshEyes2, string FreshEyes3,
+    int PromptVersion, GoalCardStatus Status, DateTime CreatedAt, DateTime UpdatedAt);
+
+public record CreateGoalCardRequest(
+    [Required, StringLength(2000, MinimumLength = 10)] string TaskDescription,
+    [Required, StringLength(2000, MinimumLength = 10)] string Intent,
+    [Required, StringLength(500, MinimumLength = 5)] string Divergence,
+    [Required, StringLength(2000, MinimumLength = 20)] string Steelman,
+    [Required, StringLength(2000, MinimumLength = 20)] string Strawman,
+    [Required] GoalCardVerdict Verdict,
+    [Required, StringLength(1000, MinimumLength = 10)] string FreshEyes1,
+    [Required, StringLength(1000, MinimumLength = 10)] string FreshEyes2,
+    [Required, StringLength(1000, MinimumLength = 10)] string FreshEyes3,
+    string? TaskId = null);
+
+public record UpdateGoalCardStatusRequest([Required] GoalCardStatus Status);
+```
+
+> **Source**: `src/AgentAcademy.Shared/Models/GoalCards.cs`
+
 ## Interfaces & Contracts
 
 All types live in `AgentAcademy.Shared.Models` namespace. They are:
@@ -411,6 +443,7 @@ The shared domain types (`AgentAcademy.Shared.Models`) are immutable C# records 
 | `LlmUsageEntity` | `llm_usage` | `Id` (string) | `LlmUsageRecord` |
 | `AgentErrorEntity` | `agent_errors` | `Id` (string) | `ErrorRecord` |
 | `SpecTaskLinkEntity` | `spec_task_links` | `Id` (string) | `SpecTaskLink` |
+| `GoalCardEntity` | `goal_cards` | `Id` (string) | `GoalCard` |
 
 ### Key Differences from API DTOs
 
@@ -454,6 +487,8 @@ Entities are associated with projects (workspaces) via `WorkspacePath`. The asso
 - `BreakoutRoom → BreakoutMessages` (one-to-many, cascade delete)
 - `Task → TaskComments` (one-to-many, cascade delete)
 - `Task → SpecTaskLinks` (one-to-many, cascade delete)
+- `Room → GoalCards` (one-to-many, cascade delete)
+- `Task → GoalCards` (one-to-many, set null on delete)
 - `AgentConfig → InstructionTemplate` (many-to-one, set null on delete)
 
 ### Entity-Layer Enums
@@ -512,6 +547,12 @@ public enum BreakoutRoomCloseReason { Completed, Recalled, Cancelled, StuckDetec
 | `idx_spec_task_links_task` | `spec_task_links` | `TaskId` | |
 | `idx_spec_task_links_spec` | `spec_task_links` | `SpecSectionId` | |
 | `idx_spec_task_links_unique` | `spec_task_links` | `TaskId, SpecSectionId` | Unique |
+| `idx_goal_cards_room` | `goal_cards` | `RoomId` | |
+| `idx_goal_cards_agent` | `goal_cards` | `AgentId` | |
+| `idx_goal_cards_task` | `goal_cards` | `TaskId` | |
+| `idx_goal_cards_status` | `goal_cards` | `Status` | |
+| `idx_goal_cards_verdict` | `goal_cards` | `Verdict` | |
+| `idx_goal_cards_created` | `goal_cards` | `CreatedAt` | |
 
 ### Configuration
 
@@ -545,3 +586,4 @@ Auto-migration runs on startup via `db.Database.Migrate()`.
 | 2026-04-11 | Added DataAnnotations validation to all API request types. 31 validation tests. Closed validation known gap. | add-request-validation |
 | 2026-04-14 | Extracted 31 inline entity configurations from `OnModelCreating` into 10 `IEntityTypeConfiguration<T>` files in `Data/Configurations/`. DbContext reduced from 623 to 54 lines. Uses `ApplyConfigurationsFromAssembly`. | dbcontext-refactor |
 | 2026-04-17 | Documented shipped records/fields missing from spec 001: `ResourceQuota`, `IAgentCatalog`, `PhaseGate`, `PhasePrerequisiteStatus`, `RoomSnapshot.PhaseGates`, `AgentDefinition.Quota`, `TaskEvidence`, `GateCheckResult`, `TaskDependencyInfo/Summary`, bulk task ops, `AgentUsageWindow`, `AgentContextUsage`, `QuotaStatus`, `WorktreeStatusSnapshot`, `HealthResult.Message`, `ProjectScanResult`/`WorkspaceMeta` git metadata fields, `CommandEnvelope.RetryCount`, `CommandErrorCode.ConfirmationRequired`, `TaskPriority` + `EvidencePhase` enums, `TaskCommentType.Retrospective`. | spec-001-missing-records |
+| 2026-04-20 | Added goal card domain types: `GoalCard`, `CreateGoalCardRequest`, `UpdateGoalCardStatusRequest`, `GoalCardVerdict`, `GoalCardStatus` enums, `GoalCardCreated`/`GoalCardChallenged` activity events, `GoalCardEntity` + 6 indexes, Room→GoalCards and Task→GoalCards relationships. | spec-goal-cards |

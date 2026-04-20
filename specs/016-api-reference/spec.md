@@ -673,6 +673,23 @@ The hub is thin — broadcasting is handled by `ActivityHubBroadcaster` which wr
 
 ---
 
+## 24. Goal Cards
+
+> Controller: `GoalCardController` — route: `api/goal-cards`
+
+Structured intent artifacts that agents create before starting significant work. Queryable by the operator/consultant to detect drift across the agent team. Content is immutable after creation; only status transitions.
+
+| Method | Route | Description | Params | Returns |
+|--------|-------|-------------|--------|---------|
+| GET | `/api/goal-cards` | List goal cards with optional filters | `roomId?`, `agentId?`, `taskId?`, `status?`, `verdict?` | `List<GoalCard>` |
+| GET | `/api/goal-cards/{id}` | Get a specific goal card | — | `GoalCard` |
+| PATCH | `/api/goal-cards/{id}/status` | Update goal card status | Body: `UpdateGoalCardStatusRequest` | `GoalCard` |
+| PATCH | `/api/goal-cards/{id}/task` | Link goal card to a task | Body: `AttachGoalCardToTaskRequest` | `GoalCard` |
+
+**Filter priority**: `taskId` takes precedence over `agentId`, which takes precedence over `roomId/status/verdict`. When `taskId` or `agentId` is specified, results are further filtered by the remaining query params client-side.
+
+---
+
 ## Request/Response Schemas
 
 Full property definitions for every request body and response type referenced in the endpoint tables above. Properties listed in declaration order. Types marked **(required)** have validation attributes enforcing non-null/non-empty values.
@@ -699,8 +716,10 @@ Enums used across multiple schemas are listed here once. Each serializes as its 
 | `AgentAvailability` | `Ready`, `Preferred`, `Active`, `Busy`, `Offline` |
 | `AgentState` | `InRoom`, `Working`, `Presenting`, `Idle`, `Offline` |
 | `CommandStatus` | `Success`, `Error`, `Denied` |
-| `ActivityEventType` | `AgentLoaded`, `AgentCatalogReloaded`, `AgentThinking`, `AgentFinished`, `RoomCreated`, `RoomClosed`, `TaskCreated`, `PhaseChanged`, `MessagePosted`, `MessageSent`, `PresenceUpdated`, `RoomStatusChanged`, `ArtifactEvaluated`, `QualityGateChecked`, `IterationRetried`, `CheckpointCreated`, `AgentErrorOccurred`, `AgentWarningOccurred`, `SubagentStarted`, `SubagentCompleted`, `SubagentFailed`, `AgentPlanChanged`, `AgentSnapshotRewound`, `ToolIntercepted`, `CommandExecuted`, `CommandDenied`, `CommandFailed`, `TaskClaimed`, `TaskReleased`, `TaskApproved`, `TaskRejected`, `TaskChangesRequested`, `TaskStatusUpdated`, `TaskCommentAdded`, `TaskPrStatusChanged`, `AgentRecalled`, `RoomRenamed`, `DirectMessageSent`, `SpecTaskLinked`, `EvidenceRecorded`, `GateChecked`, `SprintStarted`, `SprintStageAdvanced`, `SprintArtifactStored`, `SprintCompleted`, `SprintCancelled`, `TaskUnblocked`, `TaskRetrospectiveCompleted`, `LearningDigestCompleted`, `ContextUsageUpdated` |
+| `ActivityEventType` | `AgentLoaded`, `AgentCatalogReloaded`, `AgentThinking`, `AgentFinished`, `RoomCreated`, `RoomClosed`, `TaskCreated`, `PhaseChanged`, `MessagePosted`, `MessageSent`, `PresenceUpdated`, `RoomStatusChanged`, `ArtifactEvaluated`, `QualityGateChecked`, `IterationRetried`, `CheckpointCreated`, `AgentErrorOccurred`, `AgentWarningOccurred`, `SubagentStarted`, `SubagentCompleted`, `SubagentFailed`, `AgentPlanChanged`, `AgentSnapshotRewound`, `ToolIntercepted`, `CommandExecuted`, `CommandDenied`, `CommandFailed`, `TaskClaimed`, `TaskReleased`, `TaskApproved`, `TaskRejected`, `TaskChangesRequested`, `TaskStatusUpdated`, `TaskCommentAdded`, `TaskPrStatusChanged`, `AgentRecalled`, `RoomRenamed`, `DirectMessageSent`, `SpecTaskLinked`, `EvidenceRecorded`, `GateChecked`, `SprintStarted`, `SprintStageAdvanced`, `SprintArtifactStored`, `SprintCompleted`, `SprintCancelled`, `TaskUnblocked`, `TaskRetrospectiveCompleted`, `LearningDigestCompleted`, `ContextUsageUpdated`, `GoalCardCreated`, `GoalCardChallenged` |
 | `ActivitySeverity` | `Info`, `Warning`, `Error` |
+| `GoalCardVerdict` | `Proceed`, `ProceedWithCaveat`, `Challenge` |
+| `GoalCardStatus` | `Active`, `Completed`, `Challenged`, `Abandoned` |
 
 ### Rooms Domain
 
@@ -1339,6 +1358,62 @@ Result of onboarding a project.
 | `repository` | string | Yes | Repository name |
 | `authSource` | string | No | Auth source (default: "none") |
 
+---
+
+### Goal Cards Domain
+
+#### `GoalCard`
+
+| Property | Type | Nullable | Description |
+|----------|------|----------|-------------|
+| `id` | string | No | Goal card identifier (12-char GUID prefix) |
+| `agentId` | string | No | Agent that created this card |
+| `agentName` | string | No | Agent display name |
+| `roomId` | string | No | Room context |
+| `taskId` | string | Yes | Associated task (cards may precede task creation) |
+| `taskDescription` | string | No | What the user/system asked for |
+| `intent` | string | No | Why the agent believes the user wants it |
+| `divergence` | string | No | Whether task and intent diverge |
+| `steelman` | string | No | Argument defending the work |
+| `strawman` | string | No | Argument attacking the work |
+| `verdict` | `GoalCardVerdict` | No | `Proceed`, `ProceedWithCaveat`, `Challenge` |
+| `freshEyes1` | string | No | "If I had no context, would this make sense?" |
+| `freshEyes2` | string | No | "Any part that wouldn't move toward the bigger goal?" |
+| `freshEyes3` | string | No | "Would a peer ask 'why are we doing this?'" |
+| `promptVersion` | int | No | Prompt template version |
+| `status` | `GoalCardStatus` | No | `Active`, `Completed`, `Challenged`, `Abandoned` |
+| `createdAt` | datetime | No | Creation timestamp |
+| `updatedAt` | datetime | No | Last status update |
+
+#### `CreateGoalCardRequest`
+
+| Property | Type | Required | Validation | Description |
+|----------|------|----------|------------|-------------|
+| `taskDescription` | string | Yes | 10–2000 chars | What the user/system asked for |
+| `intent` | string | Yes | 10–2000 chars | Agent's interpretation of intent |
+| `divergence` | string | Yes | 5–500 chars | Task vs intent alignment |
+| `steelman` | string | Yes | 20–2000 chars | Defense of the work |
+| `strawman` | string | Yes | 20–2000 chars | Attack on the work |
+| `verdict` | `GoalCardVerdict` | Yes | — | Agent's verdict |
+| `freshEyes1` | string | Yes | 10–1000 chars | Fresh eyes question 1 |
+| `freshEyes2` | string | Yes | 10–1000 chars | Fresh eyes question 2 |
+| `freshEyes3` | string | Yes | 10–1000 chars | Fresh eyes question 3 |
+| `taskId` | string | No | — | Optional task FK (validated if provided) |
+
+#### `UpdateGoalCardStatusRequest`
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `status` | `GoalCardStatus` | Yes | Target status (validated against state machine) |
+
+#### `AttachGoalCardToTaskRequest`
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `taskId` | string | Yes | Task to link (validated exists; fails if already linked) |
+
+---
+
 ### Settings
 
 #### `SettingResponse`
@@ -1377,7 +1452,8 @@ Result of onboarding a project.
 | Settings | 3 |
 | Worktrees | 1 |
 | Activity & Real-Time | 2 + SignalR |
-| **Total** | **141 REST + 3 SSE + 1 SignalR hub** |
+| Goal Cards | 4 |
+| **Total** | **145 REST + 3 SSE + 1 SignalR hub** |
 
 ## Known Gaps
 
@@ -1394,3 +1470,4 @@ Result of onboarding a project.
 | 2026-04-15 | Add Request/Response Schemas section — full property definitions for 39+ API types — resolves gap 1 |
 | 2026-04-14 | Add Rate Limiting section (3 mechanisms) and Pagination section (3 styles) — resolves gaps 2 and 3 |
 | 2026-04-14 | Initial catalog — 145 endpoints across 26 controllers |
+| 2026-04-20 | Added §24 Goal Cards: 4 endpoints (list, get, update status, attach to task), 4 schemas (GoalCard, CreateGoalCardRequest, UpdateGoalCardStatusRequest, AttachGoalCardToTaskRequest), 2 enums (GoalCardVerdict, GoalCardStatus), GoalCardCreated/GoalCardChallenged activity events. Endpoint count 141→145. |
