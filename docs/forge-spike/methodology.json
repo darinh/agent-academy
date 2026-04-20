@@ -25,14 +25,14 @@
       "instructions": "Produce a DAG of components. Each component must have a single, narrow responsibility expressible in one sentence. Every interface from the contract must be implemented by at least one component. Do not write code — only structural design. Defer hard decisions explicitly via `deferred_decisions[]` rather than hand-waving."
     },
     {
-      "id": "implement",
+      "id": "implementation",
       "goal": "Produce the file contents that realize the function design.",
       "inputs": ["contract", "function_design"],
       "output_schema": "implementation/v1",
       "instructions": "Output complete, runnable file contents — no placeholders, no `// TODO`, no `pass # implement`. Every component from the function design must be implemented in at least one file. Use the contract's signatures verbatim. Choose languages/frameworks that fit the task brief; be conservative."
     },
     {
-      "id": "verify",
+      "id": "review",
       "goal": "Adversarially review the implementation against requirements, contract, design, and invariants. Identify defects.",
       "inputs": ["requirements", "contract", "function_design", "implementation"],
       "output_schema": "review/v1",

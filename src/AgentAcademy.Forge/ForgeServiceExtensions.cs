@@ -40,6 +40,7 @@ public static class ForgeServiceExtensions
         services.AddSingleton<CrossArtifactValidator>();
         services.AddSingleton<ValidatorPipeline>();
         services.AddSingleton<PhaseExecutor>();
+        services.AddSingleton<PipelineRunner>();
 
         return services;
     }

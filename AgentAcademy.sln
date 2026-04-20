@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentAcademy.Forge", "src\A
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentAcademy.Forge.Tests", "tests\AgentAcademy.Forge.Tests\AgentAcademy.Forge.Tests.csproj", "{C775D70E-1528-489C-9848-A616E6CD6827}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentAcademy.Forge.Benchmarks", "src\AgentAcademy.Forge.Benchmarks\AgentAcademy.Forge.Benchmarks.csproj", "{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +103,18 @@ Global
 		{C775D70E-1528-489C-9848-A616E6CD6827}.Release|x64.Build.0 = Release|Any CPU
 		{C775D70E-1528-489C-9848-A616E6CD6827}.Release|x86.ActiveCfg = Release|Any CPU
 		{C775D70E-1528-489C-9848-A616E6CD6827}.Release|x86.Build.0 = Release|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Debug|x64.Build.0 = Debug|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Debug|x86.Build.0 = Debug|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Release|x64.ActiveCfg = Release|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Release|x64.Build.0 = Release|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Release|x86.ActiveCfg = Release|Any CPU
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -112,5 +126,6 @@ Global
 		{CB0D7F61-C5C3-4D6D-9679-717382CE9680} = {F267DC2C-9A74-4273-92B1-7F3DFCFD277A}
 		{7EF7AA02-D932-4523-B60E-16CB884F3C59} = {C0FF839A-81DE-4A49-AD46-0BC6EF354538}
 		{C775D70E-1528-489C-9848-A616E6CD6827} = {F267DC2C-9A74-4273-92B1-7F3DFCFD277A}
+		{C4E8E22F-286D-4C99-ACE8-AE39C6135EDE} = {C0FF839A-81DE-4A49-AD46-0BC6EF354538}
 	EndGlobalSection
 EndGlobal
