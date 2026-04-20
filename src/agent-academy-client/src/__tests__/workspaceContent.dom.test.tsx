@@ -66,6 +66,7 @@ function makeProps(overrides: Partial<WorkspaceContentProps> = {}): WorkspaceCon
       recentActivity: [],
       agentLocations: [],
       breakoutRooms: [],
+      goalCards: { total: 0, active: 0, challenged: 0, completed: 0, abandoned: 0, verdictProceed: 0, verdictProceedWithCaveat: 0, verdictChallenge: 0 },
       generatedAt: new Date().toISOString(),
     },
     circuitBreakerState: "Closed",

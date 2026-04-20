@@ -509,4 +509,54 @@ public class GoalCardServiceTests : IDisposable
         Assert.Equal(request.Steelman, fetched.Steelman);
         Assert.Equal(request.Strawman, fetched.Strawman);
     }
+
+    // ── GetSummaryAsync ──────────────────────────────────────
+
+    [Fact]
+    public async Task GetSummaryAsync_Empty_Returns_Zeros()
+    {
+        var summary = await _sut.GetSummaryAsync();
+
+        Assert.Equal(0, summary.Total);
+        Assert.Equal(0, summary.Active);
+        Assert.Equal(0, summary.Challenged);
+        Assert.Equal(0, summary.Completed);
+        Assert.Equal(0, summary.Abandoned);
+        Assert.Equal(0, summary.VerdictProceed);
+        Assert.Equal(0, summary.VerdictProceedWithCaveat);
+        Assert.Equal(0, summary.VerdictChallenge);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_Counts_By_Status()
+    {
+        var c1 = await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest()); // Active
+        var c2 = await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest()); // Active → Completed
+        await _sut.UpdateStatusAsync(c2.Id, GoalCardStatus.Completed);
+        await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest(GoalCardVerdict.Challenge)); // Challenged
+
+        var summary = await _sut.GetSummaryAsync();
+
+        Assert.Equal(3, summary.Total);
+        Assert.Equal(1, summary.Active);
+        Assert.Equal(1, summary.Challenged);
+        Assert.Equal(1, summary.Completed);
+        Assert.Equal(0, summary.Abandoned);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_Counts_By_Verdict()
+    {
+        await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest(GoalCardVerdict.Proceed));
+        await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest(GoalCardVerdict.Proceed));
+        await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest(GoalCardVerdict.ProceedWithCaveat));
+        await _sut.CreateAsync(AgentId, AgentName, RoomId, MakeRequest(GoalCardVerdict.Challenge));
+
+        var summary = await _sut.GetSummaryAsync();
+
+        Assert.Equal(4, summary.Total);
+        Assert.Equal(2, summary.VerdictProceed);
+        Assert.Equal(1, summary.VerdictProceedWithCaveat);
+        Assert.Equal(1, summary.VerdictChallenge);
+    }
 }

@@ -385,7 +385,8 @@ public class ErrorApiEndpointTests : IDisposable
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<LlmUsageTracker>.Instance);
         return new SystemController(
-            _roomService, _agentLocationService, _breakoutRoomService, _activityPublisher,
+            _roomService, _agentLocationService, _breakoutRoomService,
+            Substitute.For<IGoalCardService>(), _activityPublisher,
             executor, _catalog, _db, usageTracker, _errorTracker,
             NullLogger<SystemController>.Instance);
     }

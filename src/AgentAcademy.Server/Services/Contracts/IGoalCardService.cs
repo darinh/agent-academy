@@ -44,4 +44,7 @@ public interface IGoalCardService
     /// Throws InvalidOperationException for illegal transitions.
     /// </summary>
     Task<GoalCard?> UpdateStatusAsync(string id, GoalCardStatus newStatus, CancellationToken ct = default);
+
+    /// <summary>Gets aggregate counts of goal cards by status and verdict.</summary>
+    Task<GoalCardSummary> GetSummaryAsync(CancellationToken ct = default);
 }

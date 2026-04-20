@@ -498,7 +498,8 @@ public class UsageApiEndpointTests : IDisposable
             NullLogger<AgentErrorTracker>.Instance);
 
         return new SystemController(
-            _roomService, _agentLocationService, _breakoutRoomService, _activityPublisher, executor, _catalog, _db, _tracker, errorTracker,
+            _roomService, _agentLocationService, _breakoutRoomService,
+            Substitute.For<IGoalCardService>(), _activityPublisher, executor, _catalog, _db, _tracker, errorTracker,
             NullLogger<SystemController>.Instance);
     }
 

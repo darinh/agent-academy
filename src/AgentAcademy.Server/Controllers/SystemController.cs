@@ -19,6 +19,7 @@ public class SystemController : ControllerBase
     private readonly IRoomService _roomService;
     private readonly IAgentLocationService _agentLocationService;
     private readonly IBreakoutRoomService _breakoutRoomService;
+    private readonly IGoalCardService _goalCardService;
     private readonly IActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
     private readonly IAgentCatalog _catalog;
@@ -33,6 +34,7 @@ public class SystemController : ControllerBase
         IRoomService roomService,
         IAgentLocationService agentLocationService,
         IBreakoutRoomService breakoutRoomService,
+        IGoalCardService goalCardService,
         IActivityPublisher activity,
         IAgentExecutor executor,
         IAgentCatalog catalog,
@@ -44,6 +46,7 @@ public class SystemController : ControllerBase
         _roomService = roomService;
         _agentLocationService = agentLocationService;
         _breakoutRoomService = breakoutRoomService;
+        _goalCardService = goalCardService;
         _activity = activity;
         _executor = executor;
         _catalog = catalog;
@@ -154,6 +157,7 @@ public class SystemController : ControllerBase
             var agentLocations = await _agentLocationService.GetAgentLocationsAsync();
             var breakoutRooms = await _breakoutRoomService.GetAllBreakoutRoomsAsync();
             var recentActivity = _activity.GetRecentActivity();
+            var goalCardSummary = await _goalCardService.GetSummaryAsync();
 
             var overview = new WorkspaceOverview(
                 ConfiguredAgents: [.. _catalog.Agents],
@@ -161,6 +165,7 @@ public class SystemController : ControllerBase
                 RecentActivity: [.. recentActivity],
                 AgentLocations: agentLocations,
                 BreakoutRooms: breakoutRooms,
+                GoalCards: goalCardSummary,
                 GeneratedAt: DateTime.UtcNow
             );
             return Ok(overview);

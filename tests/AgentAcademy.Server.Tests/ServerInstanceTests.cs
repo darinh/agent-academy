@@ -714,7 +714,8 @@ public class RestartHistoryApiTests : IDisposable
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
 
         _controller = new SystemController(
-            roomService, agentLocations, breakouts, actPub,
+            roomService, agentLocations, breakouts,
+            Substitute.For<IGoalCardService>(), actPub,
             executor, catalog, _db, usageTracker, errorTracker,
             NullLogger<SystemController>.Instance);
     }

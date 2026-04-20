@@ -213,6 +213,39 @@ public sealed class GoalCardService : IGoalCardService
         return ToSnapshot(entity);
     }
 
+    public async Task<GoalCardSummary> GetSummaryAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.GoalCards
+            .AsNoTracking()
+            .GroupBy(g => new { g.Status, g.Verdict })
+            .Select(grp => new { grp.Key.Status, grp.Key.Verdict, Count = grp.Count() })
+            .ToListAsync(ct);
+
+        int active = 0, challenged = 0, completed = 0, abandoned = 0;
+        int vProceed = 0, vCaveat = 0, vChallenge = 0;
+
+        foreach (var r in rows)
+        {
+            var count = r.Count;
+            switch (r.Status)
+            {
+                case nameof(GoalCardStatus.Active): active += count; break;
+                case nameof(GoalCardStatus.Challenged): challenged += count; break;
+                case nameof(GoalCardStatus.Completed): completed += count; break;
+                case nameof(GoalCardStatus.Abandoned): abandoned += count; break;
+            }
+            switch (r.Verdict)
+            {
+                case nameof(GoalCardVerdict.Proceed): vProceed += count; break;
+                case nameof(GoalCardVerdict.ProceedWithCaveat): vCaveat += count; break;
+                case nameof(GoalCardVerdict.Challenge): vChallenge += count; break;
+            }
+        }
+
+        var total = active + challenged + completed + abandoned;
+        return new GoalCardSummary(total, active, challenged, completed, abandoned, vProceed, vCaveat, vChallenge);
+    }
+
     private static GoalCard ToSnapshot(GoalCardEntity e) => new(
         Id: e.Id,
         AgentId: e.AgentId,

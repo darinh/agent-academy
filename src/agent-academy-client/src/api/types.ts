@@ -551,7 +551,19 @@ export interface WorkspaceOverview {
   recentActivity: ActivityEvent[];
   agentLocations: AgentLocation[];
   breakoutRooms: BreakoutRoom[];
+  goalCards: GoalCardSummary;
   generatedAt: string;
+}
+
+export interface GoalCardSummary {
+  total: number;
+  active: number;
+  challenged: number;
+  completed: number;
+  abandoned: number;
+  verdictProceed: number;
+  verdictProceedWithCaveat: number;
+  verdictChallenge: number;
 }
 
 export interface PlanContent {

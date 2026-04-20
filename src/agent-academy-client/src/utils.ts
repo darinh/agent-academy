@@ -33,6 +33,9 @@ export function workspaceChanged(
 ): boolean {
   if (current.configuredAgents.length !== next.configuredAgents.length) return true;
   if (current.rooms.length !== next.rooms.length) return true;
+  if (current.goalCards.total !== next.goalCards.total) return true;
+  if (current.goalCards.active !== next.goalCards.active) return true;
+  if (current.goalCards.challenged !== next.goalCards.challenged) return true;
 
   for (let i = 0; i < current.rooms.length; i++) {
     const left = current.rooms[i];

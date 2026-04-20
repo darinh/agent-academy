@@ -1027,6 +1027,7 @@ public class SubServiceIntegrationTests : IDisposable
             RecentActivity: [.. recentActivity],
             AgentLocations: agentLocs,
             BreakoutRooms: breakoutList,
+            GoalCards: new GoalCardSummary(0, 0, 0, 0, 0, 0, 0, 0),
             GeneratedAt: DateTime.UtcNow);
 
         Assert.Equal(3, overview.ConfiguredAgents.Count);

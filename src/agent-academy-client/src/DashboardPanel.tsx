@@ -15,6 +15,7 @@ import {
   ClipboardTaskListLtrRegular,
   ChatHistoryRegular,
   BranchRegular,
+  TargetRegular,
 } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { WorkspaceOverview } from "./api";
@@ -180,6 +181,7 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
   const agentCount = overview.configuredAgents.length;
   const activeTasks = overview.rooms.filter((r) => r.activeTask).length;
   const eventCount = overview.recentActivity.length;
+  const gc = overview.goalCards;
 
   // Phase distribution
   const phaseCounts = new Map<CollaborationPhase, number>();
@@ -225,7 +227,51 @@ export default function DashboardPanel({ overview, circuitBreakerState }: Dashbo
           <div className={s.bigNumber}>{eventCount}</div>
           <div className={s.label}>Latest workflow activity across the workspace.</div>
         </div>
+
+        <div className={s.card}>
+          <div className={s.cardHeader}>
+            <TargetRegular style={{ fontSize: 24, color: "var(--aa-orange, #f59e0b)" }} />
+            <span>Goal Cards</span>
+          </div>
+          <div className={s.bigNumber}>{gc.total}</div>
+          <div className={s.label}>
+            {gc.active} active{gc.challenged > 0 ? `, ${gc.challenged} challenged` : ""}
+          </div>
+        </div>
       </div>
+
+      {gc.total > 0 && (
+        <div className={s.section}>
+          <div className={s.sectionTitle}>
+            <TargetRegular style={{ fontSize: 20 }} />
+            Goal Card Breakdown
+          </div>
+          <div className={s.phaseRow}>
+            <V3Badge color="active">Active</V3Badge>
+            <span>{gc.active}</span>
+          </div>
+          <div className={s.phaseRow}>
+            <V3Badge color="warn">Challenged</V3Badge>
+            <span>{gc.challenged}</span>
+          </div>
+          <div className={s.phaseRow}>
+            <V3Badge color="done">Completed</V3Badge>
+            <span>{gc.completed}</span>
+          </div>
+          <div className={s.phaseRow}>
+            <V3Badge color="cancel">Abandoned</V3Badge>
+            <span>{gc.abandoned}</span>
+          </div>
+          <div className={s.phaseRow} style={{ borderBottom: "none", paddingTop: "4px" }}>
+            <span style={{ fontSize: "11px", color: "var(--aa-soft)", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+              Verdicts
+            </span>
+            <span style={{ fontSize: "11px", color: "var(--aa-soft)" }}>
+              {gc.verdictProceed} proceed · {gc.verdictProceedWithCaveat} caveat · {gc.verdictChallenge} challenge
+            </span>
+          </div>
+        </div>
+      )}
 
       {phaseCounts.size > 0 && (
         <div className={s.section}>

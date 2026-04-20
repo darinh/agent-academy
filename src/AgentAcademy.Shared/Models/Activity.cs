@@ -27,5 +27,20 @@ public record WorkspaceOverview(
     List<ActivityEvent> RecentActivity,
     List<AgentLocation> AgentLocations,
     List<BreakoutRoom> BreakoutRooms,
+    GoalCardSummary GoalCards,
     DateTime GeneratedAt
+);
+
+/// <summary>
+/// Aggregate counts of goal cards by status and verdict, for dashboard display.
+/// </summary>
+public record GoalCardSummary(
+    int Total,
+    int Active,
+    int Challenged,
+    int Completed,
+    int Abandoned,
+    int VerdictProceed,
+    int VerdictProceedWithCaveat,
+    int VerdictChallenge
 );

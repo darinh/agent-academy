@@ -32,6 +32,7 @@ function makeOverview(overrides: Partial<WorkspaceOverview> = {}): WorkspaceOver
     recentActivity: [],
     agentLocations: [],
     breakoutRooms: [],
+    goalCards: { total: 0, active: 0, challenged: 0, completed: 0, abandoned: 0, verdictProceed: 0, verdictProceedWithCaveat: 0, verdictChallenge: 0 },
     generatedAt: "2026-04-10T12:00:00Z",
     ...overrides,
   };
