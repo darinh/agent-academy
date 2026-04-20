@@ -50,9 +50,27 @@ public sealed record PhaseDefinition
 
     /// <summary>Extracts artifact type from output_schema (e.g. "requirements/v1" → "requirements").</summary>
     [JsonIgnore]
-    public string ArtifactType => OutputSchema.Split('/')[0];
+    public string ArtifactType
+    {
+        get
+        {
+            var parts = OutputSchema.Split('/');
+            if (parts.Length < 2)
+                throw new InvalidOperationException($"Invalid OutputSchema format '{OutputSchema}': expected 'type/vN'.");
+            return parts[0];
+        }
+    }
 
     /// <summary>Extracts schema version from output_schema (e.g. "requirements/v1" → "1").</summary>
     [JsonIgnore]
-    public string SchemaVersion => OutputSchema.Split('/')[1].TrimStart('v');
+    public string SchemaVersion
+    {
+        get
+        {
+            var parts = OutputSchema.Split('/');
+            if (parts.Length < 2)
+                throw new InvalidOperationException($"Invalid OutputSchema format '{OutputSchema}': expected 'type/vN'.");
+            return parts[1].TrimStart('v');
+        }
+    }
 }

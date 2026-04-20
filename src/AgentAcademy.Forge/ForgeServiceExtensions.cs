@@ -1,5 +1,8 @@
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Prompt;
+using AgentAcademy.Forge.Schemas;
 using AgentAcademy.Forge.Storage;
+using AgentAcademy.Forge.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -28,6 +31,10 @@ public static class ForgeServiceExtensions
             new DiskRunStore(
                 root,
                 sp.GetRequiredService<ILogger<DiskRunStore>>()));
+
+        services.AddSingleton<SchemaRegistry>();
+        services.AddSingleton<PromptBuilder>();
+        services.AddSingleton<StructuralValidator>();
 
         return services;
     }
