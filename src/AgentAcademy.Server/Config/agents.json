@@ -86,7 +86,9 @@
                         "GET_PR_REVIEWS",
                         "MERGE_PR",
                         "ADD_TASK_DEPENDENCY",
-                        "REMOVE_TASK_DEPENDENCY"
+                        "REMOVE_TASK_DEPENDENCY",
+                        "CREATE_GOAL_CARD",
+                        "UPDATE_GOAL_CARD_STATUS"
                     ],
                     "Denied": []
                 }
@@ -143,7 +145,9 @@
                         "SHOW_DIFF",
                         "GET_PR_REVIEWS",
                         "ADD_TASK_DEPENDENCY",
-                        "REMOVE_TASK_DEPENDENCY"
+                        "REMOVE_TASK_DEPENDENCY",
+                        "CREATE_GOAL_CARD",
+                        "UPDATE_GOAL_CARD_STATUS"
                     ],
                     "Denied": [
                         "RESTART_SERVER"
@@ -211,7 +215,9 @@
                         "CREATE_PR",
                         "GET_PR_REVIEWS",
                         "ADD_TASK_DEPENDENCY",
-                        "REMOVE_TASK_DEPENDENCY"
+                        "REMOVE_TASK_DEPENDENCY",
+                        "CREATE_GOAL_CARD",
+                        "UPDATE_GOAL_CARD_STATUS"
                     ],
                     "Denied": [
                         "APPROVE_TASK",
@@ -281,7 +287,9 @@
                         "CREATE_PR",
                         "GET_PR_REVIEWS",
                         "ADD_TASK_DEPENDENCY",
-                        "REMOVE_TASK_DEPENDENCY"
+                        "REMOVE_TASK_DEPENDENCY",
+                        "CREATE_GOAL_CARD",
+                        "UPDATE_GOAL_CARD_STATUS"
                     ],
                     "Denied": [
                         "APPROVE_TASK",
@@ -355,7 +363,9 @@
                         "CREATE_PR",
                         "POST_PR_REVIEW",
                         "GET_PR_REVIEWS",
-                        "MERGE_PR"
+                        "MERGE_PR",
+                        "CREATE_GOAL_CARD",
+                        "UPDATE_GOAL_CARD_STATUS"
                     ],
                     "Denied": [
                         "RESTART_SERVER"
@@ -412,7 +422,9 @@
                         "READ_FILE",
                         "SEARCH_CODE",
                         "GIT_LOG",
-                        "SHOW_DIFF"
+                        "SHOW_DIFF",
+                        "CREATE_GOAL_CARD",
+                        "UPDATE_GOAL_CARD_STATUS"
                     ],
                     "Denied": [
                         "APPROVE_TASK",

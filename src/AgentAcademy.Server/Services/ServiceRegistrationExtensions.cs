@@ -36,6 +36,9 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<TaskAnalyticsService>();
         services.AddScoped<ITaskAnalyticsService>(sp => sp.GetRequiredService<TaskAnalyticsService>());
 
+        services.AddScoped<GoalCardService>();
+        services.AddScoped<IGoalCardService>(sp => sp.GetRequiredService<GoalCardService>());
+
         services.AddScoped<MessageService>();
         services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();

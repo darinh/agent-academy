@@ -236,7 +236,9 @@ public enum ActivityEventType
     TaskUnblocked,
     TaskRetrospectiveCompleted,
     LearningDigestCompleted,
-    ContextUsageUpdated
+    ContextUsageUpdated,
+    GoalCardCreated,
+    GoalCardChallenged
 }
 
 /// <summary>
@@ -307,4 +309,27 @@ public enum EvidencePhase
     Baseline,
     After,
     Review
+}
+
+/// <summary>
+/// The agent's verdict on whether to proceed with the work.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GoalCardVerdict
+{
+    Proceed,
+    ProceedWithCaveat,
+    Challenge
+}
+
+/// <summary>
+/// Lifecycle status of a goal card.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GoalCardStatus
+{
+    Active,
+    Completed,
+    Challenged,
+    Abandoned
 }
