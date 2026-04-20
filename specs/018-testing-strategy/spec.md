@@ -514,10 +514,16 @@ Security-critical modules (`CommandAuthorizer`, `PromptSanitizer`) maintain **10
 
 ### Test Data Management
 
-- **Backend**: In-memory SQLite + hand-rolled test data (no fixtures library like AutoFixture or Bogus)
+- **Backend**: ~~In-memory SQLite + hand-rolled test data (no fixtures library like AutoFixture or Bogus)~~ **Partially resolved** — Bogus 35.6.5 installed with shared `TestData` faker class (`tests/AgentAcademy.Server.Tests/Fakers/TestData.cs`). Covers the 10 most commonly hand-constructed types: `RoomEntity`, `TaskEntity`, `MessageEntity`, `AgentMemoryEntity`, `ConversationSessionEntity`, `WorkspaceEntity`, `SprintEntity`, `BreakoutRoomEntity`, `GoalCardEntity`, `AgentDefinition`, `CommandPermissionSet`. Existing tests not yet migrated — fakers are available for new tests.
 - **Frontend**: Factory functions per test file (no shared fixture library)
 
 ## Revision History
+
+### 2026-04-20
+- **Added**: Bogus 35.6.5 shared test data fakers (`TestData` class in `Fakers/TestData.cs`)
+- **Covers**: RoomEntity, TaskEntity, MessageEntity, AgentMemoryEntity, ConversationSessionEntity, WorkspaceEntity, SprintEntity, BreakoutRoomEntity, GoalCardEntity, AgentDefinition, CommandPermissionSet
+- **Tests**: 13 verification tests in `TestDataFakerTests.cs`
+- **Partial resolution**: Backend test data management known gap (frontend still pending)
 
 ### 2026-04-17
 - **Added**: "Testing Fluent UI v9 Dialogs" subsection under Frontend Unit Testing. Documents the flake-resistant pattern (async `findByRole` with 5000ms timeout for both the dialog and interior elements) and the sync anti-patterns that caused the flakes fixed in PRs #83 and #84. Notes that `asyncUtilTimeout` does not rescue sync `within().getByRole` probes.
