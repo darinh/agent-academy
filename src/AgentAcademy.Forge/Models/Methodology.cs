@@ -35,6 +35,14 @@ public sealed record MethodologyDefinition
 
     [JsonPropertyName("phases")]
     public required IReadOnlyList<PhaseDefinition> Phases { get; init; }
+
+    /// <summary>
+    /// Optional fidelity checking configuration.
+    /// When set, a source-intent artifact is generated before pipeline execution,
+    /// and a terminal fidelity phase compares the final output against source intent.
+    /// </summary>
+    [JsonPropertyName("fidelity")]
+    public FidelityConfig? Fidelity { get; init; }
 }
 
 /// <summary>
@@ -133,4 +141,36 @@ public sealed record PhaseDefinition
             return parts[1].TrimStart('v');
         }
     }
+}
+
+/// <summary>
+/// Configuration for intent fidelity checking — source-intent extraction
+/// and terminal fidelity comparison.
+/// </summary>
+public sealed record FidelityConfig
+{
+    /// <summary>
+    /// Phase ID whose output artifact is compared against source intent.
+    /// Must match a phase ID in the methodology (e.g. "implementation").
+    /// </summary>
+    [JsonPropertyName("target_phase")]
+    public required string TargetPhase { get; init; }
+
+    /// <summary>
+    /// Model to use for source-intent extraction and fidelity checking.
+    /// Falls back to methodology ModelDefaults.Generation, then "gpt-4o".
+    /// </summary>
+    [JsonPropertyName("model")]
+    public string? Model { get; init; }
+
+    /// <summary>
+    /// Model for semantic validation of the fidelity artifact.
+    /// Falls back to methodology ModelDefaults.Judge, then "gpt-4o-mini".
+    /// </summary>
+    [JsonPropertyName("judge_model")]
+    public string? JudgeModel { get; init; }
+
+    /// <summary>Max attempts for the fidelity phase (source-intent is single-shot + retry).</summary>
+    [JsonPropertyName("max_attempts")]
+    public int MaxAttempts { get; init; } = 3;
 }

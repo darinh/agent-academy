@@ -16,6 +16,8 @@ public sealed class PipelineRunner
 {
     private readonly PhaseExecutor _phaseExecutor;
     private readonly ControlExecutor? _controlExecutor;
+    private readonly SourceIntentGenerator? _sourceIntentGenerator;
+    private readonly FidelityExecutor? _fidelityExecutor;
     private readonly IArtifactStore _artifactStore;
     private readonly IRunStore _runStore;
     private readonly CostCalculator _costCalculator;
@@ -29,7 +31,9 @@ public sealed class PipelineRunner
         CostCalculator costCalculator,
         TimeProvider timeProvider,
         ILogger<PipelineRunner> logger,
-        ControlExecutor? controlExecutor = null)
+        ControlExecutor? controlExecutor = null,
+        SourceIntentGenerator? sourceIntentGenerator = null,
+        FidelityExecutor? fidelityExecutor = null)
     {
         _phaseExecutor = phaseExecutor;
         _artifactStore = artifactStore;
@@ -38,12 +42,17 @@ public sealed class PipelineRunner
         _timeProvider = timeProvider;
         _logger = logger;
         _controlExecutor = controlExecutor;
+        _sourceIntentGenerator = sourceIntentGenerator;
+        _fidelityExecutor = fidelityExecutor;
     }
 
     /// <summary>
     /// Execute a full pipeline run: all phases in methodology order.
     /// When the methodology has a control arm configured and a <see cref="ControlExecutor"/>
     /// is registered, a single-shot baseline runs after the pipeline (except on abort).
+    /// When fidelity is configured, generates a source-intent artifact before pipeline phases,
+    /// injects it as input to the requirements phase, and runs a terminal fidelity check after
+    /// the pipeline succeeds.
     /// </summary>
     /// <param name="task">Task brief describing what to build.</param>
     /// <param name="methodology">Frozen methodology definition.</param>
@@ -71,23 +80,75 @@ public sealed class PipelineRunner
         runTrace = runTrace with { Outcome = "running" };
         await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
 
-        // Execute the pipeline phases
-        var pipelineResult = await ExecutePipelinePhasesAsync(runId, task, methodology, runTrace, ct);
+        // Step 1: Generate source-intent artifact (when fidelity is configured)
+        ArtifactEnvelope? sourceIntentEnvelope = null;
+        var fidelityTokensIn = 0;
+        var fidelityTokensOut = 0;
+        var fidelityCost = 0m;
+
+        if (methodology.Fidelity is not null && _sourceIntentGenerator is not null)
+        {
+            var siResult = await _sourceIntentGenerator.GenerateAsync(
+                task, methodology, methodology.Fidelity.MaxAttempts, ct);
+
+            fidelityTokensIn += siResult.Tokens.In;
+            fidelityTokensOut += siResult.Tokens.Out;
+            fidelityCost += siResult.Cost;
+
+            if (siResult.Outcome == "accepted" && siResult.Envelope is not null)
+            {
+                sourceIntentEnvelope = siResult.Envelope;
+                runTrace = runTrace with { SourceIntentArtifactHash = siResult.ArtifactHash };
+                await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
+            }
+            else
+            {
+                _logger.LogWarning("Pipeline run {RunId}: source-intent generation failed, continuing without fidelity",
+                    runId);
+            }
+        }
+
+        // Step 2: Execute the pipeline phases (with source-intent injected into first phase inputs)
+        var pipelineResult = await ExecutePipelinePhasesAsync(
+            runId, task, methodology, runTrace, ct,
+            sourceIntentEnvelope: sourceIntentEnvelope);
         runTrace = pipelineResult.RunTrace;
         var phaseRunTraces = pipelineResult.PhaseRunTraces;
 
-        // Optionally run the control arm — but not when aborted (cancellation or budget)
+        // Step 3: Run fidelity check (when configured, pipeline succeeded, and source-intent exists)
+        if (methodology.Fidelity is not null && _fidelityExecutor is not null
+            && sourceIntentEnvelope is not null
+            && runTrace.Outcome == "succeeded")
+        {
+            var fidelityCheck = await RunFidelityCheckAsync(
+                runId, runTrace, phaseRunTraces, sourceIntentEnvelope,
+                methodology, task, ct);
+            runTrace = fidelityCheck.RunTrace;
+            fidelityTokensIn += fidelityCheck.TokensIn;
+            fidelityTokensOut += fidelityCheck.TokensOut;
+            fidelityCost += fidelityCheck.Cost;
+        }
+
+        // Stamp fidelity token/cost totals
+        if (fidelityCost > 0 || fidelityTokensIn > 0)
+        {
+            runTrace = runTrace with
+            {
+                FidelityTokens = new TokenCount { In = fidelityTokensIn, Out = fidelityTokensOut },
+                FidelityCost = fidelityCost > 0 ? fidelityCost : null
+            };
+        }
+
+        // Step 4: Optionally run the control arm — but not when aborted
         if (methodology.Control is not null && _controlExecutor is not null && runTrace.Outcome != "aborted")
         {
             runTrace = await RunControlArmAsync(runTrace, task, methodology, ct);
         }
 
-        // Stamp EndedAt after control arm (if any) so timing reflects true completion
+        // Stamp EndedAt after all post-pipeline steps
         runTrace = runTrace with { EndedAt = _timeProvider.GetUtcNow().UtcDateTime };
 
         // Single finalize path: persist final state.
-        // Use CancellationToken.None for aborted runs — the original token is cancelled
-        // but we still need to persist the final state to disk.
         var writeCt = runTrace.Outcome == "aborted" ? CancellationToken.None : ct;
         await WriteRunFinalState(runId, runTrace, phaseRunTraces, writeCt);
 
@@ -253,6 +314,8 @@ public sealed class PipelineRunner
     /// <summary>
     /// Execute methodology phases in order, optionally starting from a given index
     /// with pre-accumulated state (for crash recovery resume).
+    /// When a source-intent envelope is provided, it is injected as an input to the
+    /// first methodology phase (requirements) for grounding.
     /// </summary>
     private async Task<PipelinePhaseResult> ExecutePipelinePhasesAsync(
         string runId,
@@ -264,13 +327,20 @@ public sealed class PipelineRunner
         Dictionary<string, ArtifactEnvelope>? initialAcceptedArtifacts = null,
         int initialTokensIn = 0,
         int initialTokensOut = 0,
-        decimal initialCost = 0m)
+        decimal initialCost = 0m,
+        ArtifactEnvelope? sourceIntentEnvelope = null)
     {
         var phaseRunTraces = new List<PhaseRunTrace>();
         var acceptedArtifacts = initialAcceptedArtifacts ?? new Dictionary<string, ArtifactEnvelope>();
         var totalTokensIn = initialTokensIn;
         var totalTokensOut = initialTokensOut;
         var totalCost = initialCost;
+
+        // If source-intent is available, add it to accepted artifacts so it can be resolved as input
+        if (sourceIntentEnvelope is not null && !acceptedArtifacts.ContainsKey("source_intent"))
+        {
+            acceptedArtifacts["source_intent"] = sourceIntentEnvelope;
+        }
 
         try
         {
@@ -279,6 +349,14 @@ public sealed class PipelineRunner
                 ct.ThrowIfCancellationRequested();
 
                 var phase = methodology.Phases[i];
+
+                // If source-intent is available and this is the first phase (typically requirements),
+                // inject source_intent into the phase's inputs list
+                if (sourceIntentEnvelope is not null && i == 0 && !phase.Inputs.Contains("source_intent"))
+                {
+                    phase = phase with { Inputs = new List<string>(phase.Inputs) { "source_intent" } };
+                }
+
                 _logger.LogInformation("Pipeline run {RunId}: starting phase {PhaseIndex}/{Total} ({PhaseId})",
                     runId, i + 1, methodology.Phases.Count, phase.Id);
 
@@ -426,6 +504,100 @@ public sealed class PipelineRunner
             {
                 ControlOutcome = "failed",
                 ControlTokens = new TokenCount()
+            };
+        }
+    }
+
+    /// <summary>
+    /// Run the terminal fidelity check: compare the target phase output against source intent.
+    /// </summary>
+    private async Task<FidelityCheckResult> RunFidelityCheckAsync(
+        string runId,
+        RunTrace runTrace,
+        List<PhaseRunTrace> phaseRunTraces,
+        ArtifactEnvelope sourceIntentEnvelope,
+        MethodologyDefinition methodology,
+        TaskBrief task,
+        CancellationToken ct)
+    {
+        var fidelityConfig = methodology.Fidelity!;
+        var targetPhaseId = fidelityConfig.TargetPhase;
+        var tokensIn = 0;
+        var tokensOut = 0;
+        var cost = 0m;
+
+        // Find the target output artifact from the pipeline results
+        if (!runTrace.FinalArtifactHashes.TryGetValue(targetPhaseId, out var targetHashPrefixed))
+        {
+            _logger.LogWarning("Pipeline run {RunId}: fidelity target phase '{TargetPhase}' has no output artifact",
+                runId, targetPhaseId);
+            return new FidelityCheckResult { RunTrace = runTrace };
+        }
+
+        var targetHash = StripHashPrefix(targetHashPrefixed);
+        var targetEnvelope = await _artifactStore.ReadAsync(targetHash, ct);
+        if (targetEnvelope is null)
+        {
+            _logger.LogError("Pipeline run {RunId}: fidelity target artifact {Hash} not found",
+                runId, targetHashPrefixed[..Math.Min(targetHashPrefixed.Length, 16)]);
+            return new FidelityCheckResult { RunTrace = runTrace };
+        }
+
+        _logger.LogInformation("Pipeline run {RunId}: starting fidelity check against phase '{TargetPhase}'",
+            runId, targetPhaseId);
+
+        try
+        {
+            var fidelityResult = await _fidelityExecutor!.ExecuteAsync(
+                runId,
+                methodology.Phases.Count, // Phase index after all methodology phases
+                sourceIntentEnvelope,
+                targetEnvelope,
+                targetPhaseId,
+                methodology,
+                task,
+                budgetRemaining: null, // Fidelity is not budget-gated
+                ct);
+
+            // Accumulate fidelity tokens/cost from the phase run trace
+            if (fidelityResult.PhaseRunTrace is not null)
+            {
+                phaseRunTraces.Add(fidelityResult.PhaseRunTrace);
+
+                foreach (var attempt in fidelityResult.PhaseRunTrace.Attempts)
+                {
+                    tokensIn += attempt.Tokens.In;
+                    tokensOut += attempt.Tokens.Out;
+                    if (attempt.JudgeTokens is not null)
+                    {
+                        tokensIn += attempt.JudgeTokens.In;
+                        tokensOut += attempt.JudgeTokens.Out;
+                    }
+                    cost += attempt.Cost ?? 0;
+                }
+            }
+
+            var updatedTrace = runTrace with
+            {
+                FidelityOutcome = fidelityResult.FidelityOutcome,
+                FidelityArtifactHash = fidelityResult.ArtifactHash,
+                DriftCodes = fidelityResult.DriftCodes
+            };
+
+            return new FidelityCheckResult
+            {
+                RunTrace = updatedTrace,
+                TokensIn = tokensIn,
+                TokensOut = tokensOut,
+                Cost = cost
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Pipeline run {RunId}: fidelity check failed with exception", runId);
+            return new FidelityCheckResult
+            {
+                RunTrace = runTrace with { FidelityOutcome = "error" }
             };
         }
     }
@@ -670,6 +842,17 @@ internal sealed record PipelinePhaseResult
 {
     public required RunTrace RunTrace { get; init; }
     public required List<PhaseRunTrace> PhaseRunTraces { get; init; }
+}
+
+/// <summary>
+/// Internal result of the fidelity check step.
+/// </summary>
+internal sealed record FidelityCheckResult
+{
+    public required RunTrace RunTrace { get; init; }
+    public int TokensIn { get; init; }
+    public int TokensOut { get; init; }
+    public decimal Cost { get; init; }
 }
 
 /// <summary>

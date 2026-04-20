@@ -567,6 +567,61 @@ The control arm is a single-shot LLM baseline that produces the same artifact ty
 
 **Prompt parity**: The control prompt includes the same schema body and semantic rules as the pipeline phases. Only the upstream artifacts and amendment loop are removed. This isolates the variable being tested (multi-phase orchestration vs. single-shot) rather than testing a weaker prompt.
 
+### Intent Fidelity
+
+The intent fidelity system detects semantic drift between the human's original request and the pipeline's final output. It addresses the "telephone game" problem where each phase faithfully implements the prior phase's output, but collectively the pipeline diverges from the human's actual intent.
+
+**Configuration** — opt-in via `MethodologyDefinition.Fidelity`:
+
+```json
+{
+  "id": "my-methodology-v1",
+  "fidelity": {
+    "target_phase": "implementation",
+    "model": "gpt-4o",
+    "judge_model": "gpt-4o-mini",
+    "max_attempts": 3
+  },
+  "phases": [...]
+}
+```
+
+**Two new schemas**:
+
+- `source_intent/v1` — structured extraction of the human's original ask: verbatim task brief, acceptance criteria, explicit constraints, examples, counter-examples, and preferred approach. Created once at run start (immutable).
+- `fidelity/v1` — terminal fidelity verdict: `overall_match` (PASS/FAIL/PARTIAL), per-criterion results, and drift detections from a closed taxonomy.
+
+**Drift taxonomy (CLOSED — 5 codes)**:
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| `OMITTED_CONSTRAINT` | Blocking | A constraint from source intent was dropped |
+| `CONSTRAINT_WEAKENED` | Blocking | An explicit constraint was weakened |
+| `INVENTED_REQUIREMENT` | Advisory | A requirement appears with no basis in source intent |
+| `SCOPE_BROADENED` | Advisory | Output covers more than what was asked |
+| `SCOPE_NARROWED` | Advisory | Output covers less than what was asked |
+
+Adding a 6th code requires a methodology version bump. The `DriftCode` enum enforces the closed taxonomy at compile time.
+
+**Execution flow**:
+1. If `Fidelity` is configured and `SourceIntentGenerator` is registered, source-intent artifact is generated before pipeline phases.
+2. `SourceIntentGenerator` uses a single-shot LLM call with structural validation + retry. A verbatim check verifies the `task_brief` field matches the original `TaskBrief.Description` (≥80% word overlap after whitespace normalization).
+3. Source-intent is auto-injected as an input to the first methodology phase (requirements), providing grounding for downstream phases.
+4. Pipeline phases execute as normal.
+5. After the pipeline succeeds, `FidelityExecutor` runs: compares source-intent against the target phase output (typically `implementation`), with **zero access to intermediate artifacts**.
+6. The fidelity executor enforces a hard input constraint: exactly 2 inputs (source_intent + target output), validated by both phase ID and artifact type. Violation produces an immediate failure.
+7. Fidelity results are merged into `RunTrace`: `FidelityOutcome`, `FidelityArtifactHash`, `SourceIntentArtifactHash`, `DriftCodes`, `FidelityTokens`, `FidelityCost`.
+
+**Design decisions**:
+- Intent fidelity is a **phase**, not a validator — it runs as a separate `PhaseRun` through `PhaseExecutor` with full attempt/retry loop and three-tier validation.
+- The fidelity phase has **zero access to intermediate artifacts** (requirements, contract, function_design). This prevents the context pollution the phase exists to detect.
+- Source-intent cost counts toward fidelity totals (separate from pipeline totals). It is part of the production path, not benchmarking.
+- Pipeline `Outcome` stays "succeeded" even when fidelity reports "fail". The pipeline DID produce correct artifacts per its validators — fidelity is a separate quality signal. Consumers check `FidelityOutcome` explicitly.
+- Source-intent generation is single-shot with structural validation only (no semantic). The schema forces verbatim preservation of the task brief, so the fidelity phase always has access to the raw human request.
+- Model resolution: fidelity `model` → methodology `model_defaults.generation` → `"gpt-4o"`.
+- Source-intent generation failure is non-fatal — the pipeline continues without fidelity checking.
+- Fidelity phase is skipped when the pipeline fails or aborts.
+
 ## Invariants
 
 1. **Content identity**: An artifact's hash is `sha256(canonical_json(envelope))`. The same logical content always produces the same hash. Different content never produces the same hash (collision detection raises an exception).
@@ -579,17 +634,20 @@ The control arm is a single-shot LLM baseline that produces the same artifact ty
 8. **Methodology is frozen per run**: The `methodology.json` written at run start is the authoritative definition for the entire run. Schema registry contents are baked in at compile time.
 9. **Severity normalization**: Unknown severity values from the semantic validator are treated as `error` and marked blocking.
 10. **Advisory metadata is non-authoritative**: Missing or corrupted `.meta.json` does not affect artifact identity or pipeline correctness.
+11. **Fidelity input isolation**: The fidelity phase executor rejects any input set that is not exactly {source_intent, target_output} by artifact type. This is enforced at runtime by `FidelityExecutor.ValidateInputs` and prevents context pollution from intermediate artifacts.
+12. **Drift taxonomy is closed**: The 5 drift codes are exhaustive, defined by the `DriftCode` enum. Adding a 6th code requires a methodology version bump and a code change.
 
 ## Known Gaps
 
 1. ~~**Model configurability**~~: Resolved. Model selection is configurable per-phase and per-methodology via `model_defaults` (methodology-level) and `model`/`judge_model` (phase-level) fields. See Model Configuration section above.
 2. **No live benchmark results**: Benchmarks require `OPENAI_API_KEY`; results have not been collected yet.
-3. **Intent fidelity**: The current pipeline verifies internal consistency but not fidelity to the original task intent. The spike findings document proposes a `source-intent` artifact and terminal fidelity phase — not yet implemented.
+3. ~~**Intent fidelity**~~: Resolved. `SourceIntentGenerator` creates a structured source-intent artifact from the task brief (verbatim preservation + extracted criteria). `FidelityExecutor` runs a terminal comparison against the target phase output with zero intermediate artifact access. Closed 5-code drift taxonomy (`DriftCode` enum). See Intent Fidelity section above.
 4. ~~**No cost tracking**~~: Resolved. `CostCalculator` provides per-model pricing, per-attempt cost on traces, run-level `PipelineCost`, and optional `budget` enforcement on methodology. See Cost Tracking section above.
 5. **No parallelism**: Phases execute sequentially. The methodology model supports inputs that could enable parallel execution, but the runner doesn't exploit it.
 6. ~~**No crash recovery**~~: Resolved. `PipelineRunner.ResumeAsync` rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts, and resumes from the first non-succeeded phase. See Crash Recovery section above.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
-8. **Schema evolution**: All schemas are frozen at v1. No migration or versioning strategy exists for schema changes.
+8. **Schema evolution**: All schemas are frozen at v1 (now 7 schemas). No migration or versioning strategy exists for schema changes.
+9. **Seeded-defect benchmarks**: No controlled test cases with injected drift for measuring fidelity detection accuracy. Required to validate the LLM-judge hypothesis per the spike falsifiability statement.
 
 ## Revision History
 
@@ -604,3 +662,4 @@ The control arm is a single-shot LLM baseline that produces the same artifact ty
 | 2026-04-20 | Cost tracking — per-attempt cost, judge token tracking, budget enforcement, closes Known Gap #4 | `feat/forge-cost-tracking` |
 | 2026-04-20 | Control arm — single-shot A/B benchmarking baseline, closes Known Gap #7 | `feat/forge-control-arm` |
 | 2026-04-20 | Crash recovery — resume-from-snapshot logic, closes Known Gap #6 | `feat/forge-crash-recovery` |
+| 2026-04-20 | Intent fidelity — source-intent schema, fidelity phase, drift taxonomy, closes Known Gap #3 | `feat/forge-intent-fidelity` |

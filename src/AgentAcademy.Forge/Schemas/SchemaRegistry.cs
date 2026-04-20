@@ -15,6 +15,8 @@ public sealed class SchemaRegistry
         Register(FunctionDesignV1.Entry);
         Register(ImplementationV1.Entry);
         Register(ReviewV1.Entry);
+        Register(SourceIntentV1.Entry);
+        Register(FidelityV1.Entry);
     }
 
     private void Register(SchemaEntry entry)

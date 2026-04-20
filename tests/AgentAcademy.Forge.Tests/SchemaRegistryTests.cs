@@ -12,6 +12,8 @@ public sealed class SchemaRegistryTests
     [InlineData("function_design/v1", "function_design", "1")]
     [InlineData("implementation/v1", "implementation", "1")]
     [InlineData("review/v1", "review", "1")]
+    [InlineData("source_intent/v1", "source_intent", "1")]
+    [InlineData("fidelity/v1", "fidelity", "1")]
     public void GetSchema_ReturnsEntry_ForAllKnownSchemas(string schemaId, string expectedType, string expectedVersion)
     {
         var entry = _registry.GetSchema(schemaId);
@@ -31,16 +33,18 @@ public sealed class SchemaRegistryTests
     }
 
     [Fact]
-    public void SchemaIds_ContainsAll5Schemas()
+    public void SchemaIds_ContainsAll7Schemas()
     {
         var ids = _registry.SchemaIds;
 
-        Assert.Equal(5, ids.Count);
+        Assert.Equal(7, ids.Count);
         Assert.Contains("requirements/v1", ids);
         Assert.Contains("contract/v1", ids);
         Assert.Contains("function_design/v1", ids);
         Assert.Contains("implementation/v1", ids);
         Assert.Contains("review/v1", ids);
+        Assert.Contains("source_intent/v1", ids);
+        Assert.Contains("fidelity/v1", ids);
     }
 
     [Theory]
@@ -49,6 +53,8 @@ public sealed class SchemaRegistryTests
     [InlineData("function_design/v1")]
     [InlineData("implementation/v1")]
     [InlineData("review/v1")]
+    [InlineData("source_intent/v1")]
+    [InlineData("fidelity/v1")]
     public void SchemaBodyJson_IsValidJson(string schemaId)
     {
         var entry = _registry.GetSchema(schemaId);

@@ -52,6 +52,33 @@ public sealed record RunTrace
     public string? AbortReason { get; init; }
 
     /// <summary>
+    /// Outcome of the terminal fidelity phase: "pass", "fail", "partial", or null if fidelity was not configured.
+    /// Independent of the pipeline Outcome — a succeeded pipeline may have fidelity "fail".
+    /// </summary>
+    [JsonPropertyName("fidelityOutcome")]
+    public string? FidelityOutcome { get; init; }
+
+    /// <summary>Hash of the fidelity result artifact (sha256:... prefixed), or null.</summary>
+    [JsonPropertyName("fidelityArtifactHash")]
+    public string? FidelityArtifactHash { get; init; }
+
+    /// <summary>Hash of the source-intent artifact (sha256:... prefixed), or null.</summary>
+    [JsonPropertyName("sourceIntentArtifactHash")]
+    public string? SourceIntentArtifactHash { get; init; }
+
+    /// <summary>Drift codes detected by the fidelity phase. Empty list means no drift.</summary>
+    [JsonPropertyName("driftCodes")]
+    public IReadOnlyList<string>? DriftCodes { get; init; }
+
+    /// <summary>Token count for source-intent generation + fidelity checking (separate from pipeline).</summary>
+    [JsonPropertyName("fidelityTokens")]
+    public TokenCount? FidelityTokens { get; init; }
+
+    /// <summary>Cost of source-intent generation + fidelity checking.</summary>
+    [JsonPropertyName("fidelityCost")]
+    public decimal? FidelityCost { get; init; }
+
+    /// <summary>
     /// Map keyed by phaseId. Omit key if phase produced no terminal artifact.
     /// Values are "sha256:..." prefixed hashes.
     /// </summary>

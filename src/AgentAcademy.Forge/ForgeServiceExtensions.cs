@@ -43,6 +43,8 @@ public static class ForgeServiceExtensions
         services.AddSingleton<CostCalculator>();
         services.AddSingleton<PhaseExecutor>();
         services.AddSingleton<ControlExecutor>();
+        services.AddSingleton<SourceIntentGenerator>();
+        services.AddSingleton<FidelityExecutor>();
         services.AddSingleton<PipelineRunner>();
 
         return services;
