@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **001-domain-model §Goal Card Types**: `GoalCard`, `CreateGoalCardRequest`, `UpdateGoalCardStatusRequest` records. `GoalCardVerdict` (Proceed/ProceedWithCaveat/Challenge) and `GoalCardStatus` (Active/Completed/Challenged/Abandoned) enums. `GoalCardCreated`/`GoalCardChallenged` activity events. `GoalCardEntity` with 6 indexes, Room FK (cascade), Task FK (set null). Immutable content, validated state machine.
+- **300-frontend-ui §Goal Card Panel**: `GoalCardPanel.tsx` — read-only dashboard for agent intent artifacts with room scoping, status/verdict filters, expandable card detail, task navigation. Real-time refresh via `goalCardVersion`. Sidebar nav entry "Goals" (🎯). `GoalCardChallenged` added to toast events.
 - **007-agent-commands §Phase 1B**: `CREATE_GOAL_CARD` and `UPDATE_GOAL_CARD_STATUS` commands. Structured intent artifacts for drift detection. All 6 agents granted both commands. Permission Model table updated.
 - **010-task-management §CREATE_PR**: Goal card enrichment — `CREATE_PR` now auto-appends goal card content to PR descriptions. Each linked goal card renders as a markdown block with verdict emoji (✅/⚠️/🛑), status, agent, intent, divergence, steelman/strawman, and fresh-eyes questions. Best-effort: service unavailability logs warning, never blocks PR creation. 6 new tests (5533 total).
 - **014-database-schema §GoalCardEntity**: `goal_cards` table with 18 columns, 6 indexes, Room/Task FKs. Status state machine documented. Migration `AddGoalCards` (2026-04-20).

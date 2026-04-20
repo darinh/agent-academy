@@ -1471,6 +1471,58 @@ interface DesktopNotificationControls {
 }
 ```
 
+## Goal Card Panel (`GoalCardPanel.tsx`)
+
+Dashboard for viewing agent intent artifacts (goal cards). Read-only in v1.
+
+### Props
+
+```typescript
+interface GoalCardPanelProps {
+  roomId?: string | null;       // Scopes cards to current room
+  refreshTrigger?: number;      // Incremented on GoalCardCreated/GoalCardChallenged
+  onNavigateToTask?: (taskId: string) => void;
+}
+```
+
+### Data Flow
+
+1. On mount, fetches `GET /api/goal-cards?roomId={roomId}` (full room set)
+2. Client-side filtering by status and verdict — no additional API calls
+3. Stats computed from unfiltered card set
+4. `refreshTrigger` (from `goalCardVersion` in `useWorkspace.ts`) fires re-fetch on real-time events
+5. Duplicate-fetch prevention via `prevTriggerRef` — only re-fetches when trigger value actually changes
+
+### UI
+
+- **Stats row**: 4 stat cards (Active, Challenged, Completed, Abandoned) computed client-side
+- **Filter bar**: Status chips (All/Active/Challenged/Completed/Abandoned) + Verdict chips (All Verdicts/Proceed/Caveat/Challenge)
+- **Card list**: Expandable cards with:
+  - **Collapsed**: Agent name, status badge, verdict badge, task link, timestamp, truncated task description
+  - **Expanded**: Full task description, intent, divergence, steelman, strawman, 3-column fresh-eyes grid, metadata (ID, prompt version, updated timestamp)
+- Task link navigates to Tasks panel via `onNavigateToTask`
+
+### Types
+
+```typescript
+type GoalCardVerdict = "Proceed" | "ProceedWithCaveat" | "Challenge";
+type GoalCardStatus = "Active" | "Completed" | "Challenged" | "Abandoned";
+
+interface GoalCard {
+  id: string; agentId: string; agentName: string; roomId: string;
+  taskId: string | null; taskDescription: string; intent: string;
+  divergence: string; steelman: string; strawman: string;
+  verdict: GoalCardVerdict; freshEyes1: string; freshEyes2: string;
+  freshEyes3: string; promptVersion: number; status: GoalCardStatus;
+  createdAt: string; updatedAt: string;
+}
+```
+
+### Empty State
+
+- No cards: "No goal cards yet" with explanation
+- No matching filters: "No matching cards" with clear-filters action
+
 ## Known Gaps
 
 - ~~Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)~~ **Resolved** — `useWorkspace.ts` handles `ArtifactEvaluated` events by incrementing `artifactVersion` counter. `WorkspaceContent.tsx` passes it to `ArtifactsPanel` as `refreshTrigger`, triggering automatic re-fetch of both artifacts and evaluations. Also added `"artifacts"` to `VALID_TABS` for tab persistence.
@@ -1483,10 +1535,15 @@ interface DesktopNotificationControls {
 - ~~TaskStatePanel integration~~ **Resolved** — `TaskListPanel.tsx` includes interactive review panel with filter tabs (All/Review Queue/Active/Completed), expandable task detail, task comments, and review action buttons wired through `executeCommand` API.
 - ~~Human command metadata endpoint so the Commands tab can stop hardcoding command schemas~~ **Resolved** — `GET /api/commands/metadata` implemented. Frontend loads dynamically with fallback.
 - ~~Session history / resume indicator~~ **Resolved** — `SessionHistoryPanel` in dashboard shows session stats, filterable session list with summaries. `ChatPanel` shows "Agents have context from a previous conversation session" banner when archived sessions exist for the current room.
+- Goal Card dashboard: Status mutation UI (mark cards as Completed/Abandoned) — currently read-only. Operators can use the REST API directly.
+- Goal Card dashboard: Room overview API enrichment — goal card summary data in the `/api/overview` response for at-a-glance visibility.
 - No frontend E2E coverage for the full OAuth login → SignalR connect happy path — **Accepted**: requires a browser (cannot be automated from the server-side test harness). HTTP-level authentication behavior is covered; browser-level SignalR connect is verified manually.
 - No visual regression tests — **Accepted**: component DOM tests in Vitest cover rendering and interaction; no screenshot diffing is currently configured.
 
 ## Revision History
+
+### 2026-04-20
+- **Added**: Goal Card Panel (`GoalCardPanel.tsx`) — read-only dashboard for agent intent artifacts. Room-scoped, client-side filtered (status + verdict), expandable card detail, task navigation. Styles in `goalCards/`. API module in `api/goalCards.ts`. Real-time refresh via `goalCardVersion` on `GoalCardCreated`/`GoalCardChallenged` events. Sidebar nav entry "Goals" (🎯). `GoalCardChallenged` added to toast events. Known gaps documented for status mutation UI and overview API enrichment.
 
 ### 2026-04-16
 - **Spec hygiene**: Renamed `Future Work` section to `Known Gaps` to match pattern across specs 000–018. Moved `Browser Desktop Notifications` component section ahead of `Known Gaps` so all component sections are contiguous. Added `Revision History` and documented currently accepted gaps (E2E OAuth flow, visual regression).
