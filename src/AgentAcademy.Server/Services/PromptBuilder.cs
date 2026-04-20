@@ -164,6 +164,24 @@ internal static class PromptBuilder
         AppendDirectMessages(lines, directMessages, agent.Id);
 
         lines.Add("");
+        lines.Add("=== GOAL CARD ===");
+        lines.Add("Before starting significant work on a task, create a goal card to capture");
+        lines.Add("your structured intent. This helps detect drift and enriches PR descriptions.");
+        lines.Add("");
+        lines.Add("Run: CREATE_GOAL_CARD with these fields:");
+        lines.Add("  task_id        — the task you are working on");
+        lines.Add("  task_description — restate the task in your own words");
+        lines.Add("  intent         — what you plan to do (your approach)");
+        lines.Add("  divergence     — where your intent differs from the task description");
+        lines.Add("  steelman       — strongest argument FOR your approach");
+        lines.Add("  strawman       — strongest argument AGAINST your approach");
+        lines.Add("  verdict        — Proceed | ProceedWithCaveat | Challenge");
+        lines.Add("  fresh_eyes_1/2/3 — three questions a reviewer should consider");
+        lines.Add("");
+        lines.Add("If verdict is Challenge, STOP and discuss before proceeding.");
+        lines.Add("If verdict is ProceedWithCaveat, note the caveat and proceed carefully.");
+
+        lines.Add("");
         lines.Add("=== YOUR TURN ===");
         lines.Add($"You are {agent.Name} ({agent.Role}).");
         lines.Add("Do the work described in your tasks. Create files, write code, execute commands.");

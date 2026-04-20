@@ -96,9 +96,12 @@ public static class SprintPreambles
                 **Workflow:**
                 1. The Planner creates tasks using CREATE_TASK for each planned work item.
                 2. SoftwareEngineers work in task branches (created automatically).
-                3. When a task is code-complete, the SWE runs CREATE_PR to push and open a PR.
-                4. The Reviewer uses POST_PR_REVIEW (APPROVE / REQUEST_CHANGES) to review PRs.
-                5. On approval, use MERGE_PR to merge, then mark the task complete.
+                3. Before starting significant work, create a goal card (CREATE_GOAL_CARD)
+                   to capture your intent, approach, and any divergence from the task description.
+                4. When a task is code-complete, the SWE runs CREATE_PR to push and open a PR.
+                   Goal card content is automatically included in the PR description.
+                5. The Reviewer uses POST_PR_REVIEW (APPROVE / REQUEST_CHANGES) to review PRs.
+                6. On approval, use MERGE_PR to merge, then mark the task complete.
 
                 **PR review cycle:**
                 - If REQUEST_CHANGES, the SWE addresses feedback and requests re-review.
