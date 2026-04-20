@@ -286,11 +286,10 @@ public class SubServiceIntegrationTests : IDisposable
 
         var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
-        // Main room starts in Intake phase — roster = { Planner } only.
-        // Engineer and Reviewer are present in AgentLocations but filtered out
-        // of the snapshot until the room transitions to a stage that includes them.
-        var planner = Assert.Single(room.Participants);
-        Assert.Equal("planner-1", planner.AgentId);
+        // Participants reflect room membership — no phase filtering.
+        // Both AutoJoinDefaultRoom agents are present regardless of phase.
+        Assert.Contains(room.Participants, p => p.AgentId == "planner-1");
+        Assert.Contains(room.Participants, p => p.AgentId == "engineer-1");
     }
 
     [Fact]
@@ -307,29 +306,28 @@ public class SubServiceIntegrationTests : IDisposable
             PreferredRoles: ["Planner"]
         ));
 
-        // Task room starts in Intake phase — only Planner role is in the roster,
-        // so Engineer is present in AgentLocations but filtered out of the snapshot.
+        // Participants reflect actual agent locations — no phase filtering.
+        // Both planner and engineer (both AutoJoinDefaultRoom) are in the task room.
         var taskRoom = await _rooms.GetRoomAsync(result.Room.Id);
         Assert.NotNull(taskRoom);
         Assert.Contains(taskRoom.Participants, p => p.AgentId == "planner-1");
-        Assert.DoesNotContain(taskRoom.Participants, p => p.AgentId == "engineer-1");
+        Assert.Contains(taskRoom.Participants, p => p.AgentId == "engineer-1");
 
-        // Transition the task room to Implementation (permissive — all roles allowed)
-        // and verify Engineer now appears.
+        // Transition the task room to Implementation and verify both still present
         await _rooms.TransitionPhaseAsync(result.Room.Id, CollaborationPhase.Implementation, force: true);
         var taskRoomAfter = await _rooms.GetRoomAsync(result.Room.Id);
         Assert.NotNull(taskRoomAfter);
         Assert.Contains(taskRoomAfter.Participants, p => p.AgentId == "planner-1");
         Assert.Contains(taskRoomAfter.Participants, p => p.AgentId == "engineer-1");
 
-        // Default "main" room remains in Intake — only Planner-role agents visible.
-        // reviewer-1 has AutoJoinDefaultRoom=false and was never moved (but
-        // would be filtered anyway because Reviewer ∉ Intake roster).
+        // Main room: reviewer-1 is present because InitializationService
+        // creates a location for all agents in the default room. Planner and
+        // engineer were moved to the task room, so only reviewer remains.
         var mainRoom = await _rooms.GetRoomAsync("main");
         Assert.NotNull(mainRoom);
         Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "planner-1");
         Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "engineer-1");
-        Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "reviewer-1");
+        Assert.Contains(mainRoom.Participants, p => p.AgentId == "reviewer-1");
     }
 
     // ── Message Management ──────────────────────────────────────

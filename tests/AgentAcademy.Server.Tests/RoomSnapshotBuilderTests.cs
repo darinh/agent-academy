@@ -408,57 +408,29 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
         Assert.Contains("coding", p.ActiveCapabilities);
     }
 
-    // ── Phase-scoped roster filtering ──
+    // ── No phase filtering — participants reflect room membership ──
 
     [Fact]
-    public void BuildParticipants_IntakePhase_ExcludesRolesNotInRoster()
+    public void BuildParticipants_IncludesAllRolesRegardlessOfPhase()
     {
-        // Intake roster = { Planner }. Neither test agent (Engineer, Reviewer) qualifies.
+        // BuildParticipants no longer filters by phase — all agents with
+        // locations in the room are included. Phase filtering for conversation
+        // participation is handled by ConversationRoundRunner.
         var locations = new List<AgentLocationEntity>
         {
             new() { AgentId = "agent-1", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow },
             new() { AgentId = "agent-2", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow }
         };
 
-        var result = Sut.BuildParticipants(locations, [], currentPhase: nameof(CollaborationPhase.Intake));
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void BuildParticipants_ImplementationPhase_IncludesAllRoles()
-    {
-        // Implementation has no roster defined → permissive (all roles allowed).
-        var locations = new List<AgentLocationEntity>
-        {
-            new() { AgentId = "agent-1", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow },
-            new() { AgentId = "agent-2", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow }
-        };
-
-        var result = Sut.BuildParticipants(locations, [], currentPhase: nameof(CollaborationPhase.Implementation));
+        var result = Sut.BuildParticipants(locations, []);
 
         Assert.Equal(2, result.Count);
     }
 
     [Fact]
-    public void BuildParticipants_NullPhase_IsPermissive()
+    public void BuildParticipants_IncludesMixedRolesInIntakeRoom()
     {
-        // Existing callers (no phase argument) must continue to include everyone.
-        var locations = new List<AgentLocationEntity>
-        {
-            new() { AgentId = "agent-1", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow },
-            new() { AgentId = "agent-2", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow }
-        };
-
-        var result = Sut.BuildParticipants(locations, [], currentPhase: null);
-
-        Assert.Equal(2, result.Count);
-    }
-
-    [Fact]
-    public void BuildParticipants_IntakePhase_IncludesPlannerRole()
-    {
-        // Build a fresh graph with a Planner-role agent to exercise the positive case.
+        // Even during Intake, BuildParticipants returns all agents in the room.
         var agents = new List<AgentDefinition>
         {
             new("planner-1", "Planny", "Planner", "Planner agent", "", null, ["planning"], [], true),
@@ -471,11 +443,11 @@ public sealed class RoomSnapshotBuilderTests : IDisposable
             new() { AgentId = "eng-1", RoomId = "r1", State = "Idle", UpdatedAt = DateTime.UtcNow }
         };
 
-        var result = plannerGraph.RoomSnapshotBuilder.BuildParticipants(
-            locations, [], currentPhase: nameof(CollaborationPhase.Intake));
+        var result = plannerGraph.RoomSnapshotBuilder.BuildParticipants(locations, []);
 
-        var p = Assert.Single(result);
-        Assert.Equal("planner-1", p.AgentId);
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, p => p.AgentId == "planner-1");
+        Assert.Contains(result, p => p.AgentId == "eng-1");
     }
 
     // ═══════════════════════════════════════════════════════════════════

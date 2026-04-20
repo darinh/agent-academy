@@ -53,22 +53,6 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             var configService = scope.ServiceProvider.GetRequiredService<IAgentConfigService>();
             var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 
-            if (round == 1)
-            {
-                try
-                {
-                    var sessionService = scope.ServiceProvider.GetRequiredService<IConversationSessionService>();
-                    var rotated = await sessionService.CheckAndRotateAsync(roomId);
-                    if (rotated)
-                        _logger.LogInformation(
-                            "Conversation session rotated for room {RoomId} before round 1", roomId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Session rotation check failed for room {RoomId}", roomId);
-                }
-            }
-
             var room = await roomService.GetRoomAsync(roomId);
             if (room is null) return;
 
@@ -164,6 +148,24 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
                     "Non-PASS responses in room with active task; starting round {NextRound}/{MaxRounds}",
                     round + 1, MaxRoundsPerTrigger);
             }
+        }
+
+        // Rotate session AFTER all rounds complete so the triggering human
+        // message stays visible to agents during this run. Rotation before
+        // rounds would archive the session containing the human message,
+        // making agents see an empty conversation and PASS.
+        try
+        {
+            using var rotationScope = _scopeFactory.CreateScope();
+            var sessionService = rotationScope.ServiceProvider.GetRequiredService<IConversationSessionService>();
+            var rotated = await sessionService.CheckAndRotateAsync(roomId);
+            if (rotated)
+                _logger.LogInformation(
+                    "Conversation session rotated for room {RoomId} after rounds completed", roomId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Post-round session rotation check failed for room {RoomId}", roomId);
         }
     }
 
