@@ -325,6 +325,13 @@ public sealed class AgentToolFunctions : IAgentToolFunctions
             if (process is null)
                 return "Error: Failed to start search process.";
 
+            // Start draining stderr BEFORE reading stdout to prevent pipe deadlock:
+            // if we read only N stdout lines then stop, the process blocks writing to
+            // the full stdout pipe buffer. If stderr isn't being drained concurrently,
+            // ReadToEndAsync(stderr) would wait for process exit while the process waits
+            // for us to drain stdout — classic deadlock.
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
             // Read stdout line-by-line with a global cap to prevent
             // unbounded memory usage (--max-count is per-file in git grep).
             var lines = new List<string>(maxResults);
@@ -335,15 +342,13 @@ public sealed class AgentToolFunctions : IAgentToolFunctions
                 lines.Add(line);
             }
 
-            // Drain stderr concurrently to prevent deadlock
-            // (filled stderr pipe buffer blocks the process).
-            var stderr = await process.StandardError.ReadToEndAsync();
-
             // Kill the process if it's still running (we have enough results)
             if (!process.HasExited)
             {
                 try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
             }
+
+            var stderr = await stderrTask;
 
             // Use a timeout to avoid hanging forever
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
