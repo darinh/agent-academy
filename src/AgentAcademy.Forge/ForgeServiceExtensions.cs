@@ -1,4 +1,5 @@
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Execution;
 using AgentAcademy.Forge.Prompt;
 using AgentAcademy.Forge.Schemas;
 using AgentAcademy.Forge.Storage;
@@ -35,6 +36,10 @@ public static class ForgeServiceExtensions
         services.AddSingleton<SchemaRegistry>();
         services.AddSingleton<PromptBuilder>();
         services.AddSingleton<StructuralValidator>();
+        services.AddSingleton<SemanticValidator>();
+        services.AddSingleton<CrossArtifactValidator>();
+        services.AddSingleton<ValidatorPipeline>();
+        services.AddSingleton<PhaseExecutor>();
 
         return services;
     }
