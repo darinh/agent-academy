@@ -474,6 +474,35 @@ public class PromptBuilderTests
         Assert.Contains("=== YOUR TURN ===", prompt);
     }
 
+    [Fact]
+    public void BreakoutPrompt_IncludesGoalCardSection()
+    {
+        var agent = MakeAgent();
+        var br = MakeBreakout();
+
+        var prompt = PromptBuilder.BuildBreakoutPrompt(agent, br, 1);
+
+        Assert.Contains("=== GOAL CARD ===", prompt);
+        Assert.Contains("CREATE_GOAL_CARD", prompt);
+        Assert.Contains("verdict", prompt);
+        Assert.Contains("Challenge, STOP and discuss", prompt);
+    }
+
+    [Fact]
+    public void BreakoutPrompt_GoalCardAppearsBeforeYourTurn()
+    {
+        var agent = MakeAgent();
+        var br = MakeBreakout();
+
+        var prompt = PromptBuilder.BuildBreakoutPrompt(agent, br, 1);
+
+        var goalCardIndex = prompt.IndexOf("=== GOAL CARD ===");
+        var yourTurnIndex = prompt.IndexOf("=== YOUR TURN ===");
+
+        Assert.True(goalCardIndex > -1, "GOAL CARD section should exist");
+        Assert.True(yourTurnIndex > goalCardIndex, "GOAL CARD should appear before YOUR TURN");
+    }
+
     // ── BuildReviewPrompt ───────────────────────────────────────
 
     [Fact]

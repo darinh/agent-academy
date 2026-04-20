@@ -226,4 +226,35 @@ public class SprintPreamblesTests
 
         Assert.DoesNotContain("OVERFLOW FROM PREVIOUS SPRINT", preamble);
     }
+
+    // ── Goal card workflow in Implementation ─────────────────────
+
+    [Fact]
+    public void BuildPreamble_Implementation_IncludesGoalCardWorkflow()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        Assert.Contains("CREATE_GOAL_CARD", preamble);
+        Assert.Contains("goal card", preamble.ToLowerInvariant());
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_GoalCardBeforePR()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        var goalCardIndex = preamble.IndexOf("CREATE_GOAL_CARD");
+        var createPrIndex = preamble.IndexOf("CREATE_PR");
+
+        Assert.True(goalCardIndex > -1, "Implementation preamble should mention CREATE_GOAL_CARD");
+        Assert.True(createPrIndex > goalCardIndex, "Goal card step should come before CREATE_PR step");
+    }
+
+    [Fact]
+    public void BuildPreamble_Implementation_GoalCardAutoIncludedInPR()
+    {
+        var preamble = SprintPreambles.BuildPreamble(1, "Implementation");
+
+        Assert.Contains("Goal card content is automatically included in the PR description", preamble);
+    }
 }
