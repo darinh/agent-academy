@@ -25,15 +25,22 @@ public sealed class SemanticValidator
     /// Evaluate an artifact against its schema's semantic rules.
     /// Returns validator results; empty list means all rules passed.
     /// </summary>
+    /// <param name="envelope">Artifact to validate.</param>
+    /// <param name="schemaEntry">Schema with semantic rules.</param>
+    /// <param name="attemptNumber">Current attempt number.</param>
+    /// <param name="model">Model to use for judging, or null to use the default (gpt-4o-mini).</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<IReadOnlyList<ValidatorResultTrace>> ValidateAsync(
         ArtifactEnvelope envelope,
         SchemaEntry schemaEntry,
         int attemptNumber,
+        string? model = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(schemaEntry.SemanticRules))
             return [];
 
+        var effectiveModel = string.IsNullOrWhiteSpace(model) ? DefaultJudgeModel : model;
         var prompt = BuildJudgePrompt(envelope, schemaEntry);
 
         LlmResponse response;
@@ -43,7 +50,7 @@ public sealed class SemanticValidator
             {
                 SystemMessage = SystemPrompt,
                 UserMessage = prompt,
-                Model = "gpt-4o-mini",
+                Model = effectiveModel,
                 Temperature = 0.0,
                 MaxTokens = 4096,
                 JsonMode = true
@@ -73,6 +80,8 @@ public sealed class SemanticValidator
 
         return ParseJudgeResponse(response.Content, attemptNumber);
     }
+
+    internal const string DefaultJudgeModel = "gpt-4o-mini";
 
     internal const string SystemPrompt =
         """

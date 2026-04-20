@@ -31,10 +31,16 @@ public sealed class ValidatorPipeline
     /// Run the full validation cascade. Returns all findings up to and including
     /// the first tier that produced blocking failures.
     /// </summary>
+    /// <param name="envelope">Artifact to validate.</param>
+    /// <param name="inputArtifacts">Upstream artifacts for cross-artifact validation.</param>
+    /// <param name="attemptNumber">Current attempt number.</param>
+    /// <param name="judgeModel">Model for semantic validation, or null to use the default.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<ValidationPipelineResult> ValidateAsync(
         ArtifactEnvelope envelope,
         IReadOnlyDictionary<string, ArtifactEnvelope> inputArtifacts,
         int attemptNumber,
+        string? judgeModel = null,
         CancellationToken ct = default)
     {
         var allFindings = new List<ValidatorResultTrace>();
@@ -55,7 +61,7 @@ public sealed class ValidatorPipeline
         }
 
         // Tier 2: Semantic (LLM judge)
-        var semanticResults = await _semantic.ValidateAsync(envelope, schemaEntry, attemptNumber, ct);
+        var semanticResults = await _semantic.ValidateAsync(envelope, schemaEntry, attemptNumber, judgeModel, ct);
         allFindings.AddRange(semanticResults);
 
         if (HasBlockingFindings(semanticResults))

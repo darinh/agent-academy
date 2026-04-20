@@ -532,4 +532,160 @@ public sealed class PhaseExecutorTests : IDisposable
                 runId, 0, phase, methodology, TestTask,
                 new Dictionary<string, ArtifactEnvelope>()));
     }
+
+    [Theory]
+    [InlineData("o3", "gpt-4o", "gpt-4o", "o3")]               // Phase override wins
+    [InlineData(null, "o3", "gpt-4o", "o3")]                    // Methodology default used
+    [InlineData(null, null, "gpt-4o", "gpt-4o")]                // Hardcoded fallback
+    [InlineData("", "o3", "gpt-4o", "o3")]                      // Empty string treated as unset
+    [InlineData("  ", "o3", "gpt-4o", "o3")]                    // Whitespace treated as unset
+    [InlineData(null, "", "gpt-4o", "gpt-4o")]                  // Empty methodology default → fallback
+    [InlineData(null, "  ", "gpt-4o", "gpt-4o")]                // Whitespace methodology default → fallback
+    public void ResolveModel_PrecedenceIsCorrect(
+        string? phaseOverride, string? methodologyDefault, string fallback, string expected)
+    {
+        var result = PhaseExecutor.ResolveModel(phaseOverride, methodologyDefault, fallback);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UsesPhaseModelOverride_ForGeneration()
+    {
+        var llm = new StubLlmClient((req, _) =>
+        {
+            if (req.SystemMessage.Contains("phase executor"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirementsResponse,
+                    InputTokens = 100, OutputTokens = 200, Model = req.Model, LatencyMs = 50
+                });
+
+            return Task.FromResult(new LlmResponse
+            {
+                Content = """{"findings": []}""",
+                InputTokens = 50, OutputTokens = 20, Model = req.Model, LatencyMs = 10
+            });
+        });
+
+        var runId = ForgeId.NewRunId();
+        await InitializeRun(runId);
+
+        var executor = CreateExecutor(llm);
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            MaxAttemptsDefault = 3,
+            ModelDefaults = new ModelDefaults { Generation = "default-gen", Judge = "default-judge" },
+            Phases =
+            [
+                new PhaseDefinition
+                {
+                    Id = "requirements",
+                    Goal = "Extract requirements",
+                    Inputs = [],
+                    OutputSchema = "requirements/v1",
+                    Instructions = "Produce requirements.",
+                    Model = "phase-gen-override"
+                }
+            ]
+        };
+        var phase = methodology.Phases[0];
+
+        await executor.ExecuteAsync(
+            runId, 0, phase, methodology, TestTask,
+            new Dictionary<string, ArtifactEnvelope>());
+
+        // First request is generation; verify it used the phase override model
+        var generationRequest = llm.ReceivedRequests.First(r => r.SystemMessage.Contains("phase executor"));
+        Assert.Equal("phase-gen-override", generationRequest.Model);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UsesMethodologyDefaults_WhenPhaseHasNoOverride()
+    {
+        var llm = new StubLlmClient((req, _) =>
+        {
+            if (req.SystemMessage.Contains("phase executor"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirementsResponse,
+                    InputTokens = 100, OutputTokens = 200, Model = req.Model, LatencyMs = 50
+                });
+
+            return Task.FromResult(new LlmResponse
+            {
+                Content = """{"findings": []}""",
+                InputTokens = 50, OutputTokens = 20, Model = req.Model, LatencyMs = 10
+            });
+        });
+
+        var runId = ForgeId.NewRunId();
+        await InitializeRun(runId);
+
+        var executor = CreateExecutor(llm);
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            MaxAttemptsDefault = 3,
+            ModelDefaults = new ModelDefaults { Generation = "methodology-gen", Judge = "methodology-judge" },
+            Phases =
+            [
+                new PhaseDefinition
+                {
+                    Id = "requirements",
+                    Goal = "Extract requirements",
+                    Inputs = [],
+                    OutputSchema = "requirements/v1",
+                    Instructions = "Produce requirements."
+                }
+            ]
+        };
+        var phase = methodology.Phases[0];
+
+        await executor.ExecuteAsync(
+            runId, 0, phase, methodology, TestTask,
+            new Dictionary<string, ArtifactEnvelope>());
+
+        var generationRequest = llm.ReceivedRequests.First(r => r.SystemMessage.Contains("phase executor"));
+        Assert.Equal("methodology-gen", generationRequest.Model);
+
+        // Semantic validator should use the methodology judge model
+        var judgeRequest = llm.ReceivedRequests.FirstOrDefault(r => r.SystemMessage.Contains("semantic validator"));
+        if (judgeRequest is not null)
+            Assert.Equal("methodology-judge", judgeRequest.Model);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FallsBackToHardcoded_WhenNoModelConfig()
+    {
+        var llm = new StubLlmClient((req, _) =>
+        {
+            if (req.SystemMessage.Contains("phase executor"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirementsResponse,
+                    InputTokens = 100, OutputTokens = 200, Model = req.Model, LatencyMs = 50
+                });
+
+            return Task.FromResult(new LlmResponse
+            {
+                Content = """{"findings": []}""",
+                InputTokens = 50, OutputTokens = 20, Model = req.Model, LatencyMs = 10
+            });
+        });
+
+        var runId = ForgeId.NewRunId();
+        await InitializeRun(runId);
+
+        var executor = CreateExecutor(llm);
+        // No ModelDefaults, no phase overrides
+        var phase = TestMethodology.Phases[0];
+
+        await executor.ExecuteAsync(
+            runId, 0, phase, TestMethodology, TestTask,
+            new Dictionary<string, ArtifactEnvelope>());
+
+        var generationRequest = llm.ReceivedRequests.First(r => r.SystemMessage.Contains("phase executor"));
+        Assert.Equal("gpt-4o", generationRequest.Model);
+    }
 }

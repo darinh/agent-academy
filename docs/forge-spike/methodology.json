@@ -2,6 +2,10 @@
   "id": "spike-default-v1",
   "description": "Hardcoded 5-layer methodology for the Forge Pipeline Engine spike. Single attempt budget per phase, no fan-out, no parallel reviews. Used unchanged across all 3 benchmark tasks.",
   "max_attempts_default": 3,
+  "model_defaults": {
+    "generation": "gpt-4o",
+    "judge": "gpt-4o-mini"
+  },
   "phases": [
     {
       "id": "requirements",

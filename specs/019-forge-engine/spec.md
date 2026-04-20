@@ -59,7 +59,7 @@ Defines the standalone pipeline engine that transforms a task brief into validat
 | `StubLlmClient` | `Llm` | Test double with configurable responses and fault injection |
 | `ValidatorPipeline` | `Validation` | Three-tier cascade: Structural → Semantic → CrossArtifact, short-circuits on blocking |
 | `StructuralValidator` | `Validation` | JSON Schema validation + per-schema in-artifact structural checks |
-| `SemanticValidator` | `Validation` | LLM-judge (gpt-4o-mini) grades artifact against semantic rules |
+| `SemanticValidator` | `Validation` | LLM-judge (configurable, default gpt-4o-mini) grades artifact against semantic rules |
 | `CrossArtifactValidator` | `Validation` | Reference integrity across artifact boundaries (pure code, no LLM) |
 | `AttemptResponseParser` | `Validation` | Parses LLM JSON response, extracts `body` field, wraps into `ArtifactEnvelope` |
 | `IArtifactStore` | `Artifacts` | Content-addressed artifact storage (write, read, verify by SHA-256 hash) |
@@ -79,7 +79,7 @@ Defines the standalone pipeline engine that transforms a task brief into validat
    b. Delegate to `PhaseExecutor.ExecuteAsync()`.
 3. **Phase attempt loop** (max attempts configurable per-phase or methodology-wide, default 3):
    a. **Prompt**: `PromptBuilder` renders the user message with task, phase, schema, inputs, and amendment notes.
-   b. **Generate**: `ILlmClient.GenerateAsync()` with `gpt-4o`, temperature 0.2, JSON mode enabled.
+   b. **Generate**: `ILlmClient.GenerateAsync()` with configurable model (see Model Configuration below), temperature 0.2, JSON mode enabled.
    c. **Parse**: `AttemptResponseParser` extracts `{"body": ...}` and wraps into `ArtifactEnvelope`.
    d. **Validate**: `ValidatorPipeline` runs three tiers. If blocking findings: reject, generate amendment notes for next attempt.
    e. **Persist**: Write artifact to `IArtifactStore`, update phase-run scratch in `IRunStore`, record attempt files.
@@ -118,13 +118,19 @@ A `MethodologyDefinition` is a JSON document that declares the ordered phases:
   "id": "forge-spike-v1",
   "description": "Five-phase software engineering pipeline",
   "max_attempts_default": 3,
+  "model_defaults": {
+    "generation": "gpt-4o",
+    "judge": "gpt-4o-mini"
+  },
   "phases": [
     {
       "id": "requirements",
       "goal": "...",
       "inputs": [],
       "output_schema": "requirements/v1",
-      "instructions": "..."
+      "instructions": "...",
+      "model": null,
+      "judge_model": null
     },
     {
       "id": "contract",
@@ -155,6 +161,26 @@ A `MethodologyDefinition` is a JSON document that declares the ordered phases:
 ```
 
 Each phase declares its `inputs` (prior phase IDs), `output_schema` (schema registry key), `goal`, and `instructions`. Phases execute sequentially — there is no parallelism.
+
+### Model Configuration
+
+Model selection uses a three-tier cascade: **phase override → methodology default → hardcoded fallback**.
+
+| Purpose | Phase field | Methodology field | Fallback |
+|---------|------------|-------------------|----------|
+| Generation (artifact production) | `model` | `model_defaults.generation` | `"gpt-4o"` |
+| Semantic judging (validation) | `judge_model` | `model_defaults.judge` | `"gpt-4o-mini"` |
+
+**Resolution logic** (in `PhaseExecutor.ResolveModel`): the first non-null, non-empty, non-whitespace value wins.
+
+```
+generation_model = phase.Model ?? methodology.ModelDefaults?.Generation ?? "gpt-4o"
+judge_model = phase.JudgeModel ?? methodology.ModelDefaults?.Judge ?? "gpt-4o-mini"
+```
+
+**Threading**: `PhaseExecutor` resolves both models at the start of each attempt and passes `judgeModel` through `ValidatorPipeline.ValidateAsync` → `SemanticValidator.ValidateAsync`. All new parameters are optional with backward-compatible defaults — existing code that omits them gets the same behavior as before.
+
+**Backward compatibility**: Methodology JSON files without `model_defaults` or per-phase model fields are fully supported — all fields are optional with null defaults, and the fallback values match the previously-hardcoded models.
 
 ### Prompt Envelope
 
@@ -453,7 +479,7 @@ A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three
 
 ## Known Gaps
 
-1. **Model configurability**: `PhaseExecutor` hardcodes `gpt-4o` for generation; `SemanticValidator` hardcodes `gpt-4o-mini` for judging. Model selection is not configurable per-phase or per-methodology. Deferred to post-spike.
+1. ~~**Model configurability**~~: Resolved. Model selection is configurable per-phase and per-methodology via `model_defaults` (methodology-level) and `model`/`judge_model` (phase-level) fields. See Model Configuration section above.
 2. **No live benchmark results**: Benchmarks require `OPENAI_API_KEY`; results have not been collected yet.
 3. **Intent fidelity**: The current pipeline verifies internal consistency but not fidelity to the original task intent. The spike findings document proposes a `source-intent` artifact and terminal fidelity phase — not yet implemented.
 4. **No cost tracking**: Token counts are accumulated but no cost calculation or budget enforcement exists.
@@ -471,3 +497,4 @@ A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three
 | 2026-04-20 | Execution foundation — LLM abstraction, prompt builder, schemas (Layer 2a) | `feat/forge-execution-foundation` |
 | 2026-04-20 | Validation pipeline and phase executor (Layer 2b) | `feat/forge-phase-executor` |
 | 2026-04-20 | PipelineRunner, OpenAI client, benchmark infrastructure (Layer 3) | `feat/forge-pipeline-runner` |
+| 2026-04-20 | Model configurability — phase and methodology-level model config, closes Known Gap #1 | `feat/forge-model-config` |

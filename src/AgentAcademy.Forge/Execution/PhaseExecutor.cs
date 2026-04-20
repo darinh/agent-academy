@@ -77,7 +77,7 @@ public sealed class PhaseExecutor
 
             var attemptStart = _timeProvider.GetUtcNow().UtcDateTime;
             var attemptResult = await ExecuteAttemptAsync(
-                runId, phaseIndex, phase, task, inputArtifacts,
+                runId, phaseIndex, phase, methodology, task, inputArtifacts,
                 attemptNumber, amendmentNotes, ct);
 
             var attemptTrace = new AttemptTrace
@@ -147,6 +147,7 @@ public sealed class PhaseExecutor
         string runId,
         int phaseIndex,
         PhaseDefinition phase,
+        MethodologyDefinition methodology,
         TaskBrief task,
         IReadOnlyDictionary<string, ArtifactEnvelope> inputArtifacts,
         int attemptNumber,
@@ -158,6 +159,10 @@ public sealed class PhaseExecutor
         var userMessage = _promptBuilder.BuildUserMessage(task, phase, resolvedInputs, amendmentNotes);
         var systemMessage = PromptBuilder.SystemMessage;
 
+        // Resolve configurable models: phase override → methodology default → hardcoded fallback
+        var generationModel = ResolveModel(phase.Model, methodology?.ModelDefaults?.Generation, "gpt-4o");
+        var judgeModel = ResolveModel(phase.JudgeModel, methodology?.ModelDefaults?.Judge, "gpt-4o-mini");
+
         // Step 2: Generating — call the LLM
         LlmResponse llmResponse;
         try
@@ -166,7 +171,7 @@ public sealed class PhaseExecutor
             {
                 SystemMessage = systemMessage,
                 UserMessage = userMessage,
-                Model = "gpt-4o",
+                Model = generationModel,
                 Temperature = 0.2,
                 MaxTokens = 8192,
                 JsonMode = true
@@ -224,7 +229,7 @@ public sealed class PhaseExecutor
 
         // Step 4: Validating — run the validator pipeline
         var validationResult = await _validatorPipeline.ValidateAsync(
-            envelope, inputArtifacts, attemptNumber, ct);
+            envelope, inputArtifacts, attemptNumber, judgeModel, ct);
 
         if (validationResult.Passed)
         {
@@ -344,6 +349,19 @@ public sealed class PhaseExecutor
     }
 
     private static readonly JsonSerializerOptions IndentedOptions = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Resolve a model ID from the three-tier cascade: phase override → methodology default → hardcoded fallback.
+    /// Treats null, empty, and whitespace-only strings as "not configured".
+    /// </summary>
+    internal static string ResolveModel(string? phaseOverride, string? methodologyDefault, string fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(phaseOverride))
+            return phaseOverride;
+        if (!string.IsNullOrWhiteSpace(methodologyDefault))
+            return methodologyDefault;
+        return fallback;
+    }
 }
 
 /// <summary>

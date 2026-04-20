@@ -17,8 +17,26 @@ public sealed record MethodologyDefinition
     [JsonPropertyName("max_attempts_default")]
     public int MaxAttemptsDefault { get; init; } = 3;
 
+    /// <summary>Default model IDs for generation and semantic judging. Per-phase overrides take precedence.</summary>
+    [JsonPropertyName("model_defaults")]
+    public ModelDefaults? ModelDefaults { get; init; }
+
     [JsonPropertyName("phases")]
     public required IReadOnlyList<PhaseDefinition> Phases { get; init; }
+}
+
+/// <summary>
+/// Default model configuration for the methodology.
+/// </summary>
+public sealed record ModelDefaults
+{
+    /// <summary>Model used for artifact generation (default: gpt-4o).</summary>
+    [JsonPropertyName("generation")]
+    public string? Generation { get; init; }
+
+    /// <summary>Model used for semantic validation judging (default: gpt-4o-mini).</summary>
+    [JsonPropertyName("judge")]
+    public string? Judge { get; init; }
 }
 
 /// <summary>
@@ -47,6 +65,14 @@ public sealed record PhaseDefinition
     /// <summary>Per-phase override; falls back to methodology default.</summary>
     [JsonPropertyName("max_attempts")]
     public int? MaxAttempts { get; init; }
+
+    /// <summary>Generation model for this phase. Falls back to methodology ModelDefaults.Generation, then "gpt-4o".</summary>
+    [JsonPropertyName("model")]
+    public string? Model { get; init; }
+
+    /// <summary>Semantic judge model for this phase. Falls back to methodology ModelDefaults.Judge, then "gpt-4o-mini".</summary>
+    [JsonPropertyName("judge_model")]
+    public string? JudgeModel { get; init; }
 
     /// <summary>Extracts artifact type from output_schema (e.g. "requirements/v1" → "requirements").</summary>
     [JsonIgnore]

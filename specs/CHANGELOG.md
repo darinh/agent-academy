@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **019-forge-engine §Model Configuration**: Model selection is now configurable per-phase and per-methodology. `MethodologyDefinition` gains a `model_defaults` object with `generation` and `judge` fields. `PhaseDefinition` gains `model` and `judge_model` override fields. Resolution uses a three-tier cascade: phase override → methodology default → hardcoded fallback (`gpt-4o`/`gpt-4o-mini`). Backward compatible — existing methodology JSON without model fields works unchanged. Closes Known Gap #1.
 - **019-forge-engine**: New spec documenting the standalone Forge Pipeline Engine (`AgentAcademy.Forge`). Covers: pipeline execution flow, three-tier validation cascade (structural → semantic → cross-artifact), content-addressed artifact storage, five frozen schemas (requirements/v1 through review/v1), LLM abstraction, prompt envelope, run storage layout, DI registration, and benchmark infrastructure. Written from implemented code — all claims are verifiable.
 - **000-system-overview §Component Responsibilities**: Added Forge Pipeline Engine and Forge Benchmarks entries.
 

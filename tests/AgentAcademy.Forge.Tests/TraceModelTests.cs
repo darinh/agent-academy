@@ -239,6 +239,44 @@ public sealed class TraceModelTests
         Assert.Single(methodology.Phases);
         Assert.Equal("requirements", methodology.Phases[0].ArtifactType);
         Assert.Equal("1", methodology.Phases[0].SchemaVersion);
+        Assert.Null(methodology.ModelDefaults);
+        Assert.Null(methodology.Phases[0].Model);
+        Assert.Null(methodology.Phases[0].JudgeModel);
+    }
+
+    [Fact]
+    public void MethodologyDefinition_Deserialization_WithModelConfig()
+    {
+        var json = """
+        {
+            "id": "test-v2",
+            "max_attempts_default": 2,
+            "model_defaults": {
+                "generation": "o3",
+                "judge": "gpt-4o-mini"
+            },
+            "phases": [
+                {
+                    "id": "requirements",
+                    "goal": "Decompose task",
+                    "inputs": [],
+                    "output_schema": "requirements/v1",
+                    "instructions": "Read carefully",
+                    "model": "phase-override",
+                    "judge_model": "judge-override"
+                }
+            ]
+        }
+        """;
+
+        var methodology = JsonSerializer.Deserialize<MethodologyDefinition>(json);
+
+        Assert.NotNull(methodology);
+        Assert.NotNull(methodology.ModelDefaults);
+        Assert.Equal("o3", methodology.ModelDefaults.Generation);
+        Assert.Equal("gpt-4o-mini", methodology.ModelDefaults.Judge);
+        Assert.Equal("phase-override", methodology.Phases[0].Model);
+        Assert.Equal("judge-override", methodology.Phases[0].JudgeModel);
     }
 
     [Fact]

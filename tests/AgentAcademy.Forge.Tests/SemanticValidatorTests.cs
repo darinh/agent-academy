@@ -331,6 +331,50 @@ public sealed class SemanticValidatorTests
         """);
 
         await Assert.ThrowsAsync<OperationCanceledException>(
-            () => validator.ValidateAsync(envelope, RequirementsSchema, 1, cts.Token));
+            () => validator.ValidateAsync(envelope, RequirementsSchema, 1, ct: cts.Token));
+    }
+
+    [Fact]
+    public async Task CustomModel_IsUsedInLlmRequest()
+    {
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var validator = new SemanticValidator(llm, NullLogger<SemanticValidator>.Instance);
+        var envelope = MakeEnvelope("requirements", "1", """
+        {
+          "task_summary": "test",
+          "user_outcomes": [{"id": "U1", "outcome": "test", "priority": "must"}],
+          "functional_requirements": [{"id": "FR1", "statement": "test", "outcome_ids": ["U1"]}],
+          "non_functional_requirements": [],
+          "out_of_scope": [],
+          "open_questions": []
+        }
+        """);
+
+        await validator.ValidateAsync(envelope, RequirementsSchema, 1, "custom-judge-model");
+
+        Assert.Single(llm.ReceivedRequests);
+        Assert.Equal("custom-judge-model", llm.ReceivedRequests[0].Model);
+    }
+
+    [Fact]
+    public async Task NullModel_FallsBackToDefault()
+    {
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var validator = new SemanticValidator(llm, NullLogger<SemanticValidator>.Instance);
+        var envelope = MakeEnvelope("requirements", "1", """
+        {
+          "task_summary": "test",
+          "user_outcomes": [{"id": "U1", "outcome": "test", "priority": "must"}],
+          "functional_requirements": [{"id": "FR1", "statement": "test", "outcome_ids": ["U1"]}],
+          "non_functional_requirements": [],
+          "out_of_scope": [],
+          "open_questions": []
+        }
+        """);
+
+        await validator.ValidateAsync(envelope, RequirementsSchema, 1);
+
+        Assert.Single(llm.ReceivedRequests);
+        Assert.Equal(SemanticValidator.DefaultJudgeModel, llm.ReceivedRequests[0].Model);
     }
 }
