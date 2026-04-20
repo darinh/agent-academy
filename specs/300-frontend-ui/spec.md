@@ -89,7 +89,8 @@ Central hook that owns all workspace state. Components receive state and callbac
 - `connectionStatus` — activity-transport connection state (`"connected"` | `"connecting"` | `"reconnecting"` | `"disconnected"`); driven by whichever of `useActivityHub` / `useActivitySSE` is enabled
 - `err`, `busy` — error/loading state
 - `tab` — active tab (persisted in localStorage)
-- `sidebarOpen` — sidebar collapse state (persisted in localStorage)
+- `sidebarOpen` — sidebar collapse state (persisted in localStorage key `aa-sidebar-open`)
+- `sidebarPinned` — when pinned, sidebar stays open regardless of viewport width (persisted in localStorage key `aa-sidebar-pinned`)
 
 **Derived:**
 - `room` — selected room object (falls back to first room)
@@ -246,6 +247,7 @@ Each agent role still maps to accent/foreground/avatar colors:
 
 - Full viewport: `100vh` with CSS grid
 - Sidebar + main content: `356px minmax(0, 1fr)` (open) / `94px minmax(0, 1fr)` (collapsed)
+- **Sidebar collapse behavior**: The utility row shows a `«`/`»` toggle button (always visible), a refresh button (open only), and a thumbtack pin button (open only). When **pinned** (📌 upright), the sidebar stays open regardless of viewport width. When **unpinned** (📌 tilted 45°), the sidebar auto-collapses on narrow viewports (`≤ 900px`) via `matchMedia`. In **collapsed mode**, the sidebar shows nav icons (from `NAV_ITEMS`) — clicking any icon opens the sidebar and switches to that view — plus room phase dots below a divider.
 - The main shell is split into a left navigation rail and a right workspace canvas with a prominent masthead, spotlight card, limited-mode banner, tab deck, and panel body
 - Surfaces use layered dark panels with warm metallic borders and inset highlights rather than the previous generic glassmorphism treatment
 - Authentication surfaces (`LoginPage.tsx`, `ProjectSelectorPage.tsx`) use a two-panel editorial layout: narrative rail on the left, actionable system/status card on the right
@@ -501,6 +503,10 @@ Each room contains conversation sessions (epochs). The ChatPanel toolbar include
 - `displayMessages` switches between live room messages (from SignalR/polling) and session-scoped historical messages based on the selected session.
 - When viewing an archived session, a banner reads: "Viewing archived session. Messages are read-only."
 - Messages are loaded via `GET /api/rooms/{roomId}/messages?sessionId={id}&limit=200`.
+
+**Expand/collapse model**: Messages use a `defaultExpanded` + `overrides` pattern. `defaultExpanded` (persisted in localStorage key `aa-default-expand`) determines the base state for all messages. Individual messages toggled by the user are tracked in an `overrides` set — a message in the set renders opposite to the default. Switching rooms resets overrides but preserves the default. The `SessionToolbar` includes a `⊞ Expand` / `⊟ Collapse` button to toggle `defaultExpanded` globally (clears all overrides on toggle).
+
+**Scroll behavior**: The chat area scrolls to bottom on room change only. New messages from polling trigger a "new messages" indicator when the user has scrolled away from the bottom; they do **not** force auto-scroll or reset expand state. The `room?.id` dependency (not `room` object identity) prevents re-renders from collapsing expanded messages during poll cycles.
 
 ### Connection Status Bar
 

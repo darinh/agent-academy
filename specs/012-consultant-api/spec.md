@@ -93,7 +93,7 @@ Returns:
 }
 ```
 
-Messages are ordered chronologically (oldest first). This endpoint includes sessionless messages and messages with `SenderKind = User` from any session, so consultant/human messages are always visible regardless of session boundaries.
+Messages are ordered chronologically (oldest first). When `sessionId` is omitted, the endpoint returns messages from the active conversation session plus legacy untagged messages (matching the `RoomSnapshotBuilder` contract in spec 005 §Message Management). When `sessionId` is provided, only that session's messages are returned — no cross-session leaking.
 
 #### Stream Room Messages (SSE)
 
@@ -422,14 +422,16 @@ Wire into Program.cs:
 - `src/AgentAcademy.Server/Controllers/RoomController.cs` (MODIFY — add GET messages action)
 - `src/AgentAcademy.Server/Services/RoomService.cs` (already has GetRoomMessagesAsync with cursor)
 
-`RoomService.GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit)` returns paginated messages:
+`RoomService.GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit, string? sessionId)` returns paginated messages:
 ```csharp
 public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
-    string roomId, string? afterMessageId = null, int limit = 50)
+    string roomId, string? afterMessageId = null, int limit = 50, string? sessionId = null)
 ```
 
 Query logic:
-- Filter by room, non-DM (`RecipientId == null`), active session
+- Filter by room, non-DM (`RecipientId == null`)
+- When `sessionId` is explicit: only messages from that session (archived view)
+- When `sessionId` is null: active session + legacy untagged messages (live view, matches `RoomSnapshotBuilder`)
 - If `afterMessageId` provided, find that message's `SentAt` and filter `> SentAt` (with tiebreaker on ID)
 - Order by `SentAt` ascending
 - Take `limit + 1` to determine `HasMore`

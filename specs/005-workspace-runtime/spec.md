@@ -131,9 +131,14 @@ Task creation (in `TaskOrchestrationService`):
 
 Validation: room must exist, sender must be in catalog (for agent messages).
 
-**Message trimming**: When message count exceeds 200, oldest messages are deleted from the database. This matches v1 behavior.
+**Message trimming**: `MessageService.TrimMessagesAsync` trims the **active session's** messages to 200. Only messages from the current active session and legacy untagged messages (`SessionId == null`) are counted and eligible for deletion. Archived session messages are never deleted — they are the historical record for session browsing and export. This means total room message count can grow beyond 200 (bounded by sessions × messages-per-session).
 
-**Session-aware message loading**: `RoomSnapshotBuilder.BuildRoomSnapshotAsync` loads only messages from the active conversation session (plus legacy untagged messages). Messages are tagged with `SessionId` when posted. See spec 003 → Conversation Session Management for epoch lifecycle details.
+**Session-aware message loading**: Two query modes exist:
+
+- **Live/active view** (`sessionId` omitted): `RoomSnapshotBuilder.BuildRoomSnapshotAsync` and `RoomService.GetRoomMessagesAsync(roomId, sessionId: null)` both load only messages from the active conversation session plus legacy untagged messages. These two callers share the same query contract.
+- **Archived/explicit view** (`sessionId` provided): `RoomService.GetRoomMessagesAsync(roomId, sessionId: "...")` returns only messages from that specific session — no cross-session messages, no legacy untagged messages. This is used when the frontend selects an archived session from the sessions dropdown.
+
+Messages are tagged with `SessionId` when posted. See spec 003 → Conversation Session Management for epoch lifecycle details.
 
 **Message tagging**: `PostMessageAsync`, `PostHumanMessageAsync`, and `PostBreakoutMessageAsync` call `ConversationSessionService.GetOrCreateActiveSessionAsync` to tag each message with the active session ID and increment the session's message count.
 
