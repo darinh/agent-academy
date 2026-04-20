@@ -15,7 +15,8 @@ Defines the standalone pipeline engine that transforms a task brief into validat
 │  Run state machine: Pending → Running → Succeeded/Failed     │
 │  Iterates methodology phases in order                        │
 │  Resolves inter-phase artifact inputs                        │
-│  Accumulates token counts and final artifact hashes          │
+│  Accumulates token counts, costs, and final artifact hashes  │
+│  Enforces optional budget (aborts if exceeded)               │
 ├──────────────────┬───────────────────────────────────────────┤
 │                  │                                           │
 │  ┌───────────────▼────────────────┐                          │
@@ -181,6 +182,33 @@ judge_model = phase.JudgeModel ?? methodology.ModelDefaults?.Judge ?? "gpt-4o-mi
 **Threading**: `PhaseExecutor` resolves both models at the start of each attempt and passes `judgeModel` through `ValidatorPipeline.ValidateAsync` → `SemanticValidator.ValidateAsync`. All new parameters are optional with backward-compatible defaults — existing code that omits them gets the same behavior as before.
 
 **Backward compatibility**: Methodology JSON files without `model_defaults` or per-phase model fields are fully supported — all fields are optional with null defaults, and the fallback values match the previously-hardcoded models.
+
+### Cost Tracking
+
+The engine tracks LLM usage costs at per-attempt, per-phase, and per-run granularity. Cost calculation covers both generation and semantic judge calls.
+
+**Pricing** (`CostCalculator`): Maps model IDs to USD per million tokens (input and output). Ships with default prices for common OpenAI models. Case-insensitive lookup. Unknown models return $0 cost (but see budget enforcement below).
+
+**Per-attempt cost**: Each `AttemptTrace` includes:
+- `tokens` / `model` — generation call usage (existing)
+- `judgeTokens` / `judgeModel` — semantic validator call usage (new)
+- `cost` — total USD cost for this attempt (generation + judge)
+
+**Per-run cost**: `RunTrace.pipelineCost` aggregates all attempt costs across all phases. Token totals (`pipelineTokens`) now include both generation and judge tokens.
+
+**Budget enforcement** (`MethodologyDefinition.budget`):
+- Optional `budget` field (decimal, USD) on the methodology definition
+- When set, `CostCalculator.ValidatePricingForBudget()` runs at pipeline start — if any resolved model (generation or judge) across all phases is unpriced, the run fails immediately with `InvalidOperationException`
+- Budget is checked **between attempts** (PhaseExecutor stops retrying if budget exhausted) and **between phases** (PipelineRunner stops the pipeline)
+- When budget is exceeded, the run outcome is `"aborted"` with `abortReason: "budget_exceeded"`
+- Budget enforcement is opt-in: `budget: null` means no limit
+
+**Methodology JSON additions**:
+```json
+{
+  "budget": 5.00
+}
+```
 
 ### Prompt Envelope
 
@@ -482,7 +510,7 @@ A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three
 1. ~~**Model configurability**~~: Resolved. Model selection is configurable per-phase and per-methodology via `model_defaults` (methodology-level) and `model`/`judge_model` (phase-level) fields. See Model Configuration section above.
 2. **No live benchmark results**: Benchmarks require `OPENAI_API_KEY`; results have not been collected yet.
 3. **Intent fidelity**: The current pipeline verifies internal consistency but not fidelity to the original task intent. The spike findings document proposes a `source-intent` artifact and terminal fidelity phase — not yet implemented.
-4. **No cost tracking**: Token counts are accumulated but no cost calculation or budget enforcement exists.
+4. ~~**No cost tracking**~~: Resolved. `CostCalculator` provides per-model pricing, per-attempt cost on traces, run-level `PipelineCost`, and optional `budget` enforcement on methodology. See Cost Tracking section above.
 5. **No parallelism**: Phases execute sequentially. The methodology model supports inputs that could enable parallel execution, but the runner doesn't exploit it.
 6. **No crash recovery**: State snapshots are written for potential crash recovery, but no resume-from-snapshot logic exists yet.
 7. **Control arm not implemented**: `RunTrace` includes `ControlOutcome` and `ControlTokens` fields for A/B benchmark comparison, but no control executor exists.
@@ -498,3 +526,4 @@ A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three
 | 2026-04-20 | Validation pipeline and phase executor (Layer 2b) | `feat/forge-phase-executor` |
 | 2026-04-20 | PipelineRunner, OpenAI client, benchmark infrastructure (Layer 3) | `feat/forge-pipeline-runner` |
 | 2026-04-20 | Model configurability — phase and methodology-level model config, closes Known Gap #1 | `feat/forge-model-config` |
+| 2026-04-20 | Cost tracking — per-attempt cost, judge token tracking, budget enforcement, closes Known Gap #4 | `feat/forge-cost-tracking` |

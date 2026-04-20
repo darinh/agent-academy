@@ -30,7 +30,7 @@ public sealed class SemanticValidator
     /// <param name="attemptNumber">Current attempt number.</param>
     /// <param name="model">Model to use for judging, or null to use the default (gpt-4o-mini).</param>
     /// <param name="ct">Cancellation token.</param>
-    public async Task<IReadOnlyList<ValidatorResultTrace>> ValidateAsync(
+    public async Task<SemanticValidationResult> ValidateAsync(
         ArtifactEnvelope envelope,
         SchemaEntry schemaEntry,
         int attemptNumber,
@@ -38,7 +38,7 @@ public sealed class SemanticValidator
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(schemaEntry.SemanticRules))
-            return [];
+            return new SemanticValidationResult { Findings = [] };
 
         var effectiveModel = string.IsNullOrWhiteSpace(model) ? DefaultJudgeModel : model;
         var prompt = BuildJudgePrompt(envelope, schemaEntry);
@@ -59,26 +59,33 @@ public sealed class SemanticValidator
         catch (LlmClientException ex)
         {
             _logger.LogWarning(ex, "Semantic validator LLM call failed: {ErrorKind}", ex.ErrorKind);
-            return
-            [
-                new ValidatorResultTrace
-                {
-                    Phase = "semantic",
-                    Code = "SEMANTIC_LLM_FAILED",
-                    Severity = "error",
-                    Blocking = true,
-                    AttemptNumber = attemptNumber,
-                    Evidence = $"{ex.ErrorKind}: {Truncate(ex.Message, 200)}",
-                    BlockingReason = $"Semantic validator LLM call failed: {ex.ErrorKind}"
-                }
-            ];
+            return new SemanticValidationResult
+            {
+                Findings =
+                [
+                    new ValidatorResultTrace
+                    {
+                        Phase = "semantic",
+                        Code = "SEMANTIC_LLM_FAILED",
+                        Severity = "error",
+                        Blocking = true,
+                        AttemptNumber = attemptNumber,
+                        Evidence = $"{ex.ErrorKind}: {Truncate(ex.Message, 200)}",
+                        BlockingReason = $"Semantic validator LLM call failed: {ex.ErrorKind}"
+                    }
+                ]
+            };
         }
         catch (OperationCanceledException)
         {
             throw;
         }
 
-        return ParseJudgeResponse(response.Content, attemptNumber);
+        return new SemanticValidationResult
+        {
+            Findings = ParseJudgeResponse(response.Content, attemptNumber),
+            JudgeTokens = new TokenCount { In = response.InputTokens, Out = response.OutputTokens }
+        };
     }
 
     internal const string DefaultJudgeModel = "gpt-4o-mini";
@@ -210,4 +217,11 @@ public sealed class SemanticValidator
     {
         WriteIndented = true
     };
+}
+
+/// <summary>Result of semantic validation, including judge token usage.</summary>
+public sealed record SemanticValidationResult
+{
+    public required IReadOnlyList<ValidatorResultTrace> Findings { get; init; }
+    public TokenCount JudgeTokens { get; init; } = new();
 }

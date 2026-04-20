@@ -1,4 +1,5 @@
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Costs;
 using AgentAcademy.Forge.Models;
 using AgentAcademy.Forge.Storage;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ public sealed class PipelineRunner
     private readonly PhaseExecutor _phaseExecutor;
     private readonly IArtifactStore _artifactStore;
     private readonly IRunStore _runStore;
+    private readonly CostCalculator _costCalculator;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PipelineRunner> _logger;
 
@@ -22,12 +24,14 @@ public sealed class PipelineRunner
         PhaseExecutor phaseExecutor,
         IArtifactStore artifactStore,
         IRunStore runStore,
+        CostCalculator costCalculator,
         TimeProvider timeProvider,
         ILogger<PipelineRunner> logger)
     {
         _phaseExecutor = phaseExecutor;
         _artifactStore = artifactStore;
         _runStore = runStore;
+        _costCalculator = costCalculator;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -44,6 +48,9 @@ public sealed class PipelineRunner
         MethodologyDefinition methodology,
         CancellationToken ct = default)
     {
+        // Validate that all models are priced when budget is set
+        _costCalculator.ValidatePricingForBudget(methodology);
+
         var runId = ForgeId.NewRunId();
         var startedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
@@ -62,6 +69,7 @@ public sealed class PipelineRunner
         var acceptedArtifacts = new Dictionary<string, ArtifactEnvelope>();
         var totalTokensIn = 0;
         var totalTokensOut = 0;
+        var totalCost = 0m;
 
         try
         {
@@ -84,31 +92,55 @@ public sealed class PipelineRunner
                     phaseRunTraces.Add(failedPhaseTrace);
 
                     runTrace = FinalizeRun(runTrace, startedAt, "failed", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, _timeProvider);
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
                     await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
                     return runTrace;
                 }
 
+                // Compute remaining budget for this phase
+                decimal? budgetRemaining = methodology.Budget.HasValue
+                    ? methodology.Budget.Value - totalCost
+                    : null;
+
                 // Execute the phase
                 var result = await _phaseExecutor.ExecuteAsync(
-                    runId, i, phase, methodology, task, inputArtifacts, ct);
+                    runId, i, phase, methodology, task, inputArtifacts, budgetRemaining, ct);
 
                 phaseRunTraces.Add(result.PhaseRunTrace);
 
-                // Accumulate tokens from all attempts
+                // Accumulate tokens and cost from all attempts
                 foreach (var attempt in result.PhaseRunTrace.Attempts)
                 {
                     totalTokensIn += attempt.Tokens.In;
                     totalTokensOut += attempt.Tokens.Out;
+                    if (attempt.JudgeTokens is not null)
+                    {
+                        totalTokensIn += attempt.JudgeTokens.In;
+                        totalTokensOut += attempt.JudgeTokens.Out;
+                    }
+                    totalCost += attempt.Cost ?? 0;
                 }
 
                 if (result.Status == PhaseRunStatus.Failed)
                 {
+                    // Check if failure was due to budget exhaustion
+                    if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value)
+                    {
+                        _logger.LogWarning("Pipeline run {RunId}: aborted — budget exhausted (${Cost:F4} / ${Budget:F4})",
+                            runId, totalCost, methodology.Budget.Value);
+
+                        runTrace = FinalizeRun(runTrace, startedAt, "aborted", phaseRunTraces,
+                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
+                        runTrace = runTrace with { AbortReason = "budget_exceeded" };
+                        await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
+                        return runTrace;
+                    }
+
                     _logger.LogWarning("Pipeline run {RunId}: phase {PhaseId} failed after all attempts",
                         runId, phase.Id);
 
                     runTrace = FinalizeRun(runTrace, startedAt, "failed", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, _timeProvider);
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
                     await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
                     return runTrace;
                 }
@@ -123,7 +155,7 @@ public sealed class PipelineRunner
                             runId, result.AcceptedArtifactHash[..12]);
 
                         runTrace = FinalizeRun(runTrace, startedAt, "failed", phaseRunTraces,
-                            acceptedArtifacts, totalTokensIn, totalTokensOut, _timeProvider);
+                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
                         await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
                         return runTrace;
                     }
@@ -132,15 +164,28 @@ public sealed class PipelineRunner
                 }
 
                 _logger.LogInformation("Pipeline run {RunId}: phase {PhaseId} succeeded", runId, phase.Id);
+
+                // Budget check between phases (even after success)
+                if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value && i < methodology.Phases.Count - 1)
+                {
+                    _logger.LogWarning("Pipeline run {RunId}: aborted between phases — budget exceeded (${Cost:F4} / ${Budget:F4})",
+                        runId, totalCost, methodology.Budget.Value);
+
+                    runTrace = FinalizeRun(runTrace, startedAt, "aborted", phaseRunTraces,
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
+                    runTrace = runTrace with { AbortReason = "budget_exceeded" };
+                    await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
+                    return runTrace;
+                }
             }
 
             // All phases succeeded
             runTrace = FinalizeRun(runTrace, startedAt, "succeeded", phaseRunTraces,
-                acceptedArtifacts, totalTokensIn, totalTokensOut, _timeProvider);
+                acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
             await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
 
-            _logger.LogInformation("Pipeline run {RunId} completed successfully ({TotalIn}+{TotalOut} tokens)",
-                runId, totalTokensIn, totalTokensOut);
+            _logger.LogInformation("Pipeline run {RunId} completed successfully ({TotalIn}+{TotalOut} tokens, ${Cost:F4})",
+                runId, totalTokensIn, totalTokensOut, totalCost);
 
             return runTrace;
         }
@@ -149,7 +194,7 @@ public sealed class PipelineRunner
             _logger.LogWarning("Pipeline run {RunId} aborted via cancellation", runId);
 
             runTrace = FinalizeRun(runTrace, startedAt, "aborted", phaseRunTraces,
-                acceptedArtifacts, totalTokensIn, totalTokensOut, _timeProvider);
+                acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
 
             try
             {
@@ -211,6 +256,7 @@ public sealed class PipelineRunner
         Dictionary<string, ArtifactEnvelope> acceptedArtifacts,
         int totalTokensIn,
         int totalTokensOut,
+        decimal totalCost,
         TimeProvider timeProvider)
     {
         var finalHashes = new Dictionary<string, string>();
@@ -225,6 +271,7 @@ public sealed class PipelineRunner
             Outcome = outcome,
             EndedAt = timeProvider.GetUtcNow().UtcDateTime,
             PipelineTokens = new TokenCount { In = totalTokensIn, Out = totalTokensOut },
+            PipelineCost = totalCost > 0 ? totalCost : null,
             FinalArtifactHashes = finalHashes
         };
     }

@@ -34,8 +34,15 @@ public sealed record RunTrace
     [JsonPropertyName("controlTokens")]
     public required TokenCount ControlTokens { get; init; }
 
+    [JsonPropertyName("pipelineCost")]
+    public decimal? PipelineCost { get; init; }
+
     [JsonPropertyName("costRatio")]
     public double? CostRatio { get; init; }
+
+    /// <summary>Reason the run was aborted, when Outcome is "aborted" (e.g. "budget_exceeded").</summary>
+    [JsonPropertyName("abortReason")]
+    public string? AbortReason { get; init; }
 
     /// <summary>
     /// Map keyed by phaseId. Omit key if phase produced no terminal artifact.

@@ -21,6 +21,10 @@ public sealed record MethodologyDefinition
     [JsonPropertyName("model_defaults")]
     public ModelDefaults? ModelDefaults { get; init; }
 
+    /// <summary>Maximum USD cost for the entire pipeline run. Null means no limit.</summary>
+    [JsonPropertyName("budget")]
+    public decimal? Budget { get; init; }
+
     [JsonPropertyName("phases")]
     public required IReadOnlyList<PhaseDefinition> Phases { get; init; }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Costs;
 using AgentAcademy.Forge.Llm;
 using AgentAcademy.Forge.Models;
 using AgentAcademy.Forge.Prompt;
@@ -21,6 +22,7 @@ public sealed class PhaseExecutor
     private readonly ValidatorPipeline _validatorPipeline;
     private readonly IArtifactStore _artifactStore;
     private readonly IRunStore _runStore;
+    private readonly CostCalculator _costCalculator;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PhaseExecutor> _logger;
 
@@ -30,6 +32,7 @@ public sealed class PhaseExecutor
         ValidatorPipeline validatorPipeline,
         IArtifactStore artifactStore,
         IRunStore runStore,
+        CostCalculator costCalculator,
         TimeProvider timeProvider,
         ILogger<PhaseExecutor> logger)
     {
@@ -38,6 +41,7 @@ public sealed class PhaseExecutor
         _validatorPipeline = validatorPipeline;
         _artifactStore = artifactStore;
         _runStore = runStore;
+        _costCalculator = costCalculator;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -52,6 +56,7 @@ public sealed class PhaseExecutor
         MethodologyDefinition methodology,
         TaskBrief task,
         IReadOnlyDictionary<string, ArtifactEnvelope> inputArtifacts,
+        decimal? budgetRemaining = null,
         CancellationToken ct = default)
     {
         var maxAttempts = phase.MaxAttempts ?? methodology.MaxAttemptsDefault;
@@ -69,6 +74,12 @@ public sealed class PhaseExecutor
         await PersistPhaseRunSnapshot(runId, phaseIndex, phase, stateTransitions, attempts, inputHashes, [], ct);
 
         IReadOnlyList<AmendmentNote>? amendmentNotes = null;
+        var localBudgetRemaining = budgetRemaining;
+
+        // Resolve models once for pricing — use requested model, not response model,
+        // since providers may return variant IDs not in the pricing table
+        var requestedGenModel = ResolveModel(phase.Model, methodology.ModelDefaults?.Generation, "gpt-4o");
+        var requestedJudgeModel = ResolveModel(phase.JudgeModel, methodology.ModelDefaults?.Judge, "gpt-4o-mini");
 
         for (var attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++)
         {
@@ -79,6 +90,13 @@ public sealed class PhaseExecutor
             var attemptResult = await ExecuteAttemptAsync(
                 runId, phaseIndex, phase, methodology, task, inputArtifacts,
                 attemptNumber, amendmentNotes, ct);
+
+            // Compute cost for this attempt using requested models (not response model IDs)
+            var genCost = _costCalculator.Calculate(requestedGenModel, attemptResult.Tokens);
+            var judgeCost = attemptResult.JudgeTokens is not null
+                ? _costCalculator.Calculate(requestedJudgeModel, attemptResult.JudgeTokens)
+                : 0m;
+            var attemptCost = genCost + judgeCost;
 
             var attemptTrace = new AttemptTrace
             {
@@ -91,6 +109,9 @@ public sealed class PhaseExecutor
                 Tokens = attemptResult.Tokens,
                 LatencyMs = attemptResult.LatencyMs,
                 Model = attemptResult.Model ?? "unknown",
+                JudgeTokens = attemptResult.JudgeTokens,
+                JudgeModel = attemptResult.JudgeModel,
+                Cost = attemptCost,
                 StartedAt = attemptStart,
                 EndedAt = _timeProvider.GetUtcNow().UtcDateTime
             };
@@ -100,6 +121,10 @@ public sealed class PhaseExecutor
             // Write attempt files to run store
             await WriteAttemptFiles(runId, phaseIndex, phase.Id, attemptNumber, attemptResult, ct);
 
+            // Track budget
+            if (localBudgetRemaining.HasValue)
+                localBudgetRemaining -= attemptCost;
+
             if (attemptResult.Status == AttemptStatus.Accepted)
             {
                 acceptedHash = attemptResult.ArtifactHash;
@@ -108,6 +133,16 @@ public sealed class PhaseExecutor
                     inputHashes, acceptedHash is not null ? [$"sha256:{acceptedHash}"] : [], ct);
 
                 _logger.LogInformation("Phase {PhaseId}: accepted on attempt {Attempt}", phase.Id, attemptNumber);
+                break;
+            }
+
+            // Budget exceeded and artifact not accepted — stop retrying
+            if (localBudgetRemaining.HasValue && localBudgetRemaining.Value <= 0)
+            {
+                _logger.LogWarning("Phase {PhaseId}: budget exhausted after attempt {Attempt}",
+                    phase.Id, attemptNumber);
+                RecordTransition(stateTransitions, PhaseRunStatus.Running, PhaseRunStatus.Failed);
+                await PersistPhaseRunSnapshot(runId, phaseIndex, phase, stateTransitions, attempts, inputHashes, [], ct);
                 break;
             }
 
@@ -241,6 +276,8 @@ public sealed class PhaseExecutor
                 Tokens = new TokenCount { In = llmResponse.InputTokens, Out = llmResponse.OutputTokens },
                 LatencyMs = llmResponse.LatencyMs,
                 Model = llmResponse.Model,
+                JudgeTokens = validationResult.JudgeTokens,
+                JudgeModel = judgeModel,
                 PromptText = $"{systemMessage}\n---\n{userMessage}",
                 ResponseRaw = llmResponse.Content,
                 ResponseParsedJson = JsonSerializer.Serialize(envelope)
@@ -255,6 +292,8 @@ public sealed class PhaseExecutor
             Tokens = new TokenCount { In = llmResponse.InputTokens, Out = llmResponse.OutputTokens },
             LatencyMs = llmResponse.LatencyMs,
             Model = llmResponse.Model,
+            JudgeTokens = validationResult.JudgeTokens,
+            JudgeModel = judgeModel,
             PromptText = $"{systemMessage}\n---\n{userMessage}",
             ResponseRaw = llmResponse.Content,
             ResponseParsedJson = JsonSerializer.Serialize(envelope)
@@ -387,6 +426,8 @@ internal sealed record AttemptResult
     public required TokenCount Tokens { get; init; }
     public required long LatencyMs { get; init; }
     public string? Model { get; init; }
+    public TokenCount? JudgeTokens { get; init; }
+    public string? JudgeModel { get; init; }
     public string? PromptText { get; init; }
     public string? ResponseRaw { get; init; }
     public string? ResponseParsedJson { get; init; }

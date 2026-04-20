@@ -1,4 +1,5 @@
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Costs;
 using AgentAcademy.Forge.Execution;
 using AgentAcademy.Forge.Prompt;
 using AgentAcademy.Forge.Schemas;
@@ -39,6 +40,7 @@ public static class ForgeServiceExtensions
         services.AddSingleton<SemanticValidator>();
         services.AddSingleton<CrossArtifactValidator>();
         services.AddSingleton<ValidatorPipeline>();
+        services.AddSingleton<CostCalculator>();
         services.AddSingleton<PhaseExecutor>();
         services.AddSingleton<PipelineRunner>();
 

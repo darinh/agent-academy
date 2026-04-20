@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Costs;
 using AgentAcademy.Forge.Execution;
 using AgentAcademy.Forge.Llm;
 using AgentAcademy.Forge.Models;
@@ -47,11 +48,11 @@ public sealed class PipelineRunnerTests : IDisposable
 
         var executor = new PhaseExecutor(
             llm, _promptBuilder, pipeline, _artifactStore, _runStore,
-            TimeProvider.System, NullLogger<PhaseExecutor>.Instance);
+            new CostCalculator(), TimeProvider.System, NullLogger<PhaseExecutor>.Instance);
 
         return new PipelineRunner(
             executor, _artifactStore, _runStore,
-            TimeProvider.System, NullLogger<PipelineRunner>.Instance);
+            new CostCalculator(), TimeProvider.System, NullLogger<PipelineRunner>.Instance);
     }
 
     private static TaskBrief TestTask => new()

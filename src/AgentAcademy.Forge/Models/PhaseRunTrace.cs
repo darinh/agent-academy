@@ -68,6 +68,15 @@ public sealed record AttemptTrace
     [JsonPropertyName("model")]
     public required string Model { get; init; }
 
+    [JsonPropertyName("judgeTokens")]
+    public TokenCount? JudgeTokens { get; init; }
+
+    [JsonPropertyName("judgeModel")]
+    public string? JudgeModel { get; init; }
+
+    [JsonPropertyName("cost")]
+    public decimal? Cost { get; init; }
+
     [JsonPropertyName("startedAt")]
     public required DateTime StartedAt { get; init; }
 

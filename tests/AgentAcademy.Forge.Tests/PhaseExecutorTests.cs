@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AgentAcademy.Forge.Artifacts;
+using AgentAcademy.Forge.Costs;
 using AgentAcademy.Forge.Execution;
 using AgentAcademy.Forge.Llm;
 using AgentAcademy.Forge.Models;
@@ -51,6 +52,7 @@ public sealed class PhaseExecutorTests : IDisposable
             pipeline,
             _artifactStore,
             _runStore,
+            new CostCalculator(),
             timeProvider ?? TimeProvider.System,
             NullLogger<PhaseExecutor>.Instance);
     }

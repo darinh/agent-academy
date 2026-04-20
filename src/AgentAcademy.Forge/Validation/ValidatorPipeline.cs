@@ -61,16 +61,17 @@ public sealed class ValidatorPipeline
         }
 
         // Tier 2: Semantic (LLM judge)
-        var semanticResults = await _semantic.ValidateAsync(envelope, schemaEntry, attemptNumber, judgeModel, ct);
-        allFindings.AddRange(semanticResults);
+        var semanticResult = await _semantic.ValidateAsync(envelope, schemaEntry, attemptNumber, judgeModel, ct);
+        allFindings.AddRange(semanticResult.Findings);
 
-        if (HasBlockingFindings(semanticResults))
+        if (HasBlockingFindings(semanticResult.Findings))
         {
             return new ValidationPipelineResult
             {
                 Findings = allFindings,
                 StoppedAtTier = ValidatorPhase.Semantic,
-                Passed = false
+                Passed = false,
+                JudgeTokens = semanticResult.JudgeTokens
             };
         }
 
@@ -84,7 +85,8 @@ public sealed class ValidatorPipeline
             {
                 Findings = allFindings,
                 StoppedAtTier = ValidatorPhase.CrossArtifact,
-                Passed = false
+                Passed = false,
+                JudgeTokens = semanticResult.JudgeTokens
             };
         }
 
@@ -92,7 +94,8 @@ public sealed class ValidatorPipeline
         {
             Findings = allFindings,
             StoppedAtTier = null,
-            Passed = true
+            Passed = true,
+            JudgeTokens = semanticResult.JudgeTokens
         };
     }
 
@@ -113,4 +116,7 @@ public sealed record ValidationPipelineResult
 
     /// <summary>True if all tiers passed with no blocking findings.</summary>
     public required bool Passed { get; init; }
+
+    /// <summary>Token usage from the semantic judge LLM call, if any.</summary>
+    public TokenCount? JudgeTokens { get; init; }
 }

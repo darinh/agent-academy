@@ -41,7 +41,7 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Empty(results);
+        Assert.Empty(results.Findings);
         Assert.Single(llm.ReceivedRequests);
     }
 
@@ -69,11 +69,11 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("semantic", results[0].Phase);
-        Assert.Equal("SEMANTIC_RULE_0", results[0].Code);
-        Assert.True(results[0].Blocking);
-        Assert.Equal("error", results[0].Severity);
+        Assert.Single(results.Findings);
+        Assert.Equal("semantic", results.Findings[0].Phase);
+        Assert.Equal("SEMANTIC_RULE_0", results.Findings[0].Code);
+        Assert.True(results.Findings[0].Blocking);
+        Assert.Equal("error", results.Findings[0].Severity);
     }
 
     [Fact]
@@ -100,10 +100,10 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.False(results[0].Blocking);
-        Assert.Equal("warning", results[0].Severity);
-        Assert.Equal("SEMANTIC_RULE_2", results[0].Code);
+        Assert.Single(results.Findings);
+        Assert.False(results.Findings[0].Blocking);
+        Assert.Equal("warning", results.Findings[0].Severity);
+        Assert.Equal("SEMANTIC_RULE_2", results.Findings[0].Code);
     }
 
     [Fact]
@@ -131,8 +131,8 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("SEMANTIC_RULE_1", results[0].Code);
+        Assert.Single(results.Findings);
+        Assert.Equal("SEMANTIC_RULE_1", results.Findings[0].Code);
     }
 
     [Fact]
@@ -153,9 +153,9 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("SEMANTIC_LLM_FAILED", results[0].Code);
-        Assert.True(results[0].Blocking);
+        Assert.Single(results.Findings);
+        Assert.Equal("SEMANTIC_LLM_FAILED", results.Findings[0].Code);
+        Assert.True(results.Findings[0].Blocking);
     }
 
     [Fact]
@@ -176,9 +176,9 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("SEMANTIC_PARSE_FAILED", results[0].Code);
-        Assert.True(results[0].Blocking);
+        Assert.Single(results.Findings);
+        Assert.Equal("SEMANTIC_PARSE_FAILED", results.Findings[0].Code);
+        Assert.True(results.Findings[0].Blocking);
     }
 
     [Fact]
@@ -199,8 +199,8 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("SEMANTIC_PARSE_FAILED", results[0].Code);
+        Assert.Single(results.Findings);
+        Assert.Equal("SEMANTIC_PARSE_FAILED", results.Findings[0].Code);
     }
 
     [Fact]
@@ -220,7 +220,7 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, emptyRulesSchema, 1);
 
-        Assert.Empty(results);
+        Assert.Empty(results.Findings);
         Assert.Empty(llm.ReceivedRequests); // No LLM call made
     }
 
@@ -248,9 +248,9 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("error", results[0].Severity);
-        Assert.True(results[0].Blocking);
+        Assert.Single(results.Findings);
+        Assert.Equal("error", results.Findings[0].Severity);
+        Assert.True(results.Findings[0].Blocking);
     }
 
     [Fact]
@@ -277,9 +277,9 @@ public sealed class SemanticValidatorTests
 
         var results = await validator.ValidateAsync(envelope, RequirementsSchema, 1);
 
-        Assert.Single(results);
-        Assert.Equal("error", results[0].Severity); // Normalized to "error"
-        Assert.True(results[0].Blocking);
+        Assert.Single(results.Findings);
+        Assert.Equal("error", results.Findings[0].Severity); // Normalized to "error"
+        Assert.True(results.Findings[0].Blocking);
     }
 
     [Fact]
