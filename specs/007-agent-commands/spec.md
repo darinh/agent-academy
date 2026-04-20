@@ -3,7 +3,7 @@
 ## Purpose
 Defines a unified command pipeline through which agents interact with the platform, codebase, and each other. Every agent action — reading files, moving between rooms, sending messages, managing tasks — flows through a structured envelope with authorization, audit trails, and consistent error handling.
 
-> **Status: Implemented** — All Tier 1 command phases (1A–1G) and all Tier 2 Room Management commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 50 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Communication, Task Management, Code & Spec, Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
+> **Status: Implemented** — All Tier 1 command phases (1A–1H) and Tier 2 Room Management and Task Workflow commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 72 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, dependencies, agent context, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Tier 2 Task Workflow (Phase 2A: TASK_STATUS, SHOW_TASK_HISTORY, SHOW_DEPENDENCIES, REQUEST_REVIEW, WHOAMI) implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Communication, Code & Spec, Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
 
 ## Motivation
 Today, agents have no formalized way to interact with the platform. The orchestrator parses free-text blocks like `TASK ASSIGNMENT:` from agent responses. This creates:
@@ -103,6 +103,8 @@ The table below summarises each agent's permission envelope by capability group.
 | Thucydides | TechnicalWriter | Read all (`LIST_*`, `READ_FILE`, `SEARCH_CODE`, `GIT_LOG`, `SHOW_DIFF`); task items + comments; goal cards (`CREATE_GOAL_CARD`, `UPDATE_GOAL_CARD_STATUS`); communication (`DM`); memory; evidence (`QUERY_EVIDENCE`, `CHECK_GATES`, `STORE_ARTIFACT`); `SET_PLAN`, `REBASE_TASK`; room navigation (`MOVE_TO_ROOM`, `ROOM_HISTORY`, `ROOM_TOPIC`, `RETURN_TO_MAIN`) | `chat`, `task-state`, `task-write`, `memory`, `code`, `spec-write` (file write scoped to `specs/` and `docs/` only; see "Spec write capability" note below) | `APPROVE_TASK`, `REQUEST_CHANGES`, `RESTART_SERVER` |
 
 > **Spec write capability**: Thucydides owns the spec (see spec 009 §Spec Ownership) and holds the `spec-write` SDK tool group in `agents.json`. The `spec-write` group exposes the same `write_file` and `commit_changes` tools as `code-write` but the wrapper restricts writes to the `specs/` and `docs/` directories only — attempts to write outside those roots are rejected with an error, and Thucydides is never granted `code-write`. This preserves the engineer/writer split: engineers own `src/`, Thucydides owns `specs/` and `docs/`, and neither can modify the other's domain via SDK tools. Implementation: `CodeWriteToolWrapper` parameterised over a list of `allowedRoots` (`src` for code-write; `specs`, `docs` for spec-write) with `SpecWriteProtectedPaths` empty — no spec or docs file is structurally protected because Thucydides is expected to maintain the entire spec/docs corpus.
+
+> **Phase 2A commands**: All agents receive `TASK_STATUS`, `SHOW_TASK_HISTORY`, `SHOW_DEPENDENCIES`, and `WHOAMI` (read-only). `REQUEST_REVIEW` is granted to `SoftwareEngineer` and `Planner` roles only (agents that can be task assignees or manage task lifecycle). The authoritative source remains `agents.json`.
 
 **Escalation rules:**
 - Tighten standards → Socrates review only
@@ -219,6 +221,18 @@ These formalize existing capabilities with audit trails and structured output.
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ListWorktrees,CleanupWorktrees,ListAgentStats}Handler.cs` — 17 tests in `WorktreeCommandHandlerTests.cs`, 16 tests in `ListAgentStatsHandlerTests.cs`.
 
+#### Phase 2A: Task Workflow & Context — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `TASK_STATUS` | `taskId` | Deep task detail: full snapshot, dependency graph (upstream/downstream with satisfaction), evidence summary (total/passed/failed by phase), spec links, timeline (created/started/completed) | Audit event | `TaskStatusHandler.cs` — read-only, retry-safe; aggregates from `ITaskQueryService`, `ITaskDependencyService` |
+| `SHOW_TASK_HISTORY` | `taskId`, `count?` (default 20, max 50) | Interleaved chronological list of comments and evidence records, newest first | Audit event | `ShowTaskHistoryHandler.cs` — read-only, retry-safe; merges comments + evidence by timestamp |
+| `SHOW_DEPENDENCIES` | `taskId` | Dependency graph: upstream tasks (what this depends on), downstream tasks (what depends on this), satisfaction status, blocked flag | Audit event | `ShowDependenciesHandler.cs` — read-only, retry-safe; delegates to `ITaskDependencyService.GetDependencyInfoAsync` |
+| `REQUEST_REVIEW` | `taskId`, `summary?` | Updated task status, previous status, review round count | Transitions task to InReview, posts notification to room, optionally posts summary as task note | `RequestReviewHandler.cs` — validates caller is assignee/Planner/Human; accepts Active/AwaitingValidation/ChangesRequested source states |
+| `WHOAMI` | — | Agent identity: id, name, role, current room, breakout room, working directory, enabled tools, capability tags, allowed/denied commands | Audit event | `WhoAmIHandler.cs` — read-only, retry-safe; uses `CommandContext` + `IAgentCatalog` lookup |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{TaskStatus,ShowTaskHistory,ShowDependencies,RequestReview,WhoAmI}Handler.cs` — 28 tests in `Tier2TaskCommandTests.cs`.
+
 ### Tier 2 — Full Autonomy
 
 #### Room Management
@@ -228,7 +242,7 @@ These formalize existing capabilities with audit trails and structured output.
 `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`
 
 #### Task Management
-`TASK_STATUS`, `SHOW_DEPENDENCIES`, `MARK_BLOCKED`, `SHOW_TASK_HISTORY`, `REQUEST_REVIEW`, `SHOW_DECISIONS`
+~~`TASK_STATUS`~~ *(implemented — see Phase 2A table)*, ~~`SHOW_DEPENDENCIES`~~ *(implemented)*, `MARK_BLOCKED`, ~~`SHOW_TASK_HISTORY`~~ *(implemented)*, ~~`REQUEST_REVIEW`~~ *(implemented)*, `SHOW_DECISIONS`
 
 #### Code & Spec
 `OPEN_SPEC`, `SEARCH_SPEC`, `OPEN_COMPONENT`, `FIND_REFERENCES`
@@ -257,7 +271,7 @@ These formalize existing capabilities with audit trails and structured output.
 `PREVIEW_UI`, `CAPTURE_SCREENSHOT`, `COMPARE_SCREENSHOTS`, `SHOW_ROUTES`
 
 #### Context
-`HANDOFF_SUMMARY`, `WHOAMI`, `PLATFORM_STATUS`
+`HANDOFF_SUMMARY`, ~~`WHOAMI`~~ *(implemented — see Phase 2A table)*, `PLATFORM_STATUS`
 
 ## Agent Memory System
 

@@ -68,6 +68,11 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["RECORD_EVIDENCE"] = "Record a structured verification check (build, tests, review) against a task",
         ["QUERY_EVIDENCE"] = "Query the evidence ledger for a task, optionally filtered by phase",
         ["CHECK_GATES"] = "Check if a task meets evidence requirements for the next phase transition",
+        ["TASK_STATUS"] = "Get deep detail on a single task: status, dependencies, evidence, timeline",
+        ["SHOW_TASK_HISTORY"] = "Show interleaved chronological comments and evidence for a task",
+        ["SHOW_DEPENDENCIES"] = "Show the dependency graph for a task (upstream and downstream)",
+        ["REQUEST_REVIEW"] = "Submit a task for review — validates state, transitions to InReview, posts notification",
+        ["WHOAMI"] = "Return your identity, role, current room, and available capabilities",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
