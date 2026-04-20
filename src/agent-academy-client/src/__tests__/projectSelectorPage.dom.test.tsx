@@ -119,9 +119,9 @@ describe("ProjectSelectorPage (interactive)", () => {
   // ── Tab switching ────────────────────────────────────────────────────
 
   describe("tab switching", () => {
-    it("defaults to the onboard tab", () => {
+    it("defaults to the onboard tab", async () => {
       renderPage();
-      const onboardTab = screen.getByRole("tab", { name: /onboard/i });
+      const onboardTab = await screen.findByRole("tab", { name: /onboard/i });
       expect(onboardTab).toHaveAttribute("aria-selected", "true");
     });
 
