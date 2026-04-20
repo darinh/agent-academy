@@ -345,7 +345,9 @@ public sealed record PhaseDefinition
 
 ### Artifact Schema Registry
 
-Five frozen schemas are registered at startup:
+Seven schemas are registered at startup. The five pipeline schemas produce artifacts during normal methodology execution. The two engine-internal schemas are used by the fidelity subsystem.
+
+**Pipeline schemas:**
 
 | Schema ID | Artifact Type | Top-level Fields |
 |-----------|--------------|-----------------|
@@ -355,9 +357,54 @@ Five frozen schemas are registered at startup:
 | `implementation/v1` | Implementation | `files[]`, `build_command`, `test_command`, `notes` |
 | `review/v1` | Review | `verdict`, `summary`, `checks[]`, `defects[]`, `improvements_for_next_iteration[]` |
 
+**Engine-internal schemas** (versioned with the engine, not per-methodology):
+
+| Schema ID | Artifact Type |
+|-----------|--------------|
+| `source_intent/v1` | Source Intent |
+| `fidelity/v1` | Fidelity |
+
 Each `SchemaEntry` carries:
 - `SchemaBodyJson` — JSON Schema used for structural validation and prompt rendering.
 - `SemanticRules` — Natural-language rubric used by the semantic validator and included in prompts.
+- `Status` — Lifecycle status (Active, Deprecated, Retired). See Schema Evolution below.
+- `IsInternal` — Whether the schema is engine-internal (not methodology-configurable).
+
+### Schema Evolution
+
+Schemas follow a versioning strategy that leverages the content-addressed artifact store's immutability.
+
+**Principles:**
+
+1. **Immutable artifacts, evolving schemas.** Stored artifacts are content-addressed and never change. Schema version is recorded in the `ArtifactEnvelope`. Old artifacts remain valid against their original schema version forever.
+2. **Methodology pins versions.** Each methodology explicitly declares which schema version each phase uses via `output_schema` (e.g. `"requirements/v1"`). There is no implicit "latest" resolution.
+3. **Multi-version registry.** `SchemaRegistry` holds all schema versions simultaneously. Both `GetSchema("requirements/v1")` and `GetSchema("requirements/v2")` work when v2 exists.
+4. **No runtime migration.** Artifacts are never transformed between schema versions. To produce v2 output, re-run the phase with a v2-targeting methodology.
+5. **Version-dispatched validation.** Both `StructuralValidator` (in-artifact reference checks) and `CrossArtifactValidator` dispatch by full schema ID (`type/vN`), not just artifact type. When a v2 schema is added, new validation cases are added alongside existing ones.
+6. **Internal schemas are engine-coupled.** `source_intent` and `fidelity` schemas are versioned with the engine itself, not per-methodology. Their version is hardcoded in `SourceIntentGenerator` and `FidelityExecutor`.
+
+**Schema lifecycle** (`SchemaStatus` enum):
+
+| Status | New Runs | Resume | Pipeline Behavior |
+|--------|----------|--------|------------------|
+| **Active** | ✅ Allowed | ✅ Allowed | Normal |
+| **Deprecated** | ⚠️ Warning logged at run start | ✅ Allowed | Pipeline starts, warns operator to migrate |
+| **Retired** | ❌ Rejected at run start | ✅ Allowed | `PipelineRunner.ExecuteAsync` throws; `ResumeAsync` allows (historical run) |
+
+`PipelineRunner` validates all schema references in the methodology before starting a new run. `ResumeAsync` validates with `isNewRun: false`, allowing deprecated and retired schemas for historical run resumption.
+
+**Adding a new schema version (checklist):**
+
+1. Create a new schema class (e.g. `RequirementsV2.cs`) with the new `SchemaEntry`, schema body, and semantic rules.
+2. Register it in `SchemaRegistry` constructor — both v1 and v2 coexist.
+3. Add version-dispatched cases in `StructuralValidator.ValidateInArtifactReferences` and `CrossArtifactValidator.Validate` for the new schema ID.
+4. Optionally deprecate the old version by setting `Status = SchemaStatus.Deprecated` on the v1 entry.
+5. Create a new methodology JSON that references the new schema version in `output_schema`.
+6. Old methodologies referencing v1 continue to work unchanged.
+
+**Future work (not yet implemented):**
+- Read-time adapters/projections for querying artifacts across schema versions (query layer, not storage migration).
+- Consumer-specific compatibility rules (modeling which consumers can read which schema versions) — deferred until the first cross-version dependency arises.
 
 ### Three-Tier Validation Cascade
 
@@ -731,7 +778,7 @@ Returns exit code 0 if both thresholds are met, 1 otherwise.
 5. ~~**No parallelism**~~: Resolved. `BuildExecutionWaves` computes a topological schedule from phase dependency declarations. Phases in the same wave execute concurrently via `Task.WhenAll`. Budget enforcement is between waves. Sequential methodologies produce single-phase waves (identical behavior to pre-parallelism). See Parallel Execution section above.
 6. ~~**No crash recovery**~~: Resolved. `PipelineRunner.ResumeAsync` rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts, and resumes from the first non-succeeded phase. See Crash Recovery section above.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
-8. **Schema evolution**: All schemas are frozen at v1 (now 7 schemas). No migration or versioning strategy exists for schema changes.
+8. ~~**Schema evolution**~~: Resolved. Multi-version `SchemaRegistry` with lifecycle statuses (Active/Deprecated/Retired), methodology validation at run start, version-dispatched validators, and engine-internal schema classification. See Schema Evolution section above.
 9. ~~**Seeded-defect benchmarks**~~: Resolved. `SeededDefectCatalog` provides 7 frozen test cases (covering all 5 drift codes) with ground-truth verdicts. `SeededDefectRunner` runs them through `FidelityExecutor` and computes detection rates with thresholds (80% blocking, 60% advisory). See Seeded-Defect Benchmarks section above.
 
 ## Revision History
@@ -750,3 +797,4 @@ Returns exit code 0 if both thresholds are met, 1 otherwise.
 | 2026-04-20 | Intent fidelity — source-intent schema, fidelity phase, drift taxonomy, closes Known Gap #3 | `feat/forge-intent-fidelity` |
 | 2026-04-20 | Seeded-defect benchmarks — 7 frozen cases, detection rate metrics, benchmark runner, closes Known Gap #9 | `feat/forge-seeded-defect-benchmarks` |
 | 2026-04-20 | Parallel phase execution — wave-based scheduling, resume source-intent fix, closes Known Gap #5 | `feat/forge-parallel-phases` |
+| 2026-04-20 | Schema evolution — multi-version registry, lifecycle statuses, methodology validation, version-dispatched validators, closes Known Gap #8 | `feat/forge-schema-evolution` |

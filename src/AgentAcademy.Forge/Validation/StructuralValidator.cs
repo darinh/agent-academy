@@ -120,13 +120,15 @@ public sealed class StructuralValidator
     private static IReadOnlyList<ValidatorResultTrace> ValidateInArtifactReferences(
         JsonElement payload, SchemaEntry entry, int attemptNumber)
     {
-        return entry.ArtifactType switch
+        // Dispatch by full schema ID for version-aware in-artifact checks.
+        // When a v2 schema is added, add a new case here (e.g. "requirements/v2").
+        return entry.SchemaId switch
         {
-            "requirements" => ValidateRequirementsRefs(payload, attemptNumber),
-            "contract" => ValidateContractRefs(payload, attemptNumber),
-            "function_design" => ValidateFunctionDesignRefs(payload, attemptNumber),
-            "implementation" => ValidateImplementationRefs(payload, attemptNumber),
-            "review" => ValidateReviewRefs(payload, attemptNumber),
+            "requirements/v1" => ValidateRequirementsRefs(payload, attemptNumber),
+            "contract/v1" => ValidateContractRefs(payload, attemptNumber),
+            "function_design/v1" => ValidateFunctionDesignRefs(payload, attemptNumber),
+            "implementation/v1" => ValidateImplementationRefs(payload, attemptNumber),
+            "review/v1" => ValidateReviewRefs(payload, attemptNumber),
             _ => []
         };
     }

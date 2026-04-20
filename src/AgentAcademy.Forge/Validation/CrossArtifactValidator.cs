@@ -24,13 +24,16 @@ public sealed class CrossArtifactValidator
         IReadOnlyDictionary<string, ArtifactEnvelope> inputArtifacts,
         int attemptNumber)
     {
-        return envelope.ArtifactType switch
+        // Dispatch by full schema ID for version-aware cross-artifact checks.
+        // When a v2 schema is added, add a new case here (e.g. "contract/v2").
+        var schemaId = $"{envelope.ArtifactType}/v{envelope.SchemaVersion}";
+        return schemaId switch
         {
-            "requirements" => [], // No cross-artifact refs — first phase
-            "contract" => ValidateContractCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
-            "function_design" => ValidateFunctionDesignCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
-            "implementation" => ValidateImplementationCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
-            "review" => ValidateReviewCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
+            "requirements/v1" => [], // No cross-artifact refs — first phase
+            "contract/v1" => ValidateContractCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
+            "function_design/v1" => ValidateFunctionDesignCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
+            "implementation/v1" => ValidateImplementationCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
+            "review/v1" => ValidateReviewCrossRefs(envelope.Payload, inputArtifacts, attemptNumber),
             _ => []
         };
     }

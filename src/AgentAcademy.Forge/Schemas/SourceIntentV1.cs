@@ -14,7 +14,8 @@ internal static class SourceIntentV1
         ArtifactType = "source_intent",
         SchemaVersion = "1",
         SchemaBodyJson = SchemaBody,
-        SemanticRules = SemanticRulesText
+        SemanticRules = SemanticRulesText,
+        IsInternal = true
     };
 
     internal const string SchemaBody =

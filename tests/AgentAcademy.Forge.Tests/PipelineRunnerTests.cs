@@ -51,7 +51,7 @@ public sealed class PipelineRunnerTests : IDisposable
             new CostCalculator(), TimeProvider.System, NullLogger<PhaseExecutor>.Instance);
 
         return new PipelineRunner(
-            executor, _artifactStore, _runStore,
+            executor, _artifactStore, _runStore, _schemas,
             new CostCalculator(), TimeProvider.System, NullLogger<PipelineRunner>.Instance);
     }
 
@@ -446,7 +446,7 @@ public sealed class PipelineRunnerTests : IDisposable
             NullLogger<ControlExecutor>.Instance);
 
         return new PipelineRunner(
-            executor, _artifactStore, _runStore,
+            executor, _artifactStore, _runStore, _schemas,
             new CostCalculator(), TimeProvider.System, NullLogger<PipelineRunner>.Instance,
             controlExecutor);
     }

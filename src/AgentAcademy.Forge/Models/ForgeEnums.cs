@@ -47,3 +47,22 @@ public enum ValidatorSeverity
     Warning,
     Info
 }
+
+/// <summary>
+/// Schema lifecycle status. Controls whether new pipeline runs may
+/// produce artifacts with this schema version.
+/// </summary>
+public enum SchemaStatus
+{
+    /// <summary>Can be referenced by new methodologies; new artifacts produced.</summary>
+    Active,
+
+    /// <summary>Existing artifacts remain valid. New methodologies should migrate away.
+    /// Pipeline logs a warning at run start.</summary>
+    Deprecated,
+
+    /// <summary>Still in registry for historical artifact validation.
+    /// New runs refuse to produce artifacts with this schema; resume of
+    /// historical runs is unaffected.</summary>
+    Retired
+}

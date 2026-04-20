@@ -1,3 +1,4 @@
+using AgentAcademy.Forge.Models;
 using AgentAcademy.Forge.Schemas;
 
 namespace AgentAcademy.Forge.Tests;
@@ -60,5 +61,220 @@ public sealed class SchemaRegistryTests
         var entry = _registry.GetSchema(schemaId);
         var doc = System.Text.Json.JsonDocument.Parse(entry.SchemaBodyJson);
         Assert.Equal(System.Text.Json.JsonValueKind.Object, doc.RootElement.ValueKind);
+    }
+
+    // --- Schema Evolution: TryGetSchema ---
+
+    [Fact]
+    public void TryGetSchema_ReturnsTrue_ForKnownSchema()
+    {
+        var found = _registry.TryGetSchema("requirements/v1", out var entry);
+
+        Assert.True(found);
+        Assert.NotNull(entry);
+        Assert.Equal("requirements/v1", entry!.SchemaId);
+    }
+
+    [Fact]
+    public void TryGetSchema_ReturnsFalse_ForUnknownSchema()
+    {
+        var found = _registry.TryGetSchema("nonexistent/v99", out var entry);
+
+        Assert.False(found);
+        Assert.Null(entry);
+    }
+
+    // --- Schema Evolution: GetSchemasByType ---
+
+    [Theory]
+    [InlineData("requirements", 1)]
+    [InlineData("contract", 1)]
+    [InlineData("fidelity", 1)]
+    public void GetSchemasByType_ReturnsAllVersionsForType(string artifactType, int expectedCount)
+    {
+        var schemas = _registry.GetSchemasByType(artifactType);
+
+        Assert.Equal(expectedCount, schemas.Count);
+        Assert.All(schemas, s => Assert.Equal(artifactType, s.ArtifactType));
+    }
+
+    [Fact]
+    public void GetSchemasByType_ReturnsEmpty_ForUnknownType()
+    {
+        var schemas = _registry.GetSchemasByType("nonexistent");
+
+        Assert.Empty(schemas);
+    }
+
+    // --- Schema Evolution: Lifecycle status ---
+
+    [Theory]
+    [InlineData("requirements/v1")]
+    [InlineData("contract/v1")]
+    [InlineData("function_design/v1")]
+    [InlineData("implementation/v1")]
+    [InlineData("review/v1")]
+    public void AllPipelineSchemas_AreActive(string schemaId)
+    {
+        var entry = _registry.GetSchema(schemaId);
+        Assert.Equal(SchemaStatus.Active, entry.Status);
+    }
+
+    [Theory]
+    [InlineData("source_intent/v1")]
+    [InlineData("fidelity/v1")]
+    public void InternalSchemas_AreMarkedInternal(string schemaId)
+    {
+        var entry = _registry.GetSchema(schemaId);
+        Assert.True(entry.IsInternal);
+    }
+
+    [Theory]
+    [InlineData("requirements/v1")]
+    [InlineData("contract/v1")]
+    [InlineData("function_design/v1")]
+    [InlineData("implementation/v1")]
+    [InlineData("review/v1")]
+    public void PipelineSchemas_AreNotInternal(string schemaId)
+    {
+        var entry = _registry.GetSchema(schemaId);
+        Assert.False(entry.IsInternal);
+    }
+
+    // --- Schema Evolution: ValidateMethodology ---
+
+    [Fact]
+    public void ValidateMethodology_ReturnsNoDiagnostics_ForValidMethodology()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "req", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" },
+                new PhaseDefinition { Id = "con", Goal = "G", Inputs = ["req"], OutputSchema = "contract/v1", Instructions = "I" }
+            }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public void ValidateMethodology_ReturnsError_ForUnknownSchema()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "req", Goal = "G", Inputs = [], OutputSchema = "nonexistent/v99", Instructions = "I" }
+            }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Single(diagnostics);
+        Assert.Equal(SchemaValidationSeverity.Error, diagnostics[0].Severity);
+        Assert.Contains("nonexistent/v99", diagnostics[0].Message);
+        Assert.Equal("req", diagnostics[0].PhaseId);
+    }
+
+    [Fact]
+    public void ValidateMethodology_ReturnsError_ForUnknownControlSchema()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "req", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" }
+            },
+            Control = new ControlConfig { TargetSchema = "nonexistent/v99" }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Single(diagnostics);
+        Assert.Equal(SchemaValidationSeverity.Error, diagnostics[0].Severity);
+        Assert.Equal("control", diagnostics[0].PhaseId);
+    }
+
+    [Fact]
+    public void ValidateMethodology_AllowsRetiredSchemas_OnResume()
+    {
+        // To test this, we'd need a retired schema in the registry.
+        // For now, verify that all current schemas produce no diagnostics when isNewRun=false.
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "req", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" }
+            }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology, isNewRun: false);
+
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public void ValidateMethodology_RejectsInternalSchema_InPhase()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "si", Goal = "G", Inputs = [], OutputSchema = "source_intent/v1", Instructions = "I" }
+            }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Single(diagnostics);
+        Assert.Equal(SchemaValidationSeverity.Error, diagnostics[0].Severity);
+        Assert.Contains("engine-internal", diagnostics[0].Message);
+    }
+
+    [Fact]
+    public void ValidateMethodology_RejectsInternalSchema_InControl()
+    {
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-v1",
+            Phases = new[]
+            {
+                new PhaseDefinition { Id = "req", Goal = "G", Inputs = [], OutputSchema = "requirements/v1", Instructions = "I" }
+            },
+            Control = new ControlConfig { TargetSchema = "fidelity/v1" }
+        };
+
+        var diagnostics = _registry.ValidateMethodology(methodology);
+
+        Assert.Single(diagnostics);
+        Assert.Equal(SchemaValidationSeverity.Error, diagnostics[0].Severity);
+        Assert.Contains("engine-internal", diagnostics[0].Message);
+        Assert.Equal("control", diagnostics[0].PhaseId);
+    }
+
+    // --- Schema Evolution: SchemaStatus defaults ---
+
+    [Fact]
+    public void SchemaEntry_DefaultsToActive()
+    {
+        var entry = new SchemaEntry
+        {
+            SchemaId = "test/v1",
+            ArtifactType = "test",
+            SchemaVersion = "1",
+            SchemaBodyJson = "{}",
+            SemanticRules = "none"
+        };
+
+        Assert.Equal(SchemaStatus.Active, entry.Status);
+        Assert.False(entry.IsInternal);
     }
 }

@@ -1,6 +1,7 @@
 using AgentAcademy.Forge.Artifacts;
 using AgentAcademy.Forge.Costs;
 using AgentAcademy.Forge.Models;
+using AgentAcademy.Forge.Schemas;
 using AgentAcademy.Forge.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -20,6 +21,7 @@ public sealed class PipelineRunner
     private readonly FidelityExecutor? _fidelityExecutor;
     private readonly IArtifactStore _artifactStore;
     private readonly IRunStore _runStore;
+    private readonly SchemaRegistry _schemaRegistry;
     private readonly CostCalculator _costCalculator;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PipelineRunner> _logger;
@@ -28,6 +30,7 @@ public sealed class PipelineRunner
         PhaseExecutor phaseExecutor,
         IArtifactStore artifactStore,
         IRunStore runStore,
+        SchemaRegistry schemaRegistry,
         CostCalculator costCalculator,
         TimeProvider timeProvider,
         ILogger<PipelineRunner> logger,
@@ -38,6 +41,7 @@ public sealed class PipelineRunner
         _phaseExecutor = phaseExecutor;
         _artifactStore = artifactStore;
         _runStore = runStore;
+        _schemaRegistry = schemaRegistry;
         _costCalculator = costCalculator;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -65,6 +69,9 @@ public sealed class PipelineRunner
     {
         // Validate that all models are priced when budget is set
         _costCalculator.ValidatePricingForBudget(methodology);
+
+        // Validate that all schema references are resolvable and respect lifecycle
+        ValidateMethodologySchemas(methodology, isNewRun: true);
 
         var runId = ForgeId.NewRunId();
         var startedAt = _timeProvider.GetUtcNow().UtcDateTime;
@@ -209,6 +216,9 @@ public sealed class PipelineRunner
 
         // Validate that all models are priced when budget is set (same as fresh run)
         _costCalculator.ValidatePricingForBudget(methodology);
+
+        // Schema validation for resume: allow deprecated/retired schemas (historical run)
+        ValidateMethodologySchemas(methodology, isNewRun: false);
 
         // 3. Rebuild state from phase scratch files
         var resumeState = await RebuildStateFromSnapshotsAsync(runId, methodology, ct);
@@ -919,6 +929,28 @@ public sealed class PipelineRunner
             AccumulatedCost = totalCost,
             TerminalPhaseOutcome = terminalPhaseOutcome
         };
+    }
+
+    /// <summary>
+    /// Validates methodology schema references against the registry.
+    /// Logs warnings for deprecated schemas; throws for errors (unknown/retired schemas on new runs).
+    /// </summary>
+    private void ValidateMethodologySchemas(MethodologyDefinition methodology, bool isNewRun)
+    {
+        var diagnostics = _schemaRegistry.ValidateMethodology(methodology, isNewRun);
+        if (diagnostics.Count == 0) return;
+
+        foreach (var d in diagnostics.Where(d => d.Severity == SchemaValidationSeverity.Warning))
+        {
+            _logger.LogWarning("Schema lifecycle warning: {Message}", d.Message);
+        }
+
+        var errors = diagnostics.Where(d => d.Severity == SchemaValidationSeverity.Error).ToList();
+        if (errors.Count > 0)
+        {
+            var messages = string.Join("; ", errors.Select(e => e.Message));
+            throw new InvalidOperationException($"Methodology schema validation failed: {messages}");
+        }
     }
 
     private async Task WriteRunFinalState(

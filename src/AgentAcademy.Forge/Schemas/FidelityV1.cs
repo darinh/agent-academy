@@ -13,7 +13,8 @@ internal static class FidelityV1
         ArtifactType = "fidelity",
         SchemaVersion = "1",
         SchemaBodyJson = SchemaBody,
-        SemanticRules = SemanticRulesText
+        SemanticRules = SemanticRulesText,
+        IsInternal = true
     };
 
     internal const string SchemaBody =
