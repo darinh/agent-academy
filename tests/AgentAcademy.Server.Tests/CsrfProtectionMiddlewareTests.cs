@@ -137,6 +137,36 @@ public sealed class CsrfProtectionMiddlewareTests
         Assert.True(nextCalled.Value);
     }
 
+    [Fact]
+    public async Task Post_SignalRNegotiate_WithAuthCookie_WithoutHeader_IsRejected()
+    {
+        // Regression: SignalR's negotiate POST was blocked by CSRF because the
+        // JS client did not send X-Requested-With. The client-side fix adds the
+        // header, but this test proves the middleware IS protecting the path.
+        var (context, nextCalled) = BuildContext("POST");
+        context.Request.Path = "/hubs/activity/negotiate";
+        context.Request.Cookies = BuildCookies((AuthenticationExtensions.AuthCookieName, "signed-in"));
+
+        await InvokeAsync(context, nextCalled);
+
+        Assert.False(nextCalled.Value);
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Post_SignalRNegotiate_WithAuthCookie_WithHeader_PassesThrough()
+    {
+        // After the client-side fix: negotiate POST with X-Requested-With passes.
+        var (context, nextCalled) = BuildContext("POST");
+        context.Request.Path = "/hubs/activity/negotiate";
+        context.Request.Cookies = BuildCookies((AuthenticationExtensions.AuthCookieName, "signed-in"));
+        context.Request.Headers[CsrfProtectionMiddleware.RequiredHeaderName] = "XMLHttpRequest";
+
+        await InvokeAsync(context, nextCalled);
+
+        Assert.True(nextCalled.Value);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────
 
     private static async Task InvokeAsync(HttpContext context, StrongBox<bool> nextCalled)

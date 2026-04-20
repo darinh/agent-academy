@@ -23,9 +23,10 @@ interface MockConnection {
   _triggerClose(): void;
 }
 
-const { mockConnections, createMockConnection, MockHubConnectionBuilder } =
+const { mockConnections, mockBuilders, createMockConnection, MockHubConnectionBuilder } =
   vi.hoisted(() => {
     const mockConnections: MockConnection[] = [];
+    const mockBuilders: InstanceType<typeof MockHubConnectionBuilder>[] = [];
 
     function createMockConnection(): MockConnection {
       const conn: MockConnection = {
@@ -68,16 +69,21 @@ const { mockConnections, createMockConnection, MockHubConnectionBuilder } =
     // Must be a class (not arrow fn) so it works with `new`
     class MockHubConnectionBuilder {
       _url = "";
-      withUrl(url: string) {
+      _urlOptions: Record<string, unknown> = {};
+      withUrl(url: string, options?: Record<string, unknown>) {
         this._url = url;
+        this._urlOptions = options ?? {};
         return this;
       }
       withAutomaticReconnect() { return this; }
       configureLogging() { return this; }
-      build() { return createMockConnection(); }
+      build() {
+        mockBuilders.push(this);
+        return createMockConnection();
+      }
     }
 
-    return { mockConnections, createMockConnection, MockHubConnectionBuilder };
+    return { mockConnections, mockBuilders, createMockConnection, MockHubConnectionBuilder };
   });
 
 vi.mock("@microsoft/signalr", () => ({
@@ -96,6 +102,7 @@ import { useActivityHub } from "../useActivityHub";
 
 beforeEach(() => {
   mockConnections.length = 0;
+  mockBuilders.length = 0;
   vi.useFakeTimers();
 });
 
@@ -217,6 +224,19 @@ describe("useActivityHub", () => {
 
       act(() => { mockConnections[0]._triggerClose(); });
       expect(result.current).toBe("disconnected");
+    });
+  });
+
+  describe("CSRF protection", () => {
+    it("sends X-Requested-With header in hub connection options", async () => {
+      renderHook(() => useActivityHub(vi.fn()));
+
+      await act(async () => { await vi.runAllTimersAsync(); });
+
+      expect(mockBuilders).toHaveLength(1);
+      const headers = mockBuilders[0]._urlOptions.headers as Record<string, string>;
+      expect(headers).toBeDefined();
+      expect(headers["X-Requested-With"]).toBe("XMLHttpRequest");
     });
   });
 

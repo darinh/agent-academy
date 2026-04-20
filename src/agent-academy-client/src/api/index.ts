@@ -5,7 +5,7 @@
  * Consumer imports (`from "./api"`) continue to work without changes.
  */
 
-export { apiBaseUrl, extractApiError } from "./core";
+export { apiBaseUrl, csrfHeaders, extractApiError } from "./core";
 export type { ApiError, ProblemDetails } from "./core";
 export * from "./types";
 export * from "./auth";
