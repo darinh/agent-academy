@@ -438,6 +438,30 @@ forge-runs/
 
 Snapshot writes are atomic (temp file → rename). `run.json` is snapshotted after every state transition for crash recovery. `trace.log` is append-only NDJSON (non-atomic appends — last line may truncate on crash).
 
+### Crash Recovery
+
+`PipelineRunner.ResumeAsync(runId)` resumes a run that was interrupted (crash, process exit). Reads persisted snapshots to determine which phases completed, reconstructs accumulated tokens/cost from **all** persisted attempts (including in-progress phases), and continues from the first non-succeeded phase.
+
+**Algorithm:**
+1. Read `run.json`. If outcome is terminal (succeeded/failed/aborted) → return as-is (idempotent).
+2. Read `task.json` and `methodology.json` (frozen at run start).
+3. Scan per-phase scratch files in methodology order:
+   - **Succeeded** phases: skip, read accepted artifact from store, accumulate tokens/cost.
+   - **Failed** phases: terminal — classify as `failed` or `aborted` (if cost ≥ budget).
+   - **Running/Pending** phases: crashed mid-execution. Tokens/cost from persisted attempts are accumulated for budget accuracy, but the phase is re-executed from attempt 1.
+   - **Missing** scratch file: phase never started, execute normally.
+4. Budget guard: if accumulated cost ≥ budget before resuming, abort immediately.
+5. Continue execution from the first non-succeeded phase with pre-populated artifact map and token/cost accumulators.
+6. If pipeline succeeded and control arm has no outcome, re-run control arm.
+7. Append `run_resumed` event to `trace.log` with completed phase IDs, resume index, and accumulated cost.
+
+**Invariants:**
+- Idempotent: calling `ResumeAsync` on a terminal run is a no-op.
+- Budget-correct: accumulated cost from all persisted attempts (including crashed phases) counts toward budget.
+- Inconsistency-safe: if a succeeded phase's artifact is missing from the artifact store, `ResumeAsync` throws `InvalidOperationException` (store corruption, not a resumable state).
+
+**Known limitation:** When a "running" phase is re-executed on resume, its old attempt data (prompt.txt, response files) remains on disk in the attempt directories, but the phase scratch file (`phase-run.json`) is overwritten with the new execution's trace. The run-level `PipelineTokens` and `PipelineCost` correctly include the cost of those pre-crash attempts, but the `phase-runs.json` rollup does not — there is a minor audit discrepancy for resumed runs.
+
 ### LLM Abstraction
 
 ```csharp
@@ -563,7 +587,7 @@ The control arm is a single-shot LLM baseline that produces the same artifact ty
 3. **Intent fidelity**: The current pipeline verifies internal consistency but not fidelity to the original task intent. The spike findings document proposes a `source-intent` artifact and terminal fidelity phase — not yet implemented.
 4. ~~**No cost tracking**~~: Resolved. `CostCalculator` provides per-model pricing, per-attempt cost on traces, run-level `PipelineCost`, and optional `budget` enforcement on methodology. See Cost Tracking section above.
 5. **No parallelism**: Phases execute sequentially. The methodology model supports inputs that could enable parallel execution, but the runner doesn't exploit it.
-6. **No crash recovery**: State snapshots are written for potential crash recovery, but no resume-from-snapshot logic exists yet.
+6. ~~**No crash recovery**~~: Resolved. `PipelineRunner.ResumeAsync` rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts, and resumes from the first non-succeeded phase. See Crash Recovery section above.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
 8. **Schema evolution**: All schemas are frozen at v1. No migration or versioning strategy exists for schema changes.
 
@@ -579,3 +603,4 @@ The control arm is a single-shot LLM baseline that produces the same artifact ty
 | 2026-04-20 | Model configurability — phase and methodology-level model config, closes Known Gap #1 | `feat/forge-model-config` |
 | 2026-04-20 | Cost tracking — per-attempt cost, judge token tracking, budget enforcement, closes Known Gap #4 | `feat/forge-cost-tracking` |
 | 2026-04-20 | Control arm — single-shot A/B benchmarking baseline, closes Known Gap #7 | `feat/forge-control-arm` |
+| 2026-04-20 | Crash recovery — resume-from-snapshot logic, closes Known Gap #6 | `feat/forge-crash-recovery` |

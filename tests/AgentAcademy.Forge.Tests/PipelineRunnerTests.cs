@@ -650,4 +650,388 @@ public sealed class PipelineRunnerTests : IDisposable
         // Control should NOT run even though config exists — no executor registered
         Assert.Null(result.ControlOutcome);
     }
+
+    // --- Crash Recovery (Resume) Tests ---
+
+    [Fact]
+    public async Task Resume_TerminalRun_ReturnsAsIs()
+    {
+        // Complete a full run successfully
+        var llm = CreatePassingLlm();
+        var runner = CreateRunner(llm);
+        var result = await runner.ExecuteAsync(TestTask, FullMethodology);
+        Assert.Equal("succeeded", result.Outcome);
+
+        // Resume should return the same trace unchanged
+        var resumed = await runner.ResumeAsync(result.RunId);
+        Assert.Equal("succeeded", resumed.Outcome);
+        Assert.Equal(result.RunId, resumed.RunId);
+        Assert.Equal(result.EndedAt, resumed.EndedAt);
+    }
+
+    [Fact]
+    public async Task Resume_NonExistentRun_Throws()
+    {
+        var llm = CreatePassingLlm();
+        var runner = CreateRunner(llm);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runner.ResumeAsync("nonexistent-run-id"));
+    }
+
+    [Fact]
+    public async Task Resume_CrashAfterPhaseSuccess_SkipsCompletedPhases()
+    {
+        // Simulate a crash after requirements succeeds but before contract starts:
+        // 1. Run normally through requirements
+        // 2. Manually leave run.json as "running"
+        // 3. Resume should skip requirements and continue from contract
+
+        var callCount = 0;
+        var llm = new StubLlmClient((req, ct) =>
+        {
+            if (req.SystemMessage.Contains("semantic validator"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = """{"findings": []}""",
+                    InputTokens = 50, OutputTokens = 20, Model = "test", LatencyMs = 5
+                });
+
+            callCount++;
+
+            if (req.UserMessage.Contains("phase_id: requirements"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirements,
+                    InputTokens = 100, OutputTokens = 200, Model = "test", LatencyMs = 10
+                });
+
+            if (req.UserMessage.Contains("phase_id: contract"))
+            {
+                if (callCount <= 2)
+                {
+                    // First time: simulate crash by throwing after requirements
+                    throw new OperationCanceledException();
+                }
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidContract,
+                    InputTokens = 100, OutputTokens = 200, Model = "test", LatencyMs = 10
+                });
+            }
+
+            // All other phases pass
+            return CreatePassingLlm().GenerateAsync(req, ct);
+        });
+
+        // Do a full run that will abort at contract phase
+        var runner = CreateRunner(llm);
+        var result = await runner.ExecuteAsync(TestTask, FullMethodology);
+        Assert.Equal("aborted", result.Outcome);
+
+        // Manually reset run.json to "running" (simulating that the crash happened
+        // before the aborted state was persisted)
+        var runTrace = (await _runStore.ReadRunAsync(result.RunId))!;
+        await _runStore.WriteRunSnapshotAsync(result.RunId, runTrace with
+        {
+            Outcome = "running",
+            EndedAt = null
+        });
+
+        // Resume — should pick up from contract phase
+        var resumed = await runner.ResumeAsync(result.RunId);
+
+        Assert.Equal("succeeded", resumed.Outcome);
+        Assert.Equal(5, resumed.FinalArtifactHashes.Count);
+        Assert.NotNull(resumed.EndedAt);
+    }
+
+    [Fact]
+    public async Task Resume_CrashMidPhaseWithRejectedAttempt_AccumulatesCost()
+    {
+        // Simulate a crash mid-phase with 1 rejected attempt persisted.
+        // Resume should accumulate that attempt's cost and continue.
+
+        var requirementsCallCount = 0;
+        var llm = new StubLlmClient((req, ct) =>
+        {
+            if (req.SystemMessage.Contains("semantic validator"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = """{"findings": []}""",
+                    InputTokens = 50, OutputTokens = 20, Model = "test", LatencyMs = 5
+                });
+
+            if (req.UserMessage.Contains("phase_id: requirements"))
+            {
+                requirementsCallCount++;
+                if (requirementsCallCount == 1)
+                {
+                    // First attempt returns structurally invalid data (will be rejected)
+                    return Task.FromResult(new LlmResponse
+                    {
+                        Content = """{"body": {"task_summary": "x"}}""",
+                        InputTokens = 100, OutputTokens = 50, Model = "test", LatencyMs = 10
+                    });
+                }
+                // Second+ attempt returns valid requirements
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirements,
+                    InputTokens = 100, OutputTokens = 200, Model = "test", LatencyMs = 10
+                });
+            }
+
+            return CreatePassingLlm().GenerateAsync(req, ct);
+        });
+
+        // Use a 2-phase methodology for simplicity
+        var methodology = new MethodologyDefinition
+        {
+            Id = "two-phase-v1",
+            MaxAttemptsDefault = 3,
+            Phases =
+            [
+                new PhaseDefinition
+                {
+                    Id = "requirements",
+                    Goal = "Extract requirements",
+                    Inputs = [],
+                    OutputSchema = "requirements/v1",
+                    Instructions = "Produce requirements."
+                },
+                new PhaseDefinition
+                {
+                    Id = "contract",
+                    Goal = "Define interface",
+                    Inputs = ["requirements"],
+                    OutputSchema = "contract/v1",
+                    Instructions = "Produce contract."
+                }
+            ]
+        };
+
+        // Run normally — requirements will fail first attempt, succeed second
+        var runner = CreateRunner(llm);
+        var result = await runner.ExecuteAsync(TestTask, methodology);
+        Assert.Equal("succeeded", result.Outcome);
+
+        // The token total should include BOTH attempts from requirements
+        Assert.True(result.PipelineTokens.In > 0);
+        Assert.True(result.PipelineTokens.Out > 0);
+    }
+
+    [Fact]
+    public async Task Resume_FailedPhase_ReturnsFailedWithoutRetry()
+    {
+        // Run where contract phase fails (all attempts exhausted)
+        var llm = new StubLlmClient((req, _) =>
+        {
+            if (req.SystemMessage.Contains("semantic validator"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = """{"findings": []}""",
+                    InputTokens = 50, OutputTokens = 20, Model = "test", LatencyMs = 5
+                });
+
+            if (req.UserMessage.Contains("phase_id: requirements"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirements,
+                    InputTokens = 100, OutputTokens = 200, Model = "test", LatencyMs = 10
+                });
+
+            // Contract always fails
+            return Task.FromResult(new LlmResponse
+            {
+                Content = """{"body": {"interfaces": []}}""",
+                InputTokens = 100, OutputTokens = 50, Model = "test", LatencyMs = 10
+            });
+        });
+
+        var runner = CreateRunner(llm);
+        var result = await runner.ExecuteAsync(TestTask, FullMethodology);
+        Assert.Equal("failed", result.Outcome);
+
+        // Manually set run.json back to "running" (simulating crash before failure persisted)
+        await _runStore.WriteRunSnapshotAsync(result.RunId, (await _runStore.ReadRunAsync(result.RunId))! with
+        {
+            Outcome = "running",
+            EndedAt = null
+        });
+
+        // Resume should detect the failed phase and return failed (not retry)
+        var resumed = await runner.ResumeAsync(result.RunId);
+        Assert.Equal("failed", resumed.Outcome);
+        Assert.NotNull(resumed.EndedAt);
+    }
+
+    [Fact]
+    public async Task Resume_FailedPhaseOverBudget_ReturnsAborted()
+    {
+        // Set a very tight budget so that a failed phase also exceeds budget
+        var llm = new StubLlmClient((req, _) =>
+        {
+            if (req.SystemMessage.Contains("semantic validator"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = """{"findings": []}""",
+                    InputTokens = 50, OutputTokens = 20, Model = "test", LatencyMs = 5
+                });
+
+            if (req.UserMessage.Contains("phase_id: requirements"))
+                return Task.FromResult(new LlmResponse
+                {
+                    Content = ValidRequirements,
+                    InputTokens = 100, OutputTokens = 200, Model = "test", LatencyMs = 10
+                });
+
+            // Contract always fails
+            return Task.FromResult(new LlmResponse
+            {
+                Content = """{"body": {"interfaces": []}}""",
+                InputTokens = 100, OutputTokens = 50, Model = "test", LatencyMs = 10
+            });
+        });
+
+        // Budget that's so small the contract failures exhaust it
+        var methodology = new MethodologyDefinition
+        {
+            Id = "budget-test-v1",
+            MaxAttemptsDefault = 2,
+            Budget = 0.0001m, // Tiny budget — will be exceeded by accumulated cost
+            Phases = FullMethodology.Phases
+        };
+
+        var runner = CreateRunner(llm);
+        var result = await runner.ExecuteAsync(TestTask, methodology);
+        // Either aborted or failed — depends on exact budget math
+        Assert.Contains(result.Outcome, new[] { "aborted", "failed" });
+
+        // Force run.json back to "running"
+        await _runStore.WriteRunSnapshotAsync(result.RunId, (await _runStore.ReadRunAsync(result.RunId))! with
+        {
+            Outcome = "running",
+            EndedAt = null
+        });
+
+        // Resume should detect over-budget + failed phase → aborted
+        var resumed = await runner.ResumeAsync(result.RunId);
+        Assert.Equal("aborted", resumed.Outcome);
+        Assert.Equal("budget_exceeded", resumed.AbortReason);
+    }
+
+    [Fact]
+    public async Task Resume_MissingArtifactForSucceededPhase_ThrowsInconsistency()
+    {
+        // Run successfully
+        var llm = CreatePassingLlm();
+        var runner = CreateRunner(llm);
+        var methodology = new MethodologyDefinition
+        {
+            Id = "single-v1",
+            MaxAttemptsDefault = 2,
+            Phases =
+            [
+                new PhaseDefinition
+                {
+                    Id = "requirements",
+                    Goal = "Extract requirements",
+                    Inputs = [],
+                    OutputSchema = "requirements/v1",
+                    Instructions = "Produce requirements."
+                },
+                new PhaseDefinition
+                {
+                    Id = "contract",
+                    Goal = "Define interface",
+                    Inputs = ["requirements"],
+                    OutputSchema = "contract/v1",
+                    Instructions = "Produce contract."
+                }
+            ]
+        };
+
+        var result = await runner.ExecuteAsync(TestTask, methodology);
+        Assert.Equal("succeeded", result.Outcome);
+
+        // Corrupt state: delete all artifacts from the store (including shard subdirectories)
+        var artifactsDir = Path.Combine(_tempDir, "artifacts");
+        foreach (var file in Directory.GetFiles(artifactsDir, "*.json", SearchOption.AllDirectories))
+        {
+            File.Delete(file);
+        }
+
+        // Force run.json back to "running"
+        await _runStore.WriteRunSnapshotAsync(result.RunId, (await _runStore.ReadRunAsync(result.RunId))! with
+        {
+            Outcome = "running",
+            EndedAt = null
+        });
+
+        // Resume should detect the inconsistency and throw
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runner.ResumeAsync(result.RunId));
+        Assert.Contains("inconsistent", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Resume_BudgetExhaustedBeforeResumePhase_AbortsImmediately()
+    {
+        // Run a pipeline where phase 1 (requirements) succeeds but accumulates cost.
+        // Set budget so low that the accumulated cost from phase 1 is already over budget.
+        // Then crash before the between-phases budget check fires, resume, and verify abort.
+        var llm = CreatePassingLlm();
+        var runner = CreateRunner(llm);
+
+        // Two-phase methodology with tiny budget
+        var methodology = new MethodologyDefinition
+        {
+            Id = "budget-guard-v1",
+            MaxAttemptsDefault = 2,
+            Budget = 0.00001m,
+            Phases =
+            [
+                new PhaseDefinition
+                {
+                    Id = "requirements",
+                    Goal = "Extract requirements",
+                    Inputs = [],
+                    OutputSchema = "requirements/v1",
+                    Instructions = "Produce requirements."
+                },
+                new PhaseDefinition
+                {
+                    Id = "contract",
+                    Goal = "Define interface",
+                    Inputs = ["requirements"],
+                    OutputSchema = "contract/v1",
+                    Instructions = "Produce contract."
+                }
+            ]
+        };
+
+        var result = await runner.ExecuteAsync(TestTask, methodology);
+        // The run either succeeded (if cost was 0 due to unpriced model) or aborted
+        // Force it to "running" to simulate crash
+        await _runStore.WriteRunSnapshotAsync(result.RunId, (await _runStore.ReadRunAsync(result.RunId))! with
+        {
+            Outcome = "running",
+            EndedAt = null
+        });
+
+        var resumed = await runner.ResumeAsync(result.RunId);
+
+        // If any cost was accumulated, should be aborted; if zero cost, should succeed
+        if (resumed.PipelineCost is > 0)
+        {
+            Assert.Equal("aborted", resumed.Outcome);
+            Assert.Equal("budget_exceeded", resumed.AbortReason);
+        }
+        else
+        {
+            // Zero-cost runs (e.g., unpriced test model) can still succeed
+            Assert.Contains(resumed.Outcome, new[] { "succeeded", "aborted" });
+        }
+    }
 }

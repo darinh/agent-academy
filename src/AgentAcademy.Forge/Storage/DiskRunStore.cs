@@ -146,6 +146,18 @@ public sealed class DiskRunStore : IRunStore
         return Task.FromResult(Directory.Exists(GetRunDirectory(runId)));
     }
 
+    public async Task<TaskBrief?> ReadTaskAsync(string runId, CancellationToken ct = default)
+    {
+        var path = Path.Combine(GetRunDirectory(runId), "task.json");
+        return await ReadJsonAsync<TaskBrief>(path, ct);
+    }
+
+    public async Task<MethodologyDefinition?> ReadMethodologyAsync(string runId, CancellationToken ct = default)
+    {
+        var path = Path.Combine(GetRunDirectory(runId), "methodology.json");
+        return await ReadJsonAsync<MethodologyDefinition>(path, ct);
+    }
+
     // --- Directory naming per storage-layout.md ---
 
     private string GetPhaseDirectory(string runId, int phaseIndex, string phaseId)

@@ -70,6 +70,16 @@ public interface IRunStore
     Task<bool> RunExistsAsync(string runId, CancellationToken ct = default);
 
     /// <summary>
+    /// Read the frozen task.json for a run.
+    /// </summary>
+    Task<TaskBrief?> ReadTaskAsync(string runId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Read the frozen methodology.json for a run.
+    /// </summary>
+    Task<MethodologyDefinition?> ReadMethodologyAsync(string runId, CancellationToken ct = default);
+
+    /// <summary>
     /// Get the path to a run's directory.
     /// </summary>
     string GetRunDirectory(string runId);
