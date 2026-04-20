@@ -1,6 +1,8 @@
+using System.Text;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
@@ -14,11 +16,13 @@ public sealed class CreatePrHandler : ICommandHandler
 {
     private readonly IGitService _gitService;
     private readonly IGitHubService _gitHubService;
+    private readonly ILogger<CreatePrHandler> _logger;
 
-    public CreatePrHandler(IGitService gitService, IGitHubService gitHubService)
+    public CreatePrHandler(IGitService gitService, IGitHubService gitHubService, ILogger<CreatePrHandler> logger)
     {
         _gitService = gitService;
         _gitHubService = gitHubService;
+        _logger = logger;
     }
 
     public string CommandName => "CREATE_PR";
@@ -107,6 +111,9 @@ public sealed class CreatePrHandler : ICommandHandler
         var baseBranch = command.Args.TryGetValue("baseBranch", out var baseObj) && baseObj is string bb
             ? bb : "develop";
 
+        // Enrich PR body with goal cards (best-effort — don't block PR creation)
+        body = await EnrichBodyWithGoalCardsAsync(body, taskId, context.Services);
+
         try
         {
             // Push the branch to remote
@@ -177,6 +184,71 @@ public sealed class CreatePrHandler : ICommandHandler
                 ErrorCode = CommandErrorCode.Execution,
                 Error = $"Failed to create PR: {ex.Message}"
             };
+        }
+    }
+
+    /// <summary>
+    /// Appends a formatted goal card section to the PR body if the task has goal cards.
+    /// Best-effort: logs and returns the original body on failure.
+    /// </summary>
+    internal async Task<string> EnrichBodyWithGoalCardsAsync(
+        string body, string taskId, IServiceProvider services)
+    {
+        try
+        {
+            var goalCards = services.GetService<IGoalCardService>();
+            if (goalCards is null) return body;
+
+            var cards = await goalCards.GetByTaskAsync(taskId);
+            if (cards.Count == 0) return body;
+
+            var sb = new StringBuilder(body);
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+
+            foreach (var card in cards)
+            {
+                var verdictEmoji = card.Verdict switch
+                {
+                    GoalCardVerdict.Proceed => "✅",
+                    GoalCardVerdict.ProceedWithCaveat => "⚠️",
+                    GoalCardVerdict.Challenge => "🛑",
+                    _ => "❓"
+                };
+
+                sb.AppendLine($"## 🎯 Goal Card — {verdictEmoji} {card.Verdict}");
+                sb.AppendLine();
+                sb.AppendLine($"**Status**: {card.Status} · **By**: {card.AgentName}");
+                sb.AppendLine();
+                sb.AppendLine("### Intent");
+                sb.AppendLine(card.Intent);
+                sb.AppendLine();
+                sb.AppendLine("### Divergence");
+                sb.AppendLine(card.Divergence);
+                sb.AppendLine();
+                sb.AppendLine("### Arguments For (Steelman)");
+                sb.AppendLine(card.Steelman);
+                sb.AppendLine();
+                sb.AppendLine("### Arguments Against (Strawman)");
+                sb.AppendLine(card.Strawman);
+                sb.AppendLine();
+                sb.AppendLine("### Fresh Eyes Questions");
+                sb.AppendLine($"1. {card.FreshEyes1}");
+                sb.AppendLine($"2. {card.FreshEyes2}");
+                sb.AppendLine($"3. {card.FreshEyes3}");
+                sb.AppendLine();
+                sb.AppendLine($"*Goal Card `{card.Id}` · Created {card.CreatedAt:yyyy-MM-dd}*");
+                sb.AppendLine();
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enrich PR body with goal cards for task {TaskId}", taskId);
+            return body;
         }
     }
 }

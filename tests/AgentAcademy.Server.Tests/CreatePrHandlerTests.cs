@@ -121,13 +121,16 @@ public class CreatePrHandlerTests : IDisposable
         services.AddScoped<ConversationSessionService>();
         services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(_gitService);
+        services.AddScoped<GoalCardService>();
+        services.AddScoped<IGoalCardService>(sp => sp.GetRequiredService<GoalCardService>());
+        services.AddSingleton<ILogger<GoalCardService>>(NullLogger<GoalCardService>.Instance);
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 
         using var scope = _serviceProvider.CreateScope();
         scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>().Database.EnsureCreated();
 
-        _handler = new CreatePrHandler(_gitService, _gitHubService);
+        _handler = new CreatePrHandler(_gitService, _gitHubService, NullLogger<CreatePrHandler>.Instance);
     }
 
     public void Dispose()
@@ -350,6 +353,130 @@ public class CreatePrHandlerTests : IDisposable
         Assert.Contains("already exists", result.Error!);
     }
 
+    // ── Goal Card Enrichment Tests ────────────────────────────────
+
+    [Fact]
+    public async Task CreatePr_WithGoalCard_IncludesGoalCardInBody()
+    {
+        var taskId = await CreateTestTask();
+        await CreateGoalCard(taskId, GoalCardVerdict.Proceed);
+        SetupSuccessfulPrCreation();
+        var (cmd, ctx) = MakeCommand(
+            new() { ["taskId"] = taskId },
+            "planner-1", "Aristotle", "Planner");
+
+        await _handler.ExecuteAsync(cmd, ctx);
+
+        // Capture the body passed to CreatePullRequestAsync
+        var call = _gitHubService.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == "CreatePullRequestAsync");
+        var body = (string)call.GetArguments()[2]!;
+        Assert.Contains("🎯 Goal Card", body);
+        Assert.Contains("✅ Proceed", body);
+        Assert.Contains("Test intent for the goal card", body);
+        Assert.Contains("Test divergence", body);
+        Assert.Contains("Steelman argument", body);
+        Assert.Contains("Strawman argument", body);
+        Assert.Contains("Fresh eyes question 1", body);
+    }
+
+    [Fact]
+    public async Task CreatePr_WithChallengeCard_ShowsChallengeEmoji()
+    {
+        var taskId = await CreateTestTask();
+        await CreateGoalCard(taskId, GoalCardVerdict.Challenge);
+        SetupSuccessfulPrCreation();
+        var (cmd, ctx) = MakeCommand(
+            new() { ["taskId"] = taskId },
+            "planner-1", "Aristotle", "Planner");
+
+        await _handler.ExecuteAsync(cmd, ctx);
+
+        var call = _gitHubService.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == "CreatePullRequestAsync");
+        var body = (string)call.GetArguments()[2]!;
+        Assert.Contains("🛑 Challenge", body);
+    }
+
+    [Fact]
+    public async Task CreatePr_WithProceedWithCaveatCard_ShowsWarningEmoji()
+    {
+        var taskId = await CreateTestTask();
+        await CreateGoalCard(taskId, GoalCardVerdict.ProceedWithCaveat);
+        SetupSuccessfulPrCreation();
+        var (cmd, ctx) = MakeCommand(
+            new() { ["taskId"] = taskId },
+            "planner-1", "Aristotle", "Planner");
+
+        await _handler.ExecuteAsync(cmd, ctx);
+
+        var call = _gitHubService.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == "CreatePullRequestAsync");
+        var body = (string)call.GetArguments()[2]!;
+        Assert.Contains("⚠️ ProceedWithCaveat", body);
+    }
+
+    [Fact]
+    public async Task CreatePr_NoGoalCards_BodyUnchanged()
+    {
+        var taskId = await CreateTestTask();
+        SetupSuccessfulPrCreation();
+        var (cmd, ctx) = MakeCommand(
+            new() { ["taskId"] = taskId },
+            "planner-1", "Aristotle", "Planner");
+
+        await _handler.ExecuteAsync(cmd, ctx);
+
+        var call = _gitHubService.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == "CreatePullRequestAsync");
+        var body = (string)call.GetArguments()[2]!;
+        Assert.DoesNotContain("Goal Card", body);
+    }
+
+    [Fact]
+    public async Task CreatePr_CustomBodyWithGoalCard_AppendsGoalCard()
+    {
+        var taskId = await CreateTestTask();
+        await CreateGoalCard(taskId, GoalCardVerdict.Proceed);
+        SetupSuccessfulPrCreation();
+        var (cmd, ctx) = MakeCommand(
+            new()
+            {
+                ["taskId"] = taskId,
+                ["body"] = "My custom PR body"
+            },
+            "planner-1", "Aristotle", "Planner");
+
+        await _handler.ExecuteAsync(cmd, ctx);
+
+        var call = _gitHubService.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == "CreatePullRequestAsync");
+        var body = (string)call.GetArguments()[2]!;
+        Assert.StartsWith("My custom PR body", body);
+        Assert.Contains("🎯 Goal Card", body);
+    }
+
+    [Fact]
+    public async Task CreatePr_MultipleGoalCards_IncludesAll()
+    {
+        var taskId = await CreateTestTask();
+        await CreateGoalCard(taskId, GoalCardVerdict.Challenge);
+        await CreateGoalCard(taskId, GoalCardVerdict.Proceed);
+        SetupSuccessfulPrCreation();
+        var (cmd, ctx) = MakeCommand(
+            new() { ["taskId"] = taskId },
+            "planner-1", "Aristotle", "Planner");
+
+        await _handler.ExecuteAsync(cmd, ctx);
+
+        var call = _gitHubService.ReceivedCalls()
+            .First(c => c.GetMethodInfo().Name == "CreatePullRequestAsync");
+        var body = (string)call.GetArguments()[2]!;
+        // Both cards should appear
+        Assert.Contains("🛑 Challenge", body);
+        Assert.Contains("✅ Proceed", body);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────
 
     private void SetupSuccessfulPrCreation()
@@ -436,6 +563,36 @@ public class CreatePrHandlerTests : IDisposable
             Services: scope.ServiceProvider
         );
         return (command, context);
+    }
+
+    private async Task CreateGoalCard(string taskId, GoalCardVerdict verdict)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.GoalCards.Add(new Data.Entities.GoalCardEntity
+        {
+            Id = $"gc-{Guid.NewGuid():N}"[..12],
+            AgentId = "engineer-1",
+            AgentName = "Hephaestus",
+            RoomId = "room-1",
+            TaskId = taskId,
+            TaskDescription = "Test task description for goal card",
+            Intent = "Test intent for the goal card",
+            Divergence = "Test divergence",
+            Steelman = "Steelman argument for the approach",
+            Strawman = "Strawman argument against the approach",
+            Verdict = verdict.ToString(),
+            FreshEyes1 = "Fresh eyes question 1",
+            FreshEyes2 = "Fresh eyes question 2",
+            FreshEyes3 = "Fresh eyes question 3",
+            PromptVersion = 1,
+            Status = verdict == GoalCardVerdict.Challenge
+                ? GoalCardStatus.Challenged.ToString()
+                : GoalCardStatus.Active.ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
     }
 
     private static void InitializeRepository(string repoRoot)
