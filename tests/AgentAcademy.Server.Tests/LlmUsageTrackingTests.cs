@@ -385,44 +385,6 @@ public class UsageApiEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task RoomUsageRecordsEndpoint_ReturnsRecords()
-    {
-        await SeedUsage("agent-1", "room-1", "gpt-5", 100, 50, 0.01);
-
-        var controller = new RoomController(
-            _roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, _tracker,
-            new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
-            new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
-            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
-            NullLogger<RoomController>.Instance);
-        var result = await controller.GetRoomUsageRecords("room-1");
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var records = Assert.IsType<List<LlmUsageRecord>>(ok.Value);
-
-        Assert.Single(records);
-        Assert.Equal("agent-1", records[0].AgentId);
-    }
-
-    [Fact]
-    public async Task RoomUsageRecordsEndpoint_ClampsLimit()
-    {
-        for (int i = 0; i < 5; i++)
-            await SeedUsage("agent-1", "room-1", "gpt-5", i * 100, i * 50, 0.01);
-
-        var controller = new RoomController(
-            _roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, _tracker,
-            new AgentErrorTracker(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
-            new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
-            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
-            NullLogger<RoomController>.Instance);
-        var result = await controller.GetRoomUsageRecords("room-1", limit: 2);
-        var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var records = Assert.IsType<List<LlmUsageRecord>>(ok.Value);
-
-        Assert.Equal(2, records.Count);
-    }
-
-    [Fact]
     public async Task GlobalUsageEndpoint_ReturnsAcrossAllRooms()
     {
         await SeedUsage("agent-1", "room-1", "gpt-5", 100, 50, 0.01);

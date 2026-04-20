@@ -195,27 +195,6 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/rooms/{roomId}/usage/records — individual LLM call records.
-    /// </summary>
-    [HttpGet("{roomId}/usage/records")]
-    public async Task<ActionResult<List<LlmUsageRecord>>> GetRoomUsageRecords(
-        string roomId,
-        [FromQuery] string? agentId = null,
-        [FromQuery] int limit = 50)
-    {
-        try
-        {
-            var records = await _usageTracker.GetRecentUsageAsync(roomId, agentId, Math.Clamp(limit, 1, 200));
-            return Ok(records);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get usage records for room '{RoomId}'", roomId);
-            return Problem("Failed to retrieve usage records.");
-        }
-    }
-
-    /// <summary>
     /// GET /api/rooms/{roomId}/errors — agent errors in a room.
     /// </summary>
     [HttpGet("{roomId}/errors")]

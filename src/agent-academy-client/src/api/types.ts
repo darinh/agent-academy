@@ -1251,11 +1251,6 @@ export interface AgentKnowledgeResponse {
 
 export type AllKnowledgeResponse = Record<string, string[]>;
 
-export interface RunAgentResponse {
-  agentId: string;
-  response: string;
-}
-
 // ── Room Cleanup ───────────────────────────────────────────────────────
 
 export interface CleanupResponse {

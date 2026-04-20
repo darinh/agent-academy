@@ -253,40 +253,6 @@ public class AgentController : ControllerBase
         return raw;
     }
 
-    /// <summary>
-    /// POST /api/agents/{agentId}/run — execute a prompt against an agent.
-    /// </summary>
-    [HttpPost("{agentId}/run")]
-    public async Task<IActionResult> RunPrompt(string agentId, CancellationToken ct)
-    {
-        // Read body as raw text to match v1 behavior (accepts text or JSON)
-        string body;
-        using (var reader = new StreamReader(Request.Body))
-        {
-            body = await reader.ReadToEndAsync(ct);
-        }
-
-        if (string.IsNullOrWhiteSpace(body))
-            return BadRequest(ApiProblem.BadRequest("Prompt body is required.", "empty_prompt"));
-
-        var agent = _catalog.Agents.FirstOrDefault(
-            a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
-
-        if (agent is null)
-            return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
-
-        try
-        {
-            var response = await _executor.RunAsync(agent, body, roomId: null, workspacePath: null, ct);
-            return Ok(new { agentId = agent.Id, response });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to run prompt for agent '{AgentId}'", agentId);
-            return Problem("Failed to execute agent prompt.");
-        }
-    }
-
     // ── Agent Config and Custom Agent endpoints: see AgentConfigController ──
 
     /// <summary>

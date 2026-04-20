@@ -43,7 +43,7 @@ describe("request() CSRF header", () => {
   });
 
   it("preserves caller-supplied Content-Type AND includes X-Requested-With", async () => {
-    // This is the regression: runAgent() passes text/plain and must not lose CSRF.
+    // Regression: POST with text/plain Content-Type must not lose CSRF header.
     await request("http://test/api/agents/x/run", {
       method: "POST",
       headers: { "Content-Type": "text/plain" },

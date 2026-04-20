@@ -101,7 +101,6 @@ public class SystemController : ControllerBase
                 "GET  /api/agents/:agentId/knowledge",
                 "POST /api/agents/:agentId/knowledge",
                 "GET  /api/knowledge",
-                "POST /api/agents/:agentId/run",
                 "GET  /api/activity/recent",
             },
         });
@@ -416,33 +415,6 @@ public class SystemController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Triggers a manual reload of the agent catalog from agents.json.
-    /// </summary>
-    [HttpPost("/api/system/reload-catalog")]
-    public async Task<IActionResult> ReloadCatalog(
-        [FromServices] AgentCatalogWatcher watcher,
-        CancellationToken ct)
-    {
-        var result = await watcher.TriggerReloadAsync(ct);
-
-        if (result.Error is not null)
-            return Problem(result.Error, statusCode: 500);
-
-        if (result.WasSkipped)
-            return Ok(new { reloaded = false, reason = "Reload already in progress" });
-
-        if (result.Diff is null)
-            return Ok(new { reloaded = false, reason = "No changes detected" });
-
-        return Ok(new
-        {
-            reloaded = true,
-            added = result.Diff.Added.Select(a => new { a.Id, a.Name, a.Role }),
-            removed = result.Diff.Removed.Select(a => new { a.Id, a.Name, a.Role }),
-            modified = result.Diff.Modified.Select(a => new { a.Id, a.Name, a.Role })
-        });
-    }
 }
 
 public record ServerInstanceDto(

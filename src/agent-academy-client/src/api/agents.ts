@@ -10,7 +10,6 @@ import type {
   AgentLocation,
   AgentKnowledgeResponse,
   AllKnowledgeResponse,
-  RunAgentResponse,
 } from "./types";
 import { apiUrl, request } from "./core";
 
@@ -148,15 +147,4 @@ export function addAgentKnowledge(
 
 export function getAllKnowledge(): Promise<AllKnowledgeResponse> {
   return request<AllKnowledgeResponse>(apiUrl("/api/knowledge"));
-}
-
-export function runAgent(agentId: string, prompt: string): Promise<RunAgentResponse> {
-  return request<RunAgentResponse>(
-    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/run`),
-    {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: prompt,
-    },
-  );
 }

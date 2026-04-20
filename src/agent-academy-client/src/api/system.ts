@@ -128,9 +128,3 @@ export function getAvailableModels(): Promise<ModelsResponse> {
 export function getRecentActivity(limit = 50): Promise<ActivityEvent[]> {
   return request<ActivityEvent[]>(apiUrl(`/api/activity/recent?limit=${limit}`));
 }
-
-// ── System Admin ─────────────────────────────────────────────────────────
-
-export function reloadAgentCatalog(): Promise<{ status: string }> {
-  return request<{ status: string }>(apiUrl("/api/system/reload-catalog"), { method: "POST" });
-}

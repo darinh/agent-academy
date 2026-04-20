@@ -163,19 +163,3 @@ export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> 
 export function cleanupRooms(): Promise<CleanupResponse> {
   return request<CleanupResponse>(apiUrl("/api/rooms/cleanup"), { method: "POST" });
 }
-
-// ── Room Usage Records ─────────────────────────────────────────────────
-
-export function getRoomUsageRecords(
-  roomId: string,
-  limit = 50,
-  offset = 0,
-): Promise<import("./types").LlmUsageRecord[]> {
-  const params = new URLSearchParams();
-  if (limit !== 50) params.set("limit", String(limit));
-  if (offset > 0) params.set("offset", String(offset));
-  const qs = params.toString();
-  return request<import("./types").LlmUsageRecord[]>(
-    apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/usage/records${qs ? `?${qs}` : ""}`),
-  );
-}
