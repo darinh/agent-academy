@@ -515,9 +515,15 @@ Security-critical modules (`CommandAuthorizer`, `PromptSanitizer`) maintain **10
 ### Test Data Management
 
 - **Backend**: ~~In-memory SQLite + hand-rolled test data (no fixtures library like AutoFixture or Bogus)~~ **Partially resolved** — Bogus 35.6.5 installed with shared `TestData` faker class (`tests/AgentAcademy.Server.Tests/Fakers/TestData.cs`). Covers the 10 most commonly hand-constructed types: `RoomEntity`, `TaskEntity`, `MessageEntity`, `AgentMemoryEntity`, `ConversationSessionEntity`, `WorkspaceEntity`, `SprintEntity`, `BreakoutRoomEntity`, `GoalCardEntity`, `AgentDefinition`, `CommandPermissionSet`. Existing tests not yet migrated — fakers are available for new tests.
-- **Frontend**: Factory functions per test file (no shared fixture library)
+- **Frontend**: ~~Factory functions per test file (no shared fixture library)~~ **Resolved** — Shared test data factory library (`src/agent-academy-client/src/__tests__/helpers/testData.ts`). 14 factory functions covering the most commonly used types: `AgentDefinition`, `AgentPresence`, `AgentLocation`, `ChatEnvelope`, `TaskSnapshot`, `ActivityEvent`, `RoomSnapshot`, `BreakoutRoom`, `WorkspaceOverview`, `SprintSnapshot`, `SprintArtifact`, `ErrorRecord`, `DmMessage`, `GoalCardSummary`. Auto-incrementing IDs for uniqueness, `Partial<T>` override pattern, `resetFactories()` for test isolation. 18 verification tests in `testDataFactories.test.ts`. Existing tests not yet migrated.
 
 ## Revision History
+
+### 2026-04-20 (b)
+- **Added**: Frontend shared test data factory library (`__tests__/helpers/testData.ts`)
+- **Covers**: AgentDefinition, AgentPresence, AgentLocation, ChatEnvelope, TaskSnapshot, ActivityEvent, RoomSnapshot, BreakoutRoom, WorkspaceOverview, SprintSnapshot, SprintArtifact, ErrorRecord, DmMessage, GoalCardSummary (14 factories)
+- **Tests**: 18 verification tests in `testDataFactories.test.ts`
+- **Full resolution**: Test data management known gap now resolved for both backend and frontend
 
 ### 2026-04-20
 - **Added**: Bogus 35.6.5 shared test data fakers (`TestData` class in `Fakers/TestData.cs`)
