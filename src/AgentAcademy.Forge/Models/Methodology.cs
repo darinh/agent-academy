@@ -25,8 +25,38 @@ public sealed record MethodologyDefinition
     [JsonPropertyName("budget")]
     public decimal? Budget { get; init; }
 
+    /// <summary>
+    /// Optional control arm configuration for A/B benchmarking.
+    /// When set, a single-shot LLM baseline runs after the pipeline completes.
+    /// Budget enforcement does not include control arm cost.
+    /// </summary>
+    [JsonPropertyName("control")]
+    public ControlConfig? Control { get; init; }
+
     [JsonPropertyName("phases")]
     public required IReadOnlyList<PhaseDefinition> Phases { get; init; }
+}
+
+/// <summary>
+/// Configuration for the control arm — a single-shot LLM baseline
+/// that produces the target schema artifact directly from the task brief,
+/// enabling A/B comparison with the multi-phase pipeline.
+/// </summary>
+public sealed record ControlConfig
+{
+    /// <summary>
+    /// Target output schema for the control (e.g. "implementation/v1").
+    /// The control executor will ask the LLM to produce this artifact in one shot.
+    /// </summary>
+    [JsonPropertyName("target_schema")]
+    public required string TargetSchema { get; init; }
+
+    /// <summary>
+    /// Model to use for the control generation. Falls back to methodology
+    /// ModelDefaults.Generation, then "gpt-4o".
+    /// </summary>
+    [JsonPropertyName("model")]
+    public string? Model { get; init; }
 }
 
 /// <summary>

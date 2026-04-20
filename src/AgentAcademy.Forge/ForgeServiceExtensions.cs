@@ -42,6 +42,7 @@ public static class ForgeServiceExtensions
         services.AddSingleton<ValidatorPipeline>();
         services.AddSingleton<CostCalculator>();
         services.AddSingleton<PhaseExecutor>();
+        services.AddSingleton<ControlExecutor>();
         services.AddSingleton<PipelineRunner>();
 
         return services;

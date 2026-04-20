@@ -297,10 +297,14 @@ public sealed record RunTrace
     public required DateTime StartedAt { get; init; }
     public DateTime? EndedAt { get; init; }
     public required string Outcome { get; init; }           // "pending", "running", "succeeded", "failed", "aborted"
-    public string? ControlOutcome { get; init; }
+    public string? ControlOutcome { get; init; }            // "structurally_valid", "structurally_invalid", "failed", or null
     public required TokenCount PipelineTokens { get; init; }
     public required TokenCount ControlTokens { get; init; }
-    public double? CostRatio { get; init; }
+    public decimal? PipelineCost { get; init; }
+    public decimal? ControlCost { get; init; }
+    public double? CostRatio { get; init; }                 // PipelineCost / ControlCost (>1 = pipeline costs more)
+    public string? ControlArtifactHash { get; init; }       // sha256:... prefixed, for A/B comparison
+    public string? AbortReason { get; init; }               // e.g. "budget_exceeded"
     public required Dictionary<string, string> FinalArtifactHashes { get; init; }
 }
 
@@ -310,7 +314,17 @@ public sealed record MethodologyDefinition
     public required string Id { get; init; }
     public string? Description { get; init; }
     public int MaxAttemptsDefault { get; init; } = 3;
+    public ModelDefaults? ModelDefaults { get; init; }
+    public decimal? Budget { get; init; }
+    public ControlConfig? Control { get; init; }            // Opt-in A/B benchmarking
     public required IReadOnlyList<PhaseDefinition> Phases { get; init; }
+}
+
+/// Control arm configuration for A/B benchmarking.
+public sealed record ControlConfig
+{
+    public required string TargetSchema { get; init; }      // e.g. "implementation/v1"
+    public string? Model { get; init; }                     // Falls back to ModelDefaults.Generation → "gpt-4o"
 }
 
 public sealed record PhaseDefinition
@@ -466,7 +480,8 @@ services.AddForgeEngine(forgeRunsRoot: "/path/to/forge-runs");
 // IRunStore → DiskRunStore
 // SchemaRegistry, PromptBuilder
 // StructuralValidator, SemanticValidator, CrossArtifactValidator, ValidatorPipeline
-// PhaseExecutor, PipelineRunner
+// CostCalculator
+// PhaseExecutor, ControlExecutor, PipelineRunner
 ```
 
 Default `forgeRunsRoot` is `./forge-runs` under the current working directory.
@@ -492,6 +507,42 @@ Acceptance criteria for each task live in `forge-spike/benchmarks/T{N}-acceptanc
 
 A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three tasks against the pipeline with a live `OpenAiLlmClient`.
 
+### Control Arm (A/B Benchmarking)
+
+The control arm is a single-shot LLM baseline that produces the same artifact type as the pipeline but without multi-phase scaffolding. This enables measuring whether the multi-phase pipeline improves output quality over a single LLM call, and at what cost overhead.
+
+**Configuration** — opt-in via `MethodologyDefinition.Control`:
+
+```json
+{
+  "id": "my-methodology-v1",
+  "control": {
+    "target_schema": "implementation/v1",
+    "model": "gpt-4o"
+  },
+  "phases": [...]
+}
+```
+
+**Execution flow**:
+1. Pipeline phases run to completion (or failure).
+2. If `Control` is configured and the outcome is NOT "aborted", `ControlExecutor` runs.
+3. Control builds a single-shot prompt with: the same system message as the pipeline, the target schema body + semantic rules, and the task description — but NO upstream artifacts and NO amendment loop.
+4. The LLM response is parsed and structurally validated. Semantic validation is intentionally skipped to keep the control's token count clean for cost comparison.
+5. Control outcome is one of: `structurally_valid`, `structurally_invalid`, or `failed` (LLM error).
+6. Results are merged into `RunTrace`: `ControlOutcome`, `ControlTokens`, `ControlCost`, `ControlArtifactHash`, and `CostRatio` (pipeline cost / control cost).
+
+**Design decisions**:
+- Control runs AFTER the pipeline (sequential, not parallel) — simpler, avoids rate limits.
+- Single-shot, no retries — the control is a "dumb baseline" for comparison.
+- Structural validation only — semantic validation uses LLM tokens that would distort the cost comparison.
+- Budget enforcement does NOT include the control arm cost. The control is a benchmarking tool, not a production path.
+- Control is skipped when the pipeline aborts (cancellation or budget exhaustion) — an aborted run isn't a meaningful baseline.
+- Model resolution: control `model` → methodology `model_defaults.generation` → `"gpt-4o"`.
+- Control artifacts are persisted to the same content-addressed store for later manual comparison, with `producedByPhase: "control"`.
+
+**Prompt parity**: The control prompt includes the same schema body and semantic rules as the pipeline phases. Only the upstream artifacts and amendment loop are removed. This isolates the variable being tested (multi-phase orchestration vs. single-shot) rather than testing a weaker prompt.
+
 ## Invariants
 
 1. **Content identity**: An artifact's hash is `sha256(canonical_json(envelope))`. The same logical content always produces the same hash. Different content never produces the same hash (collision detection raises an exception).
@@ -513,7 +564,7 @@ A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three
 4. ~~**No cost tracking**~~: Resolved. `CostCalculator` provides per-model pricing, per-attempt cost on traces, run-level `PipelineCost`, and optional `budget` enforcement on methodology. See Cost Tracking section above.
 5. **No parallelism**: Phases execute sequentially. The methodology model supports inputs that could enable parallel execution, but the runner doesn't exploit it.
 6. **No crash recovery**: State snapshots are written for potential crash recovery, but no resume-from-snapshot logic exists yet.
-7. **Control arm not implemented**: `RunTrace` includes `ControlOutcome` and `ControlTokens` fields for A/B benchmark comparison, but no control executor exists.
+7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
 8. **Schema evolution**: All schemas are frozen at v1. No migration or versioning strategy exists for schema changes.
 
 ## Revision History
@@ -527,3 +578,4 @@ A standalone console runner (`AgentAcademy.Forge.Benchmarks`) executes all three
 | 2026-04-20 | PipelineRunner, OpenAI client, benchmark infrastructure (Layer 3) | `feat/forge-pipeline-runner` |
 | 2026-04-20 | Model configurability — phase and methodology-level model config, closes Known Gap #1 | `feat/forge-model-config` |
 | 2026-04-20 | Cost tracking — per-attempt cost, judge token tracking, budget enforcement, closes Known Gap #4 | `feat/forge-cost-tracking` |
+| 2026-04-20 | Control arm — single-shot A/B benchmarking baseline, closes Known Gap #7 | `feat/forge-control-arm` |

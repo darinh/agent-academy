@@ -21,7 +21,19 @@ public static class AttemptResponseParser
     /// Success: the parsed ArtifactEnvelope.
     /// Failure: null envelope with a list of structural validator failures.
     /// </returns>
-    public static ParseResult Parse(string rawResponse, PhaseDefinition phase, int attemptNumber)
+    public static ParseResult Parse(string rawResponse, PhaseDefinition phase, int attemptNumber) =>
+        Parse(rawResponse, phase.ArtifactType, phase.SchemaVersion, phase.Id, attemptNumber);
+
+    /// <summary>
+    /// Parse raw LLM JSON response with explicit artifact identity fields.
+    /// Used by the control executor where no <see cref="PhaseDefinition"/> exists.
+    /// </summary>
+    public static ParseResult Parse(
+        string rawResponse,
+        string artifactType,
+        string schemaVersion,
+        string producedByPhase,
+        int attemptNumber)
     {
         // Step 1: Parse as JSON
         JsonDocument doc;
@@ -91,9 +103,9 @@ public static class AttemptResponseParser
             // Step 3: Wrap into ArtifactEnvelope (Clone before dispose)
             var envelope = new ArtifactEnvelope
             {
-                ArtifactType = phase.ArtifactType,
-                SchemaVersion = phase.SchemaVersion,
-                ProducedByPhase = phase.Id,
+                ArtifactType = artifactType,
+                SchemaVersion = schemaVersion,
+                ProducedByPhase = producedByPhase,
                 Payload = bodyElement.Clone()
             };
 

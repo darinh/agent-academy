@@ -10,10 +10,12 @@ namespace AgentAcademy.Forge.Execution;
 /// Top-level pipeline orchestrator. Chains methodology phases in sequence,
 /// resolves input artifacts between phases, and owns the Run state machine
 /// (Pending → Running → Succeeded | Failed | Aborted).
+/// Optionally runs a control arm for A/B benchmarking after the pipeline completes.
 /// </summary>
 public sealed class PipelineRunner
 {
     private readonly PhaseExecutor _phaseExecutor;
+    private readonly ControlExecutor? _controlExecutor;
     private readonly IArtifactStore _artifactStore;
     private readonly IRunStore _runStore;
     private readonly CostCalculator _costCalculator;
@@ -26,7 +28,8 @@ public sealed class PipelineRunner
         IRunStore runStore,
         CostCalculator costCalculator,
         TimeProvider timeProvider,
-        ILogger<PipelineRunner> logger)
+        ILogger<PipelineRunner> logger,
+        ControlExecutor? controlExecutor = null)
     {
         _phaseExecutor = phaseExecutor;
         _artifactStore = artifactStore;
@@ -34,10 +37,13 @@ public sealed class PipelineRunner
         _costCalculator = costCalculator;
         _timeProvider = timeProvider;
         _logger = logger;
+        _controlExecutor = controlExecutor;
     }
 
     /// <summary>
     /// Execute a full pipeline run: all phases in methodology order.
+    /// When the methodology has a control arm configured and a <see cref="ControlExecutor"/>
+    /// is registered, a single-shot baseline runs after the pipeline (except on abort).
     /// </summary>
     /// <param name="task">Task brief describing what to build.</param>
     /// <param name="methodology">Frozen methodology definition.</param>
@@ -65,6 +71,46 @@ public sealed class PipelineRunner
         runTrace = runTrace with { Outcome = "running" };
         await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
 
+        // Execute the pipeline phases
+        var pipelineResult = await ExecutePipelinePhasesAsync(runId, task, methodology, runTrace, ct);
+        runTrace = pipelineResult.RunTrace;
+        var phaseRunTraces = pipelineResult.PhaseRunTraces;
+
+        // Optionally run the control arm — but not when aborted (cancellation or budget)
+        if (methodology.Control is not null && _controlExecutor is not null && runTrace.Outcome != "aborted")
+        {
+            runTrace = await RunControlArmAsync(runTrace, task, methodology, ct);
+        }
+
+        // Stamp EndedAt after control arm (if any) so timing reflects true completion
+        runTrace = runTrace with { EndedAt = _timeProvider.GetUtcNow().UtcDateTime };
+
+        // Single finalize path: persist final state.
+        // Use CancellationToken.None for aborted runs — the original token is cancelled
+        // but we still need to persist the final state to disk.
+        var writeCt = runTrace.Outcome == "aborted" ? CancellationToken.None : ct;
+        await WriteRunFinalState(runId, runTrace, phaseRunTraces, writeCt);
+
+        if (runTrace.Outcome == "succeeded")
+        {
+            _logger.LogInformation("Pipeline run {RunId} completed successfully ({TotalIn}+{TotalOut} tokens, ${Cost:F4})",
+                runId, runTrace.PipelineTokens.In, runTrace.PipelineTokens.Out, runTrace.PipelineCost ?? 0);
+        }
+
+        return runTrace;
+    }
+
+    /// <summary>
+    /// Execute all methodology phases in order. Returns the pipeline outcome
+    /// without persisting final state (caller handles that).
+    /// </summary>
+    private async Task<PipelinePhaseResult> ExecutePipelinePhasesAsync(
+        string runId,
+        TaskBrief task,
+        MethodologyDefinition methodology,
+        RunTrace runTrace,
+        CancellationToken ct)
+    {
         var phaseRunTraces = new List<PhaseRunTrace>();
         var acceptedArtifacts = new Dictionary<string, ArtifactEnvelope>();
         var totalTokensIn = 0;
@@ -91,10 +137,8 @@ public sealed class PipelineRunner
                     var failedPhaseTrace = CreateInputsMissingTrace(phase, _timeProvider);
                     phaseRunTraces.Add(failedPhaseTrace);
 
-                    runTrace = FinalizeRun(runTrace, startedAt, "failed", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
-                    await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
-                    return runTrace;
+                    return FinalizePhases(runTrace, "failed", phaseRunTraces,
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
                 }
 
                 // Compute remaining budget for this phase
@@ -129,20 +173,20 @@ public sealed class PipelineRunner
                         _logger.LogWarning("Pipeline run {RunId}: aborted — budget exhausted (${Cost:F4} / ${Budget:F4})",
                             runId, totalCost, methodology.Budget.Value);
 
-                        runTrace = FinalizeRun(runTrace, startedAt, "aborted", phaseRunTraces,
-                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
-                        runTrace = runTrace with { AbortReason = "budget_exceeded" };
-                        await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
-                        return runTrace;
+                        var abortResult = FinalizePhases(runTrace, "aborted", phaseRunTraces,
+                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
+                        abortResult = abortResult with
+                        {
+                            RunTrace = abortResult.RunTrace with { AbortReason = "budget_exceeded" }
+                        };
+                        return abortResult;
                     }
 
                     _logger.LogWarning("Pipeline run {RunId}: phase {PhaseId} failed after all attempts",
                         runId, phase.Id);
 
-                    runTrace = FinalizeRun(runTrace, startedAt, "failed", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
-                    await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
-                    return runTrace;
+                    return FinalizePhases(runTrace, "failed", phaseRunTraces,
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
                 }
 
                 // Phase succeeded — read the accepted artifact from the store
@@ -154,10 +198,8 @@ public sealed class PipelineRunner
                         _logger.LogError("Pipeline run {RunId}: accepted artifact {Hash} not found in store",
                             runId, result.AcceptedArtifactHash[..12]);
 
-                        runTrace = FinalizeRun(runTrace, startedAt, "failed", phaseRunTraces,
-                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
-                        await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
-                        return runTrace;
+                        return FinalizePhases(runTrace, "failed", phaseRunTraces,
+                            acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
                     }
 
                     acceptedArtifacts[phase.Id] = envelope;
@@ -171,41 +213,65 @@ public sealed class PipelineRunner
                     _logger.LogWarning("Pipeline run {RunId}: aborted between phases — budget exceeded (${Cost:F4} / ${Budget:F4})",
                         runId, totalCost, methodology.Budget.Value);
 
-                    runTrace = FinalizeRun(runTrace, startedAt, "aborted", phaseRunTraces,
-                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
-                    runTrace = runTrace with { AbortReason = "budget_exceeded" };
-                    await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
-                    return runTrace;
+                    var abortResult = FinalizePhases(runTrace, "aborted", phaseRunTraces,
+                        acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
+                    abortResult = abortResult with
+                    {
+                        RunTrace = abortResult.RunTrace with { AbortReason = "budget_exceeded" }
+                    };
+                    return abortResult;
                 }
             }
 
             // All phases succeeded
-            runTrace = FinalizeRun(runTrace, startedAt, "succeeded", phaseRunTraces,
-                acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
-            await WriteRunFinalState(runId, runTrace, phaseRunTraces, ct);
-
-            _logger.LogInformation("Pipeline run {RunId} completed successfully ({TotalIn}+{TotalOut} tokens, ${Cost:F4})",
-                runId, totalTokensIn, totalTokensOut, totalCost);
-
-            return runTrace;
+            return FinalizePhases(runTrace, "succeeded", phaseRunTraces,
+                acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
         }
         catch (OperationCanceledException)
         {
             _logger.LogWarning("Pipeline run {RunId} aborted via cancellation", runId);
 
-            runTrace = FinalizeRun(runTrace, startedAt, "aborted", phaseRunTraces,
-                acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost, _timeProvider);
+            return FinalizePhases(runTrace, "aborted", phaseRunTraces,
+                acceptedArtifacts, totalTokensIn, totalTokensOut, totalCost);
+        }
+    }
 
-            try
-            {
-                await WriteRunFinalState(runId, runTrace, phaseRunTraces, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to persist aborted run state for {RunId}", runId);
-            }
+    /// <summary>
+    /// Run the control arm and merge results into the run trace.
+    /// </summary>
+    private async Task<RunTrace> RunControlArmAsync(
+        RunTrace runTrace,
+        TaskBrief task,
+        MethodologyDefinition methodology,
+        CancellationToken ct)
+    {
+        _logger.LogInformation("Pipeline run {RunId}: starting control arm", runTrace.RunId);
 
-            return runTrace;
+        try
+        {
+            var controlResult = await _controlExecutor!.ExecuteAsync(task, methodology, ct);
+
+            var costRatio = controlResult.Cost is > 0 && runTrace.PipelineCost is > 0
+                ? (double)(runTrace.PipelineCost.Value / controlResult.Cost.Value)
+                : (double?)null;
+
+            return runTrace with
+            {
+                ControlOutcome = controlResult.Outcome,
+                ControlTokens = controlResult.Tokens,
+                ControlCost = controlResult.Cost,
+                ControlArtifactHash = controlResult.ArtifactHash,
+                CostRatio = costRatio
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Pipeline run {RunId}: control arm failed with exception", runTrace.RunId);
+            return runTrace with
+            {
+                ControlOutcome = "failed",
+                ControlTokens = new TokenCount()
+            };
         }
     }
 
@@ -248,16 +314,14 @@ public sealed class PipelineRunner
         };
     }
 
-    private static RunTrace FinalizeRun(
+    private PipelinePhaseResult FinalizePhases(
         RunTrace current,
-        DateTime startedAt,
         string outcome,
         List<PhaseRunTrace> phaseRunTraces,
         Dictionary<string, ArtifactEnvelope> acceptedArtifacts,
         int totalTokensIn,
         int totalTokensOut,
-        decimal totalCost,
-        TimeProvider timeProvider)
+        decimal totalCost)
     {
         var finalHashes = new Dictionary<string, string>();
         foreach (var (phaseId, envelope) in acceptedArtifacts)
@@ -266,14 +330,15 @@ public sealed class PipelineRunner
             finalHashes[phaseId] = hash;
         }
 
-        return current with
+        var runTrace = current with
         {
             Outcome = outcome,
-            EndedAt = timeProvider.GetUtcNow().UtcDateTime,
             PipelineTokens = new TokenCount { In = totalTokensIn, Out = totalTokensOut },
             PipelineCost = totalCost > 0 ? totalCost : null,
             FinalArtifactHashes = finalHashes
         };
+
+        return new PipelinePhaseResult { RunTrace = runTrace, PhaseRunTraces = phaseRunTraces };
     }
 
     private async Task WriteRunFinalState(
@@ -282,8 +347,15 @@ public sealed class PipelineRunner
         List<PhaseRunTrace> phaseRunTraces,
         CancellationToken ct)
     {
-        await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
-        await _runStore.WritePhaseRunsRollupAsync(runId, phaseRunTraces, ct);
+        try
+        {
+            await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
+            await _runStore.WritePhaseRunsRollupAsync(runId, phaseRunTraces, ct);
+        }
+        catch (Exception ex) when (runTrace.Outcome == "aborted")
+        {
+            _logger.LogError(ex, "Failed to persist aborted run state for {RunId}", runId);
+        }
     }
 
     private static RunTrace NewRunTrace(
@@ -305,4 +377,13 @@ public sealed class PipelineRunner
             FinalArtifactHashes = new Dictionary<string, string>()
         };
     }
+}
+
+/// <summary>
+/// Internal result of pipeline phase execution (before control arm and final persistence).
+/// </summary>
+internal sealed record PipelinePhaseResult
+{
+    public required RunTrace RunTrace { get; init; }
+    public required List<PhaseRunTrace> PhaseRunTraces { get; init; }
 }

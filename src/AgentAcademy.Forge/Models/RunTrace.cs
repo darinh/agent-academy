@@ -37,8 +37,15 @@ public sealed record RunTrace
     [JsonPropertyName("pipelineCost")]
     public decimal? PipelineCost { get; init; }
 
+    [JsonPropertyName("controlCost")]
+    public decimal? ControlCost { get; init; }
+
     [JsonPropertyName("costRatio")]
     public double? CostRatio { get; init; }
+
+    /// <summary>Hash of the control arm artifact (sha256:... prefixed), when control was executed.</summary>
+    [JsonPropertyName("controlArtifactHash")]
+    public string? ControlArtifactHash { get; init; }
 
     /// <summary>Reason the run was aborted, when Outcome is "aborted" (e.g. "budget_exceeded").</summary>
     [JsonPropertyName("abortReason")]
