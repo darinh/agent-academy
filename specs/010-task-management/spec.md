@@ -422,10 +422,13 @@ Creates a GitHub pull request for a task.
 **Workflow**:
 1. Validates task exists, has a branch, and has no existing PR
 2. Checks GitHub is configured (`IsConfiguredAsync`)
-3. Pushes branch to remote (`GitService.PushBranchAsync`)
-4. Creates PR via `gh pr create` (`GitHubService.CreatePullRequestAsync`)
-5. Updates task entity with PR URL, number, and `Open` status
-6. Posts a system status message to the task's room
+3. Enriches PR body with goal cards (best-effort — see below)
+4. Pushes branch to remote (`GitService.PushBranchAsync`)
+5. Creates PR via `gh pr create` (`GitHubService.CreatePullRequestAsync`)
+6. Updates task entity with PR URL, number, and `Open` status
+7. Posts a system status message to the task's room
+
+**Goal card enrichment**: If the task has associated goal cards (`IGoalCardService.GetByTaskAsync`), a formatted section is appended to the PR body (after any default or custom body content). Each goal card renders as a markdown block with verdict emoji (✅/⚠️/🛑), status, agent name, intent, divergence, steelman/strawman arguments, fresh-eyes questions, and card metadata. Multiple cards are all included. Enrichment is best-effort: if the goal card service is unavailable or throws, the handler logs a warning and creates the PR with the original body.
 
 **Error handling**: On any failure (push or PR creation), returns `CommandErrorCode.Execution` with the error message. Task entity is not modified on failure.
 
@@ -1009,6 +1012,7 @@ All task services have interface contracts in `Services/Contracts/`. Consumers i
 | 2026-04-13 | Bulk task operations: `POST /api/tasks/bulk/status` and `/api/tasks/bulk/assign` endpoints. Safe-status subset, max 50, dedup, partial-success. Frontend multi-select with bulk action bar. 12 backend + 10 frontend tests. | Anvil |
 | 2026-04-13 | Spec sync — document auto-unblock behavior: `GetTasksUnblockedByCompletionAsync` fires `TaskUnblocked` events when task completion satisfies all downstream dependencies. Frontend desktop notification and refresh wiring. | Anvil |
 | 2026-04-13 | Spec sync — updated `GitService` source references: merge/rebase/revert operations now in `GitService.MergeOperations.cs` partial class. Branch creation and other operations remain in `GitService.cs`. | Anvil |
+| 2026-04-20 | CREATE_PR goal card enrichment — PR body auto-appended with linked goal cards showing verdict, intent, divergence, steelman/strawman, fresh-eyes questions. Best-effort: service failure logs warning, never blocks PR creation. `EnrichBodyWithGoalCardsAsync` internal method. 6 new tests (5533 total). | Anvil |
 | 2026-04-11 | Spec reconciliation — updated GitHub Integration section: corrected status, added OAuth bridge auth docs, updated IGitHubService interface, added MERGE_PR and PullRequestSyncService sections, fixed branch naming (task/ prefix, not agents/), updated API endpoints table with authSource, removed stale Planned markers | Anvil |
 | 2026-04-07 | Evidence ledger: new §6.6 documenting task evidence system. TaskEvidenceEntity data model, EvidencePhase enum (Baseline/After/Review), gate definitions for status transitions (Active→AwaitingValidation: ≥1, AwaitingValidation→InReview: ≥2, InReview→Approved: ≥1). Authorization rules, commands cross-reference to spec 007. Invariants #10 (immutable evidence) and #11 (advisory gates). | Anvil |
 | 2026-04-07 | Added Invariant #9: git-DB transaction ordering — task metadata must not persist to database until git branch creation succeeds (commit `36e0dda`). Documents failure mode hierarchy and UI contract. | Thucydides / Anvil |
