@@ -852,7 +852,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 4. **Resume not implemented**: `POST /api/forge/runs/{runId}/resume` returns 501.
 5. ~~**No agent commands**~~: Resolved. Agents can trigger forge runs via `RUN_FORGE`, check status via `FORGE_STATUS`, and list jobs via `LIST_FORGE_RUNS`. See spec 007 for command details. Handlers use `IForgeJobService` interface for testability. Path traversal and symlink protections applied to methodology file loading.
 6. **No SignalR events**: No real-time progress updates during pipeline execution.
-7. **No frontend UI**: No forge panel in the React frontend yet.
+7. ~~**No frontend UI**~~: Resolved. ForgePanel provides status dashboard, job list, run detail with phase/attempt/validator drill-down, inline artifact viewer, and start-run form with methodology JSON editor. See spec 300 for frontend details.
 
 ## Revision History
 
@@ -872,3 +872,4 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-20 | Parallel phase execution — wave-based scheduling, resume source-intent fix, closes Known Gap #5 | `feat/forge-parallel-phases` |
 | 2026-04-20 | Schema evolution — multi-version registry, lifecycle statuses, methodology validation, version-dispatched validators, closes Known Gap #8 | `feat/forge-schema-evolution` |
 | 2026-04-21 | Server integration — REST API, job queue, DI wiring, path validation, conditional LLM, 35 tests, closes Known Gap #10 | `feat/forge-integration` |
+| 2026-04-21 | Start-run UI — New Run button, form with title/description/methodology JSON editor, 11 new tests, closes Integration Gap #7 | `develop` |
