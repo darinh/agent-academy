@@ -3,8 +3,6 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Startup;
-using Microsoft.AspNetCore.RateLimiting;
-using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,41 +18,8 @@ var authSetup = AppAuthSetup.FromConfiguration(builder.Configuration);
 builder.Services.AddAppAuthentication(authSetup, builder.Environment);
 builder.Services.AddSingleton(authSetup);
 builder.Services.AddSingleton(new GitHubAuthOptions(authSetup.GitHubAuthEnabled, authSetup.GitHubFrontendUrl));
-
-var consultantRateLimits = builder.Configuration
-    .GetSection(ConsultantRateLimitSettings.SectionName)
-    .Get<ConsultantRateLimitSettings>() ?? new();
-
-if (authSetup.ConsultantAuthEnabled && consultantRateLimits.Enabled)
-{
-    builder.Services.AddRateLimiter(options =>
-    {
-        options.GlobalLimiter = ConsultantRateLimitExtensions
-            .CreateConsultantRateLimiter(consultantRateLimits);
-
-        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-        options.OnRejected = async (ctx, cancellationToken) =>
-        {
-            ctx.HttpContext.Response.ContentType = "application/problem+json";
-
-            var retryAfter = ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue)
-                ? retryAfterValue
-                : TimeSpan.FromSeconds(10);
-
-            ctx.HttpContext.Response.Headers.RetryAfter =
-                ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
-
-            await ctx.HttpContext.Response.WriteAsJsonAsync(new
-            {
-                type = "https://tools.ietf.org/html/rfc6585#section-4",
-                title = "Rate limit exceeded",
-                status = 429,
-                detail = $"Too many requests. Try again in {(int)Math.Ceiling(retryAfter.TotalSeconds)} seconds.",
-            }, cancellationToken);
-        };
-    });
-}
-builder.Services.AddSingleton(consultantRateLimits);
+var consultantRateLimits = builder.Services
+    .ConfigureConsultantRateLimiting(builder.Configuration, authSetup);
 
 // ── Application Services ────────────────────────────────────────────────────
 
@@ -65,16 +30,6 @@ builder.Services.AddCommandSystem();
 builder.Services.AddNotificationSystem();
 builder.Services.AddBackgroundServices(builder.Configuration);
 builder.Services.AddForge(builder.Configuration, builder.Environment);
-
-// Prevent background service exceptions from killing the host. The default
-// StopHost behavior meant any transient failure (e.g., a network timeout in
-// CopilotAuthMonitorService) would crash the entire server, which the wrapper
-// restarts — but the crash/restart cycle causes SignalR disconnections and
-// auth status oscillations that trigger full-page redirects in the client.
-builder.Services.Configure<HostOptions>(options =>
-{
-    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
-});
 
 // ── Logging ─────────────────────────────────────────────────────────────────
 

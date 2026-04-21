@@ -219,7 +219,7 @@ public sealed class ConsultantRateLimitTests : IDisposable
 
         // RetryAfter metadata may or may not be present depending on the
         // underlying SlidingWindowRateLimiter implementation. The OnRejected
-        // handler in Program.cs has a 10-second fallback for when it's absent.
+        // handler in AuthenticationExtensions has a 10-second fallback for when it's absent.
         if (rejected.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
         {
             Assert.True(retryAfter > TimeSpan.Zero);

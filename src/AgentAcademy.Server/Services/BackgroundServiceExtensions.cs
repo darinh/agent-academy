@@ -44,6 +44,13 @@ public static class BackgroundServiceExtensions
             configuration.GetSection(SprintSchedulerSettings.SectionName));
         services.AddHostedService<SprintSchedulerService>();
 
+        // Keep hosted-service faults isolated from host lifecycle so transient
+        // background errors do not crash the server process.
+        services.Configure<HostOptions>(options =>
+        {
+            options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+        });
+
         return services;
     }
 }
