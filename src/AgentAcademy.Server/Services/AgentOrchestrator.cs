@@ -207,20 +207,15 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
     private void EndProcessingAndRestartIfNeeded()
     {
-        var shouldRestart = false;
+        var shouldStart = false;
 
         lock (_lock)
         {
             _processing = false;
-
-            if (!_cts.IsCancellationRequested && _queue.Count > 0)
-            {
-                _processing = true;
-                shouldRestart = true;
-            }
+            shouldStart = TryBeginProcessingLocked();
         }
 
-        if (shouldRestart)
+        if (shouldStart)
         {
             _ = ProcessQueueAsync();
         }
@@ -228,20 +223,23 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
     private void SignalProcessing()
     {
-        var shouldStart = false;
-
-        lock (_lock)
-        {
-            if (!_processing && !_cts.IsCancellationRequested && _queue.Count > 0)
-            {
-                _processing = true;
-                shouldStart = true;
-            }
-        }
+        bool shouldStart;
+        lock (_lock) { shouldStart = TryBeginProcessingLocked(); }
 
         if (shouldStart)
         {
             _ = ProcessQueueAsync();
         }
+    }
+
+    private bool TryBeginProcessingLocked()
+    {
+        if (_processing || _cts.IsCancellationRequested || _queue.Count == 0)
+        {
+            return false;
+        }
+
+        _processing = true;
+        return true;
     }
 }
