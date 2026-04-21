@@ -48,7 +48,9 @@ public sealed class CommandParser
         // Tier 2B — Communication
         "MENTION_TASK_OWNER", "BROADCAST_TO_ROOM",
         // Tier 2C — Task Management
-        "MARK_BLOCKED", "SHOW_DECISIONS"
+        "MARK_BLOCKED", "SHOW_DECISIONS",
+        // Tier 2D — Code & Spec
+        "OPEN_SPEC", "SEARCH_SPEC", "OPEN_COMPONENT", "FIND_REFERENCES"
     };
 
     /// <summary>
