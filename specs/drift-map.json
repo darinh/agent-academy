@@ -472,12 +472,82 @@
       "note": "Application bootstrap / system overview"
     },
     {
+      "pattern": "Dockerfile",
+      "specs": [
+        "017"
+      ],
+      "note": "Container image build (deployment)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Forge/",
+      "specs": [
+        "019"
+      ],
+      "note": "Forge engine library (default)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Forge.Benchmarks/",
+      "specs": [
+        "019"
+      ],
+      "note": "Forge benchmark harness"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Data/AgentAcademyDbContext.cs",
+      "specs": [
+        "014"
+      ],
+      "note": "EF Core DbContext / database schema"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Data/Configurations/",
+      "specs": [
+        "014"
+      ],
+      "note": "EF entity configurations (default)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Data/Configurations/ForgeConfigurations.cs",
+      "specs": [
+        "014",
+        "019"
+      ],
+      "note": "Forge entity persistence config"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Startup/",
+      "specs": [
+        "000"
+      ],
+      "note": "Service registration / app wiring (default)"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Startup/ForgeServiceRegistration.cs",
+      "specs": [
+        "019"
+      ],
+      "note": "Forge engine DI wiring"
+    },
+    {
+      "pattern": "src/AgentAcademy.Server/Middleware/",
+      "specs": [
+        "015"
+      ],
+      "note": "Security middleware (CSRF, etc.)"
+    },
+    {
       "pattern": "src/AgentAcademy.Server/Services/TaskAnalyticsService.cs",
-      "spec": "012-consultant-api"
+      "specs": [
+        "012"
+      ],
+      "note": "Migrated from singular `spec` field"
     },
     {
       "pattern": "src/agent-academy-client/src/TaskAnalyticsPanel.tsx",
-      "spec": "300-frontend-ui"
+      "specs": [
+        "300"
+      ],
+      "note": "Migrated from singular `spec` field"
     }
   ],
   "excludes": [
@@ -498,6 +568,17 @@
     "**/*.yaml",
     "**/*.sln",
     "**/*.props",
-    "**/*.lock"
+    "**/*.lock",
+    "**/*.csproj",
+    "**/.gitignore",
+    "CHANGELOG.md",
+    "**/e2e/",
+    "*.sln",
+    "AgentAcademy.sln",
+    "*.json",
+    "*.yml",
+    "*.yaml",
+    "*.md",
+    ".gitignore"
   ]
 }
