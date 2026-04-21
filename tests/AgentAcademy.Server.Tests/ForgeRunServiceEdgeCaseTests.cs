@@ -567,6 +567,69 @@ public sealed class ForgeRunServiceBroadcastTests : IDisposable
         Assert.Equal(job.JobId, queuedEvent.Metadata["jobId"]?.ToString());
     }
 
+    [Theory]
+    [InlineData(ForgeProgressKind.PhaseStarted, AgentAcademy.Shared.Models.ActivityEventType.ForgePhaseStarted)]
+    [InlineData(ForgeProgressKind.PhaseCompleted, AgentAcademy.Shared.Models.ActivityEventType.ForgePhaseCompleted)]
+    [InlineData(ForgeProgressKind.PhaseFailed, AgentAcademy.Shared.Models.ActivityEventType.ForgePhaseFailed)]
+    public void OnForgeProgress_MapsPhaseEventsToActivityEventTypes(
+        ForgeProgressKind progressKind,
+        AgentAcademy.Shared.Models.ActivityEventType expectedType)
+    {
+        var (service, broadcaster) = CreateServiceWithBroadcaster();
+        var receivedEvents = new List<AgentAcademy.Shared.Models.ActivityEvent>();
+        broadcaster.Subscribe(evt => receivedEvents.Add(evt));
+
+        var runId = "R_" + Ulid.NewUlid().ToString();
+        InvokeOnForgeProgress(service, "job-phase", new ForgeProgressEvent
+        {
+            RunId = runId,
+            Kind = progressKind,
+            PhaseId = "requirements",
+            Wave = 1
+        });
+
+        var evt = Assert.Single(receivedEvents);
+        Assert.Equal(expectedType, evt.Type);
+        Assert.Equal("job-phase", evt.Metadata?["jobId"]?.ToString());
+        Assert.Equal(runId, evt.Metadata?["runId"]?.ToString());
+        Assert.Equal("requirements", evt.Metadata?["phaseId"]?.ToString());
+    }
+
+    [Fact]
+    public void OnForgeProgress_WhenWaveStarts_UsesProvidedMessage()
+    {
+        var (service, broadcaster) = CreateServiceWithBroadcaster();
+        var receivedEvents = new List<AgentAcademy.Shared.Models.ActivityEvent>();
+        broadcaster.Subscribe(evt => receivedEvents.Add(evt));
+
+        InvokeOnForgeProgress(service, "job-wave", new ForgeProgressEvent
+        {
+            RunId = "R_" + Ulid.NewUlid().ToString(),
+            Kind = ForgeProgressKind.WaveStarted,
+            Message = "Wave 2 started"
+        });
+
+        var evt = Assert.Single(receivedEvents);
+        Assert.Equal(AgentAcademy.Shared.Models.ActivityEventType.ForgePhaseStarted, evt.Type);
+        Assert.Equal("Wave 2 started", evt.Message);
+    }
+
+    [Fact]
+    public void OnForgeProgress_IgnoresUnhandledProgressKinds()
+    {
+        var (service, broadcaster) = CreateServiceWithBroadcaster();
+        var receivedEvents = new List<AgentAcademy.Shared.Models.ActivityEvent>();
+        broadcaster.Subscribe(evt => receivedEvents.Add(evt));
+
+        InvokeOnForgeProgress(service, "job-ignored", new ForgeProgressEvent
+        {
+            RunId = "R_" + Ulid.NewUlid().ToString(),
+            Kind = ForgeProgressKind.RunCompleted
+        });
+
+        Assert.Empty(receivedEvents);
+    }
+
     [Fact]
     public async Task ResumeRunAsync_CreatesJobWithRunId()
     {
@@ -659,5 +722,14 @@ public sealed class ForgeRunServiceBroadcastTests : IDisposable
             NullLogger<ForgeRunService>.Instance);
 
         return (service, broadcaster);
+    }
+
+    private static void InvokeOnForgeProgress(ForgeRunService service, string jobId, ForgeProgressEvent evt)
+    {
+        var method = typeof(ForgeRunService)
+            .GetMethod("OnForgeProgress", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        Assert.NotNull(method);
+        method!.Invoke(service, [jobId, evt]);
     }
 }
