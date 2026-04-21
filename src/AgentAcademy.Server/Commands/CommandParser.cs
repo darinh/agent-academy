@@ -56,7 +56,9 @@ public sealed class CommandParser
         // Tier 2F — Data & Operations
         "QUERY_DB", "RUN_MIGRATIONS", "SHOW_MIGRATION_STATUS", "HEALTHCHECK", "SHOW_ACTIVE_CONNECTIONS",
         // Tier 2G — Audit & Debug
-        "SHOW_AUDIT_EVENTS", "SHOW_LAST_ERROR", "TRACE_REQUEST", "LIST_SYSTEM_SETTINGS", "RETRY_FAILED_JOB"
+        "SHOW_AUDIT_EVENTS", "SHOW_LAST_ERROR", "TRACE_REQUEST", "LIST_SYSTEM_SETTINGS", "RETRY_FAILED_JOB",
+        // Tier 3A — Spec Verification
+        "VERIFY_SPEC_SECTION", "COMPARE_SPEC_TO_CODE", "DETECT_ORPHANED_SECTIONS"
     };
 
     /// <summary>
