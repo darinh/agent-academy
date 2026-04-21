@@ -82,19 +82,13 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             return;
         }
 
-        lock (_lock)
-        {
-            foreach (var roomId in pendingRoomIds)
-            {
-                _queue.Enqueue(new QueueItem(roomId));
-            }
-        }
+        EnqueueRooms(pendingRoomIds);
 
         _logger.LogInformation(
             "Queue reconstruction: re-enqueued {Count} room(s) with pending human messages: {RoomIds}",
             pendingRoomIds.Count, string.Join(", ", pendingRoomIds));
 
-        SignalProcessing();
+        StartProcessingIfNeeded();
     }
 
     // ── PUBLIC ENTRY POINT ──────────────────────────────────────
@@ -119,7 +113,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             return;
         }
 
-        SignalProcessing();
+        StartProcessingIfNeeded();
     }
 
     // ── QUEUE ───────────────────────────────────────────────────
@@ -148,7 +142,18 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private void EnqueueAndProcess(QueueItem item)
     {
         lock (_lock) { _queue.Enqueue(item); }
-        SignalProcessing();
+        StartProcessingIfNeeded();
+    }
+
+    private void EnqueueRooms(IReadOnlyCollection<string> roomIds)
+    {
+        lock (_lock)
+        {
+            foreach (var roomId in roomIds)
+            {
+                _queue.Enqueue(new QueueItem(roomId));
+            }
+        }
     }
 
     private bool TryEnqueueDirectMessage(string recipientAgentId)
@@ -207,21 +212,15 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
     private void EndProcessingAndRestartIfNeeded()
     {
-        var shouldStart = false;
-
         lock (_lock)
         {
             _processing = false;
-            shouldStart = TryBeginProcessingLocked();
         }
 
-        if (shouldStart)
-        {
-            _ = ProcessQueueAsync();
-        }
+        StartProcessingIfNeeded();
     }
 
-    private void SignalProcessing()
+    private void StartProcessingIfNeeded()
     {
         bool shouldStart;
         lock (_lock) { shouldStart = TryBeginProcessingLocked(); }
