@@ -95,7 +95,7 @@ function formatLatencyMs(ms: number): string {
 
 type ForgeView = "list" | "run-detail" | "new-run";
 
-export default function ForgePanel() {
+export default function ForgePanel({ refreshTrigger }: { refreshTrigger?: number }) {
   const s = useForgePanelStyles();
 
   // List view state
@@ -207,7 +207,17 @@ export default function ForgePanel() {
   // ── Initial fetch ──
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  // ── Conditional polling: poll when active jobs exist ──
+  // ── SignalR-driven refresh: re-fetch when forge events arrive ──
+  const prevTrigger = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevTrigger.current) {
+      prevTrigger.current = refreshTrigger;
+      fetchList();
+      if (selectedRunId) fetchRunDetail(selectedRunId);
+    }
+  }, [refreshTrigger, fetchList, fetchRunDetail, selectedRunId]);
+
+  // ── Conditional polling: poll when active jobs exist (fallback for no SignalR) ──
   useEffect(() => {
     const hasActive = status != null && status.activeJobs > 0;
     const isRunning = runTrace != null && (runTrace.outcome === "Running" || runTrace.outcome === "Pending");
@@ -858,7 +868,7 @@ export default function ForgePanel() {
             <EmptyState
               icon="🔥"
               title="No forge runs yet"
-              detail="Forge runs are created when agents execute the RUN_FORGE command. Completed runs and their artifacts appear here."
+              detail="Start a run from the New Run button above. Completed runs and their artifacts appear here."
             />
           )}
           {runs.length > 0 && (

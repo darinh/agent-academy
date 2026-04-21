@@ -57,6 +57,7 @@ export interface WorkspaceContentProps {
   memoryVersion: number;
   artifactVersion: number;
   goalCardVersion: number;
+  forgeVersion: number;
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
@@ -169,7 +170,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onNavigateToTask={props.onNavigateToTask}
             />
           )}
-          {tab === "forge" && <ForgePanel />}
+          {tab === "forge" && <ForgePanel refreshTrigger={props.forgeVersion} />}
         </section>
       </Suspense>
     </ChunkErrorBoundary>

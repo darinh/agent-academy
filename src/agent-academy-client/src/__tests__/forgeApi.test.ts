@@ -38,7 +38,36 @@ describe("forge API", () => {
       const expected = { enabled: true, executionAvailable: true, activeJobs: 0, totalJobs: 5, completedJobs: 4, failedJobs: 1, runsDirectory: "/tmp" };
       mockRequest.mockResolvedValue(expected);
       const result = await getForgeStatus();
-      expect(result).toBe(expected);
+      expect(result).toEqual(expected);
+    });
+
+    it("maps legacy executionEnabled payloads to executionAvailable", async () => {
+      mockRequest.mockResolvedValue({
+        enabled: true,
+        executionEnabled: true,
+        activeJobs: 1,
+        totalJobs: 2,
+        completedJobs: 1,
+        failedJobs: 0,
+        runsDirectory: "/tmp",
+      });
+
+      const result = await getForgeStatus();
+      expect(result.executionAvailable).toBe(true);
+    });
+
+    it("falls back to enabled when execution availability field is missing", async () => {
+      mockRequest.mockResolvedValue({
+        enabled: true,
+        activeJobs: 0,
+        totalJobs: 0,
+        completedJobs: 0,
+        failedJobs: 0,
+        runsDirectory: "/tmp",
+      });
+
+      const result = await getForgeStatus();
+      expect(result.executionAvailable).toBe(true);
     });
   });
 

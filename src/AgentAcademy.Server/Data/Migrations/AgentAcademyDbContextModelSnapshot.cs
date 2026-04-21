@@ -15,7 +15,7 @@ namespace AgentAcademy.Server.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.25");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.26");
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.ActivityEventEntity", b =>
                 {
@@ -442,6 +442,55 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_conversation_sessions_room_status");
 
                     b.ToTable("conversation_sessions", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.ForgeJobEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MethodologyJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("{}");
+
+                    b.Property<string>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("queued");
+
+                    b.Property<string>("TaskBriefJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("{}");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("idx_forge_jobs_created");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("idx_forge_jobs_status");
+
+                    b.ToTable("forge_jobs", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.GoalCardEntity", b =>

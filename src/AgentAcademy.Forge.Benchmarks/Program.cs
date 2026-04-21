@@ -8,7 +8,33 @@ using Microsoft.Extensions.Logging;
 
 // --- Flag parsing ---
 var seededDefectMode = args.Any(a => a.Equals("--seeded-defects", StringComparison.OrdinalIgnoreCase));
-var positionalArgs = args.Where(a => !a.StartsWith("--")).ToArray();
+var helpMode = args.Any(a => a is "--help" or "-h");
+var customTitle = GetFlagValue(args, "--title");
+var customDescription = GetFlagValue(args, "--description");
+var flagsWithValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "--title", "--description" };
+var positionalArgs = GetPositionalArgs(args, flagsWithValues);
+
+if (helpMode)
+{
+    Console.WriteLine("Usage: forge-benchmarks [methodology.json] [output-dir] [task-filter]");
+    Console.WriteLine();
+    Console.WriteLine("Arguments:");
+    Console.WriteLine("  methodology.json  Path to methodology JSON (default: docs/forge-spike/methodology.json)");
+    Console.WriteLine("  output-dir        Root directory for run artifacts (default: ./forge-runs)");
+    Console.WriteLine("  task-filter       T1, T2, T3 to run a single benchmark task");
+    Console.WriteLine();
+    Console.WriteLine("Custom task (standalone mode):");
+    Console.WriteLine("  --title \"My Task\"        Task title (required for custom tasks)");
+    Console.WriteLine("  --description \"Details\"  Task description");
+    Console.WriteLine();
+    Console.WriteLine("Other flags:");
+    Console.WriteLine("  --seeded-defects  Run seeded-defect benchmark suite");
+    Console.WriteLine("  --help, -h        Show this help");
+    Console.WriteLine();
+    Console.WriteLine("Environment:");
+    Console.WriteLine("  OPENAI_API_KEY    Required. Set to your OpenAI API key.");
+    return 0;
+}
 
 // --- Configuration ---
 var methodologyPath = positionalArgs.Length > 0
@@ -127,6 +153,51 @@ if (seededDefectMode)
     return report.MeetsBlockingThreshold && report.MeetsAdvisoryThreshold ? 0 : 1;
 }
 
+// --- Custom task mode (--title flag) ---
+if (customTitle is not null)
+{
+    var customTask = new TaskBrief
+    {
+        TaskId = $"custom-{DateTime.UtcNow:yyyyMMddHHmmss}",
+        Title = customTitle,
+        Description = customDescription ?? customTitle
+    };
+
+    Console.WriteLine($"═══ Custom Task: {customTask.Title} ═══");
+    Console.WriteLine($"  Task ID: {customTask.TaskId}");
+    Console.WriteLine();
+
+    try
+    {
+        var trace = await runner.ExecuteAsync(customTask, methodology);
+
+        Console.WriteLine();
+        Console.WriteLine($"  Run ID:  {trace.RunId}");
+        Console.WriteLine($"  Outcome: {trace.Outcome}");
+        Console.WriteLine($"  Tokens:  {trace.PipelineTokens.In} in / {trace.PipelineTokens.Out} out");
+        Console.WriteLine($"  Cost:    ${trace.PipelineCost:F4}");
+        Console.WriteLine($"  Phases:  {trace.FinalArtifactHashes.Count}/{methodology.Phases.Count} produced artifacts");
+
+        if (trace.FinalArtifactHashes.Count > 0)
+        {
+            Console.WriteLine("  Artifacts:");
+            foreach (var (phaseId, hash) in trace.FinalArtifactHashes)
+            {
+                Console.WriteLine($"    {phaseId}: {hash[..Math.Min(20, hash.Length)]}...");
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"  Run directory: {Path.Combine(forgeRunsRoot, trace.RunId)}");
+        return trace.Outcome == "succeeded" ? 0 : 1;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"  FATAL: {ex.GetType().Name}: {ex.Message}");
+        return 1;
+    }
+}
+
 // --- Select tasks ---
 var allTasks = new[] { BenchmarkTasks.T1, BenchmarkTasks.T2, BenchmarkTasks.T3 };
 var tasksToRun = taskFilter is not null
@@ -213,5 +284,31 @@ static string FindRepoRoot()
         dir = Path.GetDirectoryName(dir);
     }
     return Directory.GetCurrentDirectory();
+}
+
+static string? GetFlagValue(string[] args, string flag)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i].Equals(flag, StringComparison.OrdinalIgnoreCase))
+            return args[i + 1];
+    }
+    return null;
+}
+
+static string[] GetPositionalArgs(string[] args, HashSet<string> flagsWithValues)
+{
+    var result = new List<string>();
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i].StartsWith("--") || args[i].StartsWith("-"))
+        {
+            if (flagsWithValues.Contains(args[i]) && i + 1 < args.Length)
+                i++; // Skip the value too
+            continue;
+        }
+        result.Add(args[i]);
+    }
+    return result.ToArray();
 }
 

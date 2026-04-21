@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationManager>(sp => sp.GetRequiredService<NotificationManager>());
         services.AddSingleton<ConsoleNotificationProvider>();
         services.AddSingleton<DiscordChannelManager>();
+        services.AddSingleton<DiscordConnectionManager>();
         services.AddSingleton<DiscordInputHandler>();
         services.AddSingleton<DiscordMessageSender>();
         services.AddSingleton<DiscordMessageRouter>();

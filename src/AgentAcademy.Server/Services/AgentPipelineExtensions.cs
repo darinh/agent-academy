@@ -2,6 +2,7 @@ using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
+using AgentAcademy.Shared.Models;
 
 namespace AgentAcademy.Server.Services;
 
@@ -77,9 +78,22 @@ public static class AgentPipelineExtensions
         services.AddSingleton<ICopilotSessionPool>(sp => sp.GetRequiredService<CopilotSessionPool>());
         services.AddSingleton<CopilotSdkSender>();
         services.AddSingleton<ICopilotSdkSender>(sp => sp.GetRequiredService<CopilotSdkSender>());
+        services.AddSingleton<ICopilotAuthStateNotifier, CopilotAuthStateNotifier>();
         services.AddSingleton<CopilotCircuitBreaker>();
         services.AddSingleton<StubExecutor>();
-        services.AddSingleton<CopilotExecutor>();
+        services.AddSingleton<CopilotExecutor>(sp => new CopilotExecutor(
+            sp.GetRequiredService<ILogger<CopilotExecutor>>(),
+            sp.GetRequiredService<ILogger<StubExecutor>>(),
+            sp.GetRequiredService<ICopilotClientFactory>(),
+            sp.GetRequiredService<ICopilotSessionPool>(),
+            sp.GetRequiredService<ICopilotSdkSender>(),
+            sp.GetRequiredService<ICopilotAuthStateNotifier>(),
+            sp.GetRequiredService<IAgentToolRegistry>(),
+            sp.GetRequiredService<IAgentErrorTracker>(),
+            sp.GetRequiredService<IAgentQuotaService>(),
+            sp.GetRequiredService<IAgentCatalog>(),
+            sp.GetRequiredService<CopilotCircuitBreaker>(),
+            sp.GetRequiredService<StubExecutor>()));
         services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
         services.AddHttpClient<ICopilotAuthProbe, GitHubCopilotAuthProbe>(client =>
         {
@@ -132,6 +146,8 @@ public static class AgentPipelineExtensions
         services.AddSingleton<IConversationRoundRunner>(sp => sp.GetRequiredService<ConversationRoundRunner>());
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
+        services.AddSingleton<OrchestratorDispatchService>();
+        services.AddSingleton<IOrchestratorDispatchService>(sp => sp.GetRequiredService<OrchestratorDispatchService>());
         services.AddSingleton<AgentOrchestrator>();
         services.AddSingleton<IAgentOrchestrator>(sp => sp.GetRequiredService<AgentOrchestrator>());
         return services;

@@ -19,33 +19,31 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly DiscordInputHandler _inputHandler;
     private readonly DiscordMessageSender _sender;
     private readonly DiscordMessageRouter _router;
+    private readonly DiscordConnectionManager _connection;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
 
-    private DiscordSocketClient? _client;
     private string? _botToken;
     private ulong _channelId;
     private ulong _guildId;
     private ulong? _ownerId;
     private bool _isConfigured;
-    private TaskCompletionSource<bool>? _readyTcs;
-    private Func<Task>? _readyHandler;
-    private Func<Exception, Task>? _disconnectedHandler;
+    private bool _messageReceivedHooked;
 
     public DiscordNotificationProvider(
         ILogger<DiscordNotificationProvider> logger,
         DiscordChannelManager channelManager,
         DiscordInputHandler inputHandler,
         DiscordMessageSender sender,
-        DiscordMessageRouter router)
+        DiscordMessageRouter router,
+        DiscordConnectionManager connection)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _channelManager = channelManager ?? throw new ArgumentNullException(nameof(channelManager));
         _inputHandler = inputHandler ?? throw new ArgumentNullException(nameof(inputHandler));
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _router = router ?? throw new ArgumentNullException(nameof(router));
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
     }
-
-    private string? _lastError;
 
     /// <inheritdoc />
     public string ProviderId => "discord";
@@ -57,28 +55,19 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     public bool IsConfigured => _isConfigured;
 
     /// <inheritdoc />
-    public bool IsConnected => _client?.ConnectionState == ConnectionState.Connected;
+    public bool IsConnected => _connection.IsConnected;
 
     /// <inheritdoc />
-    public string? LastError => _lastError;
+    public string? LastError => _connection.LastError;
 
     /// <inheritdoc />
     public Task ConfigureAsync(Dictionary<string, string> configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (!configuration.TryGetValue("BotToken", out var token) || string.IsNullOrWhiteSpace(token))
-            throw new ArgumentException("BotToken is required.", nameof(configuration));
-
-        if (!configuration.TryGetValue("ChannelId", out var channelIdStr) || !ulong.TryParse(channelIdStr, out var channelId))
-            throw new ArgumentException("ChannelId is required and must be a valid numeric ID.", nameof(configuration));
-
-        if (!configuration.TryGetValue("GuildId", out var guildIdStr) || !ulong.TryParse(guildIdStr, out var guildId))
-            throw new ArgumentException("GuildId is required and must be a valid numeric ID.", nameof(configuration));
-
-        _botToken = token;
-        _channelId = channelId;
-        _guildId = guildId;
+        _botToken = GetRequiredString(configuration, "BotToken");
+        _channelId = GetRequiredUlong(configuration, "ChannelId");
+        _guildId = GetRequiredUlong(configuration, "GuildId");
 
         if (configuration.TryGetValue("OwnerId", out var ownerIdStr) && ulong.TryParse(ownerIdStr, out var ownerId))
             _ownerId = ownerId;
@@ -99,101 +88,28 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
-            _lastError = null; // Clear previous error on each connect attempt
-
-            if (IsConnected)
+            if (_connection.IsConnected)
             {
                 _logger.LogDebug("Discord provider is already connected");
                 return;
             }
 
-            // Dispose any stale client
-            if (_client is not null)
-            {
-                await DisposeClientAsync();
-            }
+            // Ensure any external subscription is cleared before the connection
+            // manager tears down a stale client.
+            UnhookRouter();
 
-            var config = new DiscordSocketConfig
-            {
-                GatewayIntents = GatewayIntents.Guilds
-                    | GatewayIntents.GuildMessages
-                    | GatewayIntents.MessageContent,
-                LogLevel = LogSeverity.Info
-            };
+            await _connection.ConnectAsync(_botToken!, cancellationToken);
 
-            _client = new DiscordSocketClient(config);
-            _client.Log += OnDiscordLog;
+            _logger.LogInformation("Discord provider connected");
 
-            _readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            string? disconnectReason = null;
-
-            _readyHandler = () =>
-            {
-                _readyTcs.TrySetResult(true);
-                return Task.CompletedTask;
-            };
-
-            _disconnectedHandler = ex =>
-            {
-                _logger.LogWarning(ex, "Discord client disconnected");
-                disconnectReason = ExtractDisconnectReason(ex);
-                _readyTcs?.TrySetResult(false);
-                return Task.CompletedTask;
-            };
-
-            _client.Ready += _readyHandler;
-            _client.Disconnected += _disconnectedHandler;
-
-            try
-            {
-                await _client.LoginAsync(TokenType.Bot, _botToken);
-            }
-            catch (ArgumentException ex)
-            {
-                _lastError = $"Invalid bot token: {ex.Message}";
-                await DisposeClientAsync();
-                throw;
-            }
-            await _client.StartAsync();
-
-            // Wait for Ready event with timeout
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(30));
-
-            try
-            {
-                var ready = await _readyTcs.Task.WaitAsync(cts.Token);
-                if (!ready)
-                {
-                    await DisposeClientAsync();
-                    _lastError = disconnectReason
-                        ?? "Discord client failed to reach Ready state. Check bot token and Message Content Intent in Discord Developer Portal.";
-                    throw new InvalidOperationException(_lastError);
-                }
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                await DisposeClientAsync();
-                _lastError = "Discord client did not become ready within 30 seconds. Check bot token and network connectivity.";
-                throw new TimeoutException("Discord client did not become ready within 30 seconds.");
-            }
-            catch (Exception ex) when (_client is not null)
-            {
-                await DisposeClientAsync();
-                _lastError ??= $"Discord connection failed: {ex.Message}";
-                throw;
-            }
-
-            _lastError = null; // Connected successfully — clear any previous error
-            _logger.LogInformation("Discord provider connected as {BotUser}", _client.CurrentUser?.Username ?? "unknown");
-
-            // Rebuild channel mapping from existing Discord state (survives restarts)
-            var guild = _client.GetGuild(_guildId);
+            // Rebuild channel mapping from existing Discord state (survives restarts).
+            var guild = _connection.Client!.GetGuild(_guildId);
             if (guild is not null)
                 await _channelManager.RebuildAsync(guild);
 
-            // Attach inbound message router AFTER rebuild so channel mappings are ready
-            _client.MessageReceived += _router.HandleMessageReceivedAsync;
+            // Attach inbound message router AFTER rebuild so channel mappings are ready.
+            _connection.Client.MessageReceived += _router.HandleMessageReceivedAsync;
+            _messageReceivedHooked = true;
         }
         finally
         {
@@ -207,8 +123,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
+            UnhookRouter();
             await _channelManager.ResetAsync();
-            await DisposeClientAsync();
+            await _connection.DisposeClientAsync();
             _logger.LogInformation("Discord provider disconnected");
         }
         finally
@@ -222,21 +139,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var guild = GetGuildIfConnected("send notification");
-        if (guild is null) return false;
-
-        try
-        {
-            if (!string.IsNullOrEmpty(message.RoomId))
-                return await _sender.SendToRoomChannelAsync(guild, _channelId, message, cancellationToken);
-
-            return await _sender.SendToDefaultChannelAsync(guild, _channelId, message, cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Failed to send Discord notification: {Title}", message.Title);
-            return false;
-        }
+        return await ExecuteSafeWithConnectedGuildAsync(
+            operationName: "send notification",
+            operation: guild =>
+                !string.IsNullOrEmpty(message.RoomId)
+                    ? _sender.SendToRoomChannelAsync(guild, _channelId, message, cancellationToken)
+                    : _sender.SendToDefaultChannelAsync(guild, _channelId, message, cancellationToken),
+            onFailure: ex => _logger.LogError(ex, "Failed to send Discord notification: {Title}", message.Title));
     }
 
     /// <inheritdoc />
@@ -270,13 +179,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             if (request.Choices is { Count: > 0 })
             {
                 return await _inputHandler.RequestChoiceInputAsync(
-                    _client!, channel, embed, request.Choices, ProviderId, cancellationToken);
+                    _connection.Client!, channel, embed, request.Choices, ProviderId, cancellationToken);
             }
 
             if (request.AllowFreeform)
             {
                 return await _inputHandler.RequestFreeformInputAsync(
-                    _client!, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
+                    _connection.Client!, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
             }
 
             _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
@@ -310,7 +219,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// <inheritdoc cref="IAsyncDisposable.DisposeAsync" />
     public async ValueTask DisposeAsync()
     {
-        await DisposeClientAsync();
+        UnhookRouter();
+        await _connection.DisposeClientAsync();
         _connectLock.Dispose();
     }
 
@@ -321,18 +231,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        var guild = GetGuildIfConnected("send agent question");
-        if (guild is null) return false;
-
-        try
-        {
-            return await _sender.SendAgentQuestionAsync(guild, question, cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Failed to send agent question from '{AgentName}'", question.AgentName);
-            return false;
-        }
+        return await ExecuteSafeWithConnectedGuildAsync(
+            operationName: "send agent question",
+            operation: guild => _sender.SendAgentQuestionAsync(guild, question, cancellationToken),
+            onFailure: ex => _logger.LogError(ex, "Failed to send agent question from '{AgentName}'", question.AgentName));
     }
 
     /// <summary>
@@ -342,18 +244,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(dm);
 
-        var guild = GetGuildIfConnected("send direct message");
-        if (guild is null) return false;
-
-        try
-        {
-            return await _sender.SendDirectMessageAsync(guild, dm, cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Failed to send DM for '{AgentName}'", dm.AgentName);
-            return false;
-        }
+        return await ExecuteSafeWithConnectedGuildAsync(
+            operationName: "send direct message",
+            operation: guild => _sender.SendDirectMessageAsync(guild, dm, cancellationToken),
+            onFailure: ex => _logger.LogError(ex, "Failed to send DM for '{AgentName}'", dm.AgentName));
     }
 
 
@@ -362,17 +256,15 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// </summary>
     public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
     {
-        var guild = GetGuildIfConfigured();
-        if (guild is not null)
-            await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
+        await ExecuteWithConfiguredGuildAsync(
+            guild => _channelManager.RenameRoomChannelAsync(guild, roomId, newName));
     }
 
     /// <inheritdoc />
     public async Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
     {
-        var guild = GetGuildIfConfigured();
-        if (guild is not null)
-            await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
+        await ExecuteWithConfiguredGuildAsync(
+            guild => _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken));
     }
 
 
@@ -384,13 +276,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// </summary>
     private SocketGuild? GetGuildIfConnected(string operationName)
     {
-        if (!IsConnected || _client is null)
+        var client = _connection.Client;
+        if (!_connection.IsConnected || client is null)
         {
             _logger.LogWarning("Cannot {Operation} — Discord provider is not connected", operationName);
             return null;
         }
 
-        var guild = _client.GetGuild(_guildId);
+        var guild = client.GetGuild(_guildId);
         if (guild is null)
             _logger.LogError("Discord guild {GuildId} not found", _guildId);
 
@@ -403,78 +296,61 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// </summary>
     private SocketGuild? GetGuildIfConfigured()
     {
-        if (_client is null || !_isConfigured) return null;
-        return _client.GetGuild(_guildId);
+        var client = _connection.Client;
+        if (client is null || !_isConfigured) return null;
+        return client.GetGuild(_guildId);
     }
 
-    private Task OnDiscordLog(LogMessage logMessage)
+    private static string GetRequiredString(Dictionary<string, string> configuration, string key)
     {
-        var level = logMessage.Severity switch
-        {
-            LogSeverity.Critical => LogLevel.Critical,
-            LogSeverity.Error => LogLevel.Error,
-            LogSeverity.Warning => LogLevel.Warning,
-            LogSeverity.Info => LogLevel.Information,
-            LogSeverity.Verbose => LogLevel.Debug,
-            LogSeverity.Debug => LogLevel.Trace,
-            _ => LogLevel.Information
-        };
+        if (!configuration.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException($"{key} is required.", nameof(configuration));
 
-        _logger.Log(level, logMessage.Exception, "Discord: {Message}", logMessage.Message);
-        return Task.CompletedTask;
+        return value;
     }
 
-    private static string? ExtractDisconnectReason(Exception? ex)
+    private static ulong GetRequiredUlong(Dictionary<string, string> configuration, string key)
     {
-        var current = ex;
-        while (current is not null)
-        {
-            var msg = current.Message;
-            if (msg.Contains("4014", StringComparison.Ordinal) || msg.Contains("Disallowed intent", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Discord rejected the connection: privileged Message Content Intent is not enabled. "
-                     + "Go to https://discord.com/developers/applications → your bot → Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT, then reconnect.";
-            }
-            if (msg.Contains("4004", StringComparison.Ordinal) || msg.Contains("Authentication failed", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Discord rejected the bot token — it may be invalid or revoked. Regenerate the token in the Discord Developer Portal and reconfigure.";
-            }
-            if (msg.Contains("401", StringComparison.Ordinal) && msg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Discord returned 401 Unauthorized — the bot token is invalid, expired, or was never a bot token. "
-                     + "Go to https://discord.com/developers/applications → your bot → Bot → Reset Token, then reconfigure with the new token.";
-            }
-            current = current.InnerException;
-        }
-        return null;
+        if (!configuration.TryGetValue(key, out var value) || !ulong.TryParse(value, out var parsed))
+            throw new ArgumentException($"{key} is required and must be a valid numeric ID.", nameof(configuration));
+
+        return parsed;
     }
 
-    private async Task DisposeClientAsync()
+    private void UnhookRouter()
     {
-        if (_client is null) return;
+        if (!_messageReceivedHooked) return;
+        var client = _connection.Client;
+        if (client is not null)
+            client.MessageReceived -= _router.HandleMessageReceivedAsync;
+        _messageReceivedHooked = false;
+    }
+
+    private async Task<bool> ExecuteSafeWithConnectedGuildAsync(
+        string operationName,
+        Func<SocketGuild, Task<bool>> operation,
+        Action<Exception> onFailure)
+    {
+        var guild = GetGuildIfConnected(operationName);
+        if (guild is null) return false;
 
         try
         {
-            _client.Log -= OnDiscordLog;
-            _client.MessageReceived -= _router.HandleMessageReceivedAsync;
-            if (_readyHandler is not null)
-                _client.Ready -= _readyHandler;
-            if (_disconnectedHandler is not null)
-                _client.Disconnected -= _disconnectedHandler;
-            _readyHandler = null;
-            _disconnectedHandler = null;
+            return await operation(guild);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            onFailure(ex);
+            return false;
+        }
+    }
 
-            await _client.StopAsync();
-            await _client.DisposeAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing Discord client");
-        }
-        finally
-        {
-            _client = null;
-        }
+    private async Task ExecuteWithConfiguredGuildAsync(Func<SocketGuild, Task> operation)
+    {
+        var guild = GetGuildIfConfigured();
+        if (guild is null) return;
+
+        await operation(guild);
     }
 
     #endregion

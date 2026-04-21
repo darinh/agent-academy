@@ -101,8 +101,9 @@ public sealed class ConversationKickoffTests : IDisposable
             NullLogger<BreakoutLifecycleService>.Instance);
         _orchestrator = new AgentOrchestrator(
             scopeFactory,
-            new ConversationRoundRunner(scopeFactory, Catalog, turnRunner, NullLogger<ConversationRoundRunner>.Instance),
-            new DirectMessageRouter(scopeFactory, Catalog, turnRunner, NullLogger<DirectMessageRouter>.Instance),
+            new OrchestratorDispatchService(
+                new ConversationRoundRunner(scopeFactory, Catalog, turnRunner, NullLogger<ConversationRoundRunner>.Instance),
+                new DirectMessageRouter(scopeFactory, Catalog, turnRunner, NullLogger<DirectMessageRouter>.Instance)),
             breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
         _orchestrator.Stop(); // prevent async queue processing

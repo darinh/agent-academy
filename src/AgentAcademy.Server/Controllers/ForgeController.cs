@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using AgentAcademy.Forge;
 using AgentAcademy.Forge.Artifacts;
 using AgentAcademy.Forge.Models;
 using AgentAcademy.Forge.Schemas;
@@ -14,7 +15,7 @@ namespace AgentAcademy.Server.Controllers;
 /// <summary>
 /// REST API for the Forge Pipeline Engine.
 /// Read-only endpoints (runs, artifacts, schemas) are always available.
-/// Execution endpoints (start run, resume) require an OpenAI API key.
+/// Execution endpoints (start run, resume) require execution to be enabled.
 /// </summary>
 [ApiController]
 [Route("api/forge")]
@@ -54,7 +55,7 @@ public sealed class ForgeController : ControllerBase
         if (!_options.ExecutionAvailable)
             return Problem(
                 title: "Forge execution unavailable",
-                detail: "No OpenAI API key configured. Read-only endpoints remain available.",
+                detail: "Forge execution is disabled by server configuration. Read-only endpoints remain available.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
 
         var task = new TaskBrief
@@ -77,9 +78,9 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>Get status of a forge job.</summary>
     [HttpGet("jobs/{jobId}")]
-    public IActionResult GetJob(string jobId)
+    public async Task<IActionResult> GetJob(string jobId)
     {
-        var job = _runService.GetJob(jobId);
+        var job = await _runService.GetJobAsync(jobId);
         if (job is null)
             return NotFound(new { error = "Job not found", jobId });
 
@@ -99,9 +100,9 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>List all forge jobs.</summary>
     [HttpGet("jobs")]
-    public IActionResult ListJobs()
+    public async Task<IActionResult> ListJobs()
     {
-        var jobs = _runService.ListJobs();
+        var jobs = await _runService.ListJobsAsync();
         return Ok(jobs.Select(j => new
         {
             j.JobId,
@@ -115,25 +116,31 @@ public sealed class ForgeController : ControllerBase
         }));
     }
 
-    /// <summary>Resume a crashed/failed forge run.</summary>
+    /// <summary>Resume a crashed/interrupted forge run.</summary>
     [HttpPost("runs/{runId}/resume")]
     [Authorize]
-    public IActionResult ResumeRun(string runId)
+    public async Task<IActionResult> ResumeRun(string runId)
     {
-        if (!ForgeRunService.IsValidRunId(runId))
+        if (!ForgeIdentifiers.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
 
         if (!_options.ExecutionAvailable)
             return Problem(
                 title: "Forge execution unavailable",
-                detail: "No OpenAI API key configured.",
+                detail: "Forge execution is disabled by server configuration.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
 
-        // Resume is not yet implemented — requires extending ForgeRunService
-        return Problem(
-            title: "Not implemented",
-            detail: "Run resume is planned for a future release.",
-            statusCode: StatusCodes.Status501NotImplemented);
+        try
+        {
+            var job = await _runService.ResumeRunAsync(runId);
+            return AcceptedAtAction(nameof(GetJob), new { jobId = job.JobId },
+                new { jobId = job.JobId, runId, status = "queued" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(title: "Resume failed", detail: ex.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
     }
 
     // ── Read-only endpoints ─────────────────────────────────────────────────
@@ -172,7 +179,7 @@ public sealed class ForgeController : ControllerBase
     [HttpGet("runs/{runId}")]
     public async Task<IActionResult> GetRun(string runId, CancellationToken ct)
     {
-        if (!ForgeRunService.IsValidRunId(runId))
+        if (!ForgeIdentifiers.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
 
         var trace = await _runStore.ReadRunAsync(runId, ct);
@@ -186,7 +193,7 @@ public sealed class ForgeController : ControllerBase
     [HttpGet("runs/{runId}/phases")]
     public async Task<IActionResult> GetRunPhases(string runId, CancellationToken ct)
     {
-        if (!ForgeRunService.IsValidRunId(runId))
+        if (!ForgeIdentifiers.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
 
         var phases = await _runStore.ReadPhaseRunsRollupAsync(runId, ct);
@@ -200,7 +207,7 @@ public sealed class ForgeController : ControllerBase
     [HttpGet("artifacts/{hash}")]
     public async Task<IActionResult> GetArtifact(string hash, CancellationToken ct)
     {
-        var normalized = ForgeRunService.NormalizeArtifactHash(hash);
+        var normalized = ForgeIdentifiers.NormalizeArtifactHash(hash);
         if (normalized is null)
             return BadRequest(new { error = "Invalid artifact hash. Expected 64 hex chars, optionally prefixed with sha256:." });
 
@@ -233,9 +240,9 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>Get forge engine status.</summary>
     [HttpGet("status")]
-    public IActionResult GetStatus()
+    public async Task<IActionResult> GetStatus()
     {
-        var jobs = _runService.ListJobs();
+        var jobs = await _runService.ListJobsAsync();
         return Ok(new
         {
             Enabled = _options.Enabled,

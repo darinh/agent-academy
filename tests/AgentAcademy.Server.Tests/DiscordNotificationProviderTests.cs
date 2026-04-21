@@ -28,7 +28,9 @@ public class DiscordNotificationProviderTests
         var sender = new DiscordMessageSender(channelManager, senderLogger);
         var routerLogger = Substitute.For<ILogger<DiscordMessageRouter>>();
         var router = new DiscordMessageRouter(_scopeFactory, orchestrator, channelManager, routerLogger);
-        _provider = new DiscordNotificationProvider(_logger, channelManager, inputHandler, sender, router);
+        var connectionLogger = Substitute.For<ILogger<DiscordConnectionManager>>();
+        var connection = new DiscordConnectionManager(connectionLogger);
+        _provider = new DiscordNotificationProvider(_logger, channelManager, inputHandler, sender, router, connection);
     }
 
     #region Properties
@@ -405,7 +407,8 @@ public class DiscordNotificationProviderTests
         var turnRunner = new AgentTurnRunner(executor, pipeline, taskAssignmentHandler, memoryLoader, scopeFactory, Substitute.For<ILogger<AgentTurnRunner>>());
         var roundRunner = new ConversationRoundRunner(scopeFactory, catalog, turnRunner, Substitute.For<ILogger<ConversationRoundRunner>>());
         var dmRouter = new DirectMessageRouter(scopeFactory, catalog, turnRunner, Substitute.For<ILogger<DirectMessageRouter>>());
-        return new AgentOrchestrator(scopeFactory, roundRunner, dmRouter, breakoutLifecycle, logger);
+        var dispatchService = new OrchestratorDispatchService(roundRunner, dmRouter);
+        return new AgentOrchestrator(scopeFactory, dispatchService, breakoutLifecycle, logger);
     }
 
     #endregion

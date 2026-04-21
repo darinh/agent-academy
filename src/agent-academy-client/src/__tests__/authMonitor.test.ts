@@ -138,7 +138,7 @@ describe("auth monitor", () => {
     });
   });
 
-  it("clears session debounce state when auth returns to operational", () => {
+  it("does NOT clear session debounce state when auth returns to operational", () => {
     const storage = new MemoryStorage();
     markAutoReauthAttempt(storage);
     markManualLogout(storage);
@@ -157,8 +157,11 @@ describe("auth monitor", () => {
       storage,
     );
 
+    // Auto-reauth flag is never cleared automatically — this prevents the
+    // redirect loop where operational→degraded oscillation caused repeated
+    // full-page navigations to the OAuth flow.
     expect(effect).toEqual({
-      clearAutoReauthAttempt: true,
+      clearAutoReauthAttempt: false,
       clearManualLogoutSuppression: true,
       redirectToLogin: false,
     });
@@ -183,8 +186,9 @@ describe("auth monitor", () => {
       storage,
     );
 
+    // Auto-reauth flag is never cleared automatically
     expect(effect).toEqual({
-      clearAutoReauthAttempt: true,
+      clearAutoReauthAttempt: false,
       clearManualLogoutSuppression: false,
       redirectToLogin: false,
     });

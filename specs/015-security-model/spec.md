@@ -415,7 +415,7 @@ The SQLite database has no row-level security, tenant IDs, or per-user data part
 
 **File**: `Startup/ServiceCollectionStartupExtensions.cs:39-50`
 
-Configurable via `Cors:Origins` (array) in `appsettings.json` or environment variables (`Cors__Origins__0`, `Cors__Origins__1`, etc.). Falls back to `["http://localhost:5173"]` when not set.
+Configurable via `Cors:Origins` (array) in `appsettings.json` or environment variables (`Cors__Origins__0`, `Cors__Origins__1`, etc.). Falls back to `["http://localhost:5173"]` when missing, empty, or containing only blank values.
 
 Default policy:
 - Allowed origins: configured array (default: `http://localhost:5173`)

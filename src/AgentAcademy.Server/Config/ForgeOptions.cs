@@ -24,17 +24,11 @@ public sealed class ForgeOptions
     public string MethodologiesDirectory { get; set; } = "methodologies";
 
     /// <summary>
-    /// OpenAI API key for LLM calls. When empty, execution endpoints return 503
-    /// but read-only endpoints (list runs, get artifacts, schemas) remain available.
-    /// Can also be set via user-secrets or FORGE__OPENAIAPIKEYENVAR environment variable.
+    /// Kill switch for Forge execution paths.
+    /// When false, execution endpoints return 503 while read-only endpoints remain available.
     /// </summary>
-    public string? OpenAiApiKey { get; set; }
+    public bool ExecutionEnabled { get; set; } = true;
 
-    /// <summary>
-    /// OpenAI API base URL. Defaults to https://api.openai.com/v1.
-    /// </summary>
-    public string? OpenAiBaseUrl { get; set; }
-
-    /// <summary>Whether LLM execution is available (API key is configured).</summary>
-    public bool ExecutionAvailable => !string.IsNullOrWhiteSpace(OpenAiApiKey);
+    /// <summary>Whether Forge execution paths are available.</summary>
+    public bool ExecutionAvailable => ExecutionEnabled;
 }

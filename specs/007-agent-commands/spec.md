@@ -537,10 +537,10 @@ Content-Type: application/json
 }
 ```
 
-**Response (async commands: RUN_BUILD, RUN_TESTS)**:
+**Response (async commands: CREATE_PR, MERGE_PR, GENERATE_DIGEST, RUN_FRONTEND_BUILD, RUN_TYPECHECK, RUN_MIGRATIONS, RUN_FORGE)**:
 ```json
 {
-  "command": "RUN_BUILD",
+  "command": "RUN_FORGE",
   "status": "pending",
   "result": null,
   "error": null,
@@ -560,7 +560,7 @@ Authorization: Cookie (authenticated session)
 **Response**:
 ```json
 {
-  "command": "RUN_BUILD",
+  "command": "RUN_FORGE",
   "status": "completed",
   "result": {
     "exitCode": 0,
@@ -604,7 +604,7 @@ Authorization: Cookie (authenticated session)
 **Argument normalization**: Converts `Dictionary<string, JsonElement>` to `Dictionary<string, object?>` (lines 303-326). Only scalar JSON values allowed (string, number, boolean, null). Arrays/objects rejected to prevent handlers from misinterpreting complex types as strings.
 
 **Async command handling**:
-- Commands in `AsyncCommands` set (`RUN_BUILD`, `RUN_TESTS`) return `202 Accepted` immediately
+- Commands in `AsyncCommands` set (`CREATE_PR`, `MERGE_PR`, `GENERATE_DIGEST`, `RUN_FRONTEND_BUILD`, `RUN_TYPECHECK`, `RUN_MIGRATIONS`, `RUN_FORGE`) return `202 Accepted` immediately
 - Creates a "Pending" audit row with the correlationId
 - Fires handler on background thread via `Task.Run`
 - Handler writes final result to same audit row when complete

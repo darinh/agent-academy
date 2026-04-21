@@ -177,8 +177,36 @@ export interface MethodologyPhase {
 
 // --- API functions ---
 
+function toBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function toString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
 export function getForgeStatus(): Promise<ForgeStatus> {
-  return request<ForgeStatus>(apiUrl("/api/forge/status"));
+  return request<Record<string, unknown>>(apiUrl("/api/forge/status")).then((raw) => {
+    const enabled = toBoolean(raw.enabled ?? raw.Enabled);
+    const executionAvailable = toBoolean(
+      raw.executionAvailable ?? raw.executionEnabled ?? raw.ExecutionAvailable ?? raw.ExecutionEnabled,
+      enabled,
+    );
+
+    return {
+      enabled,
+      executionAvailable,
+      runsDirectory: toString(raw.runsDirectory ?? raw.RunsDirectory),
+      activeJobs: toNumber(raw.activeJobs ?? raw.ActiveJobs),
+      totalJobs: toNumber(raw.totalJobs ?? raw.TotalJobs),
+      completedJobs: toNumber(raw.completedJobs ?? raw.CompletedJobs),
+      failedJobs: toNumber(raw.failedJobs ?? raw.FailedJobs),
+    };
+  });
 }
 
 export function startForgeRun(req: StartForgeRunRequest): Promise<StartForgeRunResponse> {

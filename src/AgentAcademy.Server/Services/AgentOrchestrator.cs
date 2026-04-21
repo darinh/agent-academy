@@ -13,12 +13,12 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IConversationRoundRunner _roundRunner;
-    private readonly IDirectMessageRouter _dmRouter;
+    private readonly IOrchestratorDispatchService _dispatchService;
     private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
+    private readonly HashSet<string> _queuedRooms = new(StringComparer.Ordinal);
     private readonly HashSet<string> _queuedDirectMessages = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private bool _processing;
@@ -31,14 +31,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
-        IConversationRoundRunner roundRunner,
-        IDirectMessageRouter dmRouter,
+        IOrchestratorDispatchService dispatchService,
         IBreakoutLifecycleService breakoutLifecycle,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
-        _roundRunner = roundRunner;
-        _dmRouter = dmRouter;
+        _dispatchService = dispatchService;
         _breakoutLifecycle = breakoutLifecycle;
         _logger = logger;
     }
@@ -82,19 +80,13 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             return;
         }
 
-        lock (_lock)
-        {
-            foreach (var roomId in pendingRoomIds)
-            {
-                _queue.Enqueue(new QueueItem(roomId));
-            }
-        }
+        var enqueuedCount = EnqueueRooms(pendingRoomIds);
 
         _logger.LogInformation(
-            "Queue reconstruction: re-enqueued {Count} room(s) with pending human messages: {RoomIds}",
-            pendingRoomIds.Count, string.Join(", ", pendingRoomIds));
+            "Queue reconstruction: enqueued {Count} room(s) with pending human messages: {RoomIds}",
+            enqueuedCount, string.Join(", ", pendingRoomIds));
 
-        SignalProcessing();
+        StartProcessingIfNeeded();
     }
 
     // ── PUBLIC ENTRY POINT ──────────────────────────────────────
@@ -105,7 +97,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     /// </summary>
     public void HandleHumanMessage(string roomId)
     {
-        EnqueueAndProcess(new QueueItem(roomId));
+        if (!TryEnqueueRoom(roomId))
+        {
+            return;
+        }
+
+        StartProcessingIfNeeded();
     }
 
     /// <summary>
@@ -119,109 +116,164 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             return;
         }
 
-        SignalProcessing();
+        StartProcessingIfNeeded();
     }
 
     // ── QUEUE ───────────────────────────────────────────────────
 
     private async Task ProcessQueueAsync()
     {
-        if (!TryBeginProcessing()) return;
-        var resetProcessingOnExit = true;
-
         try
         {
             while (!_cts.IsCancellationRequested)
             {
                 QueueItem item;
-                if (!TryDequeueOrStop(out item))
+                if (!TryDequeue(out item))
                 {
-                    resetProcessingOnExit = false;
-                    return;
+                    break;
                 }
 
-                try
-                {
-                    if (item.TargetAgentId is { } targetAgentId)
-                    {
-                        await _dmRouter.RouteAsync(targetAgentId);
-                    }
-                    else
-                    {
-                        await _roundRunner.RunRoundsAsync(item.RoomId, _cts.Token);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Orchestrator failed for {Item}", item);
-                }
+                await ProcessQueueItemAsync(item);
             }
         }
         finally
         {
-            if (resetProcessingOnExit)
-            {
-                EndProcessing();
-            }
+            EndProcessingAndRestartIfNeeded();
         }
     }
 
-    private void EnqueueAndProcess(QueueItem item)
+    private bool TryEnqueueRoom(string roomId)
     {
-        lock (_lock) { _queue.Enqueue(item); }
-        SignalProcessing();
+        lock (_lock)
+        {
+            return TryEnqueueRoomLocked(roomId);
+        }
+    }
+
+    private int EnqueueRooms(IReadOnlyCollection<string> roomIds)
+    {
+        var enqueuedCount = 0;
+
+        lock (_lock)
+        {
+            foreach (var roomId in roomIds)
+            {
+                if (!TryEnqueueRoomLocked(roomId))
+                {
+                    continue;
+                }
+                enqueuedCount++;
+            }
+        }
+
+        return enqueuedCount;
     }
 
     private bool TryEnqueueDirectMessage(string recipientAgentId)
     {
         lock (_lock)
         {
-            // Dedupe: skip if a DM trigger for this agent is already queued.
-            if (!_queuedDirectMessages.Add(recipientAgentId))
+            return TryEnqueueDirectMessageLocked(recipientAgentId);
+        }
+    }
+
+    private bool TryDequeue(out QueueItem item)
+    {
+        lock (_lock)
+        {
+            if (_cts.IsCancellationRequested)
             {
+                item = default!;
                 return false;
             }
 
-            _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
-            return true;
-        }
-    }
-
-    private bool TryBeginProcessing()
-    {
-        lock (_lock)
-        {
-            if (_processing) return false;
-            _processing = true;
-            return true;
-        }
-    }
-
-    private bool TryDequeueOrStop(out QueueItem item)
-    {
-        lock (_lock)
-        {
             if (_queue.TryDequeue(out var dequeuedItem))
             {
                 if (dequeuedItem.TargetAgentId is { } targetAgentId)
                 {
                     _queuedDirectMessages.Remove(targetAgentId);
                 }
+                else
+                {
+                    _queuedRooms.Remove(dequeuedItem.RoomId);
+                }
 
                 item = dequeuedItem;
                 return true;
             }
 
-            _processing = false;
             item = default!;
             return false;
         }
     }
 
-    private void EndProcessing()
+    private async Task ProcessQueueItemAsync(QueueItem item)
     {
-        lock (_lock) { _processing = false; }
+        try
+        {
+            await _dispatchService.DispatchAsync(item.RoomId, item.TargetAgentId, _cts.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Orchestrator failed for {Item}", item);
+        }
     }
 
-    private void SignalProcessing() => _ = ProcessQueueAsync();
+    private void EndProcessingAndRestartIfNeeded()
+    {
+        lock (_lock)
+        {
+            _processing = false;
+        }
+
+        StartProcessingIfNeeded();
+    }
+
+    private void StartProcessingIfNeeded()
+    {
+        bool shouldStart;
+        lock (_lock)
+        {
+            shouldStart = TryBeginProcessingLocked();
+        }
+
+        if (shouldStart)
+        {
+            _ = ProcessQueueAsync();
+        }
+    }
+
+    private bool TryEnqueueRoomLocked(string roomId)
+    {
+        if (!_queuedRooms.Add(roomId))
+        {
+            return false;
+        }
+
+        _queue.Enqueue(new QueueItem(roomId));
+        return true;
+    }
+
+    private bool TryEnqueueDirectMessageLocked(string recipientAgentId)
+    {
+        // Dedupe: skip if a DM trigger for this agent is already queued.
+        if (!_queuedDirectMessages.Add(recipientAgentId))
+        {
+            return false;
+        }
+
+        _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
+        return true;
+    }
+
+    private bool TryBeginProcessingLocked()
+    {
+        if (_processing || _cts.IsCancellationRequested || _queue.Count == 0)
+        {
+            return false;
+        }
+
+        _processing = true;
+        return true;
+    }
 }

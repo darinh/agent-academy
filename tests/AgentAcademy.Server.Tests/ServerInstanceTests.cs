@@ -115,8 +115,9 @@ public class ServerInstanceTests : IDisposable
         var dmRouter = new DirectMessageRouter(
             scopeFactory, _catalog, turnRunner,
             NullLogger<DirectMessageRouter>.Instance);
+        var dispatchService = new OrchestratorDispatchService(roundRunner, dmRouter);
         return new AgentOrchestrator(
-            scopeFactory, roundRunner, dmRouter,
+            scopeFactory, dispatchService,
             breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
     }
