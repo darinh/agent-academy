@@ -344,7 +344,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         _disconnectedHandler = ex =>
         {
             _logger.LogWarning(ex, "Discord client disconnected");
-            setDisconnectReason(ExtractDisconnectReason(ex));
+            setDisconnectReason(DiscordDisconnectReasonResolver.Resolve(ex));
             _readyTcs?.TrySetResult(false);
             return Task.CompletedTask;
         };
@@ -399,44 +399,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     private Task OnDiscordLog(LogMessage logMessage)
     {
-        var level = logMessage.Severity switch
-        {
-            LogSeverity.Critical => LogLevel.Critical,
-            LogSeverity.Error => LogLevel.Error,
-            LogSeverity.Warning => LogLevel.Warning,
-            LogSeverity.Info => LogLevel.Information,
-            LogSeverity.Verbose => LogLevel.Debug,
-            LogSeverity.Debug => LogLevel.Trace,
-            _ => LogLevel.Information
-        };
-
+        var level = DiscordLogSeverityMapper.ToLogLevel(logMessage.Severity);
         _logger.Log(level, logMessage.Exception, "Discord: {Message}", logMessage.Message);
         return Task.CompletedTask;
-    }
-
-    private static string? ExtractDisconnectReason(Exception? ex)
-    {
-        var current = ex;
-        while (current is not null)
-        {
-            var msg = current.Message;
-            if (msg.Contains("4014", StringComparison.Ordinal) || msg.Contains("Disallowed intent", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Discord rejected the connection: privileged Message Content Intent is not enabled. "
-                     + "Go to https://discord.com/developers/applications → your bot → Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT, then reconnect.";
-            }
-            if (msg.Contains("4004", StringComparison.Ordinal) || msg.Contains("Authentication failed", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Discord rejected the bot token — it may be invalid or revoked. Regenerate the token in the Discord Developer Portal and reconfigure.";
-            }
-            if (msg.Contains("401", StringComparison.Ordinal) && msg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Discord returned 401 Unauthorized — the bot token is invalid, expired, or was never a bot token. "
-                     + "Go to https://discord.com/developers/applications → your bot → Bot → Reset Token, then reconfigure with the new token.";
-            }
-            current = current.InnerException;
-        }
-        return null;
     }
 
     private async Task<bool> ExecuteSafeWithConnectedGuildAsync(
