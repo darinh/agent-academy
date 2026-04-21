@@ -195,8 +195,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 "Authentication failure for agent {AgentId} — marking auth failed",
                 agent.Id);
             await _errorTracker.RecordAsync(agent.Id, roomId, "authentication", ex.Message, recoverable: false);
-            await HandleAuthFailureAsync(agent.Id, roomId, sessionKey);
-            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
+            await HandleAuthFailureAsync(agent.Id, roomId);
+            return await RunFallbackAsync(agent, prompt, roomId, ct);
         }
         catch (CopilotAuthorizationException ex)
         {
@@ -205,8 +205,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 "Authorization failure for agent {AgentId} — token lacks required permissions",
                 agent.Id);
             await _errorTracker.RecordAsync(agent.Id, roomId, "authorization", ex.Message, recoverable: false);
-            await _sessionPool.InvalidateAsync(sessionKey);
-            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
+            return await InvalidateSessionAndFallbackAsync(agent, prompt, roomId, sessionKey, ct);
         }
         catch (CopilotQuotaException ex)
         {
@@ -217,8 +216,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 agent.Id, roomId,
                 _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             // Already recorded per-attempt in CopilotSdkSender; no duplicate here.
-            await _sessionPool.InvalidateAsync(sessionKey);
-            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
+            return await InvalidateSessionAndFallbackAsync(agent, prompt, roomId, sessionKey, ct);
         }
         catch (CopilotTransientException ex)
         {
@@ -229,8 +227,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
                 agent.Id, roomId,
                 _circuitBreaker.ConsecutiveFailures, _circuitBreaker.FailureThreshold);
             // Already recorded per-attempt in CopilotSdkSender; no duplicate here.
-            await _sessionPool.InvalidateAsync(sessionKey);
-            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
+            return await InvalidateSessionAndFallbackAsync(agent, prompt, roomId, sessionKey, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -243,8 +240,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             await _errorTracker.RecordAsync(agent.Id, roomId, "unknown", ex.Message, recoverable: true);
 
             // Invalidate the broken session so the next attempt gets a fresh one.
-            await _sessionPool.InvalidateAsync(sessionKey);
-            return await GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
+            return await InvalidateSessionAndFallbackAsync(agent, prompt, roomId, sessionKey, ct);
         }
     }
 
@@ -356,6 +352,24 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         return _fallback ??= new StubExecutor(_stubLogger);
     }
 
+    private Task<string> RunFallbackAsync(
+        AgentDefinition agent,
+        string prompt,
+        string? roomId,
+        CancellationToken ct)
+        => GetFallback().RunAsync(agent, prompt, roomId, workspacePath: null, ct);
+
+    private async Task<string> InvalidateSessionAndFallbackAsync(
+        AgentDefinition agent,
+        string prompt,
+        string? roomId,
+        string sessionKey,
+        CancellationToken ct)
+    {
+        await _sessionPool.InvalidateAsync(sessionKey);
+        return await RunFallbackAsync(agent, prompt, roomId, ct);
+    }
+
     private static string BuildKey(string agentId, string? roomId)
         => $"{agentId}:{roomId ?? "default"}";
 
@@ -366,7 +380,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
 
     // ── Auth failure/recovery notifications ─────────────────────
 
-    private async Task HandleAuthFailureAsync(string agentId, string? roomId, string sessionKey)
+    private async Task HandleAuthFailureAsync(string agentId, string? roomId)
     {
         // Invalidate both the specific failing session AND the default/worktree
         // sessions for this agent+room — mirrors original InvalidateSessionAsync behavior.
