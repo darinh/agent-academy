@@ -5,6 +5,7 @@ using AgentAcademy.Forge.Schemas;
 using AgentAcademy.Forge.Storage;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -22,6 +23,7 @@ public sealed class ForgeController : ControllerBase
     private readonly IRunStore _runStore;
     private readonly IArtifactStore _artifactStore;
     private readonly SchemaRegistry _schemaRegistry;
+    private readonly IMethodologyCatalog _methodologyCatalog;
     private readonly ForgeOptions _options;
 
     public ForgeController(
@@ -29,12 +31,14 @@ public sealed class ForgeController : ControllerBase
         IRunStore runStore,
         IArtifactStore artifactStore,
         SchemaRegistry schemaRegistry,
+        IMethodologyCatalog methodologyCatalog,
         ForgeOptions options)
     {
         _runService = runService;
         _runStore = runStore;
         _artifactStore = artifactStore;
         _schemaRegistry = schemaRegistry;
+        _methodologyCatalog = methodologyCatalog;
         _options = options;
     }
 
@@ -239,6 +243,48 @@ public sealed class ForgeController : ControllerBase
             CompletedJobs = jobs.Count(j => j.Status == ForgeJobStatus.Completed),
             FailedJobs = jobs.Count(j => j.Status == ForgeJobStatus.Failed)
         });
+    }
+
+    // ── Methodology catalog endpoints ───────────────────────────────────────
+
+    /// <summary>List all saved methodology templates.</summary>
+    [HttpGet("methodologies")]
+    public async Task<IActionResult> ListMethodologies(CancellationToken ct)
+    {
+        var methodologies = await _methodologyCatalog.ListAsync(ct);
+        return Ok(methodologies);
+    }
+
+    /// <summary>Get a saved methodology by ID.</summary>
+    [HttpGet("methodologies/{methodologyId}")]
+    public async Task<IActionResult> GetMethodology(string methodologyId, CancellationToken ct)
+    {
+        var methodology = await _methodologyCatalog.GetAsync(methodologyId, ct);
+        if (methodology is null)
+            return NotFound(new { error = "Methodology not found", methodologyId });
+
+        return Ok(methodology);
+    }
+
+    /// <summary>Save or update a methodology template.</summary>
+    [HttpPut("methodologies/{methodologyId}")]
+    public async Task<IActionResult> SaveMethodology(
+        string methodologyId,
+        [FromBody] MethodologyDefinition methodology,
+        CancellationToken ct)
+    {
+        if (methodology.Id != methodologyId)
+            return BadRequest(new { error = "Methodology ID in body must match the URL parameter." });
+
+        try
+        {
+            var savedId = await _methodologyCatalog.SaveAsync(methodology, ct);
+            return Ok(new { id = savedId, message = "Methodology saved." });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 }
 

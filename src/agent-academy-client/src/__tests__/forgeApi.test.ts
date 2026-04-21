@@ -9,6 +9,9 @@ import {
   getForgeArtifact,
   listForgeSchemas,
   startForgeRun,
+  listMethodologies,
+  getMethodology,
+  saveMethodology,
 } from "../api/forge";
 
 vi.mock("../api/core", () => ({
@@ -143,6 +146,51 @@ describe("forge API", () => {
       await startForgeRun(req);
       const body = JSON.parse((mockRequest.mock.calls[0][1] as RequestInit).body as string);
       expect(body.taskId).toBe("custom-id");
+    });
+  });
+
+  // ── Methodology catalog ──────────────────────────────────────────
+
+  describe("listMethodologies", () => {
+    it("calls correct URL", async () => {
+      mockRequest.mockResolvedValue([]);
+      await listMethodologies();
+      expect(mockRequest).toHaveBeenCalledWith("http://test/api/forge/methodologies");
+    });
+
+    it("returns the methodologies array", async () => {
+      const expected = [{ id: "spike-default-v1", description: "Five phases", phaseCount: 5 }];
+      mockRequest.mockResolvedValue(expected);
+      const result = await listMethodologies();
+      expect(result).toBe(expected);
+    });
+  });
+
+  describe("getMethodology", () => {
+    it("calls correct URL with methodologyId", async () => {
+      mockRequest.mockResolvedValue({ id: "spike-default-v1" });
+      await getMethodology("spike-default-v1");
+      expect(mockRequest).toHaveBeenCalledWith("http://test/api/forge/methodologies/spike-default-v1");
+    });
+
+    it("encodes special characters in methodologyId", async () => {
+      mockRequest.mockResolvedValue({ id: "a/b" });
+      await getMethodology("a/b");
+      expect(mockRequest).toHaveBeenCalledWith("http://test/api/forge/methodologies/a%2Fb");
+    });
+  });
+
+  describe("saveMethodology", () => {
+    it("calls correct URL with PUT method and body", async () => {
+      const methodology = { id: "my-method-v1", phases: [{ id: "req", goal: "g", inputs: [], output_schema: "r/v1", instructions: "i" }] };
+      mockRequest.mockResolvedValue({ id: "my-method-v1", message: "Saved" });
+
+      const result = await saveMethodology("my-method-v1", methodology as never);
+      expect(result.id).toBe("my-method-v1");
+      expect(mockRequest).toHaveBeenCalledWith("http://test/api/forge/methodologies/my-method-v1", {
+        method: "PUT",
+        body: JSON.stringify(methodology),
+      });
     });
   });
 });

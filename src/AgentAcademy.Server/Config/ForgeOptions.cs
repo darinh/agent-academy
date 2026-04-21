@@ -18,6 +18,12 @@ public sealed class ForgeOptions
     public string RunsDirectory { get; set; } = "forge-runs";
 
     /// <summary>
+    /// Root directory for saved methodology templates. Resolved relative to ContentRootPath.
+    /// Default: "methodologies".
+    /// </summary>
+    public string MethodologiesDirectory { get; set; } = "methodologies";
+
+    /// <summary>
     /// OpenAI API key for LLM calls. When empty, execution endpoints return 503
     /// but read-only endpoints (list runs, get artifacts, schemas) remain available.
     /// Can also be set via user-secrets or FORGE__OPENAIAPIKEYENVAR environment variable.

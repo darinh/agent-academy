@@ -21,6 +21,9 @@ vi.mock("../api", () => ({
   getForgeRunPhases: vi.fn(),
   getForgeArtifact: vi.fn(),
   startForgeRun: vi.fn(),
+  listMethodologies: vi.fn(),
+  getMethodology: vi.fn(),
+  saveMethodology: vi.fn(),
 }));
 
 import {
@@ -30,6 +33,9 @@ import {
   getForgeRun,
   getForgeRunPhases,
   startForgeRun,
+  listMethodologies,
+  getMethodology,
+  saveMethodology,
 } from "../api";
 
 const mockGetStatus = vi.mocked(getForgeStatus);
@@ -38,6 +44,9 @@ const mockListRuns = vi.mocked(listForgeRuns);
 const mockGetRun = vi.mocked(getForgeRun);
 const mockGetPhases = vi.mocked(getForgeRunPhases);
 const mockStartRun = vi.mocked(startForgeRun);
+const mockListMethodologies = vi.mocked(listMethodologies);
+const mockGetMethodology = vi.mocked(getMethodology);
+const mockSaveMethodology = vi.mocked(saveMethodology);
 
 // ── Factories ──
 
@@ -131,6 +140,8 @@ describe("ForgePanel", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Default: empty methodology catalog (graceful fallback)
+    mockListMethodologies.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -428,7 +439,7 @@ describe("ForgePanel", () => {
       expect(screen.getByText(/New Pipeline Run/)).toBeInTheDocument();
       expect(screen.getByLabelText("Title")).toBeInTheDocument();
       expect(screen.getByLabelText("Description")).toBeInTheDocument();
-      expect(screen.getByLabelText("Methodology (JSON)")).toBeInTheDocument();
+      expect(screen.getByLabelText("Methodology JSON")).toBeInTheDocument();
       expect(screen.getByText("Start Run")).toBeInTheDocument();
     });
   });
@@ -505,7 +516,7 @@ describe("ForgePanel", () => {
     await user.type(screen.getByLabelText("Description"), "Do the thing");
 
     // Clear methodology and type invalid JSON
-    const methodologyInput = screen.getByLabelText("Methodology (JSON)");
+    const methodologyInput = screen.getByLabelText("Methodology JSON");
     await user.clear(methodologyInput);
     await user.type(methodologyInput, "not valid json");
 
@@ -602,6 +613,114 @@ describe("ForgePanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Forge")).toBeInTheDocument();
       expect(screen.queryByText(/New Pipeline Run/)).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Methodology catalog ──
+
+  it("shows methodology selector in new run form", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    mockListMethodologies.mockResolvedValue([
+      { id: "spike-default-v1", description: "Five phases", phaseCount: 5, hasBudget: false, hasFidelity: false, hasControl: false },
+      { id: "fast-v1", description: "Quick run", phaseCount: 2, hasBudget: false, hasFidelity: false, hasControl: false },
+    ]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Methodology")).toBeInTheDocument();
+    });
+
+    // Catalog options should appear
+    await waitFor(() => {
+      const select = screen.getByLabelText("Methodology") as HTMLSelectElement;
+      expect(select.options.length).toBe(3); // "Custom" + 2 methodologies
+    });
+  });
+
+  it("loads methodology JSON when selecting from catalog", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    mockListMethodologies.mockResolvedValue([
+      { id: "spike-default-v1", description: "Five phases", phaseCount: 5, hasBudget: false, hasFidelity: false, hasControl: false },
+    ]);
+    mockGetMethodology.mockResolvedValue({
+      id: "spike-default-v1",
+      description: "Five phases",
+      phases: [{ id: "req", goal: "g", inputs: [], output_schema: "r/v1", instructions: "i" }],
+    } as never);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Methodology")).toBeInTheDocument();
+    });
+
+    // Wait for catalog to load
+    await waitFor(() => {
+      const select = screen.getByLabelText("Methodology") as HTMLSelectElement;
+      expect(select.options.length).toBe(2);
+    });
+
+    await user.selectOptions(screen.getByLabelText("Methodology"), "spike-default-v1");
+
+    await waitFor(() => {
+      expect(mockGetMethodology).toHaveBeenCalledWith("spike-default-v1");
+    });
+  });
+
+  it("shows Save as Template button in new run form", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Save as Template/)).toBeInTheDocument();
+    });
+  });
+
+  it("gracefully handles methodology catalog failure", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    mockListMethodologies.mockRejectedValue(new Error("Server error"));
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    // Form should still render with Custom option only
+    await waitFor(() => {
+      expect(screen.getByText(/New Pipeline Run/)).toBeInTheDocument();
+      const select = screen.getByLabelText("Methodology") as HTMLSelectElement;
+      expect(select.options.length).toBe(1); // Just "Custom"
     });
   });
 });

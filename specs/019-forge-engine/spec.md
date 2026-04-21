@@ -795,6 +795,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
   "Forge": {
     "Enabled": true,
     "RunsDirectory": "forge-runs",
+    "MethodologiesDirectory": "methodologies",
     "OpenAiApiKey": "",
     "OpenAiBaseUrl": "https://api.openai.com/v1"
   }
@@ -803,6 +804,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 
 - `ForgeOptions` POCO bound from `Forge` section (`Config/ForgeOptions.cs`)
 - `RunsDirectory` resolved relative to `ContentRootPath`
+- `MethodologiesDirectory` resolved relative to `ContentRootPath` (default: `methodologies/`)
 - `OpenAiApiKey` can be set via user-secrets or environment variables
 - When `OpenAiApiKey` is empty, execution endpoints return 503; read-only endpoints remain available
 
@@ -829,6 +831,9 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | `/api/forge/artifacts/{hash}` | GET | — | Get artifact by content hash |
 | `/api/forge/schemas` | GET | — | List registered schemas |
 | `/api/forge/status` | GET | — | Engine status + job counts |
+| `/api/forge/methodologies` | GET | — | List saved methodology templates |
+| `/api/forge/methodologies/{id}` | GET | — | Get a methodology by ID |
+| `/api/forge/methodologies/{id}` | PUT | — | Save/update a methodology template |
 
 ### Job Queue
 
@@ -843,6 +848,35 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 
 - **Path traversal**: Run IDs validated against `R_[0-9A-HJKMNP-TV-Z]{26}` regex; artifact hashes validated as 64 hex chars (with optional `sha256:` prefix normalization)
 - **Execution gating**: `UnavailableLlmClient` throws on `GenerateAsync`, preventing accidental execution when no API key is configured
+- **Methodology IDs**: Strict allowlist regex `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,98}[a-zA-Z0-9]$`; resolved paths validated against catalog root; atomic writes via unique temp files
+
+### Methodology Catalog
+
+`IMethodologyCatalog` / `DiskMethodologyCatalog` (`Services/DiskMethodologyCatalog.cs`):
+- Disk-backed catalog of saved methodology templates in `MethodologiesDirectory` (configurable, default `methodologies/`)
+- Filename derived from methodology `id` field (e.g., `spike-default-v1` → `spike-default-v1.json`)
+- `ListAsync()` scans directory, skips malformed files (logs warnings), returns summaries sorted by ID
+- `GetAsync(id)` returns full `MethodologyDefinition` or null if not found
+- `SaveAsync(methodology)` validates then writes atomically; returns methodology ID
+- `SeedAsync(methodology)` writes only if file doesn't already exist (idempotent startup seeding)
+
+**Validation on save:**
+- Non-empty ID matching allowlist regex
+- At least one phase with unique IDs
+- All phase inputs reference existing phases
+- No dependency cycles (DFS cycle detection)
+- Valid `max_attempts_default` (> 0), valid `budget` (> 0 if specified)
+- `fidelity.target_phase` references existing phase ID
+- `control.target_schema` is non-empty when control is configured
+
+**Default methodology**: `spike-default-v1` (5-phase pipeline) is seeded into the catalog on first startup via `SeedDefaultMethodologyAsync()`.
+
+**Frontend**: ForgePanel "New Run" form includes:
+- Methodology selector dropdown (populated from `GET /api/forge/methodologies`)
+- JSON editor pre-populated when a template is selected
+- "Save as Template" button to persist customized methodologies back to catalog
+- Graceful fallback when catalog is unavailable (form works with manual JSON editing)
+- Stale-response guard on methodology selection (fetch ID tracking)
 
 ### Known Integration Gaps
 
@@ -873,3 +907,4 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-20 | Schema evolution — multi-version registry, lifecycle statuses, methodology validation, version-dispatched validators, closes Known Gap #8 | `feat/forge-schema-evolution` |
 | 2026-04-21 | Server integration — REST API, job queue, DI wiring, path validation, conditional LLM, 35 tests, closes Known Gap #10 | `feat/forge-integration` |
 | 2026-04-21 | Start-run UI — New Run button, form with title/description/methodology JSON editor, 11 new tests, closes Integration Gap #7 | `develop` |
+| 2026-04-21 | Methodology catalog — disk-backed catalog, REST endpoints, UI selector with save-as-template, 26 new tests | `feat/methodology-browser` |

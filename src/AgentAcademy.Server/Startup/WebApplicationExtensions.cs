@@ -81,6 +81,9 @@ public static class WebApplicationExtensions
             var kickoff = scope.ServiceProvider.GetRequiredService<IConversationKickoffService>();
             await kickoff.TryKickoffAsync(mainRoomId, activeWorkspace);
         }
+
+        // 8. Seed default forge methodology into catalog
+        await app.SeedDefaultMethodologyAsync();
     }
 
     /// <summary>

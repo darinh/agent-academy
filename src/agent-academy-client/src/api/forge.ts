@@ -215,3 +215,31 @@ export function getForgeArtifact(hash: string): Promise<ForgeArtifactResponse> {
 export function listForgeSchemas(): Promise<ForgeSchemaInfo[]> {
   return request<ForgeSchemaInfo[]>(apiUrl("/api/forge/schemas"));
 }
+
+// --- Methodology catalog ---
+
+export interface MethodologySummary {
+  id: string;
+  description?: string;
+  phaseCount: number;
+  generationModel?: string;
+  judgeModel?: string;
+  hasBudget: boolean;
+  hasFidelity: boolean;
+  hasControl: boolean;
+}
+
+export function listMethodologies(): Promise<MethodologySummary[]> {
+  return request<MethodologySummary[]>(apiUrl("/api/forge/methodologies"));
+}
+
+export function getMethodology(methodologyId: string): Promise<MethodologyDefinition> {
+  return request<MethodologyDefinition>(apiUrl(`/api/forge/methodologies/${encodeURIComponent(methodologyId)}`));
+}
+
+export function saveMethodology(methodologyId: string, methodology: MethodologyDefinition): Promise<{ id: string; message: string }> {
+  return request<{ id: string; message: string }>(apiUrl(`/api/forge/methodologies/${encodeURIComponent(methodologyId)}`), {
+    method: "PUT",
+    body: JSON.stringify(methodology),
+  });
+}
