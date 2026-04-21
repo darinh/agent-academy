@@ -46,6 +46,10 @@ public sealed class ServiceRegistrationWiringTests
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IAgentOrchestrator));
 
+        // IOrchestratorDispatchService should be registered (alias for OrchestratorDispatchService)
+        Assert.Contains(services, sd =>
+            sd.ServiceType == typeof(IOrchestratorDispatchService));
+
         // IGitService should be registered (alias for GitService)
         Assert.Contains(services, sd =>
             sd.ServiceType == typeof(IGitService));
@@ -147,6 +151,7 @@ public sealed class ServiceRegistrationWiringTests
             typeof(AgentTurnRunner),
             typeof(ConversationRoundRunner),
             typeof(DirectMessageRouter),
+            typeof(OrchestratorDispatchService),
             typeof(AgentOrchestrator),
         };
 

@@ -4,11 +4,12 @@
 
 The orchestrator subsystem drives the multi-agent conversation lifecycle — from receiving a human message through planner-led rounds, breakout room work, and review cycles. It determines which agents speak, when, and in what order.
 
-The subsystem is decomposed into four collaborating services:
+The subsystem is decomposed into five collaborating services:
 
 | Service | Lifetime | Responsibility |
 |---------|----------|----------------|
 | `AgentOrchestrator` | Singleton | Queue management, message dispatch, startup recovery |
+| `OrchestratorDispatchService` | Singleton | Dispatch branch: routes queue items to room-round or DM execution |
 | `ConversationRoundRunner` | Singleton | Planner-led conversation rounds, agent selection, sprint filtering |
 | `DirectMessageRouter` | Singleton | DM routing — breakout forwarding or targeted room turns |
 | `RoundContextLoader` | Scoped | Loads shared per-round context (spec, session, sprint) |
@@ -23,12 +24,12 @@ Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await pat
 
 > **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
 
-`AgentOrchestrator` is a pure queue manager. It accepts human messages and DM triggers, enqueues them as `QueueItem` records, and dispatches to `ConversationRoundRunner` or `DirectMessageRouter` for execution. All conversation logic and DM routing have been extracted out.
+`AgentOrchestrator` is a pure queue manager. It accepts human messages and DM triggers, enqueues them as `QueueItem` records, and dispatches through `OrchestratorDispatchService` for execution. All conversation logic and DM routing have been extracted out.
 
 - Entry point: `HandleHumanMessage(roomId)` — enqueues with dedupe (skips if that room already has a queued trigger) and kicks off `ProcessQueueAsync()`
 - Entry point: `HandleDirectMessage(recipientAgentId)` — enqueues with dedupe (skips if a DM trigger for the same agent is already queued)
 - Processing is serialized via `_processing` flag + `_lock` — only one item is processed at a time
-- Dispatch: items with `TargetAgentId` go to `DirectMessageRouter.RouteAsync()`; room items go to `ConversationRoundRunner.RunRoundsAsync()`
+- Dispatch: `OrchestratorDispatchService.DispatchAsync(roomId, targetAgentId, ct)` routes items with `TargetAgentId` to `DirectMessageRouter.RouteAsync()`; room items go to `ConversationRoundRunner.RunRoundsAsync()`
 - The orchestrator can be stopped via `Stop()`, which cancels the `CancellationTokenSource` and halts queue processing
 - **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `RoomService.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, enqueues them with the same room-level dedupe as live triggers, and kicks off processing. This prevents message loss when the server restarts while human messages are pending without inflating duplicate queue items.
 - **Conversation kickoff on fresh start**: During `WebApplicationExtensions.InitializeAsync()` (step 7), if the main room has no `User` or `Agent` messages and crash recovery did not run, a system kickoff message is posted and the room is enqueued. This bootstraps agent collaboration on a fresh workspace without requiring a manual human message. The check is idempotent — once agents have spoken, subsequent restarts skip the kickoff.
@@ -227,6 +228,8 @@ builder.Services.AddSingleton<TaskAssignmentHandler>();
 builder.Services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
 builder.Services.AddSingleton<ConversationRoundRunner>();
 builder.Services.AddSingleton<DirectMessageRouter>();
+builder.Services.AddSingleton<OrchestratorDispatchService>();
+builder.Services.AddSingleton<IOrchestratorDispatchService>(sp => sp.GetRequiredService<OrchestratorDispatchService>());
 builder.Services.AddSingleton<AgentOrchestrator>();
 
 // ServiceRegistrationExtensions.cs
@@ -242,10 +245,16 @@ builder.Services.AddScoped<RoundContextLoader>();
 | Dependency | Lifetime | Purpose |
 |------------|----------|---------|
 | `IServiceScopeFactory` | Singleton | Creates scoped DB contexts for startup recovery |
-| `ConversationRoundRunner` | Singleton | Executes planner-led conversation rounds |
-| `DirectMessageRouter` | Singleton | Routes DM-triggered agent turns |
+| `IOrchestratorDispatchService` | Singleton | Dispatches queue items to round-runner or DM router |
 | `BreakoutLifecycleService` | Singleton | Manages breakout room loop (stopped on orchestrator Stop) |
 | `ILogger<AgentOrchestrator>` | Singleton | Structured logging |
+
+**OrchestratorDispatchService (singleton)**:
+
+| Dependency | Lifetime | Purpose |
+|------------|----------|---------|
+| `IConversationRoundRunner` | Singleton | Executes planner-led conversation rounds |
+| `IDirectMessageRouter` | Singleton | Routes DM-triggered agent turns |
 
 **ConversationRoundRunner (singleton)**:
 

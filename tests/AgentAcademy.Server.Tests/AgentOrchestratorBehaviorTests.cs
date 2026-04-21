@@ -151,10 +151,11 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
         var dmRouter = new DirectMessageRouter(
             scopeFactory, _catalog, turnRunner,
             NullLogger<DirectMessageRouter>.Instance);
+        var dispatchService = new OrchestratorDispatchService(roundRunner, dmRouter);
 
         var orchestratorLoggerFactory = LoggerFactory.Create(b => b.AddProvider(new CapturingLoggerProvider(_logErrors)));
         _orchestrator = new AgentOrchestrator(
-            scopeFactory, roundRunner, dmRouter,
+            scopeFactory, dispatchService,
             breakoutLifecycle,
             orchestratorLoggerFactory.CreateLogger<AgentOrchestrator>());
     }

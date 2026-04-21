@@ -13,8 +13,7 @@ namespace AgentAcademy.Server.Services;
 public sealed class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IConversationRoundRunner _roundRunner;
-    private readonly IDirectMessageRouter _dmRouter;
+    private readonly IOrchestratorDispatchService _dispatchService;
     private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<AgentOrchestrator> _logger;
 
@@ -32,14 +31,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
-        IConversationRoundRunner roundRunner,
-        IDirectMessageRouter dmRouter,
+        IOrchestratorDispatchService dispatchService,
         IBreakoutLifecycleService breakoutLifecycle,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
-        _roundRunner = roundRunner;
-        _dmRouter = dmRouter;
+        _dispatchService = dispatchService;
         _breakoutLifecycle = breakoutLifecycle;
         _logger = logger;
     }
@@ -214,14 +211,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     {
         try
         {
-            if (item.TargetAgentId is { } targetAgentId)
-            {
-                await _dmRouter.RouteAsync(targetAgentId);
-            }
-            else
-            {
-                await _roundRunner.RunRoundsAsync(item.RoomId, _cts.Token);
-            }
+            await _dispatchService.DispatchAsync(item.RoomId, item.TargetAgentId, _cts.Token);
         }
         catch (Exception ex)
         {
