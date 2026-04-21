@@ -149,13 +149,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     {
         lock (_lock)
         {
-            if (!_queuedRooms.Add(roomId))
-            {
-                return false;
-            }
-
-            _queue.Enqueue(new QueueItem(roomId));
-            return true;
+            return TryEnqueueRoomLocked(roomId);
         }
     }
 
@@ -167,12 +161,10 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         {
             foreach (var roomId in roomIds)
             {
-                if (!_queuedRooms.Add(roomId))
+                if (!TryEnqueueRoomLocked(roomId))
                 {
                     continue;
                 }
-
-                _queue.Enqueue(new QueueItem(roomId));
                 enqueuedCount++;
             }
         }
@@ -184,14 +176,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     {
         lock (_lock)
         {
-            // Dedupe: skip if a DM trigger for this agent is already queued.
-            if (!_queuedDirectMessages.Add(recipientAgentId))
-            {
-                return false;
-            }
-
-            _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
-            return true;
+            return TryEnqueueDirectMessageLocked(recipientAgentId);
         }
     }
 
@@ -257,12 +242,38 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private void StartProcessingIfNeeded()
     {
         bool shouldStart;
-        lock (_lock) { shouldStart = TryBeginProcessingLocked(); }
+        lock (_lock)
+        {
+            shouldStart = TryBeginProcessingLocked();
+        }
 
         if (shouldStart)
         {
             _ = ProcessQueueAsync();
         }
+    }
+
+    private bool TryEnqueueRoomLocked(string roomId)
+    {
+        if (!_queuedRooms.Add(roomId))
+        {
+            return false;
+        }
+
+        _queue.Enqueue(new QueueItem(roomId));
+        return true;
+    }
+
+    private bool TryEnqueueDirectMessageLocked(string recipientAgentId)
+    {
+        // Dedupe: skip if a DM trigger for this agent is already queued.
+        if (!_queuedDirectMessages.Add(recipientAgentId))
+        {
+            return false;
+        }
+
+        _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
+        return true;
     }
 
     private bool TryBeginProcessingLocked()
