@@ -37,6 +37,9 @@ public sealed class HumanCommandRegistryTests
         Assert.Contains("INVITE_TO_ROOM", names);
         Assert.Contains("RUN_BUILD", names);
         Assert.Contains("RUN_TESTS", names);
+        Assert.Contains("RUN_FORGE", names);
+        Assert.Contains("FORGE_STATUS", names);
+        Assert.Contains("LIST_FORGE_RUNS", names);
     }
 
     [Fact]
@@ -110,6 +113,29 @@ public sealed class HumanCommandRegistryTests
 
         Assert.True(pathField.Required);
         Assert.False(startLineField.Required);
+    }
+
+    [Fact]
+    public void ForgeCommands_HaveExpectedMetadata()
+    {
+        var runForge = HumanCommandRegistry.Get("RUN_FORGE");
+        var forgeStatus = HumanCommandRegistry.Get("FORGE_STATUS");
+        var listForgeRuns = HumanCommandRegistry.Get("LIST_FORGE_RUNS");
+
+        Assert.NotNull(runForge);
+        Assert.Equal("forge", runForge!.Category);
+        Assert.True(runForge.IsAsync);
+        Assert.True(runForge.Fields.Single(f => f.Name == "title").Required);
+        Assert.True(runForge.Fields.Single(f => f.Name == "description").Required);
+        Assert.False(runForge.Fields.Single(f => f.Name == "methodology").Required);
+
+        Assert.NotNull(forgeStatus);
+        Assert.False(forgeStatus!.IsAsync);
+        Assert.False(forgeStatus.Fields.Single(f => f.Name == "jobId").Required);
+
+        Assert.NotNull(listForgeRuns);
+        Assert.False(listForgeRuns!.IsAsync);
+        Assert.False(listForgeRuns.Fields.Single(f => f.Name == "status").Required);
     }
 
     [Fact]
