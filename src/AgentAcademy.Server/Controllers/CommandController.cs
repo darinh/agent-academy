@@ -76,6 +76,10 @@ public sealed class CommandController : ControllerBase
         "TRACE_REQUEST",
         "LIST_SYSTEM_SETTINGS",
         "RETRY_FAILED_JOB",
+        // Forge Pipeline
+        "RUN_FORGE",
+        "FORGE_STATUS",
+        "LIST_FORGE_RUNS",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
