@@ -12,8 +12,8 @@ public interface IForgeJobService
     Task<ForgeJob> StartRunAsync(TaskBrief task, MethodologyDefinition methodology);
 
     /// <summary>Get a job by ID, or null if not found.</summary>
-    ForgeJob? GetJob(string jobId);
+    Task<ForgeJob?> GetJobAsync(string jobId);
 
     /// <summary>List all jobs, most recent first.</summary>
-    IReadOnlyList<ForgeJob> ListJobs();
+    Task<IReadOnlyList<ForgeJob>> ListJobsAsync();
 }

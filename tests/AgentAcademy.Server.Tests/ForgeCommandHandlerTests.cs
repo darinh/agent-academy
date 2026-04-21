@@ -52,9 +52,11 @@ public sealed class ForgeCommandHandlerTests : IDisposable
             return Task.FromResult(job);
         }
 
-        public ForgeJob? GetJob(string jobId) => _jobs.FirstOrDefault(j => j.JobId == jobId);
+        public Task<ForgeJob?> GetJobAsync(string jobId) =>
+            Task.FromResult(_jobs.FirstOrDefault(j => j.JobId == jobId));
 
-        public IReadOnlyList<ForgeJob> ListJobs() => _jobs.OrderByDescending(j => j.CreatedAt).ToList();
+        public Task<IReadOnlyList<ForgeJob>> ListJobsAsync() =>
+            Task.FromResult<IReadOnlyList<ForgeJob>>(_jobs.OrderByDescending(j => j.CreatedAt).ToList());
 
         public ForgeJob AddJob(ForgeJobStatus status, string? error = null, string? runId = null)
         {
