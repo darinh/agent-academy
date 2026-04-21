@@ -772,4 +772,121 @@ describe("ChatPanel (interactive)", () => {
       expect(screen.getByText("Message the team")).toBeInTheDocument();
     });
   });
+
+  // ── Previous-session tail (empty-active-session UX fix) ────────────
+
+  describe("previous session tail", () => {
+    function makeSession(overrides: Record<string, unknown> = {}) {
+      return {
+        id: "session-archived",
+        roomId: "room-1",
+        roomType: "Main",
+        sequenceNumber: 2,
+        status: "Archived",
+        summary: null,
+        messageCount: 50,
+        createdAt: "2026-04-10T09:00:00Z",
+        archivedAt: "2026-04-10T11:00:00Z",
+        ...overrides,
+      };
+    }
+
+    it("fetches and renders tail of most recent archived session when active session is nearly empty", async () => {
+      const archived = makeSession({ id: "sess-old", sequenceNumber: 2, status: "Archived" });
+      const active = makeSession({
+        id: "sess-new", sequenceNumber: 3, status: "Active",
+        messageCount: 0, archivedAt: null,
+      });
+      mockGetRoomSessions.mockResolvedValue({ sessions: [active, archived], totalCount: 2 });
+      mockGetRoomMessages.mockResolvedValue({
+        messages: [
+          makeMessage({ id: "tail-1", content: "Tail message one" }),
+          makeMessage({ id: "tail-2", content: "Tail message two" }),
+        ],
+        hasMore: false,
+      });
+
+      // Room with an empty active session (matches the reported bug state).
+      renderChat({ room: makeRoom({ recentMessages: [] }) });
+
+      await waitFor(() => {
+        expect(mockGetRoomMessages).toHaveBeenCalledWith(
+          "room-1",
+          expect.objectContaining({ sessionId: "sess-old", limit: 20 }),
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("previous-session-divider")).toBeInTheDocument();
+      });
+      expect(screen.getByText("Tail message one")).toBeInTheDocument();
+      expect(screen.getByText("Tail message two")).toBeInTheDocument();
+    });
+
+    it("does NOT fetch tail when active session already has enough messages", async () => {
+      const archived = makeSession({ id: "sess-old", sequenceNumber: 2, status: "Archived" });
+      const active = makeSession({
+        id: "sess-new", sequenceNumber: 3, status: "Active",
+        messageCount: 20, archivedAt: null,
+      });
+      mockGetRoomSessions.mockResolvedValue({ sessions: [active, archived], totalCount: 2 });
+
+      // 10+ recent messages — above the near-empty threshold.
+      const liveMsgs = Array.from({ length: 12 }, (_, i) =>
+        makeMessage({ id: `live-${i}`, content: `Live ${i}` }),
+      );
+      renderChat({ room: makeRoom({ recentMessages: liveMsgs }) });
+
+      // Let sessions load and effects settle.
+      await waitFor(() => {
+        expect(mockGetRoomSessions).toHaveBeenCalled();
+      });
+
+      // Tail fetch (by sessionId) must not have been called.
+      const tailFetches = mockGetRoomMessages.mock.calls.filter(
+        ([, opts]) => opts && (opts as { sessionId?: string }).sessionId === "sess-old",
+      );
+      expect(tailFetches).toHaveLength(0);
+      expect(screen.queryByTestId("previous-session-divider")).not.toBeInTheDocument();
+    });
+
+    it("hides the 'agents have context' banner when the tail is shown (divider replaces it)", async () => {
+      const archived = makeSession({ id: "sess-old", status: "Archived" });
+      const active = makeSession({ id: "sess-new", sequenceNumber: 3, status: "Active", messageCount: 0, archivedAt: null });
+      // First call (archived-count probe) returns 1; second call (full list) returns sessions.
+      mockGetRoomSessions
+        .mockResolvedValueOnce({ sessions: [archived], totalCount: 1 })
+        .mockResolvedValueOnce({ sessions: [active, archived], totalCount: 2 });
+      mockGetRoomMessages.mockResolvedValue({
+        messages: [makeMessage({ id: "tail-1", content: "Tail msg" })],
+        hasMore: false,
+      });
+
+      renderChat({ room: makeRoom({ recentMessages: [] }) });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("previous-session-divider")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByText(/Agents have context from a previous conversation session/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does NOT show tail when there is no archived session", async () => {
+      const active = makeSession({ id: "sess-new", sequenceNumber: 1, status: "Active", messageCount: 0, archivedAt: null });
+      mockGetRoomSessions.mockResolvedValue({ sessions: [active], totalCount: 1 });
+
+      renderChat({ room: makeRoom({ recentMessages: [] }) });
+
+      await waitFor(() => {
+        expect(mockGetRoomSessions).toHaveBeenCalled();
+      });
+      // No tail fetch should happen
+      const tailFetches = mockGetRoomMessages.mock.calls.filter(
+        ([, opts]) => opts && (opts as { sessionId?: string }).sessionId !== undefined,
+      );
+      expect(tailFetches).toHaveLength(0);
+      expect(screen.queryByTestId("previous-session-divider")).not.toBeInTheDocument();
+    });
+  });
 });
