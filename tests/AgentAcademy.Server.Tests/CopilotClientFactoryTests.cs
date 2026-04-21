@@ -425,7 +425,7 @@ public class CopilotClientFactoryTests : IAsyncLifetime
         _tokenProvider.SetToken("tok");
         var factory = CreateFactory(cliPath: null);
         // Use a real directory so the SDK can start the client
-        var testPath = Directory.GetCurrentDirectory();
+        var testPath = AppContext.BaseDirectory;
         try
         {
             var acquired = await factory.GetWorktreeClientAsync(testPath, CancellationToken.None);

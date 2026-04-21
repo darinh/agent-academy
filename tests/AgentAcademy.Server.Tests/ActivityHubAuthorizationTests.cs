@@ -93,6 +93,7 @@ public sealed class ActivityHubAuthorizationTests : IClassFixture<ApiContractFix
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
+            builder.UseContentRoot(TestPaths.ServerContentRoot);
             builder.UseSetting("GitHub:ClientId", "test-client-id");
             builder.UseSetting("GitHub:ClientSecret", "test-client-secret");
             builder.UseSetting("GitHub:CallbackPath", "/api/auth/callback");

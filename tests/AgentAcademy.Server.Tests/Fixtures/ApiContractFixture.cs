@@ -40,6 +40,14 @@ public sealed class ApiContractFixture : WebApplicationFactory<Program>, IAsyncL
     {
         builder.UseEnvironment("Development");
 
+        // Resolve the content root from the test assembly location, NOT from
+        // Directory.GetCurrentDirectory(). The default WebApplicationFactory
+        // looks for {solutionDir}/AgentAcademy.Server/ which doesn't exist
+        // (the project is at src/AgentAcademy.Server/). Using cwd as fallback
+        // is fragile because CwdMutating tests can change it process-wide.
+        var contentRoot = TestPaths.ServerContentRoot;
+        builder.UseContentRoot(contentRoot);
+
         // Clear auth secrets so the app starts with auth disabled.
         // User secrets from the main project would otherwise leak in.
         // UseSetting takes highest precedence over all config sources.

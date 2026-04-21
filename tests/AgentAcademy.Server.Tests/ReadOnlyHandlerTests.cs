@@ -17,7 +17,7 @@ namespace AgentAcademy.Server.Tests;
 /// GitLogHandler, ShowDiffHandler, SearchCodeHandler, RunBuildHandler, RunTestsHandler.
 /// Uses a real temporary git repository for git-based tests.
 /// </summary>
-[Collection("WorkspaceRuntime")]
+[Collection("CwdMutating")]
 public sealed class GitCommandHandlerTests : IDisposable
 {
     private readonly string _repoRoot;
