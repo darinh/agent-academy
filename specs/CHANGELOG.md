@@ -5,6 +5,12 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **019-forge-engine §Server Integration**: Real-time SignalR events for Forge pipeline execution. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress. `ForgeRunService` broadcasts events (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`) via existing `ActivityBroadcaster` → `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives `refreshTrigger` version counter for instant re-fetch on events. Polling remains as fallback. Closes Integration Gap #6.
+
+### Fixed
+- **019-forge-engine §Job Queue**: `EntityToJob` now catches `JsonException` on malformed `TaskBriefJson`/`MethodologyJson` and returns fallback values instead of crashing the entire job listing. Tests updated to verify fallback behavior.
+
+### Added
 - **019-forge-engine §Security**: Auth on forge endpoints. Execution endpoints (`POST /api/forge/jobs`, `POST .../resume`, `PUT .../methodologies/{id}`) carry explicit `[Authorize]` attributes — unauthenticated requests get 401. Read-only GET endpoints protected by global `FallbackPolicy` (requires authenticated user when auth is enabled; open in dev mode when auth is disabled). Closes Integration Gap #2.
 - **019-forge-engine §Methodology Catalog**: Disk-backed methodology catalog (`DiskMethodologyCatalog`) with REST API (`GET/PUT /api/forge/methodologies`). Configurable `MethodologiesDirectory` (default `methodologies/`). Validation on save: unique phase IDs, input reference integrity, dependency cycle detection, budget/fidelity/control config validation. Default `spike-default-v1` methodology seeded on first startup. Frontend `ForgePanel` methodology selector dropdown with "Save as Template" button, stale-response guard. 26 new tests (19 backend, 7 frontend).
 - **019-forge-engine §Frontend UI**: Start-run affordance — `ForgePanel` New Run button (visible when `executionAvailable`), form with title, description, and methodology JSON editor (pre-populated with spike-default-v1). `startForgeRun()` API function POSTs to `/api/forge/jobs`. Client-side validation (required fields, JSON syntax). 11 new tests. Closes Integration Gap #7.

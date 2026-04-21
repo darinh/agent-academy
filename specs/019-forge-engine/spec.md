@@ -889,7 +889,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 3. **No workspace scoping**: Forge runs are global, not scoped to a workspace/room. Multi-user deployments would expose cross-tenant data.
 4. **Resume not implemented**: `POST /api/forge/runs/{runId}/resume` returns 501.
 5. ~~**No agent commands**~~: Resolved. Agents can trigger forge runs via `RUN_FORGE`, check status via `FORGE_STATUS`, and list jobs via `LIST_FORGE_RUNS`. See spec 007 for command details. Handlers use `IForgeJobService` interface for testability. Path traversal and symlink protections applied to methodology file loading.
-6. **No SignalR events**: No real-time progress updates during pipeline execution.
+6. ~~**No SignalR events**~~: Resolved. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress reporting. `ForgeRunService` broadcasts events via `IActivityBroadcaster` as `ActivityEvent` instances with forge-specific types (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`). Events flow through the existing `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives a `refreshTrigger` version counter incremented on each forge event, triggering immediate re-fetch. Polling remains as fallback.
 7. ~~**No frontend UI**~~: Resolved. ForgePanel provides status dashboard, job list, run detail with phase/attempt/validator drill-down, inline artifact viewer, and start-run form with methodology JSON editor. See spec 300 for frontend details.
 
 ## Revision History
@@ -914,3 +914,4 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-21 | Methodology catalog — disk-backed catalog, REST endpoints, UI selector with save-as-template, 26 new tests | `feat/methodology-browser` |
 | 2026-04-21 | Auth on forge endpoints — `[Authorize]` on execution endpoints (POST jobs, POST resume, PUT methodologies), read-only GET endpoints protected by FallbackPolicy, closes Integration Gap #2 | `feat/methodology-browser` |
 | 2026-04-21 | Durable job store — SQLite persistence via ForgeJobEntity, startup recovery (interrupted/re-enqueue), async IForgeJobService, 4 new tests, closes Integration Gap #1 | `feat/durable-forge-jobs` |
+| 2026-04-21 | Real-time SignalR events — IProgress<ForgeProgressEvent> in PipelineRunner, ActivityBroadcaster integration, frontend version-counter-driven refresh, closes Integration Gap #6 | `feat/forge-signalr-progress` |
