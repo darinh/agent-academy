@@ -452,4 +452,212 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
             new ActivityBroadcaster(),
             NullLogger<ForgeRunService>.Instance);
     }
+
+    private (ForgeRunService Service, ActivityBroadcaster Broadcaster) CreateServiceWithBroadcaster(
+        bool executionAvailable = true)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"forge-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        _tempDirs.Add(tempDir);
+
+        var options = new ForgeOptions
+        {
+            Enabled = true,
+            OpenAiApiKey = executionAvailable ? "test-key" : ""
+        };
+
+        var runStore = new DiskRunStore(tempDir, NullLogger<DiskRunStore>.Instance);
+        var artifactStore = new DiskArtifactStore(
+            Path.Combine(tempDir, "artifacts"),
+            NullLogger<DiskArtifactStore>.Instance);
+        var schemaRegistry = new SchemaRegistry();
+        var llmClient = new StubLlmClient();
+        var promptBuilder = new AgentAcademy.Forge.Prompt.PromptBuilder(schemaRegistry);
+        var structValidator = new AgentAcademy.Forge.Validation.StructuralValidator(schemaRegistry);
+        var semValidator = new AgentAcademy.Forge.Validation.SemanticValidator(
+            llmClient, NullLogger<AgentAcademy.Forge.Validation.SemanticValidator>.Instance);
+        var crossValidator = new AgentAcademy.Forge.Validation.CrossArtifactValidator();
+        var validatorPipeline = new AgentAcademy.Forge.Validation.ValidatorPipeline(
+            structValidator, semValidator, crossValidator, schemaRegistry);
+        var costCalculator = new AgentAcademy.Forge.Costs.CostCalculator();
+        var phaseExecutor = new PhaseExecutor(
+            llmClient, promptBuilder, validatorPipeline, artifactStore, runStore,
+            costCalculator, TimeProvider.System, NullLogger<PhaseExecutor>.Instance);
+        var pipelineRunner = new PipelineRunner(
+            phaseExecutor, artifactStore, runStore, schemaRegistry,
+            costCalculator, TimeProvider.System,
+            NullLogger<PipelineRunner>.Instance);
+
+        var broadcaster = new ActivityBroadcaster();
+        var service = new ForgeRunService(
+            pipelineRunner, options,
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            broadcaster,
+            NullLogger<ForgeRunService>.Instance);
+
+        return (service, broadcaster);
+    }
+}
+
+// ── SignalR broadcast + resume tests ────────────────────────────────────
+
+public sealed class ForgeRunServiceBroadcastTests : IDisposable
+{
+    private readonly SqliteConnection _connection;
+    private readonly ServiceProvider _serviceProvider;
+
+    public ForgeRunServiceBroadcastTests()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<AgentAcademyDbContext>(opt =>
+            opt.UseSqlite(_connection));
+        _serviceProvider = services.BuildServiceProvider();
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.Database.EnsureCreated();
+    }
+
+    public void Dispose()
+    {
+        _serviceProvider.Dispose();
+        _connection.Dispose();
+    }
+
+    [Fact]
+    public async Task StartRunAsync_BroadcastsForgeJobQueuedEvent()
+    {
+        var (service, broadcaster) = CreateServiceWithBroadcaster();
+        var receivedEvents = new List<AgentAcademy.Shared.Models.ActivityEvent>();
+        broadcaster.Subscribe(evt => receivedEvents.Add(evt));
+
+        var brief = new TaskBrief { TaskId = "t1", Title = "Test", Description = "desc" };
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-m", Phases = [new PhaseDefinition { Id = "p1", Goal = "test", Inputs = [], Instructions = "test", OutputSchema = "requirements/v1" }]
+        };
+
+        await service.StartRunAsync(brief, methodology);
+
+        Assert.Contains(receivedEvents,
+            e => e.Type == AgentAcademy.Shared.Models.ActivityEventType.ForgeJobQueued);
+    }
+
+    [Fact]
+    public async Task StartRunAsync_EventContainsJobIdInMetadata()
+    {
+        var (service, broadcaster) = CreateServiceWithBroadcaster();
+        var receivedEvents = new List<AgentAcademy.Shared.Models.ActivityEvent>();
+        broadcaster.Subscribe(evt => receivedEvents.Add(evt));
+
+        var brief = new TaskBrief { TaskId = "t1", Title = "Test", Description = "desc" };
+        var methodology = new MethodologyDefinition
+        {
+            Id = "test-m", Phases = [new PhaseDefinition { Id = "p1", Goal = "test", Inputs = [], Instructions = "test", OutputSchema = "requirements/v1" }]
+        };
+
+        var job = await service.StartRunAsync(brief, methodology);
+        var queuedEvent = receivedEvents.First(
+            e => e.Type == AgentAcademy.Shared.Models.ActivityEventType.ForgeJobQueued);
+
+        Assert.NotNull(queuedEvent.Metadata);
+        Assert.Equal(job.JobId, queuedEvent.Metadata["jobId"]?.ToString());
+    }
+
+    [Fact]
+    public async Task ResumeRunAsync_CreatesJobWithRunId()
+    {
+        var (service, _) = CreateServiceWithBroadcaster();
+
+        var runId = "R_" + Ulid.NewUlid().ToString();
+        var job = await service.ResumeRunAsync(runId);
+
+        Assert.Equal(runId, job.RunId);
+        Assert.Equal(ForgeJobStatus.Queued, job.Status);
+    }
+
+    [Fact]
+    public async Task ResumeRunAsync_BroadcastsQueuedEvent()
+    {
+        var (service, broadcaster) = CreateServiceWithBroadcaster();
+        var receivedEvents = new List<AgentAcademy.Shared.Models.ActivityEvent>();
+        broadcaster.Subscribe(evt => receivedEvents.Add(evt));
+
+        var runId = "R_" + Ulid.NewUlid().ToString();
+        await service.ResumeRunAsync(runId);
+
+        Assert.Contains(receivedEvents,
+            e => e.Type == AgentAcademy.Shared.Models.ActivityEventType.ForgeJobQueued);
+    }
+
+    [Fact]
+    public async Task ResumeRunAsync_ThrowsWhenNoApiKey()
+    {
+        var (service, _) = CreateServiceWithBroadcaster(executionAvailable: false);
+
+        var runId = "R_" + Ulid.NewUlid().ToString();
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ResumeRunAsync(runId));
+    }
+
+    [Fact]
+    public async Task ResumeRunAsync_JobPersistsToDb()
+    {
+        var (service, _) = CreateServiceWithBroadcaster();
+        var runId = "R_" + Ulid.NewUlid().ToString();
+
+        var job = await service.ResumeRunAsync(runId);
+
+        // Verify persisted to DB
+        var loaded = await service.GetJobAsync(job.JobId);
+        Assert.NotNull(loaded);
+        Assert.Equal(runId, loaded.RunId);
+    }
+
+    private (ForgeRunService Service, ActivityBroadcaster Broadcaster) CreateServiceWithBroadcaster(
+        bool executionAvailable = true)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"forge-bcast-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        var options = new ForgeOptions
+        {
+            Enabled = true,
+            OpenAiApiKey = executionAvailable ? "test-key" : ""
+        };
+
+        var runStore = new DiskRunStore(tempDir, NullLogger<DiskRunStore>.Instance);
+        var artifactStore = new DiskArtifactStore(
+            Path.Combine(tempDir, "artifacts"),
+            NullLogger<DiskArtifactStore>.Instance);
+        var schemaRegistry = new SchemaRegistry();
+        var llmClient = new StubLlmClient();
+        var promptBuilder = new AgentAcademy.Forge.Prompt.PromptBuilder(schemaRegistry);
+        var structValidator = new AgentAcademy.Forge.Validation.StructuralValidator(schemaRegistry);
+        var semValidator = new AgentAcademy.Forge.Validation.SemanticValidator(
+            llmClient, NullLogger<AgentAcademy.Forge.Validation.SemanticValidator>.Instance);
+        var crossValidator = new AgentAcademy.Forge.Validation.CrossArtifactValidator();
+        var validatorPipeline = new AgentAcademy.Forge.Validation.ValidatorPipeline(
+            structValidator, semValidator, crossValidator, schemaRegistry);
+        var costCalculator = new AgentAcademy.Forge.Costs.CostCalculator();
+        var phaseExecutor = new PhaseExecutor(
+            llmClient, promptBuilder, validatorPipeline, artifactStore, runStore,
+            costCalculator, TimeProvider.System, NullLogger<PhaseExecutor>.Instance);
+        var pipelineRunner = new PipelineRunner(
+            phaseExecutor, artifactStore, runStore, schemaRegistry,
+            costCalculator, TimeProvider.System,
+            NullLogger<PipelineRunner>.Instance);
+
+        var broadcaster = new ActivityBroadcaster();
+        var service = new ForgeRunService(
+            pipelineRunner, options,
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            broadcaster,
+            NullLogger<ForgeRunService>.Instance);
+
+        return (service, broadcaster);
+    }
 }
