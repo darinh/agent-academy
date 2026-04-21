@@ -222,21 +222,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var guild = GetGuildIfConnected("send notification");
-        if (guild is null) return false;
-
-        try
-        {
-            if (!string.IsNullOrEmpty(message.RoomId))
-                return await _sender.SendToRoomChannelAsync(guild, _channelId, message, cancellationToken);
-
-            return await _sender.SendToDefaultChannelAsync(guild, _channelId, message, cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Failed to send Discord notification: {Title}", message.Title);
-            return false;
-        }
+        return await ExecuteSafeWithConnectedGuildAsync(
+            operationName: "send notification",
+            operation: guild =>
+                !string.IsNullOrEmpty(message.RoomId)
+                    ? _sender.SendToRoomChannelAsync(guild, _channelId, message, cancellationToken)
+                    : _sender.SendToDefaultChannelAsync(guild, _channelId, message, cancellationToken),
+            onFailure: ex => _logger.LogError(ex, "Failed to send Discord notification: {Title}", message.Title));
     }
 
     /// <inheritdoc />
@@ -321,18 +313,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        var guild = GetGuildIfConnected("send agent question");
-        if (guild is null) return false;
-
-        try
-        {
-            return await _sender.SendAgentQuestionAsync(guild, question, cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Failed to send agent question from '{AgentName}'", question.AgentName);
-            return false;
-        }
+        return await ExecuteSafeWithConnectedGuildAsync(
+            operationName: "send agent question",
+            operation: guild => _sender.SendAgentQuestionAsync(guild, question, cancellationToken),
+            onFailure: ex => _logger.LogError(ex, "Failed to send agent question from '{AgentName}'", question.AgentName));
     }
 
     /// <summary>
@@ -342,18 +326,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(dm);
 
-        var guild = GetGuildIfConnected("send direct message");
-        if (guild is null) return false;
-
-        try
-        {
-            return await _sender.SendDirectMessageAsync(guild, dm, cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Failed to send DM for '{AgentName}'", dm.AgentName);
-            return false;
-        }
+        return await ExecuteSafeWithConnectedGuildAsync(
+            operationName: "send direct message",
+            operation: guild => _sender.SendDirectMessageAsync(guild, dm, cancellationToken),
+            onFailure: ex => _logger.LogError(ex, "Failed to send DM for '{AgentName}'", dm.AgentName));
     }
 
 
@@ -447,6 +423,25 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             current = current.InnerException;
         }
         return null;
+    }
+
+    private async Task<bool> ExecuteSafeWithConnectedGuildAsync(
+        string operationName,
+        Func<SocketGuild, Task<bool>> operation,
+        Action<Exception> onFailure)
+    {
+        var guild = GetGuildIfConnected(operationName);
+        if (guild is null) return false;
+
+        try
+        {
+            return await operation(guild);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            onFailure(ex);
+            return false;
+        }
     }
 
     private async Task DisposeClientAsync()
