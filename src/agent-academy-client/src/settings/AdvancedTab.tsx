@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Button,
   Spinner,
@@ -92,6 +92,13 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
   const [schedTz, setSchedTz] = useState(detectBrowserTimezone);
   const [schedEnabled, setSchedEnabled] = useState(true);
 
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+  const safeTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(fn, ms);
+    timersRef.current.push(id);
+  }, []);
+
   useEffect(() => {
     getSystemSettings()
       .then((s) => {
@@ -114,7 +121,7 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
         "sprint.autoStartOnCompletion": sprintAutoStart.toString(),
       });
       setSettingsSaved(true);
-      setTimeout(() => setSettingsSaved(false), 2000);
+      safeTimeout(() => setSettingsSaved(false), 2000);
     } catch {
       // Error handling in API layer
     } finally {
@@ -150,7 +157,7 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
       });
       setSchedule(updated);
       setScheduleSaved(true);
-      setTimeout(() => setScheduleSaved(false), 2000);
+      safeTimeout(() => setScheduleSaved(false), 2000);
     } catch (err) {
       setScheduleError(err instanceof Error ? err.message : "Failed to save schedule");
     } finally {
@@ -162,7 +169,7 @@ export default function AdvancedTab({ desktopNotifications }: AdvancedTabProps) 
     if (scheduleSaving) return;
     if (!deleteConfirm) {
       setDeleteConfirm(true);
-      setTimeout(() => setDeleteConfirm(false), 3000);
+      safeTimeout(() => setDeleteConfirm(false), 3000);
       return;
     }
     setDeleteConfirm(false);
