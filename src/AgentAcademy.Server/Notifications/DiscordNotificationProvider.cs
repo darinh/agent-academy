@@ -30,6 +30,25 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private bool _messageReceivedHooked;
     private int _disposed;
 
+    // In-flight outbound operation tracking. Sends/inputs/lifecycle-notifications
+    // capture a snapshot of (client, config) and run async work outside _connectLock.
+    // Without coordination, DisconnectAsync/DisposeAsync could call DisposeClientAsync
+    // mid-send, tearing down the live client and forcing the catch-block to log a
+    // noisy ObjectDisposedException. We instead:
+    //   1. Set _teardownInProgress under _connectLock at the start of teardown so
+    //      new sends short-circuit cleanly (return false / no-op).
+    //   2. Wait for _inFlight to drain (with a bounded timeout) before tearing
+    //      down so already-started sends complete on the live client.
+    private long _inFlight;
+    private volatile bool _teardownInProgress;
+    private readonly object _drainLock = new();
+    private TaskCompletionSource<bool>? _drainTcs;
+
+    // Bounded wait so a hung send (e.g. Discord API stall) can't block teardown
+    // forever. After the timeout we proceed with teardown anyway; the in-flight
+    // send will get an ObjectDisposedException caught by ExecuteSafe...'s catch.
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
+
     public DiscordNotificationProvider(
         ILogger<DiscordNotificationProvider> logger,
         DiscordChannelManager channelManager,
@@ -177,10 +196,27 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
-            UnhookRouter();
-            await _channelManager.ResetAsync();
-            await _connection.DisposeClientAsync();
-            _logger.LogInformation("Discord provider disconnected");
+            // Block new outbound operations from starting; existing _connectLock
+            // already serialises us with Connect/Configure/other Disconnects.
+            _teardownInProgress = true;
+            try
+            {
+                // Wait for outbound operations that captured a (client, config)
+                // snapshot to finish before we tear down the client. Bounded so a
+                // wedged send can't deadlock teardown.
+                await WaitForDrainAsync(DrainTimeout, cancellationToken);
+
+                UnhookRouter();
+                await _channelManager.ResetAsync();
+                await _connection.DisposeClientAsync();
+                _logger.LogInformation("Discord provider disconnected");
+            }
+            finally
+            {
+                // Allow sends again — the next ConnectAsync will spin up a fresh
+                // client and the provider becomes usable again.
+                _teardownInProgress = false;
+            }
         }
         finally
         {
@@ -207,49 +243,62 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var resolved = GetGuildIfConnected("request input");
-        if (resolved is null) return null;
-        var (guild, config) = resolved.Value;
+        if (!TryEnterOperation())
+        {
+            _logger.LogDebug("Cannot request input — Discord provider is shutting down");
+            return null;
+        }
 
         try
         {
-            var channel = DiscordMessageSender.ResolveDefaultChannel(guild, config.ChannelId);
-            if (channel is null)
+            var resolved = GetGuildIfConnected("request input");
+            if (resolved is null) return null;
+            var (guild, config) = resolved.Value;
+
+            try
             {
-                _logger.LogError("Discord channel {ChannelId} not found in guild {GuildId}", config.ChannelId, config.GuildId);
+                var channel = DiscordMessageSender.ResolveDefaultChannel(guild, config.ChannelId);
+                if (channel is null)
+                {
+                    _logger.LogError("Discord channel {ChannelId} not found in guild {GuildId}", config.ChannelId, config.GuildId);
+                    return null;
+                }
+
+                var embed = new EmbedBuilder()
+                    .WithTitle("Input Requested")
+                    .WithDescription(request.Prompt)
+                    .WithColor(Color.Gold)
+                    .WithCurrentTimestamp();
+
+                if (request.AgentName is not null)
+                    embed.AddField("Agent", request.AgentName, inline: true);
+                if (request.RoomId is not null)
+                    embed.AddField("Room", request.RoomId, inline: true);
+
+                if (request.Choices is { Count: > 0 })
+                {
+                    return await _inputHandler.RequestChoiceInputAsync(
+                        _connection.Client!, channel, embed, request.Choices, ProviderId, cancellationToken);
+                }
+
+                if (request.AllowFreeform)
+                {
+                    return await _inputHandler.RequestFreeformInputAsync(
+                        _connection.Client!, channel, embed, config.ChannelId, config.OwnerId, ProviderId, cancellationToken);
+                }
+
+                _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
                 return null;
             }
-
-            var embed = new EmbedBuilder()
-                .WithTitle("Input Requested")
-                .WithDescription(request.Prompt)
-                .WithColor(Color.Gold)
-                .WithCurrentTimestamp();
-
-            if (request.AgentName is not null)
-                embed.AddField("Agent", request.AgentName, inline: true);
-            if (request.RoomId is not null)
-                embed.AddField("Room", request.RoomId, inline: true);
-
-            if (request.Choices is { Count: > 0 })
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                return await _inputHandler.RequestChoiceInputAsync(
-                    _connection.Client!, channel, embed, request.Choices, ProviderId, cancellationToken);
+                _logger.LogError(ex, "Failed to request input via Discord");
+                return null;
             }
-
-            if (request.AllowFreeform)
-            {
-                return await _inputHandler.RequestFreeformInputAsync(
-                    _connection.Client!, channel, embed, config.ChannelId, config.OwnerId, ProviderId, cancellationToken);
-            }
-
-            _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
-            return null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        finally
         {
-            _logger.LogError(ex, "Failed to request input via Discord");
-            return null;
+            LeaveOperation();
         }
     }
 
@@ -281,11 +330,20 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         // still waiting on or releasing it.
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
 
+        // Reject any new outbound operations starting between here and teardown.
+        // _disposed alone isn't enough because tracked ops check _teardownInProgress.
+        _teardownInProgress = true;
+
         // Serialize with any in-flight ConnectAsync/DisconnectAsync so we don't
         // tear down the client mid-connect and leave orphaned handlers.
         await _connectLock.WaitAsync();
         try
         {
+            // Wait for in-flight sends/inputs that captured a client snapshot to
+            // complete before disposing the underlying client. Bounded so a wedged
+            // operation can't deadlock disposal.
+            await WaitForDrainAsync(DrainTimeout, CancellationToken.None);
+
             UnhookRouter();
             await _connection.DisposeClientAsync();
         }
@@ -395,28 +453,137 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         Func<SocketGuild, DiscordProviderConfig, Task<bool>> operation,
         Action<Exception> onFailure)
     {
-        var resolved = GetGuildIfConnected(operationName);
-        if (resolved is null) return false;
-        var (guild, config) = resolved.Value;
+        if (!TryEnterOperation())
+        {
+            _logger.LogDebug("Cannot {Operation} — Discord provider is shutting down", operationName);
+            return false;
+        }
 
         try
         {
-            return await operation(guild, config);
+            var resolved = GetGuildIfConnected(operationName);
+            if (resolved is null) return false;
+            var (guild, config) = resolved.Value;
+
+            try
+            {
+                return await operation(guild, config);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                onFailure(ex);
+                return false;
+            }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        finally
         {
-            onFailure(ex);
-            return false;
+            LeaveOperation();
         }
     }
 
     private async Task ExecuteWithConfiguredGuildAsync(Func<SocketGuild, Task> operation)
     {
-        var guild = GetGuildIfConfigured();
-        if (guild is null) return;
+        if (!TryEnterOperation()) return;
 
-        await operation(guild);
+        try
+        {
+            var guild = GetGuildIfConfigured();
+            if (guild is null) return;
+
+            await operation(guild);
+        }
+        finally
+        {
+            LeaveOperation();
+        }
+    }
+
+    /// <summary>
+    /// Reserve a slot for an outbound operation that captures a (client, config)
+    /// snapshot. Returns false if the provider is being torn down — callers must
+    /// short-circuit cleanly without touching the snapshot.
+    /// </summary>
+    private bool TryEnterOperation()
+    {
+        if (Volatile.Read(ref _disposed) == 1 || _teardownInProgress) return false;
+        Interlocked.Increment(ref _inFlight);
+        // Re-check after increment: teardown may have flipped between our read and
+        // our increment. If so, back out and let the teardown proceed.
+        if (Volatile.Read(ref _disposed) == 1 || _teardownInProgress)
+        {
+            LeaveOperation();
+            return false;
+        }
+        return true;
+    }
+
+    private void LeaveOperation()
+    {
+        if (Interlocked.Decrement(ref _inFlight) != 0) return;
+
+        // Last operation out — wake any teardown waiter.
+        TaskCompletionSource<bool>? toComplete;
+        lock (_drainLock)
+        {
+            toComplete = _drainTcs;
+            _drainTcs = null;
+        }
+        toComplete?.TrySetResult(true);
+    }
+
+    /// <summary>
+    /// Wait for in-flight outbound operations to drain. Returns immediately if
+    /// none are in flight. Bounded by <paramref name="timeout"/> so a wedged
+    /// operation can't deadlock teardown.
+    /// </summary>
+    private async Task WaitForDrainAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (Interlocked.Read(ref _inFlight) == 0) return;
+
+        TaskCompletionSource<bool> tcs;
+        lock (_drainLock)
+        {
+            // Re-check inside the lock — LeaveOperation may have already drained
+            // and there's nothing left to wait for.
+            if (Interlocked.Read(ref _inFlight) == 0) return;
+            _drainTcs ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcs = _drainTcs;
+        }
+
+        try
+        {
+            await tcs.Task.WaitAsync(timeout, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            // Best-effort: log and proceed with teardown. In-flight ops will get
+            // ObjectDisposedException, which their catch handlers absorb.
+            _logger.LogWarning(
+                "Discord provider teardown proceeding with {InFlight} operation(s) still in flight after {Timeout}",
+                Interlocked.Read(ref _inFlight), timeout);
+        }
     }
 
     #endregion
+
+    /// <summary>
+    /// Internal test seam: runs <paramref name="body"/> while the in-flight
+    /// operation tracker treats it as a real send. Lets tests drive teardown
+    /// races without needing a live Discord client. Production code MUST use
+    /// the public surface (SendNotificationAsync etc.) which routes through
+    /// the same tracker via ExecuteSafeWithConnectedGuildAsync.
+    /// </summary>
+    internal async Task<bool> RunUnderInFlightForTestingAsync(Func<Task> body)
+    {
+        if (!TryEnterOperation()) return false;
+        try
+        {
+            await body();
+            return true;
+        }
+        finally
+        {
+            LeaveOperation();
+        }
+    }
 }
