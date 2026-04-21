@@ -20,6 +20,7 @@ vi.mock("../api", () => ({
   getForgeRun: vi.fn(),
   getForgeRunPhases: vi.fn(),
   getForgeArtifact: vi.fn(),
+  startForgeRun: vi.fn(),
 }));
 
 import {
@@ -28,6 +29,7 @@ import {
   listForgeRuns,
   getForgeRun,
   getForgeRunPhases,
+  startForgeRun,
 } from "../api";
 
 const mockGetStatus = vi.mocked(getForgeStatus);
@@ -35,6 +37,7 @@ const mockListJobs = vi.mocked(listForgeJobs);
 const mockListRuns = vi.mocked(listForgeRuns);
 const mockGetRun = vi.mocked(getForgeRun);
 const mockGetPhases = vi.mocked(getForgeRunPhases);
+const mockStartRun = vi.mocked(startForgeRun);
 
 // ── Factories ──
 
@@ -382,6 +385,223 @@ describe("ForgePanel", () => {
     await waitFor(() => {
       expect(screen.getByText("$0.42")).toBeInTheDocument();
       expect(screen.getByText("8.0K")).toBeInTheDocument(); // 5000+3000
+    });
+  });
+
+  // ── New Run form ──
+
+  it("shows New Run button when execution is available", async () => {
+    mockGetStatus.mockResolvedValue(makeStatus({ executionAvailable: true }));
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+  });
+
+  it("hides New Run button when execution is unavailable", async () => {
+    mockGetStatus.mockResolvedValue(makeStatus({ executionAvailable: false }));
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Forge")).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText("New run")).not.toBeInTheDocument();
+  });
+
+  it("navigates to new run form on button click", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/New Pipeline Run/)).toBeInTheDocument();
+      expect(screen.getByLabelText("Title")).toBeInTheDocument();
+      expect(screen.getByLabelText("Description")).toBeInTheDocument();
+      expect(screen.getByLabelText("Methodology (JSON)")).toBeInTheDocument();
+      expect(screen.getByText("Start Run")).toBeInTheDocument();
+    });
+  });
+
+  it("validates title is required", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Start Run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Start Run"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Title is required/)).toBeInTheDocument();
+    });
+    expect(mockStartRun).not.toHaveBeenCalled();
+  });
+
+  it("validates description is required", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Start Run")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText("Title"), "My task");
+    await user.click(screen.getByText("Start Run"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Description is required/)).toBeInTheDocument();
+    });
+    expect(mockStartRun).not.toHaveBeenCalled();
+  });
+
+  it("validates methodology JSON syntax", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Start Run")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText("Title"), "My task");
+    await user.type(screen.getByLabelText("Description"), "Do the thing");
+
+    // Clear methodology and type invalid JSON
+    const methodologyInput = screen.getByLabelText("Methodology (JSON)");
+    await user.clear(methodologyInput);
+    await user.type(methodologyInput, "not valid json");
+
+    await user.click(screen.getByText("Start Run"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Methodology JSON is invalid/)).toBeInTheDocument();
+    });
+    expect(mockStartRun).not.toHaveBeenCalled();
+  });
+
+  it("submits new run and returns to list", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Start Run")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText("Title"), "Build auth module");
+    await user.type(screen.getByLabelText("Description"), "Implement JWT authentication");
+
+    mockStartRun.mockResolvedValue({ jobId: "j1", status: "queued", createdAt: "2026-04-21T00:00:00Z", taskId: "t1" });
+    mockGetStatus.mockResolvedValue(makeStatus({ activeJobs: 1 }));
+    mockListJobs.mockResolvedValue([makeJob({ status: "queued", taskTitle: "Build auth module" })]);
+    mockListRuns.mockResolvedValue([]);
+
+    await user.click(screen.getByText("Start Run"));
+
+    await waitFor(() => {
+      expect(mockStartRun).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Forge")).toBeInTheDocument();
+      expect(screen.queryByText(/New Pipeline Run/)).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows API error on submission failure", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Start Run")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText("Title"), "Fail task");
+    await user.type(screen.getByLabelText("Description"), "This will fail");
+
+    mockStartRun.mockRejectedValue(new Error("Forge execution unavailable"));
+
+    await user.click(screen.getByText("Start Run"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Forge execution unavailable/)).toBeInTheDocument();
+    });
+  });
+
+  it("cancels new run form and returns to list", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockGetStatus.mockResolvedValue(makeStatus());
+    mockListJobs.mockResolvedValue([]);
+    mockListRuns.mockResolvedValue([]);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("New run")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("New run"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Cancel")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Cancel"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Forge")).toBeInTheDocument();
+      expect(screen.queryByText(/New Pipeline Run/)).not.toBeInTheDocument();
     });
   });
 });

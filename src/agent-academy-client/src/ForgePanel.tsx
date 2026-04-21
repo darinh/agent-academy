@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, mergeClasses, Spinner } from "@fluentui/react-components";
-import { ArrowSyncRegular, ChevronLeftRegular, ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, ChevronLeftRegular, ChevronDownRegular, ChevronRightRegular, PlayRegular } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import EmptyState from "./EmptyState";
@@ -12,6 +12,7 @@ import {
   getForgeRun,
   getForgeRunPhases,
   getForgeArtifact,
+  startForgeRun,
   type ForgeStatus,
   type ForgeJobSummary,
   type ForgeRunSummary,
@@ -20,6 +21,7 @@ import {
   type ForgeArtifactResponse,
 } from "./api";
 import { useForgePanelStyles } from "./forge";
+import { DEFAULT_METHODOLOGY_JSON } from "./forge/defaultMethodology";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -87,7 +89,7 @@ function formatLatencyMs(ms: number): string {
 
 // ── Main Panel ───────────────────────────────────────────────
 
-type ForgeView = "list" | "run-detail";
+type ForgeView = "list" | "run-detail" | "new-run";
 
 export default function ForgePanel() {
   const s = useForgePanelStyles();
@@ -116,6 +118,13 @@ export default function ForgePanel() {
   const [artifactLoading, setArtifactLoading] = useState(false);
   const artifactCache = useRef<Map<string, ForgeArtifactResponse>>(new Map());
   const artifactFetchIdRef = useRef(0);
+
+  // New run form state
+  const [newRunTitle, setNewRunTitle] = useState("");
+  const [newRunDescription, setNewRunDescription] = useState("");
+  const [newRunMethodology, setNewRunMethodology] = useState(DEFAULT_METHODOLOGY_JSON);
+  const [newRunSubmitting, setNewRunSubmitting] = useState(false);
+  const [newRunError, setNewRunError] = useState<string | null>(null);
 
   // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -241,6 +250,138 @@ export default function ForgePanel() {
       return next;
     });
   }, []);
+
+  // ── New run handlers ──
+
+  const handleOpenNewRun = useCallback(() => {
+    setNewRunTitle("");
+    setNewRunDescription("");
+    setNewRunMethodology(DEFAULT_METHODOLOGY_JSON);
+    setNewRunError(null);
+    setView("new-run");
+  }, []);
+
+  const handleCancelNewRun = useCallback(() => {
+    setView("list");
+    setNewRunError(null);
+  }, []);
+
+  const handleSubmitNewRun = useCallback(async () => {
+    setNewRunError(null);
+
+    if (!newRunTitle.trim()) {
+      setNewRunError("Title is required");
+      return;
+    }
+    if (!newRunDescription.trim()) {
+      setNewRunError("Description is required");
+      return;
+    }
+
+    let methodology;
+    try {
+      methodology = JSON.parse(newRunMethodology);
+    } catch {
+      setNewRunError("Methodology JSON is invalid");
+      return;
+    }
+
+    setNewRunSubmitting(true);
+    try {
+      await startForgeRun({
+        title: newRunTitle.trim(),
+        description: newRunDescription.trim(),
+        methodology,
+      });
+      setView("list");
+      fetchList();
+    } catch (err) {
+      setNewRunError(err instanceof Error ? err.message : "Failed to start run");
+    } finally {
+      setNewRunSubmitting(false);
+    }
+  }, [newRunTitle, newRunDescription, newRunMethodology, fetchList]);
+
+  // ── Render: New Run Form ──
+
+  if (view === "new-run") {
+    return (
+      <div className={s.root}>
+        <Button
+          className={s.backButton}
+          appearance="subtle"
+          size="small"
+          icon={<ChevronLeftRegular />}
+          onClick={handleCancelNewRun}
+        >
+          Cancel
+        </Button>
+
+        <div className={s.detail}>
+          <div className={s.detailHeader}>
+            <span style={{ fontFamily: "var(--aa-mono)", fontSize: "14px", fontWeight: 600 }}>
+              🚀 New Pipeline Run
+            </span>
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel} htmlFor="forge-title">Title</label>
+            <input
+              id="forge-title"
+              className={s.formInput}
+              type="text"
+              placeholder="e.g. Build auth module"
+              value={newRunTitle}
+              onChange={(e) => setNewRunTitle(e.target.value)}
+              disabled={newRunSubmitting}
+            />
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel} htmlFor="forge-description">Description</label>
+            <textarea
+              id="forge-description"
+              className={s.formTextarea}
+              placeholder="Describe the task for the pipeline…"
+              value={newRunDescription}
+              onChange={(e) => setNewRunDescription(e.target.value)}
+              disabled={newRunSubmitting}
+              rows={4}
+            />
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel} htmlFor="forge-methodology">Methodology (JSON)</label>
+            <textarea
+              id="forge-methodology"
+              className={s.formTextarea}
+              value={newRunMethodology}
+              onChange={(e) => setNewRunMethodology(e.target.value)}
+              disabled={newRunSubmitting}
+              rows={12}
+              style={{ fontSize: "11px" }}
+            />
+          </div>
+
+          {newRunError && (
+            <div style={{ color: "var(--aa-copper, #e06c75)", fontFamily: "var(--aa-mono)", fontSize: "12px" }}>
+              ⚠ {newRunError}
+            </div>
+          )}
+
+          <Button
+            appearance="primary"
+            size="small"
+            icon={newRunSubmitting ? <Spinner size="tiny" /> : <PlayRegular />}
+            onClick={handleSubmitNewRun}
+            disabled={newRunSubmitting}
+          >
+            {newRunSubmitting ? "Starting…" : "Start Run"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Render: Run Detail ──
 
@@ -511,6 +652,17 @@ export default function ForgePanel() {
           )}
         </div>
         <div className={s.controls}>
+          {status?.executionAvailable && (
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<PlayRegular />}
+              onClick={handleOpenNewRun}
+              aria-label="New run"
+            >
+              New Run
+            </Button>
+          )}
           <Button
             appearance="subtle"
             size="small"

@@ -139,10 +139,53 @@ export interface ForgeSchemaInfo {
   semanticRuleCount: number;
 }
 
+export interface StartForgeRunRequest {
+  taskId?: string;
+  title: string;
+  description: string;
+  methodology: MethodologyDefinition;
+}
+
+export interface StartForgeRunResponse {
+  jobId: string;
+  status: string;
+  createdAt: string;
+  taskId: string;
+}
+
+export interface MethodologyDefinition {
+  id: string;
+  description?: string;
+  max_attempts_default?: number;
+  model_defaults?: { generation?: string; judge?: string };
+  budget?: number;
+  control?: { target_schema: string; model?: string };
+  phases: MethodologyPhase[];
+  fidelity?: { target_phase: string; model?: string; judge_model?: string; max_attempts?: number };
+}
+
+export interface MethodologyPhase {
+  id: string;
+  goal: string;
+  inputs: string[];
+  output_schema: string;
+  instructions: string;
+  max_attempts?: number;
+  model?: string;
+  judge_model?: string;
+}
+
 // --- API functions ---
 
 export function getForgeStatus(): Promise<ForgeStatus> {
   return request<ForgeStatus>(apiUrl("/api/forge/status"));
+}
+
+export function startForgeRun(req: StartForgeRunRequest): Promise<StartForgeRunResponse> {
+  return request<StartForgeRunResponse>(apiUrl("/api/forge/jobs"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
 export function listForgeJobs(): Promise<ForgeJobSummary[]> {

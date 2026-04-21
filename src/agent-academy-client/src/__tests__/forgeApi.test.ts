@@ -8,6 +8,7 @@ import {
   getForgeRunPhases,
   getForgeArtifact,
   listForgeSchemas,
+  startForgeRun,
 } from "../api/forge";
 
 vi.mock("../api/core", () => ({
@@ -104,6 +105,44 @@ describe("forge API", () => {
       mockRequest.mockResolvedValue([]);
       await listForgeSchemas();
       expect(mockRequest).toHaveBeenCalledWith("http://test/api/forge/schemas");
+    });
+  });
+
+  describe("startForgeRun", () => {
+    it("calls correct URL with POST method and body", async () => {
+      const response = { jobId: "j1", status: "queued", createdAt: "2026-04-21T00:00:00Z", taskId: "t1" };
+      mockRequest.mockResolvedValue(response);
+
+      const req = {
+        title: "Build auth",
+        description: "Implement JWT auth module",
+        methodology: {
+          id: "test-v1",
+          phases: [{ id: "req", goal: "Requirements", inputs: [], output_schema: "requirements/v1", instructions: "Do it" }],
+        },
+      };
+
+      const result = await startForgeRun(req);
+      expect(result).toBe(response);
+      expect(mockRequest).toHaveBeenCalledWith("http://test/api/forge/jobs", {
+        method: "POST",
+        body: JSON.stringify(req),
+      });
+    });
+
+    it("passes optional taskId when provided", async () => {
+      mockRequest.mockResolvedValue({ jobId: "j1", status: "queued", createdAt: "2026-04-21T00:00:00Z", taskId: "custom-id" });
+
+      const req = {
+        taskId: "custom-id",
+        title: "Test task",
+        description: "Test description",
+        methodology: { id: "m1", phases: [] },
+      };
+
+      await startForgeRun(req);
+      const body = JSON.parse((mockRequest.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.taskId).toBe("custom-id");
     });
   });
 });
