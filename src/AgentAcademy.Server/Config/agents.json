@@ -119,7 +119,8 @@
             "COMPARE_SPEC_TO_CODE",
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
-            "PLATFORM_STATUS"
+            "PLATFORM_STATUS",
+            "SHOW_ROUTES"
           ],
           "Denied": []
         }
@@ -205,7 +206,8 @@
             "COMPARE_SPEC_TO_CODE",
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
-            "PLATFORM_STATUS"
+            "PLATFORM_STATUS",
+            "SHOW_ROUTES"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -303,7 +305,8 @@
             "COMPARE_SPEC_TO_CODE",
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
-            "PLATFORM_STATUS"
+            "PLATFORM_STATUS",
+            "SHOW_ROUTES"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -403,7 +406,8 @@
             "COMPARE_SPEC_TO_CODE",
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
-            "PLATFORM_STATUS"
+            "PLATFORM_STATUS",
+            "SHOW_ROUTES"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -508,7 +512,8 @@
             "COMPARE_SPEC_TO_CODE",
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
-            "PLATFORM_STATUS"
+            "PLATFORM_STATUS",
+            "SHOW_ROUTES"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -594,7 +599,8 @@
             "COMPARE_SPEC_TO_CODE",
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
-            "PLATFORM_STATUS"
+            "PLATFORM_STATUS",
+            "SHOW_ROUTES"
           ],
           "Denied": [
             "APPROVE_TASK",

@@ -441,7 +441,7 @@ public class CommandParserTests
     public void KnownCommands_ContainsExpectedCount()
     {
         // Guard: if someone adds/removes a command, this test catches it.
-        Assert.Equal(100, CommandParser.KnownCommands.Count);
+        Assert.Equal(101, CommandParser.KnownCommands.Count);
     }
 
     // ── Mutation-Killing: LegacyBlocks ────────────────────────────

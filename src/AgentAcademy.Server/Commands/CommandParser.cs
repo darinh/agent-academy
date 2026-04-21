@@ -60,7 +60,9 @@ public sealed class CommandParser
         // Tier 3A — Spec Verification
         "VERIFY_SPEC_SECTION", "COMPARE_SPEC_TO_CODE", "DETECT_ORPHANED_SECTIONS",
         // Tier 3B — Context
-        "HANDOFF_SUMMARY", "PLATFORM_STATUS"
+        "HANDOFF_SUMMARY", "PLATFORM_STATUS",
+        // Tier 3C — Frontend/UX
+        "SHOW_ROUTES"
     };
 
     /// <summary>

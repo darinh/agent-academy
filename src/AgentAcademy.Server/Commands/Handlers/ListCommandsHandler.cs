@@ -98,6 +98,8 @@ public sealed class ListCommandsHandler : ICommandHandler
         // Tier 3B — Context
         ["HANDOFF_SUMMARY"] = "Generate a structured snapshot of your current state for handoff (tasks, location, memories)",
         ["PLATFORM_STATUS"] = "Comprehensive platform status: server health, agents, tasks, sprint, connections",
+        // Tier 3C — Frontend/UX
+        ["SHOW_ROUTES"] = "List registered API endpoints with paths, HTTP methods, and controllers",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
