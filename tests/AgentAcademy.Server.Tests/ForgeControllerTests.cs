@@ -7,10 +7,14 @@ using AgentAcademy.Forge.Schemas;
 using AgentAcademy.Forge.Storage;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Controllers;
+using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgentAcademy.Server.Tests;
@@ -18,6 +22,8 @@ namespace AgentAcademy.Server.Tests;
 public sealed class ForgeControllerTests : IDisposable
 {
     private readonly string _tempDir;
+    private readonly SqliteConnection _connection;
+    private readonly ServiceProvider _serviceProvider;
     private readonly ForgeRunService _runService;
     private readonly IRunStore _runStore;
     private readonly IArtifactStore _artifactStore;
@@ -33,6 +39,19 @@ public sealed class ForgeControllerTests : IDisposable
 
         _options = new ForgeOptions { Enabled = true, OpenAiApiKey = "test-key" };
 
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
+        _serviceProvider = services.BuildServiceProvider();
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.Database.EnsureCreated();
+        }
+
         _runStore = new DiskRunStore(_tempDir, NullLogger<DiskRunStore>.Instance);
         _artifactStore = new DiskArtifactStore(
             Path.Combine(_tempDir, "artifacts"),
@@ -44,7 +63,7 @@ public sealed class ForgeControllerTests : IDisposable
 
         var pipelineRunner = CreatePipelineRunner();
         _runService = new ForgeRunService(
-            pipelineRunner, _options, NullLogger<ForgeRunService>.Instance);
+            pipelineRunner, _options, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ForgeRunService>.Instance);
 
         _controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, _options);
@@ -52,6 +71,8 @@ public sealed class ForgeControllerTests : IDisposable
 
     public void Dispose()
     {
+        _serviceProvider.Dispose();
+        _connection.Dispose();
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, recursive: true);
     }
@@ -98,9 +119,9 @@ public sealed class ForgeControllerTests : IDisposable
     // ── Status endpoint ─────────────────────────────────────────────────
 
     [Fact]
-    public void GetStatus_ReturnsForgeState()
+    public async Task GetStatus_ReturnsForgeState()
     {
-        var result = _controller.GetStatus();
+        var result = await _controller.GetStatus();
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var json = JsonSerializer.Serialize(ok.Value);
@@ -109,13 +130,13 @@ public sealed class ForgeControllerTests : IDisposable
     }
 
     [Fact]
-    public void GetStatus_WhenNoApiKey_ShowsExecutionUnavailable()
+    public async Task GetStatus_WhenNoApiKey_ShowsExecutionUnavailable()
     {
         var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
         var controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
-        var result = controller.GetStatus();
+        var result = await controller.GetStatus();
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var json = JsonSerializer.Serialize(ok.Value);
@@ -191,7 +212,7 @@ public sealed class ForgeControllerTests : IDisposable
         var jobId = JsonSerializer.Deserialize<JsonElement>(
             JsonSerializer.Serialize(startResult!.Value)).GetProperty("JobId").GetString()!;
 
-        var result = _controller.GetJob(jobId);
+        var result = await _controller.GetJob(jobId);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var json = JsonSerializer.Serialize(ok.Value);
@@ -199,17 +220,17 @@ public sealed class ForgeControllerTests : IDisposable
     }
 
     [Fact]
-    public void GetJob_WhenNotFound_Returns404()
+    public async Task GetJob_WhenNotFound_Returns404()
     {
-        var result = _controller.GetJob("nonexistent");
+        var result = await _controller.GetJob("nonexistent");
 
         Assert.IsType<NotFoundObjectResult>(result);
     }
 
     [Fact]
-    public void ListJobs_ReturnsEmptyListInitially()
+    public async Task ListJobs_ReturnsEmptyListInitially()
     {
-        var result = _controller.ListJobs();
+        var result = await _controller.ListJobs();
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var json = JsonSerializer.Serialize(ok.Value);
@@ -317,8 +338,31 @@ public sealed class ForgeControllerTests : IDisposable
     }
 }
 
-public sealed class ForgeRunServiceTests
+public sealed class ForgeRunServiceTests : IDisposable
 {
+    private readonly SqliteConnection _connection;
+    private readonly ServiceProvider _serviceProvider;
+
+    public ForgeRunServiceTests()
+    {
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
+        _serviceProvider = services.BuildServiceProvider();
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        db.Database.EnsureCreated();
+    }
+
+    public void Dispose()
+    {
+        _serviceProvider.Dispose();
+        _connection.Dispose();
+    }
+
     // ── Run ID Validation ───────────────────────────────────────────────
 
     [Theory]
@@ -370,17 +414,17 @@ public sealed class ForgeRunServiceTests
     // ── Job management ──────────────────────────────────────────────────
 
     [Fact]
-    public void GetJob_ReturnsNullForUnknownJob()
+    public async Task GetJobAsync_ReturnsNullForUnknownJob()
     {
         var service = CreateService();
-        Assert.Null(service.GetJob("nonexistent"));
+        Assert.Null(await service.GetJobAsync("nonexistent"));
     }
 
     [Fact]
-    public void ListJobs_EmptyInitially()
+    public async Task ListJobsAsync_EmptyInitially()
     {
         var service = CreateService();
-        Assert.Empty(service.ListJobs());
+        Assert.Empty(await service.ListJobsAsync());
     }
 
     [Fact]
@@ -402,7 +446,7 @@ public sealed class ForgeRunServiceTests
     }
 
     [Fact]
-    public async Task StartRunAsync_EnqueuesJob()
+    public async Task StartRunAsync_EnqueuesAndPersistsJob()
     {
         var service = CreateService();
 
@@ -420,11 +464,110 @@ public sealed class ForgeRunServiceTests
         Assert.NotNull(job.JobId);
         Assert.Equal(ForgeJobStatus.Queued, job.Status);
         Assert.Equal("t1", job.TaskBrief.TaskId);
-        Assert.NotNull(service.GetJob(job.JobId));
-        Assert.Single(service.ListJobs());
+        Assert.NotNull(await service.GetJobAsync(job.JobId));
+        Assert.Single(await service.ListJobsAsync());
+
+        // Verify persisted to DB
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var entity = await db.ForgeJobs.FindAsync(job.JobId);
+        Assert.NotNull(entity);
+        Assert.Equal("queued", entity.Status);
+        Assert.Contains("t1", entity.TaskBriefJson);
     }
 
-    private static ForgeRunService CreateService(bool executionAvailable = true)
+    [Fact]
+    public async Task RecoverJobsAsync_MarksRunningAsInterrupted()
+    {
+        // Seed a "running" job directly in DB (simulating a crash)
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.ForgeJobs.Add(new Data.Entities.ForgeJobEntity
+            {
+                Id = "crashed-job",
+                Status = "running",
+                TaskBriefJson = """{"taskId":"t1","title":"T","description":"D"}""",
+                MethodologyJson = """{"id":"test","phases":[{"id":"r","goal":"g","inputs":[],"output_schema":"requirements/v1","instructions":"i"}]}""",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+                StartedAt = DateTime.UtcNow.AddMinutes(-4)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+        await service.RecoverJobsAsync();
+
+        // Verify the job was marked interrupted
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            var entity = await db.ForgeJobs.FindAsync("crashed-job");
+            Assert.NotNull(entity);
+            Assert.Equal("interrupted", entity.Status);
+            Assert.Contains("Server restarted", entity.Error);
+            Assert.NotNull(entity.CompletedAt);
+        }
+    }
+
+    [Fact]
+    public async Task RecoverJobsAsync_ReenqueuesQueuedJobs()
+    {
+        // Seed a "queued" job directly in DB
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.ForgeJobs.Add(new Data.Entities.ForgeJobEntity
+            {
+                Id = "queued-job",
+                Status = "queued",
+                TaskBriefJson = """{"taskId":"t2","title":"T","description":"D"}""",
+                MethodologyJson = """{"id":"test","phases":[{"id":"r","goal":"g","inputs":[],"output_schema":"requirements/v1","instructions":"i"}]}""",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-3)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+        await service.RecoverJobsAsync();
+
+        // Verify the job is available in the active cache
+        var job = await service.GetJobAsync("queued-job");
+        Assert.NotNull(job);
+        Assert.Equal(ForgeJobStatus.Queued, job.Status);
+        Assert.Equal("t2", job.TaskBrief.TaskId);
+    }
+
+    [Fact]
+    public async Task GetJobAsync_FallsBackToDbForCompletedJobs()
+    {
+        // Seed a completed job directly in DB (not in active cache)
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+            db.ForgeJobs.Add(new Data.Entities.ForgeJobEntity
+            {
+                Id = "old-job",
+                RunId = "R_01HWXYZ123456789ABCDEFGH",
+                Status = "completed",
+                TaskBriefJson = """{"taskId":"t3","title":"Old Task","description":"Done"}""",
+                MethodologyJson = """{"id":"test","phases":[{"id":"r","goal":"g","inputs":[],"output_schema":"requirements/v1","instructions":"i"}]}""",
+                CreatedAt = DateTime.UtcNow.AddDays(-1),
+                CompletedAt = DateTime.UtcNow.AddDays(-1)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService();
+        var job = await service.GetJobAsync("old-job");
+
+        Assert.NotNull(job);
+        Assert.Equal(ForgeJobStatus.Completed, job.Status);
+        Assert.Equal("t3", job.TaskBrief.TaskId);
+        Assert.Equal("R_01HWXYZ123456789ABCDEFGH", job.RunId);
+    }
+
+    private ForgeRunService CreateService(bool executionAvailable = true)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"forge-svc-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -457,6 +600,6 @@ public sealed class ForgeRunServiceTests
             costCalculator, TimeProvider.System,
             NullLogger<PipelineRunner>.Instance);
 
-        return new ForgeRunService(pipelineRunner, options, NullLogger<ForgeRunService>.Instance);
+        return new ForgeRunService(pipelineRunner, options, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ForgeRunService>.Instance);
     }
 }

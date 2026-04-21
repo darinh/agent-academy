@@ -77,9 +77,9 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>Get status of a forge job.</summary>
     [HttpGet("jobs/{jobId}")]
-    public IActionResult GetJob(string jobId)
+    public async Task<IActionResult> GetJob(string jobId)
     {
-        var job = _runService.GetJob(jobId);
+        var job = await _runService.GetJobAsync(jobId);
         if (job is null)
             return NotFound(new { error = "Job not found", jobId });
 
@@ -99,9 +99,9 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>List all forge jobs.</summary>
     [HttpGet("jobs")]
-    public IActionResult ListJobs()
+    public async Task<IActionResult> ListJobs()
     {
-        var jobs = _runService.ListJobs();
+        var jobs = await _runService.ListJobsAsync();
         return Ok(jobs.Select(j => new
         {
             j.JobId,
@@ -233,9 +233,9 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>Get forge engine status.</summary>
     [HttpGet("status")]
-    public IActionResult GetStatus()
+    public async Task<IActionResult> GetStatus()
     {
-        var jobs = _runService.ListJobs();
+        var jobs = await _runService.ListJobsAsync();
         return Ok(new
         {
             Enabled = _options.Enabled,

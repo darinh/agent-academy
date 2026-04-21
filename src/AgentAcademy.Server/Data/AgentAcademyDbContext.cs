@@ -46,6 +46,7 @@ public class AgentAcademyDbContext : DbContext
     public DbSet<LearningDigestSourceEntity> LearningDigestSources => Set<LearningDigestSourceEntity>();
     public DbSet<RoomArtifactEntity> RoomArtifacts => Set<RoomArtifactEntity>();
     public DbSet<GoalCardEntity> GoalCards => Set<GoalCardEntity>();
+    public DbSet<ForgeJobEntity> ForgeJobs => Set<ForgeJobEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

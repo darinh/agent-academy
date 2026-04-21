@@ -77,7 +77,11 @@ public static class ForgeServiceRegistration
         }
 
         // Background service for processing forge runs
-        services.AddSingleton<ForgeRunService>();
+        services.AddSingleton<ForgeRunService>(sp => new ForgeRunService(
+            sp.GetRequiredService<AgentAcademy.Forge.Execution.PipelineRunner>(),
+            sp.GetRequiredService<ForgeOptions>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<ForgeRunService>>()));
         services.AddSingleton<IForgeJobService>(sp => sp.GetRequiredService<ForgeRunService>());
         services.AddHostedService(sp => sp.GetRequiredService<ForgeRunService>());
 
@@ -108,6 +112,28 @@ public static class ForgeServiceRegistration
         if (defaultMethodology is not null)
         {
             await diskCatalog.SeedAsync(defaultMethodology);
+        }
+    }
+
+    /// <summary>
+    /// Recover forge jobs from a previous server lifecycle.
+    /// Called during app initialization, after DB migration.
+    /// </summary>
+    public static async Task RecoverForgeJobsAsync(this WebApplication app)
+    {
+        var options = app.Services.GetRequiredService<ForgeOptions>();
+        if (!options.Enabled)
+            return;
+
+        try
+        {
+            var runService = app.Services.GetRequiredService<ForgeRunService>();
+            await runService.RecoverJobsAsync();
+        }
+        catch (Exception ex)
+        {
+            var logger = app.Services.GetRequiredService<ILogger<ForgeRunService>>();
+            logger.LogWarning(ex, "Forge job recovery failed — continuing startup without recovery");
         }
     }
 
