@@ -73,8 +73,15 @@ export function getAuthTransitionEffect(
   next: AuthStatus,
   storage?: StorageLike,
 ): AuthTransitionEffect {
+  // Never clear the auto-reauth flag automatically. Once a redirect has been
+  // attempted in this browser session, don't try again — the user can manually
+  // reconnect via the "Reconnect GitHub" button. Clearing the flag on
+  // "operational" status caused a redirect loop when copilotStatus oscillated
+  // between operational and degraded (each return to operational re-armed the
+  // redirect, so every subsequent degraded transition triggered a full-page
+  // navigation to the OAuth flow).
   return {
-    clearAutoReauthAttempt: next.copilotStatus === "operational" || next.copilotStatus === "unavailable",
+    clearAutoReauthAttempt: false,
     clearManualLogoutSuppression: next.copilotStatus === "operational",
     redirectToLogin: shouldAutoReauthenticate(previous, next, storage),
   };

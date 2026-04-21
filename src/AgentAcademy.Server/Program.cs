@@ -66,6 +66,16 @@ builder.Services.AddNotificationSystem();
 builder.Services.AddBackgroundServices(builder.Configuration);
 builder.Services.AddForge(builder.Configuration, builder.Environment);
 
+// Prevent background service exceptions from killing the host. The default
+// StopHost behavior meant any transient failure (e.g., a network timeout in
+// CopilotAuthMonitorService) would crash the entire server, which the wrapper
+// restarts — but the crash/restart cycle causes SignalR disconnections and
+// auth status oscillations that trigger full-page redirects in the client.
+builder.Services.Configure<HostOptions>(options =>
+{
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+});
+
 // ── Logging ─────────────────────────────────────────────────────────────────
 
 var logStore = new InMemoryLogStore();
