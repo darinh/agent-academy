@@ -67,18 +67,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (!configuration.TryGetValue("BotToken", out var token) || string.IsNullOrWhiteSpace(token))
-            throw new ArgumentException("BotToken is required.", nameof(configuration));
-
-        if (!configuration.TryGetValue("ChannelId", out var channelIdStr) || !ulong.TryParse(channelIdStr, out var channelId))
-            throw new ArgumentException("ChannelId is required and must be a valid numeric ID.", nameof(configuration));
-
-        if (!configuration.TryGetValue("GuildId", out var guildIdStr) || !ulong.TryParse(guildIdStr, out var guildId))
-            throw new ArgumentException("GuildId is required and must be a valid numeric ID.", nameof(configuration));
-
-        _botToken = token;
-        _channelId = channelId;
-        _guildId = guildId;
+        _botToken = GetRequiredString(configuration, "BotToken");
+        _channelId = GetRequiredUlong(configuration, "ChannelId");
+        _guildId = GetRequiredUlong(configuration, "GuildId");
 
         if (configuration.TryGetValue("OwnerId", out var ownerIdStr) && ulong.TryParse(ownerIdStr, out var ownerId))
             _ownerId = ownerId;
@@ -113,76 +104,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 await DisposeClientAsync();
             }
 
-            var config = new DiscordSocketConfig
-            {
-                GatewayIntents = GatewayIntents.Guilds
-                    | GatewayIntents.GuildMessages
-                    | GatewayIntents.MessageContent,
-                LogLevel = LogSeverity.Info
-            };
-
-            _client = new DiscordSocketClient(config);
+            _client = new DiscordSocketClient(CreateClientConfig());
             _client.Log += OnDiscordLog;
 
             _readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             string? disconnectReason = null;
-
-            _readyHandler = () =>
-            {
-                _readyTcs.TrySetResult(true);
-                return Task.CompletedTask;
-            };
-
-            _disconnectedHandler = ex =>
-            {
-                _logger.LogWarning(ex, "Discord client disconnected");
-                disconnectReason = ExtractDisconnectReason(ex);
-                _readyTcs?.TrySetResult(false);
-                return Task.CompletedTask;
-            };
-
-            _client.Ready += _readyHandler;
-            _client.Disconnected += _disconnectedHandler;
-
-            try
-            {
-                await _client.LoginAsync(TokenType.Bot, _botToken);
-            }
-            catch (ArgumentException ex)
-            {
-                _lastError = $"Invalid bot token: {ex.Message}";
-                await DisposeClientAsync();
-                throw;
-            }
-            await _client.StartAsync();
-
-            // Wait for Ready event with timeout
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(30));
-
-            try
-            {
-                var ready = await _readyTcs.Task.WaitAsync(cts.Token);
-                if (!ready)
-                {
-                    await DisposeClientAsync();
-                    _lastError = disconnectReason
-                        ?? "Discord client failed to reach Ready state. Check bot token and Message Content Intent in Discord Developer Portal.";
-                    throw new InvalidOperationException(_lastError);
-                }
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                await DisposeClientAsync();
-                _lastError = "Discord client did not become ready within 30 seconds. Check bot token and network connectivity.";
-                throw new TimeoutException("Discord client did not become ready within 30 seconds.");
-            }
-            catch (Exception ex) when (_client is not null)
-            {
-                await DisposeClientAsync();
-                _lastError ??= $"Discord connection failed: {ex.Message}";
-                throw;
-            }
+            AttachConnectionHandlers(reason => disconnectReason = reason);
+            await LoginStartAndAwaitReadyAsync(() => disconnectReason, cancellationToken);
 
             _lastError = null; // Connected successfully — clear any previous error
             _logger.LogInformation("Discord provider connected as {BotUser}", _client.CurrentUser?.Username ?? "unknown");
@@ -338,17 +266,15 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// </summary>
     public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
     {
-        var guild = GetGuildIfConfigured();
-        if (guild is not null)
-            await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
+        await ExecuteWithConfiguredGuildAsync(
+            guild => _channelManager.RenameRoomChannelAsync(guild, roomId, newName));
     }
 
     /// <inheritdoc />
     public async Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
     {
-        var guild = GetGuildIfConfigured();
-        if (guild is not null)
-            await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
+        await ExecuteWithConfiguredGuildAsync(
+            guild => _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken));
     }
 
 
@@ -381,6 +307,94 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         if (_client is null || !_isConfigured) return null;
         return _client.GetGuild(_guildId);
+    }
+
+    private static string GetRequiredString(Dictionary<string, string> configuration, string key)
+    {
+        if (!configuration.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException($"{key} is required.", nameof(configuration));
+
+        return value;
+    }
+
+    private static ulong GetRequiredUlong(Dictionary<string, string> configuration, string key)
+    {
+        if (!configuration.TryGetValue(key, out var value) || !ulong.TryParse(value, out var parsed))
+            throw new ArgumentException($"{key} is required and must be a valid numeric ID.", nameof(configuration));
+
+        return parsed;
+    }
+
+    private static DiscordSocketConfig CreateClientConfig() => new()
+    {
+        GatewayIntents = GatewayIntents.Guilds
+            | GatewayIntents.GuildMessages
+            | GatewayIntents.MessageContent,
+        LogLevel = LogSeverity.Info
+    };
+
+    private void AttachConnectionHandlers(Action<string?> setDisconnectReason)
+    {
+        _readyHandler = () =>
+        {
+            _readyTcs?.TrySetResult(true);
+            return Task.CompletedTask;
+        };
+
+        _disconnectedHandler = ex =>
+        {
+            _logger.LogWarning(ex, "Discord client disconnected");
+            setDisconnectReason(ExtractDisconnectReason(ex));
+            _readyTcs?.TrySetResult(false);
+            return Task.CompletedTask;
+        };
+
+        _client!.Ready += _readyHandler;
+        _client.Disconnected += _disconnectedHandler;
+    }
+
+    private async Task LoginStartAndAwaitReadyAsync(Func<string?> disconnectReasonProvider, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _client!.LoginAsync(TokenType.Bot, _botToken);
+        }
+        catch (ArgumentException ex)
+        {
+            _lastError = $"Invalid bot token: {ex.Message}";
+            await DisposeClientAsync();
+            throw;
+        }
+
+        await _client.StartAsync();
+
+        // Wait for Ready event with timeout
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            var ready = await _readyTcs!.Task.WaitAsync(cts.Token);
+            if (!ready)
+            {
+                await DisposeClientAsync();
+                _lastError = disconnectReasonProvider()
+                    ?? "Discord client failed to reach Ready state. Check bot token and Message Content Intent in Discord Developer Portal.";
+                throw new InvalidOperationException(_lastError);
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            await DisposeClientAsync();
+            _lastError = "Discord client did not become ready within 30 seconds. Check bot token and network connectivity.";
+            throw new TimeoutException("Discord client did not become ready within 30 seconds.");
+        }
+        catch (Exception ex) when (_client is not null)
+        {
+            await DisposeClientAsync();
+            _lastError ??= $"Discord connection failed: {ex.Message}";
+            throw;
+        }
     }
 
     private Task OnDiscordLog(LogMessage logMessage)
@@ -442,6 +456,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             onFailure(ex);
             return false;
         }
+    }
+
+    private async Task ExecuteWithConfiguredGuildAsync(Func<SocketGuild, Task> operation)
+    {
+        var guild = GetGuildIfConfigured();
+        if (guild is null) return;
+
+        await operation(guild);
     }
 
     private async Task DisposeClientAsync()
