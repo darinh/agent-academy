@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Button,
@@ -10,12 +10,11 @@ import {
   useId,
   Toast,
   ToastTitle,
-  ToastBody,
 } from "@fluentui/react-components";
 import { useLayoutStyles, useWorkspaceStyles, useRecoveryStyles } from "./styles";
 import { useWorkspace } from "./useWorkspace";
 import { useDesktopNotifications } from "./useDesktopNotifications";
-import type { ActivityEvent, CollaborationPhase, WorkspaceMeta } from "./api";
+import type { CollaborationPhase, WorkspaceMeta } from "./api";
 import { renameRoom } from "./api";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
@@ -37,10 +36,13 @@ import {
   isWorkspaceLimited,
   shouldRenderWorkspace,
 } from "./authPresentation";
-import { VIEW_TITLES, TOAST_EVENT_TYPES, toastIntent, matrixTheme } from "./appConstants";
+import { VIEW_TITLES, matrixTheme } from "./appConstants";
 import { useChatFilters } from "./useChatFilters";
 import { useProjectSelection } from "./useProjectSelection";
 import { useRoomCallbacks } from "./useRoomCallbacks";
+import { useCrossPanelNavigation } from "./useCrossPanelNavigation";
+import { useDocumentTitle } from "./useDocumentTitle";
+import { useActivityToast } from "./useActivityToast";
 
 // Lazy-loaded panels
 const ProjectSelectorPage = lazy(() => import("./ProjectSelectorPage"));
@@ -96,19 +98,7 @@ function AppShell() {
   const desktopNotif = useDesktopNotifications();
 
   /* ── Activity toast handler ── */
-  const handleActivityToast = useCallback((evt: ActivityEvent) => {
-    desktopNotif.notify(evt);
-    if (!TOAST_EVENT_TYPES.has(evt.type)) return;
-    const intent = toastIntent(evt);
-    const timeout = intent === "error" ? 8000 : 4000;
-    dispatchToast(
-      <Toast>
-        <ToastTitle>{evt.type.replace(/([A-Z])/g, " $1").trim()}</ToastTitle>
-        <ToastBody>{evt.message}</ToastBody>
-      </Toast>,
-      { intent, timeout },
-    );
-  }, [dispatchToast, desktopNotif]);
+  const handleActivityToast = useActivityToast(dispatchToast, desktopNotif);
 
   /* ── Workspace core ── */
   const {
@@ -187,29 +177,15 @@ function AppShell() {
     enabled: !showProjectSelector && tab === "tasks",
   });
 
-  /* ── Task focus (cross-panel navigation) ── */
-  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
-  const handleNavigateToTask = useCallback((taskId: string) => {
-    setFocusTaskId(taskId);
-    setTab("tasks");
-  }, [setTab]);
-  const handleFocusTaskHandled = useCallback(() => {
-    setFocusTaskId(null);
-  }, []);
-
-  /* ── Retro filter (cross-panel navigation from tasks) ── */
-  const [retroFilterTaskId, setRetroFilterTaskId] = useState<string | null>(null);
-  const handleNavigateToRetro = useCallback((taskId: string) => {
-    setRetroFilterTaskId(taskId);
-    setTab("retrospectives");
-  }, [setTab]);
-  const handleClearRetroTaskFilter = useCallback(() => {
-    setRetroFilterTaskId(null);
-  }, []);
-  // Clear task filter when navigating away from retrospectives tab
-  useEffect(() => {
-    if (tab !== "retrospectives") setRetroFilterTaskId(null);
-  }, [tab]);
+  /* ── Cross-panel navigation (task focus + retro task filter) ── */
+  const {
+    focusTaskId,
+    retroFilterTaskId,
+    handleNavigateToTask,
+    handleFocusTaskHandled,
+    handleNavigateToRetro,
+    handleClearRetroTaskFilter,
+  } = useCrossPanelNavigation(tab, setTab);
 
   /* ── Keyboard shortcuts ── */
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -232,13 +208,7 @@ function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
 
   /* ── Document title ── */
-  useEffect(() => {
-    const roomName = room?.name ?? "Agent Academy";
-    const phase = room?.currentPhase ?? "";
-    document.title = phase
-      ? `${roomName} · ${phase} | Agent Academy`
-      : `${roomName} | Agent Academy`;
-  }, [room?.name, room?.currentPhase]);
+  useDocumentTitle(room?.name, room?.currentPhase);
 
   /* ── Room rename handler (must be declared before early returns to keep hook order stable) ── */
   const handleRoomRename = useCallback(async (newName: string) => {
