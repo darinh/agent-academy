@@ -78,10 +78,10 @@ public interface IAgentExecutor
 
 ### Implementation: `CopilotExecutor` + `CopilotSessionPool` + `CopilotSdkSender` + `CopilotClientFactory`
 
-**Files**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`, `src/AgentAcademy.Server/Services/CopilotSessionPool.cs`, `src/AgentAcademy.Server/Services/CopilotSdkSender.cs`, `src/AgentAcademy.Server/Services/CopilotClientFactory.cs`
+**Files**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`, `src/AgentAcademy.Server/Services/CopilotSessionPool.cs`, `src/AgentAcademy.Server/Services/CopilotSdkSender.cs`, `src/AgentAcademy.Server/Services/CopilotClientFactory.cs`, `src/AgentAcademy.Server/Services/CopilotAuthStateNotifier.cs`
 **NuGet**: `GitHub.Copilot.SDK` v0.2.2
 
-`CopilotClientFactory` owns client lifecycle (token resolution, client creation, worktree clients). `CopilotSessionPool` owns session caching with TTL and send serialization. `CopilotSdkSender` owns SDK communication: streamed response collection, error classification, and retry with backoff. `CopilotExecutor` is a thin coordinator that owns auth-state transitions, circuit breaker, and fallback management.
+`CopilotClientFactory` owns client lifecycle (token resolution, client creation, worktree clients). `CopilotSessionPool` owns session caching with TTL and send serialization. `CopilotSdkSender` owns SDK communication: streamed response collection, error classification, and retry with backoff. `CopilotAuthStateNotifier` maps auth-state transitions into room status + provider notifications. `CopilotExecutor` is a thin coordinator that owns auth-state transitions, circuit breaker, and fallback management.
 
 Key behaviors:
 - **Lazy client initialization** *(CopilotClientFactory)*: `CopilotClient` is created on first use and cached.
@@ -195,17 +195,20 @@ The message includes the agent's name and role so users can identify which agent
 
 ### DI Registration
 
-**File**: `src/AgentAcademy.Server/Program.cs`
+**File**: `src/AgentAcademy.Server/Services/AgentPipelineExtensions.cs`
 
 ```csharp
 builder.Services.AddSingleton<CopilotClientFactory>();
 builder.Services.AddSingleton<CopilotSessionPool>();
 builder.Services.AddSingleton<CopilotSdkSender>();
-builder.Services.AddSingleton<CopilotExecutor>();
+builder.Services.AddSingleton<ICopilotAuthStateNotifier, CopilotAuthStateNotifier>();
+builder.Services.AddSingleton<CopilotExecutor>(sp => new CopilotExecutor(
+    // ... factory wiring omitted for brevity
+));
 builder.Services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
 ```
 
-`CopilotClientFactory`, `CopilotSessionPool`, and `CopilotSdkSender` are registered as singletons. `CopilotExecutor` takes all three as constructor dependencies and is registered as `IAgentExecutor`. It internally creates and manages a `StubExecutor` fallback — consumers only depend on `IAgentExecutor`.
+`CopilotClientFactory`, `CopilotSessionPool`, and `CopilotSdkSender` are registered as singletons. `ICopilotAuthStateNotifier` isolates room-notice + notification transport from `CopilotExecutor`. `CopilotExecutor` is registered as `IAgentExecutor` and still manages `StubExecutor` fallback semantics.
 
 ### Tests
 
@@ -908,3 +911,4 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-04-14 | Knowledge endpoints wired to memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category with auto-generated key, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub. | knowledge-endpoints |
 | 2026-04-14 | Platform review — agent capability fixes. Added `code` tool group to Planner and Architect (were blind to codebase). Added `RUN_BUILD`, `RUN_TESTS`, `SHOW_DIFF`, `GIT_LOG`, `READ_FILE`, `SEARCH_CODE` commands to engineers. Fixed prompt-permission mismatches across all 6 agents. Added SDK Tools documentation section to all agent prompts. Updated `AgentCatalogWatcher.AgentsEqual` to compare `Permissions` and `GitIdentity`. Added conversation kickoff on fresh startup. | platform-review |
 | 2026-04-12 | Structural refactor — extracted `CopilotSessionPool` (session cache with TTL, per-key locks, send serialization, cleanup timer) and `CopilotSdkSender` (streamed response collection, error classification, retry/backoff, usage tracking) from `CopilotExecutor`. Executor reduced from 779→424 lines. Zero behavioral changes. Adversarial review (GPT-5.3 Codex): 1 finding fixed (auth-failure invalidation scope). | session-pool-sender |
+| 2026-04-21 | Structural refactor — extracted auth transition side-effects (`PostSystemStatusAsync` + `SendToAllAsync`) behind `ICopilotAuthStateNotifier`/`CopilotAuthStateNotifier`, leaving `CopilotExecutor` focused on state transitions/circuit/fallback logic. Behavior unchanged; existing auth-transition tests still apply. | copilot-auth-state-notifier |

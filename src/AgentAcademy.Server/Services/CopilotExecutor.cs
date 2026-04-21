@@ -48,8 +48,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly ICopilotClientFactory _clientFactory;
     private readonly ICopilotSessionPool _sessionPool;
     private readonly ICopilotSdkSender _sender;
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly INotificationManager _notificationManager;
+    private readonly ICopilotAuthStateNotifier _authStateNotifier;
     private readonly IAgentToolRegistry _toolRegistry;
     private readonly IAgentErrorTracker _errorTracker;
     private readonly IAgentQuotaService _quotaService;
@@ -74,14 +73,42 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         IAgentCatalog catalog,
         CopilotCircuitBreaker? circuitBreaker = null,
         StubExecutor? fallback = null)
+        : this(
+            logger,
+            stubLogger,
+            clientFactory,
+            sessionPool,
+            sender,
+            new CopilotAuthStateNotifier(scopeFactory, notificationManager),
+            toolRegistry,
+            errorTracker,
+            quotaService,
+            catalog,
+            circuitBreaker,
+            fallback)
+    {
+    }
+
+    internal CopilotExecutor(
+        ILogger<CopilotExecutor> logger,
+        ILogger<StubExecutor> stubLogger,
+        ICopilotClientFactory clientFactory,
+        ICopilotSessionPool sessionPool,
+        ICopilotSdkSender sender,
+        ICopilotAuthStateNotifier authStateNotifier,
+        IAgentToolRegistry toolRegistry,
+        IAgentErrorTracker errorTracker,
+        IAgentQuotaService quotaService,
+        IAgentCatalog catalog,
+        CopilotCircuitBreaker? circuitBreaker = null,
+        StubExecutor? fallback = null)
     {
         _logger = logger;
         _stubLogger = stubLogger;
         _clientFactory = clientFactory;
         _sessionPool = sessionPool;
         _sender = sender;
-        _scopeFactory = scopeFactory;
-        _notificationManager = notificationManager;
+        _authStateNotifier = authStateNotifier;
         _toolRegistry = toolRegistry;
         _errorTracker = errorTracker;
         _quotaService = quotaService;
@@ -399,25 +426,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             _authFailed = degraded;
 
             var roomId = _catalog.DefaultRoomId;
-            var roomMessage = degraded
-                ? "⚠️ **Copilot SDK authentication failed.** The OAuth token has expired or been revoked. Please re-authenticate at `/api/auth/login` to restore agent functionality."
-                : "✅ **Copilot SDK reconnected.** A new token has been provided — agents are coming back online.";
-            var notification = degraded
-                ? new NotificationMessage(
-                    Type: NotificationType.Error,
-                    Title: "Copilot SDK authentication degraded",
-                    Body: "The GitHub auth probe received 401/403 from `GET /user`. Re-authenticate at `/api/auth/login` to restore agent functionality.",
-                    RoomId: roomId)
-                : new NotificationMessage(
-                    Type: NotificationType.TaskComplete,
-                    Title: "Copilot SDK authentication restored",
-                    Body: "Copilot access is healthy again. Agents are coming back online.",
-                    RoomId: roomId);
-
-            using var scope = _scopeFactory.CreateScope();
-            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
-            await messageService.PostSystemStatusAsync(roomId, roomMessage);
-            await _notificationManager.SendToAllAsync(notification, ct);
+            await _authStateNotifier.NotifyAsync(degraded, roomId, ct);
 
             if (degraded)
             {
