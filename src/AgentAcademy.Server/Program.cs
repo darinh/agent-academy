@@ -65,6 +65,12 @@ builder.Services.AddCommandSystem();
 builder.Services.AddNotificationSystem();
 builder.Services.AddBackgroundServices(builder.Configuration);
 
+// ── Logging ─────────────────────────────────────────────────────────────────
+
+var logStore = new InMemoryLogStore();
+builder.Services.AddSingleton(logStore);
+builder.Logging.AddProvider(new InMemoryLogProvider(logStore));
+
 // ── Build & Initialize ──────────────────────────────────────────────────────
 
 var app = builder.Build();

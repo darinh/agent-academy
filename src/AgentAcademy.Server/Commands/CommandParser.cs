@@ -50,7 +50,9 @@ public sealed class CommandParser
         // Tier 2C — Task Management
         "MARK_BLOCKED", "SHOW_DECISIONS",
         // Tier 2D — Code & Spec
-        "OPEN_SPEC", "SEARCH_SPEC", "OPEN_COMPONENT", "FIND_REFERENCES"
+        "OPEN_SPEC", "SEARCH_SPEC", "OPEN_COMPONENT", "FIND_REFERENCES",
+        // Tier 2E — Backend Execution
+        "RUN_FRONTEND_BUILD", "RUN_TYPECHECK", "CALL_ENDPOINT", "TAIL_LOGS", "SHOW_CONFIG"
     };
 
     /// <summary>

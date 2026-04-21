@@ -215,6 +215,16 @@ public static class HumanCommandRegistry
             "Async on purpose so the UI stays responsive while the server serializes build access.",
             IsAsync: true, Fields: []),
 
+        new("RUN_FRONTEND_BUILD", "Run frontend build", "operations",
+            "Run npm build in the client directory and poll for the result.",
+            "Serialized with the frontend lock to prevent concurrent npm operations.",
+            IsAsync: true, Fields: []),
+
+        new("RUN_TYPECHECK", "Run typecheck", "operations",
+            "Run TypeScript type checking (tsc --noEmit) and poll for the result.",
+            "Shares the frontend lock — cannot run concurrently with a frontend build.",
+            IsAsync: true, Fields: []),
+
         new("RUN_TESTS", "Run tests", "operations",
             "Launch the test suite with an optional scope hint.",
             "Supports all, backend, frontend, or custom file filters with the backend polling contract.",
@@ -234,6 +244,38 @@ public static class HumanCommandRegistry
             [
                 new("category", "Category", "text", "Optional category filter.",
                     Placeholder: "pattern"),
+            ]),
+
+        new("CALL_ENDPOINT", "Call endpoint", "operations",
+            "Make an HTTP GET request to a local server API endpoint.",
+            "Restricted to Planner/Reviewer roles. Denied paths: /api/auth, /api/commands. v1 is GET-only.",
+            IsAsync: false,
+            Fields:
+            [
+                new("path", "Path", "text", "API path starting with /.",
+                    Placeholder: "/api/rooms", Required: true),
+            ]),
+
+        new("TAIL_LOGS", "Tail logs", "operations",
+            "Read recent application log entries from the in-memory buffer.",
+            "Returns structured log entries with timestamp, level, category, and message. Supports text filtering.",
+            IsAsync: false,
+            Fields:
+            [
+                new("lines", "Lines", "number", "Number of recent entries to return (1-500).",
+                    Placeholder: "100", DefaultValue: "100"),
+                new("filter", "Filter", "text", "Optional case-insensitive substring filter.",
+                    Placeholder: "error"),
+            ]),
+
+        new("SHOW_CONFIG", "Show config", "operations",
+            "Display current configuration for allowed sections with secrets masked.",
+            "Allowed sections: Logging, Cors, AllowedHosts, Copilot. Sensitive values are replaced with ***.",
+            IsAsync: false,
+            Fields:
+            [
+                new("section", "Section", "text", "Optional section name to filter.",
+                    Placeholder: "Logging"),
             ]),
 
         new("CREATE_TASK_ITEM", "Create task item", "workspace",

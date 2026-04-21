@@ -58,6 +58,12 @@ public sealed class CommandController : ControllerBase
         "LIST_AGENT_STATS",
         "CLEANUP_WORKTREES",
         "GENERATE_DIGEST",
+        // Tier 2E — Backend Execution
+        "RUN_FRONTEND_BUILD",
+        "RUN_TYPECHECK",
+        "CALL_ENDPOINT",
+        "TAIL_LOGS",
+        "SHOW_CONFIG",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
@@ -65,6 +71,8 @@ public sealed class CommandController : ControllerBase
         "CREATE_PR",
         "MERGE_PR",
         "GENERATE_DIGEST",
+        "RUN_FRONTEND_BUILD",
+        "RUN_TYPECHECK",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;

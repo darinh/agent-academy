@@ -3,7 +3,7 @@
 ## Purpose
 Defines a unified command pipeline through which agents interact with the platform, codebase, and each other. Every agent action — reading files, moving between rooms, sending messages, managing tasks — flows through a structured envelope with authorization, audit trails, and consistent error handling.
 
-> **Status: Implemented** — All Tier 1 command phases (1A–1H), Tier 2 Room Management, Task Workflow, Communication, Task Management, and Code & Spec commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 78 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, dependencies, agent context, code navigation, spec browsing, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Tier 2 Task Workflow (Phase 2A: TASK_STATUS, SHOW_TASK_HISTORY, SHOW_DEPENDENCIES, REQUEST_REVIEW, WHOAMI) implemented. Tier 2 Communication (Phase 2B: MENTION_TASK_OWNER, BROADCAST_TO_ROOM) implemented. Tier 2 Task Management (Phase 2C: MARK_BLOCKED, SHOW_DECISIONS) implemented. Tier 2 Code & Spec (Phase 2D: OPEN_SPEC, SEARCH_SPEC, OPEN_COMPONENT, FIND_REFERENCES) implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
+> **Status: Implemented** — All Tier 1 command phases (1A–1H), Tier 2 Room Management, Task Workflow, Communication, Task Management, Code & Spec, and Backend Execution commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 83 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, dependencies, agent context, code navigation, spec browsing, frontend build/typecheck, endpoint probing, log tailing, config inspection, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Tier 2 Task Workflow (Phase 2A: TASK_STATUS, SHOW_TASK_HISTORY, SHOW_DEPENDENCIES, REQUEST_REVIEW, WHOAMI) implemented. Tier 2 Communication (Phase 2B: MENTION_TASK_OWNER, BROADCAST_TO_ROOM) implemented. Tier 2 Task Management (Phase 2C: MARK_BLOCKED, SHOW_DECISIONS) implemented. Tier 2 Code & Spec (Phase 2D: OPEN_SPEC, SEARCH_SPEC, OPEN_COMPONENT, FIND_REFERENCES) implemented. Tier 2 Backend Execution (Phase 2E: RUN_FRONTEND_BUILD, RUN_TYPECHECK, CALL_ENDPOINT, TAIL_LOGS, SHOW_CONFIG) implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
 
 ## Motivation
 Today, agents have no formalized way to interact with the platform. The orchestrator parses free-text blocks like `TASK ASSIGNMENT:` from agent responses. This creates:
@@ -286,7 +286,21 @@ These formalize existing capabilities with audit trails and structured output.
 ~~`CREATE_PR`~~, ~~`POST_PR_REVIEW`~~, ~~`GET_PR_REVIEWS`~~, ~~`MERGE_PR`~~ *(all implemented — see spec 010 §5 GitHub Integration for argument schemas, permission gates, and preconditions)*
 
 #### Backend Execution
-`RUN_FRONTEND_BUILD`, `RUN_TYPECHECK`, `RUN_SERVER`, `CALL_ENDPOINT`, `TAIL_LOGS`, `SHOW_CONFIG`
+~~`RUN_FRONTEND_BUILD`~~, ~~`RUN_TYPECHECK`~~, ~~`CALL_ENDPOINT`~~, ~~`TAIL_LOGS`~~, ~~`SHOW_CONFIG`~~ *(all implemented — see Phase 2E table below)*
+
+`RUN_SERVER` — dropped as redundant with existing `RESTART_SERVER`.
+
+| Command | Args | Returns | Notes |
+|---------|------|---------|-------|
+| `RUN_FRONTEND_BUILD` | *(none)* | `exitCode`, `output`, `success` | Runs `npm run build` in `src/agent-academy-client`. Serialized via `FrontendLock`. 10-min timeout. Concurrent stdout/stderr capture with process-tree kill on timeout. Async for human UI. |
+| `RUN_TYPECHECK` | *(none)* | `exitCode`, `output`, `success` | Runs `npx tsc --noEmit` in client dir. Shares `FrontendLock` with `RUN_FRONTEND_BUILD` to prevent concurrent TypeScript operations. 5-min timeout. Async for human UI. |
+| `CALL_ENDPOINT` | `path` (required, must start with `/`) | `statusCode`, `contentType`, `body`, `method` | GET-only v1. Restricted to Planner/Reviewer roles (enforced in handler). Denied paths: `/api/auth`, `/api/commands`. Path validation rejects `//`, `\`. Resolves port from `IServerAddressesFeature`, rebuilds URL as `http://127.0.0.1:{port}`. 30s timeout. |
+| `TAIL_LOGS` | `lines?` (default 100, max 500), `filter?` (substring) | `count`, `entries[]` (timestamp, level, category, message, exception) | Reads from `InMemoryLogStore` ring buffer (500 capacity). Filter matches message, category, or exception. Retry-safe. |
+| `SHOW_CONFIG` | `section?` (must be in allowlist) | `sections{}`, `allowedSections[]` | Allowlisted sections: Logging, Cors, AllowedHosts, Copilot. Sensitive keys (secret, password, key, token, credential, connectionstring, certificate, passphrase, signing) masked as `***`. Retry-safe. |
+
+**Infrastructure**: `InMemoryLogStore` (singleton ring buffer, 500 entries) + `InMemoryLogProvider` (ILoggerProvider) registered in `Program.cs`. Captures Information+ level logs.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{RunFrontendBuild,RunTypecheck,CallEndpoint,TailLogs,ShowConfig}Handler.cs`, `src/AgentAcademy.Server/Services/InMemoryLogSink.cs` — 31 tests in `Tier2BackendExecutionCommandTests.cs`.
 
 #### Data & Operations
 `QUERY_DB`, `RUN_MIGRATIONS`, `SHOW_MIGRATION_STATUS`, `HEALTHCHECK`, `SHOW_ACTIVE_CONNECTIONS`

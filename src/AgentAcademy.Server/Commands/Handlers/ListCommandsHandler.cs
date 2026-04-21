@@ -73,6 +73,12 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["SHOW_DEPENDENCIES"] = "Show the dependency graph for a task (upstream and downstream)",
         ["REQUEST_REVIEW"] = "Submit a task for review — validates state, transitions to InReview, posts notification",
         ["WHOAMI"] = "Return your identity, role, current room, and available capabilities",
+        // Tier 2E — Backend Execution
+        ["RUN_FRONTEND_BUILD"] = "Run the frontend build (npm run build) and return output",
+        ["RUN_TYPECHECK"] = "Run the TypeScript type checker (tsc --noEmit) and return output",
+        ["CALL_ENDPOINT"] = "Make an HTTP GET request to a local server endpoint (Planner/Reviewer only)",
+        ["TAIL_LOGS"] = "Read recent application log entries with optional filter",
+        ["SHOW_CONFIG"] = "Display current configuration for allowed sections (secrets masked)",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
