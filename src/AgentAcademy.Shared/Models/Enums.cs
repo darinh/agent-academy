@@ -125,7 +125,8 @@ public enum TaskCommentType
     Finding,
     Evidence,
     Blocker,
-    Retrospective
+    Retrospective,
+    Decision
 }
 
 /// <summary>

@@ -46,7 +46,9 @@ public sealed class CommandParser
         // Tier 2 — Goal Cards, Task Items, List Commands
         "CREATE_GOAL_CARD", "UPDATE_GOAL_CARD_STATUS", "LIST_TASK_ITEMS", "LIST_COMMANDS",
         // Tier 2B — Communication
-        "MENTION_TASK_OWNER", "BROADCAST_TO_ROOM"
+        "MENTION_TASK_OWNER", "BROADCAST_TO_ROOM",
+        // Tier 2C — Task Management
+        "MARK_BLOCKED", "SHOW_DECISIONS"
     };
 
     /// <summary>

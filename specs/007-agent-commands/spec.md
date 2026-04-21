@@ -255,7 +255,20 @@ These formalize existing capabilities with audit trails and structured output.
 ~~`MENTION_TASK_OWNER`~~ *(implemented — see Phase 2B table)*, ~~`BROADCAST_TO_ROOM`~~ *(implemented — see Phase 2B table)*
 
 #### Task Management
-~~`TASK_STATUS`~~ *(implemented — see Phase 2A table)*, ~~`SHOW_DEPENDENCIES`~~ *(implemented)*, `MARK_BLOCKED`, ~~`SHOW_TASK_HISTORY`~~ *(implemented)*, ~~`REQUEST_REVIEW`~~ *(implemented)*, `SHOW_DECISIONS`
+~~`TASK_STATUS`~~ *(implemented — see Phase 2A table)*, ~~`SHOW_DEPENDENCIES`~~ *(implemented)*, ~~`MARK_BLOCKED`~~ *(implemented — see Phase 2C table)*, ~~`SHOW_TASK_HISTORY`~~ *(implemented)*, ~~`REQUEST_REVIEW`~~ *(implemented)*, ~~`SHOW_DECISIONS`~~ *(implemented — see Phase 2C table)*
+
+##### Phase 2C — Task Management Commands
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `MARK_BLOCKED` | `taskId`, `reason` | Task id/title, previous status, new status, reason | Transitions task to `Blocked` status. Records a `Blocker`-typed comment with the reason. Posts system status notification to the room. Rejects terminal (`Completed`/`Cancelled`), already-`Blocked`, and merge-workflow (`Approved`/`Merging`) states. | `MarkBlockedHandler.cs` — comment/notification are non-critical (swallowed on failure) |
+| `SHOW_DECISIONS` | `taskId`, `count?` (default 20, max 50) | Task id/title, decision list (id, agent, content, timestamp), counts | Read-only. Filters task comments to `Decision` type, ordered newest-first. | `ShowDecisionsHandler.cs` — retry-safe |
+
+**Permission model**: Both commands granted to all agents in `agents.json`. `MARK_BLOCKED` is not retry-safe (mutating). `SHOW_DECISIONS` is retry-safe (read-only).
+
+**New enum value**: `TaskCommentType.Decision` added to support tagging comments as decisions. Agents record decisions via `ADD_TASK_COMMENT taskId=X type=Decision content="..."` and surface them with `SHOW_DECISIONS`.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{MarkBlocked,ShowDecisions}Handler.cs` — 23 tests in `Tier2TaskManagementCommandTests.cs`.
 
 #### Code & Spec
 `OPEN_SPEC`, `SEARCH_SPEC`, `OPEN_COMPONENT`, `FIND_REFERENCES`

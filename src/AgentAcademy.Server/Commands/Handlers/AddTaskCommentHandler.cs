@@ -47,7 +47,7 @@ public sealed class AddTaskCommentHandler : ICommandHandler
                 {
                     Status = CommandStatus.Error,
                     ErrorCode = CommandErrorCode.Validation,
-                    Error = $"Invalid comment type: '{typeStr}'. Valid types: Comment, Finding, Evidence, Blocker, Retrospective"
+                    Error = $"Invalid comment type: '{typeStr}'. Valid types: Comment, Finding, Evidence, Blocker, Retrospective, Decision"
                 };
             }
         }
