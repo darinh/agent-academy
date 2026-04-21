@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Button,
   FluentProvider,
@@ -48,6 +49,19 @@ const SettingsPanel = lazy(() => import("./SettingsPanel"));
 const AgentSessionPanel = lazy(() => import("./AgentSessionPanel"));
 const CommandPalette = lazy(() => import("./CommandPalette"));
 const KeyboardShortcutsDialog = lazy(() => import("./KeyboardShortcutsDialog"));
+
+type LazyBoundaryProps = {
+  fallback: ReactNode;
+  children: ReactNode;
+};
+
+function LazyBoundary({ fallback, children }: LazyBoundaryProps) {
+  return (
+    <ChunkErrorBoundary>
+      <Suspense fallback={fallback}>{children}</Suspense>
+    </ChunkErrorBoundary>
+  );
+}
 
 export default function App() {
   return (
@@ -243,7 +257,11 @@ function AppShell() {
   }
 
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
-    return <ChunkErrorBoundary><Suspense fallback={<div className={s.root} />}><LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} /></Suspense></ChunkErrorBoundary>;
+    return (
+      <LazyBoundary fallback={<div className={s.root} />}>
+        <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />
+      </LazyBoundary>
+    );
   }
 
   /* ── Derived state ── */
@@ -319,16 +337,14 @@ function AppShell() {
       />
 
       {showProjectSelector ? (
-        <ChunkErrorBoundary>
-        <Suspense fallback={<div className={s.root}><Spinner label="Loading…" /></div>}>
-        <ProjectSelectorPage
-          onProjectSelected={handleProjectSelected}
-          onProjectOnboarded={handleProjectOnboarded}
-          user={auth.user ?? null}
-          onLogout={logoutDialog.request}
-        />
-        </Suspense>
-        </ChunkErrorBoundary>
+        <LazyBoundary fallback={<div className={s.root}><Spinner label="Loading…" /></div>}>
+          <ProjectSelectorPage
+            onProjectSelected={handleProjectSelected}
+            onProjectOnboarded={handleProjectOnboarded}
+            user={auth.user ?? null}
+            onLogout={logoutDialog.request}
+          />
+        </LazyBoundary>
       ) : (
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
           <SidebarPanel
@@ -391,43 +407,39 @@ function AppShell() {
 
             {/* ─ Content ─ */}
             {sessionAgent ? (
-              <ChunkErrorBoundary>
-                <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
-                  <section className={s.tabContent}>
-                    <AgentSessionPanel
-                      agent={sessionAgent}
-                      location={sessionAgentLocation}
-                      thinkingAgents={thinkingAgentList}
-                      connectionStatus={connectionStatus}
-                      onSendMessage={handleSendMessage}
-                    />
-                  </section>
-                </Suspense>
-              </ChunkErrorBoundary>
+              <LazyBoundary fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
+                <section className={s.tabContent}>
+                  <AgentSessionPanel
+                    agent={sessionAgent}
+                    location={sessionAgentLocation}
+                    thinkingAgents={thinkingAgentList}
+                    connectionStatus={connectionStatus}
+                    onSendMessage={handleSendMessage}
+                  />
+                </section>
+              </LazyBoundary>
             ) : selectedBreakout ? (
-              <ChunkErrorBoundary>
-                <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
-                  <section className={s.tabContent}>
-                    <ChatPanel
-                      room={{
-                        id: selectedBreakout.id,
-                        name: selectedBreakout.name,
-                        status: selectedBreakout.status,
-                        currentPhase: "Implementation",
-                        activeTask: null,
-                        participants: [],
-                        recentMessages: selectedBreakout.recentMessages,
-                        createdAt: selectedBreakout.createdAt,
-                        updatedAt: selectedBreakout.updatedAt,
-                      }}
-                      thinkingAgents={thinkingAgentList}
-                      connectionStatus={connectionStatus}
-                      onSendMessage={handleSendMessage}
-                      readOnly
-                    />
-                  </section>
-                </Suspense>
-              </ChunkErrorBoundary>
+              <LazyBoundary fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
+                <section className={s.tabContent}>
+                  <ChatPanel
+                    room={{
+                      id: selectedBreakout.id,
+                      name: selectedBreakout.name,
+                      status: selectedBreakout.status,
+                      currentPhase: "Implementation",
+                      activeTask: null,
+                      participants: [],
+                      recentMessages: selectedBreakout.recentMessages,
+                      createdAt: selectedBreakout.createdAt,
+                      updatedAt: selectedBreakout.updatedAt,
+                    }}
+                    thinkingAgents={thinkingAgentList}
+                    connectionStatus={connectionStatus}
+                    onSendMessage={handleSendMessage}
+                    readOnly
+                  />
+                </section>
+              </LazyBoundary>
             ) : (
               <WorkspaceContent
                 tab={tab}
@@ -477,30 +489,24 @@ function AppShell() {
 
       {/* ── Overlays ── */}
       {showSettings && (
-        <ChunkErrorBoundary>
-          <Suspense fallback={null}>
-            <SettingsPanel onClose={() => setShowSettings(false)} desktopNotifications={desktopNotif} />
-          </Suspense>
-        </ChunkErrorBoundary>
+        <LazyBoundary fallback={null}>
+          <SettingsPanel onClose={() => setShowSettings(false)} desktopNotifications={desktopNotif} />
+        </LazyBoundary>
       )}
-      <ChunkErrorBoundary>
-        <Suspense fallback={null}>
-          <CommandPalette
-            open={paletteOpen}
-            onDismiss={() => setPaletteOpen(false)}
-            roomId={room?.id ?? null}
-            readOnly={workspaceLimited}
-          />
-        </Suspense>
-      </ChunkErrorBoundary>
-      <ChunkErrorBoundary>
-        <Suspense fallback={null}>
-          <KeyboardShortcutsDialog
-            open={shortcutsOpen}
-            onClose={() => setShortcutsOpen(false)}
-          />
-        </Suspense>
-      </ChunkErrorBoundary>
+      <LazyBoundary fallback={null}>
+        <CommandPalette
+          open={paletteOpen}
+          onDismiss={() => setPaletteOpen(false)}
+          roomId={room?.id ?? null}
+          readOnly={workspaceLimited}
+        />
+      </LazyBoundary>
+      <LazyBoundary fallback={null}>
+        <KeyboardShortcutsDialog
+          open={shortcutsOpen}
+          onClose={() => setShortcutsOpen(false)}
+        />
+      </LazyBoundary>
       <ConfirmDialog
         open={logoutDialog.open}
         onConfirm={logoutDialog.confirm}

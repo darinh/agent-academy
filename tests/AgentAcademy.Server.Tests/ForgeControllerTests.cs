@@ -324,6 +324,20 @@ public sealed class ForgeControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task ResumeRun_ValidRunId_ReturnsQueuedPayloadWithRunId()
+    {
+        var runId = "R_" + Ulid.NewUlid().ToString();
+
+        var result = await _controller.ResumeRun(runId);
+
+        var accepted = Assert.IsType<AcceptedAtActionResult>(result);
+        var json = JsonSerializer.Serialize(accepted.Value);
+        Assert.Contains($"\"runId\":\"{runId}\"", json);
+        Assert.Contains("\"status\":\"queued\"", json);
+        Assert.Contains("\"jobId\":", json);
+    }
+
+    [Fact]
     public async Task ResumeRun_WhenNoApiKey_Returns503()
     {
         var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
