@@ -37,12 +37,13 @@ public sealed class ForgeActivityEventAdapter : IForgeActivityEventAdapter
 
     public void PublishProgress(string jobId, ForgeProgressEvent evt)
     {
+        var phaseId = evt.PhaseId ?? "unknown";
         var (eventType, message) = evt.Kind switch
         {
             ForgeProgressKind.WaveStarted => (ActivityEventType.ForgePhaseStarted, evt.Message ?? "Wave started"),
-            ForgeProgressKind.PhaseCompleted => (ActivityEventType.ForgePhaseCompleted, $"Phase {evt.PhaseId} completed"),
-            ForgeProgressKind.PhaseFailed => (ActivityEventType.ForgePhaseFailed, $"Phase {evt.PhaseId} failed"),
-            ForgeProgressKind.PhaseStarted => (ActivityEventType.ForgePhaseStarted, $"Phase {evt.PhaseId} started"),
+            ForgeProgressKind.PhaseCompleted => (ActivityEventType.ForgePhaseCompleted, $"Phase {phaseId} completed"),
+            ForgeProgressKind.PhaseFailed => (ActivityEventType.ForgePhaseFailed, $"Phase {phaseId} failed"),
+            ForgeProgressKind.PhaseStarted => (ActivityEventType.ForgePhaseStarted, $"Phase {phaseId} started"),
             _ => (default(ActivityEventType?), (string?)null)
         };
 
