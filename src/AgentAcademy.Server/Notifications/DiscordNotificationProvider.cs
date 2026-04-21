@@ -22,7 +22,11 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly IDiscordConnectionManager _connection;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
 
-    private DiscordProviderConfig? _config;
+    // _config is mutated under _connectLock (ConfigureAsync). Declared volatile so
+    // lockless readers (IsConfigured, GetGuildIfConnected/Configured, callers that
+    // capture a snapshot via `var config = _config`) see the latest published value
+    // on weak memory models (e.g. ARM64) without having to take the lock themselves.
+    private volatile DiscordProviderConfig? _config;
     private bool _messageReceivedHooked;
     private int _disposed;
 
@@ -58,21 +62,43 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     public string? LastError => _connection.LastError;
 
     /// <inheritdoc />
-    public Task ConfigureAsync(Dictionary<string, string> configuration, CancellationToken cancellationToken = default)
+    public async Task ConfigureAsync(Dictionary<string, string> configuration, CancellationToken cancellationToken = default)
     {
-        var config = DiscordProviderConfig.FromDictionary(configuration);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
 
-        // Preserve prior OwnerId across reconfiguration when the new config omits it.
-        // This matches the original field-based behavior where OwnerId was sticky:
-        // silently widening access scope on reconfigure would be a surprising regression.
-        if (config.OwnerId is null && _config?.OwnerId is { } previousOwnerId)
-            config = config with { OwnerId = previousOwnerId };
+        // Parse/validate outside the lock — FromDictionary may throw on bad input,
+        // and we don't want to serialize other callers on argument validation.
+        var newConfig = DiscordProviderConfig.FromDictionary(configuration);
 
-        _config = config;
+        // Acquire _connectLock so the read-modify-write of _config (OwnerId
+        // preservation + assignment) is atomic with respect to ConnectAsync,
+        // DisconnectAsync, DisposeAsync, and other ConfigureAsync callers.
+        // Without this, ConnectAsync could snapshot a stale _config and connect
+        // with the old BotToken while subsequent operations read the new GuildId /
+        // ChannelId, leaving the provider connected to one guild but addressing
+        // messages to another.
+        await _connectLock.WaitAsync(cancellationToken);
+        try
+        {
+            // Re-check after acquiring the lock: DisposeAsync may have flipped
+            // _disposed between our entry guard and now.
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
 
-        _logger.LogInformation("Discord provider configured for guild {GuildId}, channel {ChannelId}, owner {OwnerId}",
-            config.GuildId, config.ChannelId, config.OwnerId?.ToString() ?? "(any user)");
-        return Task.CompletedTask;
+            // Preserve prior OwnerId across reconfiguration when the new config omits it.
+            // This matches the original field-based behavior where OwnerId was sticky:
+            // silently widening access scope on reconfigure would be a surprising regression.
+            if (newConfig.OwnerId is null && _config?.OwnerId is { } previousOwnerId)
+                newConfig = newConfig with { OwnerId = previousOwnerId };
+
+            _config = newConfig;
+
+            _logger.LogInformation("Discord provider configured for guild {GuildId}, channel {ChannelId}, owner {OwnerId}",
+                newConfig.GuildId, newConfig.ChannelId, newConfig.OwnerId?.ToString() ?? "(any user)");
+        }
+        finally
+        {
+            _connectLock.Release();
+        }
     }
 
     /// <inheritdoc />
@@ -80,12 +106,20 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
 
-        var config = _config
-            ?? throw new InvalidOperationException("Discord provider must be configured before connecting. Call ConfigureAsync first.");
-
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
+            // Re-check after acquiring the lock: DisposeAsync may have flipped
+            // _disposed between our entry guard and now.
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
+            // Read _config INSIDE the lock so we always use the most recently
+            // published config. Reading it outside the lock would let a concurrent
+            // ConfigureAsync swap _config between our read and the lock acquisition,
+            // causing Connect to use a stale BotToken.
+            var config = _config
+                ?? throw new InvalidOperationException("Discord provider must be configured before connecting. Call ConfigureAsync first.");
+
             if (_connection.IsConnected)
             {
                 _logger.LogDebug("Discord provider is already connected");

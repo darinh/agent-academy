@@ -161,6 +161,87 @@ public class DiscordNotificationProviderConcurrencyTests
         Assert.True(connection.DisposeClientCallCount >= 1);
     }
 
+    [Fact]
+    public async Task ConfigureAsync_AfterDispose_ThrowsObjectDisposed()
+    {
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+        await provider.DisposeAsync();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => provider.ConfigureAsync(ValidConfig()));
+    }
+
+    [Fact]
+    public async Task ConnectAsync_UsesLatestConfig_WhenConfigureRacesAcrossLock()
+    {
+        // Arrange: first Configure with token-A, start Connect blocked on gate.
+        // While Connect holds _connectLock, fire Configure(token-B). Because
+        // Configure takes the same lock, it queues behind Connect. Connect must
+        // therefore observe the config that was published BEFORE it acquired
+        // the lock (token-A) — not a mid-flight swap.
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connection = new FakeDiscordConnectionManager
+        {
+            ConnectSucceeds = true,
+            ClientAfterConnect = null, // post-connect init will NRE; that's fine
+            ConnectGate = gate.Task
+        };
+        var provider = CreateProvider(connection, out _);
+
+        var configA = ValidConfig();
+        configA["BotToken"] = "token-A";
+        await provider.ConfigureAsync(configA);
+
+        var connectTask = Task.Run(async () =>
+        {
+            try { await provider.ConnectAsync(); } catch { /* NRE expected */ }
+        });
+
+        // Wait for Connect to enter ConnectAsync on the fake — this is AFTER
+        // ConnectAsync has already acquired _connectLock and read _config.
+        await connection.ConnectEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var configB = ValidConfig();
+        configB["BotToken"] = "token-B";
+        var configureTask = provider.ConfigureAsync(configB);
+
+        // ConfigureAsync must block on _connectLock while Connect holds it.
+        var raced = await Task.WhenAny(configureTask, Task.Delay(150));
+        Assert.NotSame(configureTask, raced);
+
+        // Release Connect; both should complete cleanly.
+        gate.SetResult(true);
+        await connectTask;
+        await configureTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // The running connection used token-A — the config that was current when
+        // Connect acquired the lock. token-B only applies to the NEXT connection.
+        Assert.Equal("token-A", connection.LastBotToken);
+        Assert.True(provider.IsConfigured);
+    }
+
+    [Fact]
+    public async Task ConfigureAsync_ConcurrentCalls_DoNotCorruptState()
+    {
+        // Race many Configure calls alternating between two owners. State must
+        // remain consistent (IsConfigured, no exceptions, one of the two owners
+        // as final value — we don't care which).
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+
+        var tasks = Enumerable.Range(0, 32).Select(i => Task.Run(async () =>
+        {
+            var cfg = ValidConfig();
+            cfg["OwnerId"] = (i % 2 == 0 ? "111111111111111111" : "222222222222222222");
+            await provider.ConfigureAsync(cfg);
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+
+        Assert.True(provider.IsConfigured);
+    }
+
+
     private static AgentOrchestrator CreateMockOrchestrator()
     {
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
@@ -213,6 +294,7 @@ public class DiscordNotificationProviderConcurrencyTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int DisposeClientCallCount { get; private set; }
+        public string? LastBotToken { get; private set; }
 
         private DiscordSocketClient? _client;
         private bool _isConnected;
@@ -223,6 +305,7 @@ public class DiscordNotificationProviderConcurrencyTests
 
         public async Task ConnectAsync(string botToken, CancellationToken cancellationToken = default)
         {
+            LastBotToken = botToken;
             ConnectEntered.TrySetResult(true);
             if (ConnectGate is not null)
                 await ConnectGate.WaitAsync(cancellationToken);
