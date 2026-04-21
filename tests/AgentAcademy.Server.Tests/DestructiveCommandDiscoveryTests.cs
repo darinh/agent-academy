@@ -27,6 +27,7 @@ public class DestructiveCommandDiscoveryTests
         "MERGE_TASK",
         "REJECT_TASK",
         "RESTART_SERVER",
+        "RUN_MIGRATIONS",
     };
 
     private static IReadOnlyList<ICommandHandler> DiscoverHandlers()

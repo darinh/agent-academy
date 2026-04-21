@@ -278,6 +278,40 @@ public static class HumanCommandRegistry
                     Placeholder: "Logging"),
             ]),
 
+        // ── Tier 2F — Data & Operations ─────────────────────────────────
+
+        new("QUERY_DB", "Query database", "operations",
+            "Execute a read-only SQL query against the application database.",
+            "Human-only. Uses a read-only SQLite connection. Restricted tables: AgentMemories, NotificationConfigs, SystemSettings, AgentConfigs, InstructionTemplates. Max 1000 rows.",
+            IsAsync: false,
+            Fields:
+            [
+                new("query", "SQL Query", "text", "A SELECT query to execute.",
+                    Placeholder: "SELECT Id, Title, Status FROM Tasks WHERE Status = 'Active'", Required: true),
+                new("limit", "Row limit", "number", "Maximum rows to return (1-1000).",
+                    Placeholder: "100", DefaultValue: "100"),
+            ]),
+
+        new("RUN_MIGRATIONS", "Run migrations", "operations",
+            "Apply all pending EF Core database migrations.",
+            "Human-only, destructive. Uses a process-wide lock to prevent concurrent migrations. Requires confirm=true.",
+            IsAsync: true, Fields: []),
+
+        new("SHOW_MIGRATION_STATUS", "Migration status", "operations",
+            "Show applied and pending database migrations.",
+            "Lists all EF Core migration IDs grouped by applied/pending status.",
+            IsAsync: false, Fields: []),
+
+        new("HEALTHCHECK", "Health check", "operations",
+            "System health summary covering database, uptime, entities, resources, and connections.",
+            "Returns per-subsystem health status (healthy/warning/unhealthy) and an overall status.",
+            IsAsync: false, Fields: []),
+
+        new("SHOW_ACTIVE_CONNECTIONS", "Active connections", "operations",
+            "Show active SignalR connections for this server instance.",
+            "Planner/Reviewer/Human only. Shows connection count, durations, and instance name. Current-instance only.",
+            IsAsync: false, Fields: []),
+
         new("CREATE_TASK_ITEM", "Create task item", "workspace",
             "Create a work item assigned to yourself or another agent.",
             "Break down complex work into trackable sub-items within a room.",

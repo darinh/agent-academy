@@ -52,7 +52,9 @@ public sealed class CommandParser
         // Tier 2D — Code & Spec
         "OPEN_SPEC", "SEARCH_SPEC", "OPEN_COMPONENT", "FIND_REFERENCES",
         // Tier 2E — Backend Execution
-        "RUN_FRONTEND_BUILD", "RUN_TYPECHECK", "CALL_ENDPOINT", "TAIL_LOGS", "SHOW_CONFIG"
+        "RUN_FRONTEND_BUILD", "RUN_TYPECHECK", "CALL_ENDPOINT", "TAIL_LOGS", "SHOW_CONFIG",
+        // Tier 2F — Data & Operations
+        "QUERY_DB", "RUN_MIGRATIONS", "SHOW_MIGRATION_STATUS", "HEALTHCHECK", "SHOW_ACTIVE_CONNECTIONS"
     };
 
     /// <summary>

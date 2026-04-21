@@ -79,6 +79,12 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["CALL_ENDPOINT"] = "Make an HTTP GET request to a local server endpoint (Planner/Reviewer only)",
         ["TAIL_LOGS"] = "Read recent application log entries with optional filter",
         ["SHOW_CONFIG"] = "Display current configuration for allowed sections (secrets masked)",
+        // Tier 2F — Data & Operations
+        ["QUERY_DB"] = "Execute a read-only SQL query against the application database (Human only)",
+        ["RUN_MIGRATIONS"] = "Apply pending EF Core database migrations (Human only, destructive)",
+        ["SHOW_MIGRATION_STATUS"] = "Show applied and pending database migrations",
+        ["HEALTHCHECK"] = "System health summary: DB, uptime, entities, resources, connections",
+        ["SHOW_ACTIVE_CONNECTIONS"] = "Show active SignalR connections for this server instance (Planner/Reviewer only)",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)

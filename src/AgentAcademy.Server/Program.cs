@@ -70,6 +70,7 @@ builder.Services.AddBackgroundServices(builder.Configuration);
 var logStore = new InMemoryLogStore();
 builder.Services.AddSingleton(logStore);
 builder.Logging.AddProvider(new InMemoryLogProvider(logStore));
+builder.Services.AddSingleton<SignalRConnectionTracker>();
 
 // ── Build & Initialize ──────────────────────────────────────────────────────
 

@@ -64,6 +64,12 @@ public sealed class CommandController : ControllerBase
         "CALL_ENDPOINT",
         "TAIL_LOGS",
         "SHOW_CONFIG",
+        // Tier 2F — Data & Operations
+        "QUERY_DB",
+        "RUN_MIGRATIONS",
+        "SHOW_MIGRATION_STATUS",
+        "HEALTHCHECK",
+        "SHOW_ACTIVE_CONNECTIONS",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
@@ -73,6 +79,7 @@ public sealed class CommandController : ControllerBase
         "GENERATE_DIGEST",
         "RUN_FRONTEND_BUILD",
         "RUN_TYPECHECK",
+        "RUN_MIGRATIONS",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;
