@@ -24,7 +24,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
     private readonly PipelineRunner _pipelineRunner;
     private readonly ForgeOptions _options;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IActivityBroadcaster _activityBus;
+    private readonly IForgeActivityEventAdapter _activityEvents;
     private readonly ILogger<ForgeRunService> _logger;
     private readonly ConcurrentDictionary<string, ForgeJob> _activeJobs = new();
     private readonly Channel<string> _queue = Channel.CreateBounded<string>(100);
@@ -41,11 +41,26 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         IServiceScopeFactory scopeFactory,
         IActivityBroadcaster activityBus,
         ILogger<ForgeRunService> logger)
+        : this(
+            pipelineRunner,
+            options,
+            scopeFactory,
+            new ForgeActivityEventAdapter(activityBus),
+            logger)
+    {
+    }
+
+    internal ForgeRunService(
+        PipelineRunner pipelineRunner,
+        ForgeOptions options,
+        IServiceScopeFactory scopeFactory,
+        IForgeActivityEventAdapter activityEvents,
+        ILogger<ForgeRunService> logger)
     {
         _pipelineRunner = pipelineRunner;
         _options = options;
         _scopeFactory = scopeFactory;
-        _activityBus = activityBus;
+        _activityEvents = activityEvents;
         _logger = logger;
     }
 
@@ -81,7 +96,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         }
 
         _logger.LogInformation("Forge job {JobId} queued for task {TaskId}", job.JobId, task.TaskId);
-        BroadcastForgeEvent(ActivityEventType.ForgeJobQueued, job.JobId, $"Forge job queued: {task.Title}");
+        _activityEvents.PublishJobQueued(job.JobId, $"Forge job queued: {task.Title}");
         return job;
     }
 
@@ -117,7 +132,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         }
 
         _logger.LogInformation("Forge resume job {JobId} queued for run {RunId}", job.JobId, runId);
-        BroadcastForgeEvent(ActivityEventType.ForgeJobQueued, job.JobId, $"Forge resume queued: {runId}");
+        _activityEvents.PublishJobQueued(job.JobId, $"Forge resume queued: {runId}");
         return job;
     }
 
@@ -240,8 +255,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
                 job.Status = ForgeJobStatus.Running;
                 job.StartedAt = DateTime.UtcNow;
                 await UpdateJobStatusAsync(job);
-                BroadcastForgeEvent(ActivityEventType.ForgeJobStarted, job.JobId,
-                    $"Forge job started: {job.TaskBrief.Title}");
+                _activityEvents.PublishJobStarted(job.JobId, $"Forge job started: {job.TaskBrief.Title}");
 
                 var isResume = job.RunId is not null;
                 var progress = new Progress<ForgeProgressEvent>(evt => OnForgeProgress(job.JobId, evt));
@@ -265,12 +279,11 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
                 await UpdateJobStatusAsync(job);
                 _activeJobs.TryRemove(jobId, out _);
 
-                var eventType = result.Outcome == "succeeded"
-                    ? ActivityEventType.ForgeJobCompleted
-                    : ActivityEventType.ForgeJobFailed;
-                BroadcastForgeEvent(eventType, job.JobId,
+                _activityEvents.PublishJobFinished(
+                    job.JobId,
                     $"Forge job {result.Outcome}: {job.TaskBrief.Title}",
-                    new Dictionary<string, object?> { ["runId"] = result.RunId, ["outcome"] = result.Outcome });
+                    result.Outcome,
+                    result.RunId);
 
                 _logger.LogInformation(
                     "Forge job {JobId} completed with outcome {Outcome}, runId {RunId}",
@@ -402,47 +415,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
 
     private void OnForgeProgress(string jobId, ForgeProgressEvent evt)
     {
-        var (eventType, message) = evt.Kind switch
-        {
-            ForgeProgressKind.WaveStarted => (ActivityEventType.ForgePhaseStarted, evt.Message ?? "Wave started"),
-            ForgeProgressKind.PhaseCompleted => (ActivityEventType.ForgePhaseCompleted, $"Phase {evt.PhaseId} completed"),
-            ForgeProgressKind.PhaseFailed => (ActivityEventType.ForgePhaseFailed, $"Phase {evt.PhaseId} failed"),
-            ForgeProgressKind.PhaseStarted => (ActivityEventType.ForgePhaseStarted, $"Phase {evt.PhaseId} started"),
-            _ => (default(ActivityEventType?), (string?)null)
-        };
-
-        if (eventType is null) return;
-
-        var metadata = new Dictionary<string, object?>
-        {
-            ["jobId"] = jobId,
-            ["runId"] = evt.RunId,
-            ["phaseId"] = evt.PhaseId,
-            ["wave"] = evt.Wave,
-            ["kind"] = evt.Kind.ToString()
-        };
-
-        BroadcastForgeEvent(eventType.Value, jobId, message!, metadata);
-    }
-
-    private void BroadcastForgeEvent(ActivityEventType type, string jobId, string message,
-        Dictionary<string, object?>? metadata = null)
-    {
-        metadata ??= new Dictionary<string, object?>();
-        metadata["jobId"] = jobId;
-
-        _activityBus.Broadcast(new ActivityEvent(
-            Id: Guid.NewGuid().ToString("N"),
-            Type: type,
-            Severity: ActivitySeverity.Info,
-            RoomId: null,
-            ActorId: null,
-            TaskId: null,
-            Message: message,
-            CorrelationId: jobId,
-            OccurredAt: DateTime.UtcNow,
-            Metadata: metadata
-        ));
+        _activityEvents.PublishProgress(jobId, evt);
     }
 }
 

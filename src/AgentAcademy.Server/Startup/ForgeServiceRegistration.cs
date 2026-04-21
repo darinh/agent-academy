@@ -54,6 +54,9 @@ public static class ForgeServiceRegistration
         // TimeProvider is required by PipelineRunner
         services.AddSingleton(TimeProvider.System);
 
+        // Adapter seam between forge lifecycle signals and ActivityEvent transport.
+        services.AddSingleton<IForgeActivityEventAdapter, ForgeActivityEventAdapter>();
+
         // Register the Forge engine core (stores, schemas, executors)
         services.AddForgeEngine(runsDir);
 
@@ -66,7 +69,7 @@ public static class ForgeServiceRegistration
             sp.GetRequiredService<AgentAcademy.Forge.Execution.PipelineRunner>(),
             sp.GetRequiredService<ForgeOptions>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
-            sp.GetRequiredService<IActivityBroadcaster>(),
+            sp.GetRequiredService<IForgeActivityEventAdapter>(),
             sp.GetRequiredService<ILogger<ForgeRunService>>()));
         services.AddSingleton<IForgeJobService>(sp => sp.GetRequiredService<ForgeRunService>());
         services.AddHostedService(sp => sp.GetRequiredService<ForgeRunService>());
