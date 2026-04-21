@@ -98,7 +98,7 @@ public sealed class CommandControllerTests : IDisposable
     public async Task Execute_AsyncCommand_ReturnsAcceptedAndPollingTracksCompletion()
     {
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var handler = new BlockingHandler(gate);
+        var handler = new BlockingHandler("CREATE_PR", gate);
         var controller = CreateController(handler);
 
         var executeResult = await controller.Execute(new ExecuteCommandRequest(
@@ -141,6 +141,44 @@ public sealed class CommandControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Execute_RunForge_PassesTaskIdToHandler()
+    {
+        var handler = new CapturingHandler("RUN_FORGE");
+        var controller = CreateController(handler);
+
+        var result = await controller.Execute(new ExecuteCommandRequest(
+            Command: "RUN_FORGE",
+            Args: ParseArgs("""{"title":"Build feature","description":"Build login","methodologyPath":"methodology.json","taskId":"my-task-42"}""")));
+
+        var accepted = Assert.IsType<AcceptedResult>(result);
+        var payload = Assert.IsType<ExecuteCommandResponse>(accepted.Value);
+        Assert.Equal("pending", payload.Status);
+
+        ExecuteCommandResponse? completed = null;
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            await Task.Delay(25);
+            var statusResult = await controller.GetStatus(payload.CorrelationId);
+            var statusOk = Assert.IsType<OkObjectResult>(statusResult);
+            var statusPayload = Assert.IsType<ExecuteCommandResponse>(statusOk.Value);
+            if (statusPayload.Status != "pending")
+            {
+                completed = statusPayload;
+                break;
+            }
+        }
+
+        Assert.NotNull(completed);
+        Assert.Equal("completed", completed!.Status);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var audit = await db.CommandAudits.SingleAsync(a => a.CorrelationId == payload.CorrelationId);
+        using var args = JsonDocument.Parse(audit.ArgsJson!);
+        Assert.Equal("my-task-42", args.RootElement.GetProperty("taskId").GetString());
+    }
+
+    [Fact]
     public void GetMetadata_WhenAuthenticated_ReturnsAllowlistedCommands()
     {
         var handlers = new ICommandHandler[]
@@ -173,6 +211,32 @@ public sealed class CommandControllerTests : IDisposable
         // Verify async commands are flagged
         var createPr = commands.Single(m => m.Command == "CREATE_PR");
         Assert.True(createPr.IsAsync);
+    }
+
+    [Fact]
+    public void GetMetadata_IncludesForgeCommands_WhenHandlersRegistered()
+    {
+        var handlers = new ICommandHandler[]
+        {
+            new CapturingHandler("RUN_FORGE"),
+            new CapturingHandler("FORGE_STATUS"),
+            new CapturingHandler("LIST_FORGE_RUNS"),
+        };
+        var controller = CreateController(handlers);
+
+        var result = controller.GetMetadata();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var commands = Assert.IsAssignableFrom<List<AgentAcademy.Shared.Models.HumanCommandMetadata>>(ok.Value);
+
+        var runForge = commands.Single(c => c.Command == "RUN_FORGE");
+        var forgeStatus = commands.Single(c => c.Command == "FORGE_STATUS");
+        var listForgeRuns = commands.Single(c => c.Command == "LIST_FORGE_RUNS");
+
+        Assert.True(runForge.IsAsync);
+        Assert.Equal("forge", runForge.Category);
+        Assert.False(forgeStatus.IsAsync);
+        Assert.False(listForgeRuns.IsAsync);
     }
 
     [Fact]
@@ -650,9 +714,9 @@ public sealed class CommandControllerTests : IDisposable
         }
     }
 
-    private sealed class BlockingHandler(TaskCompletionSource gate) : ICommandHandler
+    private sealed class BlockingHandler(string commandName, TaskCompletionSource gate) : ICommandHandler
     {
-        public string CommandName => "CREATE_PR";
+        public string CommandName => commandName;
 
         public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
         {

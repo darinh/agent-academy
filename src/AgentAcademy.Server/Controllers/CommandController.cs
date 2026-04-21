@@ -90,6 +90,7 @@ public sealed class CommandController : ControllerBase
         "RUN_FRONTEND_BUILD",
         "RUN_TYPECHECK",
         "RUN_MIGRATIONS",
+        "RUN_FORGE",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;
