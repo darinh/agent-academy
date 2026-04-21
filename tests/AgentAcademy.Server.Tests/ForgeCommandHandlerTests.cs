@@ -136,7 +136,7 @@ public sealed class ForgeCommandHandlerTests : IDisposable
         ForgeOptions? options = null,
         StubForgeJobService? jobService = null)
     {
-        options ??= new ForgeOptions { Enabled = true, OpenAiApiKey = "test-key" };
+        options ??= new ForgeOptions { Enabled = true, ExecutionEnabled = true };
         jobService ??= new StubForgeJobService();
 
         var services = new ServiceCollection();
@@ -211,9 +211,9 @@ public sealed class ForgeCommandHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunForge_NoApiKey_ReturnsError()
+    public async Task RunForge_ExecutionDisabled_ReturnsError()
     {
-        var options = new ForgeOptions { Enabled = true, OpenAiApiKey = null };
+        var options = new ForgeOptions { Enabled = true, ExecutionEnabled = false };
         var (cmd, ctx) = MakeCommand("RUN_FORGE", new Dictionary<string, object?>
         {
             ["title"] = "Test",
@@ -225,7 +225,7 @@ public sealed class ForgeCommandHandlerTests : IDisposable
         var result = await handler.ExecuteAsync(cmd, ctx);
 
         Assert.Equal(CommandStatus.Error, result.Status);
-        Assert.Contains("unavailable", result.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("disabled", result.Error!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

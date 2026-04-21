@@ -69,7 +69,7 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
         Assert.All(jobs, j =>
         {
             Assert.Equal("interrupted", j.Status);
-            Assert.Contains("execution is unavailable", j.Error);
+            Assert.Contains("execution is disabled", j.Error);
             Assert.NotNull(j.CompletedAt);
         });
     }
@@ -94,7 +94,7 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
 
         var queued = await db.ForgeJobs.FindAsync("q1");
         Assert.Equal("interrupted", queued!.Status);
-        Assert.Contains("execution is unavailable", queued.Error);
+        Assert.Contains("execution is disabled", queued.Error);
     }
 
     // ── Recovery: no jobs to recover ────────────────────────────────────
@@ -421,7 +421,7 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
         var options = new ForgeOptions
         {
             Enabled = true,
-            OpenAiApiKey = executionAvailable ? "test-key" : ""
+            ExecutionEnabled = executionAvailable
         };
 
         var runStore = new DiskRunStore(tempDir, NullLogger<DiskRunStore>.Instance);
@@ -463,7 +463,7 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
         var options = new ForgeOptions
         {
             Enabled = true,
-            OpenAiApiKey = executionAvailable ? "test-key" : ""
+            ExecutionEnabled = executionAvailable
         };
 
         var runStore = new DiskRunStore(tempDir, NullLogger<DiskRunStore>.Instance);
@@ -594,7 +594,7 @@ public sealed class ForgeRunServiceBroadcastTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeRunAsync_ThrowsWhenNoApiKey()
+    public async Task ResumeRunAsync_ThrowsWhenExecutionDisabled()
     {
         var (service, _) = CreateServiceWithBroadcaster(executionAvailable: false);
 
@@ -626,7 +626,7 @@ public sealed class ForgeRunServiceBroadcastTests : IDisposable
         var options = new ForgeOptions
         {
             Enabled = true,
-            OpenAiApiKey = executionAvailable ? "test-key" : ""
+            ExecutionEnabled = executionAvailable
         };
 
         var runStore = new DiskRunStore(tempDir, NullLogger<DiskRunStore>.Instance);

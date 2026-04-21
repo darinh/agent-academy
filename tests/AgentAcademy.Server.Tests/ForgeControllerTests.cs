@@ -37,7 +37,7 @@ public sealed class ForgeControllerTests : IDisposable
         _tempDir = Path.Combine(Path.GetTempPath(), $"forge-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
 
-        _options = new ForgeOptions { Enabled = true, OpenAiApiKey = "test-key" };
+        _options = new ForgeOptions { Enabled = true, ExecutionEnabled = true };
 
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
@@ -130,9 +130,9 @@ public sealed class ForgeControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task GetStatus_WhenNoApiKey_ShowsExecutionUnavailable()
+    public async Task GetStatus_WhenExecutionDisabled_ShowsExecutionUnavailable()
     {
-        var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
+        var noKeyOptions = new ForgeOptions { Enabled = true, ExecutionEnabled = false };
         var controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
@@ -179,9 +179,9 @@ public sealed class ForgeControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task StartRun_WhenNoApiKey_Returns503()
+    public async Task StartRun_WhenExecutionDisabled_Returns503()
     {
-        var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
+        var noKeyOptions = new ForgeOptions { Enabled = true, ExecutionEnabled = false };
         var controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
@@ -338,9 +338,9 @@ public sealed class ForgeControllerTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeRun_WhenNoApiKey_Returns503()
+    public async Task ResumeRun_WhenExecutionDisabled_Returns503()
     {
-        var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
+        var noKeyOptions = new ForgeOptions { Enabled = true, ExecutionEnabled = false };
         var controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
@@ -442,7 +442,7 @@ public sealed class ForgeRunServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StartRunAsync_WhenNoApiKey_Throws()
+    public async Task StartRunAsync_WhenExecutionDisabled_Throws()
     {
         var service = CreateService(executionAvailable: false);
 
@@ -589,7 +589,7 @@ public sealed class ForgeRunServiceTests : IDisposable
         var options = new ForgeOptions
         {
             Enabled = true,
-            OpenAiApiKey = executionAvailable ? "test-key" : ""
+            ExecutionEnabled = executionAvailable
         };
 
         var runStore = new DiskRunStore(tempDir, NullLogger<DiskRunStore>.Instance);

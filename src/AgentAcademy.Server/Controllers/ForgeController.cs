@@ -14,7 +14,7 @@ namespace AgentAcademy.Server.Controllers;
 /// <summary>
 /// REST API for the Forge Pipeline Engine.
 /// Read-only endpoints (runs, artifacts, schemas) are always available.
-/// Execution endpoints (start run, resume) require an OpenAI API key.
+/// Execution endpoints (start run, resume) require execution to be enabled.
 /// </summary>
 [ApiController]
 [Route("api/forge")]
@@ -54,7 +54,7 @@ public sealed class ForgeController : ControllerBase
         if (!_options.ExecutionAvailable)
             return Problem(
                 title: "Forge execution unavailable",
-                detail: "No OpenAI API key configured. Read-only endpoints remain available.",
+                detail: "Forge execution is disabled by server configuration. Read-only endpoints remain available.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
 
         var task = new TaskBrief
@@ -126,7 +126,7 @@ public sealed class ForgeController : ControllerBase
         if (!_options.ExecutionAvailable)
             return Problem(
                 title: "Forge execution unavailable",
-                detail: "No OpenAI API key configured.",
+                detail: "Forge execution is disabled by server configuration.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
 
         try

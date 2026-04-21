@@ -743,7 +743,7 @@ public static class HumanCommandRegistry
 
         new("RUN_FORGE", "Run forge pipeline", "forge",
             "Start a new forge pipeline run with a task brief.",
-            "Queues a forge pipeline run that executes in the background. Requires an OpenAI API key configured on the server. Use FORGE_STATUS to monitor progress.",
+            "Queues a forge pipeline run that executes in the background. Uses the same Copilot SDK authentication path as the rest of Agent Academy. Use FORGE_STATUS to monitor progress.",
             IsAsync: true,
             Fields:
             [

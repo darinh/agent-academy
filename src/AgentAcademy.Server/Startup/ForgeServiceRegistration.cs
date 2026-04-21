@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text.Json;
 using AgentAcademy.Forge;
 using AgentAcademy.Forge.Llm;
@@ -17,7 +16,7 @@ public static class ForgeServiceRegistration
     /// <summary>
     /// Register the Forge engine and its dependencies.
     /// When <see cref="ForgeOptions.Enabled"/> is false, no services are registered.
-    /// When <see cref="ForgeOptions.ExecutionAvailable"/> is false, the engine is
+    /// When <see cref="ForgeOptions.ExecutionEnabled"/> is false, the engine is
     /// registered for read-only access (list runs, get artifacts) but execution
     /// endpoints will return 503.
     /// </summary>
@@ -58,23 +57,9 @@ public static class ForgeServiceRegistration
         // Register the Forge engine core (stores, schemas, executors)
         services.AddForgeEngine(runsDir);
 
-        // Register LLM client
-        if (options.ExecutionAvailable)
-        {
-            services.AddSingleton<ILlmClient>(_ =>
-            {
-                var http = new HttpClient();
-                http.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", options.OpenAiApiKey);
-
-                return new OpenAiLlmClient(options.OpenAiBaseUrl, http);
-            });
-        }
-        else
-        {
-            // No LLM client — execution endpoints return 503
-            services.AddSingleton<ILlmClient, UnavailableLlmClient>();
-        }
+        // Register LLM client. Forge execution uses the same Copilot SDK token/client
+        // path as the rest of Agent Academy.
+        services.AddSingleton<ILlmClient, CopilotSdkLlmClient>();
 
         // Background service for processing forge runs
         services.AddSingleton<ForgeRunService>(sp => new ForgeRunService(
@@ -202,16 +187,4 @@ public static class ForgeServiceRegistration
             return null;
         }
     }
-}
-
-/// <summary>
-/// LLM client that always throws — used when no API key is configured.
-/// Prevents accidental execution; read-only endpoints still work.
-/// </summary>
-internal sealed class UnavailableLlmClient : ILlmClient
-{
-    public Task<LlmResponse> GenerateAsync(LlmRequest request, CancellationToken ct = default)
-        => throw new InvalidOperationException(
-            "Forge LLM execution is unavailable — no OpenAI API key configured. " +
-            "Set Forge:OpenAiApiKey in appsettings.json or user-secrets.");
 }

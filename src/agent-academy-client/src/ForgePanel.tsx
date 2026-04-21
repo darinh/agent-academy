@@ -868,7 +868,7 @@ export default function ForgePanel({ refreshTrigger }: { refreshTrigger?: number
             <EmptyState
               icon="🔥"
               title="No forge runs yet"
-              detail="Forge runs are created when agents execute the RUN_FORGE command. Completed runs and their artifacts appear here."
+              detail="Start a run from the New Run button above. Completed runs and their artifacts appear here."
             />
           )}
           {runs.length > 0 && (

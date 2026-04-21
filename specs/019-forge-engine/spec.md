@@ -5,7 +5,7 @@ Defines the standalone pipeline engine that transforms a task brief into validat
 
 ## Current Behavior
 
-> **Status: Implemented** — Core engine, five artifact schemas, three-tier validation, disk-based content-addressed storage, and benchmark infrastructure are compiled and tested. LLM integration requires an OpenAI API key; benchmarks have not yet been executed against live models.
+> **Status: Implemented** — Core engine, five artifact schemas, three-tier validation, disk-based content-addressed storage, and benchmark infrastructure are compiled and tested. Server-side LLM integration uses the same Copilot SDK authentication/token path as Agent Academy agent execution.
 
 ### Architecture
 
@@ -780,7 +780,7 @@ Returns exit code 0 if both thresholds are met, 1 otherwise.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
 8. ~~**Schema evolution**~~: Resolved. Multi-version `SchemaRegistry` with lifecycle statuses (Active/Deprecated/Retired), methodology validation at run start, version-dispatched validators, and engine-internal schema classification. See Schema Evolution section above.
 9. ~~**Seeded-defect benchmarks**~~: Resolved. `SeededDefectCatalog` provides 7 frozen test cases (covering all 5 drift codes) with ground-truth verdicts. `SeededDefectRunner` runs them through `FidelityExecutor` and computes detection rates with thresholds (80% blocking, 60% advisory). See Seeded-Defect Benchmarks section above.
-10. ~~**Server integration**~~: Resolved. Forge engine wired into `AgentAcademy.Server` via `AddForge()` DI extension. REST API at `/api/forge/*` with job queue, path validation, and conditional LLM wiring. See Server Integration section below.
+10. ~~**Server integration**~~: Resolved. Forge engine wired into `AgentAcademy.Server` via `AddForge()` DI extension. REST API at `/api/forge/*` with job queue, path validation, and Copilot SDK-backed LLM wiring. See Server Integration section below.
 
 ## Server Integration
 
@@ -796,8 +796,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
     "Enabled": true,
     "RunsDirectory": "forge-runs",
     "MethodologiesDirectory": "methodologies",
-    "OpenAiApiKey": "",
-    "OpenAiBaseUrl": "https://api.openai.com/v1"
+    "ExecutionEnabled": true
   }
 }
 ```
@@ -805,8 +804,8 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 - `ForgeOptions` POCO bound from `Forge` section (`Config/ForgeOptions.cs`)
 - `RunsDirectory` resolved relative to `ContentRootPath`
 - `MethodologiesDirectory` resolved relative to `ContentRootPath` (default: `methodologies/`)
-- `OpenAiApiKey` can be set via user-secrets or environment variables
-- When `OpenAiApiKey` is empty, execution endpoints return 503; read-only endpoints remain available
+- `ExecutionEnabled` gates execution endpoints while preserving read-only endpoints
+- LLM auth/token resolution is inherited from the existing Agent Academy Copilot SDK path (`ICopilotClientFactory`)
 
 ### DI Wiring
 
@@ -814,7 +813,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 1. Reads `ForgeOptions` from configuration
 2. Registers `TimeProvider.System` (required by `PipelineRunner`)
 3. Calls `AddForgeEngine(runsDir)` from the Forge library
-4. Registers `ILlmClient`: `OpenAiLlmClient` when API key is present, `UnavailableLlmClient` otherwise
+4. Registers `ILlmClient` as `CopilotSdkLlmClient` (uses `ICopilotClientFactory` / shared SDK token path)
 5. Registers `ForgeRunService` as both singleton and `IHostedService`
 
 ### REST API
@@ -851,7 +850,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 
 - **Path traversal**: Run IDs validated against `R_[0-9A-HJKMNP-TV-Z]{26}` regex; artifact hashes validated as 64 hex chars (with optional `sha256:` prefix normalization)
 - **Authentication**: Execution endpoints (`POST /api/forge/jobs`, `POST .../resume`, `PUT .../methodologies/{id}`) carry explicit `[Authorize]` attributes. Read-only GET endpoints are protected by the global `FallbackPolicy` (requires authenticated user when auth is enabled; see spec 015 §2). When auth is disabled (`AnyAuthEnabled = false`), neither middleware is registered and all endpoints are open — this is by design for single-user local development.
-- **Execution gating**: `UnavailableLlmClient` throws on `GenerateAsync`, preventing accidental execution when no API key is configured
+- **Execution gating**: `ExecutionEnabled` controls whether execution endpoints and queueing are available; read-only endpoints remain available when disabled
 - **Methodology IDs**: Strict allowlist regex `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,98}[a-zA-Z0-9]$`; resolved paths validated against catalog root; atomic writes via unique temp files
 
 ### Methodology Catalog
@@ -916,3 +915,4 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-21 | Durable job store — SQLite persistence via ForgeJobEntity, startup recovery (interrupted/re-enqueue), async IForgeJobService, 4 new tests, closes Integration Gap #1 | `feat/durable-forge-jobs` |
 | 2026-04-21 | Real-time SignalR events — IProgress<ForgeProgressEvent> in PipelineRunner, ActivityBroadcaster integration, frontend version-counter-driven refresh, closes Integration Gap #6 | `feat/forge-signalr-progress` |
 | 2026-04-21 | Resume endpoint — ForgeRunService.ResumeRunAsync, controller 202+jobId, background worker PipelineRunner.ResumeAsync dispatch, closes Integration Gap #4 | `develop` |
+| 2026-04-21 | Execution auth alignment — removed OpenAI-key-specific server wiring; Forge now uses Agent Academy Copilot SDK token path via `CopilotSdkLlmClient`; `ForgeOptions` switched to `ExecutionEnabled` gate | `develop` |

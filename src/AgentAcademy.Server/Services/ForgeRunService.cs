@@ -63,7 +63,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
     public async Task<ForgeJob> StartRunAsync(TaskBrief task, MethodologyDefinition methodology)
     {
         if (!_options.ExecutionAvailable)
-            throw new InvalidOperationException("Forge execution is unavailable — no OpenAI API key configured.");
+            throw new InvalidOperationException("Forge execution is disabled by server configuration.");
 
         var job = new ForgeJob
         {
@@ -99,7 +99,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
     public async Task<ForgeJob> ResumeRunAsync(string runId)
     {
         if (!_options.ExecutionAvailable)
-            throw new InvalidOperationException("Forge execution is unavailable — no OpenAI API key configured.");
+            throw new InvalidOperationException("Forge execution is disabled by server configuration.");
 
         var job = new ForgeJob
         {
@@ -212,7 +212,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
             foreach (var entity in queuedJobs)
             {
                 entity.Status = "interrupted";
-                entity.Error = "Server restarted and execution is unavailable (no API key configured).";
+                entity.Error = "Server restarted and execution is disabled by server configuration.";
                 entity.CompletedAt = DateTime.UtcNow;
             }
             await db.SaveChangesAsync();
