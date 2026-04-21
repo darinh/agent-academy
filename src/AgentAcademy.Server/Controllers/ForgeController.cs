@@ -115,10 +115,10 @@ public sealed class ForgeController : ControllerBase
         }));
     }
 
-    /// <summary>Resume a crashed/failed forge run.</summary>
+    /// <summary>Resume a crashed/interrupted forge run.</summary>
     [HttpPost("runs/{runId}/resume")]
     [Authorize]
-    public IActionResult ResumeRun(string runId)
+    public async Task<IActionResult> ResumeRun(string runId)
     {
         if (!ForgeRunService.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
@@ -129,11 +129,17 @@ public sealed class ForgeController : ControllerBase
                 detail: "No OpenAI API key configured.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
 
-        // Resume is not yet implemented — requires extending ForgeRunService
-        return Problem(
-            title: "Not implemented",
-            detail: "Run resume is planned for a future release.",
-            statusCode: StatusCodes.Status501NotImplemented);
+        try
+        {
+            var job = await _runService.ResumeRunAsync(runId);
+            return AcceptedAtAction(nameof(GetJob), new { jobId = job.JobId },
+                new { jobId = job.JobId, runId, status = "queued" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(title: "Resume failed", detail: ex.Message,
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
     }
 
     // ── Read-only endpoints ─────────────────────────────────────────────────

@@ -58,6 +58,24 @@ public sealed class ForgeCommandHandlerTests : IDisposable
         public Task<IReadOnlyList<ForgeJob>> ListJobsAsync() =>
             Task.FromResult<IReadOnlyList<ForgeJob>>(_jobs.OrderByDescending(j => j.CreatedAt).ToList());
 
+        public Task<ForgeJob> ResumeRunAsync(string runId)
+        {
+            if (ThrowQueueFull)
+                throw new InvalidOperationException("Run queue is full. Try again later.");
+
+            var job = new ForgeJob
+            {
+                JobId = Guid.NewGuid().ToString("N")[..12],
+                RunId = runId,
+                TaskBrief = new TaskBrief { TaskId = "resume", Title = $"Resume {runId}", Description = "" },
+                Methodology = new MethodologyDefinition { Id = "resume", Phases = [] },
+                Status = ForgeJobStatus.Queued,
+                CreatedAt = DateTime.UtcNow
+            };
+            _jobs.Add(job);
+            return Task.FromResult(job);
+        }
+
         public ForgeJob AddJob(ForgeJobStatus status, string? error = null, string? runId = null)
         {
             var job = new ForgeJob

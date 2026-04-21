@@ -92,6 +92,42 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         return job;
     }
 
+    /// <summary>
+    /// Enqueue a resume of an existing run. Creates a job tagged with the RunId so the
+    /// background worker calls <see cref="PipelineRunner.ResumeAsync"/> instead of ExecuteAsync.
+    /// </summary>
+    public async Task<ForgeJob> ResumeRunAsync(string runId)
+    {
+        if (!_options.ExecutionAvailable)
+            throw new InvalidOperationException("Forge execution is unavailable — no OpenAI API key configured.");
+
+        var job = new ForgeJob
+        {
+            JobId = Guid.NewGuid().ToString("N")[..12],
+            RunId = runId,
+            TaskBrief = new TaskBrief { TaskId = "resume", Title = $"Resume {runId}", Description = "" },
+            Methodology = new MethodologyDefinition { Id = "resume", Phases = [] },
+            Status = ForgeJobStatus.Queued,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await PersistJobAsync(job);
+        _activeJobs[job.JobId] = job;
+
+        if (!_queue.Writer.TryWrite(job.JobId))
+        {
+            job.Status = ForgeJobStatus.Failed;
+            job.Error = "Run queue is full. Try again later.";
+            await UpdateJobStatusAsync(job);
+            _activeJobs.TryRemove(job.JobId, out _);
+            throw new InvalidOperationException(job.Error);
+        }
+
+        _logger.LogInformation("Forge resume job {JobId} queued for run {RunId}", job.JobId, runId);
+        BroadcastForgeEvent(ActivityEventType.ForgeJobQueued, job.JobId, $"Forge resume queued: {runId}");
+        return job;
+    }
+
     /// <summary>Get a job by ID — checks active cache first, falls back to DB.</summary>
     public async Task<ForgeJob?> GetJobAsync(string jobId)
     {
@@ -230,12 +266,17 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
                 BroadcastForgeEvent(ActivityEventType.ForgeJobStarted, job.JobId,
                     $"Forge job started: {job.TaskBrief.Title}");
 
-                _logger.LogInformation("Forge job {JobId} starting execution for task {TaskId}",
-                    job.JobId, job.TaskBrief.TaskId);
-
+                var isResume = job.RunId is not null;
                 var progress = new Progress<ForgeProgressEvent>(evt => OnForgeProgress(job.JobId, evt));
-                var result = await _pipelineRunner.ExecuteAsync(
-                    job.TaskBrief, job.Methodology, stoppingToken, progress);
+
+                _logger.LogInformation("Forge job {JobId} starting {Mode} for {Detail}",
+                    job.JobId, isResume ? "resume" : "execution",
+                    isResume ? $"run {job.RunId}" : $"task {job.TaskBrief.TaskId}");
+
+                var result = isResume
+                    ? await _pipelineRunner.ResumeAsync(job.RunId!, stoppingToken, progress)
+                    : await _pipelineRunner.ExecuteAsync(
+                        job.TaskBrief, job.Methodology, stoppingToken, progress);
 
                 job.RunId = result.RunId;
                 job.Status = result.Outcome == "succeeded"

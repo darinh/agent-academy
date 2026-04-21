@@ -306,32 +306,32 @@ public sealed class ForgeControllerTests : IDisposable
     // ── Resume endpoint ─────────────────────────────────────────────────
 
     [Fact]
-    public void ResumeRun_InvalidRunId_Returns400()
+    public async Task ResumeRun_InvalidRunId_Returns400()
     {
-        var result = _controller.ResumeRun("bad-id");
+        var result = await _controller.ResumeRun("bad-id");
 
         Assert.IsType<BadRequestObjectResult>(result);
     }
 
     [Fact]
-    public void ResumeRun_ValidRunId_Returns501()
+    public async Task ResumeRun_ValidRunId_Returns202()
     {
         var runId = "R_" + Ulid.NewUlid().ToString();
-        var result = _controller.ResumeRun(runId);
+        var result = await _controller.ResumeRun(runId);
 
-        var problem = Assert.IsType<ObjectResult>(result);
-        Assert.Equal(StatusCodes.Status501NotImplemented, problem.StatusCode);
+        var accepted = Assert.IsType<AcceptedAtActionResult>(result);
+        Assert.Equal(StatusCodes.Status202Accepted, accepted.StatusCode);
     }
 
     [Fact]
-    public void ResumeRun_WhenNoApiKey_Returns503()
+    public async Task ResumeRun_WhenNoApiKey_Returns503()
     {
         var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
         var controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
         var runId = "R_" + Ulid.NewUlid().ToString();
-        var result = controller.ResumeRun(runId);
+        var result = await controller.ResumeRun(runId);
 
         var problem = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, problem.StatusCode);
