@@ -148,23 +148,29 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
     // Consider wrapping in try/catch if data integrity isn't guaranteed.
 
     [Fact]
-    public async Task GetJobAsync_MalformedTaskBriefJson_Throws()
+    public async Task GetJobAsync_MalformedTaskBriefJson_ReturnsFallback()
     {
         SeedJobRaw("bad-brief", "completed", taskBriefJson: "not valid json {{", methodologyJson: MinimalMethodologyJson);
 
         var service = CreateService();
-        await Assert.ThrowsAsync<System.Text.Json.JsonException>(
-            () => service.GetJobAsync("bad-brief"));
+        var job = await service.GetJobAsync("bad-brief");
+
+        Assert.NotNull(job);
+        Assert.Equal("unknown", job.TaskBrief.TaskId);
+        Assert.Contains("corrupt", job.TaskBrief.Title, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task GetJobAsync_MalformedMethodologyJson_Throws()
+    public async Task GetJobAsync_MalformedMethodologyJson_ReturnsFallback()
     {
         SeedJobRaw("bad-meth", "completed", taskBriefJson: MinimalTaskBriefJson, methodologyJson: "}{invalid");
 
         var service = CreateService();
-        await Assert.ThrowsAsync<System.Text.Json.JsonException>(
-            () => service.GetJobAsync("bad-meth"));
+        var job = await service.GetJobAsync("bad-meth");
+
+        Assert.NotNull(job);
+        Assert.Equal("unknown", job.Methodology.Id);
+        Assert.Empty(job.Methodology.Phases);
     }
 
     // ── Entity mapping: null JSON fields → graceful default ─────────────

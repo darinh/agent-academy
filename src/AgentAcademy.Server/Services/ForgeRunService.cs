@@ -326,10 +326,27 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
 
     private static ForgeJob EntityToJob(ForgeJobEntity entity)
     {
-        var taskBrief = JsonSerializer.Deserialize<TaskBrief>(entity.TaskBriefJson, JsonOptions)
+        TaskBrief taskBrief;
+        try
+        {
+            taskBrief = JsonSerializer.Deserialize<TaskBrief>(entity.TaskBriefJson, JsonOptions)
                         ?? new TaskBrief { TaskId = "unknown", Title = "Unknown", Description = "" };
-        var methodology = JsonSerializer.Deserialize<MethodologyDefinition>(entity.MethodologyJson, JsonOptions)
+        }
+        catch (JsonException)
+        {
+            taskBrief = new TaskBrief { TaskId = "unknown", Title = "Unknown (corrupt data)", Description = "" };
+        }
+
+        MethodologyDefinition methodology;
+        try
+        {
+            methodology = JsonSerializer.Deserialize<MethodologyDefinition>(entity.MethodologyJson, JsonOptions)
                           ?? new MethodologyDefinition { Id = "unknown", Phases = [] };
+        }
+        catch (JsonException)
+        {
+            methodology = new MethodologyDefinition { Id = "unknown", Phases = [] };
+        }
 
         var status = Enum.TryParse<ForgeJobStatus>(entity.Status, ignoreCase: true, out var parsed)
             ? parsed
