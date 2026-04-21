@@ -827,7 +827,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | `/api/forge/runs` | GET | FallbackPolicy | List completed runs from disk store |
 | `/api/forge/runs/{runId}` | GET | FallbackPolicy | Get full run trace |
 | `/api/forge/runs/{runId}/phases` | GET | FallbackPolicy | Get phase-level traces |
-| `/api/forge/runs/{runId}/resume` | POST | `[Authorize]` | Resume crashed run (501 placeholder) |
+| `/api/forge/runs/{runId}/resume` | POST | `[Authorize]` | Resume crashed run (202 + job ID) |
 | `/api/forge/artifacts/{hash}` | GET | FallbackPolicy | Get artifact by content hash |
 | `/api/forge/schemas` | GET | FallbackPolicy | List registered schemas |
 | `/api/forge/status` | GET | FallbackPolicy | Engine status + job counts |
@@ -887,7 +887,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 1. ~~**Jobs are not durable**~~: Resolved. Jobs persisted to SQLite via `ForgeJobEntity` (`forge_jobs` table). On restart: Running jobs marked `Interrupted`, Queued jobs re-enqueued if execution available. Active jobs cached in memory; completed jobs served from DB. See Job Queue section above.
 2. ~~**No authentication on forge endpoints**~~: Resolved. Execution endpoints (`POST jobs`, `POST resume`, `PUT methodologies`) carry explicit `[Authorize]`. Read-only GET endpoints are protected by the global `FallbackPolicy` (authenticated when auth enabled, open when auth disabled). See Security section above.
 3. **No workspace scoping**: Forge runs are global, not scoped to a workspace/room. Multi-user deployments would expose cross-tenant data.
-4. **Resume not implemented**: `POST /api/forge/runs/{runId}/resume` returns 501.
+4. ~~**Resume not implemented**~~: Resolved. `POST /api/forge/runs/{runId}/resume` enqueues a resume job (returns 202 + job ID). `ForgeRunService` detects resume jobs (pre-populated `RunId`) and calls `PipelineRunner.ResumeAsync` instead of `ExecuteAsync`. The engine rebuilds state from phase snapshots and continues from the first non-succeeded phase.
 5. ~~**No agent commands**~~: Resolved. Agents can trigger forge runs via `RUN_FORGE`, check status via `FORGE_STATUS`, and list jobs via `LIST_FORGE_RUNS`. See spec 007 for command details. Handlers use `IForgeJobService` interface for testability. Path traversal and symlink protections applied to methodology file loading.
 6. ~~**No SignalR events**~~: Resolved. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress reporting. `ForgeRunService` broadcasts events via `IActivityBroadcaster` as `ActivityEvent` instances with forge-specific types (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`). Events flow through the existing `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives a `refreshTrigger` version counter incremented on each forge event, triggering immediate re-fetch. Polling remains as fallback.
 7. ~~**No frontend UI**~~: Resolved. ForgePanel provides status dashboard, job list, run detail with phase/attempt/validator drill-down, inline artifact viewer, and start-run form with methodology JSON editor. See spec 300 for frontend details.
@@ -915,3 +915,4 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-21 | Auth on forge endpoints — `[Authorize]` on execution endpoints (POST jobs, POST resume, PUT methodologies), read-only GET endpoints protected by FallbackPolicy, closes Integration Gap #2 | `feat/methodology-browser` |
 | 2026-04-21 | Durable job store — SQLite persistence via ForgeJobEntity, startup recovery (interrupted/re-enqueue), async IForgeJobService, 4 new tests, closes Integration Gap #1 | `feat/durable-forge-jobs` |
 | 2026-04-21 | Real-time SignalR events — IProgress<ForgeProgressEvent> in PipelineRunner, ActivityBroadcaster integration, frontend version-counter-driven refresh, closes Integration Gap #6 | `feat/forge-signalr-progress` |
+| 2026-04-21 | Resume endpoint — ForgeRunService.ResumeRunAsync, controller 202+jobId, background worker PipelineRunner.ResumeAsync dispatch, closes Integration Gap #4 | `develop` |

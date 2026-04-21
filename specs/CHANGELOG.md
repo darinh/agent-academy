@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **019-forge-engine §Server Integration**: Real-time SignalR events for Forge pipeline execution. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress. `ForgeRunService` broadcasts events (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`) via existing `ActivityBroadcaster` → `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives `refreshTrigger` version counter for instant re-fetch on events. Polling remains as fallback. Closes Integration Gap #6.
+- **019-forge-engine §Server Integration**: Resume endpoint implemented. `POST /api/forge/runs/{runId}/resume` enqueues a resume job (returns 202 + job ID). Background worker calls `PipelineRunner.ResumeAsync`. Closes Integration Gap #4.
 
 ### Fixed
 - **019-forge-engine §Job Queue**: `EntityToJob` now catches `JsonException` on malformed `TaskBriefJson`/`MethodologyJson` and returns fallback values instead of crashing the entire job listing. Tests updated to verify fallback behavior.
