@@ -312,6 +312,60 @@ public static class HumanCommandRegistry
             "Planner/Reviewer/Human only. Shows connection count, durations, and instance name. Current-instance only.",
             IsAsync: false, Fields: []),
 
+        // ── Tier 2G — Audit & Debug ──
+
+        new("SHOW_AUDIT_EVENTS", "Show audit events", "operations",
+            "Query the activity event log with filters.",
+            "Returns recent activity events sorted by time (newest first). Filter by type, severity, actor, room, or time range.",
+            IsAsync: false,
+            Fields:
+            [
+                new("type", "Event type", "text", "Filter by event type (e.g. AgentErrorOccurred, CommandExecuted)."),
+                new("severity", "Severity", "text", "Filter by severity (Info, Warning, Error)."),
+                new("actorId", "Actor ID", "text", "Filter by agent/actor ID."),
+                new("roomId", "Room ID", "text", "Filter by room ID."),
+                new("since", "Since", "text", "ISO 8601 datetime — only events after this time.",
+                    Placeholder: "2026-04-20T00:00:00Z"),
+                new("count", "Count", "text", "Number of events to return (default 20, max 100).",
+                    Placeholder: "20"),
+            ]),
+
+        new("SHOW_LAST_ERROR", "Show last error", "operations",
+            "Show the most recent errors from both activity events and failed commands.",
+            "Merges runtime errors (AgentErrorOccurred, SubagentFailed) with command failures into a single chronological timeline.",
+            IsAsync: false,
+            Fields:
+            [
+                new("count", "Count", "text", "Number of errors to return (default 5, max 25).",
+                    Placeholder: "5"),
+                new("agentId", "Agent ID", "text", "Filter errors by a specific agent."),
+            ]),
+
+        new("TRACE_REQUEST", "Trace request", "operations",
+            "Trace events by correlation ID across activity log and command audit trail.",
+            "Returns a unified timeline of all events sharing a correlation ID, from both activity events and command audits.",
+            IsAsync: false,
+            Fields:
+            [
+                new("correlationId", "Correlation ID", "text", "The correlation ID to trace.",
+                    Required: true),
+            ]),
+
+        new("LIST_SYSTEM_SETTINGS", "System settings", "operations",
+            "List all runtime system settings with current values.",
+            "Shows all key-value pairs from the system settings store, with defaults filled in for known keys.",
+            IsAsync: false, Fields: []),
+
+        new("RETRY_FAILED_JOB", "Retry failed job", "operations",
+            "Re-execute a previously failed command from the audit trail.",
+            "Planner/Human only. Only retry-safe (idempotent/read-only) commands can be retried. Creates a new correlation ID for tracking.",
+            IsAsync: false,
+            Fields:
+            [
+                new("auditId", "Audit ID", "text", "The ID of the failed command audit entry to retry.",
+                    Required: true),
+            ]),
+
         new("CREATE_TASK_ITEM", "Create task item", "workspace",
             "Create a work item assigned to yourself or another agent.",
             "Break down complex work into trackable sub-items within a room.",

@@ -109,7 +109,12 @@
             "CALL_ENDPOINT",
             "SHOW_MIGRATION_STATUS",
             "HEALTHCHECK",
-            "SHOW_ACTIVE_CONNECTIONS"
+            "SHOW_ACTIVE_CONNECTIONS",
+            "SHOW_AUDIT_EVENTS",
+            "SHOW_LAST_ERROR",
+            "TRACE_REQUEST",
+            "LIST_SYSTEM_SETTINGS",
+            "RETRY_FAILED_JOB"
           ],
           "Denied": []
         }
@@ -186,7 +191,11 @@
             "TAIL_LOGS",
             "SHOW_CONFIG",
             "SHOW_MIGRATION_STATUS",
-            "HEALTHCHECK"
+            "HEALTHCHECK",
+            "SHOW_AUDIT_EVENTS",
+            "SHOW_LAST_ERROR",
+            "TRACE_REQUEST",
+            "LIST_SYSTEM_SETTINGS"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -275,7 +284,11 @@
             "TAIL_LOGS",
             "SHOW_CONFIG",
             "SHOW_MIGRATION_STATUS",
-            "HEALTHCHECK"
+            "HEALTHCHECK",
+            "SHOW_AUDIT_EVENTS",
+            "SHOW_LAST_ERROR",
+            "TRACE_REQUEST",
+            "LIST_SYSTEM_SETTINGS"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -366,7 +379,11 @@
             "TAIL_LOGS",
             "SHOW_CONFIG",
             "SHOW_MIGRATION_STATUS",
-            "HEALTHCHECK"
+            "HEALTHCHECK",
+            "SHOW_AUDIT_EVENTS",
+            "SHOW_LAST_ERROR",
+            "TRACE_REQUEST",
+            "LIST_SYSTEM_SETTINGS"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -462,7 +479,11 @@
             "CALL_ENDPOINT",
             "SHOW_MIGRATION_STATUS",
             "HEALTHCHECK",
-            "SHOW_ACTIVE_CONNECTIONS"
+            "SHOW_ACTIVE_CONNECTIONS",
+            "SHOW_AUDIT_EVENTS",
+            "SHOW_LAST_ERROR",
+            "TRACE_REQUEST",
+            "LIST_SYSTEM_SETTINGS"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -539,7 +560,11 @@
             "TAIL_LOGS",
             "SHOW_CONFIG",
             "SHOW_MIGRATION_STATUS",
-            "HEALTHCHECK"
+            "HEALTHCHECK",
+            "SHOW_AUDIT_EVENTS",
+            "SHOW_LAST_ERROR",
+            "TRACE_REQUEST",
+            "LIST_SYSTEM_SETTINGS"
           ],
           "Denied": [
             "APPROVE_TASK",

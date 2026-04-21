@@ -70,6 +70,12 @@ public sealed class CommandController : ControllerBase
         "SHOW_MIGRATION_STATUS",
         "HEALTHCHECK",
         "SHOW_ACTIVE_CONNECTIONS",
+        // Tier 2G — Audit & Debug
+        "SHOW_AUDIT_EVENTS",
+        "SHOW_LAST_ERROR",
+        "TRACE_REQUEST",
+        "LIST_SYSTEM_SETTINGS",
+        "RETRY_FAILED_JOB",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)

@@ -85,6 +85,12 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["SHOW_MIGRATION_STATUS"] = "Show applied and pending database migrations",
         ["HEALTHCHECK"] = "System health summary: DB, uptime, entities, resources, connections",
         ["SHOW_ACTIVE_CONNECTIONS"] = "Show active SignalR connections for this server instance (Planner/Reviewer only)",
+        // Tier 2G — Audit & Debug
+        ["SHOW_AUDIT_EVENTS"] = "Query the activity event log with filters (type, severity, actor, room, since, count)",
+        ["SHOW_LAST_ERROR"] = "Show recent errors from activity events and failed commands, merged chronologically",
+        ["TRACE_REQUEST"] = "Trace events by correlation ID across activity log and command audit trail",
+        ["LIST_SYSTEM_SETTINGS"] = "List all runtime system settings with current values and defaults",
+        ["RETRY_FAILED_JOB"] = "Re-execute a previously failed retry-safe command from the audit trail (Planner/Human only)",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)

@@ -22,6 +22,8 @@ internal sealed class ActivityEventConfiguration : IEntityTypeConfiguration<Acti
 
         entity.HasIndex(e => e.RoomId).HasDatabaseName("idx_activity_room");
         entity.HasIndex(e => e.OccurredAt).HasDatabaseName("idx_activity_time");
+        entity.HasIndex(e => e.CorrelationId).HasDatabaseName("idx_activity_correlation");
+        entity.HasIndex(e => new { e.Severity, e.OccurredAt }).HasDatabaseName("idx_activity_severity_time");
     }
 }
 

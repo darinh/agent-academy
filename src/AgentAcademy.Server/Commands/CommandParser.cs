@@ -54,7 +54,9 @@ public sealed class CommandParser
         // Tier 2E — Backend Execution
         "RUN_FRONTEND_BUILD", "RUN_TYPECHECK", "CALL_ENDPOINT", "TAIL_LOGS", "SHOW_CONFIG",
         // Tier 2F — Data & Operations
-        "QUERY_DB", "RUN_MIGRATIONS", "SHOW_MIGRATION_STATUS", "HEALTHCHECK", "SHOW_ACTIVE_CONNECTIONS"
+        "QUERY_DB", "RUN_MIGRATIONS", "SHOW_MIGRATION_STATUS", "HEALTHCHECK", "SHOW_ACTIVE_CONNECTIONS",
+        // Tier 2G — Audit & Debug
+        "SHOW_AUDIT_EVENTS", "SHOW_LAST_ERROR", "TRACE_REQUEST", "LIST_SYSTEM_SETTINGS", "RETRY_FAILED_JOB"
     };
 
     /// <summary>
