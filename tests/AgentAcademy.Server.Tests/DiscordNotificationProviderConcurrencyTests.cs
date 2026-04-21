@@ -241,6 +241,156 @@ public class DiscordNotificationProviderConcurrencyTests
         Assert.True(provider.IsConfigured);
     }
 
+    [Fact]
+    public async Task DisposeAsync_WaitsForInFlightSendOperation_BeforeDisposingClient()
+    {
+        // Race: a send captures (client, config) and is mid-flight when DisposeAsync
+        // runs. Without drain, DisposeClientAsync would tear down the client out from
+        // under the send. With drain, Dispose waits until the send completes.
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+
+        var sendStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSend = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Start an "in-flight send" — counts toward _inFlight via the same tracker
+        // used by SendNotificationAsync/RequestInputAsync/etc.
+        var sendTask = Task.Run(() => provider.RunUnderInFlightForTestingAsync(async () =>
+        {
+            sendStarted.TrySetResult(true);
+            await releaseSend.Task;
+        }));
+
+        await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Act: dispose while the "send" is still in flight.
+        var disposeTask = provider.DisposeAsync().AsTask();
+
+        // Dispose must NOT have torn down the client yet — the send is still
+        // running and would race with DisposeClientAsync.
+        var raced = await Task.WhenAny(disposeTask, Task.Delay(150));
+        Assert.NotSame(disposeTask, raced);
+        Assert.Equal(0, connection.DisposeClientCallCount);
+
+        // Release the send; Dispose should now drain and tear down.
+        releaseSend.SetResult(true);
+        Assert.True(await sendTask);
+
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, connection.DisposeClientCallCount);
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_WaitsForInFlightSendOperation_BeforeDisposingClient()
+    {
+        // Same race as Dispose, but for the lifecycle Disconnect path. Disconnect
+        // also calls _connection.DisposeClientAsync() and must wait for in-flight
+        // sends to drain first.
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+        await provider.ConfigureAsync(ValidConfig());
+
+        var sendStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSend = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var sendTask = Task.Run(() => provider.RunUnderInFlightForTestingAsync(async () =>
+        {
+            sendStarted.TrySetResult(true);
+            await releaseSend.Task;
+        }));
+
+        await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var disconnectTask = provider.DisconnectAsync();
+
+        // Disconnect must NOT have torn down the client yet.
+        var raced = await Task.WhenAny(disconnectTask, Task.Delay(150));
+        Assert.NotSame(disconnectTask, raced);
+        Assert.Equal(0, connection.DisposeClientCallCount);
+
+        releaseSend.SetResult(true);
+        Assert.True(await sendTask);
+
+        await disconnectTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, connection.DisposeClientCallCount);
+    }
+
+    [Fact]
+    public async Task SendNotificationAsync_DuringTeardown_ReturnsFalseWithoutTouchingClient()
+    {
+        // While DisposeAsync is mid-drain (waiting on an in-flight send), a NEW
+        // send must short-circuit cleanly via the _teardownInProgress gate rather
+        // than capturing a soon-to-be-disposed client snapshot.
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+        await provider.ConfigureAsync(ValidConfig());
+
+        var sendStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSend = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // First send: keeps _inFlight > 0 so Dispose stays in WaitForDrainAsync.
+        var inflightTask = Task.Run(() => provider.RunUnderInFlightForTestingAsync(async () =>
+        {
+            sendStarted.TrySetResult(true);
+            await releaseSend.Task;
+        }));
+        await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Start dispose — sets _teardownInProgress=true, then waits for drain.
+        var disposeTask = provider.DisposeAsync().AsTask();
+
+        // Give Dispose a moment to enter teardown state.
+        await Task.Delay(50);
+
+        // Capture client-access count BEFORE the late send. If the teardown gate
+        // works, TryEnterOperation rejects BEFORE GetGuildIfConnected reads
+        // _connection.Client — so this counter must NOT increase. (Without this
+        // assertion the test would pass even with a broken gate, because
+        // IsConnected=false would also cause SendNotificationAsync to return
+        // false via GetGuildIfConnected — a false positive the reviewer caught.)
+        var clientAccessesBefore = connection.ClientAccessCount;
+
+        var msg = new NotificationMessage(NotificationType.AgentThinking, Title: "t", Body: "b");
+        var late = await provider.SendNotificationAsync(msg);
+        Assert.False(late);
+        Assert.Equal(clientAccessesBefore, connection.ClientAccessCount);
+
+        // Cleanup: release in-flight, allow Dispose to complete.
+        releaseSend.SetResult(true);
+        Assert.True(await inflightTask);
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DrainTimesOut_ProceedsAnyway()
+    {
+        // If a send hangs forever, Dispose must NOT hang forever waiting for it.
+        // We can't easily test the 5-second production timeout in CI, but we can
+        // assert the contract: a never-completing in-flight op does not deadlock
+        // teardown — it eventually proceeds (possibly with the in-flight op still
+        // pending). We bound the test wait at 7 seconds.
+        var connection = new FakeDiscordConnectionManager();
+        var provider = CreateProvider(connection, out _);
+
+        var sendStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Never released: simulates a wedged send.
+        var neverReleased = new TaskCompletionSource<bool>();
+
+        _ = Task.Run(() => provider.RunUnderInFlightForTestingAsync(async () =>
+        {
+            sendStarted.TrySetResult(true);
+            await neverReleased.Task;
+        }));
+        await sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var disposeTask = provider.DisposeAsync().AsTask();
+
+        // Dispose's drain timeout is 5s in production. Allow up to 7s here.
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(7));
+
+        Assert.Equal(1, connection.DisposeClientCallCount);
+    }
+
 
     private static AgentOrchestrator CreateMockOrchestrator()
     {
@@ -295,11 +445,19 @@ public class DiscordNotificationProviderConcurrencyTests
 
         public int DisposeClientCallCount { get; private set; }
         public string? LastBotToken { get; private set; }
+        public int ClientAccessCount { get; private set; }
 
         private DiscordSocketClient? _client;
         private bool _isConnected;
 
-        public DiscordSocketClient? Client => _client;
+        public DiscordSocketClient? Client
+        {
+            get
+            {
+                ClientAccessCount++;
+                return _client;
+            }
+        }
         public bool IsConnected => _isConnected;
         public string? LastError { get; private set; }
 
