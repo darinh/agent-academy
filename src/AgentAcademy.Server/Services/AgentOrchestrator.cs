@@ -127,42 +127,23 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private async Task ProcessQueueAsync()
     {
         if (!TryBeginProcessing()) return;
-        var resetProcessingOnExit = true;
 
         try
         {
             while (!_cts.IsCancellationRequested)
             {
                 QueueItem item;
-                if (!TryDequeueOrStop(out item))
+                if (!TryDequeue(out item))
                 {
-                    resetProcessingOnExit = false;
-                    return;
+                    break;
                 }
 
-                try
-                {
-                    if (item.TargetAgentId is { } targetAgentId)
-                    {
-                        await _dmRouter.RouteAsync(targetAgentId);
-                    }
-                    else
-                    {
-                        await _roundRunner.RunRoundsAsync(item.RoomId, _cts.Token);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Orchestrator failed for {Item}", item);
-                }
+                await ProcessQueueItemAsync(item);
             }
         }
         finally
         {
-            if (resetProcessingOnExit)
-            {
-                EndProcessing();
-            }
+            EndProcessingAndRestartIfNeeded();
         }
     }
 
@@ -197,7 +178,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         }
     }
 
-    private bool TryDequeueOrStop(out QueueItem item)
+    private bool TryDequeue(out QueueItem item)
     {
         lock (_lock)
         {
@@ -212,15 +193,48 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
                 return true;
             }
 
-            _processing = false;
             item = default!;
             return false;
         }
     }
 
-    private void EndProcessing()
+    private async Task ProcessQueueItemAsync(QueueItem item)
     {
-        lock (_lock) { _processing = false; }
+        try
+        {
+            if (item.TargetAgentId is { } targetAgentId)
+            {
+                await _dmRouter.RouteAsync(targetAgentId);
+            }
+            else
+            {
+                await _roundRunner.RunRoundsAsync(item.RoomId, _cts.Token);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Orchestrator failed for {Item}", item);
+        }
+    }
+
+    private void EndProcessingAndRestartIfNeeded()
+    {
+        var shouldRestart = false;
+
+        lock (_lock)
+        {
+            _processing = false;
+
+            if (!_cts.IsCancellationRequested && _queue.Count > 0)
+            {
+                shouldRestart = true;
+            }
+        }
+
+        if (shouldRestart)
+        {
+            SignalProcessing();
+        }
     }
 
     private void SignalProcessing() => _ = ProcessQueueAsync();
