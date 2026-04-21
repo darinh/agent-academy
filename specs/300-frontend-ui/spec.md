@@ -61,7 +61,8 @@ App.tsx (FluentProvider + AppShell)
                 ├── SprintPanel.tsx (sprint lifecycle viewer)
                 ├── ActivityFeedPanel.tsx (standalone activity feed with severity badges)
                 ├── SpecSearchPanel.tsx (full-text spec search with debounced input)
-                └── AgentKnowledgePanel.tsx (per-agent knowledge browser with agent selector)
+                ├── AgentKnowledgePanel.tsx (per-agent knowledge browser with agent selector)
+                └── ForgePanel.tsx (pipeline engine status, jobs, runs, phases, artifacts)
 
 Overlays (rendered at root, outside the sidebar/main split):
     ├── SettingsPanel.tsx — full-screen tabbed settings (opened via UserBadge → settings)
