@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Handles all breakout room operations: creation, closure, queries,
 /// task linking, agent session history, and breakout reopening.
 /// </summary>
-public sealed class BreakoutRoomService
+public sealed class BreakoutRoomService : IBreakoutRoomService
 {
     internal static readonly HashSet<string> TerminalBreakoutStatuses = new(StringComparer.Ordinal)
     {
@@ -20,20 +21,20 @@ public sealed class BreakoutRoomService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<BreakoutRoomService> _logger;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityPublisher _activity;
-    private readonly ConversationSessionService _sessionService;
-    private readonly TaskQueryService _taskQueries;
-    private readonly AgentLocationService _agentLocations;
+    private readonly IAgentCatalog _catalog;
+    private readonly IActivityPublisher _activity;
+    private readonly IConversationSessionService _sessionService;
+    private readonly ITaskQueryService _taskQueries;
+    private readonly IAgentLocationService _agentLocations;
 
     public BreakoutRoomService(
         AgentAcademyDbContext db,
         ILogger<BreakoutRoomService> logger,
-        AgentCatalogOptions catalog,
-        ActivityPublisher activity,
-        ConversationSessionService sessionService,
-        TaskQueryService taskQueries,
-        AgentLocationService agentLocations)
+        IAgentCatalog catalog,
+        IActivityPublisher activity,
+        IConversationSessionService sessionService,
+        ITaskQueryService taskQueries,
+        IAgentLocationService agentLocations)
     {
         _db = db;
         _logger = logger;
@@ -337,6 +338,13 @@ public sealed class BreakoutRoomService
             .Select(r => r.WorkspacePath)
             .FirstOrDefaultAsync();
 
+        // Inherit priority from parent room's active task (if any)
+        var parentPriority = await _db.Tasks
+            .Where(t => t.RoomId == roomId && t.Status == nameof(Shared.Models.TaskStatus.Active))
+            .OrderByDescending(t => t.CreatedAt)
+            .Select(t => (int?)t.Priority)
+            .FirstOrDefaultAsync() ?? 2; // default Medium
+
         var entity = new TaskEntity
         {
             Id = taskId,
@@ -357,6 +365,7 @@ public sealed class BreakoutRoomService
             AssignedAgentId = agentId,
             AssignedAgentName = agent?.Name,
             BranchName = branchName,
+            Priority = parentPriority,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now
@@ -390,7 +399,7 @@ public sealed class BreakoutRoomService
         var activeSessionId = activeSession?.Id;
 
         var filteredMessages = entity.Messages?
-            .Where(m => activeSessionId == null || m.SessionId == activeSessionId || m.SessionId == null)
+            .Where(m => m.SessionId == null || m.SessionId == activeSessionId)
             .OrderBy(m => m.SentAt)
             ?? Enumerable.Empty<BreakoutMessageEntity>();
 

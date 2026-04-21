@@ -23,7 +23,7 @@ The human operator currently acts as a middleman between the CLI agent (which ha
 ### Authentication: Shared Secret Header
 
 - **Mechanism**: `X-Consultant-Key` header containing a pre-shared secret
-- **Configuration**: `ConsultantApi:SharedSecret` in `appsettings.json` or `CONSULTANT_API__SHARED_SECRET` environment variable
+- **Configuration**: `ConsultantApi:SharedSecret` in `appsettings.json` or `ConsultantApi__SharedSecret` environment variable
 - **Identity**: Authenticated as a `Consultant` principal with `SenderKind = User`, `SenderId = "consultant"`, `SenderName = "Consultant"`
 - **Scope**: Grants access to the same endpoints as an authenticated human user
 - **Migration path**: The auth handler is a standard ASP.NET Core authentication scheme. When a real OAuth2 provider (e.g., Entra ID) is needed, add it as another scheme alongside this one. No endpoint changes required.
@@ -93,7 +93,43 @@ Returns:
 }
 ```
 
-Messages are ordered chronologically (oldest first). This endpoint includes sessionless messages and messages with `SenderKind = User` from any session, so consultant/human messages are always visible regardless of session boundaries.
+Messages are ordered chronologically (oldest first). When `sessionId` is omitted, the endpoint returns messages from the active conversation session plus legacy untagged messages (matching the `RoomSnapshotBuilder` contract in spec 005 §Message Management). When `sessionId` is provided, only that session's messages are returned — no cross-session leaking.
+
+#### Stream Room Messages (SSE)
+
+```
+GET /api/rooms/{roomId}/messages/stream?after={messageId}
+X-Consultant-Key: {secret}
+```
+
+Server-Sent Events stream delivering room messages in real-time. Replaces polling for the primary consultant workflow.
+
+**Query parameters:**
+- `after` (optional): Cursor — only replay messages after this ID, then stream live
+
+**SSE event format:**
+```
+id: {messageId}
+event: message
+data: {full ChatEnvelope JSON}
+
+```
+
+**Overflow handling:** If the client falls behind (internal buffer full), the server emits a `resync` event with the last successfully sent message ID, then closes the connection. Client should reconnect with `after={lastId}`.
+
+```
+event: resync
+data: {"lastId": "{messageId}"}
+```
+
+**Delivery semantics:** At-least-once. Messages that arrive during the replay window may be delivered both in the replay batch and as a live event. Clients should deduplicate by message ID.
+
+**Coverage:** Streams messages posted via `MessageService` methods (agent messages, human messages, system messages, system status messages, DM room notifications). Messages inserted directly by other services (e.g., task lifecycle review messages) are not streamed but are available via the REST endpoint on reconnect.
+
+**Implementation:**
+- `MessageBroadcaster` (singleton, `src/AgentAcademy.Server/Services/MessageBroadcaster.cs`): Per-room pub/sub for live message delivery. No buffer — the SSE endpoint handles replay from DB.
+- SSE endpoint on `RoomController` (`src/AgentAcademy.Server/Controllers/RoomController.cs`): Subscribe-first pattern (avoids race window between DB replay and subscription).
+- `MessageService` broadcasts to `MessageBroadcaster` after `SaveChangesAsync` in all message-posting methods.
 
 #### List Rooms
 
@@ -122,6 +158,51 @@ POST /api/dm/threads/{agentId}    # Send DM to specific agent
 GET  /api/dm/threads/{agentId}    # Read DM thread
 GET  /api/dm/threads              # List DM threads
 ```
+
+#### Stream DM Thread Messages (SSE)
+
+```
+GET /api/dm/threads/{agentId}/stream?after={messageId}
+```
+
+Server-Sent Events stream delivering DM messages for a specific agent thread in real-time.
+
+**Parameters:**
+- `agentId` (path, required): Agent ID for the DM thread
+- `after` (query, optional): Cursor — only replay messages after this ID, then stream live
+
+**SSE event format:**
+```
+id: {messageId}
+event: message
+data: {"id":"...","senderId":"...","senderName":"...","senderRole":"...","content":"...","sentAt":"...","isFromHuman":true}
+```
+
+**Overflow/resync:** If the client falls behind, emits `event: resync` with `{"lastId":"..."}` and closes the connection. Client should reconnect with `?after={lastId}`.
+
+**Implementation:**
+- Reuses `MessageBroadcaster` with DM-specific subscriptions (`SubscribeDm`/`BroadcastDm`), keyed by agent ID (case-insensitive).
+- Subscribe-first pattern (same as room SSE) avoids race conditions between DB replay and live subscription.
+- `SendDirectMessageAsync` broadcasts `DmMessage` after commit, covering both human→agent and agent→human directions.
+- Returns 404 if agent ID is not found in catalog.
+
+#### Stream DM Thread List (SSE)
+
+```
+GET /api/dm/threads/stream
+```
+
+Server-Sent Events stream for DM thread list invalidation. Notifies when any DM message is posted in any thread, allowing the client to refresh the thread list in real-time instead of polling.
+
+**SSE events:**
+- `connected` — stream is live. Client should refetch thread list on (re)connect.
+- `thread-updated` — a DM was posted. Data: `{"agentId":"...","messageId":"..."}`. Client should debounce and refetch `GET /api/dm/threads`.
+- `resync` — channel overflow. Client should refetch.
+
+**Implementation:**
+- `MessageBroadcaster.SubscribeAllDm` provides a global DM subscription that fires on ALL DM messages regardless of agent thread. `BroadcastDm` fires global subscribers even when no per-thread subscribers exist.
+- Bounded channel (256 capacity) with overflow → resync pattern (same as per-thread SSE).
+- Frontend `useDmThreadSSE` hook connects, triggers `onInvalidate` callback on all three events, with 500ms debounce in DmPanel to collapse bursts.
 
 ### Command Execution
 
@@ -265,6 +346,56 @@ Frontend: Export CSV button on `AgentAnalyticsPanel` toolbar. Uses `downloadFile
 
 > **Tests**: `CsvExportTests` (20 tests — formatting, escaping, formula injection, edge cases), `ExportControllerTests` (14 tests — validation, content types, truncation, time filtering, integration with real DB).
 
+#### Conversation Export
+
+> **Source**: `src/AgentAcademy.Server/Controllers/ExportController.cs`, `src/AgentAcademy.Server/Services/ConversationExportService.cs`
+
+Downloadable room and DM conversation history in JSON or Markdown format.
+
+```
+GET /api/export/rooms/{roomId}/messages?format=json|markdown
+GET /api/export/dm/{agentId}/messages?format=json|markdown
+```
+
+**Room export** fetches all non-DM messages in a room (`RecipientId == null`), ordered by `SentAt` then `Id`. **DM export** fetches all messages between the human/consultant and a specific agent — both directions — using the `HumanSideSenderIds` array (`["human", "consultant"]`) to match the human side.
+
+- `format` (optional, default `json`): `json` or `markdown`.
+- Message cap: 10,000 per export. Server fetches `MaxExportMessages + 1` to detect truncation.
+- Response headers: `X-Record-Count` (actual count returned), `X-Truncated: true` (when more messages exist beyond cap).
+- Content-Disposition: `attachment; filename="room-{sanitized-name}-{timestamp}.{json|md}"` (rooms) or `"dm-{sanitized-agentId}-{timestamp}.{json|md}"` (DMs). Triggers browser download.
+- Filename sanitization: only `[a-zA-Z0-9_-]` characters preserved, lowercased.
+- Returns `404` with `{ code, message }` if the room doesn't exist (rooms) or no DM thread exists for the agent (DMs — checked by zero messages).
+
+**JSON format** (`ConversationExportService.FormatAsJson`): Envelope object with `exportedAt` (UTC), `roomName` or `agentId`, `messageCount`, and `messages` array. Each message includes: `id`, `senderId`, `senderName`, `senderRole`, `senderKind`, `kind`, `content`, `sentAt`, `replyToMessageId`. Serialized with `WriteIndented = true`, `camelCase` naming.
+
+**Markdown format** (`ConversationExportService.FormatAsMarkdown`): Human-readable document with heading (`# Room: {name}` or `# DM Thread: {agentId}`), export timestamp, message count, date range, then each message as `**{SenderName}** ({Role}) — {timestamp}` followed by content. Messages separated by horizontal rules.
+
+Frontend: Export dropdown in `SessionToolbar` (room chat view) — button with `▾` that reveals JSON/Markdown options on click. DM export via `<select>` element in `DmPanel` thread header. Both use `downloadFile()` helper from `api/core.ts` which reads blob from fetch response and triggers download via temporary anchor element. API client functions: `exportRoomMessages(roomId, format)` in `api/rooms.ts`, `exportDmMessages(agentId, format)` in `api/system.ts`.
+
+> **Tests**: `ConversationExportServiceTests` (21 tests — room/DM fetching, JSON/Markdown formatting, truncation, empty threads, null room), `ExportControllerTests` (extended with conversation export endpoint tests — format validation, 404 handling, content types, truncation headers).
+
+#### Task Cycle Analytics
+
+> **Source**: `src/AgentAcademy.Server/Services/TaskAnalyticsService.cs`, `src/AgentAcademy.Server/Controllers/AnalyticsController.cs`
+
+Task effectiveness metrics computed from `TaskEntity` lifecycle data.
+
+```
+GET /api/analytics/tasks?hoursBack={N}
+```
+
+Returns `TaskCycleAnalytics`:
+- **Overview**: Total tasks, status counts, completion rate, average cycle time (created→completed), average queue time (created→started), average execution span (started→completed), average review rounds, rework rate (tasks needing >1 review round), total commits.
+- **AgentEffectiveness[]**: Per-agent metrics — assigned, completed, cancelled, completion rate, cycle/queue/execution times, review rounds, commits per task, first-pass approval rate, rework rate. Attribution based on current assignee (not full reassignment history).
+- **ThroughputBuckets[]**: 12 time-series buckets with completed/created counts for sparkline visualization.
+- **TypeBreakdown**: Counts by task type (Feature, Bug, Chore, Spike).
+
+Completion rate uses a union cohort (created-in-window ∪ completed-in-window) as the denominator to prevent >100% when tasks are created before the window but completed inside it. Database indexes on `CreatedAt` and `CompletedAt` support efficient time-window queries.
+
+Frontend: `TaskAnalyticsPanel` in Dashboard — summary KPIs (completion rate, avg cycle, avg queue, avg reviews, rework rate, commits), status badges, throughput sparkline, type breakdown chips, sortable agent effectiveness table. Auto-refreshes every 60s.
+
+> **Tests**: `TaskAnalyticsTests` (19 tests — empty state, status counts, metrics computation, time windowing, rate capping, per-agent breakdown, type breakdown, throughput buckets, controller validation). Frontend: `taskAnalyticsPanel.dom.test.tsx` (14 tests — loading, error, empty, KPIs, badges, sparkline, table, sort, refresh, auto-refresh).
+
 ## Implementation Plan
 
 ### Phase 1: Auth Handler
@@ -291,14 +422,16 @@ Wire into Program.cs:
 - `src/AgentAcademy.Server/Controllers/RoomController.cs` (MODIFY — add GET messages action)
 - `src/AgentAcademy.Server/Services/RoomService.cs` (already has GetRoomMessagesAsync with cursor)
 
-`RoomService.GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit)` returns paginated messages:
+`RoomService.GetRoomMessagesAsync(string roomId, string? afterMessageId, int limit, string? sessionId)` returns paginated messages:
 ```csharp
 public async Task<(List<ChatEnvelope> Messages, bool HasMore)> GetRoomMessagesAsync(
-    string roomId, string? afterMessageId = null, int limit = 50)
+    string roomId, string? afterMessageId = null, int limit = 50, string? sessionId = null)
 ```
 
 Query logic:
-- Filter by room, non-DM (`RecipientId == null`), active session
+- Filter by room, non-DM (`RecipientId == null`)
+- When `sessionId` is explicit: only messages from that session (archived view)
+- When `sessionId` is null: active session + legacy untagged messages (live view, matches `RoomSnapshotBuilder`)
 - If `afterMessageId` provided, find that message's `SentAt` and filter `> SentAt` (with tiebreaker on ID)
 - Order by `SentAt` ascending
 - Take `limit + 1` to determine `HasMore`
@@ -315,7 +448,9 @@ Test cases:
 
 ## Polling Strategy (for CLI consumer)
 
-The CLI agent should follow this pattern when consulting:
+**Preferred: SSE streaming** — connect to `GET /api/rooms/{roomId}/messages/stream` for real-time delivery. See "Stream Room Messages (SSE)" above.
+
+**Fallback: polling** — use when SSE is unavailable (proxy limitations, etc.):
 
 ```
 1. GET /api/rooms → find main room ID
@@ -335,6 +470,52 @@ This handles:
 - Multi-round conversations (orchestrator chains rounds)
 - Agent silence (no response = pass, handled by timeout)
 
+## Rate Limiting
+
+> **Source**: `src/AgentAcademy.Server/Auth/ConsultantRateLimitExtensions.cs`, `src/AgentAcademy.Server/Auth/ConsultantRateLimitSettings.cs`
+
+Prevents the consultant from overwhelming agents with rapid-fire requests. Uses ASP.NET Core's built-in `AddRateLimiter()` with a global `PartitionedRateLimiter`.
+
+### Behavior
+
+- **Only consultant requests are rate-limited.** Regular users (cookie auth) and anonymous requests pass through with no limit. The partitioner checks `User.IsInRole("Consultant")`.
+- **Separate buckets for reads and writes.** Exhausting the write limit does not affect read requests, and vice versa.
+- **Sliding window algorithm** with configurable segments for smooth rate enforcement.
+- **429 response** on rejection with `Retry-After` header (seconds) and JSON body:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc6585#section-4",
+  "title": "Rate limit exceeded",
+  "status": 429,
+  "detail": "Too many requests. Try again in {N} seconds."
+}
+```
+
+### Configuration
+
+`ConsultantApi:RateLimiting` section in `appsettings.json`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Enabled` | `true` | Enable/disable rate limiting (only applies when consultant auth is configured) |
+| `WritePermitLimit` | `20` | Max POST/PUT/DELETE/PATCH requests per window |
+| `ReadPermitLimit` | `60` | Max GET/HEAD/OPTIONS requests per window |
+| `WindowSeconds` | `60` | Sliding window duration |
+| `SegmentsPerWindow` | `6` | Segments for sliding window granularity |
+
+### Middleware Ordering
+
+Rate limiting is placed between authentication and authorization:
+
+```
+UseAuthentication() → UseRateLimiter() → UseAuthorization()
+```
+
+This ensures user claims are available for the role check, and rate-limited requests are rejected before authorization evaluation.
+
+> **Tests**: `ConsultantRateLimitTests` (15 tests — defaults, config binding, write/read limits, separate buckets, method classification, non-consultant passthrough, anonymous passthrough, rejection behavior).
+
 ## Risk Assessment
 
 | Component | Risk | Rationale |
@@ -348,7 +529,7 @@ This handles:
 ## Future Considerations (Not in scope)
 
 - **OAuth2 provider**: Replace shared secret with Entra ID or similar. The auth scheme abstraction makes this a swap.
-- **WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.
+- ~~**WebSocket/SSE streaming**: Replace polling with server-sent events for real-time responses. Would require a new hub method or SSE endpoint.~~ — **Resolved**: `GET /api/rooms/{roomId}/messages/stream` SSE endpoint streams room messages in real-time. `MessageBroadcaster` (singleton) provides per-room pub/sub. Subscribe-first pattern avoids race conditions. Overflow detection emits `resync` event and closes connection. At-least-once delivery with client-side dedup by message ID. Covers all `MessageService` message-posting methods. 18 tests (13 MessageBroadcaster + 5 MessageService broadcast integration).
 - ~~**Consultant identity in UI**: Show consultant messages differently from human messages in the frontend.~~ — **Resolved**: Consultant messages now carry `SenderRole = "Consultant"` (derived from `User.IsInRole("Consultant")` claim). Frontend renders a copper-colored "Consultant" role pill in ChatPanel and SearchPanel. DmPanel shows consultant label + distinct bubble styling. DM service includes consultant messages in the human inbox via `HumanSideSenderIds` array. `DmMessage` model includes `SenderRole` field.
-- **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages.
+- **Rate limiting**: Prevent the consultant from overwhelming agents with rapid-fire messages. **Resolved**: ASP.NET Core built-in rate limiting middleware with `PartitionedRateLimiter`. Separate sliding window buckets for write operations (POST/PUT/DELETE/PATCH: 20/min default) and read operations (GET/HEAD/OPTIONS: 60/min default). Only applies to consultant-authenticated requests — regular users and cookie-auth pass through unthrottled. Returns 429 with `Retry-After` header and ProblemDetails-style JSON body. Configurable via `ConsultantApi:RateLimiting` section (`Enabled`, `WritePermitLimit`, `ReadPermitLimit`, `WindowSeconds`, `SegmentsPerWindow`). Middleware placed between `UseAuthentication()` and `UseAuthorization()` so user claims are available for role check. 15 tests.
 - ~~**Analytics export**: CSV/JSON download endpoints for agent performance and LLM usage records.~~ — **Resolved** (implemented previously).

@@ -23,7 +23,7 @@ public sealed class SearchControllerTests : IDisposable
     {
         var result = await _controller.Search(q: null);
         var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
-        Assert.Contains("empty_query", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "empty_query");
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public sealed class SearchControllerTests : IDisposable
     {
         var result = await _controller.Search(q: "test", scope: "invalid");
         var bad = Assert.IsType<BadRequestObjectResult>(result.Result);
-        Assert.Contains("invalid_scope", bad.Value!.ToString()!);
+        ProblemDetailsAssert.HasCode(bad.Value, "invalid_scope");
     }
 
     [Fact]

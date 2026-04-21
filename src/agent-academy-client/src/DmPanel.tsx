@@ -1,12 +1,8 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   Button,
-  makeStyles,
   mergeClasses,
-  shorthands,
   Spinner,
   Textarea,
 } from "@fluentui/react-components";
@@ -25,248 +21,11 @@ import {
   getDmThreads,
   getDmThreadMessages,
   sendDmToAgent,
+  exportDmMessages,
 } from "./api";
-
-// ── Styles ──────────────────────────────────────────────────────────────
-
-const useLocalStyles = makeStyles({
-  root: {
-    display: "flex",
-    height: "100%",
-    overflow: "hidden",
-  },
-  sidebar: {
-    width: "220px",
-    minWidth: "220px",
-    borderRight: "1px solid var(--aa-border)",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-    background: "var(--aa-panel)",
-  },
-  sidebarHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    ...shorthands.padding("8px", "12px"),
-    borderBottom: "1px solid var(--aa-border)",
-  },
-  threadList: {
-    flex: 1,
-    overflowY: "auto",
-    ...shorthands.padding("4px", "0"),
-  },
-  threadItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    ...shorthands.padding("8px", "12px"),
-    cursor: "pointer",
-    border: "none",
-    background: "transparent",
-    width: "100%",
-    textAlign: "left",
-    color: "inherit",
-    transitionProperty: "background",
-    transitionDuration: "0.1s",
-    "&:hover": {
-      background: "rgba(91, 141, 239, 0.06)",
-    },
-  },
-  threadItemSelected: {
-    background: "rgba(91, 141, 239, 0.12)",
-  },
-  threadInfo: {
-    flex: 1,
-    minWidth: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
-  threadNameRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-  },
-  threadPreview: {
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    color: "var(--aa-soft)",
-    fontSize: "10px",
-  },
-  threadTime: {
-    fontSize: "10px",
-    color: "var(--aa-soft)",
-    whiteSpace: "nowrap",
-    fontFamily: "var(--mono)",
-  },
-  chatArea: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  chatHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    ...shorthands.padding("8px", "16px"),
-    borderBottom: "1px solid var(--aa-border)",
-  },
-  messageList: {
-    flex: 1,
-    overflowY: "auto",
-    ...shorthands.padding("14px", "20px"),
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  msgRow: {
-    display: "flex",
-    gap: "10px",
-    maxWidth: "85%",
-  },
-  msgRowHuman: {
-    alignSelf: "flex-end",
-    flexDirection: "row-reverse",
-  },
-  msgBubble: {
-    ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("8px"),
-    backgroundColor: "var(--aa-panel)",
-    border: "1px solid var(--aa-border)",
-    maxWidth: "100%",
-  },
-  msgBubbleHuman: {
-    backgroundColor: "rgba(91, 141, 239, 0.15)",
-    ...shorthands.borderColor("rgba(91, 141, 239, 0.3)"),
-    color: "var(--aa-text)",
-  },
-  msgBubbleConsultant: {
-    backgroundColor: "rgba(224, 151, 110, 0.15)",
-    ...shorthands.borderColor("rgba(224, 151, 110, 0.3)"),
-    color: "var(--aa-text)",
-  },
-  msgMeta: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    marginBottom: "2px",
-  },
-  msgTime: {
-    fontSize: "10px",
-    color: "var(--aa-soft)",
-    fontFamily: "var(--mono)",
-    marginTop: "4px",
-  },
-  msgTimeHuman: {
-    textAlign: "right",
-    color: "var(--aa-soft)",
-  },
-  msgContent: {
-    fontFamily: "var(--mono)",
-    fontSize: "13px",
-    lineHeight: 1.6,
-    "& p": { margin: 0 },
-    "& pre": {
-      backgroundColor: "var(--aa-bg)",
-      ...shorthands.padding("8px"),
-      ...shorthands.borderRadius("4px"),
-      overflowX: "auto",
-      fontSize: "12px",
-    },
-    "& code": {
-      fontSize: "12px",
-    },
-  },
-  composer: {
-    borderTop: "1px solid var(--aa-border)",
-    background: "var(--aa-panel)",
-    ...shorthands.padding("10px", "16px"),
-    display: "flex",
-    gap: "8px",
-    alignItems: "flex-end",
-  },
-  composerInput: {
-    flex: 1,
-  },
-  emptyState: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    height: "100%",
-    gap: "12px",
-    color: "var(--aa-soft)",
-    ...shorthands.padding("24px"),
-    textAlign: "center",
-  },
-  emptyIcon: {
-    fontSize: "26px",
-    opacity: 0.5,
-  },
-  rolePill: {
-    fontFamily: "var(--mono)",
-    fontSize: "9px",
-    fontWeight: 600,
-    ...shorthands.borderRadius("3px"),
-    ...shorthands.padding("3px", "6px", "2px"),
-    textTransform: "uppercase",
-    lineHeight: "1",
-  },
-  agentDropdown: {
-    position: "absolute",
-    top: "100%",
-    right: 0,
-    zIndex: 100,
-    backgroundColor: "var(--aa-panel-alt)",
-    border: "1px solid var(--aa-border)",
-    ...shorthands.borderRadius("6px"),
-    boxShadow: "var(--aa-shadow)",
-    minWidth: "200px",
-    ...shorthands.padding("4px", "0"),
-    marginTop: "4px",
-  },
-  agentOption: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    ...shorthands.padding("8px", "12px"),
-    cursor: "pointer",
-    border: "none",
-    background: "transparent",
-    width: "100%",
-    textAlign: "left",
-    color: "inherit",
-    "&:hover": {
-      background: "rgba(91, 141, 239, 0.06)",
-    },
-  },
-  newMsgWrapper: {
-    position: "relative",
-  },
-  limitedModeNotice: {
-    borderTop: "1px solid var(--aa-border)",
-    ...shorthands.padding("12px", "16px"),
-    color: "var(--aa-gold)",
-    backgroundColor: "rgba(255, 152, 0, 0.06)",
-    fontSize: "12px",
-    lineHeight: 1.6,
-  },
-  avatar: {
-    display: "grid",
-    placeItems: "center",
-    borderRadius: "50%",
-    fontFamily: "var(--mono)",
-    fontWeight: 700,
-    color: "white",
-    flexShrink: 0,
-  },
-  avatarSm: { width: "28px", height: "28px", fontSize: "9px" },
-  avatarMd: { width: "32px", height: "32px", fontSize: "10px" },
-  avatarLg: { width: "36px", height: "36px", fontSize: "11px" },
-});
+import { DmMessageBubble, useDmPanelStyles } from "./dm";
+import { useMessageSSE } from "./useMessageSSE";
+import { useDmThreadSSE } from "./useDmThreadSSE";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -288,13 +47,15 @@ function initials(name: string): string {
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
-  const s = useLocalStyles();
+  const s = useDmPanelStyles();
 
   const [threads, setThreads] = useState<DmThreadSummary[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DmMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [exportingDm, setExportingDm] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -313,6 +74,21 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     }
   }, []);
 
+  // Debounced refresh: collapses rapid SSE invalidations into a single refetch.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const debouncedRefresh = useMemo(
+    () => () => {
+      if (debounceRef.current !== undefined) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => void refreshThreads(), 500);
+    },
+    [refreshThreads],
+  );
+  useEffect(() => () => { if (debounceRef.current !== undefined) clearTimeout(debounceRef.current); }, []);
+
+  // SSE for real-time thread list updates (replaces 10s polling)
+  useDmThreadSSE(debouncedRefresh, !readOnly);
+
+  // Initial load
   useEffect(() => {
     let active = true;
 
@@ -322,20 +98,12 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       }
     });
 
-    if (readOnly) {
-      return () => {
-        active = false;
-      };
-    }
-
-    const interval = setInterval(() => void refreshThreads(), 10000);
     return () => {
       active = false;
-      clearInterval(interval);
     };
-  }, [readOnly, refreshThreads]);
+  }, [refreshThreads]);
 
-  // Load messages when thread selected
+  // Load messages when thread selected (initial fetch only — SSE handles live updates)
   const refreshMessages = useCallback(async (agentId: string) => {
     try {
       const data = await getDmThreadMessages(agentId);
@@ -345,16 +113,34 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     }
   }, []);
 
+  // SSE live message stream
+  const handleSseMessage = useCallback((msg: DmMessage) => {
+    setMessages((prev) => {
+      // Deduplicate: at-least-once delivery means we may see messages
+      // that were already fetched in the initial REST load.
+      if (prev.some((m) => m.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
+    // Refresh thread list sidebar so lastMessage/timestamp update
+    void refreshThreads();
+  }, [refreshThreads]);
+
+  const handleResync = useCallback(() => {
+    // Channel overflow — do a full reload of the current thread
+    if (selectedAgentId) void refreshMessages(selectedAgentId);
+  }, [selectedAgentId, refreshMessages]);
+
+  useMessageSSE(
+    selectedAgentId,
+    handleSseMessage,
+    handleResync,
+    !readOnly,
+  );
+
   useEffect(() => {
     if (!selectedAgentId) return;
     void refreshMessages(selectedAgentId);
-    if (readOnly) {
-      return;
-    }
-
-    const interval = setInterval(() => void refreshMessages(selectedAgentId), 3000);
-    return () => clearInterval(interval);
-  }, [readOnly, selectedAgentId, refreshMessages]);
+  }, [selectedAgentId, refreshMessages]);
 
   // Auto-scroll
   useEffect(() => {
@@ -391,13 +177,14 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
   const doSend = useCallback(async () => {
     if (readOnly || !selectedAgentId || !input.trim()) return;
     setSending(true);
+    setSendError(null);
     try {
       await sendDmToAgent(selectedAgentId, input.trim());
       setInput("");
       void refreshMessages(selectedAgentId);
       void refreshThreads();
     } catch {
-      // Send failed — input is preserved so the user can retry
+      setSendError("Failed to send message. Your text is preserved — try again.");
     } finally {
       setSending(false);
     }
@@ -525,8 +312,34 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
       <div className={s.chatArea}>
         {selectedAgent ? (
           <>
-            <div className={s.chatHeader}>
+            <div className={s.chatHeader} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontWeight: 600 }}>{selectedAgent.name}</span>
+              <select
+                value=""
+                onChange={async (e) => {
+                  const format = e.target.value as "json" | "markdown";
+                  if (!format || !selectedAgentId) return;
+                  e.target.value = "";
+                  setExportingDm(true);
+                  try {
+                    await exportDmMessages(selectedAgentId, format);
+                  } catch {
+                    // download helper handles errors
+                  } finally {
+                    setExportingDm(false);
+                  }
+                }}
+                disabled={exportingDm}
+                style={{
+                  background: "var(--aa-surface, #1e1e2e)", border: "1px solid var(--aa-border, #333)",
+                  borderRadius: "4px", padding: "2px 6px", color: "inherit", cursor: "pointer",
+                  fontSize: "12px", opacity: exportingDm ? 0.6 : 1,
+                }}
+              >
+                <option value="">{exportingDm ? "Exporting…" : "Export ▾"}</option>
+                <option value="json">Export as JSON</option>
+                <option value="markdown">Export as Markdown</option>
+              </select>
             </div>
 
             <div ref={scrollRef} className={s.messageList} role="log" aria-label="Direct messages">
@@ -550,6 +363,20 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
               </div>
             ) : (
               <div className={s.composer}>
+                {sendError && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "6px 12px", borderRadius: "6px",
+                    backgroundColor: "rgba(220, 53, 69, 0.08)",
+                    border: "1px solid rgba(220, 53, 69, 0.2)",
+                    color: "var(--aa-copper, #dc3545)", fontSize: "12px",
+                  }}>
+                    <span style={{ flex: 1 }}>⚠ {sendError}</span>
+                    <button onClick={() => setSendError(null)} style={{
+                      background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "12px",
+                    }}>✕</button>
+                  </div>
+                )}
                 <Textarea
                   className={s.composerInput}
                   appearance="filled-darker"
@@ -583,61 +410,3 @@ export default function DmPanel({ agents, readOnly = false }: DmPanelProps) {
     </div>
   );
 }
-
-// ── Message bubble ──────────────────────────────────────────────────────
-
-const DmMessageBubble = memo(function DmMessageBubble({
-  message,
-}: {
-  message: DmMessage;
-}) {
-  const s = useLocalStyles();
-  const isHuman = message.isFromHuman;
-  const isConsultant = isHuman && message.senderRole === "Consultant";
-  const consultantColors = isConsultant ? roleColor("Consultant") : null;
-
-  return (
-    <div className={mergeClasses(s.msgRow, isHuman && s.msgRowHuman)}>
-      <div>
-        <div className={mergeClasses(
-          s.msgBubble,
-          isHuman && !isConsultant && s.msgBubbleHuman,
-          isConsultant && s.msgBubbleConsultant,
-        )}>
-          {!isHuman && (
-            <div className={s.msgMeta}>
-              <span style={{ fontWeight: 600, fontSize: "13px" }}>
-                {message.senderName}
-              </span>
-            </div>
-          )}
-          {isConsultant && (
-            <div className={s.msgMeta}>
-              <span style={{ fontWeight: 600, fontSize: "13px" }}>
-                {message.senderName}
-              </span>
-              <span
-                style={{
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  padding: "1px 6px",
-                  borderRadius: "4px",
-                  backgroundColor: consultantColors!.accent + "26",
-                  color: consultantColors!.accent,
-                }}
-              >
-                {formatRole("Consultant")}
-              </span>
-            </div>
-          )}
-          <div className={s.msgContent}>
-            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
-          </div>
-        </div>
-        <div className={mergeClasses(s.msgTime, isHuman && s.msgTimeHuman)}>
-          {formatTime(message.sentAt)}
-        </div>
-      </div>
-    </div>
-  );
-});

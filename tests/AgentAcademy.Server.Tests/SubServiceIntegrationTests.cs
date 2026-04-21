@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -24,10 +25,12 @@ public class SubServiceIntegrationTests : IDisposable
     private readonly ActivityPublisher _activityPublisher;
     private readonly InitializationService _initialization;
     private readonly RoomService _rooms;
+    private readonly WorkspaceRoomService _workspaceRooms;
+    private readonly RoomLifecycleService _roomLifecycle;
     private readonly TaskOrchestrationService _taskOrchestration;
     private readonly TaskQueryService _taskQueries;
     private readonly TaskLifecycleService _taskLifecycle;
-    private readonly MessageService _messages;
+    private readonly IMessageService _messages;
     private readonly AgentLocationService _agentLocations;
     private readonly BreakoutRoomService _breakouts;
     private readonly PlanService _plans;
@@ -88,16 +91,19 @@ public class SubServiceIntegrationTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
-        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activityPublisher);
+        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
+        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, _activityPublisher, taskDeps);
         _agentLocations = new AgentLocationService(_db, _catalog, _activityPublisher);
         _plans = new PlanService(_db);
-        _messages = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService);
+        _messages = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher, sessionService, new MessageBroadcaster());
         _breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, _activityPublisher, sessionService, _taskQueries, _agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, _breakouts, _agentLocations, _messages, _activityPublisher);
-        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, _activityPublisher, sessionService, _messages);
-        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _rooms, _agentLocations, _messages, _breakouts);
+        _rooms = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, _messages, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        _workspaceRooms = new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, _activityPublisher);
+        _roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, _activityPublisher);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, _activityPublisher, crashRecovery, _rooms, _workspaceRooms);
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, _activityPublisher, _taskLifecycle, _taskQueries, _rooms, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), _roomLifecycle, _agentLocations, _messages, _breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
     }
 
     public void Dispose()
@@ -202,7 +208,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
         // Create a task room in the same workspace that alphabetically sorts before main
         var now = DateTime.UtcNow;
@@ -239,7 +245,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        await _rooms.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
+        await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync("/home/test/project-a");
 
         // Add a room for a different workspace
         var now = DateTime.UtcNow;
@@ -280,11 +286,10 @@ public class SubServiceIntegrationTests : IDisposable
 
         var room = await _rooms.GetRoomAsync("main");
         Assert.NotNull(room);
-        // All agents get location entries in the default room at init
-        Assert.Equal(3, room.Participants.Count);
+        // Participants reflect room membership — no phase filtering.
+        // Both AutoJoinDefaultRoom agents are present regardless of phase.
         Assert.Contains(room.Participants, p => p.AgentId == "planner-1");
         Assert.Contains(room.Participants, p => p.AgentId == "engineer-1");
-        Assert.Contains(room.Participants, p => p.AgentId == "reviewer-1");
     }
 
     [Fact]
@@ -301,18 +306,28 @@ public class SubServiceIntegrationTests : IDisposable
             PreferredRoles: ["Planner"]
         ));
 
-        // Task room should have the moved agents
+        // Participants reflect actual agent locations — no phase filtering.
+        // Both planner and engineer (both AutoJoinDefaultRoom) are in the task room.
         var taskRoom = await _rooms.GetRoomAsync(result.Room.Id);
         Assert.NotNull(taskRoom);
         Assert.Contains(taskRoom.Participants, p => p.AgentId == "planner-1");
         Assert.Contains(taskRoom.Participants, p => p.AgentId == "engineer-1");
 
-        // Default room should only have agents NOT moved (reviewer-1 has AutoJoinDefaultRoom=false)
+        // Transition the task room to Implementation and verify both still present
+        await _rooms.TransitionPhaseAsync(result.Room.Id, CollaborationPhase.Implementation, force: true);
+        var taskRoomAfter = await _rooms.GetRoomAsync(result.Room.Id);
+        Assert.NotNull(taskRoomAfter);
+        Assert.Contains(taskRoomAfter.Participants, p => p.AgentId == "planner-1");
+        Assert.Contains(taskRoomAfter.Participants, p => p.AgentId == "engineer-1");
+
+        // Main room: reviewer-1 is present because InitializationService
+        // creates a location for all agents in the default room. Planner and
+        // engineer were moved to the task room, so only reviewer remains.
         var mainRoom = await _rooms.GetRoomAsync("main");
         Assert.NotNull(mainRoom);
-        Assert.Contains(mainRoom.Participants, p => p.AgentId == "reviewer-1");
         Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "planner-1");
         Assert.DoesNotContain(mainRoom.Participants, p => p.AgentId == "engineer-1");
+        Assert.Contains(mainRoom.Participants, p => p.AgentId == "reviewer-1");
     }
 
     // ── Message Management ──────────────────────────────────────
@@ -741,7 +756,7 @@ public class SubServiceIntegrationTests : IDisposable
         await _initialization.InitializeAsync();
 
         var room = await _rooms.TransitionPhaseAsync(
-            "main", CollaborationPhase.FinalSynthesis);
+            "main", CollaborationPhase.FinalSynthesis, force: true);
 
         Assert.Equal(RoomStatus.Completed, room.Status);
         Assert.Equal(CollaborationPhase.FinalSynthesis, room.CurrentPhase);
@@ -1010,6 +1025,7 @@ public class SubServiceIntegrationTests : IDisposable
             RecentActivity: [.. recentActivity],
             AgentLocations: agentLocs,
             BreakoutRooms: breakoutList,
+            GoalCards: new GoalCardSummary(0, 0, 0, 0, 0, 0, 0, 0),
             GeneratedAt: DateTime.UtcNow);
 
         Assert.Equal(3, overview.ConfiguredAgents.Count);
@@ -1159,15 +1175,15 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        // This should create a workspace default room AND retire the legacy one
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        // Legacy room already has workspace path → should be recognized as workspace default
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
-        Assert.NotEqual("main", defaultRoomId);
+        Assert.Equal("main", defaultRoomId);
 
-        // Legacy room should have WorkspacePath cleared
+        // Legacy room should keep its WorkspacePath (it IS the workspace default)
         var legacyRoom = await _db.Rooms.FindAsync("main");
         Assert.NotNull(legacyRoom);
-        Assert.Null(legacyRoom!.WorkspacePath);
+        Assert.Equal(workspacePath, legacyRoom!.WorkspacePath);
 
         // Only the workspace default room should appear in room list
         var rooms = await _rooms.GetRoomsAsync();
@@ -1215,7 +1231,7 @@ public class SubServiceIntegrationTests : IDisposable
         await _db.SaveChangesAsync();
 
         // Should find existing workspace room and retire legacy
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
         Assert.Equal("my-project-main", defaultRoomId);
 
         var legacyRoom = await _db.Rooms.FindAsync("main");
@@ -1227,7 +1243,7 @@ public class SubServiceIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task EnsureDefaultRoom_DoesNotRetire_WhenLegacyRoomNotBackfilled()
+    public async Task EnsureDefaultRoom_AdoptsLegacyRoom_WhenNotBackfilled()
     {
         var workspacePath = "/home/test/my-project";
         _db.Workspaces.Add(new WorkspaceEntity
@@ -1238,7 +1254,7 @@ public class SubServiceIntegrationTests : IDisposable
             CreatedAt = DateTime.UtcNow
         });
 
-        // Legacy room with no workspace (never backfilled)
+        // Legacy room with no workspace (never backfilled) — this is the bug case
         var now = DateTime.UtcNow;
         _db.Rooms.Add(new RoomEntity
         {
@@ -1252,11 +1268,11 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
 
-        // Legacy room should still have null WorkspacePath (unchanged)
+        // Legacy room should now be adopted (WorkspacePath set to workspace)
         var legacyRoom = await _db.Rooms.FindAsync("main");
-        Assert.Null(legacyRoom!.WorkspacePath);
+        Assert.Equal(workspacePath, legacyRoom!.WorkspacePath);
     }
 
     // ── RenameRoomAsync ────────────────────────────────────────
@@ -1318,7 +1334,7 @@ public class SubServiceIntegrationTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var defaultRoomId = await _rooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
+        var defaultRoomId = await _workspaceRooms.EnsureDefaultRoomForWorkspaceAsync(workspacePath);
         var room = await _db.Rooms.FindAsync(defaultRoomId);
 
         Assert.Equal(_catalog.DefaultRoomName, room!.Name);
@@ -1504,7 +1520,7 @@ public class SubServiceIntegrationTests : IDisposable
         Assert.Equal(nameof(RoomStatus.Active), room!.Status);
 
         // Run cleanup
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(1, count);
         var cleaned = await _db.Rooms.FindAsync(roomId);
@@ -1519,7 +1535,7 @@ public class SubServiceIntegrationTests : IDisposable
         // Create an empty room (no tasks)
         var room = await _rooms.CreateRoomAsync("Empty Room");
 
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
         var entity = await _db.Rooms.FindAsync(room.Id);
@@ -1540,7 +1556,7 @@ public class SubServiceIntegrationTests : IDisposable
         entity.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
         var mainRoom = await _db.Rooms.FindAsync("main");
@@ -1565,7 +1581,7 @@ public class SubServiceIntegrationTests : IDisposable
         entity.CompletedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
-        var count = await _rooms.CleanupStaleRoomsAsync();
+        var count = await _roomLifecycle.CleanupStaleRoomsAsync();
 
         Assert.Equal(0, count);
     }

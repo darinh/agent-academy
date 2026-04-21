@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
@@ -13,12 +14,12 @@ namespace AgentAcademy.Server.Auth;
 public sealed class CopilotTokenRefreshMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly ILogger<CopilotTokenRefreshMiddleware> _logger;
 
     public CopilotTokenRefreshMiddleware(
         RequestDelegate next,
-        CopilotTokenProvider tokenProvider,
+        ICopilotTokenProvider tokenProvider,
         ILogger<CopilotTokenRefreshMiddleware> logger)
     {
         _next = next;

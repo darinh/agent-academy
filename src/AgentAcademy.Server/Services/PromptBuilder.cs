@@ -20,9 +20,10 @@ internal static class PromptBuilder
         List<AgentMemory>? memories = null,
         List<MessageEntity>? directMessages = null,
         string? sessionSummary = null,
-        string? sprintPreamble = null)
+        string? sprintPreamble = null,
+        string? specVersion = null)
     {
-        var lines = new List<string>();
+        var lines = new List<string> { PromptSanitizer.BoundaryInstruction, "" };
 
         if (!string.IsNullOrEmpty(sprintPreamble))
         {
@@ -32,40 +33,46 @@ internal static class PromptBuilder
         if (!string.IsNullOrEmpty(sessionSummary))
         {
             lines.Add("=== PREVIOUS CONVERSATION SUMMARY ===");
-            lines.Add(sessionSummary);
+            lines.Add(PromptSanitizer.WrapBlock(sessionSummary));
             lines.Add("");
         }
 
         AppendMemories(lines, memories, agent.Id);
 
         lines.Add("=== CURRENT ROOM CONTEXT ===");
-        lines.Add($"Room: {room.Name}");
+        lines.Add($"Room: {PromptSanitizer.SanitizeMetadata(room.Name)}");
 
         if (room.ActiveTask is not null)
         {
             lines.Add("");
             lines.Add("=== TASK ===");
-            lines.Add($"Title: {room.ActiveTask.Title}");
-            lines.Add($"Description: {room.ActiveTask.Description}");
-            if (!string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria))
-                lines.Add($"Success criteria: {room.ActiveTask.SuccessCriteria}");
+            lines.Add(PromptSanitizer.WrapBlock(
+                $"Title: {room.ActiveTask.Title}\n" +
+                $"Priority: {room.ActiveTask.Priority}\n" +
+                $"Description: {room.ActiveTask.Description}" +
+                (string.IsNullOrEmpty(room.ActiveTask.SuccessCriteria)
+                    ? ""
+                    : $"\nSuccess criteria: {room.ActiveTask.SuccessCriteria}")));
         }
 
         if (activeTaskItems is { Count: > 0 })
         {
             lines.Add("");
             lines.Add("=== IN-FLIGHT WORK ITEMS ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var item in activeTaskItems)
             {
                 var workspace = item.BreakoutRoomId is not null ? " [in workspace]" : "";
-                lines.Add($"- [{item.Status}] \"{item.Title}\" → assigned to {item.AssignedTo}{workspace}");
+                lines.Add($"- [{item.Status}] \"{PromptSanitizer.SanitizeMetadata(item.Title)}\" → assigned to {PromptSanitizer.SanitizeMetadata(item.AssignedTo)}{workspace}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         if (specContext is not null)
         {
+            var versionTag = specVersion is not null ? $" (v{specVersion})" : "";
             lines.Add("");
-            lines.Add("=== PROJECT SPECIFICATION ===");
+            lines.Add($"=== PROJECT SPECIFICATION{versionTag} ===");
             lines.Add("The project maintains a living spec in specs/. Relevant sections:");
             lines.Add(specContext);
         }
@@ -74,10 +81,12 @@ internal static class PromptBuilder
         {
             lines.Add("");
             lines.Add("=== RECENT CONVERSATION ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var msg in room.RecentMessages.TakeLast(20))
             {
-                lines.Add($"[{msg.SenderName} ({msg.SenderRole ?? msg.SenderKind.ToString()})]: {msg.Content}");
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(msg.SenderName)} ({PromptSanitizer.SanitizeMetadata(msg.SenderRole ?? msg.SenderKind.ToString())})]: {PromptSanitizer.EscapeMarkers(msg.Content)}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         AppendDirectMessages(lines, directMessages, agent.Id);
@@ -100,26 +109,28 @@ internal static class PromptBuilder
         List<AgentMemory>? memories = null,
         List<MessageEntity>? directMessages = null,
         string? sessionSummary = null,
-        string? specContext = null)
+        string? specContext = null,
+        string? specVersion = null)
     {
-        var lines = new List<string>();
+        var lines = new List<string> { PromptSanitizer.BoundaryInstruction, "" };
 
         if (!string.IsNullOrEmpty(sessionSummary))
         {
             lines.Add("=== PREVIOUS WORK SUMMARY ===");
-            lines.Add(sessionSummary);
+            lines.Add(PromptSanitizer.WrapBlock(sessionSummary));
             lines.Add("");
         }
 
         AppendMemories(lines, memories, agent.Id);
 
-        lines.Add($"=== BREAKOUT ROOM: {br.Name} ===");
+        lines.Add($"=== BREAKOUT ROOM: {PromptSanitizer.SanitizeMetadata(br.Name)} ===");
         lines.Add($"Round: {round}");
 
         if (specContext is not null)
         {
+            var versionTag = specVersion is not null ? $" (v{specVersion})" : "";
             lines.Add("");
-            lines.Add("=== PROJECT SPECIFICATIONS ===");
+            lines.Add($"=== PROJECT SPECIFICATIONS{versionTag} ===");
             lines.Add("Sections marked with ★ are linked to your current task.");
             lines.Add(specContext);
         }
@@ -128,25 +139,47 @@ internal static class PromptBuilder
         {
             lines.Add("");
             lines.Add("=== ASSIGNED TASKS ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var task in br.Tasks)
             {
-                lines.Add($"Task: {task.Title}");
-                lines.Add($"Description: {task.Description}");
+                lines.Add($"Task: {PromptSanitizer.EscapeMarkers(task.Title)}");
+                lines.Add($"Description: {PromptSanitizer.EscapeMarkers(task.Description)}");
                 lines.Add($"Status: {task.Status}");
                 lines.Add("");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         if (br.RecentMessages.Count > 0)
         {
             lines.Add("=== WORK LOG ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var msg in br.RecentMessages.TakeLast(10))
             {
-                lines.Add($"[{msg.SenderName}]: {msg.Content}");
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(msg.SenderName)}]: {PromptSanitizer.EscapeMarkers(msg.Content)}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
         }
 
         AppendDirectMessages(lines, directMessages, agent.Id);
+
+        lines.Add("");
+        lines.Add("=== GOAL CARD ===");
+        lines.Add("Before starting significant work on a task, create a goal card to capture");
+        lines.Add("your structured intent. This helps detect drift and enriches PR descriptions.");
+        lines.Add("");
+        lines.Add("Run: CREATE_GOAL_CARD with these fields:");
+        lines.Add("  task_id        — the task you are working on");
+        lines.Add("  task_description — restate the task in your own words");
+        lines.Add("  intent         — what you plan to do (your approach)");
+        lines.Add("  divergence     — where your intent differs from the task description");
+        lines.Add("  steelman       — strongest argument FOR your approach");
+        lines.Add("  strawman       — strongest argument AGAINST your approach");
+        lines.Add("  verdict        — Proceed | ProceedWithCaveat | Challenge");
+        lines.Add("  fresh_eyes_1/2/3 — three questions a reviewer should consider");
+        lines.Add("");
+        lines.Add("If verdict is Challenge, STOP and discuss before proceeding.");
+        lines.Add("If verdict is ProceedWithCaveat, note the caveat and proceed carefully.");
 
         lines.Add("");
         lines.Add("=== YOUR TURN ===");
@@ -166,19 +199,20 @@ internal static class PromptBuilder
     /// this DOES include the reviewer's StartupPrompt.
     /// </summary>
     internal static string BuildReviewPrompt(
-        AgentDefinition reviewer, string agentName, string workReport, string? specContext)
+        AgentDefinition reviewer, string agentName, string workReport, string? specContext, string? specVersion = null)
     {
-        var lines = new List<string> { reviewer.StartupPrompt, "" };
+        var lines = new List<string> { reviewer.StartupPrompt, "", PromptSanitizer.BoundaryInstruction, "" };
         lines.Add("=== REVIEW REQUEST ===");
-        lines.Add($"{agentName} has completed work and is presenting their results.");
+        lines.Add($"{PromptSanitizer.SanitizeMetadata(agentName)} has completed work and is presenting their results.");
         lines.Add("");
         lines.Add("=== WORK REPORT ===");
-        lines.Add(workReport);
+        lines.Add(PromptSanitizer.WrapBlock(workReport));
 
         if (specContext is not null)
         {
+            var versionTag = specVersion is not null ? $" (v{specVersion})" : "";
             lines.Add("");
-            lines.Add("=== SPEC SECTIONS (verify accuracy against delivered work) ===");
+            lines.Add($"=== SPEC SECTIONS{versionTag} (verify accuracy against delivered work) ===");
             lines.Add(specContext);
         }
 
@@ -273,23 +307,27 @@ internal static class PromptBuilder
         if (ownMemories.Count > 0)
         {
             lines.Add("=== YOUR MEMORIES ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var m in ownMemories)
             {
                 var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
                 var ttlTag = m.ExpiresAt.HasValue ? $" [expires {m.ExpiresAt.Value:yyyy-MM-dd}]" : "";
-                lines.Add($"[{m.Category}] {m.Key}: {m.Value}{staleTag}{ttlTag}");
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(m.Category)}] {PromptSanitizer.SanitizeMetadata(m.Key)}: {PromptSanitizer.EscapeMarkers(m.Value)}{staleTag}{ttlTag}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
             lines.Add("");
         }
 
         if (sharedMemories.Count > 0)
         {
             lines.Add("=== SHARED KNOWLEDGE ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
             foreach (var m in sharedMemories)
             {
                 var staleTag = IsMemoryStale(m) ? " ⚠️STALE" : "";
-                lines.Add($"[shared] {m.Key}: {m.Value} (from: {m.AgentId}){staleTag}");
+                lines.Add($"[shared] {PromptSanitizer.SanitizeMetadata(m.Key)}: {PromptSanitizer.EscapeMarkers(m.Value)} (from: {PromptSanitizer.SanitizeMetadata(m.AgentId)}){staleTag}");
             }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
             lines.Add("");
         }
     }
@@ -304,12 +342,174 @@ internal static class PromptBuilder
         lines.Add("");
         lines.Add("=== DIRECT MESSAGES ===");
         lines.Add("These are private messages only you can see. Reply via DM command if needed.");
+        lines.Add(PromptSanitizer.ContentMarkerOpen);
         foreach (var dm in directMessages)
         {
             var direction = dm.SenderId == agentId
-                ? $"[DM to {dm.RecipientId}]"
-                : $"[DM from {dm.SenderName}]";
-            lines.Add($"{direction}: {dm.Content}");
+                ? $"[DM to {PromptSanitizer.SanitizeMetadata(dm.RecipientId)}]"
+                : $"[DM from {PromptSanitizer.SanitizeMetadata(dm.SenderName)}]";
+            lines.Add($"{direction}: {PromptSanitizer.EscapeMarkers(dm.Content)}");
         }
+        lines.Add(PromptSanitizer.ContentMarkerClose);
+    }
+
+    /// <summary>
+    /// Builds the prompt for a post-task retrospective. The agent reflects on
+    /// the completed task, identifies learnings, and stores them via REMEMBER.
+    /// </summary>
+    internal static string BuildRetrospectivePrompt(
+        AgentDefinition agent, RetrospectiveContext context)
+    {
+        var lines = new List<string>
+        {
+            PromptSanitizer.BoundaryInstruction,
+            "",
+            "=== POST-TASK RETROSPECTIVE ===",
+            "",
+            $"You ({agent.Name}, {agent.Role}) have just completed a task. Take a moment to reflect on the work and capture learnings that will help you and the team in future tasks.",
+            "",
+            "=== COMPLETED TASK ===",
+            $"Title: {PromptSanitizer.SanitizeMetadata(context.Title)}",
+            $"Type: {context.TaskType ?? "Unknown"}",
+            $"Description: {PromptSanitizer.EscapeMarkers(context.Description)}"
+        };
+
+        if (!string.IsNullOrEmpty(context.SuccessCriteria))
+            lines.Add($"Success Criteria: {PromptSanitizer.EscapeMarkers(context.SuccessCriteria)}");
+
+        lines.Add("");
+        lines.Add("=== TASK METRICS ===");
+        lines.Add($"Review rounds: {context.ReviewRounds}");
+        lines.Add($"Commit count: {context.CommitCount}");
+
+        if (context.CycleTime.HasValue)
+        {
+            var ct = context.CycleTime.Value;
+            var cycleStr = ct.TotalHours >= 1
+                ? $"{ct.TotalHours:F1} hours"
+                : $"{ct.TotalMinutes:F0} minutes";
+            lines.Add($"Cycle time: {cycleStr}");
+        }
+
+        // Include review feedback if any
+        if (context.ReviewMessages.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("=== REVIEW FEEDBACK ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
+            foreach (var msg in context.ReviewMessages.TakeLast(5))
+            {
+                lines.Add($"[{PromptSanitizer.SanitizeMetadata(msg.Author)}]: {PromptSanitizer.EscapeMarkers(msg.Content)}");
+            }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
+        }
+
+        // Include task comments (findings, evidence, blockers)
+        var relevantComments = context.Comments
+            .Where(c => c.Type is "Finding" or "Evidence" or "Blocker")
+            .ToList();
+        if (relevantComments.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("=== NOTABLE COMMENTS ===");
+            lines.Add(PromptSanitizer.ContentMarkerOpen);
+            foreach (var comment in relevantComments.TakeLast(10))
+            {
+                lines.Add($"[{comment.Type}] {PromptSanitizer.SanitizeMetadata(comment.Author)}: {PromptSanitizer.EscapeMarkers(comment.Content)}");
+            }
+            lines.Add(PromptSanitizer.ContentMarkerClose);
+        }
+
+        lines.Add("");
+        lines.Add("=== INSTRUCTIONS ===");
+        lines.Add("Reflect on this task and produce two outputs:");
+        lines.Add("");
+        lines.Add("1. **REMEMBER commands** (2-5) to store the most valuable learnings. Use these exact categories:");
+        lines.Add("   - `lesson` — general lessons from the experience");
+        lines.Add("   - `pattern` — code or design patterns discovered in the codebase");
+        lines.Add("   - `gotcha` — surprising behavior or non-obvious constraints");
+        lines.Add("   - `incident` — mistakes to avoid repeating");
+        lines.Add("   - `decision` — architectural decisions with rationale");
+        lines.Add("");
+        lines.Add("   Format each REMEMBER exactly like this:");
+        lines.Add("   ```");
+        lines.Add("   REMEMBER:");
+        lines.Add("     category: lesson");
+        lines.Add("     key: descriptive-kebab-case-key");
+        lines.Add("     value: Concise description of the learning. Include enough context to be useful without the original task.");
+        lines.Add("   ```");
+        lines.Add("");
+        lines.Add("2. **Retrospective summary** — a brief (3-5 sentence) summary covering:");
+        lines.Add("   - What went well (patterns to repeat)");
+        lines.Add("   - What was challenging (to anticipate next time)");
+        lines.Add("   - Key insight for the team");
+        lines.Add("");
+        if (context.ReviewRounds > 1)
+        {
+            lines.Add($"NOTE: This task required {context.ReviewRounds} review rounds. Pay special attention to what caused review iterations — this is high-value learning.");
+            lines.Add("");
+        }
+        lines.Add("Focus on learnings specific to THIS task and THIS codebase. Avoid generic advice. Only REMEMBER things you discovered that would not be obvious to a new agent working on a similar task.");
+
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Builds the prompt for a learning digest. The planner reviews
+    /// retrospective summaries and identifies cross-cutting patterns
+    /// to store as shared memories.
+    /// </summary>
+    internal static string BuildDigestPrompt(
+        AgentDefinition agent, List<DigestRetrospective> retrospectives)
+    {
+        var lines = new List<string>
+        {
+            PromptSanitizer.BoundaryInstruction,
+            "",
+            "=== LEARNING DIGEST ===",
+            "",
+            $"You ({agent.Name}, {agent.Role}) are reviewing retrospective summaries from your team's recently completed tasks. Your goal: identify cross-cutting patterns and synthesize them into shared knowledge that benefits all agents.",
+            "",
+            $"=== RETROSPECTIVE SUMMARIES ({retrospectives.Count} tasks) ==="
+        };
+
+        lines.Add(PromptSanitizer.ContentMarkerOpen);
+        foreach (var retro in retrospectives)
+        {
+            lines.Add($"--- Task: {PromptSanitizer.SanitizeMetadata(retro.TaskTitle)} (by {PromptSanitizer.SanitizeMetadata(retro.AgentName)}, {retro.CreatedAt:yyyy-MM-dd}) ---");
+            lines.Add(PromptSanitizer.EscapeMarkers(retro.Content));
+            lines.Add("");
+        }
+        lines.Add(PromptSanitizer.ContentMarkerClose);
+
+        lines.Add("");
+        lines.Add("=== INSTRUCTIONS ===");
+        lines.Add("Analyze the retrospectives above and produce two outputs:");
+        lines.Add("");
+        lines.Add("1. **REMEMBER commands** (3-8) to store cross-cutting learnings as **shared** knowledge. These will be visible to ALL agents on the team.");
+        lines.Add("");
+        lines.Add("   Rules:");
+        lines.Add("   - EVERY REMEMBER must use `category: shared` — no exceptions");
+        lines.Add("   - Focus on patterns that appear across MULTIPLE retrospectives");
+        lines.Add("   - Merge redundant agent-specific learnings into unified shared knowledge");
+        lines.Add("   - Identify contradictions between agents' learnings and resolve them");
+        lines.Add("   - Skip one-off observations that only apply to a single task");
+        lines.Add("");
+        lines.Add("   Format each REMEMBER exactly like this:");
+        lines.Add("   ```");
+        lines.Add("   REMEMBER:");
+        lines.Add("     category: shared");
+        lines.Add("     key: descriptive-kebab-case-key");
+        lines.Add("     value: Concise, actionable learning. Include enough context to be useful without the original tasks.");
+        lines.Add("   ```");
+        lines.Add("");
+        lines.Add("2. **Digest summary** — a brief (3-5 sentence) overview covering:");
+        lines.Add("   - Top recurring themes across the retrospectives");
+        lines.Add("   - Any contradictions or tensions discovered");
+        lines.Add("   - Recommended process improvements for the team");
+        lines.Add("");
+        lines.Add("Focus on actionable, specific insights. Avoid restating what individual retrospectives already said. Your value is synthesis — connecting dots across tasks that individual agents can't see.");
+
+        return string.Join('\n', lines);
     }
 }

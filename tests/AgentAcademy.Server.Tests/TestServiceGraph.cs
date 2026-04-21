@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -25,21 +26,33 @@ internal sealed class TestServiceGraph : IDisposable
     public IAgentExecutor Executor { get; }
     public SystemSettingsService SettingsService { get; }
     public ConversationSessionService SessionService { get; }
-    public MessageService MessageService { get; }
+    public IMessageService MessageService { get; }
+    public MessageBroadcaster MessageBroadcaster { get; }
     public AgentLocationService AgentLocationService { get; }
     public TaskQueryService TaskQueryService { get; }
     public TaskLifecycleService TaskLifecycleService { get; }
-    public BreakoutRoomService BreakoutRoomService { get; }
-    public RoomService RoomService { get; }
+    public TaskDependencyService TaskDependencyService { get; }
+    public IBreakoutRoomService BreakoutRoomService { get; }
+    public IRoomService RoomService { get; }
+    public RoomSnapshotBuilder RoomSnapshotBuilder { get; }
+    public PhaseTransitionValidator PhaseTransitionValidator { get; }
+    public IRoomLifecycleService RoomLifecycleService { get; }
+    public WorkspaceRoomService WorkspaceRoomService { get; }
     public PlanService PlanService { get; }
     public SearchService SearchService { get; }
     public AgentConfigService AgentConfigService { get; }
     public AgentOrchestrator Orchestrator { get; }
     public TaskOrchestrationService TaskOrchestrationService { get; }
     public ProjectScanner ProjectScanner { get; }
+    public WorkspaceService WorkspaceService { get; }
+    public SprintScheduleService SprintScheduleService { get; }
     public IServiceScopeFactory ScopeFactory { get; }
     public LlmUsageTracker UsageTracker { get; }
     public AgentErrorTracker ErrorTracker { get; }
+    public RoomArtifactTracker ArtifactTracker { get; }
+    public ArtifactEvaluatorService ArtifactEvaluator { get; }
+    public SpecManager SpecManager { get; }
+    public GoalCardService GoalCardService { get; }
 
     public TestServiceGraph(List<AgentDefinition>? agents = null)
     {
@@ -63,25 +76,39 @@ internal sealed class TestServiceGraph : IDisposable
             Db, SettingsService, Executor,
             NullLogger<ConversationSessionService>.Instance);
 
+        MessageBroadcaster = new MessageBroadcaster();
         MessageService = new MessageService(
             Db, NullLogger<MessageService>.Instance, Catalog,
-            ActivityPublisher, SessionService);
+            ActivityPublisher, SessionService, MessageBroadcaster);
 
         AgentLocationService = new AgentLocationService(Db, Catalog, ActivityPublisher);
 
+        TaskDependencyService = new TaskDependencyService(
+            Db, NullLogger<TaskDependencyService>.Instance, ActivityPublisher);
+
         TaskQueryService = new TaskQueryService(
-            Db, NullLogger<TaskQueryService>.Instance, Catalog);
+            Db, NullLogger<TaskQueryService>.Instance, Catalog, TaskDependencyService);
 
         TaskLifecycleService = new TaskLifecycleService(
-            Db, NullLogger<TaskLifecycleService>.Instance, Catalog, ActivityPublisher);
+            Db, NullLogger<TaskLifecycleService>.Instance, Catalog, ActivityPublisher, TaskDependencyService);
 
         BreakoutRoomService = new BreakoutRoomService(
             Db, NullLogger<BreakoutRoomService>.Instance, Catalog,
             ActivityPublisher, SessionService, TaskQueryService, AgentLocationService);
 
+        PhaseTransitionValidator = new PhaseTransitionValidator(Db);
+
+        RoomSnapshotBuilder = new RoomSnapshotBuilder(Db, Catalog, PhaseTransitionValidator);
+
         RoomService = new RoomService(
-            Db, NullLogger<RoomService>.Instance, Catalog,
-            ActivityPublisher, SessionService, MessageService);
+            Db, NullLogger<RoomService>.Instance,
+            ActivityPublisher, MessageService, RoomSnapshotBuilder, PhaseTransitionValidator);
+
+        RoomLifecycleService = new RoomLifecycleService(
+            Db, NullLogger<RoomLifecycleService>.Instance, Catalog, ActivityPublisher);
+
+        WorkspaceRoomService = new WorkspaceRoomService(
+            Db, NullLogger<WorkspaceRoomService>.Instance, Catalog, ActivityPublisher);
 
         PlanService = new PlanService(Db);
         SearchService = new SearchService(Db, NullLogger<SearchService>.Instance);
@@ -96,15 +123,21 @@ internal sealed class TestServiceGraph : IDisposable
 
         TaskOrchestrationService = new TaskOrchestrationService(
             Db, NullLogger<TaskOrchestrationService>.Instance, Catalog,
-            ActivityPublisher, TaskLifecycleService, RoomService,
-            AgentLocationService, MessageService, BreakoutRoomService);
+            ActivityPublisher, TaskLifecycleService, TaskQueryService, RoomService, RoomSnapshotBuilder,
+            RoomLifecycleService, AgentLocationService, MessageService, BreakoutRoomService,
+            Substitute.For<IWorktreeService>());
 
         ProjectScanner = new ProjectScanner();
+        WorkspaceService = new WorkspaceService(Db, NullLogger<WorkspaceService>.Instance);
+        SprintScheduleService = new SprintScheduleService(Db);
 
         UsageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         ErrorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
+        ArtifactTracker = new RoomArtifactTracker(Db, ActivityPublisher, NullLogger<RoomArtifactTracker>.Instance);
+        ArtifactEvaluator = new ArtifactEvaluatorService(Db, NullLogger<ArtifactEvaluatorService>.Instance);
+        GoalCardService = new GoalCardService(Db, ActivityPublisher, NullLogger<GoalCardService>.Instance);
 
-        var specManager = new SpecManager();
+        SpecManager = new SpecManager();
         var pipeline = new CommandPipeline(
             Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
         var gitService = new GitService(NullLogger<GitService>.Instance);
@@ -112,17 +145,26 @@ internal sealed class TestServiceGraph : IDisposable
             NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo");
         var memoryLoader = new AgentMemoryLoader(
             scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
+        var breakoutCompletion = new BreakoutCompletionService(
+            scopeFactory, Catalog, Executor, SpecManager, pipeline,
+            memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, Catalog, Executor, specManager, pipeline,
-            gitService, worktreeService, memoryLoader,
+            scopeFactory, Catalog, Executor, SpecManager,
+            gitService, memoryLoader, breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
         var taskAssignment = new TaskAssignmentHandler(
             Catalog, gitService, worktreeService, breakoutLifecycle,
             NullLogger<TaskAssignmentHandler>.Instance);
 
+        var turnRunner = new AgentTurnRunner(
+            Executor, pipeline, taskAssignment, memoryLoader,
+            scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+
         Orchestrator = new AgentOrchestrator(
-            scopeFactory, Catalog, Executor, ActivityBus, specManager,
-            pipeline, breakoutLifecycle, taskAssignment, memoryLoader,
+            scopeFactory,
+            new ConversationRoundRunner(scopeFactory, Catalog, turnRunner, NullLogger<ConversationRoundRunner>.Instance),
+            new DirectMessageRouter(scopeFactory, Catalog, turnRunner, NullLogger<DirectMessageRouter>.Instance),
+            breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
     }
 

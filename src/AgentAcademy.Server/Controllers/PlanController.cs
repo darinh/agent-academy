@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,15 +12,15 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/rooms/{roomId}/plan")]
 public class PlanController : ControllerBase
 {
-    private readonly PlanService _planService;
-    private readonly RoomService _roomService;
-    private readonly BreakoutRoomService _breakoutRoomService;
+    private readonly IPlanService _planService;
+    private readonly IRoomService _roomService;
+    private readonly IBreakoutRoomService _breakoutRoomService;
     private readonly ILogger<PlanController> _logger;
 
     public PlanController(
-        PlanService planService,
-        RoomService roomService,
-        BreakoutRoomService breakoutRoomService,
+        IPlanService planService,
+        IRoomService roomService,
+        IBreakoutRoomService breakoutRoomService,
         ILogger<PlanController> logger)
     {
         _planService = planService;
@@ -38,7 +39,7 @@ public class PlanController : ControllerBase
         {
             var plan = await _planService.GetPlanAsync(roomId);
             if (plan is null)
-                return NotFound(new { error = $"No plan found for room '{roomId}'" });
+                return NotFound(ApiProblem.NotFound($"No plan found for room '{roomId}'"));
 
             return Ok(plan);
         }
@@ -56,7 +57,7 @@ public class PlanController : ControllerBase
     public async Task<IActionResult> SetPlan(string roomId, [FromBody] PlanContent plan)
     {
         if (string.IsNullOrWhiteSpace(plan.Content))
-            return BadRequest(new { error = "Plan content is required" });
+            return BadRequest(ApiProblem.BadRequest("Plan content is required"));
 
         try
         {
@@ -64,7 +65,7 @@ public class PlanController : ControllerBase
             var room = await _roomService.GetRoomAsync(roomId);
             var breakout = room is null ? await _breakoutRoomService.GetBreakoutRoomAsync(roomId) : null;
             if (room is null && breakout is null)
-                return NotFound(new { error = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found"));
 
             await _planService.SetPlanAsync(roomId, plan.Content);
             return Ok(new { status = "saved", roomId });
@@ -86,7 +87,7 @@ public class PlanController : ControllerBase
         {
             var deleted = await _planService.DeletePlanAsync(roomId);
             if (!deleted)
-                return NotFound(new { error = $"No plan found for room '{roomId}'" });
+                return NotFound(ApiProblem.NotFound($"No plan found for room '{roomId}'"));
 
             return Ok(new { status = "deleted", roomId });
         }

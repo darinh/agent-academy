@@ -5,9 +5,11 @@ import {
   sendHumanMessage,
   transitionPhase,
   submitTask,
+  getRoomContextUsage,
 } from "./api";
 import type {
   ActivityEvent,
+  AgentContextUsage,
   AgentPresence,
   CollaborationPhase,
   RoomSnapshot,
@@ -33,6 +35,7 @@ export interface TaskDraft {
   description: string;
   successCriteria: string;
   roomId?: string;
+  priority?: "Critical" | "High" | "Medium" | "Low";
 }
 
 const FALLBACK_POLL_MS = 120_000;
@@ -40,8 +43,10 @@ const RECOVERY_BANNER_DISMISS_MS = 4_000;
 
 const TAB_STORAGE_KEY = "aa-active-tab";
 const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
+const SIDEBAR_PIN_KEY = "aa-sidebar-pinned";
+const NARROW_VIEWPORT_PX = 900;
 
-const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages"]);
+const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts", "goalCards", "forge"]);
 
 function loadTab(): string {
   try {
@@ -51,6 +56,9 @@ function loadTab(): string {
 }
 function loadSidebar(): boolean {
   try { return localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "false"; } catch { return true; }
+}
+function loadSidebarPin(): boolean {
+  try { return localStorage.getItem(SIDEBAR_PIN_KEY) !== "false"; } catch { return true; }
 }
 function loadTransport(): ActivityTransport {
   try {
@@ -65,6 +73,7 @@ const empty: WorkspaceOverview = {
   recentActivity: [],
   agentLocations: [],
   breakoutRooms: [],
+  goalCards: { total: 0, active: 0, challenged: 0, completed: 0, abandoned: 0, verdictProceed: 0, verdictProceedWithCaveat: 0, verdictChallenge: 0 },
   generatedAt: "",
 };
 
@@ -87,9 +96,32 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBannerState | null>(null);
   const [tab, setTabRaw] = useState<string>(loadTab);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebar);
+  const [sidebarPinned, setSidebarPinned] = useState(loadSidebarPin);
+
+  // Auto-collapse on narrow viewport when unpinned
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia(`(max-width: ${NARROW_VIEWPORT_PX}px)`);
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches && !loadSidebarPin()) {
+        setSidebarOpen(false);
+        try { localStorage.setItem(SIDEBAR_STORAGE_KEY, "false"); } catch { /* */ }
+      }
+    };
+    handler(mq);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Thinking state keyed by roomId → Map<agentId, info>
   const [thinkingByRoom, setThinkingByRoom] = useState<Map<string, Map<string, { name: string; role: string }>>>(new Map());
+  // Context usage keyed by roomId → Map<agentId, AgentContextUsage>
+  const [contextByRoom, setContextByRoom] = useState<Map<string, Map<string, import("./api").AgentContextUsage>>>(new Map());
   const [sprintVersion, setSprintVersion] = useState(0);
+  const [retroVersion, setRetroVersion] = useState(0);
+  const [digestVersion, setDigestVersion] = useState(0);
+  const [memoryVersion, setMemoryVersion] = useState(0);
+  const [artifactVersion, setArtifactVersion] = useState(0);
+  const [goalCardVersion, setGoalCardVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -128,6 +160,10 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     if (!roomMap?.size) return [];
     return Array.from(roomMap.entries(), ([id, info]) => ({ id, ...info }));
   }, [thinkingByRoom, room?.id]);
+
+  const roomContextUsage = useMemo(() => {
+    return contextByRoom.get(room?.id ?? "");
+  }, [contextByRoom, room?.id]);
 
   // Ref so the SignalR callback always sees current configuredAgents without re-subscribing
   const agentsRef = useRef(ov.configuredAgents);
@@ -169,6 +205,29 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
           });
         }
         break;
+      case "ContextUsageUpdated": {
+        const rid = evt.roomId;
+        const aid = evt.actorId;
+        const meta = evt.metadata;
+        if (rid && aid && meta) {
+          setContextByRoom((prev) => {
+            const next = new Map(prev);
+            const roomMap = new Map(prev.get(rid) ?? []);
+            roomMap.set(aid, {
+              agentId: aid,
+              roomId: rid,
+              model: (meta.model as string) ?? null,
+              currentTokens: (meta.currentTokens as number) ?? 0,
+              maxTokens: (meta.maxTokens as number) ?? 0,
+              percentage: (meta.percentage as number) ?? 0,
+              updatedAt: evt.occurredAt,
+            });
+            next.set(rid, roomMap);
+            return next;
+          });
+        }
+        break;
+      }
       case "MessagePosted":
       case "RoomCreated":
       case "TaskCreated":
@@ -176,6 +235,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "PresenceUpdated":
       case "DirectMessageSent":
       case "TaskPrStatusChanged":
+      case "TaskUnblocked":
       case "AgentErrorOccurred":
       case "AgentWarningOccurred":
       case "SubagentFailed":
@@ -209,6 +269,20 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
         setSprintVersion((v) => v + 1);
         break;
       }
+      case "TaskRetrospectiveCompleted":
+        setRetroVersion((v) => v + 1);
+        break;
+      case "LearningDigestCompleted":
+        setDigestVersion((v) => v + 1);
+        setMemoryVersion((v) => v + 1);
+        break;
+      case "ArtifactEvaluated":
+        setArtifactVersion((v) => v + 1);
+        break;
+      case "GoalCardCreated":
+      case "GoalCardChallenged":
+        setGoalCardVersion((v) => v + 1);
+        break;
     }
   }, []);
 
@@ -277,6 +351,31 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch context usage when room changes
+  useEffect(() => {
+    if (!room?.id) return;
+    let cancelled = false;
+    getRoomContextUsage(room.id).then((usages) => {
+      if (cancelled) return;
+      if (usages.length === 0) return;
+      setContextByRoom((prev) => {
+        const next = new Map(prev);
+        const existing = prev.get(room.id);
+        const merged = new Map<string, AgentContextUsage>(existing ?? []);
+        for (const u of usages) {
+          const cur = merged.get(u.agentId);
+          // Only seed from fetch if no realtime data exists or fetch is newer
+          if (!cur || u.updatedAt > cur.updatedAt) {
+            merged.set(u.agentId, u);
+          }
+        }
+        next.set(room.id, merged);
+        return next;
+      });
+    }).catch(() => { /* context fetch is best-effort */ });
+    return () => { cancelled = true; };
+  }, [room?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -427,6 +526,19 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     });
   }, []);
 
+  const handleToggleSidebarPin = useCallback(() => {
+    setSidebarPinned((cur) => {
+      const next = !cur;
+      try { localStorage.setItem(SIDEBAR_PIN_KEY, String(next)); } catch { /* quota */ }
+      // When unpinning on a narrow viewport, auto-collapse
+      if (!next && typeof window !== "undefined" && window.innerWidth <= NARROW_VIEWPORT_PX) {
+        setSidebarOpen(false);
+        try { localStorage.setItem(SIDEBAR_STORAGE_KEY, "false"); } catch { /* */ }
+      }
+      return next;
+    });
+  }, []);
+
   const handleTaskSubmit = useCallback(async (draft: TaskDraft) => {
     setErr("");
     try {
@@ -436,6 +548,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
         successCriteria: draft.successCriteria,
         preferredRoles: [],
         roomId: draft.roomId,
+        priority: draft.priority,
       });
       await refresh({ showBusy: false });
       setRoomId(result.room.id);
@@ -471,6 +584,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     activity,
     thinkingAgentList,
     thinkingByRoom,
+    roomContextUsage,
     recoveryBanner,
     connectionStatus,
     activityTransport: transport,
@@ -478,16 +592,23 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     breakoutRooms: ov.breakoutRooms ?? [],
     sprintVersion,
     lastSprintEvent,
+    retroVersion,
+    digestVersion,
+    memoryVersion,
+    artifactVersion,
+    goalCardVersion,
     err,
     busy,
     tab,
     setTab,
     sidebarOpen,
+    sidebarPinned,
     roomSummary,
     handleRoomSelect,
     handlePhaseTransition,
     handleManualRefresh,
     handleToggleSidebar,
+    handleToggleSidebarPin,
     handleTaskSubmit,
     handleSendMessage,
   };

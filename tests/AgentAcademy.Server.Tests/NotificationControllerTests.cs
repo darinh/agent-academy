@@ -158,6 +158,86 @@ public sealed class NotificationControllerTests : IDisposable
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task Configure_OmittedKey_IsDeletedFromStorage()
+    {
+        // Regression: previously Configure only inserted/updated keys present in the
+        // payload. A key removed from a subsequent payload (e.g. operator clears an old
+        // webhook URL or rotates away from a secondary token) would silently persist in
+        // the database and resurrect on the next restart through NotificationRestoreService.
+        // Configure has full-replace semantics — keys absent from the payload must be
+        // removed in the same transaction.
+        var provider = Substitute.For<INotificationProvider>();
+        provider.ProviderId.Returns("multi-key-provider");
+        provider.DisplayName.Returns("Multi");
+        provider.IsConfigured.Returns(false);
+        provider.IsConnected.Returns(false);
+        provider.GetConfigSchema().Returns(new ProviderConfigSchema(
+            "multi-key-provider", "Multi", "desc",
+            [
+                new ConfigField("webhook_url", "Webhook", "string", false, ""),
+                new ConfigField("token", "Token", "secret", false, "")
+            ]));
+        _manager.RegisterProvider(provider);
+
+        // Initial configuration with both keys.
+        var initial = new Dictionary<string, string>
+        {
+            ["webhook_url"] = "https://old.example.com/hook",
+            ["token"] = "old-secret"
+        };
+        var first = await _controller.Configure("multi-key-provider", initial, CancellationToken.None);
+        Assert.IsType<OkObjectResult>(first);
+
+        var afterFirst = await _db.NotificationConfigs
+            .Where(c => c.ProviderId == "multi-key-provider")
+            .Select(c => c.Key)
+            .OrderBy(k => k)
+            .ToListAsync();
+        Assert.Equal(new[] { "token", "webhook_url" }, afterFirst);
+
+        // Reconfigure with only the token — the operator removed the webhook_url.
+        var followup = new Dictionary<string, string>
+        {
+            ["token"] = "new-secret"
+        };
+        var second = await _controller.Configure("multi-key-provider", followup, CancellationToken.None);
+        Assert.IsType<OkObjectResult>(second);
+
+        var afterSecond = await _db.NotificationConfigs
+            .Where(c => c.ProviderId == "multi-key-provider")
+            .Select(c => c.Key)
+            .OrderBy(k => k)
+            .ToListAsync();
+        Assert.Equal(new[] { "token" }, afterSecond);
+    }
+
+    [Fact]
+    public async Task Configure_DoesNotDeleteOtherProviderKeys()
+    {
+        // Defence-in-depth for the stale-key fix: deleting absent keys must be
+        // scoped to the provider being configured. A second provider's keys must
+        // remain untouched.
+        var providerA = CreateFakeProvider(id: "provider-a", name: "A");
+        var providerB = CreateFakeProvider(id: "provider-b", name: "B");
+        _manager.RegisterProvider(providerA);
+        _manager.RegisterProvider(providerB);
+
+        await _controller.Configure("provider-a",
+            new Dictionary<string, string> { ["token"] = "a-tok" }, CancellationToken.None);
+        await _controller.Configure("provider-b",
+            new Dictionary<string, string> { ["token"] = "b-tok" }, CancellationToken.None);
+
+        // Reconfigure A with no token at all — its keys go to zero, B is untouched.
+        await _controller.Configure("provider-a",
+            new Dictionary<string, string>(), CancellationToken.None);
+
+        var aKeys = await _db.NotificationConfigs.Where(c => c.ProviderId == "provider-a").CountAsync();
+        var bKeys = await _db.NotificationConfigs.Where(c => c.ProviderId == "provider-b").CountAsync();
+        Assert.Equal(0, aKeys);
+        Assert.Equal(1, bKeys);
+    }
+
     // ── Connect ──────────────────────────────────────────────────
 
     [Fact]

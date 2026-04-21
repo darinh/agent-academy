@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,8 @@ public class SprintTimeoutTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
+    private readonly SprintStageService _sprintStageService;
+    private readonly SprintArtifactService _artifactService;
 
     public SprintTimeoutTests()
     {
@@ -34,7 +37,9 @@ public class SprintTimeoutTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _sprintService = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
+        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
+        _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
     }
 
     public void Dispose()
@@ -48,9 +53,9 @@ public class SprintTimeoutTests : IDisposable
     private async Task<SprintEntity> CreateSprintInSignOff()
     {
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument",
             """{"Title":"T","Description":"D","InScope":[],"OutOfScope":[],"AcceptanceCriteria":[]}""");
-        await _sprintService.AdvanceStageAsync(sprint.Id);
+        await _sprintStageService.AdvanceStageAsync(sprint.Id);
         // Sprint is now AwaitingSignOff with PendingStage = Planning
         return sprint;
     }
@@ -73,7 +78,7 @@ public class SprintTimeoutTests : IDisposable
         var sprint = await CreateSprintInSignOff();
         Assert.NotNull(sprint.SignOffRequestedAt);
 
-        var approved = await _sprintService.ApproveAdvanceAsync(sprint.Id);
+        var approved = await _sprintStageService.ApproveAdvanceAsync(sprint.Id);
 
         Assert.False(approved.AwaitingSignOff);
         Assert.Null(approved.SignOffRequestedAt);
@@ -85,7 +90,7 @@ public class SprintTimeoutTests : IDisposable
         var sprint = await CreateSprintInSignOff();
         Assert.NotNull(sprint.SignOffRequestedAt);
 
-        var rejected = await _sprintService.RejectAdvanceAsync(sprint.Id);
+        var rejected = await _sprintStageService.RejectAdvanceAsync(sprint.Id);
 
         Assert.False(rejected.AwaitingSignOff);
         Assert.Null(rejected.SignOffRequestedAt);
@@ -98,7 +103,7 @@ public class SprintTimeoutTests : IDisposable
     {
         var sprint = await CreateSprintInSignOff();
 
-        var result = await _sprintService.TimeOutSignOffAsync(sprint.Id);
+        var result = await _sprintStageService.TimeOutSignOffAsync(sprint.Id);
 
         Assert.False(result.AwaitingSignOff);
         Assert.Null(result.PendingStage);
@@ -112,7 +117,7 @@ public class SprintTimeoutTests : IDisposable
     {
         var sprint = await CreateSprintInSignOff();
 
-        await _sprintService.TimeOutSignOffAsync(sprint.Id);
+        await _sprintStageService.TimeOutSignOffAsync(sprint.Id);
 
         var evt = await _db.ActivityEvents
             .OrderByDescending(e => e.OccurredAt)
@@ -130,7 +135,7 @@ public class SprintTimeoutTests : IDisposable
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _sprintService.TimeOutSignOffAsync(sprint.Id));
+            () => _sprintStageService.TimeOutSignOffAsync(sprint.Id));
         Assert.Contains("not awaiting sign-off", ex.Message);
     }
 
@@ -366,12 +371,24 @@ public class SprintTimeoutTests : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton(_db);
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
         services.AddSingleton<ILogger<SprintService>>(NullLogger<SprintService>.Instance);
+        services.AddSingleton<ILogger<SprintStageService>>(NullLogger<SprintStageService>.Instance);
+        services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<SprintService>(sp =>
             new SprintService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),
                 sp.GetRequiredService<ActivityBroadcaster>(),
+                sp.GetRequiredService<SystemSettingsService>(),
                 sp.GetRequiredService<ILogger<SprintService>>()));
+        services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
+        services.AddScoped<SprintStageService>(sp =>
+            new SprintStageService(
+                sp.GetRequiredService<AgentAcademyDbContext>(),
+                sp.GetRequiredService<ActivityBroadcaster>(),
+                sp.GetRequiredService<ILogger<SprintStageService>>()));
+        services.AddScoped<ISprintStageService>(sp => sp.GetRequiredService<SprintStageService>());
         var provider = services.BuildServiceProvider();
 
         return new SprintTimeoutService(

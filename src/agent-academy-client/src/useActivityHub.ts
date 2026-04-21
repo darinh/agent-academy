@@ -6,6 +6,7 @@ import {
   type HubConnection,
 } from "@microsoft/signalr";
 import type { ActivityEvent } from "./api";
+import { csrfHeaders } from "./api";
 
 export type ConnectionStatus =
   | "connecting"
@@ -41,7 +42,9 @@ export function useActivityHub(
     }
 
     const connection: HubConnection = new HubConnectionBuilder()
-      .withUrl("/hubs/activity")
+      .withUrl("/hubs/activity", {
+        headers: { ...csrfHeaders },
+      })
       .withAutomaticReconnect(INITIAL_RETRY_DELAYS)
       .configureLogging(LogLevel.Warning)
       .build();

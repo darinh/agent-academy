@@ -56,11 +56,17 @@ namespace AgentAcademy.Server.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("idx_activity_correlation");
+
                     b.HasIndex("OccurredAt")
                         .HasDatabaseName("idx_activity_time");
 
                     b.HasIndex("RoomId")
                         .HasDatabaseName("idx_activity_room");
+
+                    b.HasIndex("Severity", "OccurredAt")
+                        .HasDatabaseName("idx_activity_severity_time");
 
                     b.ToTable("activity_events", (string)null);
                 });
@@ -218,34 +224,6 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_agent_memories_expires");
 
                     b.ToTable("agent_memories", (string)null);
-                });
-
-            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.AgentWorkspaceEntity", b =>
-                {
-                    b.Property<string>("WorkspacePath")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgentId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CurrentBranch")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("LastAccessedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WorktreePath")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("WorkspacePath", "AgentId");
-
-                    b.HasIndex("AgentId")
-                        .HasDatabaseName("idx_agent_workspaces_agent");
-
-                    b.ToTable("agent_workspaces", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.BreakoutMessageEntity", b =>
@@ -466,6 +444,104 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.ToTable("conversation_sessions", (string)null);
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.GoalCardEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgentName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Divergence")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FreshEyes1")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FreshEyes2")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FreshEyes3")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Intent")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PromptVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
+                    b.Property<string>("RoomId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Active");
+
+                    b.Property<string>("Steelman")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Strawman")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TaskDescription")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TaskId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Verdict")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Proceed");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId")
+                        .HasDatabaseName("idx_goal_cards_agent");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("idx_goal_cards_created");
+
+                    b.HasIndex("RoomId")
+                        .HasDatabaseName("idx_goal_cards_room");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("idx_goal_cards_status");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("idx_goal_cards_task");
+
+                    b.HasIndex("Verdict")
+                        .HasDatabaseName("idx_goal_cards_verdict");
+
+                    b.ToTable("goal_cards", (string)null);
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.InstructionTemplateEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -495,6 +571,51 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_instruction_templates_name");
 
                     b.ToTable("instruction_templates", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.LearningDigestEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MemoriesCreated")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RetrospectivesProcessed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("learning_digests", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.LearningDigestSourceEntity", b =>
+                {
+                    b.Property<int>("DigestId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RetrospectiveCommentId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("DigestId", "RetrospectiveCommentId");
+
+                    b.HasIndex("RetrospectiveCommentId")
+                        .IsUnique()
+                        .HasDatabaseName("idx_digest_sources_retro_unique");
+
+                    b.ToTable("learning_digest_sources", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.LlmUsageEntity", b =>
@@ -730,6 +851,43 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.ToTable("plans", (string)null);
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.RoomArtifactEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommitSha")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RoomId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoomId", "Timestamp")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("idx_room_artifacts_room_ts");
+
+                    b.ToTable("room_artifacts", (string)null);
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.RoomEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -957,6 +1115,60 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.ToTable("sprints", (string)null);
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SprintScheduleEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CronExpression")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("LastEvaluatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastOutcome")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastTriggeredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextRunAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("UTC");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("WorkspacePath")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspacePath")
+                        .IsUnique()
+                        .HasDatabaseName("idx_sprint_schedules_workspace_unique");
+
+                    b.HasIndex("Enabled", "NextRunAtUtc")
+                        .HasDatabaseName("idx_sprint_schedules_enabled_next_run");
+
+                    b.ToTable("sprint_schedules", (string)null);
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.SystemSettingEntity", b =>
                 {
                     b.Property<string>("Key")
@@ -1013,6 +1225,25 @@ namespace AgentAcademy.Server.Data.Migrations
                         .HasDatabaseName("idx_task_comments_task");
 
                     b.ToTable("task_comments", (string)null);
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskDependencyEntity", b =>
+                {
+                    b.Property<string>("TaskId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DependsOnTaskId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("TaskId", "DependsOnTaskId");
+
+                    b.HasIndex("DependsOnTaskId")
+                        .HasDatabaseName("idx_task_deps_depends_on");
+
+                    b.ToTable("task_dependencies", (string)null);
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskEntity", b =>
@@ -1084,6 +1315,9 @@ namespace AgentAcademy.Server.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
                         .HasDefaultValue("[]");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("PullRequestNumber")
                         .HasColumnType("INTEGER");
@@ -1169,6 +1403,15 @@ namespace AgentAcademy.Server.Data.Migrations
 
                     b.HasIndex("AssignedAgentId")
                         .HasDatabaseName("idx_tasks_agent");
+
+                    b.HasIndex("CompletedAt")
+                        .HasDatabaseName("idx_tasks_completed");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("idx_tasks_created");
+
+                    b.HasIndex("Priority")
+                        .HasDatabaseName("idx_tasks_priority");
 
                     b.HasIndex("RoomId")
                         .HasDatabaseName("idx_tasks_room");
@@ -1348,17 +1591,6 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("InstructionTemplate");
                 });
 
-            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.AgentWorkspaceEntity", b =>
-                {
-                    b.HasOne("AgentAcademy.Server.Data.Entities.WorkspaceEntity", "Workspace")
-                        .WithMany("AgentWorktrees")
-                        .HasForeignKey("WorkspacePath")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Workspace");
-                });
-
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.BreakoutMessageEntity", b =>
                 {
                     b.HasOne("AgentAcademy.Server.Data.Entities.BreakoutRoomEntity", "BreakoutRoom")
@@ -1389,6 +1621,43 @@ namespace AgentAcademy.Server.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Sprint");
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.GoalCardEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.RoomEntity", "Room")
+                        .WithMany()
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AgentAcademy.Server.Data.Entities.TaskEntity", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Room");
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.LearningDigestSourceEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.LearningDigestEntity", "Digest")
+                        .WithMany("Sources")
+                        .HasForeignKey("DigestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AgentAcademy.Server.Data.Entities.TaskCommentEntity", "RetrospectiveComment")
+                        .WithMany()
+                        .HasForeignKey("RetrospectiveCommentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Digest");
+
+                    b.Navigation("RetrospectiveComment");
                 });
 
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.MessageEntity", b =>
@@ -1455,6 +1724,25 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("Task");
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskDependencyEntity", b =>
+                {
+                    b.HasOne("AgentAcademy.Server.Data.Entities.TaskEntity", "DependsOn")
+                        .WithMany("Dependents")
+                        .HasForeignKey("DependsOnTaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AgentAcademy.Server.Data.Entities.TaskEntity", "Task")
+                        .WithMany("Dependencies")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DependsOn");
+
+                    b.Navigation("Task");
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskEntity", b =>
                 {
                     b.HasOne("AgentAcademy.Server.Data.Entities.RoomEntity", "Room")
@@ -1488,6 +1776,11 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("Messages");
                 });
 
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.LearningDigestEntity", b =>
+                {
+                    b.Navigation("Sources");
+                });
+
             modelBuilder.Entity("AgentAcademy.Server.Data.Entities.RoomEntity", b =>
                 {
                     b.Navigation("ActivityEvents");
@@ -1499,9 +1792,11 @@ namespace AgentAcademy.Server.Data.Migrations
                     b.Navigation("Tasks");
                 });
 
-            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.WorkspaceEntity", b =>
+            modelBuilder.Entity("AgentAcademy.Server.Data.Entities.TaskEntity", b =>
                 {
-                    b.Navigation("AgentWorktrees");
+                    b.Navigation("Dependencies");
+
+                    b.Navigation("Dependents");
                 });
 #pragma warning restore 612, 618
         }

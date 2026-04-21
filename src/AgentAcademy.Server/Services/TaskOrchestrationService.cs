@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -9,38 +10,52 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Coordinates task operations that cross room, agent, and task boundaries.
 /// </summary>
-public sealed class TaskOrchestrationService
+public sealed class TaskOrchestrationService : ITaskOrchestrationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskOrchestrationService> _logger;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityPublisher _activity;
-    private readonly TaskLifecycleService _taskLifecycle;
-    private readonly RoomService _rooms;
-    private readonly AgentLocationService _agentLocations;
-    private readonly MessageService _messages;
-    private readonly BreakoutRoomService _breakouts;
+    private readonly IAgentCatalog _catalog;
+    private readonly IActivityPublisher _activity;
+    private readonly ITaskLifecycleService _taskLifecycle;
+    private readonly ITaskQueryService _taskQueries;
+    private readonly IRoomService _rooms;
+    private readonly IRoomSnapshotBuilder _snapshots;
+    private readonly IRoomLifecycleService _roomLifecycle;
+    private readonly IAgentLocationService _agentLocations;
+    private readonly IMessageService _messages;
+    private readonly IBreakoutRoomService _breakouts;
+    private readonly IWorktreeService? _worktrees;
+
+    private const int MaxBulkSize = 50;
 
     public TaskOrchestrationService(
         AgentAcademyDbContext db,
         ILogger<TaskOrchestrationService> logger,
-        AgentCatalogOptions catalog,
-        ActivityPublisher activity,
-        TaskLifecycleService taskLifecycle,
-        RoomService rooms,
-        AgentLocationService agentLocations,
-        MessageService messages,
-        BreakoutRoomService breakouts)
+        IAgentCatalog catalog,
+        IActivityPublisher activity,
+        ITaskLifecycleService taskLifecycle,
+        ITaskQueryService taskQueries,
+        IRoomService rooms,
+        IRoomSnapshotBuilder snapshots,
+        IRoomLifecycleService roomLifecycle,
+        IAgentLocationService agentLocations,
+        IMessageService messages,
+        IBreakoutRoomService breakouts,
+        IWorktreeService? worktrees = null)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
         _activity = activity;
         _taskLifecycle = taskLifecycle;
+        _taskQueries = taskQueries;
         _rooms = rooms;
+        _snapshots = snapshots;
+        _roomLifecycle = roomLifecycle;
         _agentLocations = agentLocations;
         _messages = messages;
         _breakouts = breakouts;
+        _worktrees = worktrees;
     }
 
     /// <summary>
@@ -118,7 +133,7 @@ public sealed class TaskOrchestrationService
             }
         }
 
-        var roomSnapshot = await _rooms.BuildRoomSnapshotAsync(roomEntity);
+        var roomSnapshot = await _snapshots.BuildRoomSnapshotAsync(roomEntity);
 
         return new TaskAssignmentResult(
             CorrelationId: correlationId,
@@ -130,6 +145,9 @@ public sealed class TaskOrchestrationService
 
     /// <summary>
     /// Completes a task and auto-archives its room if all tasks in it are terminal.
+    /// Also disposes the task's git worktree — per spec 005 §Workspace Isolation,
+    /// the worktree persists through the breakout lifecycle and is only cleaned
+    /// up when the task reaches a terminal state.
     /// </summary>
     public async Task<TaskSnapshot> CompleteTaskAsync(
         string taskId, int commitCount, List<string>? testsCreated = null, string? mergeCommitSha = null)
@@ -137,12 +155,45 @@ public sealed class TaskOrchestrationService
         var (snapshot, roomId) = await _taskLifecycle.CompleteTaskCoreAsync(
             taskId, commitCount, testsCreated, mergeCommitSha);
 
-        if (!string.IsNullOrEmpty(roomId))
+        try
         {
-            await _rooms.TryAutoArchiveRoomAsync(roomId);
+            if (!string.IsNullOrEmpty(roomId))
+            {
+                await _roomLifecycle.TryAutoArchiveRoomAsync(roomId);
+            }
+        }
+        finally
+        {
+            await TryRemoveTaskWorktreeAsync(snapshot.BranchName, taskId);
         }
 
         return snapshot;
+    }
+
+    /// <summary>
+    /// Best-effort worktree removal for a task reaching a terminal state.
+    /// Failures are logged but do not propagate — the task status change
+    /// has already been persisted and a lingering worktree can be cleaned
+    /// up later via CLEANUP_WORKTREES.
+    /// </summary>
+    private async Task TryRemoveTaskWorktreeAsync(string? branchName, string taskId)
+    {
+        if (string.IsNullOrWhiteSpace(branchName) || _worktrees is null)
+            return;
+
+        try
+        {
+            await _worktrees.RemoveWorktreeAsync(branchName);
+            _logger.LogInformation(
+                "Removed worktree for terminal task {TaskId} on branch {Branch}",
+                taskId, branchName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to remove worktree for terminal task {TaskId} on branch {Branch}",
+                taskId, branchName);
+        }
     }
 
     /// <summary>
@@ -200,5 +251,59 @@ public sealed class TaskOrchestrationService
         _logger.LogInformation(
             "Reopened auto-archived room '{RoomId}' ({RoomName}) due to task rejection",
             roomId, room.Name);
+    }
+
+    // ── Bulk Operations ─────────────────────────────────────────
+
+    /// <summary>
+    /// Updates the status of multiple tasks and publishes activity events.
+    /// Throws <see cref="ArgumentException"/> if <paramref name="taskIds"/> exceeds
+    /// <see cref="MaxBulkSize"/> or the status is disallowed.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkUpdateStatusAsync(
+        IReadOnlyList<string> taskIds, Shared.Models.TaskStatus status)
+    {
+        if (taskIds.Count > MaxBulkSize)
+            throw new ArgumentException($"Maximum {MaxBulkSize} tasks per bulk operation.");
+
+        var result = await _taskQueries.BulkUpdateStatusAsync(taskIds, status);
+
+        foreach (var task in result.Updated)
+        {
+            _activity.Publish(
+                ActivityEventType.TaskStatusUpdated, null, null, task.Id,
+                $"Task '{task.Title}' status → {task.Status} (bulk)");
+        }
+
+        if (result.Updated.Count > 0)
+            await _db.SaveChangesAsync();
+
+        return result;
+    }
+
+    /// <summary>
+    /// Assigns multiple tasks to a single agent and publishes activity events.
+    /// Throws <see cref="ArgumentException"/> if <paramref name="taskIds"/> exceeds
+    /// <see cref="MaxBulkSize"/> or the agent can't be resolved.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkAssignAsync(
+        IReadOnlyList<string> taskIds, string agentId, string? agentName)
+    {
+        if (taskIds.Count > MaxBulkSize)
+            throw new ArgumentException($"Maximum {MaxBulkSize} tasks per bulk operation.");
+
+        var result = await _taskQueries.BulkAssignAsync(taskIds, agentId, agentName);
+
+        foreach (var task in result.Updated)
+        {
+            _activity.Publish(
+                ActivityEventType.TaskStatusUpdated, null, null, task.Id,
+                $"Task '{task.Title}' assigned to {task.AssignedAgentName} (bulk)");
+        }
+
+        if (result.Updated.Count > 0)
+            await _db.SaveChangesAsync();
+
+        return result;
     }
 }

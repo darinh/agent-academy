@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// Records and queries LLM API usage metrics. Singleton service that
 /// creates its own DB scopes for persistence (same pattern as CopilotExecutor).
 /// </summary>
-public sealed class LlmUsageTracker
+public sealed class LlmUsageTracker : ILlmUsageTracker
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<LlmUsageTracker> _logger;
@@ -207,6 +208,35 @@ public sealed class LlmUsageTracker
             RequestCount: stats.Count,
             Models: models
         );
+    }
+
+    /// <summary>
+    /// Returns the current context window usage for each agent in a room.
+    /// The latest <c>InputTokens</c> from each agent's most recent LLM call
+    /// represents the current conversation context size.
+    /// </summary>
+    public async Task<List<AgentContextUsage>> GetLatestContextPerAgentAsync(string roomId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+
+        // Get the most recent usage record per agent in this room
+        var latestPerAgent = await db.LlmUsage
+            .Where(u => u.RoomId == roomId)
+            .GroupBy(u => u.AgentId)
+            .Select(g => g.OrderByDescending(u => u.RecordedAt).First())
+            .ToListAsync();
+
+        return latestPerAgent.Select(u =>
+        {
+            var maxTokens = ModelContextLimits.GetLimit(u.Model);
+            var pct = maxTokens > 0
+                ? Math.Round((double)u.InputTokens / maxTokens * 100, 1)
+                : 0;
+            return new AgentContextUsage(
+                u.AgentId, u.RoomId, u.Model,
+                u.InputTokens, maxTokens, pct, u.RecordedAt);
+        }).ToList();
     }
 
     /// <summary>

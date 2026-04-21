@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -26,8 +27,8 @@ public sealed class MoveToRoomHandler : ICommandHandler
             };
         }
 
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
 
         // Verify room exists
         var room = await roomService.GetRoomAsync(roomId);

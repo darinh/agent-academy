@@ -9,9 +9,12 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AgentAcademy.Server.Tests" />
+    <InternalsVisibleTo Include="AgentAcademy.Server.Benchmarks" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Cronos" Version="0.8.4" />
     <PackageReference Include="Discord.Net" Version="3.19.1" />
     <PackageReference Include="GitHub.Copilot.SDK" Version="0.2.2" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.25" />
@@ -24,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AgentAcademy.Forge\AgentAcademy.Forge.csproj" />
     <ProjectReference Include="..\AgentAcademy.Shared\AgentAcademy.Shared.csproj" />
   </ItemGroup>
 

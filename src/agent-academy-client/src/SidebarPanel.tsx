@@ -9,8 +9,9 @@ import {
 import { useSidebarStyles } from "./styles";
 import { initials } from "./utils";
 import { roleColor } from "./theme";
-import type { AgentDefinition, AgentLocation, AuthUser, BreakoutRoom, RoomSnapshot } from "./api";
+import type { AgentContextUsage, AgentDefinition, AgentLocation, AuthUser, BreakoutRoom, RoomSnapshot } from "./api";
 import UserBadge from "./UserBadge";
+import ContextMeter from "./ContextMeter";
 import {
   phaseDotColor,
   compactRoomTooltip,
@@ -25,16 +26,26 @@ const NAV_ITEMS = [
   { value: "directMessages", icon: "✉️", label: "Messages" },
   { value: "plan", icon: "📄", label: "Plan" },
   { value: "tasks", icon: "📋", label: "Tasks" },
+  { value: "artifacts", icon: "📦", label: "Artifacts" },
   { value: "timeline", icon: "⏱️", label: "Timeline" },
+  { value: "activity", icon: "⚡", label: "Activity" },
   { value: "sprint", icon: "🏃", label: "Sprint" },
   { value: "dashboard", icon: "📊", label: "Metrics" },
   { value: "commands", icon: "⌨️", label: "Commands" },
+  { value: "memories", icon: "🧠", label: "Memory" },
+  { value: "knowledge", icon: "📖", label: "Knowledge" },
+  { value: "specs", icon: "📜", label: "Specs" },
+  { value: "digests", icon: "📚", label: "Digests" },
+  { value: "retrospectives", icon: "🔬", label: "Retros" },
+  { value: "goalCards", icon: "🎯", label: "Goals" },
+  { value: "forge", icon: "🔥", label: "Forge" },
 ] as const;
 
 /* ── Sidebar Panel ───────────────────────────────────────────────── */
 
 const SidebarPanel = memo(function SidebarPanel(props: {
   sidebarOpen: boolean;
+  sidebarPinned?: boolean;
   busy: boolean;
   rooms: RoomSnapshot[];
   room: RoomSnapshot | null;
@@ -47,19 +58,29 @@ const SidebarPanel = memo(function SidebarPanel(props: {
   onViewChange: (view: string) => void;
   onRefresh: () => void;
   onToggleSidebar: () => void;
+  onToggleSidebarPin?: () => void;
   onSelectRoom: (roomId: string) => void;
   onSelectWorkspace: (breakoutId: string) => void;
   onCreateRoom?: (name: string) => void;
+  onCleanupRooms?: () => Promise<void>;
   onSwitchProject?: () => void;
   workspace?: { name: string; path: string } | null;
   user?: AuthUser | null;
   onLogout?: () => void;
   onOpenSettings?: () => void;
   sprintVersion?: number;
+  contextUsage?: Map<string, AgentContextUsage>;
 }) {
   const s = useSidebarStyles();
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
+  const [cleaningUp, setCleaningUp] = useState(false);
+
+  const handleCleanup = useCallback(async () => {
+    if (!props.onCleanupRooms) return;
+    setCleaningUp(true);
+    try { await props.onCleanupRooms(); } finally { setCleaningUp(false); }
+  }, [props.onCleanupRooms]);
 
   const handleCreateRoom = useCallback(() => {
     const name = newRoomName.trim();
@@ -93,16 +114,43 @@ const SidebarPanel = memo(function SidebarPanel(props: {
           <div className={s.sidebarUtilityRow}>
             {props.busy && <Spinner size="tiny" />}
             {props.sidebarOpen && (
+              <>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  className={s.sidebarIconButton}
+                  onClick={props.onRefresh}
+                  aria-label="Refresh"
+                >
+                  ↻
+                </Button>
+                {props.onToggleSidebarPin && (
+                  <Tooltip content={props.sidebarPinned ? "Unpin sidebar" : "Pin sidebar open"} relationship="label">
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      className={s.sidebarIconButton}
+                      onClick={props.onToggleSidebarPin}
+                      aria-label={props.sidebarPinned ? "Unpin sidebar" : "Pin sidebar"}
+                      style={{ fontSize: "13px", transform: props.sidebarPinned ? "rotate(0deg)" : "rotate(45deg)" }}
+                    >
+                      📌
+                    </Button>
+                  </Tooltip>
+                )}
+              </>
+            )}
+            <Tooltip content={props.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"} relationship="label">
               <Button
                 appearance="subtle"
                 size="small"
                 className={s.sidebarIconButton}
-                onClick={props.onRefresh}
-                aria-label="Refresh"
+                onClick={props.onToggleSidebar}
+                aria-label={props.sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
               >
-                ↻
+                {props.sidebarOpen ? "«" : "»"}
               </Button>
-            )}
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -136,6 +184,21 @@ const SidebarPanel = memo(function SidebarPanel(props: {
               <div className={s.sectionLabel}>Rooms</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                 <div className={s.sectionCount}>{props.rooms.length}</div>
+                {props.onCleanupRooms && (
+                  <Tooltip content="Archive idle rooms" relationship="label">
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      className={s.sidebarIconButton}
+                      onClick={handleCleanup}
+                      disabled={cleaningUp}
+                      aria-label="Cleanup idle rooms"
+                      style={{ minWidth: 0, padding: "0 4px", fontSize: "11px" }}
+                    >
+                      {cleaningUp ? <Spinner size="tiny" /> : "🧹"}
+                    </Button>
+                  </Tooltip>
+                )}
                 {props.onCreateRoom && (
                   <Button
                     appearance="subtle"
@@ -234,6 +297,9 @@ const SidebarPanel = memo(function SidebarPanel(props: {
                           >
                             {state.toLowerCase()}
                           </span>
+                          {props.contextUsage?.get(agent.id) && (
+                            <ContextMeter usage={props.contextUsage.get(agent.id)!} />
+                          )}
                         </div>
                       </div>
                     </button>
@@ -258,17 +324,24 @@ const SidebarPanel = memo(function SidebarPanel(props: {
         </div>
       ) : (
         <div className={s.compactSidebar}>
-          <Tooltip content="Expand sidebar" relationship="label" positioning="after">
-            <Button
-              appearance="subtle"
-              size="small"
-              className={s.compactButton}
-              onClick={props.onToggleSidebar}
-              aria-label="Expand sidebar"
-            >
-              ▷
-            </Button>
-          </Tooltip>
+          {/* Nav icons in collapsed mode */}
+          {NAV_ITEMS.map((item) => (
+            <Tooltip key={item.value} content={item.label} relationship="label" positioning="after">
+              <button
+                className={mergeClasses(s.compactButton, props.activeView === item.value ? s.compactButtonActive : undefined)}
+                onClick={() => { props.onViewChange(item.value); props.onToggleSidebar(); }}
+                aria-label={item.label}
+                type="button"
+              >
+                {item.icon}
+              </button>
+            </Tooltip>
+          ))}
+
+          {/* Divider */}
+          <div style={{ borderTop: "1px solid var(--aa-border)", margin: "4px 6px" }} />
+
+          {/* Room dots */}
           {props.rooms.map((candidate) => {
             const dotColor = phaseDotColor(candidate.currentPhase);
             const tooltipText = compactRoomTooltip(candidate);

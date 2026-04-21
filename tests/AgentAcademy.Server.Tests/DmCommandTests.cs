@@ -5,7 +5,9 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -59,43 +61,90 @@ public class DmCommandTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
+        services.AddScoped<IPlanService>(sp => sp.GetRequiredService<PlanService>());
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
 
         // Real NotificationManager with no providers (SendAgentQuestionAsync returns false)
         services.AddSingleton<NotificationManager>();
+        services.AddSingleton<INotificationManager>(sp => sp.GetRequiredService<NotificationManager>());
 
         // Real services needed by AgentOrchestrator
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<SpecManager>();
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
         services.AddSingleton<CommandAuthorizer>();
         services.AddSingleton<CommandPipeline>();
         services.AddSingleton<GitService>();
+        services.AddSingleton<IGitService>(sp => sp.GetRequiredService<GitService>());
         services.AddSingleton(new WorktreeService(
             Microsoft.Extensions.Logging.Abstractions.NullLogger<WorktreeService>.Instance,
             repositoryRoot: "/tmp/test-repo"));
+        services.AddSingleton<IWorktreeService>(sp => sp.GetRequiredService<WorktreeService>());
         services.AddSingleton<AgentMemoryLoader>();
+        services.AddSingleton<IAgentMemoryLoader>(sp => sp.GetRequiredService<AgentMemoryLoader>());
+        services.AddSingleton<BreakoutCompletionService>();
+        services.AddSingleton<IBreakoutCompletionService>(sp => sp.GetRequiredService<BreakoutCompletionService>());
         services.AddSingleton<BreakoutLifecycleService>();
+        services.AddSingleton<IBreakoutLifecycleService>(sp => sp.GetRequiredService<BreakoutLifecycleService>());
         services.AddSingleton<TaskAssignmentHandler>();
+        services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
+        services.AddSingleton<AgentTurnRunner>();
+        services.AddSingleton<IAgentTurnRunner>(sp => sp.GetRequiredService<AgentTurnRunner>());
+        services.AddSingleton<ConversationRoundRunner>();
+        services.AddSingleton<IConversationRoundRunner>(sp => sp.GetRequiredService<ConversationRoundRunner>());
+        services.AddSingleton<DirectMessageRouter>();
+        services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
         services.AddSingleton<AgentOrchestrator>();
+        services.AddSingleton<IAgentOrchestrator>(sp => sp.GetRequiredService<AgentOrchestrator>());
 
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
@@ -313,7 +362,7 @@ public class DmCommandTests : IDisposable
     public async Task SendDirectMessage_StoresWithRecipientId()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -334,7 +383,7 @@ public class DmCommandTests : IDisposable
     public async Task SendDirectMessage_PostsSystemNotification()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -354,7 +403,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDirectMessagesForAgent_UnreadOnly_ReturnsReceivedOnly()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -382,7 +431,7 @@ public class DmCommandTests : IDisposable
     public async Task RoomMessages_ExcludeDMs()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -413,7 +462,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadsForHuman_GroupsByAgent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -439,7 +488,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadMessages_ReturnsConversation()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
         
 
@@ -462,7 +511,7 @@ public class DmCommandTests : IDisposable
     public async Task ConsultantDm_StoresWithConsultantRole()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         await messageService.SendDirectMessageAsync(
@@ -484,7 +533,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDmThreadsForHuman_IncludesConsultantMessages()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Consultant DMs agent
@@ -539,7 +588,7 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_MarksAsRead()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         await messageService.SendDirectMessageAsync(
@@ -567,7 +616,7 @@ public class DmCommandTests : IDisposable
     public async Task GetDirectMessages_UnreadOnlyFalse_ReturnsAll()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         await messageService.SendDirectMessageAsync(
@@ -595,7 +644,7 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_OnlyAffectsTargetAgent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Both agents receive a DM
@@ -623,7 +672,7 @@ public class DmCommandTests : IDisposable
     public async Task AcknowledgeDirectMessages_DoesNotAckSenderMessages()
     {
         using var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
 
         // Planner sends DM to engineer
@@ -645,12 +694,13 @@ public class DmCommandTests : IDisposable
     private DmController CreateDmController(ClaimsPrincipal? user = null)
     {
         var scope = _serviceProvider.CreateScope();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<AgentOrchestrator>();
+        var messageBroadcaster = scope.ServiceProvider.GetRequiredService<MessageBroadcaster>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<IAgentOrchestrator>();
         var logger = NullLogger<DmController>.Instance;
 
-        var controller = new DmController(messageService, roomService, _catalog, orchestrator, logger);
+        var controller = new DmController(messageService, roomService, messageBroadcaster, _catalog, orchestrator, logger);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
@@ -722,7 +772,7 @@ public class DmCommandTests : IDisposable
         // Seed a consultant message via runtime
         using (var scope = _serviceProvider.CreateScope())
         {
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
             await messageService.SendDirectMessageAsync(
                 "consultant", "Consultant", "Consultant", "planner-1",
@@ -747,7 +797,7 @@ public class DmCommandTests : IDisposable
         // Seed both consultant and agent messages
         using (var scope = _serviceProvider.CreateScope())
         {
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
             await messageService.SendDirectMessageAsync(
                 "consultant", "Consultant", "Consultant", "engineer-1",

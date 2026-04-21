@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -11,221 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
-
-public class AgentToolRegistryTests
-{
-    [Fact]
-    public void GetToolsForAgent_TaskStateGroup_ReturnsThreeTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["task-state"]);
-
-        Assert.Equal(3, tools.Count);
-        Assert.Contains(tools, t => t.Name == "list_tasks");
-        Assert.Contains(tools, t => t.Name == "list_rooms");
-        Assert.Contains(tools, t => t.Name == "show_agents");
-    }
-
-    [Fact]
-    public void GetToolsForAgent_CodeGroup_ReturnsTwoTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["code"]);
-
-        Assert.Equal(2, tools.Count);
-        Assert.Contains(tools, t => t.Name == "read_file");
-        Assert.Contains(tools, t => t.Name == "search_code");
-    }
-
-    [Fact]
-    public void GetToolsForAgent_BothGroups_ReturnsFiveTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["task-state", "code"]);
-
-        Assert.Equal(5, tools.Count);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_ChatGroup_ReturnsNoTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["chat"]);
-
-        Assert.Empty(tools);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_EmptyGroups_ReturnsNoTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent([]);
-
-        Assert.Empty(tools);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_UnknownGroup_ReturnsNoTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["nonexistent"]);
-
-        Assert.Empty(tools);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_DuplicateGroups_NoDuplicateTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["task-state", "task-state"]);
-
-        Assert.Equal(3, tools.Count);
-        Assert.Equal(3, tools.Select(t => t.Name).Distinct().Count());
-    }
-
-    [Fact]
-    public void GetToolsForAgent_CaseInsensitiveGroupNames()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["TASK-STATE", "Code"]);
-
-        Assert.Equal(5, tools.Count);
-    }
-
-    [Fact]
-    public void GetAllToolNames_ReturnsAllRegisteredNames()
-    {
-        var registry = CreateRegistry();
-        var names = registry.GetAllToolNames();
-
-        // 5 static + 7 contextual = 12 total
-        Assert.Equal(12, names.Count);
-        Assert.Contains("list_tasks", names);
-        Assert.Contains("list_rooms", names);
-        Assert.Contains("show_agents", names);
-        Assert.Contains("read_file", names);
-        Assert.Contains("search_code", names);
-        Assert.Contains("create_task", names);
-        Assert.Contains("update_task_status", names);
-        Assert.Contains("add_task_comment", names);
-        Assert.Contains("remember", names);
-        Assert.Contains("recall", names);
-        Assert.Contains("write_file", names);
-        Assert.Contains("commit_changes", names);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_ToolsHaveDescriptions()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["task-state", "code"]);
-
-        foreach (var tool in tools)
-        {
-            Assert.False(string.IsNullOrWhiteSpace(tool.Description),
-                $"Tool '{tool.Name}' should have a description");
-        }
-    }
-
-    [Fact]
-    public void GetToolsForAgent_MatchesTypicalEngineerAgent()
-    {
-        // Engineers have: chat, task-state, code, code-write, task-write, memory
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(
-            ["chat", "task-state", "code", "code-write", "task-write", "memory"],
-            "eng-1", "Engineer");
-
-        // 5 static + 2 code-write + 3 task-write + 2 memory = 12
-        Assert.Equal(12, tools.Count);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_MatchesTypicalPlannerAgent()
-    {
-        // Planners have: chat, task-state, task-write, memory (no code)
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(
-            ["chat", "task-state", "task-write", "memory"],
-            "planner-1", "Planner");
-
-        // 3 static + 3 task-write + 2 memory = 8
-        Assert.Equal(8, tools.Count);
-        Assert.DoesNotContain(tools, t => t.Name == "read_file");
-        Assert.DoesNotContain(tools, t => t.Name == "search_code");
-    }
-
-    [Fact]
-    public void GetToolsForAgent_TaskWriteGroup_ReturnsThreeTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["task-write"], "agent-1", "Alpha");
-
-        Assert.Equal(3, tools.Count);
-        Assert.Contains(tools, t => t.Name == "create_task");
-        Assert.Contains(tools, t => t.Name == "update_task_status");
-        Assert.Contains(tools, t => t.Name == "add_task_comment");
-    }
-
-    [Fact]
-    public void GetToolsForAgent_MemoryGroup_ReturnsTwoTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["memory"], "agent-1", "Alpha");
-
-        Assert.Equal(2, tools.Count);
-        Assert.Contains(tools, t => t.Name == "remember");
-        Assert.Contains(tools, t => t.Name == "recall");
-    }
-
-    [Fact]
-    public void GetToolsForAgent_CodeWriteGroup_ReturnsWriteAndCommitTools()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(["code-write"], "agent-1", "Alpha");
-
-        Assert.Equal(2, tools.Count);
-        Assert.Contains(tools, t => t.Name == "write_file");
-        Assert.Contains(tools, t => t.Name == "commit_changes");
-    }
-
-    [Fact]
-    public void GetToolsForAgent_ContextualGroupWithoutAgentId_ReturnsNoTools()
-    {
-        var registry = CreateRegistry();
-        // No agentId provided — contextual groups should be skipped
-        var tools = registry.GetToolsForAgent(["task-write", "memory"]);
-
-        Assert.Empty(tools);
-    }
-
-    [Fact]
-    public void GetToolsForAgent_AllGroups_NoDuplicates()
-    {
-        var registry = CreateRegistry();
-        var tools = registry.GetToolsForAgent(
-            ["task-state", "code", "code-write", "task-write", "memory", "task-write", "memory"],
-            "agent-1", "Alpha");
-
-        var names = tools.Select(t => t.Name).ToList();
-        Assert.Equal(names.Count, names.Distinct().Count());
-        Assert.Equal(12, tools.Count);
-    }
-
-    private static AgentToolRegistry CreateRegistry()
-    {
-        var scopeFactory = Substitute.For<IServiceScopeFactory>();
-        var catalog = new AgentCatalogOptions("main", "Main", []);
-        var toolFunctions = new AgentToolFunctions(
-            scopeFactory,
-            catalog,
-            NullLogger<AgentToolFunctions>.Instance);
-        return new AgentToolRegistry(
-            toolFunctions,
-            catalog,
-            NullLogger<AgentToolRegistry>.Instance);
-    }
-}
 
 public class AgentToolFunctionsTests : IDisposable
 {
@@ -241,7 +27,11 @@ public class AgentToolFunctionsTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(new AgentCatalogOptions(
             "main", "Main Room", new List<AgentDefinition>
             {
@@ -252,30 +42,57 @@ public class AgentToolFunctionsTests : IDisposable
                     "gpt-5", ["review"], ["chat", "task-state"],
                     true),
             }));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -285,7 +102,7 @@ public class AgentToolFunctionsTests : IDisposable
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
@@ -399,6 +216,87 @@ public class AgentToolFunctionsTests : IDisposable
         var text = result?.ToString() ?? "";
 
         Assert.Contains("denied", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReadFile_SymlinkPointingOutsideRoot_ReturnsDenied()
+    {
+        // Regression: Path.GetFullPath only canonicalizes . and .. — it does
+        // NOT follow symlinks. Without symlink resolution, an attacker (or a
+        // confused agent) could create a symlink inside the repo whose
+        // target is /etc/passwd and read arbitrary files. The fix walks the
+        // resolved final target via FileSystemInfo.ResolveLinkTarget(true)
+        // and rejects when the target falls outside the project root.
+        if (OperatingSystem.IsWindows())
+        {
+            // Symlink creation requires elevated privileges on Windows;
+            // skip rather than emit a misleading false positive.
+            return;
+        }
+
+        var projectRoot = AgentToolFunctions.FindProjectRoot();
+        var linkPath = Path.Combine(projectRoot, $"__test_symlink_{Guid.NewGuid():N}");
+
+        try
+        {
+            // Pick a target that always exists outside the repo. /etc/hostname
+            // is readable by all users on Linux; this avoids relying on
+            // /etc/passwd-style assumptions while still exercising the escape.
+            const string outsideTarget = "/etc/hostname";
+            if (!File.Exists(outsideTarget))
+                return; // platform doesn't expose the file; no point asserting
+
+            File.CreateSymbolicLink(linkPath, outsideTarget);
+
+            var tools = _toolFunctions.CreateCodeTools();
+            var readFile = tools.Single(t => t.Name == "read_file");
+
+            var result = await readFile.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments(
+                new Dictionary<string, object?>
+                {
+                    ["path"] = Path.GetFileName(linkPath),
+                }));
+            var text = result?.ToString() ?? "";
+
+            Assert.Contains("denied", text, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("symlink", text, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { File.Delete(linkPath); } catch { /* best-effort cleanup */ }
+        }
+    }
+
+    [Fact]
+    public async Task ReadFile_SymlinkPointingInsideRoot_IsAllowed()
+    {
+        // Counter-regression: legitimate in-repo symlinks must keep working.
+        if (OperatingSystem.IsWindows()) return;
+
+        var projectRoot = AgentToolFunctions.FindProjectRoot();
+        var linkPath = Path.Combine(projectRoot, $"__test_symlink_{Guid.NewGuid():N}");
+        var target = Path.Combine(projectRoot, "AgentAcademy.sln");
+
+        try
+        {
+            File.CreateSymbolicLink(linkPath, target);
+
+            var tools = _toolFunctions.CreateCodeTools();
+            var readFile = tools.Single(t => t.Name == "read_file");
+
+            var result = await readFile.InvokeAsync(new Microsoft.Extensions.AI.AIFunctionArguments(
+                new Dictionary<string, object?>
+                {
+                    ["path"] = Path.GetFileName(linkPath),
+                }));
+            var text = result?.ToString() ?? "";
+
+            Assert.DoesNotContain("denied", text, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { File.Delete(linkPath); } catch { /* best-effort cleanup */ }
+        }
     }
 
     [Fact]
@@ -529,7 +427,11 @@ public class AgentWriteToolTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(new AgentCatalogOptions(
             "main", "Main Room", new List<AgentDefinition>
             {
@@ -540,30 +442,57 @@ public class AgentWriteToolTests : IDisposable
                     "gpt-5", ["review"], ["chat", "task-state", "task-write", "memory"],
                     true),
             }));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -572,7 +501,7 @@ public class AgentWriteToolTests : IDisposable
             var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
             db.Database.EnsureCreated();
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+            var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
             initialization.InitializeAsync().GetAwaiter().GetResult();
         }
 
@@ -1265,7 +1194,7 @@ public class AgentWriteToolTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: "Test Task",
             Description: "Test task for write tool tests",

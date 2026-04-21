@@ -3,6 +3,7 @@ using System.Net.Http;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -242,178 +243,7 @@ internal sealed class CountingAuthProbe : ICopilotAuthProbe
         => Task.FromResult<TokenRefreshResult?>(null);
 }
 
-public class GitHubCopilotAuthProbeTests
-{
-    [Fact]
-    public async Task ProbeAsync_WhenTokenMissing_ReturnsSkipped()
-    {
-        var probe = CreateProbe(new StubHttpMessageHandler(_ => throw new InvalidOperationException("should not send")));
-
-        var result = await probe.ProbeAsync();
-
-        Assert.Equal(CopilotAuthProbeResult.Skipped, result);
-    }
-
-    [Fact]
-    public async Task ProbeAsync_WhenGitHubReturnsOk_ReturnsHealthy()
-    {
-        var tokenProvider = new CopilotTokenProvider();
-        tokenProvider.SetToken("gho_test");
-        var probe = CreateProbe(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)), tokenProvider);
-
-        var result = await probe.ProbeAsync();
-
-        Assert.Equal(CopilotAuthProbeResult.Healthy, result);
-    }
-
-    [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    public async Task ProbeAsync_WhenGitHubReturnsAuthFailure_ReturnsAuthFailed(HttpStatusCode statusCode)
-    {
-        var tokenProvider = new CopilotTokenProvider();
-        tokenProvider.SetToken("gho_test");
-        var probe = CreateProbe(new StubHttpMessageHandler(_ => new HttpResponseMessage(statusCode)), tokenProvider);
-
-        var result = await probe.ProbeAsync();
-
-        Assert.Equal(CopilotAuthProbeResult.AuthFailed, result);
-    }
-
-    [Fact]
-    public async Task ProbeAsync_WhenGitHubReturnsOtherFailure_ReturnsTransientFailure()
-    {
-        var tokenProvider = new CopilotTokenProvider();
-        tokenProvider.SetToken("gho_test");
-        var probe = CreateProbe(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
-        {
-            Content = new StringContent("server error")
-        }), tokenProvider);
-
-        var result = await probe.ProbeAsync();
-
-        Assert.Equal(CopilotAuthProbeResult.TransientFailure, result);
-    }
-
-    [Fact]
-    public async Task RefreshTokenAsync_WhenSuccessful_ReturnsNewTokens()
-    {
-        var responseJson = """
-        {
-            "access_token": "ghu_new_access",
-            "refresh_token": "ghr_new_refresh",
-            "expires_in": 28800,
-            "refresh_token_expires_in": 15811200,
-            "token_type": "bearer",
-            "scope": ""
-        }
-        """;
-        var probe = CreateProbe(
-            new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(responseJson, System.Text.Encoding.UTF8, "application/json")
-            }),
-            config: new Dictionary<string, string?>
-            {
-                ["GitHub:ClientId"] = "test-client-id",
-                ["GitHub:ClientSecret"] = "test-client-secret",
-            });
-
-        var result = await probe.RefreshTokenAsync("ghr_old_refresh");
-
-        Assert.NotNull(result);
-        Assert.Equal("ghu_new_access", result.AccessToken);
-        Assert.Equal("ghr_new_refresh", result.RefreshToken);
-        Assert.Equal(TimeSpan.FromSeconds(28800), result.ExpiresIn);
-        Assert.Equal(TimeSpan.FromSeconds(15811200), result.RefreshTokenExpiresIn);
-    }
-
-    [Fact]
-    public async Task RefreshTokenAsync_WhenGitHubReturnsError_ReturnsNull()
-    {
-        var responseJson = """{"error":"bad_refresh_token","error_description":"The refresh token is invalid."}""";
-        var probe = CreateProbe(
-            new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(responseJson, System.Text.Encoding.UTF8, "application/json")
-            }),
-            config: new Dictionary<string, string?>
-            {
-                ["GitHub:ClientId"] = "test-client-id",
-                ["GitHub:ClientSecret"] = "test-client-secret",
-            });
-
-        var result = await probe.RefreshTokenAsync("ghr_invalid");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task RefreshTokenAsync_WhenHttpFails_ReturnsNull()
-    {
-        var probe = CreateProbe(
-            new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
-            {
-                Content = new StringContent("server error")
-            }),
-            config: new Dictionary<string, string?>
-            {
-                ["GitHub:ClientId"] = "test-client-id",
-                ["GitHub:ClientSecret"] = "test-client-secret",
-            });
-
-        var result = await probe.RefreshTokenAsync("ghr_test");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task RefreshTokenAsync_WhenNoClientCredentials_ReturnsNull()
-    {
-        var probe = CreateProbe(
-            new StubHttpMessageHandler(_ => throw new InvalidOperationException("should not send")));
-
-        var result = await probe.RefreshTokenAsync("ghr_test");
-
-        Assert.Null(result);
-    }
-
-    private static GitHubCopilotAuthProbe CreateProbe(
-        HttpMessageHandler handler,
-        CopilotTokenProvider? tokenProvider = null,
-        Dictionary<string, string?>? config = null)
-    {
-        var client = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("https://api.github.com/")
-        };
-
-        var configBuilder = new ConfigurationBuilder();
-        if (config is not null)
-            configBuilder.AddInMemoryCollection(config);
-
-        return new GitHubCopilotAuthProbe(
-            client,
-            tokenProvider ?? new CopilotTokenProvider(),
-            configBuilder.Build(),
-            NullLogger<GitHubCopilotAuthProbe>.Instance);
-    }
-
-    private sealed class StubHttpMessageHandler : HttpMessageHandler
-    {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
-
-        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
-        {
-            _handler = handler;
-        }
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_handler(request));
-        }
-    }
-}
+// GitHubCopilotAuthProbeTests moved to CopilotAuthProbeTests.cs
 
 public class CopilotTokenProviderRefreshTests
 {
@@ -629,31 +459,62 @@ public class CopilotExecutorAuthTransitionTests
             var services = new ServiceCollection();
             services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(connection));
             services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
             services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
+            services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
             services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
             services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
             services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
-            services.AddScoped<TaskQueryService>();
+            services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
+        services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
             services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
             services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
             services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
             services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
             services.AddSingleton(new NotificationManager(NullLogger<NotificationManager>.Instance));
 
@@ -676,10 +537,15 @@ public class CopilotExecutorAuthTransitionTests
                     NullLogger<CopilotClientFactory>.Instance,
                     new ConfigurationBuilder().Build(),
                     new CopilotTokenProvider()),
+                new CopilotSessionPool(NullLogger<CopilotSessionPool>.Instance),
+                new CopilotSdkSender(
+                    NullLogger<CopilotSdkSender>.Instance,
+                    new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
+                    new AgentErrorTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+                    new AgentQuotaService(serviceProvider.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance), new ActivityBroadcaster()),
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                 serviceProvider.GetRequiredService<NotificationManager>(),
                 NSubstitute.Substitute.For<IAgentToolRegistry>(),
-                new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
                 new AgentErrorTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
                 new AgentQuotaService(serviceProvider.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance),
                 serviceProvider.GetRequiredService<AgentCatalogOptions>());

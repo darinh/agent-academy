@@ -25,6 +25,12 @@ public interface ICommandHandler
     string DestructiveWarning => $"{CommandName} performs a destructive action.";
 
     /// <summary>
+    /// Whether the pipeline may automatically retry this command on transient failure.
+    /// Only safe for idempotent / read-only commands. Defaults to false.
+    /// </summary>
+    bool IsRetrySafe => false;
+
+    /// <summary>
     /// Execute the command and return the completed envelope.
     /// </summary>
     Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context);

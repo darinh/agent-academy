@@ -126,6 +126,7 @@ export type TaskStatus =
   | "Completed" | "Cancelled";
 export type TaskItemStatus = "Pending" | "Active" | "Done" | "Rejected";
 export type TaskSize = "XS" | "S" | "M" | "L" | "XL";
+export type TaskPriority = "Critical" | "High" | "Medium" | "Low";
 export type PullRequestStatus =
   | "Open" | "ReviewRequested" | "ChangesRequested"
   | "Approved" | "Merged" | "Closed";
@@ -133,16 +134,26 @@ export type PullRequestStatus =
 // ── Activity ───────────────────────────────────────────────────────────
 
 export type ActivityEventType =
-  | "AgentLoaded" | "AgentThinking" | "AgentFinished"
-  | "RoomCreated" | "RoomClosed" | "TaskCreated"
+  | "AgentLoaded" | "AgentCatalogReloaded" | "AgentThinking" | "AgentFinished"
+  | "RoomCreated" | "RoomClosed" | "RoomRenamed" | "TaskCreated"
   | "PhaseChanged" | "MessagePosted" | "MessageSent"
   | "PresenceUpdated" | "RoomStatusChanged"
   | "ArtifactEvaluated" | "QualityGateChecked" | "IterationRetried"
   | "CheckpointCreated" | "AgentErrorOccurred" | "AgentWarningOccurred"
   | "SubagentStarted" | "SubagentCompleted" | "SubagentFailed"
   | "AgentPlanChanged" | "AgentSnapshotRewound" | "ToolIntercepted"
+  | "CommandExecuted" | "CommandDenied" | "CommandFailed"
+  | "TaskClaimed" | "TaskReleased" | "TaskApproved" | "TaskRejected"
+  | "TaskChangesRequested" | "TaskStatusUpdated" | "TaskCommentAdded"
   | "DirectMessageSent" | "TaskPrStatusChanged"
-  | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled";
+  | "AgentRecalled" | "SpecTaskLinked" | "EvidenceRecorded" | "GateChecked"
+  | "SprintStarted" | "SprintStageAdvanced" | "SprintArtifactStored" | "SprintCompleted" | "SprintCancelled"
+  | "TaskUnblocked"
+  | "TaskRetrospectiveCompleted"
+  | "LearningDigestCompleted"
+  | "ContextUsageUpdated"
+  | "GoalCardCreated"
+  | "GoalCardChallenged";
 
 export interface ActivityEvent {
   id: string;
@@ -313,9 +324,12 @@ export interface TaskSnapshot {
   commentCount?: number;
   type?: "Feature" | "Bug" | "Chore" | "Spike";
   sprintId?: string | null;
+  dependsOnTaskIds?: string[] | null;
+  blockingTaskIds?: string[] | null;
+  priority?: TaskPriority;
 }
 
-export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker";
+export type TaskCommentType = "Comment" | "Finding" | "Evidence" | "Blocker" | "Retrospective";
 
 export interface TaskComment {
   id: string;
@@ -338,6 +352,35 @@ export interface SpecTaskLink {
   linkedByAgentName: string;
   note?: string | null;
   createdAt: string;
+}
+
+export interface TaskDependencySummary {
+  taskId: string;
+  title: string;
+  status: TaskStatus;
+  isSatisfied: boolean;
+}
+
+export interface TaskDependencyInfo {
+  taskId: string;
+  dependsOn: TaskDependencySummary[];
+  dependedOnBy: TaskDependencySummary[];
+}
+
+// ── Bulk Operations ────────────────────────────────────────────────────
+
+export interface BulkOperationResult {
+  requested: number;
+  succeeded: number;
+  failed: number;
+  updated: TaskSnapshot[];
+  errors: BulkOperationError[];
+}
+
+export interface BulkOperationError {
+  taskId: string;
+  code: string;
+  error: string;
 }
 
 export type EvidencePhase = "Baseline" | "After" | "Review";
@@ -404,6 +447,7 @@ export interface TaskAssignmentRequest {
   roomId?: string | null;
   preferredRoles: string[];
   correlationId?: string | null;
+  priority?: TaskPriority;
 }
 
 export interface TaskAssignmentResult {
@@ -414,6 +458,15 @@ export interface TaskAssignmentResult {
 }
 
 // ── Rooms ──────────────────────────────────────────────────────────────
+
+export interface PhaseGate {
+  allowed: boolean;
+  reason?: string | null;
+}
+
+export interface PhasePrerequisiteStatus {
+  gates: Record<string, PhaseGate>;
+}
 
 export interface RoomSnapshot {
   id: string;
@@ -426,6 +479,7 @@ export interface RoomSnapshot {
   recentMessages: ChatEnvelope[];
   createdAt: string;
   updatedAt: string;
+  phaseGates?: PhasePrerequisiteStatus | null;
 }
 
 export interface BreakoutRoom {
@@ -437,6 +491,16 @@ export interface BreakoutRoom {
   status: RoomStatus;
   recentMessages: ChatEnvelope[];
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentContextUsage {
+  agentId: string;
+  roomId: string | null;
+  model: string | null;
+  currentTokens: number;
+  maxTokens: number;
+  percentage: number;
   updatedAt: string;
 }
 
@@ -471,6 +535,14 @@ export interface SessionStats {
   totalMessages: number;
 }
 
+// ── Compaction ─────────────────────────────────────────────────────────
+
+export interface CompactRoomResult {
+  compactedSessions: number;
+  totalAgents: number;
+  note?: string;
+}
+
 // ── Workspace / Project ────────────────────────────────────────────────
 
 export interface WorkspaceOverview {
@@ -479,7 +551,19 @@ export interface WorkspaceOverview {
   recentActivity: ActivityEvent[];
   agentLocations: AgentLocation[];
   breakoutRooms: BreakoutRoom[];
+  goalCards: GoalCardSummary;
   generatedAt: string;
+}
+
+export interface GoalCardSummary {
+  total: number;
+  active: number;
+  challenged: number;
+  completed: number;
+  abandoned: number;
+  verdictProceed: number;
+  verdictProceedWithCaveat: number;
+  verdictChallenge: number;
 }
 
 export interface PlanContent {
@@ -714,6 +798,72 @@ export interface AgentAnalyticsDetail {
   activityBuckets: AgentActivityBucket[];
 }
 
+// ── Task Cycle Analytics ──────────────────────────────────────────────
+
+export interface TaskCycleAnalytics {
+  overview: TaskCycleOverview;
+  agentEffectiveness: AgentTaskEffectiveness[];
+  throughputBuckets: TaskCycleBucket[];
+  typeBreakdown: TaskTypeBreakdown;
+  windowStart: string;
+  windowEnd: string;
+}
+
+export interface TaskCycleOverview {
+  totalTasks: number;
+  statusCounts: TaskStatusCounts;
+  completionRate: number;
+  avgCycleTimeHours: number | null;
+  avgQueueTimeHours: number | null;
+  avgExecutionSpanHours: number | null;
+  avgReviewRounds: number | null;
+  reworkRate: number;
+  totalCommits: number;
+}
+
+export interface TaskStatusCounts {
+  queued: number;
+  active: number;
+  blocked: number;
+  awaitingValidation: number;
+  inReview: number;
+  changesRequested: number;
+  approved: number;
+  merging: number;
+  completed: number;
+  cancelled: number;
+}
+
+export interface AgentTaskEffectiveness {
+  agentId: string;
+  agentName: string;
+  assigned: number;
+  completed: number;
+  cancelled: number;
+  completionRate: number;
+  avgCycleTimeHours: number | null;
+  avgQueueTimeHours: number | null;
+  avgExecutionSpanHours: number | null;
+  avgReviewRounds: number | null;
+  avgCommitsPerTask: number | null;
+  firstPassApprovalRate: number;
+  reworkRate: number;
+}
+
+export interface TaskCycleBucket {
+  bucketStart: string;
+  bucketEnd: string;
+  completed: number;
+  created: number;
+}
+
+export interface TaskTypeBreakdown {
+  feature: number;
+  bug: number;
+  chore: number;
+  spike: number;
+}
+
 // ── Notifications ──────────────────────────────────────────────────────
 
 export interface ProviderStatus {
@@ -844,6 +994,28 @@ export interface SprintRealtimeEvent {
   receivedAt: number;
 }
 
+// ── Sprint Schedule ────────────────────────────────────────────────────
+
+export interface SprintScheduleRequest {
+  cronExpression: string;
+  timeZoneId: string;
+  enabled: boolean;
+}
+
+export interface SprintScheduleResponse {
+  id: string;
+  workspacePath: string;
+  cronExpression: string;
+  timeZoneId: string;
+  enabled: boolean;
+  nextRunAtUtc: string | null;
+  lastTriggeredAt: string | null;
+  lastEvaluatedAt: string | null;
+  lastOutcome: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Search ─────────────────────────────────────────────────────────────
 
 export type SearchScope = "all" | "messages" | "tasks";
@@ -876,4 +1048,211 @@ export interface SearchResults {
   tasks: TaskSearchResult[];
   totalCount: number;
   query: string;
+}
+
+// ── Agent Memory ────────────────────────────────────────────────
+
+export interface MemoryDto {
+  agentId: string;
+  category: string;
+  key: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string | null;
+  lastAccessedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface BrowseMemoriesResponse {
+  total: number;
+  memories: MemoryDto[];
+}
+
+export interface MemoryCategoryStat {
+  category: string;
+  total: number;
+  active: number;
+  expired: number;
+  lastUpdated: string;
+}
+
+export interface MemoryStatsResponse {
+  agentId: string;
+  totalMemories: number;
+  activeMemories: number;
+  expiredMemories: number;
+  categories: MemoryCategoryStat[];
+}
+
+// ── Worktrees ──────────────────────────────────────────────────────────
+
+export interface WorktreeStatusSnapshot {
+  branch: string;
+  relativePath: string;
+  createdAt: string;
+  statusAvailable: boolean;
+  error: string | null;
+  totalDirtyFiles: number;
+  dirtyFilesPreview: string[];
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  lastCommitSha: string | null;
+  lastCommitMessage: string | null;
+  lastCommitAuthor: string | null;
+  lastCommitDate: string | null;
+  taskId: string | null;
+  taskTitle: string | null;
+  taskStatus: string | null;
+  agentId: string | null;
+  agentName: string | null;
+}
+
+// ── Artifacts & Evaluations ─────────────────────────────────────────────
+
+export type ArtifactOperation = "Created" | "Updated" | "Committed" | "Deleted";
+
+export interface ArtifactRecord {
+  agentId: string;
+  roomId: string;
+  filePath: string;
+  operation: ArtifactOperation;
+  timestamp: string;
+}
+
+export interface EvaluationResult {
+  filePath: string;
+  score: number;
+  exists: boolean;
+  nonEmpty: boolean;
+  syntaxValid: boolean;
+  complete: boolean;
+  issues: string[];
+}
+
+export interface RoomEvaluationResponse {
+  artifacts: EvaluationResult[];
+  aggregateScore: number;
+}
+
+// ── Sprint Metrics ─────────────────────────────────────────────────────
+
+export interface SprintMetrics {
+  sprintId: string;
+  sprintNumber: number;
+  status: SprintStatus;
+  durationSeconds: number | null;
+  stageTransitions: number;
+  artifactCount: number;
+  taskCount: number;
+  completedTaskCount: number;
+  timePerStageSeconds: Record<string, number>;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SprintMetricsSummary {
+  totalSprints: number;
+  completedSprints: number;
+  cancelledSprints: number;
+  activeSprints: number;
+  averageDurationSeconds: number | null;
+  averageTaskCount: number;
+  averageArtifactCount: number;
+  averageTimePerStageSeconds: Record<string, number>;
+}
+
+// ── Models ─────────────────────────────────────────────────────────────
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+  executorOperational: boolean;
+}
+
+// ── Memory Export/Import ───────────────────────────────────────────────
+
+export interface MemoryExportDto {
+  agentId: string;
+  category: string;
+  key: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string | null;
+  lastAccessedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface MemoryExportResponse {
+  count: number;
+  memories: MemoryExportDto[];
+}
+
+export interface MemoryImportEntry {
+  agentId: string;
+  category: string;
+  key: string;
+  value: string;
+  ttlHours?: number | null;
+}
+
+export interface MemoryImportResponse {
+  created: number;
+  updated: number;
+  skipped: number;
+  total: number;
+  errors: string[] | null;
+}
+
+// ── Notification Deliveries ────────────────────────────────────────────
+
+export interface NotificationDeliveryDto {
+  id: number;
+  channel: string;
+  title: string | null;
+  body: string | null;
+  roomId: string | null;
+  agentId: string | null;
+  providerId: string;
+  status: string;
+  error: string | null;
+  attemptedAt: string;
+}
+
+export type NotificationDeliveryStats = Record<string, number>;
+
+// ── Specs ──────────────────────────────────────────────────────────────
+
+export interface SpecVersionInfo {
+  version: string;
+  lastUpdated: string;
+  contentHash: string;
+  sectionCount: number;
+}
+
+export interface SpecSearchResult {
+  id: string;
+  heading: string;
+  summary: string;
+  filePath: string;
+  score: number;
+  matchedTerms: string;
+}
+
+// ── Agent Knowledge ────────────────────────────────────────────────────
+
+export interface AgentKnowledgeResponse {
+  entries: string[];
+}
+
+export type AllKnowledgeResponse = Record<string, string[]>;
+
+// ── Room Cleanup ───────────────────────────────────────────────────────
+
+export interface CleanupResponse {
+  archivedCount: number;
 }

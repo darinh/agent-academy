@@ -21,6 +21,20 @@ vi.mock("../CommandsPanel", () => ({ default: () => <div data-testid="commands-p
 vi.mock("../SprintPanel", () => ({ default: () => <div data-testid="sprint-panel" /> }));
 vi.mock("../SearchPanel", () => ({ default: () => <div data-testid="search-panel" /> }));
 vi.mock("../ChatPanel", () => ({ default: () => <div data-testid="chat-panel" /> }));
+vi.mock("../MemoryBrowserPanel", () => ({ default: () => <div data-testid="memory-panel" /> }));
+vi.mock("../DigestPanel", () => ({ default: () => <div data-testid="digest-panel" /> }));
+vi.mock("../RetrospectivePanel", () => ({ default: () => <div data-testid="retrospective-panel" /> }));
+vi.mock("../ArtifactsPanel", () => ({
+  default: ({ roomId, refreshTrigger }: { roomId: string | null; refreshTrigger?: number }) => (
+    <div
+      data-testid="artifacts-panel"
+      data-room-id={roomId ?? ""}
+      data-refresh-trigger={String(refreshTrigger ?? "")}
+    />
+  ),
+}));
+vi.mock("../GoalCardPanel", () => ({ default: () => <div data-testid="goal-card-panel" /> }));
+vi.mock("../ForgePanel", () => ({ default: () => <div data-testid="forge-panel" /> }));
 vi.mock("../ChunkErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div data-testid="error-boundary">{children}</div>,
 }));
@@ -54,14 +68,26 @@ function makeProps(overrides: Partial<WorkspaceContentProps> = {}): WorkspaceCon
       recentActivity: [],
       agentLocations: [],
       breakoutRooms: [],
+      goalCards: { total: 0, active: 0, challenged: 0, completed: 0, abandoned: 0, verdictProceed: 0, verdictProceedWithCaveat: 0, verdictChallenge: 0 },
       generatedAt: new Date().toISOString(),
     },
     circuitBreakerState: "Closed",
     sprintVersion: 0,
     lastSprintEvent: null,
+    retroVersion: 0,
+    digestVersion: 0,
+    memoryVersion: 0,
+    artifactVersion: 0,
+    goalCardVersion: 0,
     activity: [],
     onSelectRoom: vi.fn(),
     onNavigateToTasks: vi.fn(),
+    onNavigateToTask: vi.fn(),
+    onNavigateToRetro: vi.fn(),
+    retroFilterTaskId: null,
+    onClearRetroTaskFilter: vi.fn(),
+    focusTaskId: null,
+    onFocusTaskHandled: vi.fn(),
     styles: baseStyles,
     ...overrides,
   };
@@ -134,6 +160,60 @@ describe("WorkspaceContent", () => {
   it("renders SearchPanel when tab is 'search'", async () => {
     renderContent({ tab: "search" });
     expect(await screen.findByTestId("search-panel")).toBeInTheDocument();
+  });
+
+  it("renders ArtifactsPanel when tab is 'artifacts'", async () => {
+    renderContent({ tab: "artifacts" });
+    expect(await screen.findByTestId("artifacts-panel")).toBeInTheDocument();
+  });
+
+  it("passes room ID and artifactVersion to ArtifactsPanel refresh props", async () => {
+    renderContent({
+      tab: "artifacts",
+      artifactVersion: 7,
+      room: {
+        id: "room-9",
+        name: "Room 9",
+        topic: null,
+        status: "Active",
+        currentPhase: "Discussion",
+        activeTask: null,
+        participants: [],
+        recentMessages: [],
+        createdAt: new Date("2026-04-01T00:00:00Z").toISOString(),
+        updatedAt: new Date("2026-04-01T00:00:00Z").toISOString(),
+        phaseGates: null,
+      },
+    });
+
+    const panel = await screen.findByTestId("artifacts-panel");
+    expect(panel).toHaveAttribute("data-room-id", "room-9");
+    expect(panel).toHaveAttribute("data-refresh-trigger", "7");
+  });
+
+  it("renders MemoryBrowserPanel when tab is 'memories'", async () => {
+    renderContent({ tab: "memories" });
+    expect(await screen.findByTestId("memory-panel")).toBeInTheDocument();
+  });
+
+  it("renders DigestPanel when tab is 'digests'", async () => {
+    renderContent({ tab: "digests" });
+    expect(await screen.findByTestId("digest-panel")).toBeInTheDocument();
+  });
+
+  it("renders RetrospectivePanel when tab is 'retrospectives'", async () => {
+    renderContent({ tab: "retrospectives" });
+    expect(await screen.findByTestId("retrospective-panel")).toBeInTheDocument();
+  });
+
+  it("renders GoalCardPanel when tab is 'goalCards'", async () => {
+    renderContent({ tab: "goalCards" });
+    expect(await screen.findByTestId("goal-card-panel")).toBeInTheDocument();
+  });
+
+  it("renders ForgePanel when tab is 'forge'", async () => {
+    renderContent({ tab: "forge" });
+    expect(await screen.findByTestId("forge-panel")).toBeInTheDocument();
   });
 
   it("does not render any known panel for unknown tab", async () => {

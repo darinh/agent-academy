@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -15,19 +16,19 @@ namespace AgentAcademy.Server.Services;
 /// is processed for a given agent at a time. The orchestrator's serialized
 /// queue processing provides this guarantee today.
 /// </summary>
-public sealed class TaskAssignmentHandler
+public sealed class TaskAssignmentHandler : ITaskAssignmentHandler
 {
-    private readonly AgentCatalogOptions _catalog;
-    private readonly GitService _gitService;
-    private readonly WorktreeService _worktreeService;
-    private readonly BreakoutLifecycleService _breakoutLifecycle;
+    private readonly IAgentCatalog _catalog;
+    private readonly IGitService _gitService;
+    private readonly IWorktreeService _worktreeService;
+    private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<TaskAssignmentHandler> _logger;
 
     public TaskAssignmentHandler(
-        AgentCatalogOptions catalog,
-        GitService gitService,
-        WorktreeService worktreeService,
-        BreakoutLifecycleService breakoutLifecycle,
+        IAgentCatalog catalog,
+        IGitService gitService,
+        IWorktreeService worktreeService,
+        IBreakoutLifecycleService breakoutLifecycle,
         ILogger<TaskAssignmentHandler> logger)
     {
         _catalog = catalog;
@@ -42,11 +43,11 @@ public sealed class TaskAssignmentHandler
     /// Planners may create any task type; non-planners may only file bugs
     /// (other types are converted into a proposal posted to the room).
     /// </summary>
-    internal async Task ProcessAssignmentAsync(
+    public async Task ProcessAssignmentAsync(
         IServiceScope scope, AgentDefinition requestedBy, string roomId,
         ParsedTaskAssignment assignment)
     {
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
         if (!await TryGateAssignmentAsync(messageService, requestedBy, roomId, assignment))
             return;
 
@@ -61,7 +62,7 @@ public sealed class TaskAssignmentHandler
     /// proposal message posted to the room. Returns true if the assignment should proceed.
     /// </summary>
     private async Task<bool> TryGateAssignmentAsync(
-        MessageService messageService, AgentDefinition agent, string roomId,
+        IMessageService messageService, AgentDefinition agent, string roomId,
         ParsedTaskAssignment assignment)
     {
         if (string.Equals(agent.Role, "Planner", StringComparison.OrdinalIgnoreCase))
@@ -87,13 +88,13 @@ public sealed class TaskAssignmentHandler
     private async Task HandleAssignmentAsync(
         IServiceScope scope, string roomId, ParsedTaskAssignment assignment)
     {
-        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
-        var taskQueryService = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
-        var planService = scope.ServiceProvider.GetRequiredService<PlanService>();
+        var agentLocationService = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
+        var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+        var breakoutRoomService = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
+        var taskItemService = scope.ServiceProvider.GetRequiredService<ITaskItemService>();
+        var taskQueryService = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
+        var planService = scope.ServiceProvider.GetRequiredService<IPlanService>();
 
         var agent = _catalog.Agents.FirstOrDefault(a =>
             a.Name.Equals(assignment.Agent, StringComparison.OrdinalIgnoreCase) ||
@@ -197,8 +198,8 @@ public sealed class TaskAssignmentHandler
     private async Task CleanupFailedAssignmentAsync(
         string breakoutRoomId, string? taskId, TaskItem? taskItem,
         string? taskBranch, string? worktreePath, string roomId, string title,
-        BreakoutRoomService breakoutRoomService, MessageService messageService,
-        TaskQueryService taskQueryService, TaskItemService taskItemService)
+        IBreakoutRoomService breakoutRoomService, IMessageService messageService,
+        ITaskQueryService taskQueryService, ITaskItemService taskItemService)
     {
         try
         {

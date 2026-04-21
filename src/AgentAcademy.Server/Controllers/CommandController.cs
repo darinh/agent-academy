@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -50,26 +51,58 @@ public sealed class CommandController : ControllerBase
         "RECORD_EVIDENCE",
         "QUERY_EVIDENCE",
         "CHECK_GATES",
+        "ADD_TASK_DEPENDENCY",
+        "REMOVE_TASK_DEPENDENCY",
+        "SCHEDULE_SPRINT",
+        "LIST_WORKTREES",
+        "LIST_AGENT_STATS",
+        "CLEANUP_WORKTREES",
+        "GENERATE_DIGEST",
+        // Tier 2E — Backend Execution
+        "RUN_FRONTEND_BUILD",
+        "RUN_TYPECHECK",
+        "CALL_ENDPOINT",
+        "TAIL_LOGS",
+        "SHOW_CONFIG",
+        // Tier 2F — Data & Operations
+        "QUERY_DB",
+        "RUN_MIGRATIONS",
+        "SHOW_MIGRATION_STATUS",
+        "HEALTHCHECK",
+        "SHOW_ACTIVE_CONNECTIONS",
+        // Tier 2G — Audit & Debug
+        "SHOW_AUDIT_EVENTS",
+        "SHOW_LAST_ERROR",
+        "TRACE_REQUEST",
+        "LIST_SYSTEM_SETTINGS",
+        "RETRY_FAILED_JOB",
     };
 
     private static readonly HashSet<string> AsyncCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "CREATE_PR",
         "MERGE_PR",
+        "GENERATE_DIGEST",
+        "RUN_FRONTEND_BUILD",
+        "RUN_TYPECHECK",
+        "RUN_MIGRATIONS",
     };
 
     private readonly Dictionary<string, ICommandHandler> _handlers;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CommandController> _logger;
+    private readonly AppAuthSetup _authSetup;
 
     public CommandController(
         IEnumerable<ICommandHandler> handlers,
         IServiceScopeFactory scopeFactory,
-        ILogger<CommandController> logger)
+        ILogger<CommandController> logger,
+        AppAuthSetup authSetup)
     {
         _handlers = handlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -79,8 +112,8 @@ public sealed class CommandController : ControllerBase
     [HttpGet("metadata")]
     public IActionResult GetMetadata()
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         var metadata = HumanCommandRegistry.GetAll()
             .Where(m => AllowedCommands.Contains(m.Command) && _handlers.ContainsKey(m.Command))
@@ -95,23 +128,20 @@ public sealed class CommandController : ControllerBase
     [HttpPost("execute")]
     public async Task<IActionResult> Execute([FromBody] ExecuteCommandRequest? request)
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (request is null)
-            return BadRequest(new { code = "invalid_command_request", message = "Command payload is required." });
+            return BadRequest(ApiProblem.BadRequest("Command payload is required.", "invalid_command_request"));
 
         var commandName = request.Command?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(commandName))
-            return BadRequest(new { code = "invalid_command_request", message = "Command is required." });
+            return BadRequest(ApiProblem.BadRequest("Command is required.", "invalid_command_request"));
 
         if (!AllowedCommands.Contains(commandName))
         {
-            return StatusCode(StatusCodes.Status403Forbidden, new
-            {
-                code = "command_denied",
-                message = $"Command '{commandName}' is not available in the human command API."
-            });
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiProblem.Forbidden($"Command '{commandName}' is not available in the human command API.", "command_denied"));
         }
 
         if (!_handlers.TryGetValue(commandName, out var handler))
@@ -127,7 +157,7 @@ public sealed class CommandController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { code = "invalid_command_args", message = ex.Message });
+            return BadRequest(ApiProblem.BadRequest(ex.Message, "invalid_command_args"));
         }
 
         var correlationId = $"cmd-{Guid.NewGuid():N}";
@@ -185,17 +215,15 @@ public sealed class CommandController : ControllerBase
     [HttpGet("{correlationId}")]
     public async Task<IActionResult> GetStatus(string correlationId)
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var audit = await db.CommandAudits
+        var audit = await WithDbContextAsync(db => db.CommandAudits
             .AsNoTracking()
             .FirstOrDefaultAsync(a =>
                 a.CorrelationId == correlationId &&
                 a.AgentId == HumanAgentId &&
-                a.Source == HumanUiSource);
+                a.Source == HumanUiSource));
 
         if (audit is null)
         {
@@ -274,31 +302,30 @@ public sealed class CommandController : ControllerBase
         Dictionary<string, object?> args,
         string correlationId)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        db.CommandAudits.Add(new CommandAuditEntity
+        await WithDbContextAsync(db =>
         {
-            Id = Guid.NewGuid().ToString("N"),
-            CorrelationId = correlationId,
-            AgentId = HumanAgentId,
-            Source = HumanUiSource,
-            Command = commandName,
-            ArgsJson = JsonSerializer.Serialize(args),
-            Status = PendingAuditStatus,
-            Timestamp = DateTime.UtcNow
+            db.CommandAudits.Add(new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = correlationId,
+                AgentId = HumanAgentId,
+                Source = HumanUiSource,
+                Command = commandName,
+                ArgsJson = JsonSerializer.Serialize(args),
+                Status = PendingAuditStatus,
+                Timestamp = DateTime.UtcNow
+            });
+            return Task.CompletedTask;
         });
-
-        await db.SaveChangesAsync();
     }
 
     private async Task CreateCompletedAuditAsync(CommandEnvelope envelope)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        db.CommandAudits.Add(CreateAuditEntity(envelope));
-        await db.SaveChangesAsync();
+        await WithDbContextAsync(db =>
+        {
+            db.CommandAudits.Add(CreateAuditEntity(envelope));
+            return Task.CompletedTask;
+        });
     }
 
     private async Task CreateConfirmationAuditAsync(
@@ -306,48 +333,60 @@ public sealed class CommandController : ControllerBase
         Dictionary<string, object?> args,
         string correlationId)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        db.CommandAudits.Add(new CommandAuditEntity
+        await WithDbContextAsync(db =>
         {
-            Id = Guid.NewGuid().ToString("N"),
-            CorrelationId = correlationId,
-            AgentId = HumanAgentId,
-            Source = HumanUiSource,
-            Command = commandName,
-            ArgsJson = JsonSerializer.Serialize(args),
-            Status = nameof(CommandStatus.Denied),
-            ErrorCode = CommandErrorCode.ConfirmationRequired,
-            ErrorMessage = "Confirmation required for destructive command",
-            Timestamp = DateTime.UtcNow
+            db.CommandAudits.Add(new CommandAuditEntity
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                CorrelationId = correlationId,
+                AgentId = HumanAgentId,
+                Source = HumanUiSource,
+                Command = commandName,
+                ArgsJson = JsonSerializer.Serialize(args),
+                Status = nameof(CommandStatus.Denied),
+                ErrorCode = CommandErrorCode.ConfirmationRequired,
+                ErrorMessage = "Confirmation required for destructive command",
+                Timestamp = DateTime.UtcNow
+            });
+            return Task.CompletedTask;
         });
-
-        await db.SaveChangesAsync();
     }
 
     private async Task UpdateAuditAsync(CommandEnvelope envelope)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        var audit = await db.CommandAudits.FirstOrDefaultAsync(a =>
-            a.CorrelationId == envelope.CorrelationId &&
-            a.AgentId == HumanAgentId &&
-            a.Source == HumanUiSource);
+        await WithDbContextAsync(async db =>
+        {
+            var audit = await db.CommandAudits.FirstOrDefaultAsync(a =>
+                a.CorrelationId == envelope.CorrelationId &&
+                a.AgentId == HumanAgentId &&
+                a.Source == HumanUiSource);
 
-        if (audit is null)
-        {
-            db.CommandAudits.Add(CreateAuditEntity(envelope));
-        }
-        else
-        {
+            if (audit is null)
+            {
+                db.CommandAudits.Add(CreateAuditEntity(envelope));
+                return;
+            }
+
             audit.Status = envelope.Status.ToString();
             audit.ResultJson = envelope.Result is null ? null : JsonSerializer.Serialize(envelope.Result);
             audit.ErrorMessage = envelope.Error;
             audit.ErrorCode = envelope.ErrorCode;
             audit.Timestamp = envelope.Timestamp;
-        }
+        });
+    }
 
+    private async Task<T> WithDbContextAsync<T>(Func<AgentAcademyDbContext, Task<T>> work)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        return await work(db);
+    }
+
+    private async Task WithDbContextAsync(Func<AgentAcademyDbContext, Task> work)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        await work(db);
         await db.SaveChangesAsync();
     }
 
@@ -432,134 +471,10 @@ public sealed class CommandController : ControllerBase
             _ => "failed"
         };
 
-    /// <summary>
-    /// GET /api/commands/audit — paginated command audit log with optional filters.
-    /// </summary>
-    [HttpGet("audit")]
-    public async Task<IActionResult> GetAuditLog(
-        [FromQuery] string? agentId = null,
-        [FromQuery] string? command = null,
-        [FromQuery] string? status = null,
-        [FromQuery] int? hoursBack = null,
-        [FromQuery] int limit = 50,
-        [FromQuery] int offset = 0)
-    {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
-
-        if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760." });
-
-        limit = Math.Clamp(limit, 1, 200);
-        offset = Math.Max(offset, 0);
-
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        var query = db.CommandAudits.AsNoTracking().AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(agentId))
-            query = query.Where(a => a.AgentId == agentId);
-
-        if (!string.IsNullOrWhiteSpace(command))
-            query = query.Where(a => a.Command == command.ToUpperInvariant());
-
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            // Normalize common casing variants
-            var normalized = status switch
-            {
-                var s when s.Equals("Success", StringComparison.OrdinalIgnoreCase) => "Success",
-                var s when s.Equals("Error", StringComparison.OrdinalIgnoreCase) => "Error",
-                var s when s.Equals("Denied", StringComparison.OrdinalIgnoreCase) => "Denied",
-                var s when s.Equals("Pending", StringComparison.OrdinalIgnoreCase) => "Pending",
-                _ => status
-            };
-            query = query.Where(a => a.Status == normalized);
-        }
-
-        if (hoursBack.HasValue)
-        {
-            var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
-            query = query.Where(a => a.Timestamp >= since);
-        }
-
-        var total = await query.CountAsync();
-
-        var records = await query
-            .OrderByDescending(a => a.Timestamp)
-            .Skip(offset)
-            .Take(limit)
-            .Select(a => new AuditLogEntry(
-                a.Id,
-                a.CorrelationId,
-                a.AgentId,
-                a.Source,
-                a.Command,
-                a.Status,
-                a.ErrorMessage,
-                a.ErrorCode,
-                a.RoomId,
-                a.Timestamp))
-            .ToListAsync();
-
-        return Ok(new AuditLogResponse(records, total, limit, offset));
-    }
-
-    /// <summary>
-    /// GET /api/commands/audit/stats — aggregate command execution statistics.
-    /// </summary>
-    [HttpGet("audit/stats")]
-    public async Task<IActionResult> GetAuditStats([FromQuery] int? hoursBack = null)
-    {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
-
-        if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-            return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760." });
-
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-        var query = db.CommandAudits.AsNoTracking().AsQueryable();
-
-        if (hoursBack.HasValue)
-        {
-            var since = DateTime.UtcNow.AddHours(-hoursBack.Value);
-            query = query.Where(a => a.Timestamp >= since);
-        }
-
-        var totalCommands = await query.CountAsync();
-
-        var byStatus = await query
-            .GroupBy(a => a.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToListAsync();
-
-        var byAgent = await query
-            .GroupBy(a => a.AgentId)
-            .Select(g => new { AgentId = g.Key, Count = g.Count() })
-            .OrderByDescending(g => g.Count)
-            .ToListAsync();
-
-        var byCommand = await query
-            .GroupBy(a => a.Command)
-            .Select(g => new { Command = g.Key, Count = g.Count() })
-            .OrderByDescending(g => g.Count)
-            .Take(20)
-            .ToListAsync();
-
-        return Ok(new AuditStatsResponse(
-            TotalCommands: totalCommands,
-            ByStatus: byStatus.ToDictionary(x => x.Status, x => x.Count),
-            ByAgent: byAgent.ToDictionary(x => x.AgentId, x => x.Count),
-            ByCommand: byCommand.ToDictionary(x => x.Command, x => x.Count),
-            WindowHours: hoursBack));
-    }
 }
 
 public sealed record ExecuteCommandRequest(
-    [property: Required, MinLength(1), StringLength(10_000)] string Command,
+    [Required, MinLength(1), StringLength(10_000)] string Command,
     Dictionary<string, JsonElement>? Args);
 
 public sealed record ExecuteCommandResponse(

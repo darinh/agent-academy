@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -11,9 +12,9 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class RebaseTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
 
-    public RebaseTaskHandler(GitService gitService)
+    public RebaseTaskHandler(IGitService gitService)
     {
         _gitService = gitService;
     }
@@ -39,8 +40,8 @@ public sealed class RebaseTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Validate task exists
         var task = await taskQueries.GetTaskAsync(taskId);
@@ -150,7 +151,7 @@ public sealed class RebaseTaskHandler : ICommandHandler
     }
 
     private async Task<CommandEnvelope> HandleRebaseAsync(
-        CommandEnvelope command, TaskSnapshot task, string? roomId, MessageService messages)
+        CommandEnvelope command, TaskSnapshot task, string? roomId, IMessageService messages)
     {
         try
         {

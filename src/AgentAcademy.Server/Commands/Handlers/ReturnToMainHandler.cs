@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -14,9 +15,9 @@ public sealed class ReturnToMainHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
         var mainRoomId = catalog.DefaultRoomId;
 
         var room = await roomService.GetRoomAsync(mainRoomId);

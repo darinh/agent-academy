@@ -1,24 +1,24 @@
-using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Discord;
-using Discord.Webhook;
 using Discord.WebSocket;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace AgentAcademy.Server.Notifications;
 
 /// <summary>
 /// Notification provider that delivers notifications and collects user input via a Discord bot.
-/// Delegates channel/category lifecycle to <see cref="DiscordChannelManager"/>.
-/// Owns the Discord client connection and message sending/routing logic.
+/// Owns the Discord client connection lifecycle and delegates to:
+/// <see cref="DiscordChannelManager"/> for channel/category infrastructure,
+/// <see cref="DiscordMessageSender"/> for outbound message delivery,
+/// <see cref="DiscordMessageRouter"/> for inbound message routing,
+/// <see cref="DiscordInputHandler"/> for interactive input collection.
 /// </summary>
 public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncDisposable
 {
     private readonly ILogger<DiscordNotificationProvider> _logger;
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentOrchestrator _orchestrator;
     private readonly DiscordChannelManager _channelManager;
     private readonly DiscordInputHandler _inputHandler;
+    private readonly DiscordMessageSender _sender;
+    private readonly DiscordMessageRouter _router;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
 
     private DiscordSocketClient? _client;
@@ -28,19 +28,21 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private ulong? _ownerId;
     private bool _isConfigured;
     private TaskCompletionSource<bool>? _readyTcs;
+    private Func<Task>? _readyHandler;
+    private Func<Exception, Task>? _disconnectedHandler;
 
     public DiscordNotificationProvider(
         ILogger<DiscordNotificationProvider> logger,
-        IServiceScopeFactory scopeFactory,
-        AgentOrchestrator orchestrator,
         DiscordChannelManager channelManager,
-        DiscordInputHandler inputHandler)
+        DiscordInputHandler inputHandler,
+        DiscordMessageSender sender,
+        DiscordMessageRouter router)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-        _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
         _channelManager = channelManager ?? throw new ArgumentNullException(nameof(channelManager));
         _inputHandler = inputHandler ?? throw new ArgumentNullException(nameof(inputHandler));
+        _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _router = router ?? throw new ArgumentNullException(nameof(router));
     }
 
     private string? _lastError;
@@ -125,13 +127,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             _readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             string? disconnectReason = null;
 
-            _client.Ready += () =>
+            _readyHandler = () =>
             {
                 _readyTcs.TrySetResult(true);
                 return Task.CompletedTask;
             };
 
-            _client.Disconnected += ex =>
+            _disconnectedHandler = ex =>
             {
                 _logger.LogWarning(ex, "Discord client disconnected");
                 disconnectReason = ExtractDisconnectReason(ex);
@@ -139,8 +141,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
                 return Task.CompletedTask;
             };
 
-            // Persistent handler for routing replies from agent channels back to rooms
-            _client.MessageReceived += OnAgentChannelMessageReceived;
+            _client.Ready += _readyHandler;
+            _client.Disconnected += _disconnectedHandler;
 
             try
             {
@@ -189,6 +191,9 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             var guild = _client.GetGuild(_guildId);
             if (guild is not null)
                 await _channelManager.RebuildAsync(guild);
+
+            // Attach inbound message router AFTER rebuild so channel mappings are ready
+            _client.MessageReceived += _router.HandleMessageReceivedAsync;
         }
         finally
         {
@@ -217,31 +222,15 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        if (!IsConnected || _client is null)
-        {
-            _logger.LogWarning("Cannot send notification — Discord provider is not connected");
-            return false;
-        }
+        var guild = GetGuildIfConnected("send notification");
+        if (guild is null) return false;
 
         try
         {
-            // Route to room-specific channel if RoomId is available
             if (!string.IsNullOrEmpty(message.RoomId))
-            {
-                return await SendToRoomChannelAsync(message);
-            }
+                return await _sender.SendToRoomChannelAsync(guild, _channelId, message, cancellationToken);
 
-            // Fallback: send to configured default channel
-            var channel = ResolveChannel();
-            if (channel is null)
-                return false;
-
-            var embed = BuildEmbed(message);
-            var components = BuildActionComponents(message.Actions);
-            await channel.SendMessageAsync(embed: embed, components: components);
-
-            _logger.LogDebug("Sent Discord notification to default channel: {Title}", message.Title);
-            return true;
+            return await _sender.SendToDefaultChannelAsync(guild, _channelId, message, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -250,129 +239,20 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
     }
 
-    /// <summary>
-    /// Sends a notification to a room-specific Discord channel using a webhook
-    /// so the agent appears as the sender with a custom name and avatar.
-    /// Creates the room channel and webhook on demand.
-    /// Falls back to the configured default channel if creation fails (e.g., missing permissions).
-    /// </summary>
-    private async Task<bool> SendToRoomChannelAsync(NotificationMessage message)
-    {
-        var guild = _client!.GetGuild(_guildId);
-        if (guild is null)
-        {
-            _logger.LogError("Discord guild {GuildId} not found", _guildId);
-            return false;
-        }
-
-        ITextChannel? roomChannel = null;
-        DiscordWebhookClient? webhook = null;
-
-        try
-        {
-            (roomChannel, webhook) = await _channelManager.EnsureRoomChannelAsync(
-                guild, message.RoomId!, message.AgentName);
-        }
-        catch (Discord.Net.HttpException httpEx) when (httpEx.DiscordCode == DiscordErrorCode.MissingPermissions)
-        {
-            _logger.LogWarning(
-                "Cannot create room channel/webhook (Missing Permissions) — falling back to default channel. " +
-                "Grant the bot 'Manage Channels' and 'Manage Webhooks' at the server level.");
-            roomChannel = null;
-        }
-
-        // Fallback to configured default channel if room channel creation failed
-        if (roomChannel is null)
-        {
-            var fallbackChannel = ResolveChannel();
-            if (fallbackChannel is null)
-                return false;
-
-            var embed = BuildEmbed(message);
-            await (fallbackChannel as ITextChannel)!.SendMessageAsync(embed: embed);
-            return true;
-        }
-
-        // Use webhook for agent messages (custom sender name/avatar)
-        if (webhook is not null && !string.IsNullOrEmpty(message.AgentName))
-        {
-            var agentDisplayName = DiscordChannelManager.FormatAgentDisplayName(message.AgentName);
-            var avatarUrl = DiscordChannelManager.GetAgentAvatarUrl(message.AgentName);
-
-            if (message.Type is NotificationType.Error or NotificationType.TaskFailed)
-            {
-                var embed = new EmbedBuilder()
-                    .WithDescription(message.Body)
-                    .WithColor(GetColorForType(message.Type))
-                    .WithCurrentTimestamp()
-                    .Build();
-
-                await webhook.SendMessageAsync(
-                    embeds: new[] { embed },
-                    username: agentDisplayName,
-                    avatarUrl: avatarUrl);
-            }
-            else
-            {
-                await SendChunkedWebhookAsync(webhook, message.Body, agentDisplayName, avatarUrl);
-            }
-
-            return true;
-        }
-
-        // Fallback: regular bot message with embed (no webhook available)
-        var fallbackEmbed = BuildEmbed(message);
-        await roomChannel.SendMessageAsync(embed: fallbackEmbed);
-        return true;
-    }
-
-    /// <summary>
-    /// Sends a long message via webhook, splitting into multiple parts if it exceeds
-    /// Discord's 2000-character limit. Parts are labeled (1/N), (2/N), etc.
-    /// </summary>
-    private static async Task SendChunkedWebhookAsync(
-        DiscordWebhookClient webhook, string text, string username, string? avatarUrl)
-    {
-        const int maxLen = 2000;
-        const int suffixReserve = 10; // room for " (XX/XX)"
-        var chunkSize = maxLen - suffixReserve;
-
-        if (text.Length <= maxLen)
-        {
-            await webhook.SendMessageAsync(text: text, username: username, avatarUrl: avatarUrl);
-            return;
-        }
-
-        var chunks = new List<string>();
-        for (var i = 0; i < text.Length; i += chunkSize)
-        {
-            var len = Math.Min(chunkSize, text.Length - i);
-            chunks.Add(text.Substring(i, len));
-        }
-
-        for (var i = 0; i < chunks.Count; i++)
-        {
-            var part = $"{chunks[i]} ({i + 1}/{chunks.Count})";
-            await webhook.SendMessageAsync(text: part, username: username, avatarUrl: avatarUrl);
-        }
-    }
-
     /// <inheritdoc />
     public async Task<UserResponse?> RequestInputAsync(InputRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!IsConnected || _client is null)
-        {
-            _logger.LogWarning("Cannot request input — Discord provider is not connected");
-            return null;
-        }
+        var guild = GetGuildIfConnected("request input");
+        if (guild is null) return null;
 
         try
         {
-            var channel = ResolveChannel();
+            var channel = DiscordMessageSender.ResolveDefaultChannel(guild, _channelId);
             if (channel is null)
             {
+                _logger.LogError("Discord channel {ChannelId} not found in guild {GuildId}", _channelId, _guildId);
                 return null;
             }
 
@@ -390,13 +270,13 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             if (request.Choices is { Count: > 0 })
             {
                 return await _inputHandler.RequestChoiceInputAsync(
-                    _client, channel, embed, request.Choices, ProviderId, cancellationToken);
+                    _client!, channel, embed, request.Choices, ProviderId, cancellationToken);
             }
 
             if (request.AllowFreeform)
             {
                 return await _inputHandler.RequestFreeformInputAsync(
-                    _client, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
+                    _client!, channel, embed, _channelId, _ownerId, ProviderId, cancellationToken);
             }
 
             _logger.LogWarning("InputRequest has no choices and freeform is disabled — cannot collect input");
@@ -436,57 +316,17 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     /// <summary>
     /// Sends an agent's question to the human via a dedicated Discord channel and thread.
-    /// Creates a category for the workspace, a channel for the agent, and a thread for the question.
-    /// Human replies in the channel/thread are automatically routed back to the agent's room.
     /// </summary>
     public async Task<bool> SendAgentQuestionAsync(AgentQuestion question, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        if (!IsConnected || _client is null)
-        {
-            _logger.LogWarning("Cannot send agent question — Discord provider is not connected");
-            return false;
-        }
+        var guild = GetGuildIfConnected("send agent question");
+        if (guild is null) return false;
 
         try
         {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null)
-            {
-                _logger.LogError("Discord guild {GuildId} not found", _guildId);
-                return false;
-            }
-
-            var (channel, thread) = await _channelManager.EnsureQuestionThreadAsync(
-                guild, question.RoomId, question.RoomName, question.AgentId, question.AgentName,
-                question.Question, cancellationToken);
-
-            var embed = new EmbedBuilder()
-                .WithTitle($"❓ {question.AgentName} asks:")
-                .WithDescription(question.Question)
-                .WithColor(Color.Gold)
-                .AddField("Workspace", question.RoomName, inline: true)
-                .AddField("Agent", question.AgentName, inline: true)
-                .WithFooter("Reply in this thread — your response will be sent to the agent")
-                .WithCurrentTimestamp()
-                .Build();
-
-            await thread.SendMessageAsync(embed: embed);
-
-            _logger.LogInformation(
-                "Agent question sent: {AgentName} → #{ChannelName}/{ThreadName}",
-                question.AgentName, channel.Name, thread.Name);
-
-            return true;
-        }
-        catch (Discord.Net.HttpException httpEx) when (httpEx.DiscordCode == DiscordErrorCode.MissingPermissions)
-        {
-            _logger.LogError(httpEx,
-                "Discord bot lacks permissions to create channels/threads for agent question from '{AgentName}'. " +
-                "Grant the bot 'Manage Channels', 'Send Messages', and 'Create Public Threads' permissions on the server.",
-                question.AgentName);
-            return false;
+            return await _sender.SendAgentQuestionAsync(guild, question, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -497,35 +337,17 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
     /// <summary>
     /// Posts a DM as a simple embed in the agent's channel (no thread).
-    /// Used for agent-to-agent DMs where no reply routing is needed.
     /// </summary>
     public async Task<bool> SendDirectMessageAsync(AgentQuestion dm, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dm);
 
-        if (!IsConnected || _client is null) return false;
+        var guild = GetGuildIfConnected("send direct message");
+        if (guild is null) return false;
 
         try
         {
-            var guild = _client.GetGuild(_guildId);
-            if (guild is null) return false;
-
-            var channel = await _channelManager.EnsureAgentChannelAsync(
-                guild, dm.RoomId, dm.RoomName, dm.AgentId, dm.AgentName, cancellationToken);
-
-            var embed = new EmbedBuilder()
-                .WithDescription(dm.Question)
-                .WithColor(Color.Blue)
-                .WithFooter(dm.AgentName)
-                .WithCurrentTimestamp()
-                .Build();
-
-            await channel.SendMessageAsync(embed: embed);
-
-            _logger.LogInformation("DM posted to #{ChannelName}: {AgentName}",
-                channel.Name, dm.AgentName);
-
-            return true;
+            return await _sender.SendDirectMessageAsync(guild, dm, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -535,178 +357,54 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     }
 
 
-    #region Private helpers
-
-    /// <summary>
-    /// Persistent handler for messages in agent channels and room channels.
-    /// Routes human replies back to the correct Agent Academy room via MessageService.
-    /// </summary>
-    private async Task OnAgentChannelMessageReceived(SocketMessage message)
-    {
-        if (message.Author.IsBot) return;
-
-        // Ignore webhook messages (our own webhook-sent messages)
-        if (message is SocketUserMessage { Source: MessageSource.Webhook })
-            return;
-
-        // Skip non-text messages
-        if (string.IsNullOrWhiteSpace(message.Content))
-        {
-            try { await message.Channel.SendMessageAsync("ℹ️ Please reply with text — attachments can’t be forwarded to the agents."); }
-            catch { /* best-effort hint */ }
-            return;
-        }
-
-        // Determine the parent channel ID for routing
-        ulong channelId;
-        if (message.Channel is SocketThreadChannel thread)
-        {
-            if (thread.ParentChannel is null) return;
-            channelId = thread.ParentChannel.Id;
-        }
-        else
-        {
-            channelId = message.Channel.Id;
-        }
-
-        // Check if this is a room channel message (bidirectional bridge)
-        if (_channelManager.TryGetRoomForChannel(channelId, out var roomId) && roomId is not null)
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-                await messageService.PostHumanMessageAsync(roomId, message.Content);
-                _orchestrator.HandleHumanMessage(roomId);
-
-                await message.AddReactionAsync(new Emoji("✅"));
-
-                _logger.LogInformation(
-                    "Routed Discord message to room '{RoomId}' from user '{User}'",
-                    roomId, message.Author.Username);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to route Discord message to room '{RoomId}'", roomId);
-                try { await message.Channel.SendMessageAsync("⚠️ Failed to deliver message to room. Please try again."); }
-                catch { /* best-effort */ }
-            }
-            return;
-        }
-
-        // Check if this is an ASK_HUMAN agent channel message
-        if (!_channelManager.TryGetAgentInfoForChannel(channelId, out var agentInfo) || agentInfo is null)
-            return;
-
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-            await messageService.PostHumanMessageAsync(agentInfo.RoomId, message.Content);
-            _orchestrator.HandleHumanMessage(agentInfo.RoomId);
-
-            await message.Channel.SendMessageAsync("✅ Reply received — sent to **" + agentInfo.AgentName + "**");
-
-            _logger.LogInformation(
-                "Routed Discord reply to agent '{AgentName}' in room '{RoomId}'",
-                agentInfo.AgentName, agentInfo.RoomId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to route Discord reply to agent '{AgentName}'", agentInfo.AgentName);
-            try
-            {
-                await message.Channel.SendMessageAsync("⚠️ Failed to deliver reply to " + agentInfo.AgentName + ". Please try again.");
-            }
-            catch (Exception ackEx)
-            {
-                _logger.LogWarning(ackEx, "Failed to send error acknowledgment to Discord channel");
-            }
-        }
-    }
-
     /// <summary>
     /// Renames the Discord channel associated with a room (delegates to channel manager).
     /// </summary>
     public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
     {
-        if (_client is null || !_isConfigured) return;
-
-        var guild = _client.GetGuild(_guildId);
-        if (guild is null) return;
-
-        await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
+        var guild = GetGuildIfConfigured();
+        if (guild is not null)
+            await _channelManager.RenameRoomChannelAsync(guild, roomId, newName);
     }
 
     /// <inheritdoc />
     public async Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
     {
-        if (_client is null || !_isConfigured) return;
+        var guild = GetGuildIfConfigured();
+        if (guild is not null)
+            await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
+    }
+
+
+    #region Private helpers
+
+    /// <summary>
+    /// Resolves the Discord guild when the provider is connected.
+    /// Logs a warning if disconnected or guild unavailable. Returns null on failure.
+    /// </summary>
+    private SocketGuild? GetGuildIfConnected(string operationName)
+    {
+        if (!IsConnected || _client is null)
+        {
+            _logger.LogWarning("Cannot {Operation} — Discord provider is not connected", operationName);
+            return null;
+        }
 
         var guild = _client.GetGuild(_guildId);
-        if (guild is null) return;
-
-        await _channelManager.DeleteRoomChannelAsync(guild, roomId, cancellationToken);
-    }
-
-    private Embed BuildEmbed(NotificationMessage message)
-    {
-        var embed = new EmbedBuilder()
-            .WithTitle(message.Title)
-            .WithDescription(message.Body)
-            .WithColor(GetColorForType(message.Type))
-            .WithCurrentTimestamp();
-
-        if (message.RoomId is not null)
-            embed.AddField("Room", message.RoomId, inline: true);
-        if (message.AgentName is not null)
-            embed.AddField("Agent", message.AgentName, inline: true);
-
-        return embed.Build();
-    }
-
-    public static Color GetColorForType(NotificationType type) => type switch
-    {
-        NotificationType.AgentThinking => Color.Blue,
-        NotificationType.NeedsInput => Color.Gold,
-        NotificationType.TaskComplete => Color.Green,
-        NotificationType.TaskFailed => Color.Red,
-        NotificationType.SpecReview => new Color(138, 43, 226), // purple
-        NotificationType.Error => Color.Red,
-        _ => Color.LightGrey
-    };
-
-    private IMessageChannel? ResolveChannel()
-    {
-        var guild = _client!.GetGuild(_guildId);
         if (guild is null)
-        {
-            _logger.LogError("Discord guild {GuildId} not found — bot may not be a member", _guildId);
-            return null;
-        }
+            _logger.LogError("Discord guild {GuildId} not found", _guildId);
 
-        var channel = guild.GetTextChannel(_channelId);
-        if (channel is null)
-        {
-            _logger.LogError("Discord channel {ChannelId} not found in guild {GuildId}", _channelId, _guildId);
-            return null;
-        }
-
-        return channel;
+        return guild;
     }
 
-    private static MessageComponent? BuildActionComponents(Dictionary<string, string>? actions)
+    /// <summary>
+    /// Resolves the Discord guild when the provider is configured (but not necessarily fully connected).
+    /// Used by best-effort lifecycle operations. Returns null silently if unavailable.
+    /// </summary>
+    private SocketGuild? GetGuildIfConfigured()
     {
-        if (actions is not { Count: > 0 })
-            return null;
-
-        var builder = new ComponentBuilder();
-        foreach (var (key, label) in actions)
-        {
-            builder.WithButton(label, $"action:{key}", ButtonStyle.Primary);
-        }
-
-        return builder.Build();
+        if (_client is null || !_isConfigured) return null;
+        return _client.GetGuild(_guildId);
     }
 
     private Task OnDiscordLog(LogMessage logMessage)
@@ -758,7 +456,14 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         try
         {
             _client.Log -= OnDiscordLog;
-            _client.MessageReceived -= OnAgentChannelMessageReceived;
+            _client.MessageReceived -= _router.HandleMessageReceivedAsync;
+            if (_readyHandler is not null)
+                _client.Ready -= _readyHandler;
+            if (_disconnectedHandler is not null)
+                _client.Disconnected -= _disconnectedHandler;
+            _readyHandler = null;
+            _disconnectedHandler = null;
+
             await _client.StopAsync();
             await _client.DisposeAsync();
         }

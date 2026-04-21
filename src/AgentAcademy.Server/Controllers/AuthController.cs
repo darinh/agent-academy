@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -19,15 +20,15 @@ namespace AgentAcademy.Server.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly GitHubAuthOptions _authOptions;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
     private readonly IAgentExecutor _executor;
-    private readonly TokenPersistenceService _tokenPersistence;
+    private readonly ITokenPersistenceService _tokenPersistence;
 
     public AuthController(
         GitHubAuthOptions authOptions,
-        CopilotTokenProvider tokenProvider,
+        ICopilotTokenProvider tokenProvider,
         IAgentExecutor executor,
-        TokenPersistenceService tokenPersistence)
+        ITokenPersistenceService tokenPersistence)
     {
         _authOptions = authOptions;
         _tokenProvider = tokenProvider;
@@ -86,7 +87,7 @@ public class AuthController : ControllerBase
     public IActionResult Login()
     {
         if (!_authOptions.Enabled)
-            return BadRequest(new { error = "GitHub authentication is not configured." });
+            return BadRequest(ApiProblem.BadRequest("GitHub authentication is not configured."));
 
         // After OAuth completes on the backend, redirect to the frontend app
         var redirect = _authOptions.FrontendUrl.TrimEnd('/') + "/";

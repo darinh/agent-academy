@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -11,9 +12,9 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class RejectTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
 
-    public RejectTaskHandler(GitService gitService)
+    public RejectTaskHandler(IGitService gitService)
     {
         _gitService = gitService;
     }
@@ -57,8 +58,8 @@ public sealed class RejectTaskHandler : ICommandHandler
             };
         }
 
-        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskOrchestration = context.Services.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)

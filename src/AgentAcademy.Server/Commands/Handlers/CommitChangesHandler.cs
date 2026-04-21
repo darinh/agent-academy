@@ -1,6 +1,8 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -11,12 +13,14 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class CommitChangesHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CommitChangesHandler> _logger;
 
-    public CommitChangesHandler(GitService gitService, ILogger<CommitChangesHandler> logger)
+    public CommitChangesHandler(IGitService gitService, IServiceScopeFactory scopeFactory, ILogger<CommitChangesHandler> logger)
     {
         _gitService = gitService;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -66,6 +70,19 @@ public sealed class CommitChangesHandler : ICommandHandler
             _logger.LogInformation(
                 "COMMIT_CHANGES by {AgentId} ({Role}): {CommitSha} — {Message}",
                 context.AgentId, context.AgentRole, commitSha, message);
+
+            // Record committed files as room artifacts
+            try
+            {
+                using var artifactScope = _scopeFactory.CreateScope();
+                var tracker = artifactScope.ServiceProvider.GetRequiredService<IRoomArtifactTracker>();
+                var files = await _gitService.GetFilesInCommitAsync(commitSha, context.WorkingDirectory);
+                await tracker.RecordCommitAsync(context.RoomId, context.AgentId, commitSha, files);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record commit artifacts for {Sha}", commitSha);
+            }
 
             return command with
             {

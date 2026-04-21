@@ -16,10 +16,10 @@ public sealed class WorkspaceControllerTests : IDisposable
     {
         _svc = new TestServiceGraph();
         _controller = new WorkspaceController(
-            _svc.ProjectScanner, _svc.RoomService,
-            _svc.TaskOrchestrationService, _svc.TaskQueryService,
+            _svc.ProjectScanner, _svc.RoomService, _svc.WorkspaceRoomService,
+            _svc.WorkspaceService, _svc.TaskOrchestrationService, _svc.TaskQueryService,
             _svc.Orchestrator, _svc.Executor,
-            _svc.SessionService, _svc.Db,
+            _svc.SessionService,
             NullLogger<WorkspaceController>.Instance);
     }
 

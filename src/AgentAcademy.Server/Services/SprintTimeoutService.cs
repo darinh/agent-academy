@@ -1,3 +1,4 @@
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -65,9 +66,10 @@ internal sealed class SprintTimeoutService : BackgroundService
         try
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
-            var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+            var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
+            var stageService = scope.ServiceProvider.GetRequiredService<ISprintStageService>();
 
-            await CheckSignOffTimeoutsAsync(sprintService, ct);
+            await CheckSignOffTimeoutsAsync(sprintService, stageService, ct);
             await CheckSprintDurationTimeoutsAsync(sprintService, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -80,7 +82,7 @@ internal sealed class SprintTimeoutService : BackgroundService
         }
     }
 
-    private async Task CheckSignOffTimeoutsAsync(SprintService sprintService, CancellationToken ct)
+    private async Task CheckSignOffTimeoutsAsync(ISprintService sprintService, ISprintStageService stageService, CancellationToken ct)
     {
         var stale = await sprintService.GetTimedOutSignOffSprintsAsync(SignOffTimeout, ct);
         if (stale.Count == 0) return;
@@ -92,7 +94,7 @@ internal sealed class SprintTimeoutService : BackgroundService
             if (ct.IsCancellationRequested) break;
             try
             {
-                await sprintService.TimeOutSignOffAsync(sprint.Id, ct);
+                await stageService.TimeOutSignOffAsync(sprint.Id, ct);
                 _logger.LogInformation(
                     "Auto-rejected sign-off for sprint #{Number} ({Id})",
                     sprint.Number, sprint.Id);
@@ -106,7 +108,7 @@ internal sealed class SprintTimeoutService : BackgroundService
         }
     }
 
-    private async Task CheckSprintDurationTimeoutsAsync(SprintService sprintService, CancellationToken ct)
+    private async Task CheckSprintDurationTimeoutsAsync(ISprintService sprintService, CancellationToken ct)
     {
         var overdue = await sprintService.GetOverdueSprintsAsync(MaxSprintDuration, ct);
         if (overdue.Count == 0) return;

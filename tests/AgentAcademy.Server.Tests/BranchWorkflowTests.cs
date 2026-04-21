@@ -3,6 +3,7 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ public class BranchWorkflowTests : IDisposable
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentCatalogOptions _catalog;
     private readonly GitService _gitService;
+    private readonly ILogger<MergeTaskHandler> _mergeLogger = NullLogger<MergeTaskHandler>.Instance;
     private readonly string _gitTracePath;
     private readonly string _repoRoot;
 
@@ -65,28 +67,64 @@ public class BranchWorkflowTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(_gitService);
+        services.AddSingleton<CommandRateLimiter>();
+        services.AddSingleton<CommandPipeline>();
+        services.AddSingleton<LearningDigestService>();
+        services.AddSingleton<ILearningDigestService>(sp => sp.GetRequiredService<LearningDigestService>());
+        services.AddSingleton<RetrospectiveService>();
+        services.AddSingleton<IRetrospectiveService>(sp => sp.GetRequiredService<RetrospectiveService>());
         services.AddSingleton<CommandAuthorizer>();
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
@@ -111,7 +149,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/test-branch-abc123");
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -128,7 +166,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/test-branch-abc123");
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "planner-1", "Aristotle", "Planner");
 
@@ -162,7 +200,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/test-branch-abc123");
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "engineer-1", "Hephaestus", "SoftwareEngineer");
 
@@ -178,7 +216,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task MergeTask_NotApproved_Blocked()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active));
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -194,7 +232,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: null);
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -207,7 +245,7 @@ public class BranchWorkflowTests : IDisposable
     [Fact]
     public async Task MergeTask_MissingTaskId_ReturnsError()
     {
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new(), "reviewer-1", "Socrates", "Reviewer");
 
@@ -220,7 +258,7 @@ public class BranchWorkflowTests : IDisposable
     [Fact]
     public async Task MergeTask_NonexistentTask_ReturnsError()
     {
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = "nonexistent-task-id" }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -234,7 +272,7 @@ public class BranchWorkflowTests : IDisposable
     public async Task MergeTask_InReview_Blocked()
     {
         var taskId = await CreateTestTask(status: nameof(TaskStatus.InReview));
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -253,7 +291,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: branchName);
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -265,11 +303,11 @@ public class BranchWorkflowTests : IDisposable
         Assert.Equal(mergeCommitSha, RunGitInRepo("rev-parse", "HEAD"));
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var task = await taskQueries.GetTaskAsync(taskId);
 
         Assert.NotNull(task);
@@ -293,7 +331,7 @@ public class BranchWorkflowTests : IDisposable
             branchName: branchName,
             title: title,
             taskType: taskType);
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -312,7 +350,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: branchName);
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -329,13 +367,95 @@ public class BranchWorkflowTests : IDisposable
         Assert.True(commitIndex > addIndex, "Expected commit after git add -A.");
     }
 
+    // ── Race / Concurrency Tests ────────────────────────────────
+
+    [Fact]
+    public async Task MergeTask_RaceBetweenTwoReviewers_OnlyOneSucceeds_OtherGetsConflict()
+    {
+        // Regression for the MERGE_TASK race: prior to atomic
+        // TryClaimForMergeAsync, two reviewers both observing Approved would
+        // both proceed to squash-merge the same branch. The second now
+        // returns a Conflict before any git operations run.
+        const string branchName = "task/race-between-reviewers";
+        CreateFeatureBranchWithCommit(branchName, "race.txt", "race regression");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Approved),
+            branchName: branchName);
+
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
+        var (cmd1, ctx1) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+        var (cmd2, ctx2) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "planner-1", "Aristotle", "Planner");
+
+        // Sequential — the atomic SQL predicate is sufficient to prevent the
+        // race regardless of true parallelism, because the second handler
+        // re-checks Approved via the UPDATE WHERE clause.
+        var firstResult = await handler.ExecuteAsync(cmd1, ctx1);
+        var secondResult = await handler.ExecuteAsync(cmd2, ctx2);
+
+        Assert.Equal(CommandStatus.Success, firstResult.Status);
+        Assert.Equal(CommandStatus.Error, secondResult.Status);
+        Assert.Equal(CommandErrorCode.Conflict, secondResult.ErrorCode);
+        // Either the validation-gate read ("Approved" check) or the atomic
+        // TryClaimForMergeAsync ("no longer in Approved") will catch the
+        // duplicate — both are acceptable. The user-visible guarantee is
+        // that the second handler does NOT proceed to a second squash-merge.
+        Assert.Contains("Approved", secondResult.Error!);
+
+        // Final task state reflects the first (winning) merge — completed
+        // with a single merge commit SHA.
+        using var scope = _serviceProvider.CreateScope();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
+        var finalTask = await taskQueries.GetTaskAsync(taskId);
+        Assert.NotNull(finalTask);
+        Assert.Equal(TaskStatus.Completed, finalTask!.Status);
+        Assert.False(string.IsNullOrWhiteSpace(finalTask.MergeCommitSha));
+    }
+
+    [Fact]
+    public async Task MergeTask_AlreadyMerging_ReturnsConflict_NoSecondMerge()
+    {
+        // If a task is already in the Merging state when a MERGE_TASK arrives,
+        // it should be rejected before any git operations run. (Validated
+        // separately from the race test because some failure paths rewind
+        // status to Approved — we want to confirm Merging itself blocks too.)
+        const string branchName = "task/already-merging";
+        CreateFeatureBranchWithCommit(branchName, "already.txt", "already merging");
+
+        var taskId = await CreateTestTask(
+            status: nameof(TaskStatus.Merging),
+            branchName: branchName);
+
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
+        var (cmd, ctx) = MakeCommand("MERGE_TASK",
+            new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
+
+        var result = await handler.ExecuteAsync(cmd, ctx);
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Conflict, result.ErrorCode);
+
+        // No squash merge should have been recorded in the git trace because
+        // the validation gate rejects non-Approved status. Trace file is
+        // created lazily by GitService — its absence also proves no git ran.
+        if (File.Exists(_gitTracePath))
+        {
+            var trace = File.ReadAllLines(_gitTracePath);
+            Assert.DoesNotContain(trace, line =>
+                line.StartsWith("merge --squash ", StringComparison.Ordinal) &&
+                line.Contains(branchName, StringComparison.Ordinal));
+        }
+    }
+
     [Fact]
     public async Task MergeTask_Failure_RestoresApprovedStatus()
     {
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: "task/missing-branch");
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -345,11 +465,11 @@ public class BranchWorkflowTests : IDisposable
         Assert.Contains("Merge failed", result.Error!);
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var task = await taskQueries.GetTaskAsync(taskId);
 
         Assert.NotNull(task);
@@ -364,11 +484,11 @@ public class BranchWorkflowTests : IDisposable
         CreateFeatureBranchWithCommit(branchName, "workflow.txt", "full workflow change");
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await initialization.InitializeAsync();
         await EnsureRoom(db, "room-1");
@@ -391,7 +511,7 @@ public class BranchWorkflowTests : IDisposable
         var approvedTask = await taskLifecycle.ApproveTaskAsync(taskResult.Task.Id, "reviewer-1", "Looks good.");
         Assert.Equal(TaskStatus.Approved, approvedTask.Status);
 
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskResult.Task.Id }, "reviewer-1", "Socrates", "Reviewer");
 
@@ -402,7 +522,7 @@ public class BranchWorkflowTests : IDisposable
             $"MERGE_TASK failed: {mergeResult.Error}");
 
         using var verificationScope = _serviceProvider.CreateScope();
-        var verificationTaskQueries = verificationScope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var verificationTaskQueries = verificationScope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var mergedTask = await verificationTaskQueries.GetTaskAsync(taskResult.Task.Id);
         Assert.NotNull(mergedTask);
         Assert.Equal(TaskStatus.Completed, mergedTask!.Status);
@@ -582,11 +702,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_CreatesAndLinksTaskForBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
@@ -604,11 +724,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_ReturnsExistingLinkedTaskForSameBreakout()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Fix Login Bug");
@@ -625,11 +745,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_OverlappingBreakoutsGetDistinctTasksAndBranches()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         await EnsureRoom(db, "room-2");
@@ -660,11 +780,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_WithBranchName_PersistsBranchAtomically()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: Atomic Task");
@@ -683,11 +803,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task EnsureTaskForBreakout_WithoutBranchName_LeavesNullBranch()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
         var breakout = await breakouts.CreateBreakoutRoomAsync("room-1", "engineer-1", "BR: No Branch");
@@ -704,11 +824,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task SetBreakoutTaskId_PersistsLink()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
 
@@ -723,11 +843,11 @@ public class BranchWorkflowTests : IDisposable
     public async Task SetBreakoutTaskId_DifferentExistingLink_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         await EnsureRoom(db, "room-1");
 
@@ -746,11 +866,11 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Active), branchName: null);
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         await taskQueries.UpdateTaskBranchAsync(taskId, "task/original-abc123");
 
@@ -766,11 +886,11 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(status: nameof(TaskStatus.Approved));
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         var result = await taskOrchestration.CompleteTaskAsync(
             taskId, commitCount: 1, mergeCommitSha: "abc123def456");
@@ -788,11 +908,11 @@ public class BranchWorkflowTests : IDisposable
             branchName: "task/test-branch-abc123");
 
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         // Simulate what MergeTaskHandler does after merge: complete with SHA
         var result = await taskOrchestration.CompleteTaskAsync(
@@ -813,11 +933,11 @@ public class BranchWorkflowTests : IDisposable
 
         // APPROVE_TASK should work on InReview tasks
         using var scope = _serviceProvider.CreateScope();
-        var breakouts = scope.ServiceProvider.GetRequiredService<BreakoutRoomService>();
+        var breakouts = scope.ServiceProvider.GetRequiredService<IBreakoutRoomService>();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var approved = await taskLifecycle.ApproveTaskAsync(taskId, "reviewer-1", null);
 
         Assert.Equal(TaskStatus.Approved, approved.Status);
@@ -1076,7 +1196,7 @@ public class BranchWorkflowTests : IDisposable
         var taskId = await CreateTestTask(
             status: nameof(TaskStatus.Approved),
             branchName: branchName);
-        var handler = new MergeTaskHandler(_gitService);
+        var handler = new MergeTaskHandler(_gitService, _mergeLogger);
         var (cmd, ctx) = MakeCommand("MERGE_TASK",
             new() { ["taskId"] = taskId }, "reviewer-1", "Socrates", "Reviewer");
 

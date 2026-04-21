@@ -1,6 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Threading.Channels;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,29 +16,43 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/rooms")]
 public class RoomController : ControllerBase
 {
-    private readonly RoomService _roomService;
-    private readonly AgentLocationService _agentLocationService;
-    private readonly MessageService _messageService;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly LlmUsageTracker _usageTracker;
-    private readonly AgentErrorTracker _errorTracker;
+    private readonly IRoomService _roomService;
+    private readonly IAgentLocationService _agentLocationService;
+    private readonly IMessageService _messageService;
+    private readonly IMessageBroadcaster _messageBroadcaster;
+    private readonly IAgentCatalog _catalog;
+    private readonly ILlmUsageTracker _usageTracker;
+    private readonly IAgentErrorTracker _errorTracker;
+    private readonly IRoomArtifactTracker _artifactTracker;
+    private readonly IArtifactEvaluatorService _evaluator;
     private readonly ILogger<RoomController> _logger;
 
+    private static readonly JsonSerializerOptions SseJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     public RoomController(
-        RoomService roomService,
-        AgentLocationService agentLocationService,
-        MessageService messageService,
-        AgentCatalogOptions catalog,
-        LlmUsageTracker usageTracker,
-        AgentErrorTracker errorTracker,
+        IRoomService roomService,
+        IAgentLocationService agentLocationService,
+        IMessageService messageService,
+        IMessageBroadcaster messageBroadcaster,
+        IAgentCatalog catalog,
+        ILlmUsageTracker usageTracker,
+        IAgentErrorTracker errorTracker,
+        IRoomArtifactTracker artifactTracker,
+        IArtifactEvaluatorService evaluator,
         ILogger<RoomController> logger)
     {
         _roomService = roomService;
         _agentLocationService = agentLocationService;
         _messageService = messageService;
+        _messageBroadcaster = messageBroadcaster;
         _catalog = catalog;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
+        _artifactTracker = artifactTracker;
+        _evaluator = evaluator;
         _logger = logger;
     }
 
@@ -67,7 +84,7 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             return Ok(room);
         }
@@ -92,7 +109,7 @@ public class RoomController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return NotFound(new { code = "room_not_found", message = ex.Message });
+            return NotFound(ApiProblem.NotFound(ex.Message, "room_not_found"));
         }
         catch (Exception ex)
         {
@@ -102,14 +119,23 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/rooms/{roomId}/artifacts — artifacts produced in a room.
-    /// Artifact tracking will be wired when AgentEventTracker is ported.
+    /// GET /api/rooms/{roomId}/artifacts — artifacts produced by agents in a room.
+    /// Returns an append-only event log of file operations (write, commit, delete).
     /// </summary>
     [HttpGet("{roomId}/artifacts")]
-    public IActionResult GetRoomArtifacts(string roomId)
+    public async Task<ActionResult<List<ArtifactRecord>>> GetRoomArtifacts(
+        string roomId, [FromQuery] int limit = 100)
     {
-        // AgentEventTracker is not yet ported — return empty list.
-        return Ok(Array.Empty<ArtifactRecord>());
+        try
+        {
+            var artifacts = await _artifactTracker.GetRoomArtifactsAsync(roomId, limit);
+            return Ok(artifacts);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get artifacts for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve artifact data.");
+        }
     }
 
     /// <summary>
@@ -149,23 +175,22 @@ public class RoomController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/rooms/{roomId}/usage/records — individual LLM call records.
+    /// GET /api/rooms/{roomId}/context-usage — current context window usage per agent.
+    /// Returns the latest input token count for each agent's most recent LLM call,
+    /// along with the model's known context limit and usage percentage.
     /// </summary>
-    [HttpGet("{roomId}/usage/records")]
-    public async Task<ActionResult<List<LlmUsageRecord>>> GetRoomUsageRecords(
-        string roomId,
-        [FromQuery] string? agentId = null,
-        [FromQuery] int limit = 50)
+    [HttpGet("{roomId}/context-usage")]
+    public async Task<ActionResult<List<AgentContextUsage>>> GetRoomContextUsage(string roomId)
     {
         try
         {
-            var records = await _usageTracker.GetRecentUsageAsync(roomId, agentId, Math.Clamp(limit, 1, 200));
-            return Ok(records);
+            var usage = await _usageTracker.GetLatestContextPerAgentAsync(roomId);
+            return Ok(usage);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get usage records for room '{RoomId}'", roomId);
-            return Problem("Failed to retrieve usage records.");
+            _logger.LogError(ex, "Failed to get context usage for room '{RoomId}'", roomId);
+            return Problem("Failed to retrieve context usage data.");
         }
     }
 
@@ -189,17 +214,21 @@ public class RoomController : ControllerBase
 
     /// <summary>
     /// GET /api/rooms/{roomId}/evaluations — artifact evaluations for a room.
-    /// Evaluation will be wired when the ArtifactEvaluator service is ported.
+    /// Evaluates each tracked artifact file for existence, syntax, and completeness.
     /// </summary>
     [HttpGet("{roomId}/evaluations")]
-    public IActionResult GetRoomEvaluations(string roomId)
+    public async Task<IActionResult> GetRoomEvaluations(string roomId, CancellationToken ct)
     {
-        // ArtifactEvaluator is not yet ported — return empty result.
-        return Ok(new
+        try
         {
-            artifacts = Array.Empty<EvaluationResult>(),
-            aggregateScore = 0.0
-        });
+            var (artifacts, aggregateScore) = await _evaluator.EvaluateRoomArtifactsAsync(roomId, ct);
+            return Ok(new { artifacts, aggregateScore });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to evaluate artifacts for room '{RoomId}'", roomId);
+            return Problem("Failed to evaluate room artifacts.");
+        }
     }
 
     /// <summary>
@@ -209,13 +238,13 @@ public class RoomController : ControllerBase
     public async Task<ActionResult<RoomSnapshot>> RenameRoom(string roomId, [FromBody] RenameRoomRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_name", message = "Room name cannot be empty" });
+            return BadRequest(ApiProblem.BadRequest("Room name cannot be empty", "invalid_name"));
 
         try
         {
             var room = await _roomService.RenameRoomAsync(roomId, request.Name.Trim());
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             return Ok(room);
         }
@@ -230,11 +259,11 @@ public class RoomController : ControllerBase
     /// POST /api/rooms/cleanup — archive stale rooms where all tasks are complete.
     /// </summary>
     [HttpPost("cleanup")]
-    public async Task<ActionResult> CleanupStaleRooms()
+    public async Task<ActionResult> CleanupStaleRooms([FromServices] IRoomLifecycleService lifecycleService)
     {
         try
         {
-            var count = await _roomService.CleanupStaleRoomsAsync();
+            var count = await lifecycleService.CleanupStaleRoomsAsync();
             return Ok(new { archivedCount = count });
         }
         catch (Exception ex)
@@ -253,7 +282,7 @@ public class RoomController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] int limit = 20,
         [FromQuery] int offset = 0,
-        [FromServices] ConversationSessionService sessionService = default!)
+        [FromServices] IConversationSessionQueryService sessionService = default!)
     {
         try
         {
@@ -275,7 +304,7 @@ public class RoomController : ControllerBase
     public async Task<ActionResult<RoomSnapshot>> CreateRoom([FromBody] CreateRoomRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { code = "invalid_name", message = "Room name cannot be empty" });
+            return BadRequest(ApiProblem.BadRequest("Room name cannot be empty", "invalid_name"));
 
         try
         {
@@ -295,13 +324,13 @@ public class RoomController : ControllerBase
     [HttpPost("{roomId}/sessions")]
     public async Task<ActionResult<ConversationSessionSnapshot>> CreateSession(
         string roomId,
-        [FromServices] ConversationSessionService sessionService)
+        [FromServices] IConversationSessionService sessionService)
     {
         try
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             var session = await sessionService.CreateNewSessionAsync(roomId);
             return CreatedAtAction(nameof(GetRoomSessions), new { roomId }, session);
@@ -324,7 +353,7 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
             if (agentName is null)
@@ -332,7 +361,7 @@ public class RoomController : ControllerBase
                 // Check custom agents
                 var config = await db.AgentConfigs.FindAsync(agentId);
                 if (config is null)
-                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                    return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
                 agentName = agentId;
                 if (!string.IsNullOrEmpty(config.CustomInstructions))
                 {
@@ -367,14 +396,14 @@ public class RoomController : ControllerBase
         {
             var room = await _roomService.GetRoomAsync(roomId);
             if (room is null)
-                return NotFound(new { code = "room_not_found", message = $"Room '{roomId}' not found" });
+                return NotFound(ApiProblem.NotFound($"Room '{roomId}' not found", "room_not_found"));
 
             var agentName = _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.Name;
             if (agentName is null)
             {
                 var config = await db.AgentConfigs.FindAsync(agentId);
                 if (config is null)
-                    return NotFound(new { code = "agent_not_found", message = $"Agent '{agentId}' not found" });
+                    return NotFound(ApiProblem.NotFound($"Agent '{agentId}' not found", "agent_not_found"));
                 agentName = agentId;
                 if (!string.IsNullOrEmpty(config.CustomInstructions))
                 {
@@ -397,9 +426,103 @@ public class RoomController : ControllerBase
             return Problem("Failed to remove agent from room.");
         }
     }
+    /// <summary>
+    /// GET /api/rooms/{roomId}/messages/stream — SSE stream of room messages.
+    /// Replays messages after the optional <paramref name="after"/> cursor,
+    /// then streams live messages. Uses subscribe-first to avoid race conditions.
+    /// Delivery is at-least-once: clients must deduplicate by message ID on reconnect overlap.
+    /// If the client falls behind (channel overflow), emits a <c>resync</c> event and closes.
+    /// </summary>
+    [HttpGet("{roomId}/messages/stream")]
+    public async Task GetMessageStream(
+        string roomId,
+        [FromQuery] string? after = null,
+        CancellationToken ct = default)
+    {
+        Response.Headers.ContentType = "text/event-stream";
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.Connection = "keep-alive";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        var channel = Channel.CreateBounded<ChatEnvelope>(
+            new BoundedChannelOptions(256)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+
+        var replayedIds = new HashSet<string>();
+        var lastId = after;
+        var overflowed = false;
+
+        // Subscribe BEFORE replaying to avoid a race where messages posted
+        // between the DB query and subscription are silently dropped.
+        var unsubscribe = _messageBroadcaster.Subscribe(roomId, msg =>
+        {
+            if (!channel.Writer.TryWrite(msg))
+            {
+                overflowed = true;
+                channel.Writer.TryComplete();
+            }
+        });
+
+        try
+        {
+            // Replay messages from DB after the cursor
+            var (replayMessages, _) = await _roomService.GetRoomMessagesAsync(roomId, after, limit: 200);
+            foreach (var msg in replayMessages)
+            {
+                replayedIds.Add(msg.Id);
+                lastId = msg.Id;
+                await WriteSseEventAsync(Response, "message", msg, ct);
+            }
+            await Response.Body.FlushAsync(ct);
+
+            // Stream live messages
+            await foreach (var msg in channel.Reader.ReadAllAsync(ct))
+            {
+                // Skip messages already sent during replay (dedup)
+                if (replayedIds.Contains(msg.Id))
+                    continue;
+                replayedIds.Clear(); // No longer needed after first live message
+
+                lastId = msg.Id;
+                await WriteSseEventAsync(Response, "message", msg, ct);
+                await Response.Body.FlushAsync(ct);
+            }
+
+            // If we exited the loop because of overflow, emit resync event
+            if (overflowed)
+            {
+                var resyncData = JsonSerializer.Serialize(new { lastId }, SseJsonOptions);
+                await Response.WriteAsync($"event: resync\ndata: {resyncData}\n\n", ct);
+                await Response.Body.FlushAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected — normal shutdown.
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not found"))
+        {
+            Response.StatusCode = 404;
+        }
+        finally
+        {
+            unsubscribe();
+            channel.Writer.TryComplete();
+        }
+    }
+
+    private static async Task WriteSseEventAsync(HttpResponse response, string eventName, ChatEnvelope msg, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(msg, SseJsonOptions);
+        await response.WriteAsync($"id: {msg.Id}\nevent: {eventName}\ndata: {json}\n\n", ct);
+    }
 }
 
-public record RenameRoomRequest([property: Required, StringLength(200)] string Name);
+public record RenameRoomRequest([Required, StringLength(200)] string Name);
 public record CreateRoomRequest(
-    [property: Required, StringLength(200)] string Name,
-    [property: StringLength(1000)] string? Description = null);
+    [Required, StringLength(200)] string Name,
+    [StringLength(1000)] string? Description = null);

@@ -24,7 +24,11 @@ public class DiscordNotificationProviderTests
         var channelManager = new DiscordChannelManager(channelManagerLogger, _scopeFactory);
         var inputHandlerLogger = Substitute.For<ILogger<DiscordInputHandler>>();
         var inputHandler = new DiscordInputHandler(inputHandlerLogger);
-        _provider = new DiscordNotificationProvider(_logger, _scopeFactory, orchestrator, channelManager, inputHandler);
+        var senderLogger = Substitute.For<ILogger<DiscordMessageSender>>();
+        var sender = new DiscordMessageSender(channelManager, senderLogger);
+        var routerLogger = Substitute.For<ILogger<DiscordMessageRouter>>();
+        var router = new DiscordMessageRouter(_scopeFactory, orchestrator, channelManager, routerLogger);
+        _provider = new DiscordNotificationProvider(_logger, channelManager, inputHandler, sender, router);
     }
 
     #region Properties
@@ -279,7 +283,7 @@ public class DiscordNotificationProviderTests
     [InlineData(NotificationType.Error)]
     public void GetColorForType_ReturnsDistinctColorForEachType(NotificationType type)
     {
-        var color = DiscordNotificationProvider.GetColorForType(type);
+        var color = DiscordMessageSender.GetColorForType(type);
 
         // Verify we get a non-default color
         Assert.NotEqual(default, color);
@@ -288,31 +292,31 @@ public class DiscordNotificationProviderTests
     [Fact]
     public void GetColorForType_AgentThinking_IsBlue()
     {
-        Assert.Equal(Color.Blue, DiscordNotificationProvider.GetColorForType(NotificationType.AgentThinking));
+        Assert.Equal(Color.Blue, DiscordMessageSender.GetColorForType(NotificationType.AgentThinking));
     }
 
     [Fact]
     public void GetColorForType_NeedsInput_IsGold()
     {
-        Assert.Equal(Color.Gold, DiscordNotificationProvider.GetColorForType(NotificationType.NeedsInput));
+        Assert.Equal(Color.Gold, DiscordMessageSender.GetColorForType(NotificationType.NeedsInput));
     }
 
     [Fact]
     public void GetColorForType_TaskComplete_IsGreen()
     {
-        Assert.Equal(Color.Green, DiscordNotificationProvider.GetColorForType(NotificationType.TaskComplete));
+        Assert.Equal(Color.Green, DiscordMessageSender.GetColorForType(NotificationType.TaskComplete));
     }
 
     [Fact]
     public void GetColorForType_TaskFailed_IsRed()
     {
-        Assert.Equal(Color.Red, DiscordNotificationProvider.GetColorForType(NotificationType.TaskFailed));
+        Assert.Equal(Color.Red, DiscordMessageSender.GetColorForType(NotificationType.TaskFailed));
     }
 
     [Fact]
     public void GetColorForType_Error_IsRed()
     {
-        Assert.Equal(Color.Red, DiscordNotificationProvider.GetColorForType(NotificationType.Error));
+        Assert.Equal(Color.Red, DiscordMessageSender.GetColorForType(NotificationType.Error));
     }
 
     #endregion
@@ -389,13 +393,19 @@ public class DiscordNotificationProviderTests
         var gitService = new GitService(Substitute.For<ILogger<GitService>>());
         var worktreeService = new WorktreeService(Substitute.For<ILogger<WorktreeService>>(), repositoryRoot: "/tmp/test-repo");
         var memoryLoader = new AgentMemoryLoader(scopeFactory, Substitute.For<ILogger<AgentMemoryLoader>>());
+        var breakoutCompletion = new BreakoutCompletionService(
+            scopeFactory, catalog, executor, specManager, pipeline,
+            memoryLoader, Substitute.For<ILogger<BreakoutCompletionService>>());
         var breakoutLifecycle = new BreakoutLifecycleService(
-            scopeFactory, catalog, executor, specManager, pipeline, gitService, worktreeService,
-            memoryLoader,
+            scopeFactory, catalog, executor, specManager, gitService,
+            memoryLoader, breakoutCompletion,
             Substitute.For<ILogger<BreakoutLifecycleService>>());
         var logger = Substitute.For<ILogger<AgentOrchestrator>>();
         var taskAssignmentHandler = new TaskAssignmentHandler(catalog, gitService, worktreeService, breakoutLifecycle, Substitute.For<ILogger<TaskAssignmentHandler>>());
-        return new AgentOrchestrator(scopeFactory, catalog, executor, activityBus, specManager, pipeline, breakoutLifecycle, taskAssignmentHandler, memoryLoader, logger);
+        var turnRunner = new AgentTurnRunner(executor, pipeline, taskAssignmentHandler, memoryLoader, scopeFactory, Substitute.For<ILogger<AgentTurnRunner>>());
+        var roundRunner = new ConversationRoundRunner(scopeFactory, catalog, turnRunner, Substitute.For<ILogger<ConversationRoundRunner>>());
+        var dmRouter = new DirectMessageRouter(scopeFactory, catalog, turnRunner, Substitute.For<ILogger<DirectMessageRouter>>());
+        return new AgentOrchestrator(scopeFactory, roundRunner, dmRouter, breakoutLifecycle, logger);
     }
 
     #endregion

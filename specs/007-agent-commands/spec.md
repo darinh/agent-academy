@@ -3,7 +3,7 @@
 ## Purpose
 Defines a unified command pipeline through which agents interact with the platform, codebase, and each other. Every agent action — reading files, moving between rooms, sending messages, managing tasks — flows through a structured envelope with authorization, audit trails, and consistent error handling.
 
-> **Status: Implemented** — All Tier 1 command phases (1A–1G) and all Tier 2 Room Management commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 50 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Runs in parallel with existing free-text parsing. Remaining Tier 2 (Communication, Task Management, Code & Spec, Backend Execution, Data & Operations, Audit & Debug) and Tier 3 commands are aspirational roadmap items.
+> **Status: Implemented** — All Tier 1 command phases (1A–1H), Tier 2 Room Management, Task Workflow, Communication, Task Management, Code & Spec, Backend Execution, Data & Operations, and Audit & Debug commands are implemented: envelope, parser, pipeline, authorization, audit trail, rate limiting, structured error codes, and 101 handlers covering read operations, state management, verification, communication, navigation, room lifecycle, memory, task management, dependencies, agent context, code navigation, spec browsing, frontend build/typecheck, endpoint probing, log tailing, config inspection, database queries, migration management, health monitoring, connection tracking, audit event queries, error inspection, request tracing, system settings, command retry, API route introspection, and system commands. Memory commands (REMEMBER, RECALL, LIST_MEMORIES, FORGET, EXPORT_MEMORIES, IMPORT_MEMORIES) are implemented. Tier 2 Task Workflow (Phase 2A: TASK_STATUS, SHOW_TASK_HISTORY, SHOW_DEPENDENCIES, REQUEST_REVIEW, WHOAMI) implemented. Tier 2 Communication (Phase 2B: MENTION_TASK_OWNER, BROADCAST_TO_ROOM) implemented. Tier 2 Task Management (Phase 2C: MARK_BLOCKED, SHOW_DECISIONS) implemented. Tier 2 Code & Spec (Phase 2D: OPEN_SPEC, SEARCH_SPEC, OPEN_COMPONENT, FIND_REFERENCES) implemented. Tier 2 Backend Execution (Phase 2E: RUN_FRONTEND_BUILD, RUN_TYPECHECK, CALL_ENDPOINT, TAIL_LOGS, SHOW_CONFIG) implemented. Tier 2 Data & Operations (Phase 2F: QUERY_DB, RUN_MIGRATIONS, SHOW_MIGRATION_STATUS, HEALTHCHECK, SHOW_ACTIVE_CONNECTIONS) implemented. Tier 2 Audit & Debug (Phase 2G: SHOW_AUDIT_EVENTS, SHOW_LAST_ERROR, TRACE_REQUEST, LIST_SYSTEM_SETTINGS, RETRY_FAILED_JOB) implemented. Tier 3 Spec Verification (Phase 3A: VERIFY_SPEC_SECTION, COMPARE_SPEC_TO_CODE, DETECT_ORPHANED_SECTIONS) implemented. Tier 3 Context (Phase 3B: HANDOFF_SUMMARY, PLATFORM_STATUS) implemented. Tier 3 Frontend/UX (Phase 3C: SHOW_ROUTES) partially implemented. Runs in parallel with existing free-text parsing. Remaining Tier 3 Frontend/UX commands (PREVIEW_UI, CAPTURE_SCREENSHOT, COMPARE_SCREENSHOTS) are roadmap items.
 
 ## Motivation
 Today, agents have no formalized way to interact with the platform. The orchestrator parses free-text blocks like `TASK ASSIGNMENT:` from agent responses. This creates:
@@ -80,22 +80,33 @@ Each stage:
 1. **Command Parser**: Extracts structured commands from agent text. Commands use `COMMAND_NAME:` syntax with either indented `Key: value` lines or inline `key=value` pairs. Parser returns remaining text + extracted commands.
 2. **Authorization**: Checks agent permissions against command + args. Returns `denied` if unauthorized.
 3. **Rate Limit**: Sliding-window rate limiter (default: 30 commands per 60 seconds). Returns `RATE_LIMIT` error code if exceeded.
-4. **Execution**: Dispatches to the appropriate handler. Read commands are side-effect-free. Write commands are idempotent where possible.
-5. **Audit**: Every command execution is recorded as a `CommandAuditEntity` with the full envelope, including `ErrorCode` if applicable.
+4. **Execution**: Dispatches to the appropriate handler. Read commands are side-effect-free. Write commands are idempotent where possible. Handlers that opt in via `IsRetrySafe` are automatically retried on transient failure (up to 3 attempts with 1s/2s exponential backoff). Only `TIMEOUT` and `INTERNAL` error codes trigger pipeline retry — `RATE_LIMIT` is excluded (policy enforcement, not transient). Non-retry-safe handlers execute exactly once; the agent must re-issue manually on failure.
+5. **Audit**: Every command execution is recorded as a `CommandAuditEntity` with the full envelope, including `ErrorCode` and `RetryCount` if applicable. Only the final attempt is audited.
 6. **Response**: Result is injected into the agent's next context turn.
 
 ### Permission Model
 
-Per-agent permission boundaries:
+Per-agent permission boundaries are defined in `src/AgentAcademy.Server/Config/agents.json` (the authoritative source) via two layers:
 
-| Agent | Role | Allowed | Denied |
-|-------|------|---------|--------|
-| Aristotle | Planner | All task/room management, read all, `RECALL_AGENT`, `CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, allowlisted `SHELL` operations | Arbitrary code execution |
-| Archimedes | Architect | Read all, spec commands, `ADD_TASK_COMMENT`, `QUERY_EVIDENCE`, `CHECK_GATES` | Code execution |
-| Hephaestus | SoftwareEngineer | File read/write, build, test, git, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES` | Spec write, task approve |
-| Prometheus | SoftwareEngineer | Same as Hephaestus | Same |
-| Socrates | Reviewer | Read all, approve/reject tasks, `ADD_TASK_COMMENT`, `RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, allowlisted `SHELL` operations | File write, arbitrary code execution |
-| Thucydides | TechnicalWriter | Spec read/write, file read, `ADD_TASK_COMMENT`, `QUERY_EVIDENCE`, `CHECK_GATES` | Code execution, task approve |
+1. **`Permissions.Allowed` / `Permissions.Denied`** — explicit command allowlist/denylist enforced by `CommandAuthorizationService`. `LIST_*` is a wildcard matching every read-only `LIST_*` command.
+2. **`EnabledTools`** — SDK tool-group gates for non-command capabilities (file write, code execution, task DB mutations): `code` (file read + search), `code-write` (file write scoped to `src/`), `spec-write` (file write scoped to `specs/` and `docs/`), `task-state`, `task-write`, `memory`, `chat`.
+
+The table below summarises each agent's permission envelope by capability group. For the exact command list, always read `agents.json`.
+
+| Agent | Role | Command Groups (summary) | SDK Tools | Denied Commands |
+|-------|------|--------------------------|-----------|-----------------|
+| Aristotle | Planner | All read (`LIST_*`, `READ_FILE`, `SEARCH_CODE`, `GIT_LOG`, `SHOW_DIFF`); full task lifecycle (`CLAIM_TASK`, `RELEASE_TASK`, `UPDATE_TASK`, `APPROVE_TASK`, `REQUEST_CHANGES`, `REJECT_TASK`, `CANCEL_TASK`, `MERGE_TASK`, `REBASE_TASK`, `SHOW_REVIEW_QUEUE`); task items + deps + comments; goal cards (`CREATE_GOAL_CARD`, `UPDATE_GOAL_CARD_STATUS`); communication (`DM`, `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`); room management (`CREATE_ROOM`, `CLOSE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `MOVE_TO_ROOM`, `CLEANUP_ROOMS`, `ROOM_HISTORY`, `ROOM_TOPIC`, `RETURN_TO_MAIN`); sprint lifecycle (`START_SPRINT`, `ADVANCE_STAGE`, `COMPLETE_SPRINT`, `SCHEDULE_SPRINT`, `GENERATE_DIGEST`); memory (`REMEMBER`, `RECALL`, `FORGET`, `EXPORT_MEMORIES`, `IMPORT_MEMORIES`); evidence (`RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, `STORE_ARTIFACT`); build/test (`RUN_BUILD`, `RUN_TESTS`); GitHub (`CREATE_PR`, `POST_PR_REVIEW`, `GET_PR_REVIEWS`, `MERGE_PR`); orchestration (`RECALL_AGENT`, `RESTART_SERVER`, `CLEANUP_WORKTREES`, `LINK_TASK_TO_SPEC`, `SHOW_UNLINKED_CHANGES`, `SET_PLAN`); allowlisted `SHELL` | `chat`, `task-state`, `task-write`, `memory`, `code` | *(none)* |
+| Archimedes | Architect | Read all (`LIST_*`, `READ_FILE`, `SEARCH_CODE`, `GIT_LOG`, `SHOW_DIFF`); task items + comments + deps; goal cards (`CREATE_GOAL_CARD`, `UPDATE_GOAL_CARD_STATUS`); communication (`DM`, `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`); `SET_PLAN`, `REBASE_TASK`; memory + evidence (`QUERY_EVIDENCE`, `CHECK_GATES`, `STORE_ARTIFACT`); PR read (`GET_PR_REVIEWS`); room navigation (`MOVE_TO_ROOM`, `ROOM_HISTORY`, `ROOM_TOPIC`, `RETURN_TO_MAIN`) | `chat`, `task-state`, `task-write`, `memory`, `code` | `RESTART_SERVER` (implied: no task approval, no code execution, no file write) |
+| Hephaestus | SoftwareEngineer | Read all; self-task lifecycle (`CLAIM_TASK`, `RELEASE_TASK`, `UPDATE_TASK`, `REBASE_TASK`); task items + comments + deps; goal cards (`CREATE_GOAL_CARD`, `UPDATE_GOAL_CARD_STATUS`); communication (`DM`, `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`); memory; evidence (`RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, `STORE_ARTIFACT`); build/test (`RUN_BUILD`, `RUN_TESTS`); git (`COMMIT_CHANGES`, `SHOW_DIFF`, `GIT_LOG`); GitHub (`CREATE_PR`, `GET_PR_REVIEWS`); room navigation (`MOVE_TO_ROOM`, `ROOM_HISTORY`, `ROOM_TOPIC`, `RETURN_TO_MAIN`); `SET_PLAN` | `chat`, `task-state`, `task-write`, `memory`, `code`, `code-write` | `APPROVE_TASK`, `REQUEST_CHANGES`, `RESTART_SERVER` |
+| Athena | SoftwareEngineer | Same as Hephaestus | Same as Hephaestus | Same as Hephaestus |
+| Socrates | Reviewer | Read all; review authority (`APPROVE_TASK`, `REQUEST_CHANGES`, `REJECT_TASK`, `SHOW_REVIEW_QUEUE`, `CANCEL_TASK`, `MERGE_TASK`, `REBASE_TASK`); task items + comments; goal cards (`CREATE_GOAL_CARD`, `UPDATE_GOAL_CARD_STATUS`); communication (`DM`, `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`); evidence (`RECORD_EVIDENCE`, `QUERY_EVIDENCE`, `CHECK_GATES`, `STORE_ARTIFACT`); build/test (`RUN_BUILD`, `RUN_TESTS`); PRs (`CREATE_PR`, `POST_PR_REVIEW`, `GET_PR_REVIEWS`, `MERGE_PR`); allowlisted `SHELL`; memory; room navigation (`MOVE_TO_ROOM`, `ROOM_HISTORY`, `ROOM_TOPIC`, `RETURN_TO_MAIN`); `SET_PLAN` | `chat`, `task-state`, `task-write`, `memory`, `code` (no `code-write` — reviewer reads but doesn't author code) | `RESTART_SERVER` |
+| Thucydides | TechnicalWriter | Read all (`LIST_*`, `READ_FILE`, `SEARCH_CODE`, `GIT_LOG`, `SHOW_DIFF`); task items + comments; goal cards (`CREATE_GOAL_CARD`, `UPDATE_GOAL_CARD_STATUS`); communication (`DM`, `MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`); memory; evidence (`QUERY_EVIDENCE`, `CHECK_GATES`, `STORE_ARTIFACT`); `SET_PLAN`, `REBASE_TASK`; room navigation (`MOVE_TO_ROOM`, `ROOM_HISTORY`, `ROOM_TOPIC`, `RETURN_TO_MAIN`) | `chat`, `task-state`, `task-write`, `memory`, `code`, `spec-write` (file write scoped to `specs/` and `docs/` only; see "Spec write capability" note below) | `APPROVE_TASK`, `REQUEST_CHANGES`, `RESTART_SERVER` |
+
+> **Spec write capability**: Thucydides owns the spec (see spec 009 §Spec Ownership) and holds the `spec-write` SDK tool group in `agents.json`. The `spec-write` group exposes the same `write_file` and `commit_changes` tools as `code-write` but the wrapper restricts writes to the `specs/` and `docs/` directories only — attempts to write outside those roots are rejected with an error, and Thucydides is never granted `code-write`. This preserves the engineer/writer split: engineers own `src/`, Thucydides owns `specs/` and `docs/`, and neither can modify the other's domain via SDK tools. Implementation: `CodeWriteToolWrapper` parameterised over a list of `allowedRoots` (`src` for code-write; `specs`, `docs` for spec-write) with `SpecWriteProtectedPaths` empty — no spec or docs file is structurally protected because Thucydides is expected to maintain the entire spec/docs corpus.
+
+> **Phase 2A commands**: All agents receive `TASK_STATUS`, `SHOW_TASK_HISTORY`, `SHOW_DEPENDENCIES`, and `WHOAMI` (read-only). `REQUEST_REVIEW` is granted to `SoftwareEngineer` and `Planner` roles only (agents that can be task assignees or manage task lifecycle). The authoritative source remains `agents.json`.
+
+> **Phase 2B commands**: All agents receive `MENTION_TASK_OWNER` and `BROADCAST_TO_ROOM`. These are non-destructive communication commands — `MENTION_TASK_OWNER` sends a DM, `BROADCAST_TO_ROOM` posts a room message. The authoritative source remains `agents.json`.
 
 **Escalation rules:**
 - Tighten standards → Socrates review only
@@ -147,6 +158,8 @@ These formalize existing capabilities with audit trails and structured output.
 | `RECALL_AGENT` | `agentId` (name or ID) | Agent info and room transition details | Validates caller has Planner role, target agent is in Working state in a breakout room. Closes breakout room, moves agent to Idle in parent room. Posts recall notices to both breakout and parent rooms | |
 | `CLOSE_ROOM` | `roomId` | Room ID, room name, archived status | Validates caller has Planner or Human role, target room exists, target is not the workspace's main collaboration room, and the room has no active participants. Sets `RoomEntity.Status = Archived`, updates `UpdatedAt`, and publishes a `RoomClosed` activity event. Repeating the command against an already archived room is a no-op success. | `CloseRoomHandler.cs` + `RoomService.CloseRoomAsync()` |
 | `MERGE_TASK` | `taskId` | Task ID, title, branch, `mergeCommitSha` | Validates caller is Reviewer or Planner, task status is Approved, task has BranchName. Sets task to Merging status, squash-merges task branch to develop, runs `git add -A` to stage the full squash result, then commits using conventional-commit subject `{prefix}{task.Title}` where `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, and `Spike -> docs: `. On success: updates task to Completed, records merge commit SHA on TaskEntity, and returns it in the result. On conflict: aborts the merge, restores task status to Approved, and returns an error. Authorization enforced at handler level. | `MergeTaskHandler.cs` lines 25-31 — Planner/Reviewer role guard |
+| `CREATE_GOAL_CARD` | `task_description`, `intent`, `divergence`, `steelman`, `strawman`, `verdict` (Proceed\|ProceedWithCaveat\|Challenge), `fresh_eyes_1`, `fresh_eyes_2`, `fresh_eyes_3`, `task_id?` | `goalCardId`, `verdict`, `status`, `message` | Creates an immutable goal card — the structured intent artifact an agent produces before starting significant work. Validates TaskId FK if provided. Challenge verdict auto-sets status to Challenged and publishes `GoalCardChallenged` activity event; other verdicts set Active and publish `GoalCardCreated`. All content fields are required with length validation. Any agent can create. | `CreateGoalCardHandler.cs` + `GoalCardService.CreateAsync()` |
+| `UPDATE_GOAL_CARD_STATUS` | `goal_card_id`, `status` (Active\|Completed\|Challenged\|Abandoned) | `goalCardId`, `status`, `message` | Transitions a goal card through its lifecycle state machine. Valid transitions: Active → Completed\|Challenged\|Abandoned; Challenged → Active\|Abandoned. Completed and Abandoned are terminal. Challenged status publishes `GoalCardChallenged` activity event. Any agent can update. | `UpdateGoalCardStatusHandler.cs` + `GoalCardService.UpdateStatusAsync()` |
 
 #### Phase 1C: Verification — IMPLEMENTED
 
@@ -156,9 +169,9 @@ These formalize existing capabilities with audit trails and structured output.
 | `RUN_TESTS` | `scope?` (`all`, `frontend`, `backend`, `file:path`) | Test output, exit code | Runs test suite | `RunTestsHandler.cs` — routes frontend to `npm test`, backend to `dotnet test` |
 | `SHOW_DIFF` | `branch?` | Git diff output | Audit event | `ShowDiffHandler.cs` — `git diff --stat -p`, optional branch comparison |
 | `GIT_LOG` | `file?`, `since?`, `count?` | Commit history (sha + message) | Audit event | `GitLogHandler.cs` — `git log --oneline`, max 50 entries |
-| `RECORD_EVIDENCE` | `taskId`, `checkName`, `passed` (true/false), `phase?` (Baseline/After/Review, default: After), `tool?` (default: manual), `command?`, `exitCode?`, `output?` (max 500 chars) | Evidence ID, task ID, phase, check name, passed status, confirmation message | Records a `TaskEvidenceEntity` in the `task_evidence` table. Handler-level authorization: caller must be assignee, reviewer, planner, or human. | `RecordEvidenceHandler.cs` + `TaskLifecycleService.RecordEvidenceAsync()` |
+| `RECORD_EVIDENCE` | `taskId`, `checkName`, `passed` (true/false), `phase?` (Baseline/After/Review, default: After), `tool?` (default: manual), `command?`, `exitCode?`, `output?` (max 500 chars) | Evidence ID, task ID, phase, check name, passed status, confirmation message | Records a `TaskEvidenceEntity` in the `task_evidence` table. Handler-level authorization: caller must be assignee, reviewer, planner, or human. | `RecordEvidenceHandler.cs` + `TaskEvidenceService.RecordEvidenceAsync()` |
 | `QUERY_EVIDENCE` | `taskId`, `phase?` (Baseline/After/Review, default: all) | Task ID, phase filter, total/passed/failed counts, evidence list (id, phase, checkName, tool, command, exitCode, output, passed, agentName, createdAt) | Audit event (read-only) | `QueryEvidenceHandler.cs` + `TaskQueryService.GetTaskEvidenceAsync()` |
-| `CHECK_GATES` | `taskId` | Task ID, currentPhase, targetPhase, met (bool), requiredChecks, passedChecks, missingChecks list, evidence summary | Evaluates gate requirements and publishes `GateChecked` activity event. Read-only — does not transition task status. | `CheckGatesHandler.cs` + `TaskLifecycleService.CheckGatesAsync()` |
+| `CHECK_GATES` | `taskId` | Task ID, currentPhase, targetPhase, met (bool), requiredChecks, passedChecks, missingChecks list, evidence summary | Evaluates gate requirements and publishes `GateChecked` activity event. Read-only — does not transition task status. | `CheckGatesHandler.cs` + `TaskEvidenceService.CheckGatesAsync()` |
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{RecordEvidence,QueryEvidence,CheckGates}Handler.cs` — committed in `42d4124` (2026-04-07).
 
@@ -200,39 +213,180 @@ These formalize existing capabilities with audit trails and structured output.
 - `dotnet-build` — runs `dotnet build --nologo -v q`
 - `dotnet-test` — runs `dotnet test --nologo -v q`
 
+#### Phase 1H: Worktree Management — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `LIST_WORKTREES` | `status?` | All active worktrees: branch, relative path, created time, linked task info (id, title, status, agent). Optional `status` filter matches on task status. | Audit event | `ListWorktreesHandler.cs` — queries WorktreeService + DB task enrichment; read-only, retry-safe |
+| `CLEANUP_WORKTREES` | `includeOrphans?`, `confirm` | Count and list of removed branches | Removes worktrees linked to completed/cancelled tasks. With `includeOrphans=true`, also removes worktrees with no linked task. | `CleanupWorktreesHandler.cs` — Planner/Human-only; destructive (requires `confirm=true`) |
+| `LIST_AGENT_STATS` | `hoursBack?`, `agentId?` | Per-agent task effectiveness: completion rate, cycle time, review rounds, first-pass approval rate, rework rate, commits per task. Overview totals included. | Audit event | `ListAgentStatsHandler.cs` — delegates to `TaskAnalyticsService`; read-only, retry-safe. Agent filter matches by ID or name (case-insensitive). |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ListWorktrees,CleanupWorktrees,ListAgentStats}Handler.cs` — 17 tests in `WorktreeCommandHandlerTests.cs`, 16 tests in `ListAgentStatsHandlerTests.cs`.
+
+#### Phase 2A: Task Workflow & Context — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `TASK_STATUS` | `taskId` | Deep task detail: full snapshot, dependency graph (upstream/downstream with satisfaction), evidence summary (total/passed/failed by phase), spec links, timeline (created/started/completed) | Audit event | `TaskStatusHandler.cs` — read-only, retry-safe; aggregates from `ITaskQueryService`, `ITaskDependencyService` |
+| `SHOW_TASK_HISTORY` | `taskId`, `count?` (default 20, max 50) | Interleaved chronological list of comments and evidence records, newest first | Audit event | `ShowTaskHistoryHandler.cs` — read-only, retry-safe; merges comments + evidence by timestamp |
+| `SHOW_DEPENDENCIES` | `taskId` | Dependency graph: upstream tasks (what this depends on), downstream tasks (what depends on this), satisfaction status, blocked flag | Audit event | `ShowDependenciesHandler.cs` — read-only, retry-safe; delegates to `ITaskDependencyService.GetDependencyInfoAsync` |
+| `REQUEST_REVIEW` | `taskId`, `summary?` | Updated task status, previous status, review round count | Transitions task to InReview, posts notification to room, optionally posts summary as task note | `RequestReviewHandler.cs` — validates caller is assignee/Planner/Human; accepts Active/AwaitingValidation/ChangesRequested source states |
+| `WHOAMI` | — | Agent identity: id, name, role, current room, breakout room, working directory, enabled tools, capability tags, allowed/denied commands | Audit event | `WhoAmIHandler.cs` — read-only, retry-safe; uses `CommandContext` + `IAgentCatalog` lookup |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{TaskStatus,ShowTaskHistory,ShowDependencies,RequestReview,WhoAmI}Handler.cs` — 28 tests in `Tier2TaskCommandTests.cs`.
+
+#### Phase 2B: Communication — IMPLEMENTED
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `MENTION_TASK_OWNER` | `taskId`, `message` | Task id/title, recipient name/id, delivery confirmation | Sends a DM from the caller to the task's assigned agent with task context prefix. Wakes recipient via `HandleDirectMessage`. | `MentionTaskOwnerHandler.cs` — validates task exists, has assignee, assignee in catalog, not self-mention; falls back to `roomId = "main"` if null |
+| `BROADCAST_TO_ROOM` | `roomId`, `message` | Room id/name, participant count, delivery confirmation | Posts a message to the target room as the calling agent (even if not a room member). Message prefixed with `[Broadcast from AgentName / Role]`. | `BroadcastToRoomHandler.cs` — validates room exists and is not Archived; uses `PostMessageAsync` for agent-attributed authorship |
+
+**Permission model**: Both commands granted to all agents in `agents.json`. `MENTION_TASK_OWNER` requires the target task to have an assigned agent in the active catalog. `BROADCAST_TO_ROOM` allows cross-room posting (sender need not be in the target room).
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{MentionTaskOwner,BroadcastToRoom}Handler.cs` — 15 tests in `Tier2CommunicationCommandTests.cs`.
+
 ### Tier 2 — Full Autonomy
 
 #### Room Management
 `RETURN_TO_MAIN` *(implemented — see Phase 1E table)*, ~~`INVITE_TO_ROOM`~~ *(implemented — see Phase 1G table)*, ~~`CREATE_ROOM`~~ *(implemented)*, ~~`RESTORE_ROOM`~~ *(consolidated into `REOPEN_ROOM`)*, ~~`ROOM_TOPIC`~~ *(implemented — see Phase 1G table)*
 
 #### Communication
-`MENTION_TASK_OWNER`, `BROADCAST_TO_ROOM`
+~~`MENTION_TASK_OWNER`~~ *(implemented — see Phase 2B table)*, ~~`BROADCAST_TO_ROOM`~~ *(implemented — see Phase 2B table)*
 
 #### Task Management
-`TASK_STATUS`, `SHOW_DEPENDENCIES`, `MARK_BLOCKED`, `SHOW_TASK_HISTORY`, `REQUEST_REVIEW`, `SHOW_DECISIONS`
+~~`TASK_STATUS`~~ *(implemented — see Phase 2A table)*, ~~`SHOW_DEPENDENCIES`~~ *(implemented)*, ~~`MARK_BLOCKED`~~ *(implemented — see Phase 2C table)*, ~~`SHOW_TASK_HISTORY`~~ *(implemented)*, ~~`REQUEST_REVIEW`~~ *(implemented)*, ~~`SHOW_DECISIONS`~~ *(implemented — see Phase 2C table)*
+
+##### Phase 2C — Task Management Commands
+
+| Command | Args | Returns | Side Effects | Implementation |
+|---------|------|---------|-------------|----------------|
+| `MARK_BLOCKED` | `taskId`, `reason` | Task id/title, previous status, new status, reason | Transitions task to `Blocked` status. Records a `Blocker`-typed comment with the reason. Posts system status notification to the room. Rejects terminal (`Completed`/`Cancelled`), already-`Blocked`, and merge-workflow (`Approved`/`Merging`) states. | `MarkBlockedHandler.cs` — comment/notification are non-critical (swallowed on failure) |
+| `SHOW_DECISIONS` | `taskId`, `count?` (default 20, max 50) | Task id/title, decision list (id, agent, content, timestamp), counts | Read-only. Filters task comments to `Decision` type, ordered newest-first. | `ShowDecisionsHandler.cs` — retry-safe |
+
+**Permission model**: Both commands granted to all agents in `agents.json`. `MARK_BLOCKED` is not retry-safe (mutating). `SHOW_DECISIONS` is retry-safe (read-only).
+
+**New enum value**: `TaskCommentType.Decision` added to support tagging comments as decisions. Agents record decisions via `ADD_TASK_COMMENT taskId=X type=Decision content="..."` and surface them with `SHOW_DECISIONS`.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{MarkBlocked,ShowDecisions}Handler.cs` — 23 tests in `Tier2TaskManagementCommandTests.cs`.
 
 #### Code & Spec
-`OPEN_SPEC`, `SEARCH_SPEC`, `OPEN_COMPONENT`, `FIND_REFERENCES`
+~~`OPEN_SPEC`~~, ~~`SEARCH_SPEC`~~, ~~`OPEN_COMPONENT`~~, ~~`FIND_REFERENCES`~~ *(all implemented — Phase 2D)*
+
+| Command | Args | Returns | Notes |
+|---------|------|---------|-------|
+| `OPEN_SPEC` | `id` (section number or directory name, e.g. "007" or "007-agent-commands"), `startLine?`, `endLine?` | Section content with metadata (heading, summary, path, totalLines) | Resolves numeric prefixes via `ISpecManager.GetSpecSectionsAsync()`. Truncates at 12K chars. Retry-safe. |
+| `SEARCH_SPEC` | `query`, `ignoreCase?` | Line-level matches scoped to `specs/` | Uses `git grep` on spec files. Max 50 results. Retry-safe. |
+| `OPEN_COMPONENT` | `name` (component/class name, e.g. "CommandParser"), `startLine?`, `endLine?` | File content with path | Uses `git ls-files` to find tracked files in `src/` matching name. Returns partial-match suggestions on no exact match. Supports `.cs`, `.tsx`, `.ts`, `.jsx`, `.js`. Retry-safe. |
+| `FIND_REFERENCES` | `symbol`, `path?` (subdirectory scope, defaults to `src/`), `ignoreCase?`, `wholeWord?` (default true) | References grouped by file with line numbers | Fixed-string search (`-F`) — not regex. Whole-word matching by default. Results grouped by file. Max 50 matches. Retry-safe. |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{OpenSpec,SearchSpec,OpenComponent,FindReferences}Handler.cs` — 30 tests in `Tier2CodeSpecCommandTests.cs`.
+
+#### GitHub Integration
+~~`CREATE_PR`~~, ~~`POST_PR_REVIEW`~~, ~~`GET_PR_REVIEWS`~~, ~~`MERGE_PR`~~ *(all implemented — see spec 010 §5 GitHub Integration for argument schemas, permission gates, and preconditions)*
 
 #### Backend Execution
-`RUN_FRONTEND_BUILD`, `RUN_TYPECHECK`, `RUN_SERVER`, `CALL_ENDPOINT`, `TAIL_LOGS`, `SHOW_CONFIG`
+~~`RUN_FRONTEND_BUILD`~~, ~~`RUN_TYPECHECK`~~, ~~`CALL_ENDPOINT`~~, ~~`TAIL_LOGS`~~, ~~`SHOW_CONFIG`~~ *(all implemented — see Phase 2E table below)*
+
+`RUN_SERVER` — dropped as redundant with existing `RESTART_SERVER`.
+
+| Command | Args | Returns | Notes |
+|---------|------|---------|-------|
+| `RUN_FRONTEND_BUILD` | *(none)* | `exitCode`, `output`, `success` | Runs `npm run build` in `src/agent-academy-client`. Serialized via `FrontendLock`. 10-min timeout. Concurrent stdout/stderr capture with process-tree kill on timeout. Async for human UI. |
+| `RUN_TYPECHECK` | *(none)* | `exitCode`, `output`, `success` | Runs `npx tsc --noEmit` in client dir. Shares `FrontendLock` with `RUN_FRONTEND_BUILD` to prevent concurrent TypeScript operations. 5-min timeout. Async for human UI. |
+| `CALL_ENDPOINT` | `path` (required, must start with `/`) | `statusCode`, `contentType`, `body`, `method` | GET-only v1. Restricted to Planner/Reviewer roles (enforced in handler). Denied paths: `/api/auth`, `/api/commands`. Path validation rejects `//`, `\`. Resolves port from `IServerAddressesFeature`, rebuilds URL as `http://127.0.0.1:{port}`. 30s timeout. |
+| `TAIL_LOGS` | `lines?` (default 100, max 500), `filter?` (substring) | `count`, `entries[]` (timestamp, level, category, message, exception) | Reads from `InMemoryLogStore` ring buffer (500 capacity). Filter matches message, category, or exception. Retry-safe. |
+| `SHOW_CONFIG` | `section?` (must be in allowlist) | `sections{}`, `allowedSections[]` | Allowlisted sections: Logging, Cors, AllowedHosts, Copilot. Sensitive keys (secret, password, key, token, credential, connectionstring, certificate, passphrase, signing) masked as `***`. Retry-safe. |
+
+**Infrastructure**: `InMemoryLogStore` (singleton ring buffer, 500 entries) + `InMemoryLogProvider` (ILoggerProvider) registered in `Program.cs`. Captures Information+ level logs.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{RunFrontendBuild,RunTypecheck,CallEndpoint,TailLogs,ShowConfig}Handler.cs`, `src/AgentAcademy.Server/Services/InMemoryLogSink.cs` — 31 tests in `Tier2BackendExecutionCommandTests.cs`.
 
 #### Data & Operations
-`QUERY_DB`, `RUN_MIGRATIONS`, `SHOW_MIGRATION_STATUS`, `HEALTHCHECK`, `SHOW_ACTIVE_CONNECTIONS`
+~~`QUERY_DB`~~, ~~`RUN_MIGRATIONS`~~, ~~`SHOW_MIGRATION_STATUS`~~, ~~`HEALTHCHECK`~~, ~~`SHOW_ACTIVE_CONNECTIONS`~~ *(all implemented — Phase 2F)*
 
-#### Audit & Debug
-`SHOW_AUDIT_EVENTS`, `SHOW_LAST_ERROR`, `TRACE_REQUEST`, `LIST_FEATURE_FLAGS`, `RETRY_FAILED_JOB`
+##### Phase 2F — Data & Operations Commands
+
+| Command | Args | Returns | Notes |
+|---------|------|---------|-------|
+| `QUERY_DB` | `query` (required), `limit?` (default 100, max 1000) | `columns`, `rows[]`, `rowCount`, `hasMore`, `truncated`, `limit` | **Human-only** (in-handler role gate). Opens a separate read-only SQLite connection via `SqliteConnectionStringBuilder(Mode=ReadOnly)`. Rejects non-SELECT statements (regex), PRAGMA writes, multiple statements (`;`), and denied tables (AgentMemories, NotificationConfigs, SystemSettings, AgentConfigs, InstructionTemplates). 10s timeout. Retry-safe. |
+| `SHOW_MIGRATION_STATUS` | *(none)* | `appliedCount`, `pendingCount`, `applied[]`, `pending[]`, `isUpToDate` | All agents. Uses `Database.GetAppliedMigrationsAsync()` / `GetPendingMigrationsAsync()` on a scoped DbContext. Retry-safe. |
+| `RUN_MIGRATIONS` | *(none, confirm=true required)* | `message`, `applied[]` | **Human-only** (in-handler role gate). **Destructive** with confirmation gate. Uses `Database.MigrateAsync()` on a scoped DbContext with process-wide `SemaphoreSlim` to prevent concurrent migrations. Pending check occurs inside the lock to avoid TOCTOU race. Async for human UI. |
+| `HEALTHCHECK` | *(none)* | `status` (healthy/degraded), `checks{}`, `timestamp` | All agents. Checks: database connectivity, pending migration count, server uptime, active rooms/tasks, registered agent count, memory usage (working set + GC), active SignalR connections. Retry-safe. |
+| `SHOW_ACTIVE_CONNECTIONS` | *(none)* | `count`, `instance`, `connections[]` (truncated connectionId, connectedAt, duration) | **Planner/Reviewer/Human** (in-handler role gate). Reads from `SignalRConnectionTracker` singleton. Connection IDs truncated to 8 chars. Current-instance only (not distributed). Retry-safe. |
+
+**Infrastructure**: `SignalRConnectionTracker` (singleton, `ConcurrentDictionary`) registered in `Program.cs`. `ActivityHub.OnConnectedAsync`/`OnDisconnectedAsync` call the tracker. Connection data is in-memory, current-instance only — a distributed backplane would require a shared store.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{QueryDb,ShowMigrationStatus,RunMigrations,Healthcheck,ShowActiveConnections}Handler.cs`, `src/AgentAcademy.Server/Services/SignalRConnectionTracker.cs` — 35 tests in `Tier2DataOperationsCommandTests.cs`.
+
+#### Worktree Management
+~~`LIST_WORKTREES`~~ *(implemented)*, ~~`CLEANUP_WORKTREES`~~ *(implemented)*
+
+#### Audit & Debug — IMPLEMENTED
+~~`SHOW_AUDIT_EVENTS`~~ *(implemented — see Phase 2G table)*, ~~`SHOW_LAST_ERROR`~~ *(implemented — see Phase 2G table)*, ~~`TRACE_REQUEST`~~ *(implemented — see Phase 2G table)*, ~~`LIST_FEATURE_FLAGS`~~ *(renamed to `LIST_SYSTEM_SETTINGS`, implemented — see Phase 2G table)*, ~~`RETRY_FAILED_JOB`~~ *(implemented — see Phase 2G table)*
+
+##### Phase 2G — Audit & Debug Commands
+
+| Command | Description | Roles | Retry-Safe | Args |
+|---------|-------------|-------|------------|------|
+| `SHOW_AUDIT_EVENTS` | Query `activity_events` with filters (type, severity, actor, room, since, count). Returns events sorted newest-first. Default 20, max 100. | All agents | Yes | `type`, `severity`, `actorId`, `roomId`, `since` (ISO 8601), `count` |
+| `SHOW_LAST_ERROR` | Merges errors from `activity_events` (Severity=Error, AgentErrorOccurred, CommandFailed, SubagentFailed) and `command_audits` (Status=Error) into a chronological timeline. Default 5, max 25. | All agents | Yes | `count`, `agentId` |
+| `TRACE_REQUEST` | Traces events by `correlationId` across both `activity_events` and `command_audits`. Returns unified chronological timeline. | All agents | Yes | `correlationId` (required) |
+| `LIST_SYSTEM_SETTINGS` | Returns all runtime system settings with current values and defaults via `ISystemSettingsService.GetAllWithDefaultsAsync()`. Renamed from `LIST_FEATURE_FLAGS` (spec roadmap name) — system settings is more accurate. | All agents | Yes | *(none)* |
+| `RETRY_FAILED_JOB` | Re-executes a previously failed command from the audit trail. Only `IsRetrySafe` commands can be retried. Hard role gate (Planner/Human). Generates new correlationId for lineage tracking. Checks current agent permissions against target command. | Planner, Human | No | `auditId` (required) |
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/{ShowAuditEvents,ShowLastError,TraceRequest,ListSystemSettings,RetryFailedJob}Handler.cs` — 30 tests in `Tier2AuditDebugCommandTests.cs`.
+
+**Database**: Migration `AddAuditEventIndexes` adds `idx_activity_correlation` (on `CorrelationId`) and `idx_activity_severity_time` (composite on `Severity`, `OccurredAt`) to `activity_events` table for query performance.
 
 ### Tier 3 — Quality of Life
 
-#### Spec Verification
-`VERIFY_SPEC_SECTION`, `COMPARE_SPEC_TO_CODE`, `DETECT_ORPHANED_SECTIONS`
+#### Phase 3A — Spec Verification (Implemented)
 
-#### Frontend/UX
-`PREVIEW_UI`, `CAPTURE_SCREENSHOT`, `COMPARE_SCREENSHOTS`, `SHOW_ROUTES`
+| Command | Args | Returns | Implementation |
+|---------|------|---------|----------------|
+| `VERIFY_SPEC_SECTION` | `id` (section number or dir name) | Verified/broken path counts, broken path list, CLEAN/DRIFT_DETECTED status | `VerifySpecSectionHandler.cs` — extracts file path references from spec markdown, validates each against the filesystem |
+| `COMPARE_SPEC_TO_CODE` | `id` (section number or dir name) | Claims list (file paths, handler classes, command names) with verified/broken status, accuracy percentage, declared spec status | `CompareSpecToCodeHandler.cs` — cross-references spec claims against codebase |
+| `DETECT_ORPHANED_SECTIONS` | `id?` (optional filter) | Per-section orphan reports, total orphaned count, CLEAN/ORPHANS_DETECTED status | `DetectOrphanedSectionsHandler.cs` — scans all (or filtered) spec sections for broken file references |
 
-#### Context
-`HANDOFF_SUMMARY`, `WHOAMI`, `PLATFORM_STATUS`
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/VerifySpecSectionHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/CompareSpecToCodeHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/DetectOrphanedSectionsHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/SpecReferenceExtractor.cs`
+
+Shared utility `SpecReferenceExtractor` handles markdown file path extraction (labeled paths, backtick paths, parenthetical paths), handler class name extraction, and path traversal-safe filesystem validation.
+
+#### Frontend/UX — PARTIALLY IMPLEMENTED
+
+| Command | Args | Returns | Implementation |
+|---------|------|---------|----------------|
+| `SHOW_ROUTES` | `prefix?` (path filter), `method?` (HTTP method filter) | Sorted route list with path, HTTP methods, controller, action; total count. Filters applied before counting. | `ShowRoutesHandler.cs` — read-only, retry-safe; introspects `EndpointDataSource` from DI to enumerate all registered ASP.NET Core API endpoints. Parses controller/action from endpoint `DisplayName`. Strips "Controller" suffix. Supports multiple `EndpointDataSource` registrations. |
+
+`PREVIEW_UI`, `CAPTURE_SCREENSHOT`, `COMPARE_SCREENSHOTS` — roadmap items (require headless browser integration)
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/ShowRoutesHandler.cs`
+
+#### Forge Pipeline Commands — IMPLEMENTED
+
+| Command | Args | Returns | Implementation |
+|---------|------|---------|----------------|
+| `RUN_FORGE` | `title` (required), `description` (required), `methodologyPath` (required — path to methodology JSON), `taskId?` (optional) | `jobId`, `status`, `createdAt`, `taskId`, guidance message | `RunForgeHandler.cs` — loads methodology from disk, validates structure (id + phases), path traversal + symlink protection, pre-checks Forge enabled/available before queueing. Returns immediately; pipeline runs in background. Not retry-safe, not destructive. |
+| `FORGE_STATUS` | `jobId?` (optional) | If jobId: job details (jobId, runId, status, error, timestamps, taskId, taskTitle). If omitted: engine summary (enabled, executionAvailable, activeJobs, totalJobs, completedJobs, failedJobs). | `ForgeStatusHandler.cs` — read-only, retry-safe. Dual-mode: specific job lookup or engine health summary. |
+| `LIST_FORGE_RUNS` | `status?` (optional: queued/running/completed/failed) | Job list with jobId, runId, status, error, timestamps, taskId, taskTitle; count. Case-insensitive filter. | `ListForgeRunsHandler.cs` — read-only, retry-safe. Returns in-memory job data (not durable across restarts). |
+
+**Permissions**: `RUN_FORGE` — Aristotle (Planner), Hephaestus, Athena, Socrates (same agents with `RUN_BUILD`). `FORGE_STATUS` — all agents (explicit). `LIST_FORGE_RUNS` — all agents (via `LIST_*` wildcard).
+
+**DI**: Handlers use `IForgeJobService` interface (implemented by `ForgeRunService`). When Forge is disabled, handlers return structured errors rather than throwing DI exceptions.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/RunForgeHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/ForgeStatusHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/ListForgeRunsHandler.cs`, `src/AgentAcademy.Server/Services/IForgeJobService.cs`
+
+#### Context — IMPLEMENTED
+
+| Command | Args | Returns | Implementation |
+|---------|------|---------|----------------|
+| `HANDOFF_SUMMARY` | *(none)* | Agent identity, current location (room/breakout/state/workdir), assigned tasks with status/branch/phase, review queue filtered to calling agent, last 10 non-expired memories ordered by UpdatedAt, summary line | `HandoffSummaryHandler.cs` — read-only, retry-safe; uses `IAgentLocationService` (with `CommandContext` fallback), `ITaskQueryService`, `AgentAcademyDbContext` (`AsNoTracking` — does not mutate memory access metadata). Per-section try/catch for partial results. |
+| `PLATFORM_STATUS` | *(none)* | Server health (uptime, version, instanceId, crashDetected, memory), executor status (operational, authFailed, circuitBreaker), agent locations, room counts by status, task counts by status, active sprint info, SignalR connection count, overall healthy/degraded status | `PlatformStatusHandler.cs` — read-only, retry-safe; aggregates `IAgentExecutor`, `IAgentCatalog`, `IAgentLocationService`, `IRoomService`, `ISprintService`, `AgentAcademyDbContext`, `SignalRConnectionTracker`. Per-section try/catch with `overallHealthy` flag degraded on any failure. |
+
+~~`WHOAMI`~~ *(implemented — see Phase 2A table)*
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/HandoffSummaryHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/PlatformStatusHandler.cs`
 
 ## Agent Memory System
 
@@ -341,7 +495,7 @@ Expose a subset of platform commands to authenticated human users via HTTP REST 
 
 | Tier | Commands | Risk | Human Access |
 |------|----------|------|--------------|
-| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
+| **Read-only** | `READ_FILE`, `SEARCH_CODE`, `LIST_ROOMS`, `LIST_AGENTS`, `LIST_TASKS`, `LIST_WORKTREES`, `LIST_AGENT_STATS`, `SHOW_DIFF`, `GIT_LOG`, `SHOW_REVIEW_QUEUE`, `ROOM_HISTORY` | None | ✅ Allowed |
 | **Side effects** | `RUN_BUILD`, `RUN_TESTS` | Compute cost, long-running | ✅ Allowed |
 | **Room management** | `CREATE_ROOM`, `REOPEN_ROOM`, `CLOSE_ROOM`, `INVITE_TO_ROOM` | State mutation | ✅ Allowed |
 | **Dangerous** | `SHELL`, `RESTART_SERVER`, `MERGE_TASK`, `RECALL_AGENT` | State mutation, git ops | ❌ Denied |
@@ -553,7 +707,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 
 ### Guardrails
 - **Dry-run mode**: Side-effecting commands support `dryRun: true` returning what would happen
-- **Confirmation**: Destructive commands require explicit `confirm=true` in args before execution. Without the flag, the pipeline returns `Denied` status with `CONFIRMATION_REQUIRED` error code and a structured response containing the warning, command name, and retry hint. Destructive handlers self-declare via `ICommandHandler.IsDestructive` (default false). Confirmation check runs after authorization but before rate limiting (unconfirmed commands don't consume rate-limit budget). Applies to both agent pipeline and human/consultant API. Destructive commands: `CLOSE_ROOM`, `CLEANUP_ROOMS`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`. All agent `StartupPrompt` entries in `agents.json` document this flow with per-agent destructive command lists and the two-step `confirm=true` workflow.
+- **Confirmation**: Destructive commands require explicit `confirm=true` in args before execution. Without the flag, the pipeline returns `Denied` status with `CONFIRMATION_REQUIRED` error code and a structured response containing the warning, command name, and retry hint. Destructive handlers self-declare via `ICommandHandler.IsDestructive` (default false). Confirmation check runs after authorization but before rate limiting (unconfirmed commands don't consume rate-limit budget). Applies to both agent pipeline and human/consultant API. Destructive commands: `CLOSE_ROOM`, `CLEANUP_ROOMS`, `CLEANUP_WORKTREES`, `REJECT_TASK`, `CANCEL_TASK`, `RESTART_SERVER`, `FORGET`, `MERGE_TASK`. All agent `StartupPrompt` entries in `agents.json` document this flow with per-agent destructive command lists and the two-step `confirm=true` workflow.
 - **Secret redaction**: All command output is scanned for secrets/tokens before logging
 - **Idempotent mutations**: Write commands produce the same result when called twice with the same args
 
@@ -574,7 +728,7 @@ DM: recipient=@Human message=I need clarification on the database schema
 - `src/AgentAcademy.Server/Commands/Handlers/` — One handler per command group
 
 **Modified files:**
-- `AgentOrchestrator.cs` — After receiving agent response, run through command parser before posting to room
+- `AgentTurnRunner.cs` — After receiving agent response, run through command parser before posting to room
 - Domain service files — Expose read methods needed by LIST_* commands
 
 **New entities:**
@@ -659,7 +813,7 @@ Minimal surfaces should ship with the commands they support — not as a separat
 ## Known Gaps
 
 - ~~**Command discovery**~~: **Resolved** — `LIST_COMMANDS` handler returns all available commands with descriptions and per-agent authorization status. Agents also receive commands in their startup prompts.
-- ~~**Error recovery**~~: **Partially resolved** — CopilotExecutor has exponential backoff retries (transient: 2s/4s/8s, 3 attempts; quota: 5s/15s/30s, 3 attempts) and a global circuit breaker (trips after 5 consecutive failures, 60s cooldown before probing). Structured error codes (`errorCode` field) enable agents to make programmatic retry/skip decisions. Remaining: no per-command retry at the command pipeline level (agents must re-issue failed commands manually).
+- ~~**Error recovery**~~: **Resolved** — CopilotExecutor has exponential backoff retries (transient: 2s/4s/8s, 3 attempts; quota: 5s/15s/30s, 3 attempts) and a global circuit breaker (trips after 5 consecutive failures, 60s cooldown before probing). Structured error codes (`errorCode` field) enable agents to make programmatic retry/skip decisions. Pipeline-level retry: `CommandPipeline.ExecuteWithRetryAsync` automatically retries commands that opt in via `ICommandHandler.IsRetrySafe` (up to 3 attempts with 1s/2s exponential backoff). Only `TIMEOUT` and `INTERNAL` error codes trigger retry — `RATE_LIMIT` is excluded (policy, not transient). 19 read-only and idempotent handlers are marked retry-safe. Non-safe handlers (CREATE_*, DM, COMMIT_*, RUN_BUILD, RUN_TESTS, SHELL, RECALL_AGENT, ROOM_TOPIC, destructive commands) execute exactly once; agents must re-issue manually. `CommandEnvelope.RetryCount` reports attempt count to agents. 9 tests.
 - ~~**Rate limiting**~~: **Resolved** — Per-agent sliding-window rate limiter. Defaults: 30 commands per 60 seconds. Implemented in `CommandRateLimiter`, integrated into `CommandPipeline` after authorization. Returns `RATE_LIMIT` error code with retry-after hint. Human UI commands (via `CommandController`) are not rate-limited. Limits are runtime-configurable via `PUT /api/settings` with keys `commands.rateLimitMaxCommands` and `commands.rateLimitWindowSeconds`. Changes take effect immediately (no restart needed). Persisted in `system_settings` table and loaded on startup.
 - ~~**Frontend surfaces**~~: **Resolved** — Commands tab with dynamic catalog from `GET /api/commands/metadata`. Command palette (Cmd+K) with search, keyboard navigation, and inline execution. Command audit log panel on Dashboard. Task panel enhanced with spec links, evidence ledger, gate status, and agent assignment UI.
 - ~~**Tier 2 room commands**~~: **Resolved** — All room lifecycle commands are implemented (`CLOSE_ROOM`, `CREATE_ROOM`, `REOPEN_ROOM`, `INVITE_TO_ROOM`, `RETURN_TO_MAIN`, `ROOM_TOPIC`). `RESTORE_ROOM` was consolidated into `REOPEN_ROOM` (same functionality). `LIST_ROOMS` supports optional `status=` filter with validation. Room commands are now exposed in the command metadata endpoint.
@@ -717,3 +871,18 @@ Discord Server
 | 2026-04-04 | Command metadata endpoint: `GET /api/commands/metadata` returns `HumanCommandMetadata[]` from `HumanCommandRegistry`. Filters by allowlist + handler existence. Frontend loads dynamically with hardcoded fallback. Resolves known gap #2. 13 new backend tests, 3 new frontend tests. | command-metadata-endpoint | (this change) |
 | 2026-04-07 | Evidence ledger commands: RECORD_EVIDENCE, QUERY_EVIDENCE, CHECK_GATES added to Phase 1C (Verification). Records structured verification checks against tasks with phase (Baseline/After/Review), check names, tool, command, exit code, output. CHECK_GATES evaluates minimum evidence for status transitions. All 6 agents permitted. Human API allowlist updated. Permission model table updated. 23 new tests (1375 total). | evidence-ledger | `42d4124` |
 | 2026-04-05 | Spec-task linking (Phase 2): `SpecTaskLinkEntity` junction table, `LINK_TASK_TO_SPEC` and `SHOW_UNLINKED_CHANGES` commands, `SpecManager.LoadSpecContextForTaskAsync` for task-filtered spec loading, REST endpoints `GET /api/tasks/{id}/specs` and `GET /api/specs/{sectionId}/tasks`, cascade delete, unique constraint, `SpecTaskLinked` activity event. 36 new tests. | spec-task-linking | (this change) |
+| 2026-04-12 | Pipeline-level command retry: `ExecuteWithRetryAsync` retries retry-safe commands on `TIMEOUT`/`INTERNAL` errors (up to 3 attempts, 1s/2s exponential backoff). `ICommandHandler.IsRetrySafe` opt-in property. 19 read-only/idempotent handlers marked safe. `CommandEnvelope.RetryCount` added. `FormatResultsForContext` includes retry count. `RATE_LIMIT` intentionally excluded from pipeline retry. Error recovery known gap resolved. 9 new tests. | pipeline-retry | (this change) |
+| 2026-04-13 | Worktree management commands (Phase 1H): `LIST_WORKTREES` (read-only, retry-safe) returns active worktrees with task/agent enrichment and optional `status` filter. `CLEANUP_WORKTREES` (destructive, Planner/Human-only) removes stale worktrees for completed/cancelled tasks, with `includeOrphans` option. Added to destructive commands list and read-only allowlist. 17 new tests. | worktree-agent-commands | (this change) |
+| 2026-04-13 | Agent stats command + reviewer capabilities: `LIST_AGENT_STATS` (read-only, retry-safe) surfaces per-agent task effectiveness metrics (completion rate, cycle time, review rounds, first-pass approval, rework rate) for data-driven task assignments. Filters by `agentId` (name or ID) and `hoursBack`. Added to human/consultant allowlist and HumanCommandRegistry (analytics category). Reviewer agent (Socrates) granted `code` SDK tool group + `READ_FILE`, `SHOW_DIFF`, `SEARCH_CODE`, `GIT_LOG`, `RUN_BUILD`, `RUN_TESTS` command permissions — fixes gap where startup prompt documented commands the reviewer couldn't execute. Engineer prompts updated with worktree awareness. Planner prompt updated with `LIST_AGENT_STATS` documentation. 16 new tests. | agent-stats-command | (this change) |
+| 2026-04-17 | §Permission Model table reconciled with `agents.json` (closes #70). Prior table understated grants by 20+ commands per agent (Aristotle missing sprint/PR/build/test/worktree management; Socrates missing PRs/build/test; Hephaestus/Athena missing `COMMIT_CHANGES`/PR commands; Archimedes/Thucydides "spec commands" claim replaced with actual read-only grant). Added SDK tool-group column (`EnabledTools`) and an explicit note that `agents.json` is authoritative. Flagged Thucydides missing `code-write` as a known operational gap (spec writes currently route through humans/engineers). | agents-permissions-70 | (this change) |
+| 2026-04-17 | Thucydides granted `spec-write` SDK tool group — closes the known gap where spec authorship had to route through humans/engineers. New tool group exposes the same `write_file` and `commit_changes` tools as `code-write` but the `CodeWriteToolWrapper` is parameterised over `allowedRoot` so spec-write rejects any path outside `specs/`. Registered in `AgentToolRegistry.ContextualGroups` alongside `code-write`, wired to `IAgentToolFunctions.CreateSpecWriteTools`. Thucydides still does not hold `code-write`, preserving the engineer/writer separation. Defence-in-depth: (a) symlink escape detection — any write whose path passes through a symlinked directory under the allowed root is rejected; (b) commit scope enforcement — `commit_changes` refuses to commit if any currently staged file is outside the wrapper's `allowedRoot` or matches a protected-file rule, preventing piggy-back commits of `src/` changes via a spec-write call. 19 new tests (`SpecWriteToolWrapperTests` covering scope rejection, input validation, symlink escape, commit-scope enforcement; registry tests for `spec-write` resolution and tool-name de-dup). | thucydides-specs-write | (this change) |
+| 2026-04-18 | Spec sync: `spec-write` scope text reconciled with implementation. Spec previously said "writes restricted to `specs/` only", but `IAgentToolFunctions.CreateSpecWriteTools` configures `allowedRoots: { "specs", "docs" }` and `CodeWriteToolWrapper` accepts a list of allowed roots. Permission Model table, supporting note, and the EnabledTools enumeration now state `specs/` and `docs/` for the `spec-write` group. No code change. | spec-write-docs-scope-sync | (this change) |
+| 2026-04-20 | Goal card commands: `CREATE_GOAL_CARD` and `UPDATE_GOAL_CARD_STATUS` added to Phase 1B (Structured State Management). Structured intent artifacts that agents create before starting significant work — captures task vs. intent analysis, steelman/strawman arguments, verdict, and fresh-eyes questions. Immutable content with validated status state machine (Active → Completed/Challenged/Abandoned; Challenged → Active/Abandoned). All 6 agents granted both commands. Permission Model table updated. | spec-goal-cards | `37d2bd4` |
+| 2026-04-20 | Tier 2 Communication commands (Phase 2B): `MENTION_TASK_OWNER` sends a DM to the agent assigned to a task with task context prefix, wakes recipient via orchestrator. `BROADCAST_TO_ROOM` posts an agent-attributed message to any room (cross-room, no membership required), rejects Archived rooms. Both commands granted to all 6 agents. Also registered 11 previously missing handlers in `CommandParser.KnownCommands` (Tier 2A + goal cards + list commands). 15 new tests. | tier2-communication-commands | (this change) |
+| 2026-04-20 | Tier 2C Task Management commands: `MARK_BLOCKED` transitions task to Blocked with reason and records Blocker comment. `SHOW_DECISIONS` surfaces Decision-typed comments. Both reject terminal/merge-workflow states. All 6 agents granted. 23 new tests. | tier2-task-management-commands | (this change) |
+| 2026-04-21 | Tier 2D Code & Spec commands (Phase 2D): `OPEN_SPEC` reads spec sections by ID with numeric prefix resolution via `ISpecManager`. `SEARCH_SPEC` searches spec files via `git grep` scoped to `specs/`. `OPEN_COMPONENT` finds and reads source files by component name via `git ls-files` (avoids build outputs). `FIND_REFERENCES` searches for symbol usages via fixed-string `git grep -F` with whole-word matching, scoped to `src/`. All 4 commands are read-only, retry-safe, granted to all 6 agents. 30 new tests. | tier2-code-spec-commands | (this change) |
+| 2026-04-21 | Tier 2E Backend Execution commands (Phase 2E): `RUN_FRONTEND_BUILD`, `RUN_TYPECHECK`, `CALL_ENDPOINT`, `TAIL_LOGS`, `SHOW_CONFIG`. See Phase 2E table. 33 new tests. | tier2-backend-execution | (this change) |
+| 2026-04-21 | Tier 2F Data & Operations commands (Phase 2F): `QUERY_DB` (Human-only, read-only SQLite connection with `SqliteConnectionStringBuilder(Mode=ReadOnly)`, table denylist, statement filtering, 10s timeout). `SHOW_MIGRATION_STATUS` (all agents, applied/pending migration IDs). `RUN_MIGRATIONS` (Human-only, destructive with confirmation, process-wide semaphore lock, TOCTOU-safe pending check inside lock). `HEALTHCHECK` (all agents, checks DB/uptime/entities/resources/SignalR). `SHOW_ACTIVE_CONNECTIONS` (Planner/Reviewer/Human, reads `SignalRConnectionTracker` singleton, truncated connection IDs, current-instance only). New infrastructure: `SignalRConnectionTracker` (ConcurrentDictionary singleton) wired into `ActivityHub.OnConnectedAsync`/`OnDisconnectedAsync`. Adversarial review caught 4 issues (hasMore loop bug, leaked DI scope, read-only mode bypass, migration TOCTOU race) — all fixed. 35 new tests. KnownCommands: 85 → 90. | tier2-data-operations | (this change) |
+| 2026-04-21 | Tier 2G Audit & Debug commands (Phase 2G): `SHOW_AUDIT_EVENTS` queries `activity_events` with type/severity/actor/room/since/count filters. `SHOW_LAST_ERROR` merges errors from `activity_events` (Severity=Error, error event types) and `command_audits` (Status=Error) chronologically. `TRACE_REQUEST` traces by correlationId across both tables. `LIST_SYSTEM_SETTINGS` returns runtime settings with defaults via `ISystemSettingsService`. `RETRY_FAILED_JOB` re-executes failed retry-safe commands with hard Planner/Human role gate, permission check, and new correlationId lineage. Renamed `LIST_FEATURE_FLAGS` to `LIST_SYSTEM_SETTINGS`. Migration adds `idx_activity_correlation` and `idx_activity_severity_time` indexes. 30 new tests. KnownCommands: 90 → 95. | tier2-audit-debug | (this change) |
+| 2026-04-21 | Tier 3B Context commands (Phase 3B): `HANDOFF_SUMMARY` generates structured agent state snapshot for handoff — identity, location (IAgentLocationService with CommandContext fallback), assigned tasks filtered to calling agent, review queue filtered to calling agent, last 10 non-expired memories via AsNoTracking (does not mutate LastAccessedAt), summary line. `PLATFORM_STATUS` returns comprehensive platform status — server health, executor state, agent locations, room/task counts grouped by actual status, active sprint via IRoomService workspace resolution, SignalR connections, overall healthy/degraded flag with per-section try/catch for partial results. Adversarial review caught 2 issues (false-healthy on section failure, room status mislabeling) — both fixed. All 6 agents granted both commands. 27 new tests. KnownCommands: 98 → 100. | tier3b-context-commands | (this change) |
+| 2026-04-21 | Tier 3C Frontend/UX commands (Phase 3C): `SHOW_ROUTES` introspects ASP.NET Core `EndpointDataSource` to enumerate all registered API endpoints at runtime — returns sorted route list with path, HTTP methods, controller, action. Supports optional `prefix` (path filter, case-insensitive) and `method` (HTTP method filter, case-insensitive). Parses controller/action from endpoint `DisplayName`, strips "Controller" suffix. Handles multiple `EndpointDataSource` registrations. Read-only, retry-safe. All 6 agents granted. 25 new tests. KnownCommands: 100 → 101. | tier3c-show-routes | (this change) |

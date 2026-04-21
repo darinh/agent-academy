@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -57,60 +58,7 @@ public class CopilotExceptionTests
     }
 }
 
-public class CopilotTokenProviderTests
-{
-    [Fact]
-    public void Token_IsNull_Initially()
-    {
-        var provider = new CopilotTokenProvider();
-        Assert.Null(provider.Token);
-        Assert.Null(provider.TokenSetAt);
-    }
-
-    [Fact]
-    public void SetToken_StoresTokenAndTimestamp()
-    {
-        var provider = new CopilotTokenProvider();
-        var before = DateTime.UtcNow;
-
-        provider.SetToken("gho_abc123");
-
-        Assert.Equal("gho_abc123", provider.Token);
-        Assert.NotNull(provider.TokenSetAt);
-        Assert.True(provider.TokenSetAt >= before);
-        Assert.True(provider.TokenSetAt <= DateTime.UtcNow);
-    }
-
-    [Fact]
-    public void ClearToken_ClearsTokenAndTimestamp()
-    {
-        var provider = new CopilotTokenProvider();
-        provider.SetToken("gho_abc123");
-
-        provider.ClearToken();
-
-        Assert.Null(provider.Token);
-        Assert.Null(provider.TokenSetAt);
-    }
-
-    [Fact]
-    public void SetToken_UpdatesTimestamp_OnSubsequentCalls()
-    {
-        var provider = new CopilotTokenProvider();
-
-        provider.SetToken("token1");
-        var firstSetAt = provider.TokenSetAt;
-
-        // Small delay to ensure timestamp changes
-        Thread.Sleep(10);
-
-        provider.SetToken("token2");
-        var secondSetAt = provider.TokenSetAt;
-
-        Assert.Equal("token2", provider.Token);
-        Assert.True(secondSetAt >= firstSetAt);
-    }
-}
+// CopilotTokenProviderTests moved to CopilotTokenProviderTests.cs
 
 public class ErrorClassificationTests
 {
@@ -118,7 +66,7 @@ public class ErrorClassificationTests
     public void ClassifyError_AuthenticationError_ReturnsCopilotAuthException()
     {
         var err = CreateSessionErrorEvent("authentication", "Token expired");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthException>(ex);
         Assert.Contains("Token expired", ex.Message);
     }
@@ -127,7 +75,7 @@ public class ErrorClassificationTests
     public void ClassifyError_AuthorizationError_ReturnsCopilotAuthorizationException()
     {
         var err = CreateSessionErrorEvent("authorization", "Insufficient scope");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthorizationException>(ex);
     }
 
@@ -135,7 +83,7 @@ public class ErrorClassificationTests
     public void ClassifyError_QuotaError_ReturnsCopilotQuotaException()
     {
         var err = CreateSessionErrorEvent("quota", "Quota exceeded");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotQuotaException>(ex);
     }
 
@@ -143,7 +91,7 @@ public class ErrorClassificationTests
     public void ClassifyError_RateLimitError_ReturnsCopilotQuotaException()
     {
         var err = CreateSessionErrorEvent("rate_limit", "Too many requests");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotQuotaException>(ex);
     }
 
@@ -154,7 +102,7 @@ public class ErrorClassificationTests
     public void ClassifyError_OtherErrors_ReturnsCopilotTransientException(string errorType)
     {
         var err = CreateSessionErrorEvent(errorType, "Something went wrong");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotTransientException>(ex);
     }
 
@@ -162,7 +110,7 @@ public class ErrorClassificationTests
     public void ClassifyError_NullErrorType_ReturnsCopilotTransientException()
     {
         var err = CreateSessionErrorEvent(null, "Unknown error");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotTransientException>(ex);
     }
 
@@ -170,7 +118,7 @@ public class ErrorClassificationTests
     public void ClassifyError_CaseInsensitive()
     {
         var err = CreateSessionErrorEvent("AUTHENTICATION", "Token expired");
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthException>(ex);
     }
 
@@ -178,7 +126,7 @@ public class ErrorClassificationTests
     public void ClassifyError_NullMessage_UsesDefault()
     {
         var err = CreateSessionErrorEvent("authentication", null);
-        var ex = CopilotExecutor.ClassifyError(err);
+        var ex = CopilotSdkSender.ClassifyError(err);
         Assert.IsType<CopilotAuthException>(ex);
         Assert.Equal("Unknown Copilot session error", ex.Message);
     }
@@ -191,34 +139,65 @@ public class ErrorClassificationTests
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(new AgentCatalogOptions(
             "main", "Main Room", new List<AgentDefinition>()));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ILogger<TaskQueryService>>(
             NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         var sp = services.BuildServiceProvider();
 
         var executor = new CopilotExecutor(
@@ -228,10 +207,15 @@ public class ErrorClassificationTests
                 NullLogger<CopilotClientFactory>.Instance,
                 new ConfigurationBuilder().Build(),
                 new CopilotTokenProvider()),
+            new CopilotSessionPool(NullLogger<CopilotSessionPool>.Instance),
+            new CopilotSdkSender(
+                NullLogger<CopilotSdkSender>.Instance,
+                new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
+                new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
+                new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance), new ActivityBroadcaster()),
             sp.GetRequiredService<IServiceScopeFactory>(),
             new NotificationManager(NullLogger<NotificationManager>.Instance),
             NSubstitute.Substitute.For<IAgentToolRegistry>(),
-            new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
             new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance),
             new AgentCatalogOptions("main", "Main", []));

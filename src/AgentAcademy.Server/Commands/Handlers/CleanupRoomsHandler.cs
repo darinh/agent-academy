@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,8 +28,8 @@ public sealed class CleanupRoomsHandler : ICommandHandler
             };
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
-        var count = await roomService.CleanupStaleRoomsAsync();
+        var lifecycle = context.Services.GetRequiredService<IRoomLifecycleService>();
+        var count = await lifecycle.CleanupStaleRoomsAsync();
 
         return command with
         {

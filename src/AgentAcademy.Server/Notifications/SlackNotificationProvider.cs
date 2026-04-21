@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
-using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,19 +6,16 @@ namespace AgentAcademy.Server.Notifications;
 
 /// <summary>
 /// Notification provider that delivers notifications via the Slack Web API.
-/// Uses raw HTTP (no Slack NuGet dependency). Supports room-based channel routing,
-/// agent-identity messages, threaded agent questions, and channel lifecycle management.
+/// Channel management delegated to <see cref="SlackChannelManager"/>.
+/// Message formatting delegated to <see cref="SlackMessageBuilder"/>.
 /// </summary>
 public sealed class SlackNotificationProvider : INotificationProvider, IDisposable
 {
     private readonly ILogger<SlackNotificationProvider> _logger;
-    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly SlackChannelManager _channels;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
-    private readonly SemaphoreSlim _channelCreateLock = new(1, 1);
-
-    // Maps AA roomId → Slack channel ID
-    private readonly ConcurrentDictionary<string, string> _roomChannels = new();
 
     private SlackApiClient? _apiClient;
     private string? _botToken;
@@ -30,20 +24,6 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
     private volatile bool _isConnected;
     private string? _botUserId;
 
-    // Agent role → emoji for visual identity in messages
-    private static readonly Dictionary<string, string> AgentEmoji = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Planner"] = ":crystal_ball:",
-        ["Architect"] = ":building_construction:",
-        ["SoftwareEngineer"] = ":computer:",
-        ["Reviewer"] = ":mag:",
-        ["Validator"] = ":white_check_mark:",
-        ["TechnicalWriter"] = ":pencil:",
-        ["Human"] = ":bust_in_silhouette:"
-    };
-
-    private readonly ILoggerFactory _loggerFactory;
-
     public SlackNotificationProvider(
         ILogger<SlackNotificationProvider> logger,
         IServiceScopeFactory scopeFactory,
@@ -51,9 +31,10 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
         IHttpClientFactory httpClientFactory)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _channels = new SlackChannelManager(
+            loggerFactory.CreateLogger<SlackChannelManager>(), scopeFactory);
     }
 
     /// <summary>For unit testing: inject a pre-built API client.</summary>
@@ -145,7 +126,7 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
                 authResult.User, authResult.Team);
 
             // Rebuild channel mapping from existing Slack channels
-            await RebuildChannelMappingAsync(cancellationToken);
+            await _channels.RebuildChannelMappingAsync(_apiClient, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -165,7 +146,7 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
         try
         {
             _isConnected = false;
-            _roomChannels.Clear();
+            _channels.ClearMappings();
             _logger.LogInformation("Slack provider disconnected");
         }
         finally
@@ -192,17 +173,17 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
             // Route to room-specific channel if available
             if (!string.IsNullOrEmpty(message.RoomId))
             {
-                targetChannel = await ResolveRoomChannelAsync(message.RoomId, cancellationToken);
+                targetChannel = await _channels.ResolveRoomChannelAsync(message.RoomId, _defaultChannelId!, _apiClient, cancellationToken);
             }
             else
             {
                 targetChannel = _defaultChannelId!;
             }
 
-            var blocks = BuildMessageBlocks(message);
+            var blocks = SlackMessageBuilder.BuildMessageBlocks(message);
             var fallbackText = $"[{message.Type}] {message.Title}: {message.Body}";
             var agentName = message.AgentName;
-            var emoji = GetAgentEmoji(agentName);
+            var emoji = SlackMessageBuilder.GetAgentEmoji(agentName);
 
             var result = await _apiClient.PostMessageAsync(
                 channel: targetChannel,
@@ -251,23 +232,14 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
 
         try
         {
-            var channelId = await ResolveRoomChannelAsync(question.RoomId, cancellationToken);
+            var channelId = await _channels.ResolveRoomChannelAsync(question.RoomId, _defaultChannelId!, _apiClient, cancellationToken);
 
             // Post the question as a message with agent identity
-            var blocks = new object[]
-            {
-                new { type = "header", text = new { type = "plain_text", text = $"❓ {question.AgentName} asks:", emoji = true } },
-                new { type = "section", text = new { type = "mrkdwn", text = EscapeSlackText(question.Question) } },
-                new { type = "context", elements = new object[]
-                {
-                    new { type = "mrkdwn", text = $"*Room:* {EscapeSlackText(question.RoomName)} · *Agent:* {EscapeSlackText(question.AgentName)}" }
-                }},
-                new { type = "divider" }
-            };
+            var blocks = SlackMessageBuilder.BuildQuestionBlocks(question.AgentName, question.Question, question.RoomName);
 
             var result = await _apiClient.PostMessageAsync(
                 channel: channelId,
-                text: $"❓ {question.AgentName} asks: {EscapeSlackText(question.Question)}",
+                text: $"❓ {question.AgentName} asks: {SlackMessageBuilder.EscapeSlackText(question.Question)}",
                 blocks: blocks,
                 username: question.AgentName,
                 iconEmoji: ":question:",
@@ -303,13 +275,13 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
 
         try
         {
-            var channelId = await ResolveRoomChannelAsync(dm.RoomId, cancellationToken);
+            var channelId = await _channels.ResolveRoomChannelAsync(dm.RoomId, _defaultChannelId!, _apiClient, cancellationToken);
 
             var result = await _apiClient.PostMessageAsync(
                 channel: channelId,
-                text: EscapeSlackText(dm.Question),
+                text: SlackMessageBuilder.EscapeSlackText(dm.Question),
                 username: dm.AgentName,
-                iconEmoji: GetAgentEmoji(dm.AgentName),
+                iconEmoji: SlackMessageBuilder.GetAgentEmoji(dm.AgentName),
                 ct: cancellationToken);
 
             if (!result.Ok)
@@ -331,53 +303,14 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
     public async Task OnRoomRenamedAsync(string roomId, string newName, CancellationToken cancellationToken = default)
     {
         if (!_isConnected || _apiClient is null) return;
-
-        if (_roomChannels.TryGetValue(roomId, out var channelId))
-        {
-            try
-            {
-                var slackName = ToSlackChannelName(newName);
-                var result = await _apiClient.RenameChannelAsync(channelId, slackName, cancellationToken);
-                if (result.Ok)
-                {
-                    _logger.LogInformation("Renamed Slack channel {ChannelId} to {NewName}", channelId, slackName);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to rename Slack channel {ChannelId}: {Error}", channelId, result.Error);
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "Error renaming Slack channel for room {RoomId}", roomId);
-            }
-        }
+        await _channels.RenameRoomChannelAsync(roomId, newName, _apiClient, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task OnRoomClosedAsync(string roomId, CancellationToken cancellationToken = default)
     {
         if (!_isConnected || _apiClient is null) return;
-
-        if (_roomChannels.TryRemove(roomId, out var channelId))
-        {
-            try
-            {
-                var result = await _apiClient.ArchiveChannelAsync(channelId, cancellationToken);
-                if (result.Ok)
-                {
-                    _logger.LogInformation("Archived Slack channel {ChannelId} for room {RoomId}", channelId, roomId);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to archive Slack channel {ChannelId}: {Error}", channelId, result.Error);
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "Error archiving Slack channel for room {RoomId}", roomId);
-            }
-        }
+        await _channels.ArchiveRoomChannelAsync(roomId, _apiClient, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -400,275 +333,7 @@ public sealed class SlackNotificationProvider : INotificationProvider, IDisposab
     {
         _apiClient?.Dispose();
         _connectLock.Dispose();
-        _channelCreateLock.Dispose();
     }
-
-    #region Private helpers
-
-    /// <summary>
-    /// Resolves the Slack channel ID for a given AA room.
-    /// Creates the channel if it doesn't exist.
-    /// Falls back to default channel on failure.
-    /// </summary>
-    private async Task<string> ResolveRoomChannelAsync(string roomId, CancellationToken ct)
-    {
-        // Return cached mapping
-        if (_roomChannels.TryGetValue(roomId, out var cached))
-            return cached;
-
-        await _channelCreateLock.WaitAsync(ct);
-        try
-        {
-            // Double-check after acquiring lock
-            if (_roomChannels.TryGetValue(roomId, out cached))
-                return cached;
-
-            // Resolve project name for channel naming
-            string? projectName = null;
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-                projectName = await roomService.GetProjectNameForRoomAsync(roomId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Could not resolve project name for room {RoomId}", roomId);
-            }
-
-            var prefix = projectName is not null ? ToSlackChannelName(projectName) : "aa";
-            var channelName = $"{prefix}-{roomId[..Math.Min(8, roomId.Length)]}";
-            channelName = ToSlackChannelName(channelName);
-
-            // Truncate to Slack's 80-char channel name limit
-            if (channelName.Length > 80)
-                channelName = channelName[..80];
-
-            try
-            {
-                var createResult = await _apiClient!.CreateChannelAsync(channelName, ct: ct);
-                if (createResult.Ok && createResult.Channel is not null)
-                {
-                    var newChannelId = createResult.Channel.Id;
-                    _roomChannels[roomId] = newChannelId;
-
-                    // Set topic with room ID for startup recovery
-                    var topic = $"Agent Academy room · ID: {roomId}";
-                    await _apiClient.SetChannelTopicAsync(newChannelId, topic, ct);
-
-                    _logger.LogInformation("Created Slack channel #{Name} ({Id}) for room {RoomId}",
-                        channelName, newChannelId, roomId);
-                    return newChannelId;
-                }
-
-                // name_taken means the channel already exists — find it
-                if (createResult.Error == "name_taken")
-                {
-                    var existing = await FindChannelByNameAsync(channelName, ct);
-                    if (existing is not null)
-                    {
-                        _roomChannels[roomId] = existing;
-                        return existing;
-                    }
-                }
-
-                _logger.LogWarning("Failed to create Slack channel '{Name}': {Error}. Falling back to default.",
-                    channelName, createResult.Error);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "Error creating Slack channel for room {RoomId}. Falling back to default.", roomId);
-            }
-
-            // Cache the fallback to avoid retrying on every message
-            _roomChannels[roomId] = _defaultChannelId!;
-            return _defaultChannelId!;
-        }
-        finally
-        {
-            _channelCreateLock.Release();
-        }
-    }
-
-    /// <summary>
-    /// Scans existing Slack channels to rebuild the room → channel mapping on startup.
-    /// Looks for channels with "Agent Academy room · ID: {roomId}" in the topic.
-    /// </summary>
-    private async Task RebuildChannelMappingAsync(CancellationToken ct)
-    {
-        try
-        {
-            string? cursor = null;
-            var recovered = 0;
-
-            do
-            {
-                var result = await _apiClient!.ListChannelsAsync(cursor: cursor, ct: ct);
-                if (!result.Ok || result.Channels is null)
-                    break;
-
-                foreach (var channel in result.Channels)
-                {
-                    var roomId = ExtractRoomIdFromTopic(channel.Topic?.Value);
-                    if (roomId is not null)
-                    {
-                        _roomChannels[roomId] = channel.Id;
-                        recovered++;
-                    }
-                }
-
-                cursor = result.ResponseMetadata?.NextCursor;
-            } while (!string.IsNullOrEmpty(cursor));
-
-            if (recovered > 0)
-            {
-                _logger.LogInformation("Recovered {Count} Slack channel mappings from existing channels", recovered);
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "Failed to rebuild Slack channel mapping — new channels will be created as needed");
-        }
-    }
-
-    /// <summary>
-    /// Extracts a room ID from a Slack channel topic containing "ID: {roomId}".
-    /// </summary>
-    internal static string? ExtractRoomIdFromTopic(string? topic)
-    {
-        if (string.IsNullOrEmpty(topic)) return null;
-
-        var match = Regex.Match(topic, @"ID:\s*(\S+)");
-        return match.Success ? match.Groups[1].Value : null;
-    }
-
-    /// <summary>
-    /// Finds a Slack channel by name via conversations.list pagination.
-    /// </summary>
-    private async Task<string?> FindChannelByNameAsync(string name, CancellationToken ct)
-    {
-        string? cursor = null;
-        do
-        {
-            var result = await _apiClient!.ListChannelsAsync(cursor: cursor, ct: ct);
-            if (!result.Ok || result.Channels is null) break;
-
-            var match = result.Channels.FirstOrDefault(c =>
-                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (match is not null) return match.Id;
-
-            cursor = result.ResponseMetadata?.NextCursor;
-        } while (!string.IsNullOrEmpty(cursor));
-
-        return null;
-    }
-
-    /// <summary>
-    /// Builds Slack Block Kit blocks for a notification message.
-    /// </summary>
-    private static object[] BuildMessageBlocks(NotificationMessage message)
-    {
-        var emoji = GetTypeEmoji(message.Type);
-
-        var blocks = new List<object>
-        {
-            new
-            {
-                type = "section",
-                text = new { type = "mrkdwn", text = $"{emoji} *{EscapeSlackText(message.Title)}*" }
-            }
-        };
-
-        if (!string.IsNullOrEmpty(message.Body))
-        {
-            // Split long messages to respect Slack's 3000-char block text limit
-            var body = message.Body;
-            if (body.Length > 2900)
-                body = body[..2900] + "…";
-
-            blocks.Add(new
-            {
-                type = "section",
-                text = new { type = "mrkdwn", text = EscapeSlackText(body) }
-            });
-        }
-
-        // Context line with agent name and room
-        var contextParts = new List<object>();
-        if (!string.IsNullOrEmpty(message.AgentName))
-            contextParts.Add(new { type = "mrkdwn", text = $"*Agent:* {EscapeSlackText(message.AgentName)}" });
-        if (!string.IsNullOrEmpty(message.RoomId))
-            contextParts.Add(new { type = "mrkdwn", text = $"*Room:* {EscapeSlackText(message.RoomId)}" });
-
-        if (contextParts.Count > 0)
-        {
-            blocks.Add(new { type = "context", elements = contextParts.ToArray() });
-        }
-
-        return blocks.ToArray();
-    }
-
-    /// <summary>
-    /// Converts a name to a valid Slack channel name (lowercase, no spaces, max 80 chars).
-    /// </summary>
-    internal static string ToSlackChannelName(string name)
-    {
-        // Slack channel names: lowercase, hyphens/underscores allowed, no spaces, max 80 chars
-        var result = name.ToLowerInvariant()
-            .Replace(' ', '-')
-            .Replace('.', '-')
-            .Replace('/', '-');
-
-        // Remove invalid chars (keep alphanumeric, hyphens, underscores)
-        result = Regex.Replace(result, @"[^a-z0-9\-_]", "");
-
-        // Collapse multiple hyphens
-        result = Regex.Replace(result, @"-{2,}", "-");
-
-        // Trim leading/trailing hyphens
-        result = result.Trim('-');
-
-        // Slack requires non-empty
-        return string.IsNullOrEmpty(result) ? "agent-academy" : result;
-    }
-
-    private static string GetTypeEmoji(NotificationType type) => type switch
-    {
-        NotificationType.Error => "🔴",
-        NotificationType.TaskFailed => "❌",
-        NotificationType.TaskComplete => "✅",
-        NotificationType.NeedsInput => "💬",
-        NotificationType.SpecReview => "📋",
-        NotificationType.AgentThinking => "🤔",
-        _ => "ℹ️"
-    };
-
-    private static string? GetAgentEmoji(string? agentName)
-    {
-        if (agentName is null) return null;
-
-        // Try to match by known role keywords in the agent name
-        foreach (var (role, emoji) in AgentEmoji)
-        {
-            if (agentName.Contains(role, StringComparison.OrdinalIgnoreCase))
-                return emoji;
-        }
-
-        return ":robot_face:";
-    }
-
-    /// <summary>
-    /// Escapes special Slack mrkdwn characters to prevent unintended formatting.
-    /// </summary>
-    internal static string EscapeSlackText(string text)
-    {
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;");
-    }
-
-    #endregion
 }
 
 /// <summary>

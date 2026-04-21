@@ -15,11 +15,41 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
 
-// Fluent UI Dialog portals can take >1s to mount under parallel test load
-// because the motion system schedules extra render cycles in test environments.
+// Default RTL timeout — kept generous as a safety net even though the Dialog
+// primitives below are now synchronous-rendered.
 configure({ asyncUtilTimeout: 5000 });
 
 // ── Mocks ──────────────────────────────────────────────────────────────
+
+// Replace Fluent UI Dialog primitives with synchronous inline renders. The
+// real components mount through a portal and run a motion system that, under
+// parallel test load on slower CI runners, can take longer than the default
+// asyncUtilTimeout to render their inner content. That timing was the sole
+// source of repeated `agentConfigCard` flakes (6+ "stabilize" fix commits).
+//
+// Everything else from @fluentui/react-components (Button, Input, Select,
+// Spinner, Textarea …) is preserved via importActual so the rest of the form
+// behaves exactly as in production.
+vi.mock("@fluentui/react-components", async () => {
+  const actual = await vi.importActual<typeof import("@fluentui/react-components")>(
+    "@fluentui/react-components"
+  );
+  return {
+    ...actual,
+    Dialog: ({ open, children }: { open?: boolean; children?: React.ReactNode }) =>
+      open ? createElement("div", { role: "dialog" }, children) : null,
+    DialogSurface: ({ children }: { children?: React.ReactNode }) =>
+      createElement("div", null, children),
+    DialogBody: ({ children }: { children?: React.ReactNode }) =>
+      createElement("div", null, children),
+    DialogContent: ({ children }: { children?: React.ReactNode }) =>
+      createElement("div", null, children),
+    DialogActions: ({ children }: { children?: React.ReactNode }) =>
+      createElement("div", null, children),
+    DialogTitle: ({ children }: { children?: React.ReactNode }) =>
+      createElement("h2", null, children),
+  };
+});
 
 vi.mock("../api", () => ({
   getAgentConfig: vi.fn(),
@@ -580,9 +610,12 @@ describe("AgentConfigCard (interactive)", () => {
       mockGetQuota.mockResolvedValueOnce(makeQuota());
       // Click the "Remove Limits" button to open dialog
       fireEvent.click(screen.getByRole("button", { name: /Remove Limits/ }));
-      // Scope to dialog portal for the confirmation button
+      // Scope to dialog portal for the confirmation button — use findBy* so
+      // we wait for the dialog content (not just the portal div) to render
+      // under heavy parallel test load.
       const dialog = await screen.findByRole("dialog");
-      await user.click(within(dialog).getByRole("button", { name: /Remove Limits/ }));
+      const confirmBtn = await within(dialog).findByRole("button", { name: /Remove Limits/ });
+      await user.click(confirmBtn);
       await waitFor(() => {
         expect(mockRemoveQuota).toHaveBeenCalledWith("architect");
       });

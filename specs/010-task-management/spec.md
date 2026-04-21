@@ -19,7 +19,11 @@ When agents work on tasks, they follow a branch-based local squash-merge workflo
 
 All of this is visible in the frontend: a task list below the Main Collaboration Room showing in-progress, incomplete, and completed work with rich metadata.
 
-> **Note**: The system also includes metadata fields for GitHub PR integration (`PullRequestNumber`, `PullRequestUrl`, `PullRequestStatus`), but the current implementation does not use GitHub PRs. Tasks are merged via local `MERGE_TASK` command which invokes `GitService.SquashMergeAsync()` (see `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`).
+> **Note**: Tasks support two merge paths that can be used interchangeably:
+> 1. **Local squash-merge** — `MERGE_TASK` invokes `GitService.SquashMergeAsync()` (`src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`). Fast; no remote interaction.
+> 2. **GitHub PR workflow** — `CREATE_PR` pushes the task branch and opens a PR; `POST_PR_REVIEW` / `GET_PR_REVIEWS` drive review; `MERGE_PR` merges the PR and syncs status back to the task (`src/AgentAcademy.Server/Commands/Handlers/MergePrHandler.cs`, `src/AgentAcademy.Server/Services/PullRequestSyncService.cs`). Task entities carry `PullRequestNumber`, `PullRequestUrl`, `PullRequestStatus` for this path.
+>
+> See §5 GitHub Integration for the full PR command reference.
 
 ---
 
@@ -65,6 +69,7 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 | `CommitCount` | `int` | Number of commits on the task branch |
 | `MergeCommitSha` | `string?` | SHA of the squash-merge commit created by `MERGE_TASK` |
 | `CommentCount` | `int` | Number of task comments (computed at query time) |
+| `Priority` | `TaskPriority` | Priority level: `Critical`, `High`, `Medium` (default), `Low` |
 
 ### TaskEntity
 
@@ -77,7 +82,7 @@ All of this is visible in the frontend: a task list below the Main Collaboration
 | `RoomId` | `string?` | FK to the room where this task was created |
 | `Room` | `RoomEntity?` | Navigation property |
 
-**Note**: `TaskEntity` stores several list-typed fields as JSON strings (`PreferredRoles`, `FleetModels`, `TestsCreated`) and `Size` as a nullable string. `CommentCount` is computed at query time, not stored on the entity.
+**Note**: `TaskEntity` stores several list-typed fields as JSON strings (`PreferredRoles`, `FleetModels`, `TestsCreated`) and `Size` as a nullable string. `Priority` is stored as `int` (not string) for correct `ORDER BY ASC` semantics (0=Critical → 3=Low). `CommentCount` is computed at query time, not stored on the entity.
 
 ### Enums
 
@@ -107,6 +112,15 @@ public enum TaskSize { XS, S, M, L, XL }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PullRequestStatus { Open, ReviewRequested, ChangesRequested, Approved, Merged, Closed }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskPriority
+{
+    Critical = 0,  // Blocking issues, dependencies for other work
+    High = 1,      // Core features, important fixes
+    Medium = 2,    // Standard features (default)
+    Low = 3        // Polish, nice-to-haves
+}
 ```
 
 ### TaskCommentEntity
@@ -235,7 +249,7 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 
 ### Assignment Behavior
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`, `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs`
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`, `src/AgentAcademy.Server/Services/TaskOrchestrationService.cs`
 
 - Task assignment creates a `BreakoutRoomEntity` and a `TaskItemEntity` linked to it
 - The orchestrator ensures the breakout room has a persisted `TaskId`; if none exists yet, it creates a new `TaskEntity` for that breakout and stores the link before branch creation continues (`EnsureTaskForBreakoutAsync`)
@@ -248,9 +262,12 @@ When a task is assigned, the platform creates a dedicated breakout room and task
 2. The existing reviewer cycle can still post review feedback in the collaboration room, but task approval remains an explicit command transition
 3. Reviewer approves via `APPROVE_TASK` → task status moves to `Approved`
 4. Reviewer (or Planner) executes `MERGE_TASK` command
-5. `MERGE_TASK` squash-merges the task branch to `develop`
-6. On successful merge → task status moves to `Completed`, merge commit SHA recorded on TaskEntity
-7. On merge conflict → merge is aborted, the task returns to `Approved`, and an error is returned to the caller
+5. `MERGE_TASK` atomically transitions `Approved → Merging` via `ITaskQueryService.TryClaimForMergeAsync` (a single SQL `UPDATE` predicated on `Status = 'Approved'`). If two `MERGE_TASK` handlers race after the up-front validation read, only one wins the claim — the loser returns `CommandErrorCode.Conflict` instead of double-merging the same branch.
+6. The winning handler squash-merges the task branch to `develop`
+7. On successful merge → task status moves to `Completed`, merge commit SHA recorded on TaskEntity
+8. On merge conflict → merge is aborted, the task returns to `Approved`, and an error is returned to the caller
+
+> **Source**: `src/AgentAcademy.Server/Services/TaskQueryService.cs` (`TryClaimForMergeAsync` — uses `ExecuteUpdateAsync` then detaches the tracked entity so subsequent `UpdateTaskStatusAsync` calls in the same scope see the new status), `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs:138-156`
 
 ### Task Identity on Assignment
 
@@ -297,7 +314,7 @@ When a task transitions to `InReview`:
 
 Socrates may use multiple models for review depth:
 
-1. **Primary review**: Socrates's own model (`claude-opus-4.6`)
+1. **Primary review**: Socrates's own model (`claude-opus-4.7`)
 2. **Cross-model review**: Socrates may invoke additional models as fleet reviewers:
    - `gpt-5.4` for logic/correctness
    - `claude-sonnet-4.5` for style/architecture
@@ -333,15 +350,17 @@ After Socrates approves a task (`APPROVE_TASK` command), a reviewer or planner i
 1. Socrates issues APPROVE_TASK command
 2. Task status → Approved
 3. Socrates or Aristotle issues MERGE_TASK: TaskId={id}
-4. GitService.SquashMergeAsync(branchName, commitMessage) executes with commit subject `{prefix}{task.Title}`
-5. Task updated: CompletedAt, MergeCommitSha, CommitCount
-6. Task status → Completed
-7. System posts success message to room
+4. Atomic claim: TryClaimForMergeAsync flips Approved → Merging in a single SQL UPDATE predicated on Status='Approved'.
+   • Concurrent MERGE_TASK handlers race here; the loser returns CommandErrorCode.Conflict instead of double-merging.
+5. GitService.SquashMergeAsync(branchName, commitMessage) executes with commit subject `{prefix}{task.Title}`
+6. Task updated: CompletedAt, MergeCommitSha, CommitCount
+7. Task status → Completed
+8. System posts success message to room
 ```
 
 `{prefix}` is derived from `TaskEntity.Type`: `Feature -> feat: `, `Bug -> fix: `, `Chore -> chore: `, `Spike -> docs: `.
 
-> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.cs:186-213`
+> **Source**: `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs`, `src/AgentAcademy.Server/Services/GitService.MergeOperations.cs`
 
 ---
 
@@ -403,10 +422,13 @@ Creates a GitHub pull request for a task.
 **Workflow**:
 1. Validates task exists, has a branch, and has no existing PR
 2. Checks GitHub is configured (`IsConfiguredAsync`)
-3. Pushes branch to remote (`GitService.PushBranchAsync`)
-4. Creates PR via `gh pr create` (`GitHubService.CreatePullRequestAsync`)
-5. Updates task entity with PR URL, number, and `Open` status
-6. Posts a system status message to the task's room
+3. Enriches PR body with goal cards (best-effort — see below)
+4. Pushes branch to remote (`GitService.PushBranchAsync`)
+5. Creates PR via `gh pr create` (`GitHubService.CreatePullRequestAsync`)
+6. Updates task entity with PR URL, number, and `Open` status
+7. Posts a system status message to the task's room
+
+**Goal card enrichment**: If the task has associated goal cards (`IGoalCardService.GetByTaskAsync`), a formatted section is appended to the PR body (after any default or custom body content). Each goal card renders as a markdown block with verdict emoji (✅/⚠️/🛑), status, agent name, intent, divergence, steelman/strawman arguments, fresh-eyes questions, and card metadata. Multiple cards are all included. Enrichment is best-effort: if the goal card service is unavailable or throws, the handler logs a warning and creates the PR with the original body.
 
 **Error handling**: On any failure (push or PR creation), returns `CommandErrorCode.Execution` with the error message. Task entity is not modified on failure.
 
@@ -626,7 +648,7 @@ Comments are ordered by `CreatedAt` ascending.
 
 ## 6.6. Evidence Ledger
 
-> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/TaskLifecycleService.cs`
+> **Source**: `src/AgentAcademy.Server/Data/Entities/TaskEvidenceEntity.cs`, `src/AgentAcademy.Server/Services/TaskEvidenceService.cs`
 
 The evidence ledger records structured verification checks against tasks. Each check captures what was verified, how, and whether it passed. Evidence accumulates on a task and is evaluated by gate checks before status transitions.
 
@@ -666,7 +688,7 @@ Task status transitions (e.g., Active → AwaitingValidation → InReview → Ap
 
 ### Gate Definitions
 
-Gates are minimum evidence requirements for task status transitions. Evaluated by `TaskLifecycleService.CheckGatesAsync()`:
+Gates are minimum evidence requirements for task status transitions. Evaluated by `TaskEvidenceService.CheckGatesAsync()`:
 
 | Current Status | Target Status | Required Checks | Required Phase | Suggested Check Names |
 |---------------|---------------|-----------------|----------------|----------------------|
@@ -713,9 +735,68 @@ See spec 007 § Phase 1C for the full command reference: `RECORD_EVIDENCE`, `QUE
 | `GET /api/tasks/{id}/comments` | GET | List task comments, ordered by creation time |
 | `PUT /api/tasks/{id}/assign` | PUT | Assign agent to task |
 | `PUT /api/tasks/{id}/status` | PUT | Update task status |
+| `PUT /api/tasks/{id}/priority` | PUT | Update task priority |
 | `PUT /api/tasks/{id}/branch` | PUT | Record branch name |
 | `PUT /api/tasks/{id}/pr` | PUT | Record PR info |
 | `PUT /api/tasks/{id}/complete` | PUT | Mark complete with final metadata |
+| `DELETE /api/tasks/{id}/dependencies/{dependsOnTaskId}` | DELETE | Remove a dependency link |
+
+#### `PUT /api/tasks/{id}/status`
+
+Update the status of a task.
+
+- **Request body**: `UpdateTaskStatusRequest { Status }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/priority`
+
+Update the priority of a task.
+
+- **Request body**: `UpdateTaskPriorityRequest { Priority }` — `Critical`, `High`, `Medium`, `Low`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/branch`
+
+Record the branch name associated with a task.
+
+- **Request body**: `UpdateTaskBranchRequest { BranchName }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/pr`
+
+Record pull request information on a task.
+
+- **Request body**: `UpdateTaskPrRequest { Url, Number, Status }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `PUT /api/tasks/{id}/complete`
+
+Mark a task as complete with final metadata.
+
+- **Request body**: `CompleteTaskRequest { CommitCount, TestsCreated? }`
+- **Response**: `TaskSnapshot`
+- **404**: Task not found
+
+#### `GET /api/tasks/{id}/comments`
+
+Get all comments for a task.
+
+- **Response**: `List<TaskComment>`, ordered by creation time
+
+> See also section 6.5 for comment data model and the `ADD_TASK_COMMENT` command.
+
+#### `DELETE /api/tasks/{id}/dependencies/{dependsOnTaskId}`
+
+Remove a dependency link between two tasks.
+
+- **Response**: `TaskDependencyInfo`
+- **404**: Task or dependency not found
+
+> **Source**: `src/AgentAcademy.Server/Controllers/CollaborationController.cs`
 
 ### Review Pipeline
 
@@ -740,7 +821,7 @@ When a project is onboarded and has no existing specs (`!scan.HasSpecs`), the sy
    - SuccessCriteria: spec files created and committed
    - PreferredRoles: `["Planner", "TechnicalWriter"]`
 3. Calls `TaskOrchestrationService.CreateTaskAsync(request)`
-4. Triggers `AgentOrchestrator.HandleHumanMessageAsync(roomId)` to kick off agent work
+4. Triggers `AgentOrchestrator.HandleHumanMessage(roomId)` to kick off agent work
 5. Returns `specTaskCreated: true` and `roomId` in `OnboardResult`
 
 `OnboardResult`:
@@ -759,11 +840,11 @@ public record OnboardResult(
 
 ### Task Assignment Flow
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-563`
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
 
 When a task is created (via `/api/tasks` or auto-spec):
 
-1. Orchestrator evaluates preferred roles
+1. `TaskAssignmentHandler` evaluates preferred roles
 2. Selects the most appropriate named agent
 3. Agent acknowledges task in the room
 4. Creates breakout room and task item (`CreateBreakoutRoomAsync`, `CreateTaskItemAsync`)
@@ -774,7 +855,7 @@ When a task is created (via `/api/tasks` or auto-spec):
 
 ### Task Creation Gating
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs:452-473`
+> **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
 
 Task creation via TASK ASSIGNMENT blocks in agent responses is role-gated:
 - Only agents with the `Planner` role can create tasks
@@ -785,12 +866,12 @@ Task creation via TASK ASSIGNMENT blocks in agent responses is role-gated:
 
 When task status → `InReview`:
 
-1. Activity event: `TaskReviewRequested`
-2. Socrates receives the event
-3. Socrates fetches diff using `SHOW_DIFF` command
-4. Socrates performs review
-5. Socrates posts review in room
-6. Task status updated based on outcome (via `APPROVE_TASK` or `REQUEST_CHANGES`)
+1. `BreakoutCompletionService` transitions the breakout task to `InReview` (via `TransitionBreakoutTaskToInReviewAsync`)
+2. A system status message is posted to the parent room announcing the InReview transition and the branch name
+3. No dedicated activity event is published on the InReview transition itself. `ActivityEventType.TaskStatusUpdated` is the generic status-change event used elsewhere in the task lifecycle, but the InReview transition path (`BreakoutCompletionService.TransitionBreakoutTaskToInReviewAsync` → `TaskQueryService.UpdateTaskStatusAsync`) does not emit it.
+4. Socrates (or a human reviewer) uses `SHOW_DIFF` on the task branch to inspect changes
+5. Reviewer posts findings and approves via `APPROVE_TASK` or sends back via `REQUEST_CHANGES`
+6. Status is updated accordingly; `MERGE_TASK` follows an approval to bring the branch into `develop`
 
 ### Agent Communication
 
@@ -831,31 +912,53 @@ All task commands are implemented as `ICommandHandler` implementations.
 
 ## 11. Task Service Method Index
 
-> **Source**: `src/AgentAcademy.Server/Services/TaskQueryService.cs`, `TaskLifecycleService.cs`, `TaskOrchestrationService.cs`, `BreakoutRoomService.cs`
+> **Source**: `src/AgentAcademy.Server/Services/Contracts/` (interfaces), `src/AgentAcademy.Server/Services/` (implementations)
 
-| Method | Service | Description |
-|--------|---------|-------------|
-| `CreateTaskAsync` | `TaskOrchestrationService` | Creates task with room, plan, agents |
-| `GetTasksAsync` | `TaskQueryService` | Returns all tasks |
-| `FindTaskByTitleAsync` | `TaskQueryService` | Finds latest non-cancelled task by exact title |
-| `AssignTaskAsync` | `TaskQueryService` | Sets assigned agent on task |
-| `UpdateTaskStatusAsync` | `TaskQueryService` | Updates task status |
-| `UpdateTaskBranchAsync` | `TaskQueryService` | Write-once branch assignment |
-| `UpdateTaskPrAsync` | `TaskQueryService` | Records PR info on task |
-| `CompleteTaskAsync` | `TaskOrchestrationService` | Marks task completed with metadata |
-| `ClaimTaskAsync` | `TaskLifecycleService` | Agent claims task (prevents double-claim) |
-| `ReleaseTaskAsync` | `TaskLifecycleService` | Agent releases task |
-| `ApproveTaskAsync` | `TaskLifecycleService` | Approves task, increments ReviewRounds |
-| `RequestChangesAsync` | `TaskLifecycleService` | Requests changes, increments ReviewRounds |
-| `GetReviewQueueAsync` | `TaskQueryService` | Returns tasks awaiting review |
-| `PostTaskNoteAsync` | `TaskOrchestrationService` | Posts note to task's room |
-| `AddTaskCommentAsync` | `TaskLifecycleService` | Adds structured comment |
-| `GetTaskCommentsAsync` | `TaskQueryService` | Returns comments for a task |
-| `GetTaskCommentCountAsync` | `TaskQueryService` | Returns comment count |
+All task services have interface contracts in `Services/Contracts/`. Consumers inject the interface (e.g., `ITaskQueryService`), not the concrete class. `TaskSnapshotFactory` (static) provides pure DTO mapping shared across all services.
+
+| Method | Interface | Description |
+|--------|-----------|-------------|
+| `CreateTaskAsync` | `ITaskOrchestrationService` | Creates task with room, plan, agents |
+| `CompleteTaskAsync` | `ITaskOrchestrationService` | Marks task completed with metadata |
+| `RejectTaskAsync` | `ITaskOrchestrationService` | Reverts completed task or moves to ChangesRequested |
+| `EnsureTaskForBreakoutAsync` | `ITaskOrchestrationService` | Creates or reuses task for breakout |
+| `PostTaskNoteAsync` | `ITaskOrchestrationService` | Posts note to task's room |
+| `GetTasksAsync` | `ITaskQueryService` | Returns all tasks |
+| `GetTaskAsync` | `ITaskQueryService` | Returns single task by ID |
+| `FindTaskByTitleAsync` | `ITaskQueryService` | Finds latest non-cancelled task by exact title |
+| `AssignTaskAsync` | `ITaskQueryService` | Sets assigned agent on task |
+| `UpdateTaskStatusAsync` | `ITaskQueryService` | Updates task status |
+| `UpdateTaskBranchAsync` | `ITaskQueryService` | Write-once branch assignment |
+| `UpdateTaskPrAsync` | `ITaskQueryService` | Records PR info on task |
+| `UpdateTaskPriorityAsync` | `ITaskQueryService` | Updates task priority |
+| `GetReviewQueueAsync` | `ITaskQueryService` | Returns tasks awaiting review |
+| `GetTaskCommentsAsync` | `ITaskQueryService` | Returns comments for a task |
+| `GetTaskCommentCountAsync` | `ITaskQueryService` | Returns comment count |
+| `ClaimTaskAsync` | `ITaskLifecycleService` | Agent claims task (prevents double-claim) |
+| `ReleaseTaskAsync` | `ITaskLifecycleService` | Agent releases task |
+| `ApproveTaskAsync` | `ITaskLifecycleService` | Approves task, increments ReviewRounds |
+| `RequestChangesAsync` | `ITaskLifecycleService` | Requests changes, increments ReviewRounds |
+| `AddTaskCommentAsync` | `ITaskLifecycleService` | Adds structured comment |
+| `SyncTaskPrStatusAsync` | `ITaskLifecycleService` | Syncs GitHub PR status back onto task, publishes `TaskPrStatusChanged` activity event |
+| `AddDependencyAsync` | `ITaskDependencyService` | Adds dependency with cycle detection |
+| `RemoveDependencyAsync` | `ITaskDependencyService` | Removes a task dependency |
+| `GetBlockingTasksAsync` | `ITaskDependencyService` | Returns tasks blocked by given task |
+| `BulkUpdateStatusAsync` | `ITaskOrchestrationService` / `ITaskQueryService` | Bulk status transition for a list of task IDs, returns `BulkOperationResult` |
+| `BulkAssignAsync` | `ITaskOrchestrationService` / `ITaskQueryService` | Bulk assignment for a list of task IDs, returns `BulkOperationResult` |
+| `LinkTaskToSpecAsync` | `ITaskLifecycleService` | Links a task to a spec section; publishes `SpecTaskLinked` activity event |
+| `GetSpecLinksForTaskAsync` | `ITaskQueryService` | Returns all spec links for a task |
+| `GetTasksForSpecAsync` | `ITaskQueryService` | Returns all tasks linked to a spec section |
+| `RecordEvidenceAsync` | `ITaskEvidenceService` | Records a verification check |
+| `CheckGatesAsync` | `ITaskEvidenceService` | Evaluates evidence gates for transition |
+| `CreateTaskItemAsync` | `ITaskItemService` | Creates a breakout-level work item |
+| `UpdateTaskItemStatusAsync` | `ITaskItemService` | Updates work item status |
+| `GetTaskCycleAnalyticsAsync` | `ITaskAnalyticsService` | Computes task cycle effectiveness metrics |
 | `SetBreakoutTaskIdAsync` | `BreakoutRoomService` | Write-once breakout→task link |
 | `GetBreakoutTaskIdAsync` | `BreakoutRoomService` | Gets task ID for breakout |
 | `TransitionBreakoutTaskToInReviewAsync` | `BreakoutRoomService` | Moves breakout task to InReview |
-| `EnsureTaskForBreakoutAsync` | `TaskOrchestrationService` | Creates or reuses task for breakout |
+| `BuildTaskSnapshot` | `TaskSnapshotFactory` (static) | Maps `TaskEntity` → `TaskSnapshot` DTO |
+| `BuildTaskComment` | `TaskSnapshotFactory` (static) | Maps `TaskCommentEntity` → `TaskComment` DTO |
+| `BuildTaskEvidence` | `TaskSnapshotFactory` (static) | Maps `TaskEvidenceEntity` → `TaskEvidence` DTO |
 
 ---
 
@@ -871,13 +974,13 @@ All task commands are implemented as `ICommandHandler` implementations.
 8. `SetBreakoutTaskIdAsync` is write-once — same conflict-logging behavior (enforced in code)
 9. **Git operations must succeed before database persistence** — Task/branch metadata must not persist to the database until git operations succeed. This prevents orphaned database records that reference non-existent branches.
 
-   > **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs` lines 605–627 (commit `36e0dda`)
+   > **Source**: `src/AgentAcademy.Server/Services/TaskAssignmentHandler.cs`
 
-   **Implementation** (`HandleTaskAssignmentAsync`):
-   - `CreateTaskBranchAsync` runs first (line 607)
-   - `BranchExistsAsync` verifies the branch was created (lines 609–610)
-   - Only after git success does `CreateTaskItemAsync` persist to database (lines 614–616)
-   - `EnsureTaskForBreakoutAsync` links the task to the breakout room (lines 618–620)
+   **Implementation** (`HandleTaskAssignmentAsync` in `TaskAssignmentHandler`):
+   - `CreateTaskBranchAsync` runs first
+   - `BranchExistsAsync` verifies the branch was created
+   - Only after git success does `CreateTaskItemAsync` persist to database
+   - `EnsureTaskForBreakoutAsync` links the task to the breakout room
    - If git fails, the catch block cleans up the breakout room but no database records exist to orphan
    - Each catch-block cleanup step is independently guarded with its own try/catch (lines 632–651)
 
@@ -896,11 +999,20 @@ All task commands are implemented as `ICommandHandler` implementations.
 - ~~Conflict resolution during `MERGE_TASK` is abort-only (no interactive resolution)~~ — **resolved**: `MERGE_TASK` now detects conflicting files on merge failure and reports them with a suggestion to use `REBASE_TASK`. New `REBASE_TASK` command rebases task branches onto develop with conflict detection and abort-on-failure. Dry-run mode (`dryRun=true`) checks for conflicts without modifying the branch. `MergeConflictException` carries conflicting file paths. `DetectMergeConflictsAsync` performs non-destructive conflict checks. 18 new tests.
 - ~~No formal limit on review rounds (tracked but not enforced)~~ — **resolved**: `MaxReviewRounds = 5` enforced in `RequestChangesAsync` and `RejectTaskAsync`. Tasks that exceed the limit cannot enter another review cycle — reviewer gets an error suggesting cancellation. 2 tests added.
 - ~~`APPROVE_TASK` and `REQUEST_CHANGES` lack role gates — any agent can invoke them~~ — **resolved**: Both handlers now enforce Planner/Reviewer/Human role gates, matching `REJECT_TASK` and `MERGE_TASK`. 2 tests added.
+- ~~**No task dependencies** — Task B can't formally depend on Task A completing first. Agents may attempt dependent tasks before prerequisites are done.~~ — **resolved**: `TaskDependencyEntity` (composite PK: TaskId + DependsOnTaskId) with DAG cycle detection via BFS. `TaskDependencyService` provides CRUD, blocking queries, and batch dependency loading. Dependencies enforced at claim time (`ClaimTaskAsync`) and status transition (`UpdateTaskStatusAsync` → Active). Only `Completed` satisfies a dependency (`Cancelled` does not). REST endpoints: `POST/DELETE/GET /api/tasks/{taskId}/dependencies`. Agent commands: `ADD_TASK_DEPENDENCY`, `REMOVE_TASK_DEPENDENCY`. `TaskSnapshot` includes `DependsOnTaskIds` and `BlockingTaskIds` (derived, lightweight). Frontend: `DependenciesSection` component in task detail + blocking badge in task list. 26 backend + 14 frontend tests. Cascade delete cleans up when tasks are removed. **Auto-unblock**: When a task completes (`CompleteTaskCoreAsync`), `GetTasksUnblockedByCompletionAsync` queries downstream tasks whose dependencies are now all satisfied. For each newly unblocked task, a `TaskUnblocked` activity event is published (before `SaveChangesAsync`, treating the completing task as already satisfied). The event includes the unblocked task's title and room ID. Frontend: `TaskUnblocked` is in the `NOTIFY_EVENT_TYPES` set in `useDesktopNotifications.ts` (desktop notification title: "Task unblocked") and triggers a task list refresh via `useWorkspace`.
+- ~~**No bulk task operations** — each task must be updated individually~~ — **resolved**: `POST /api/tasks/bulk/status` and `POST /api/tasks/bulk/assign` endpoints for batch operations. Status limited to safe subset (Queued, Active, Blocked, AwaitingValidation, InReview). Max 50 tasks per request. Deduplication and partial-success semantics — per-item errors with error codes (NOT_FOUND, VALIDATION, INTERNAL). `BulkOperationResult` returns counts + updated snapshots + errors. Activity events emitted per updated task. Frontend: multi-select checkboxes on task cards, "Select all" button, bulk action bar with status/assign dropdowns, result feedback, Escape to clear. Selection prunes on filter/task-list changes. 12 backend + 10 frontend tests.
 
 ## Revision History
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-04-18 | Spec sync — Post-Approval Merge flow (both Completion Flow and Post-Approval Merge subsections) now documents the atomic `Approved → Merging` claim via `ITaskQueryService.TryClaimForMergeAsync` (single SQL `UPDATE` predicated on status). Closes the double-merge race window from audit fix #105. Note added on `ExecuteUpdateAsync` detach requirement. | Anvil |
+| 2026-04-15 | Task Service Method Index updated: column renamed to "Interface", all entries reference interface contracts. Added missing methods (RejectTaskAsync, GetTaskAsync, dependency/evidence/analytics methods, TaskSnapshotFactory mappings). | Anvil |
+| 2026-04-14 | Task priority: `TaskPriority` enum (Critical/High/Medium/Low), int DB storage for correct sort order, `PUT /api/tasks/{id}/priority` endpoint, `UPDATE_TASK` command priority arg, `create_task` tool priority param, priority-first sort in `GetTasksAsync`, breakout sub-task priority inheritance, `PromptBuilder` includes priority in agent context. 20 new tests (4622 total). | Anvil |
+| 2026-04-13 | Bulk task operations: `POST /api/tasks/bulk/status` and `/api/tasks/bulk/assign` endpoints. Safe-status subset, max 50, dedup, partial-success. Frontend multi-select with bulk action bar. 12 backend + 10 frontend tests. | Anvil |
+| 2026-04-13 | Spec sync — document auto-unblock behavior: `GetTasksUnblockedByCompletionAsync` fires `TaskUnblocked` events when task completion satisfies all downstream dependencies. Frontend desktop notification and refresh wiring. | Anvil |
+| 2026-04-13 | Spec sync — updated `GitService` source references: merge/rebase/revert operations now in `GitService.MergeOperations.cs` partial class. Branch creation and other operations remain in `GitService.cs`. | Anvil |
+| 2026-04-20 | CREATE_PR goal card enrichment — PR body auto-appended with linked goal cards showing verdict, intent, divergence, steelman/strawman, fresh-eyes questions. Best-effort: service failure logs warning, never blocks PR creation. `EnrichBodyWithGoalCardsAsync` internal method. 6 new tests (5533 total). | Anvil |
 | 2026-04-11 | Spec reconciliation — updated GitHub Integration section: corrected status, added OAuth bridge auth docs, updated IGitHubService interface, added MERGE_PR and PullRequestSyncService sections, fixed branch naming (task/ prefix, not agents/), updated API endpoints table with authSource, removed stale Planned markers | Anvil |
 | 2026-04-07 | Evidence ledger: new §6.6 documenting task evidence system. TaskEvidenceEntity data model, EvidencePhase enum (Baseline/After/Review), gate definitions for status transitions (Active→AwaitingValidation: ≥1, AwaitingValidation→InReview: ≥2, InReview→Approved: ≥1). Authorization rules, commands cross-reference to spec 007. Invariants #10 (immutable evidence) and #11 (advisory gates). | Anvil |
 | 2026-04-07 | Added Invariant #9: git-DB transaction ordering — task metadata must not persist to database until git branch creation succeeds (commit `36e0dda`). Documents failure mode hierarchy and UI contract. | Thucydides / Anvil |

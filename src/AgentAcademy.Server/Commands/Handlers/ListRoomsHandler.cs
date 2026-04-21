@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -11,10 +12,11 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListRoomsHandler : ICommandHandler
 {
     public string CommandName => "LIST_ROOMS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
 
         // When filtering for Archived rooms, we need to include them in the query
         var wantsArchived = command.Args.TryGetValue("status", out var statusObj) && statusObj is string s

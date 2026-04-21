@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,7 +35,7 @@ public sealed class SetPlanHandler : ICommandHandler
             };
         }
 
-        var plans = context.Services.GetRequiredService<PlanService>();
+        var plans = context.Services.GetRequiredService<IPlanService>();
 
         try
         {

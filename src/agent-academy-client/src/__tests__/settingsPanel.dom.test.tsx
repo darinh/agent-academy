@@ -35,6 +35,9 @@ vi.mock("../api", () => ({
   createCustomAgent: vi.fn(),
   deleteCustomAgent: vi.fn(),
   getGitHubStatus: vi.fn(),
+  getSprintSchedule: vi.fn(),
+  upsertSprintSchedule: vi.fn(),
+  deleteSprintSchedule: vi.fn(),
 }));
 
 vi.mock("../NotificationSetupWizard", () => ({
@@ -103,12 +106,16 @@ import {
   createCustomAgent,
   deleteCustomAgent,
   getGitHubStatus,
+  getSprintSchedule,
+  upsertSprintSchedule,
+  deleteSprintSchedule,
 } from "../api";
 import type {
   ProviderStatus,
   AgentDefinition,
   InstructionTemplate,
   GitHubStatus,
+  SprintScheduleResponse,
 } from "../api";
 
 const mockGetProviders = vi.mocked(getNotificationProviders);
@@ -120,6 +127,9 @@ const mockUpdateSettings = vi.mocked(updateSystemSettings);
 const mockCreateAgent = vi.mocked(createCustomAgent);
 const mockDeleteAgent = vi.mocked(deleteCustomAgent);
 const mockGetGitHubStatus = vi.mocked(getGitHubStatus);
+const mockGetSchedule = vi.mocked(getSprintSchedule);
+const mockUpsertSchedule = vi.mocked(upsertSprintSchedule);
+const mockDeleteSchedule = vi.mocked(deleteSprintSchedule);
 
 // ── Factories ──────────────────────────────────────────────────────────
 
@@ -141,7 +151,7 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
     role: "architect",
     summary: "System architect agent",
     startupPrompt: "You are an architect.",
-    model: "claude-opus-4.6",
+    model: "claude-opus-4.7",
     capabilityTags: ["design"],
     enabledTools: ["search-code"],
     autoJoinDefaultRoom: true,
@@ -179,6 +189,23 @@ function makeGitHubStatus(overrides: Partial<GitHubStatus> = {}): GitHubStatus {
   };
 }
 
+function makeSchedule(overrides: Partial<SprintScheduleResponse> = {}): SprintScheduleResponse {
+  return {
+    id: "sched-1",
+    workspacePath: "/workspace",
+    cronExpression: "0 9 * * MON-FRI",
+    timeZoneId: "America/New_York",
+    enabled: true,
+    nextRunAtUtc: "2026-04-14T13:00:00Z",
+    lastTriggeredAt: null,
+    lastEvaluatedAt: null,
+    lastOutcome: null,
+    createdAt: "2026-04-01T00:00:00Z",
+    updatedAt: "2026-04-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /** Default mock setup: all APIs resolve with empty/minimal data */
@@ -188,6 +215,7 @@ function setupDefaultMocks() {
   mockGetTemplates.mockResolvedValue([]);
   mockGetSettings.mockResolvedValue({});
   mockGetGitHubStatus.mockResolvedValue(makeGitHubStatus());
+  mockGetSchedule.mockResolvedValue(null);
 }
 
 import type { DesktopNotificationControls } from "../useDesktopNotifications";
@@ -879,10 +907,12 @@ describe("SettingsPanel (interactive)", () => {
       await renderPanelAndWait();
       clickTab("Advanced");
 
-      const inputs = screen.getAllByRole("spinbutton");
-      expect(inputs).toHaveLength(2);
-      expect(inputs[0]).toHaveValue(75);
-      expect(inputs[1]).toHaveValue(40);
+      await waitFor(() => {
+        const inputs = screen.getAllByRole("spinbutton");
+        expect(inputs).toHaveLength(2);
+        expect(inputs[0]).toHaveValue(75);
+        expect(inputs[1]).toHaveValue(40);
+      });
     });
 
     it("uses default values when API returns empty", async () => {
@@ -922,6 +952,7 @@ describe("SettingsPanel (interactive)", () => {
         expect(mockUpdateSettings).toHaveBeenCalledWith({
           "conversation.mainRoomEpochSize": "100",
           "conversation.breakoutEpochSize": "30",
+          "sprint.autoStartOnCompletion": "false",
         });
       });
     });
@@ -1013,6 +1044,387 @@ describe("SettingsPanel (interactive)", () => {
       clickTab("Advanced");
       expect(screen.getByText("Desktop Notifications")).toBeInTheDocument();
       expect(screen.getByText("Not available")).toBeInTheDocument();
+    });
+
+    it("shows sprint automation section", async () => {
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      expect(screen.getByText("Sprint Automation")).toBeInTheDocument();
+      expect(screen.getByText("Auto-start next sprint on completion")).toBeInTheDocument();
+    });
+
+    it("sprint auto-start defaults to unchecked", async () => {
+      mockGetSettings.mockResolvedValue({});
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+      expect(checkbox).not.toBeChecked();
+    });
+
+    it("sprint auto-start reflects API value", async () => {
+      mockGetSettings.mockResolvedValue({
+        "sprint.autoStartOnCompletion": "True",
+      });
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      await waitFor(() => {
+        const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+        expect(checkbox).toBeChecked();
+      });
+    });
+
+    it("toggling sprint auto-start updates state", async () => {
+      mockGetSettings.mockResolvedValue({});
+      await renderPanelAndWait();
+      clickTab("Advanced");
+      const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+      expect(checkbox).not.toBeChecked();
+      await userEvent.click(checkbox);
+      expect(checkbox).toBeChecked();
+    });
+
+    it("saves sprint auto-start setting", async () => {
+      mockUpdateSettings.mockResolvedValue({});
+      mockGetSettings.mockResolvedValue({});
+      await renderPanelAndWait();
+      clickTab("Advanced");
+
+      const checkbox = screen.getByRole("checkbox", { name: /auto-start/i });
+      await userEvent.click(checkbox);
+      await userEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith(
+          expect.objectContaining({
+            "sprint.autoStartOnCompletion": "true",
+          }),
+        );
+      });
+    });
+
+    // ── Sprint Schedule ──────────────────────────────────────────────
+
+    describe("sprint schedule", () => {
+      it("shows schedule section heading and description", async () => {
+        await renderPanelAndWait();
+        clickTab("Advanced");
+        expect(screen.getByText("Sprint Schedule")).toBeInTheDocument();
+        expect(screen.getByText(/cron schedule/i)).toBeInTheDocument();
+      });
+
+      it("shows empty form when no schedule exists", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText("0 9 * * MON-FRI")).toBeInTheDocument();
+        });
+        expect(screen.getByText("Create Schedule")).toBeInTheDocument();
+        // No delete button when schedule is null
+        expect(screen.queryByText("Delete Schedule")).not.toBeInTheDocument();
+      });
+
+      it("loads and displays existing schedule", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule());
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          const cronInput = screen.getByPlaceholderText("0 9 * * MON-FRI") as HTMLInputElement;
+          expect(cronInput.value).toBe("0 9 * * MON-FRI");
+        });
+        expect(screen.getByText("Update Schedule")).toBeInTheDocument();
+        expect(screen.getByText("Delete Schedule")).toBeInTheDocument();
+        // Schedule enabled checkbox should be checked
+        const enabledCheckbox = screen.getByRole("checkbox", { name: /schedule enabled/i });
+        expect(enabledCheckbox).toBeChecked();
+      });
+
+      it("displays next run time for existing schedule", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule({
+          nextRunAtUtc: "2026-04-14T13:00:00Z",
+        }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText(/Next run:/)).toBeInTheDocument();
+        });
+      });
+
+      it("displays last triggered info when available", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule({
+          lastTriggeredAt: "2026-04-13T13:00:00Z",
+          lastOutcome: "SprintCreated",
+        }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText(/Last triggered:/)).toBeInTheDocument();
+          expect(screen.getByText(/SprintCreated/)).toBeInTheDocument();
+        });
+      });
+
+      it("calls upsertSprintSchedule with correct params on save", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        mockUpsertSchedule.mockResolvedValue(makeSchedule({
+          cronExpression: "30 8 * * 1",
+          timeZoneId: "UTC",
+        }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText("0 9 * * MON-FRI")).toBeInTheDocument();
+        });
+
+        const cronInput = screen.getByPlaceholderText("0 9 * * MON-FRI");
+        await userEvent.type(cronInput, "30 8 * * 1");
+
+        // Change timezone to UTC (select first option alphabetically)
+        const tzSelect = screen.getByRole("combobox");
+        await userEvent.selectOptions(tzSelect, "UTC");
+
+        await userEvent.click(screen.getByText("Create Schedule"));
+
+        await waitFor(() => {
+          expect(mockUpsertSchedule).toHaveBeenCalledWith({
+            cronExpression: "30 8 * * 1",
+            timeZoneId: "UTC",
+            enabled: true,
+          });
+        });
+      });
+
+      it("shows saved confirmation after successful save", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        mockUpsertSchedule.mockResolvedValue(makeSchedule());
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText("0 9 * * MON-FRI")).toBeInTheDocument();
+        });
+
+        const cronInput = screen.getByPlaceholderText("0 9 * * MON-FRI");
+        await userEvent.type(cronInput, "0 9 * * MON-FRI");
+        await userEvent.click(screen.getByText("Create Schedule"));
+
+        await waitFor(() => {
+          const saved = screen.getAllByText("✓ Saved");
+          expect(saved.length).toBeGreaterThanOrEqual(1);
+        });
+      });
+
+      it("disables save button when cron expression is empty", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText("Create Schedule")).toBeInTheDocument();
+        });
+        expect(screen.getByText("Create Schedule").closest("button")).toBeDisabled();
+      });
+
+      it("shows cron hint for wrong field count", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText("0 9 * * MON-FRI")).toBeInTheDocument();
+        });
+
+        const cronInput = screen.getByPlaceholderText("0 9 * * MON-FRI");
+        await userEvent.type(cronInput, "0 9 *");
+
+        expect(screen.getByText(/Cron requires 5 fields/)).toBeInTheDocument();
+      });
+
+      it("delete requires two clicks (confirmation flow)", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule());
+        mockDeleteSchedule.mockResolvedValue(undefined);
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText("Delete Schedule")).toBeInTheDocument();
+        });
+
+        // First click shows confirmation
+        await userEvent.click(screen.getByText("Delete Schedule"));
+        expect(screen.getByText("Confirm Delete?")).toBeInTheDocument();
+        expect(mockDeleteSchedule).not.toHaveBeenCalled();
+
+        // Second click actually deletes
+        await userEvent.click(screen.getByText("Confirm Delete?"));
+
+        await waitFor(() => {
+          expect(mockDeleteSchedule).toHaveBeenCalledTimes(1);
+        });
+      });
+
+      it("resets to empty form after successful delete", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule());
+        mockDeleteSchedule.mockResolvedValue(undefined);
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText("Delete Schedule")).toBeInTheDocument();
+        });
+
+        // Two-click delete
+        await userEvent.click(screen.getByText("Delete Schedule"));
+        await userEvent.click(screen.getByText("Confirm Delete?"));
+
+        await waitFor(() => {
+          expect(screen.getByText("Create Schedule")).toBeInTheDocument();
+        });
+        expect(screen.queryByText("Delete Schedule")).not.toBeInTheDocument();
+      });
+
+      it("shows inline error when save fails with server validation", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        mockUpsertSchedule.mockRejectedValue(new Error("Invalid cron expression: field 1 out of range"));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText("0 9 * * MON-FRI")).toBeInTheDocument();
+        });
+
+        const cronInput = screen.getByPlaceholderText("0 9 * * MON-FRI");
+        await userEvent.type(cronInput, "99 9 * * 1");
+        await userEvent.click(screen.getByText("Create Schedule"));
+
+        await waitFor(() => {
+          expect(screen.getByText(/Invalid cron expression/)).toBeInTheDocument();
+        });
+      });
+
+      it("shows inline error when delete fails", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule());
+        mockDeleteSchedule.mockRejectedValue(new Error("Failed to delete schedule"));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText("Delete Schedule")).toBeInTheDocument();
+        });
+
+        await userEvent.click(screen.getByText("Delete Schedule"));
+        await userEvent.click(screen.getByText("Confirm Delete?"));
+
+        await waitFor(() => {
+          expect(screen.getByText("Failed to delete schedule")).toBeInTheDocument();
+        });
+      });
+
+      it("clears error when cron input changes", async () => {
+        mockGetSchedule.mockResolvedValue(null);
+        mockUpsertSchedule.mockRejectedValue(new Error("Bad cron"));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText("0 9 * * MON-FRI")).toBeInTheDocument();
+        });
+
+        const cronInput = screen.getByPlaceholderText("0 9 * * MON-FRI");
+        await userEvent.type(cronInput, "bad");
+        await userEvent.click(screen.getByText("Create Schedule"));
+
+        await waitFor(() => {
+          expect(screen.getByText("Bad cron")).toBeInTheDocument();
+        });
+
+        // Typing in the cron field should clear the error
+        await userEvent.type(cronInput, "x");
+        expect(screen.queryByText("Bad cron")).not.toBeInTheDocument();
+      });
+
+      it("shows saved timezone not in curated list in dropdown", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule({
+          timeZoneId: "Africa/Nairobi",
+        }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          const tzSelect = screen.getByRole("combobox") as HTMLSelectElement;
+          expect(tzSelect.value).toBe("Africa/Nairobi");
+        });
+        // The option should exist even though it's not in COMMON_TIMEZONES
+        const options = screen.getAllByRole("option");
+        const nairobiOption = options.find((o) => (o as HTMLOptionElement).value === "Africa/Nairobi");
+        expect(nairobiOption).toBeTruthy();
+      });
+
+      it("schedule enabled checkbox reflects loaded state", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule({ enabled: false }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          const checkbox = screen.getByRole("checkbox", { name: /schedule enabled/i });
+          expect(checkbox).not.toBeChecked();
+        });
+      });
+
+      it("shows loading spinner while schedule is being fetched", async () => {
+        let resolveSchedule!: (value: SprintScheduleResponse | null) => void;
+        mockGetSchedule.mockReturnValue(new Promise((r) => { resolveSchedule = r; }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        expect(screen.getByText("Loading schedule…")).toBeInTheDocument();
+
+        // Resolve to remove spinner
+        resolveSchedule(null);
+        await waitFor(() => {
+          expect(screen.queryByText("Loading schedule…")).not.toBeInTheDocument();
+        });
+      });
+
+      it("shows error when schedule load fails", async () => {
+        mockGetSchedule.mockRejectedValue(new Error("Network error"));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText("Failed to load schedule")).toBeInTheDocument();
+        });
+      });
+
+      it("save is blocked while delete is in progress", async () => {
+        mockGetSchedule.mockResolvedValue(makeSchedule());
+        let resolveDelete!: () => void;
+        mockDeleteSchedule.mockReturnValue(new Promise<void>((r) => { resolveDelete = r; }));
+        await renderPanelAndWait();
+        clickTab("Advanced");
+
+        await waitFor(() => {
+          expect(screen.getByText("Delete Schedule")).toBeInTheDocument();
+        });
+
+        // Start delete (two clicks)
+        await userEvent.click(screen.getByText("Delete Schedule"));
+        await userEvent.click(screen.getByText("Confirm Delete?"));
+
+        // While deleting, the save button should be disabled
+        const saveBtn = screen.getByText("Update Schedule").closest("button")!;
+        expect(saveBtn).toBeDisabled();
+
+        // Resolve to clean up
+        resolveDelete();
+        await waitFor(() => {
+          expect(screen.getByText("Create Schedule")).toBeInTheDocument();
+        });
+      });
     });
   });
 });

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -91,8 +92,8 @@ public sealed class RecordEvidenceHandler : ICommandHandler
         if (command.Args.TryGetValue("output", out var outputObj) && outputObj is string outputStr)
             outputSnippet = outputStr;
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskEvidence = context.Services.GetRequiredService<ITaskEvidenceService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try
         {
@@ -123,7 +124,7 @@ public sealed class RecordEvidenceHandler : ICommandHandler
                 };
             }
 
-            var evidence = await taskLifecycle.RecordEvidenceAsync(
+            var evidence = await taskEvidence.RecordEvidenceAsync(
                 taskId, context.AgentId, context.AgentName,
                 phase, checkName, tool, cmd, exitCode, outputSnippet, passed);
 

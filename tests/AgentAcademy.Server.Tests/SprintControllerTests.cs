@@ -2,6 +2,7 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -17,6 +18,9 @@ public class SprintControllerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
     private readonly SprintService _sprintService;
+    private readonly SprintStageService _sprintStageService;
+    private readonly SprintArtifactService _artifactService;
+    private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
     private readonly SprintController _controller;
 
@@ -32,7 +36,10 @@ public class SprintControllerTests : IDisposable
         _db = new AgentAcademyDbContext(options);
         _db.Database.EnsureCreated();
 
-        _sprintService = new SprintService(_db, new ActivityBroadcaster(), NullLogger<SprintService>.Instance);
+        _sprintService = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
+        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
+        _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
+        _metricsCalculator = new SprintMetricsCalculator(_db);
 
         var catalog = new AgentCatalogOptions("main", "Main Room", []);
         var activityBus = new ActivityBroadcaster();
@@ -41,22 +48,27 @@ public class SprintControllerTests : IDisposable
         var sessionService = new ConversationSessionService(
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher, taskDeps);
 
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
         var planService = new PlanService(_db);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
-        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, activityPublisher, messageService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, activityPublisher);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, activityPublisher));
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
 
         _roomService = roomService;
 
+        var scheduleService = new SprintScheduleService(_db);
+
         _controller = new SprintController(
-            _sprintService, _roomService,
+            _sprintService, _sprintStageService, _artifactService, _metricsCalculator,
+            scheduleService, _roomService, sessionService,
             NullLogger<SprintController>.Instance);
     }
 
@@ -146,7 +158,7 @@ public class SprintControllerTests : IDisposable
     {
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument",
             TestArtifactContent.RequirementsDocument, "agent-1");
 
@@ -195,10 +207,10 @@ public class SprintControllerTests : IDisposable
     {
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.AdvanceStageAsync(sprint.Id);
-        await _sprintService.StoreArtifactAsync(
+        await _sprintStageService.AdvanceStageAsync(sprint.Id);
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Planning", "SprintPlan", TestArtifactContent.SprintPlan, "a1");
 
         // All artifacts
@@ -256,7 +268,7 @@ public class SprintControllerTests : IDisposable
     {
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
 
         var result = await _controller.AdvanceSprint(sprint.Id);
@@ -278,6 +290,85 @@ public class SprintControllerTests : IDisposable
         var result = await _controller.AdvanceSprint(sprint.Id);
 
         Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    // Regression: spec 013 §Stage Advancement requires every stage-advance code
+    // path to rotate workspace conversation sessions so each stage gets a clean
+    // session boundary. AdvanceStageHandler (agent path) and ApproveAdvance
+    // (HTTP approve path) both did this; AdvanceSprint (HTTP advance path) did
+    // not, leaving rooms stuck on the previous stage's session. See PR #106
+    // spec sync that surfaced this divergence.
+    [Fact]
+    public async Task AdvanceSprint_RealAdvance_RotatesWorkspaceSessions()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        // Jump straight to Discussion — Discussion → Validation requires neither
+        // sign-off nor an artifact gate, so the controller advance is a real
+        // stage change (the only path where rotation is supposed to fire).
+        sprint.CurrentStage = nameof(SprintStage.Discussion);
+        await _db.SaveChangesAsync();
+
+        // Seed a non-archived room in the workspace so RotateWorkspaceSessions
+        // has something to act on.
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-1",
+            Name = "Main",
+            WorkspacePath = TestWorkspace,
+            Status = "Idle",
+            CurrentPhase = "Intake",
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.AdvanceSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.Equal(SprintStage.Validation, body.Sprint.CurrentStage);
+
+        // Evidence of rotation: a fresh conversation session exists for the
+        // workspace room tagged with the new sprint stage.
+        var rotatedSession = await _db.ConversationSessions
+            .FirstOrDefaultAsync(s => s.RoomId == "room-1"
+                && s.SprintId == sprint.Id
+                && s.SprintStage == nameof(SprintStage.Validation));
+        Assert.NotNull(rotatedSession);
+    }
+
+    // Sign-off path: AdvanceSprint that enters AwaitingSignOff must NOT rotate
+    // — the stage didn't actually change, and ApproveAdvance will rotate when
+    // the human approves.
+    [Fact]
+    public async Task AdvanceSprint_AwaitingSignOff_DoesNotRotateWorkspaceSessions()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        await _artifactService.StoreArtifactAsync(
+            sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-signoff",
+            Name = "Main",
+            WorkspacePath = TestWorkspace,
+            Status = "Idle",
+            CurrentPhase = "Intake",
+        });
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.AdvanceSprint(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SprintDetailResponse>(ok.Value);
+        Assert.True(body.Sprint.AwaitingSignOff);
+        Assert.Equal(SprintStage.Intake, body.Sprint.CurrentStage);
+
+        // No rotated session should have been created — the stage didn't change.
+        var anySession = await _db.ConversationSessions
+            .AnyAsync(s => s.RoomId == "room-signoff" && s.SprintId == sprint.Id);
+        Assert.False(anySession,
+            "AdvanceSprint must not rotate sessions while sprint is awaiting sign-off; ApproveAdvance handles that.");
     }
 
     // ── CompleteSprint ──────────────────────────────────────────
@@ -340,9 +431,9 @@ public class SprintControllerTests : IDisposable
     {
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+        await _sprintStageService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var result = await _controller.ApproveAdvance(sprint.Id);
 
@@ -389,9 +480,9 @@ public class SprintControllerTests : IDisposable
     {
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
+        await _sprintStageService.AdvanceStageAsync(sprint.Id); // enters AwaitingSignOff
 
         var result = await _controller.RejectAdvance(sprint.Id);
 
@@ -497,9 +588,9 @@ public class SprintControllerTests : IDisposable
     {
         await ActivateWorkspace();
         var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _sprintService.StoreArtifactAsync(
+        await _artifactService.StoreArtifactAsync(
             sprint.Id, "Intake", "OverflowRequirements", TestArtifactContent.OverflowRequirements, "a1");
 
         var result = await _controller.GetSprintMetrics(sprint.Id);

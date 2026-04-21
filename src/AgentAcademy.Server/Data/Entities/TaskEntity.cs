@@ -45,7 +45,16 @@ public class TaskEntity
     // Sprint association
     public string? SprintId { get; set; }
 
+    /// <summary>Priority level (0=Critical, 1=High, 2=Medium, 3=Low). Stored as int for correct sort order.</summary>
+    public int Priority { get; set; } = 2; // Medium
+
     // Navigation properties
     public RoomEntity? Room { get; set; }
     public SprintEntity? Sprint { get; set; }
+
+    /// <summary>Tasks that this task depends on (must complete before this task can start).</summary>
+    public ICollection<TaskDependencyEntity> Dependencies { get; set; } = new List<TaskDependencyEntity>();
+
+    /// <summary>Tasks that depend on this task (blocked until this task completes).</summary>
+    public ICollection<TaskDependencyEntity> Dependents { get; set; } = new List<TaskDependencyEntity>();
 }

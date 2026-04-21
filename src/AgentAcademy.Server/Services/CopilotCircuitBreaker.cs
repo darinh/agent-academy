@@ -16,10 +16,11 @@ namespace AgentAcademy.Server.Services;
 public sealed class CopilotCircuitBreaker
 {
     private readonly object _lock = new();
+    private readonly TimeProvider _timeProvider;
     private CircuitState _state = CircuitState.Closed;
     private int _consecutiveFailures;
-    private DateTime _lastFailureUtc = DateTime.MinValue;
-    private DateTime _lastStateChangeUtc = DateTime.UtcNow;
+    private DateTimeOffset _lastFailureUtc = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastStateChangeUtc;
 
     /// <summary>Number of consecutive failures before opening the circuit.</summary>
     public int FailureThreshold { get; }
@@ -27,10 +28,12 @@ public sealed class CopilotCircuitBreaker
     /// <summary>How long the circuit stays open before allowing a probe.</summary>
     public TimeSpan OpenDuration { get; }
 
-    public CopilotCircuitBreaker(int failureThreshold = 5, TimeSpan? openDuration = null)
+    public CopilotCircuitBreaker(int failureThreshold = 5, TimeSpan? openDuration = null, TimeProvider? timeProvider = null)
     {
         FailureThreshold = failureThreshold;
         OpenDuration = openDuration ?? TimeSpan.FromSeconds(60);
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _lastStateChangeUtc = _timeProvider.GetUtcNow();
     }
 
     public CircuitState State
@@ -55,7 +58,7 @@ public sealed class CopilotCircuitBreaker
         {
             lock (_lock)
             {
-                return _lastFailureUtc == DateTime.MinValue ? null : _lastFailureUtc;
+                return _lastFailureUtc == DateTimeOffset.MinValue ? null : _lastFailureUtc.UtcDateTime;
             }
         }
     }
@@ -82,7 +85,7 @@ public sealed class CopilotCircuitBreaker
                     // If it succeeds, RecordSuccess resets to Closed.
                     // If it fails, RecordFailure keeps it Open.
                     _state = CircuitState.Open;
-                    _lastStateChangeUtc = DateTime.UtcNow;
+                    _lastStateChangeUtc = _timeProvider.GetUtcNow();
                     return true;
 
                 default:
@@ -103,7 +106,7 @@ public sealed class CopilotCircuitBreaker
 
             _consecutiveFailures = 0;
             _state = CircuitState.Closed;
-            _lastStateChangeUtc = DateTime.UtcNow;
+            _lastStateChangeUtc = _timeProvider.GetUtcNow();
         }
     }
 
@@ -116,12 +119,12 @@ public sealed class CopilotCircuitBreaker
         lock (_lock)
         {
             _consecutiveFailures++;
-            _lastFailureUtc = DateTime.UtcNow;
+            _lastFailureUtc = _timeProvider.GetUtcNow();
 
             if (_consecutiveFailures >= FailureThreshold)
             {
                 _state = CircuitState.Open;
-                _lastStateChangeUtc = DateTime.UtcNow;
+                _lastStateChangeUtc = _timeProvider.GetUtcNow();
             }
         }
     }
@@ -136,7 +139,7 @@ public sealed class CopilotCircuitBreaker
         {
             _consecutiveFailures = 0;
             _state = CircuitState.Closed;
-            _lastStateChangeUtc = DateTime.UtcNow;
+            _lastStateChangeUtc = _timeProvider.GetUtcNow();
         }
     }
 
@@ -148,11 +151,11 @@ public sealed class CopilotCircuitBreaker
     {
         if (_state == CircuitState.Open)
         {
-            var elapsed = DateTime.UtcNow - _lastStateChangeUtc;
+            var elapsed = _timeProvider.GetUtcNow() - _lastStateChangeUtc;
             if (elapsed >= OpenDuration)
             {
                 _state = CircuitState.HalfOpen;
-                _lastStateChangeUtc = DateTime.UtcNow;
+                _lastStateChangeUtc = _timeProvider.GetUtcNow();
             }
         }
 

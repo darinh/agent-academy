@@ -40,7 +40,10 @@ public record TaskSnapshot(
     string? MergeCommitSha = null,
     int CommentCount = 0,
     string? WorkspacePath = null,
-    string? SprintId = null
+    string? SprintId = null,
+    List<string>? DependsOnTaskIds = null,
+    List<string>? BlockingTaskIds = null,
+    TaskPriority Priority = TaskPriority.Medium
 );
 
 /// <summary>
@@ -65,14 +68,15 @@ public record TaskItem(
 /// Request to create and assign a new task to a room.
 /// </summary>
 public record TaskAssignmentRequest(
-    [property: Required, StringLength(200)] string Title,
-    [property: Required, MinLength(1), StringLength(10_000)] string Description,
-    [property: Required, MinLength(1), StringLength(5_000)] string SuccessCriteria,
-    [property: StringLength(100)] string? RoomId,
+    [Required, StringLength(200)] string Title,
+    [Required, MinLength(1), StringLength(10_000)] string Description,
+    [Required, MinLength(1), StringLength(5_000)] string SuccessCriteria,
+    [StringLength(100)] string? RoomId,
     List<string> PreferredRoles,
-    [property: EnumDataType(typeof(TaskType))] TaskType Type = TaskType.Feature,
+    [EnumDataType(typeof(TaskType))] TaskType Type = TaskType.Feature,
     string? CorrelationId = null,
-    [property: StringLength(50_000)] string? CurrentPlan = null
+    [StringLength(50_000)] string? CurrentPlan = null,
+    [EnumDataType(typeof(TaskPriority))] TaskPriority Priority = TaskPriority.Medium
 );
 
 /// <summary>
@@ -144,3 +148,55 @@ public record SpecTaskLink(
     string? Note,
     DateTime CreatedAt
 );
+
+/// <summary>
+/// Detailed dependency information for a task, including the dependent task summaries.
+/// </summary>
+public record TaskDependencyInfo(
+    string TaskId,
+    List<TaskDependencySummary> DependsOn,
+    List<TaskDependencySummary> DependedOnBy
+);
+
+/// <summary>
+/// Lightweight summary of a dependency target task.
+/// </summary>
+public record TaskDependencySummary(
+    string TaskId,
+    string Title,
+    TaskStatus Status,
+    bool IsSatisfied
+);
+
+// ── Bulk Operation Models ───────────────────────────────────────────
+
+/// <summary>
+/// Request to update the status of multiple tasks at once.
+/// Only safe statuses allowed: Queued, Active, Blocked, AwaitingValidation, InReview.
+/// </summary>
+public record BulkUpdateStatusRequest(
+    [Required, MinLength(1)] List<string> TaskIds,
+    [Required] TaskStatus Status);
+
+/// <summary>
+/// Request to assign multiple tasks to a single agent.
+/// </summary>
+public record BulkAssignRequest(
+    [Required, MinLength(1)] List<string> TaskIds,
+    [Required, StringLength(100, MinimumLength = 1)] string AgentId,
+    [StringLength(200)] string? AgentName = null);
+
+/// <summary>
+/// Result of a bulk task operation. Contains successfully updated tasks and per-item errors.
+/// </summary>
+public record BulkOperationResult(
+    int Requested,
+    int Succeeded,
+    int Failed,
+    List<TaskSnapshot> Updated,
+    List<BulkOperationError> Errors);
+
+/// <summary>
+/// Per-task error from a bulk operation.
+/// </summary>
+public record BulkOperationError(string TaskId, string Code, string Error);

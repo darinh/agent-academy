@@ -5,8 +5,8 @@
  * Consumer imports (`from "./api"`) continue to work without changes.
  */
 
-export { apiBaseUrl } from "./core";
-export type { ApiError } from "./core";
+export { apiBaseUrl, csrfHeaders, extractApiError } from "./core";
+export type { ApiError, ProblemDetails } from "./core";
 export * from "./types";
 export * from "./auth";
 export * from "./workspace";
@@ -17,3 +17,8 @@ export * from "./commands";
 export * from "./analytics";
 export * from "./sprints";
 export * from "./system";
+export * from "./memories";
+export * from "./digests";
+export * from "./retrospectives";
+export * from "./goalCards";
+export * from "./forge";

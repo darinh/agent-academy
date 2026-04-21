@@ -103,6 +103,19 @@ public enum TaskType
 }
 
 /// <summary>
+/// Priority level for a task. Lower numeric value = higher urgency.
+/// Stored as int in the database for correct ORDER BY ASC semantics.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TaskPriority
+{
+    Critical = 0,
+    High = 1,
+    Medium = 2,
+    Low = 3
+}
+
+/// <summary>
 /// Type of comment attached to a task.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -111,7 +124,9 @@ public enum TaskCommentType
     Comment,
     Finding,
     Evidence,
-    Blocker
+    Blocker,
+    Retrospective,
+    Decision
 }
 
 /// <summary>
@@ -174,6 +189,7 @@ public enum RoomStatus
 public enum ActivityEventType
 {
     AgentLoaded,
+    AgentCatalogReloaded,
     AgentThinking,
     AgentFinished,
     RoomCreated,
@@ -217,7 +233,13 @@ public enum ActivityEventType
     SprintStageAdvanced,
     SprintArtifactStored,
     SprintCompleted,
-    SprintCancelled
+    SprintCancelled,
+    TaskUnblocked,
+    TaskRetrospectiveCompleted,
+    LearningDigestCompleted,
+    ContextUsageUpdated,
+    GoalCardCreated,
+    GoalCardChallenged
 }
 
 /// <summary>
@@ -240,7 +262,8 @@ public enum AgentState
     InRoom,
     Working,
     Presenting,
-    Idle
+    Idle,
+    Offline
 }
 
 /// <summary>
@@ -287,4 +310,27 @@ public enum EvidencePhase
     Baseline,
     After,
     Review
+}
+
+/// <summary>
+/// The agent's verdict on whether to proceed with the work.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GoalCardVerdict
+{
+    Proceed,
+    ProceedWithCaveat,
+    Challenge
+}
+
+/// <summary>
+/// Lifecycle status of a goal card.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GoalCardStatus
+{
+    Active,
+    Completed,
+    Challenged,
+    Abandoned
 }

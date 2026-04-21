@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -11,9 +12,9 @@ namespace AgentAcademy.Server.Controllers;
 public class GitHubController : ControllerBase
 {
     private readonly IGitHubService _gitHubService;
-    private readonly CopilotTokenProvider _tokenProvider;
+    private readonly ICopilotTokenProvider _tokenProvider;
 
-    public GitHubController(IGitHubService gitHubService, CopilotTokenProvider tokenProvider)
+    public GitHubController(IGitHubService gitHubService, ICopilotTokenProvider tokenProvider)
     {
         _gitHubService = gitHubService;
         _tokenProvider = tokenProvider;

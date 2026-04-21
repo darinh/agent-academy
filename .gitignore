@@ -35,6 +35,11 @@ Thumbs.db
 publish/
 out/
 
+# Coverage reports
+TestResults/
+coverage/
+src/agent-academy-client/coverage/
+
 # Logs
 *.log
 
@@ -51,3 +56,9 @@ entities.json
 mempalace.yaml
 .mempalace/
 .worktrees/
+
+# BenchmarkDotNet artifacts
+BenchmarkDotNet.Artifacts/
+
+# Stryker mutation testing output
+StrykerOutput/

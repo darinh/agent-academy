@@ -269,7 +269,7 @@ public class SlackNotificationProviderTests : IDisposable
     [InlineData("", "agent-academy")]
     public void ToSlackChannelName_FormatsCorrectly(string input, string expected)
     {
-        Assert.Equal(expected, SlackNotificationProvider.ToSlackChannelName(input));
+        Assert.Equal(expected, SlackChannelManager.ToSlackChannelName(input));
     }
 
     #endregion
@@ -284,7 +284,7 @@ public class SlackNotificationProviderTests : IDisposable
     [InlineData(null, null)]
     public void ExtractRoomIdFromTopic_ExtractsCorrectly(string? topic, string? expectedRoomId)
     {
-        Assert.Equal(expectedRoomId, SlackNotificationProvider.ExtractRoomIdFromTopic(topic));
+        Assert.Equal(expectedRoomId, SlackChannelManager.ExtractRoomIdFromTopic(topic));
     }
 
     #endregion
@@ -299,7 +299,7 @@ public class SlackNotificationProviderTests : IDisposable
     [InlineData("a & <b>", "a &amp; &lt;b&gt;")]
     public void EscapeSlackText_EscapesCorrectly(string input, string expected)
     {
-        Assert.Equal(expected, SlackNotificationProvider.EscapeSlackText(input));
+        Assert.Equal(expected, SlackMessageBuilder.EscapeSlackText(input));
     }
 
     #endregion

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,14 +15,14 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/notifications")]
 public class NotificationController : ControllerBase
 {
-    private readonly NotificationManager _manager;
+    private readonly INotificationManager _manager;
     private readonly NotificationDeliveryTracker _tracker;
     private readonly ConfigEncryptionService _encryption;
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<NotificationController> _logger;
 
     public NotificationController(
-        NotificationManager manager,
+        INotificationManager manager,
         NotificationDeliveryTracker tracker,
         ConfigEncryptionService encryption,
         AgentAcademyDbContext db,
@@ -61,7 +62,7 @@ public class NotificationController : ControllerBase
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         return Ok(provider.GetConfigSchema());
@@ -75,13 +76,13 @@ public class NotificationController : ControllerBase
     {
         if (configuration is null)
         {
-            return BadRequest(new { error = "Configuration dictionary is required" });
+            return BadRequest(ApiProblem.BadRequest("Configuration dictionary is required"));
         }
 
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         try
@@ -96,8 +97,16 @@ public class NotificationController : ControllerBase
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             // Persist config to DB for auto-restore on restart (atomic upsert).
-            // Secret fields are encrypted before storage.
+            // Secret fields are encrypted before storage. Configure has full-replace
+            // semantics: any key previously stored for this provider that is NOT in the
+            // new payload is deleted in the same transaction. Without this, a stale
+            // secret (e.g. an old webhook URL or token) could silently resurrect on the
+            // next restart, even though the operator removed it from the configuration.
             var now = DateTime.UtcNow;
+            var incomingKeys = configuration.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+
             foreach (var (key, value) in configuration)
             {
                 var storedValue = secretKeys.Contains(key)
@@ -111,12 +120,32 @@ public class NotificationController : ControllerBase
                     [id, key, storedValue, now],
                     cancellationToken);
             }
+
+            // Delete any stored keys for this provider that are absent from the new
+            // payload. This prevents stale secret resurrection on restart.
+            var existingKeys = await _db.NotificationConfigs
+                .Where(c => c.ProviderId == id)
+                .Select(c => c.Key)
+                .ToListAsync(cancellationToken);
+
+            var keysToDelete = existingKeys
+                .Where(k => !incomingKeys.Contains(k))
+                .ToList();
+
+            if (keysToDelete.Count > 0)
+            {
+                await _db.NotificationConfigs
+                    .Where(c => c.ProviderId == id && keysToDelete.Contains(c.Key))
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
             return Ok(new { status = "configured", providerId = id });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to configure provider '{ProviderId}'", id);
-            return StatusCode(500, new { error = "Failed to configure provider" });
+            return StatusCode(500, ApiProblem.ServerError("Failed to configure provider"));
         }
     }
 
@@ -129,7 +158,7 @@ public class NotificationController : ControllerBase
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         try
@@ -141,7 +170,7 @@ public class NotificationController : ControllerBase
         {
             _logger.LogError(ex, "Failed to connect provider '{ProviderId}'", id);
             var detail = provider.LastError ?? "Connection failed. Check server logs for details.";
-            return StatusCode(500, new { error = $"Failed to connect provider: {detail}" });
+            return StatusCode(500, ApiProblem.ServerError($"Failed to connect provider: {detail}"));
         }
     }
 
@@ -154,7 +183,7 @@ public class NotificationController : ControllerBase
         var provider = _manager.GetProvider(id);
         if (provider is null)
         {
-            return NotFound(new { error = $"Provider '{id}' not found" });
+            return NotFound(ApiProblem.NotFound($"Provider '{id}' not found"));
         }
 
         try
@@ -165,7 +194,7 @@ public class NotificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to disconnect provider '{ProviderId}'", id);
-            return StatusCode(500, new { error = "Failed to disconnect provider" });
+            return StatusCode(500, ApiProblem.ServerError("Failed to disconnect provider"));
         }
     }
 

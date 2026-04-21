@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Data;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Services;
@@ -7,7 +8,7 @@ namespace AgentAcademy.Server.Services;
 /// Provides typed access to system-wide settings stored in the database.
 /// Settings are key-value pairs with sensible defaults for unconfigured keys.
 /// </summary>
-public sealed class SystemSettingsService
+public sealed class SystemSettingsService : ISystemSettingsService
 {
     private readonly AgentAcademyDbContext _db;
 
@@ -16,12 +17,16 @@ public sealed class SystemSettingsService
     public const string BreakoutEpochSizeKey = "conversation.breakoutEpochSize";
     public const string RateLimitMaxCommandsKey = "commands.rateLimitMaxCommands";
     public const string RateLimitWindowSecondsKey = "commands.rateLimitWindowSeconds";
+    public const string SprintAutoStartKey = "sprint.autoStartOnCompletion";
+    public const string DigestThresholdKey = "digest.retrospectiveThreshold";
 
     // Defaults
     public const int DefaultMainRoomEpochSize = 50;
     public const int DefaultBreakoutEpochSize = 30;
     public const int DefaultRateLimitMaxCommands = 30;
     public const int DefaultRateLimitWindowSeconds = 60;
+    public const bool DefaultSprintAutoStart = false;
+    public const int DefaultDigestThreshold = 5;
 
     public SystemSettingsService(AgentAcademyDbContext db)
     {
@@ -83,6 +88,8 @@ public sealed class SystemSettingsService
             [BreakoutEpochSizeKey] = DefaultBreakoutEpochSize.ToString(),
             [RateLimitMaxCommandsKey] = DefaultRateLimitMaxCommands.ToString(),
             [RateLimitWindowSecondsKey] = DefaultRateLimitWindowSeconds.ToString(),
+            [SprintAutoStartKey] = DefaultSprintAutoStart.ToString(),
+            [DigestThresholdKey] = DefaultDigestThreshold.ToString(),
         };
 
         foreach (var (key, value) in stored)
@@ -102,4 +109,10 @@ public sealed class SystemSettingsService
 
     public async Task<int> GetRateLimitWindowSecondsAsync()
         => await GetAsync(RateLimitWindowSecondsKey, DefaultRateLimitWindowSeconds);
+
+    public async Task<bool> GetSprintAutoStartAsync()
+        => await GetAsync(SprintAutoStartKey, DefaultSprintAutoStart);
+
+    public async Task<int> GetDigestThresholdAsync()
+        => await GetAsync(DigestThresholdKey, DefaultDigestThreshold);
 }

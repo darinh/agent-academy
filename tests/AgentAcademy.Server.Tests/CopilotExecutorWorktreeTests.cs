@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -33,31 +34,62 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(new AgentCatalogOptions("main", "Main Room", new List<AgentDefinition>()));
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton<IAgentExecutor>(Substitute.For<IAgentExecutor>());
         services.AddSingleton(new NotificationManager(NullLogger<NotificationManager>.Instance));
         _serviceProvider = services.BuildServiceProvider();
@@ -77,12 +109,25 @@ public sealed class CopilotExecutorWorktreeTests : IAsyncDisposable
                 NullLogger<CopilotClientFactory>.Instance,
                 new ConfigurationBuilder().Build(),
                 new CopilotTokenProvider()),
+            new CopilotSessionPool(NullLogger<CopilotSessionPool>.Instance),
+            new CopilotSdkSender(
+                NullLogger<CopilotSdkSender>.Instance,
+                new LlmUsageTracker(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    NullLogger<LlmUsageTracker>.Instance),
+                new AgentErrorTracker(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    NullLogger<AgentErrorTracker>.Instance),
+                new AgentQuotaService(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    new LlmUsageTracker(
+                        _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                        NullLogger<LlmUsageTracker>.Instance),
+                    NullLogger<AgentQuotaService>.Instance),
+                new ActivityBroadcaster()),
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             _serviceProvider.GetRequiredService<NotificationManager>(),
             Substitute.For<IAgentToolRegistry>(),
-            new LlmUsageTracker(
-                _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                NullLogger<LlmUsageTracker>.Instance),
             new AgentErrorTracker(
                 _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                 NullLogger<AgentErrorTracker>.Instance),

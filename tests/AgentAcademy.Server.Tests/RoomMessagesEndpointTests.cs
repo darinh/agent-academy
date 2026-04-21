@@ -2,6 +2,7 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -19,7 +20,7 @@ public sealed class RoomMessagesEndpointTests : IDisposable
     private readonly AgentAcademyDbContext _db;
     private readonly RoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly AgentCatalogOptions _catalog;
     private readonly string _roomId = "test-room";
 
@@ -48,16 +49,18 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, activityPublisher, taskDeps);
         var agentLocations = new AgentLocationService(_db, catalog, activityPublisher);
         var planService = new PlanService(_db);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, activityPublisher, sessionService, messageService);
-        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService);
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, activityPublisher, messageService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, activityPublisher);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, activityPublisher));
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, activityPublisher, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         _roomService = roomService;
         _agentLocationService = agentLocations;
         _messageService = messageService;
@@ -278,7 +281,10 @@ public sealed class RoomMessagesEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
-        return new RoomController(_roomService, _agentLocationService, _messageService, _catalog, usageTracker, errorTracker, logger);
+        var activityPublisher = new ActivityPublisher(_db, new ActivityBroadcaster());
+        var artifactTracker = new RoomArtifactTracker(_db, activityPublisher, NullLogger<RoomArtifactTracker>.Instance);
+        var evaluator = new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance);
+        return new RoomController(_roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, usageTracker, errorTracker, artifactTracker, evaluator, logger);
     }
 
     private void SeedMessages(params (string id, string content, DateTime sentAt)[] messages)

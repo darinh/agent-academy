@@ -1,33 +1,28 @@
-using AgentAcademy.Server.Commands;
-using AgentAcademy.Server.Data.Entities;
-using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
 /// <summary>
-/// Drives the multi-agent conversation lifecycle: queue-based message
-/// processing, conversation rounds, breakout room workflows, and review
-/// cycles. Ported from v1 TypeScript CollaborationOrchestrator.
+/// Queue-based message processor that serializes agent work. Accepts human
+/// messages and DMs, enqueues them, and dispatches to <see cref="IConversationRoundRunner"/>
+/// or <see cref="IDirectMessageRouter"/> for execution. All conversation and
+/// DM logic has been extracted into those dedicated services.
 /// </summary>
-public sealed class AgentOrchestrator
+public sealed class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly IAgentExecutor _executor;
-    private readonly ActivityBroadcaster _activityBus;
-    private readonly SpecManager _specManager;
-    private readonly CommandPipeline _commandPipeline;
-    private readonly BreakoutLifecycleService _breakoutLifecycle;
-    private readonly TaskAssignmentHandler _taskAssignmentHandler;
-    private readonly AgentMemoryLoader _memoryLoader;
+    private readonly IConversationRoundRunner _roundRunner;
+    private readonly IDirectMessageRouter _dmRouter;
+    private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
+    private readonly HashSet<string> _queuedDirectMessages = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private bool _processing;
-    private volatile bool _stopped;
+    private readonly CancellationTokenSource _cts = new();
 
     private record QueueItem(string RoomId, string? TargetAgentId = null);
 
@@ -36,32 +31,22 @@ public sealed class AgentOrchestrator
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
-        IAgentExecutor executor,
-        ActivityBroadcaster activityBus,
-        SpecManager specManager,
-        CommandPipeline commandPipeline,
-        BreakoutLifecycleService breakoutLifecycle,
-        TaskAssignmentHandler taskAssignmentHandler,
-        AgentMemoryLoader memoryLoader,
+        IConversationRoundRunner roundRunner,
+        IDirectMessageRouter dmRouter,
+        IBreakoutLifecycleService breakoutLifecycle,
         ILogger<AgentOrchestrator> logger)
     {
         _scopeFactory = scopeFactory;
-        _catalog = catalog;
-        _executor = executor;
-        _activityBus = activityBus;
-        _specManager = specManager;
-        _commandPipeline = commandPipeline;
+        _roundRunner = roundRunner;
+        _dmRouter = dmRouter;
         _breakoutLifecycle = breakoutLifecycle;
-        _taskAssignmentHandler = taskAssignmentHandler;
-        _memoryLoader = memoryLoader;
         _logger = logger;
     }
 
     /// <summary>Signals the orchestrator to stop processing.</summary>
     public void Stop()
     {
-        _stopped = true;
+        _cts.Cancel();
         _breakoutLifecycle.Stop();
     }
 
@@ -73,7 +58,7 @@ public sealed class AgentOrchestrator
         }
 
         using var scope = _scopeFactory.CreateScope();
-        var crashRecovery = scope.ServiceProvider.GetRequiredService<CrashRecoveryService>();
+        var crashRecovery = scope.ServiceProvider.GetRequiredService<ICrashRecoveryService>();
         var result = await crashRecovery.RecoverFromCrashAsync(mainRoomId);
 
         _logger.LogWarning(
@@ -88,7 +73,7 @@ public sealed class AgentOrchestrator
     public async Task ReconstructQueueAsync()
     {
         using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var pendingRoomIds = await roomService.GetRoomsWithPendingHumanMessagesAsync();
 
         if (pendingRoomIds.Count == 0)
@@ -109,7 +94,7 @@ public sealed class AgentOrchestrator
             "Queue reconstruction: re-enqueued {Count} room(s) with pending human messages: {RoomIds}",
             pendingRoomIds.Count, string.Join(", ", pendingRoomIds));
 
-        _ = ProcessQueueAsync();
+        SignalProcessing();
     }
 
     // ── PUBLIC ENTRY POINT ──────────────────────────────────────
@@ -120,8 +105,7 @@ public sealed class AgentOrchestrator
     /// </summary>
     public void HandleHumanMessage(string roomId)
     {
-        lock (_lock) { _queue.Enqueue(new QueueItem(roomId)); }
-        _ = ProcessQueueAsync();
+        EnqueueAndProcess(new QueueItem(roomId));
     }
 
     /// <summary>
@@ -130,52 +114,41 @@ public sealed class AgentOrchestrator
     /// </summary>
     public void HandleDirectMessage(string recipientAgentId)
     {
-        lock (_lock)
+        if (!TryEnqueueDirectMessage(recipientAgentId))
         {
-            // Dedupe: skip if a DM trigger for this agent is already queued
-            if (_queue.Any(q => q.TargetAgentId == recipientAgentId))
-                return;
-            _queue.Enqueue(new QueueItem(RoomId: "", TargetAgentId: recipientAgentId));
+            return;
         }
-        _ = ProcessQueueAsync();
+
+        SignalProcessing();
     }
 
     // ── QUEUE ───────────────────────────────────────────────────
 
     private async Task ProcessQueueAsync()
     {
-        lock (_lock)
-        {
-            if (_processing) return;
-            _processing = true;
-        }
+        if (!TryBeginProcessing()) return;
+        var resetProcessingOnExit = true;
 
         try
         {
-            while (!_stopped)
+            while (!_cts.IsCancellationRequested)
             {
-                QueueItem? item;
-                lock (_lock)
+                QueueItem item;
+                if (!TryDequeueOrStop(out item))
                 {
-                    if (!_queue.TryDequeue(out item))
-                    {
-                        // Atomically clear processing flag while still holding the lock.
-                        // Any concurrent HandleHumanMessage that enqueued after the last
-                        // dequeue will see _processing == false and start a new loop.
-                        _processing = false;
-                        return;
-                    }
+                    resetProcessingOnExit = false;
+                    return;
                 }
 
                 try
                 {
-                    if (item.TargetAgentId is not null)
+                    if (item.TargetAgentId is { } targetAgentId)
                     {
-                        await RunDirectMessageRoundAsync(item.TargetAgentId);
+                        await _dmRouter.RouteAsync(targetAgentId);
                     }
                     else
                     {
-                        await RunConversationRoundAsync(item.RoomId);
+                        await _roundRunner.RunRoundsAsync(item.RoomId, _cts.Token);
                     }
                 }
                 catch (Exception ex)
@@ -186,434 +159,69 @@ public sealed class AgentOrchestrator
         }
         finally
         {
-            lock (_lock) { _processing = false; }
+            if (resetProcessingOnExit)
+            {
+                EndProcessing();
+            }
         }
     }
 
-    // ── CONVERSATION ROUND (MC room) ────────────────────────────
-
-    private const int MaxRoundsPerTrigger = 3;
-
-    private async Task RunConversationRoundAsync(string roomId)
+    private void EnqueueAndProcess(QueueItem item)
     {
-        for (int round = 1; round <= MaxRoundsPerTrigger; round++)
+        lock (_lock) { _queue.Enqueue(item); }
+        SignalProcessing();
+    }
+
+    private bool TryEnqueueDirectMessage(string recipientAgentId)
+    {
+        lock (_lock)
         {
-            bool hadNonPassResponse = false;
-
-            using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-            var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-            var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-            var taskItemService = scope.ServiceProvider.GetRequiredService<TaskItemService>();
-            var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
-            var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
-            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
-
-            // Check if conversation session needs rotation before this round
-            if (round == 1)
+            // Dedupe: skip if a DM trigger for this agent is already queued.
+            if (!_queuedDirectMessages.Add(recipientAgentId))
             {
-                try
+                return false;
+            }
+
+            _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
+            return true;
+        }
+    }
+
+    private bool TryBeginProcessing()
+    {
+        lock (_lock)
+        {
+            if (_processing) return false;
+            _processing = true;
+            return true;
+        }
+    }
+
+    private bool TryDequeueOrStop(out QueueItem item)
+    {
+        lock (_lock)
+        {
+            if (_queue.TryDequeue(out var dequeuedItem))
+            {
+                if (dequeuedItem.TargetAgentId is { } targetAgentId)
                 {
-                    var rotated = await sessionService.CheckAndRotateAsync(roomId);
-                    if (rotated)
-                        _logger.LogInformation(
-                            "Conversation session rotated for room {RoomId} before round 1", roomId);
+                    _queuedDirectMessages.Remove(targetAgentId);
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Session rotation check failed for room {RoomId}", roomId);
-                }
+
+                item = dequeuedItem;
+                return true;
             }
 
-            var room = await roomService.GetRoomAsync(roomId);
-            if (room is null) return;
-
-            _logger.LogInformation(
-                "Conversation round {Round}/{MaxRounds} for room {RoomId}",
-                round, MaxRoundsPerTrigger, roomId);
-
-            // Load shared context for this round
-            var specContext = await _specManager.LoadSpecContextAsync();
-            string? sessionSummary = null;
-            try { sessionSummary = await sessionService.GetSessionContextAsync(roomId); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to load session context for room {RoomId}", roomId); }
-
-            var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
-            var activeSprintStage = sprintCtx.ActiveStage;
-
-            // ── Planner phase ──
-            var planner = FindPlanner();
-            if (planner is not null)
-                planner = await configService.GetEffectiveAgentAsync(planner);
-
-            var plannerId = planner?.Id;
-
-            if (planner is not null && activeSprintStage is not null
-                && !SprintPreambles.IsRoleAllowedInStage(planner.Role, activeSprintStage))
-            {
-                _logger.LogInformation(
-                    "Planner {PlannerName} excluded from sprint stage {Stage}",
-                    planner.Name, activeSprintStage);
-                planner = null;
-            }
-
-            var agentsToRun = new List<AgentDefinition>();
-
-            if (planner is not null)
-            {
-                var freshRoom = await roomService.GetRoomAsync(roomId) ?? room;
-                var taskItems = await taskItemService.GetActiveTaskItemsAsync();
-                var plannerSuffix = "\n\nIMPORTANT: You are the lead planner. After your response, mention other agents "
-                    + "by name if they should respond (e.g., '@Archimedes should review').\n"
-                    + "If work needs to be done independently, use TASK ASSIGNMENT blocks to assign it:\n"
-                    + "TASK ASSIGNMENT:\nAgent: @AgentName\nTitle: ...\nDescription: ...\nAcceptance Criteria:\n- ...\n";
-
-                var (resolvedPlanner, plannerResponse, plannerIsNonPass) = await RunAgentTurnAsync(
-                    planner, scope, messageService, configService, activity,
-                    freshRoom, roomId, specContext, taskItems, sessionSummary, sprintCtx.Preamble, plannerSuffix);
-
-                if (plannerIsNonPass)
-                {
-                    hadNonPassResponse = true;
-                    foreach (var a in AgentResponseParser.ParseTaggedAgents(_catalog.Agents, plannerResponse))
-                    {
-                        if (a.Id != resolvedPlanner.Id) agentsToRun.Add(a);
-                    }
-                }
-            }
-
-            // ── Fallback to idle agents if nobody was tagged ──
-            if (agentsToRun.Count == 0)
-            {
-                agentsToRun.AddRange(
-                    (await GetIdleAgentsInRoomAsync(agentLocationService, roomId))
-                        .Where(a => a.Id != plannerId)
-                        .Take(3));
-            }
-
-            if (activeSprintStage is not null)
-                agentsToRun = SprintPreambles.FilterByStageRoster(agentsToRun, activeSprintStage, a => a.Role);
-
-            // ── Run agents sequentially so each sees prior responses ──
-            foreach (var catalogAgent in agentsToRun)
-            {
-                if (_stopped) break;
-
-                var currentRoom = await roomService.GetRoomAsync(roomId);
-                if (currentRoom is null) break;
-
-                var location = await agentLocationService.GetAgentLocationAsync(catalogAgent.Id);
-                if (location?.State == AgentState.Working) continue;
-
-                var (_, _, agentIsNonPass) = await RunAgentTurnAsync(
-                    catalogAgent, scope, messageService, configService, activity,
-                    currentRoom, roomId, specContext,
-                    sessionSummary: sessionSummary, sprintPreamble: sprintCtx.Preamble);
-
-                if (agentIsNonPass) hadNonPassResponse = true;
-            }
-
-            _logger.LogInformation(
-                "Conversation round {Round} finished for room {RoomId}", round, roomId);
-
-            if (!hadNonPassResponse || _stopped) break;
-
-            var updatedRoom = await roomService.GetRoomAsync(roomId);
-            if (updatedRoom?.ActiveTask is null) break;
-
-            if (round < MaxRoundsPerTrigger)
-            {
-                _logger.LogInformation(
-                    "Non-PASS responses in room with active task; starting round {NextRound}/{MaxRounds}",
-                    round + 1, MaxRoundsPerTrigger);
-            }
+            _processing = false;
+            item = default!;
+            return false;
         }
     }
 
-    // ── DM ROUND ────────────────────────────────────────────────
-
-    /// <summary>
-    /// Runs a targeted round for a specific agent after receiving a DM.
-    /// Only the recipient agent runs, with DMs injected into their context.
-    /// </summary>
-    private async Task RunDirectMessageRoundAsync(string recipientAgentId)
+    private void EndProcessing()
     {
-        _logger.LogInformation("DM round for agent {AgentId}", recipientAgentId);
-
-        using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
-        var messageService = scope.ServiceProvider.GetRequiredService<MessageService>();
-        var agentLocationService = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
-        var activity = scope.ServiceProvider.GetRequiredService<ActivityPublisher>();
-        var configService = scope.ServiceProvider.GetRequiredService<AgentConfigService>();
-
-        var catalogAgent = _catalog.Agents.FirstOrDefault(
-            a => string.Equals(a.Id, recipientAgentId, StringComparison.OrdinalIgnoreCase));
-
-        if (catalogAgent is null)
-        {
-            _logger.LogWarning("DM round: agent {AgentId} not found in catalog", recipientAgentId);
-            return;
-        }
-
-        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
-
-        // If agent is in a breakout room, forward DMs there instead
-        var location = await agentLocationService.GetAgentLocationAsync(agent.Id);
-        if (location?.State == AgentState.Working && location.BreakoutRoomId is not null)
-        {
-            var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id, limit: 5);
-            if (dms.Count > 0)
-            {
-                foreach (var dm in dms)
-                {
-                    await messageService.PostBreakoutMessageAsync(
-                        location.BreakoutRoomId,
-                        "system", "System", "System",
-                        $"📩 Direct message from {dm.SenderName}: {dm.Content}");
-                }
-                await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
-            }
-            _logger.LogInformation(
-                "DM round: agent {AgentName} is in breakout room. DM posted to breakout context.",
-                agent.Name);
-            return;
-        }
-
-        var roomId = location?.RoomId;
-        if (roomId is null)
-        {
-            var rooms = await roomService.GetRoomsAsync();
-            roomId = rooms.FirstOrDefault()?.Id ?? "main";
-        }
-
-        var room = await roomService.GetRoomAsync(roomId);
-        if (room is null) return;
-
-        var specContext = await _specManager.LoadSpecContextAsync();
-        string? sessionSummary = null;
-        string? sprintPreamble = null;
-        try
-        {
-            var sessionService = scope.ServiceProvider.GetRequiredService<ConversationSessionService>();
-            sessionSummary = await sessionService.GetSessionContextAsync(roomId);
-            var sprintCtx = await LoadSprintContextAsync(scope, roomService, sessionService);
-            sprintPreamble = sprintCtx.Preamble;
-        }
-        catch { /* non-critical */ }
-
-        await RunAgentTurnAsync(
-            catalogAgent, scope, messageService, configService, activity,
-            room, roomId, specContext,
-            sessionSummary: sessionSummary, sprintPreamble: sprintPreamble);
-
-        _logger.LogInformation("DM round completed for agent {AgentName}", agent.Name);
+        lock (_lock) { _processing = false; }
     }
 
-    // ── AGENT TURN HELPER ────────────────────────────────────────
-
-    /// <summary>
-    /// Runs a single agent turn: resolves effective config, loads memories and DMs,
-    /// builds the prompt, executes the agent, and processes the response (commands,
-    /// message posting, task assignments). Returns the effective agent, raw response,
-    /// and whether the response was substantive (non-pass/non-offline).
-    /// </summary>
-    private async Task<(AgentDefinition Agent, string Response, bool IsNonPass)> RunAgentTurnAsync(
-        AgentDefinition catalogAgent,
-        IServiceScope scope,
-        MessageService messageService,
-        AgentConfigService configService,
-        ActivityPublisher activity,
-        RoomSnapshot room,
-        string roomId,
-        string? specContext,
-        List<TaskItem>? taskItems = null,
-        string? sessionSummary = null,
-        string? sprintPreamble = null,
-        string? promptSuffix = null)
-    {
-        var agent = await configService.GetEffectiveAgentAsync(catalogAgent);
-
-        await activity.PublishThinkingAsync(agent, roomId);
-        string response;
-        try
-        {
-            var memories = await _memoryLoader.LoadAsync(agent.Id);
-            var dms = await messageService.GetDirectMessagesForAgentAsync(agent.Id);
-            if (dms.Count > 0)
-                await messageService.AcknowledgeDirectMessagesAsync(agent.Id, dms.Select(m => m.Id).ToList());
-
-            var prompt = PromptBuilder.BuildConversationPrompt(
-                agent, room, specContext, taskItems, memories, dms, sessionSummary, sprintPreamble);
-            if (promptSuffix is not null) prompt += promptSuffix;
-
-            response = await RunAgentAsync(agent, prompt, roomId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Agent {AgentName} failed", agent.Name);
-            response = "";
-        }
-        finally
-        {
-            await activity.PublishFinishedAsync(agent, roomId);
-        }
-
-        bool isNonPass = !string.IsNullOrWhiteSpace(response)
-            && !AgentResponseParser.IsPassResponse(response)
-            && !AgentResponseParser.IsStubOfflineResponse(response);
-
-        if (isNonPass)
-        {
-            await ProcessAndPostAgentResponseAsync(messageService, agent, roomId, response);
-            foreach (var assignment in AgentResponseParser.ParseTaskAssignments(response))
-                await _taskAssignmentHandler.ProcessAssignmentAsync(scope, agent, roomId, assignment);
-        }
-
-        return (agent, response, isNonPass);
-    }
-
-    // ── AGENT HELPERS ───────────────────────────────────────────
-
-    private AgentDefinition? FindPlanner() =>
-        _catalog.Agents.FirstOrDefault(a => a.Role == "Planner");
-
-    private async Task<List<AgentDefinition>> GetIdleAgentsInRoomAsync(
-        AgentLocationService agentLocationService, string roomId)
-    {
-        var result = new List<AgentDefinition>();
-        foreach (var agent in _catalog.Agents)
-        {
-            var loc = await agentLocationService.GetAgentLocationAsync(agent.Id);
-            if (loc is not null &&
-                loc.RoomId == roomId &&
-                (loc.State == AgentState.Idle ||
-                 loc.State == AgentState.InRoom ||
-                 loc.State == AgentState.Presenting))
-            {
-                result.Add(agent);
-            }
-        }
-        return result;
-    }
-
-    private async Task<string> RunAgentAsync(
-        AgentDefinition agent, string prompt, string roomId, string? workspacePath = null)
-    {
-        try
-        {
-            return await _executor.RunAsync(agent, prompt, roomId, workspacePath);
-        }
-        catch (AgentQuotaExceededException ex)
-        {
-            _logger.LogWarning(
-                "Agent {AgentName} quota exceeded ({QuotaType}): {Message}",
-                agent.Name, ex.QuotaType, ex.Message);
-            return $"⚠️ **{agent.Name} is temporarily paused** — {ex.Message}";
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("Agent {AgentName} was cancelled", agent.Name);
-            return "";
-        }
-    }
-
-    // ── MESSAGE POSTING ─────────────────────────────────────────
-
-    /// <summary>
-    /// Processes commands from an agent response, posts the remaining text,
-    /// and posts command results as a system message for context visibility.
-    /// </summary>
-    private async Task ProcessAndPostAgentResponseAsync(
-        MessageService messageService, AgentDefinition agent, string roomId, string response)
-    {
-        // Run response through command pipeline
-        var pipelineResult = await ProcessCommandsAsync(agent, response, roomId);
-
-        // Post the remaining text (with commands stripped) as the agent's message
-        var textToPost = pipelineResult.RemainingText;
-        if (!string.IsNullOrWhiteSpace(textToPost) && !AgentResponseParser.IsPassResponse(textToPost))
-        {
-            await PostAgentMessageAsync(messageService, agent, roomId, textToPost);
-        }
-
-        // Post command results as system message so subsequent prompts include them
-        var formattedResults = CommandPipeline.FormatResultsForContext(pipelineResult.Results);
-        if (!string.IsNullOrEmpty(formattedResults))
-        {
-            await messageService.PostSystemStatusAsync(roomId, formattedResults);
-        }
-    }
-
-    /// <summary>
-    /// Runs agent response text through the command pipeline within a new scope.
-    /// </summary>
-    private async Task<CommandPipelineResult> ProcessCommandsAsync(
-        AgentDefinition agent, string responseText, string roomId, string? workingDirectory = null)
-    {
-        try
-        {
-            using var scope = _scopeFactory.CreateScope();
-            return await _commandPipeline.ProcessResponseAsync(
-                agent.Id, responseText, roomId, agent, scope.ServiceProvider, workingDirectory);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Command processing failed for agent {AgentId}", agent.Id);
-            return new CommandPipelineResult(new List<CommandEnvelope>(), responseText, ProcessingFailed: true);
-        }
-    }
-
-    private record SprintContext(string? Preamble, string? ActiveStage);
-
-    private async Task<SprintContext> LoadSprintContextAsync(
-        IServiceScope scope, RoomService roomService, ConversationSessionService sessionService)
-    {
-        try
-        {
-            var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
-            var workspacePath = await roomService.GetActiveWorkspacePathAsync();
-            if (workspacePath is null) return new(null, null);
-
-            var sprint = await sprintService.GetActiveSprintAsync(workspacePath);
-            if (sprint is null) return new(null, null);
-
-            var priorContext = await sessionService.GetSprintContextAsync(sprint.Id);
-
-            string? overflowContent = null;
-            if (sprint.CurrentStage == "Intake" && sprint.OverflowFromSprintId is not null)
-            {
-                var overflowArtifacts = await sprintService.GetSprintArtifactsAsync(sprint.Id);
-                var overflow = overflowArtifacts.FirstOrDefault(a => a.Type == "OverflowRequirements");
-                overflowContent = overflow?.Content;
-            }
-
-            var preamble = SprintPreambles.BuildPreamble(
-                sprint.Number, sprint.CurrentStage, priorContext, overflowContent);
-
-            return new(preamble, sprint.CurrentStage);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load sprint context");
-            return new(null, null);
-        }
-    }
-
-    private async Task PostAgentMessageAsync(
-        MessageService messageService, AgentDefinition agent, string roomId, string content)
-    {
-        try
-        {
-            await messageService.PostMessageAsync(new PostMessageRequest(
-                RoomId: roomId,
-                SenderId: agent.Id,
-                Content: content,
-                Kind: AgentResponseParser.InferMessageKind(agent.Role)));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to post message for {AgentId}", agent.Id);
-        }
-    }
+    private void SignalProcessing() => _ = ProcessQueueAsync();
 }

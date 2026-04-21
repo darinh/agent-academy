@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,6 +13,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class CheckGatesHandler : ICommandHandler
 {
     public string CommandName => "CHECK_GATES";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -26,11 +28,11 @@ public sealed class CheckGatesHandler : ICommandHandler
             };
         }
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
+        var taskEvidence = context.Services.GetRequiredService<ITaskEvidenceService>();
 
         try
         {
-            var result = await taskLifecycle.CheckGatesAsync(taskId);
+            var result = await taskEvidence.CheckGatesAsync(taskId);
 
             var evidenceSummary = result.Evidence
                 .Select(e => new Dictionary<string, object?>

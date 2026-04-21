@@ -26,13 +26,19 @@ import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
 const mockExecuteCommand = vi.fn();
 const mockGetTaskComments = vi.fn();
 const mockGetTaskSpecLinks = vi.fn();
+const mockGetTaskDependencies = vi.fn();
 const mockAssignTask = vi.fn();
+const mockBulkUpdateStatus = vi.fn();
+const mockBulkAssign = vi.fn();
 
 vi.mock("../api", () => ({
   executeCommand: (...args: unknown[]) => mockExecuteCommand(...args),
   getTaskComments: (...args: unknown[]) => mockGetTaskComments(...args),
   getTaskSpecLinks: (...args: unknown[]) => mockGetTaskSpecLinks(...args),
+  getTaskDependencies: (...args: unknown[]) => mockGetTaskDependencies(...args),
   assignTask: (...args: unknown[]) => mockAssignTask(...args),
+  bulkUpdateStatus: (...args: unknown[]) => mockBulkUpdateStatus(...args),
+  bulkAssign: (...args: unknown[]) => mockBulkAssign(...args),
 }));
 
 vi.mock("../V3Badge", () => ({
@@ -228,6 +234,7 @@ function uid(): string {
 beforeEach(() => {
   mockGetTaskComments.mockResolvedValue([]);
   mockGetTaskSpecLinks.mockResolvedValue([]);
+  mockGetTaskDependencies.mockResolvedValue({ taskId: "", dependsOn: [], dependedOnBy: [] });
   mockExecuteCommand.mockResolvedValue(makeCommandResponse());
   mockAssignTask.mockResolvedValue(undefined);
 });
@@ -237,6 +244,7 @@ afterEach(() => {
   mockExecuteCommand.mockReset();
   mockGetTaskComments.mockReset();
   mockGetTaskSpecLinks.mockReset();
+  mockGetTaskDependencies.mockReset();
   mockAssignTask.mockReset();
   vi.restoreAllMocks();
 });
@@ -284,10 +292,14 @@ describe("TaskListPanel (interactive)", () => {
       makeTask({ id: "f5", status: "Approved", title: "Approved Task", updatedAt: "2026-04-01T08:00:00Z" }),
     ];
 
-    // Filter chips are <button> elements; status badges are <span>s from V3Badge mock.
-    // Use getByRole("button") to target filter chips exclusively.
+    // Filter chips are <button> elements in the filter bar; status badges are <span>s from V3Badge mock.
+    // Checkbox buttons have names starting with "Select" or "Deselect" — exclude them.
     function filterBtn(name: RegExp) {
-      return screen.getByRole("button", { name });
+      const buttons = screen.getAllByRole("button", { name });
+      const chip = buttons.find(b => !b.getAttribute("aria-label")?.startsWith("Select")
+        && !b.getAttribute("aria-label")?.startsWith("Deselect"));
+      if (!chip) throw new Error(`No filter chip button matching ${name}`);
+      return chip;
     }
 
     it("renders all four filter chips", () => {
@@ -1335,6 +1347,524 @@ describe("TaskListPanel (interactive)", () => {
       renderPanel({ tasks });
       expect(screen.getByText("Task 0")).toBeInTheDocument();
       expect(screen.getByText("Task 29")).toBeInTheDocument();
+    });
+  });
+
+  // ── Bulk operations ──────────────────────────────────────────────────
+
+  describe("bulk operations", () => {
+    const multiTasks = [
+      makeTask({ id: "t1", title: "Task Alpha", status: "Active", updatedAt: "2026-04-01T10:00:00Z" }),
+      makeTask({ id: "t2", title: "Task Beta", status: "Queued", updatedAt: "2026-04-01T11:00:00Z" }),
+      makeTask({ id: "t3", title: "Task Gamma", status: "InReview", updatedAt: "2026-04-01T12:00:00Z" }),
+    ];
+
+    it("shows checkboxes on task cards", () => {
+      renderPanel({ tasks: multiTasks });
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      expect(checkboxes.length).toBe(3);
+    });
+
+    it("toggles selection on checkbox click", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+    });
+
+    it("shows bulk action bar when tasks are selected", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      await user.click(checkboxes[1]);
+
+      expect(screen.getByText("2 selected")).toBeInTheDocument();
+      expect(screen.getByText("Set status…")).toBeInTheDocument();
+    });
+
+    it("select all / deselect all toggles", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const selectAll = screen.getByText("Select all");
+      await user.click(selectAll);
+      expect(screen.getByText("3 selected")).toBeInTheDocument();
+
+      const deselectAll = screen.getByText("Deselect all");
+      await user.click(deselectAll);
+      expect(screen.queryByText("3 selected")).not.toBeInTheDocument();
+    });
+
+    it("clears selection on Escape", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+    });
+
+    it("clears selection via Clear button", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+      await user.click(screen.getByText("Clear"));
+      expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+    });
+
+    it("calls bulkUpdateStatus and shows result", async () => {
+      const user = userEvent.setup();
+      const onRefresh = vi.fn();
+      mockBulkUpdateStatus.mockResolvedValueOnce({
+        requested: 2, succeeded: 2, failed: 0,
+        updated: multiTasks.slice(0, 2), errors: [],
+      });
+
+      renderPanel({ tasks: multiTasks, onRefresh });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      await user.click(checkboxes[1]);
+
+      // Use the status dropdown
+      const statusSelect = screen.getByDisplayValue("Set status…");
+      fireEvent.change(statusSelect, { target: { value: "Blocked" } });
+
+      await waitFor(() => {
+        expect(mockBulkUpdateStatus).toHaveBeenCalledWith(
+          expect.arrayContaining(["t3", "t2"]),
+          "Blocked",
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/2 updated/)).toBeInTheDocument();
+      });
+
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it("calls bulkAssign with selected agent", async () => {
+      const user = userEvent.setup();
+      const onRefresh = vi.fn();
+      const agents = [
+        makeAgent({ id: "a1", name: "Agent One" }),
+        makeAgent({ id: "a2", name: "Agent Two" }),
+      ];
+
+      mockBulkAssign.mockResolvedValueOnce({
+        requested: 1, succeeded: 1, failed: 0,
+        updated: [multiTasks[0]], errors: [],
+      });
+
+      renderPanel({ tasks: multiTasks, onRefresh, agents });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+
+      const assignSelect = screen.getByDisplayValue("Assign to…");
+      fireEvent.change(assignSelect, { target: { value: "a1" } });
+
+      await waitFor(() => {
+        expect(mockBulkAssign).toHaveBeenCalledWith(
+          expect.arrayContaining(["t3"]),
+          "a1",
+          "Agent One",
+        );
+      });
+
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it("keeps failed tasks selected after partial failure", async () => {
+      const user = userEvent.setup();
+      mockBulkUpdateStatus.mockResolvedValueOnce({
+        requested: 2, succeeded: 1, failed: 1,
+        updated: [multiTasks[0]],
+        errors: [{ taskId: "t2", code: "VALIDATION", error: "Dependency blocked" }],
+      });
+
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+      await user.click(checkboxes[1]);
+
+      const statusSelect = screen.getByDisplayValue("Set status…");
+      fireEvent.change(statusSelect, { target: { value: "Active" } });
+
+      await waitFor(() => {
+        expect(screen.getByText(/1 updated.*1 failed/)).toBeInTheDocument();
+      });
+
+      // Only the failed task should remain selected
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+    });
+
+    it("checkbox click does not expand task card", async () => {
+      const user = userEvent.setup();
+      renderPanel({ tasks: multiTasks });
+
+      const checkboxes = screen.getAllByRole("button", { name: /^Select Task/ });
+      await user.click(checkboxes[0]);
+
+      // Card should not expand — no detail section visible
+      expect(screen.queryByText("Description")).not.toBeInTheDocument();
+      expect(screen.getByText("1 selected")).toBeInTheDocument();
+    });
+  });
+
+  describe("focusTaskId (cross-panel navigation)", () => {
+    it("auto-expands the focused task when focusTaskId matches a task", () => {
+      const taskId = uid();
+      const task = makeTask({
+        id: taskId,
+        title: "Focused task",
+        description: "Should be expanded",
+      });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+          }),
+        ),
+      );
+
+      // The task detail section should be visible (description rendered)
+      expect(screen.getByText("Description")).toBeInTheDocument();
+      expect(screen.getByText("Should be expanded")).toBeInTheDocument();
+    });
+
+    it("does not expand when focusTaskId does not match any task", () => {
+      const task = makeTask({
+        id: uid(),
+        title: "Normal task",
+        description: "Should NOT be expanded",
+      });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: "nonexistent-id",
+          }),
+        ),
+      );
+
+      expect(screen.queryByText("Description")).not.toBeInTheDocument();
+    });
+
+    it("resets filter to 'all' when focusing a task", () => {
+      const taskId = uid();
+      const task = makeTask({
+        id: taskId,
+        title: "Target task",
+        status: "Active",
+        description: "Focused from retro",
+      });
+      const completedTask = makeTask({
+        id: uid(),
+        title: "Done task",
+        status: "Completed",
+      });
+
+      const { rerender } = render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task, completedTask],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: null,
+          }),
+        ),
+      );
+
+      // Both tasks visible initially
+      expect(screen.getByText("Target task")).toBeInTheDocument();
+      expect(screen.getByText("Done task")).toBeInTheDocument();
+
+      // Now focus the task — should auto-expand it
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task, completedTask],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+          }),
+        ),
+      );
+
+      expect(screen.getByText("Description")).toBeInTheDocument();
+      expect(screen.getByText("Focused from retro")).toBeInTheDocument();
+    });
+
+    it("calls onFocusHandled after processing focusTaskId", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Handled task", description: "Detail" });
+      const onFocusHandled = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).toHaveBeenCalledTimes(1);
+    });
+
+    it("switches focus from task A to task B when focusTaskId changes", () => {
+      const idA = uid();
+      const idB = uid();
+      const taskA = makeTask({ id: idA, title: "Task A", description: "Detail A" });
+      const taskB = makeTask({ id: idB, title: "Task B", description: "Detail B" });
+
+      const { rerender } = render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [taskA, taskB],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: idA,
+          }),
+        ),
+      );
+
+      expect(screen.getByText("Detail A")).toBeInTheDocument();
+
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [taskA, taskB],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: idB,
+          }),
+        ),
+      );
+
+      expect(screen.getByText("Detail B")).toBeInTheDocument();
+    });
+
+    it("does not call onFocusHandled when focusTaskId does not match any task", () => {
+      const task = makeTask({ id: uid(), title: "Unmatched" });
+      const onFocusHandled = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: "nonexistent-id",
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).not.toHaveBeenCalled();
+    });
+
+    it("does not re-trigger focus for the same focusTaskId on rerender", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Stable focus", description: "Detail" });
+      const onFocusHandled = vi.fn();
+
+      const { rerender } = render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).toHaveBeenCalledTimes(1);
+      onFocusHandled.mockClear();
+
+      // Re-render with same focusTaskId — should NOT fire again
+      rerender(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onFocusHandled,
+          }),
+        ),
+      );
+
+      expect(onFocusHandled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("onViewRetros (cross-panel retro navigation)", () => {
+    it("renders 'View retrospectives' link in task detail when onViewRetros is provided", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Retro task", description: "Has retros" });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onViewRetros: vi.fn(),
+          }),
+        ),
+      );
+
+      expect(screen.getByText(/View retrospectives for this task/)).toBeInTheDocument();
+    });
+
+    it("does not render 'View retrospectives' link when onViewRetros is absent", () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "No retro link", description: "Detail" });
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+          }),
+        ),
+      );
+
+      expect(screen.queryByText(/View retrospectives for this task/)).not.toBeInTheDocument();
+    });
+
+    it("calls onViewRetros with the correct taskId when the link is clicked", async () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "Click retro", description: "Click me" });
+      const onViewRetros = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onViewRetros,
+          }),
+        ),
+      );
+
+      await userEvent.click(screen.getByText(/View retrospectives for this task/));
+      expect(onViewRetros).toHaveBeenCalledTimes(1);
+      expect(onViewRetros).toHaveBeenCalledWith(taskId);
+    });
+
+    it("'View retrospectives' link is keyboard-activatable", async () => {
+      const taskId = uid();
+      const task = makeTask({ id: taskId, title: "KB retro", description: "Keyboard test" });
+      const onViewRetros = vi.fn();
+
+      render(
+        createElement(
+          FluentProvider,
+          { theme: webDarkTheme },
+          createElement(TaskListPanel, {
+            tasks: [task],
+            loading: false,
+            error: false,
+            onRefresh: vi.fn(),
+            agents: [makeAgent()],
+            focusTaskId: taskId,
+            onViewRetros,
+          }),
+        ),
+      );
+
+      const link = screen.getByText(/View retrospectives for this task/);
+      expect(link).toHaveAttribute("tabindex", "0");
+      link.focus();
+      await userEvent.keyboard("{Enter}");
+      expect(onViewRetros).toHaveBeenCalledTimes(1);
+      expect(onViewRetros).toHaveBeenCalledWith(taskId);
     });
   });
 });

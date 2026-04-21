@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -10,10 +11,11 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListTasksHandler : ICommandHandler
 {
     public string CommandName => "LIST_TASKS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
         var tasks = await taskQueries.GetTasksAsync();
 
         // Apply optional filters from args
@@ -37,6 +39,7 @@ public sealed class ListTasksHandler : ICommandHandler
             ["id"] = t.Id,
             ["title"] = t.Title,
             ["status"] = t.Status.ToString(),
+            ["priority"] = t.Priority.ToString(),
             ["assignedTo"] = t.AssignedAgentName ?? t.AssignedAgentId,
             ["description"] = t.Description,
             ["successCriteria"] = t.SuccessCriteria,

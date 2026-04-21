@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,12 +17,12 @@ public sealed class ShellCommandHandler : ICommandHandler
 {
     private static readonly TimeSpan DotnetTimeout = TimeSpan.FromMinutes(10);
 
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<ShellCommandHandler> _logger;
 
     public ShellCommandHandler(
-        GitService gitService,
+        IGitService gitService,
         IHostApplicationLifetime lifetime,
         ILogger<ShellCommandHandler> logger)
     {
@@ -222,8 +223,8 @@ public sealed class ShellCommandHandler : ICommandHandler
 
         try
         {
-            var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var messages = context.Services.GetRequiredService<MessageService>();
+            var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
             await messages.PostSystemStatusAsync(catalog.DefaultRoomId,
                 $"🔄 **Server restarting**: {parsed.Reason} (requested by {context.AgentName} via SHELL)");
         }

@@ -3,6 +3,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -11,22 +12,26 @@ namespace AgentAcademy.Server.Services;
 /// ensuring the default room exists, seeding agent locations, and resolving
 /// the startup main room.
 /// </summary>
-public sealed class InitializationService
+public sealed class InitializationService : IInitializationService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<InitializationService> _logger;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityPublisher _activity;
-    private readonly CrashRecoveryService _crashRecovery;
-    private readonly RoomService _rooms;
+    private readonly IAgentCatalog _catalog;
+    private readonly IActivityPublisher _activity;
+    private readonly ICrashRecoveryService _crashRecovery;
+    private readonly IRoomService _rooms;
+    private readonly IWorkspaceRoomService _workspaceRooms;
+    private readonly IWorktreeService? _worktrees;
 
     public InitializationService(
         AgentAcademyDbContext db,
         ILogger<InitializationService> logger,
-        AgentCatalogOptions catalog,
-        ActivityPublisher activity,
-        CrashRecoveryService crashRecovery,
-        RoomService rooms)
+        IAgentCatalog catalog,
+        IActivityPublisher activity,
+        ICrashRecoveryService crashRecovery,
+        IRoomService rooms,
+        IWorkspaceRoomService workspaceRooms,
+        IWorktreeService? worktrees = null)
     {
         _db = db;
         _logger = logger;
@@ -34,6 +39,8 @@ public sealed class InitializationService
         _activity = activity;
         _crashRecovery = crashRecovery;
         _rooms = rooms;
+        _workspaceRooms = workspaceRooms;
+        _worktrees = worktrees;
     }
 
     /// <summary>
@@ -97,7 +104,7 @@ public sealed class InitializationService
             }
         }
 
-        await _rooms.ResolveStartupMainRoomIdAsync(activeWorkspace);
+        await _workspaceRooms.ResolveStartupMainRoomIdAsync(activeWorkspace);
 
         // Initialize agent locations for any agent not already tracked
         foreach (var agent in _catalog.Agents)
@@ -116,6 +123,25 @@ public sealed class InitializationService
         }
 
         await _db.SaveChangesAsync();
+
+        // Reconcile in-memory worktree tracking with what git actually has on
+        // disk. Without this, worktrees created in a previous server lifecycle
+        // are unknown to WorktreeService until something queries git directly,
+        // so GetActiveWorktrees() returns stale/empty data and the
+        // LIST_WORKTREES admin command misses them. Optional dependency so
+        // tests that don't register IWorktreeService keep working.
+        if (_worktrees is not null)
+        {
+            try
+            {
+                await _worktrees.SyncWithGitAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to sync worktree tracking with git on startup; in-memory state may be stale until next sync.");
+            }
+        }
     }
 
     private async Task<string?> GetActiveWorkspacePathAsync()

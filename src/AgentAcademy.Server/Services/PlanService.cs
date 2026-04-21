@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Manages room/breakout plan content: get, set (create/update), and delete.
 /// </summary>
-public sealed class PlanService
+public sealed class PlanService : IPlanService
 {
     private readonly AgentAcademyDbContext _db;
 

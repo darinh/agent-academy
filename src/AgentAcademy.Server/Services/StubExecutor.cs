@@ -11,11 +11,11 @@ namespace AgentAcademy.Server.Services;
 public sealed class StubExecutor : IAgentExecutor
 {
     private readonly ILogger<StubExecutor> _logger;
+    private int _activatedLogged;
 
     public StubExecutor(ILogger<StubExecutor> logger)
     {
         _logger = logger;
-        _logger.LogWarning("StubExecutor active — agents will return offline notices");
     }
 
     public bool IsFullyOperational => false;
@@ -40,6 +40,11 @@ public sealed class StubExecutor : IAgentExecutor
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+
+        if (Interlocked.Exchange(ref _activatedLogged, 1) == 0)
+        {
+            _logger.LogWarning("StubExecutor active — agents will return offline notices");
+        }
 
         var response = $"⚠️ Agent **{agent.Name}** ({agent.Role}) is offline — " +
                        "the Copilot SDK is not connected. " +

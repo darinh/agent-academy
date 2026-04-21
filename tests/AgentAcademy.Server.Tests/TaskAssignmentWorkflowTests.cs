@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using System.Reflection;
 using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -56,27 +56,68 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(_catalog);
+        services.AddSingleton<IAgentCatalog>(_catalog);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
+        services.AddScoped<IPlanService>(sp => sp.GetRequiredService<PlanService>());
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
+        services.AddScoped<ConversationSessionQueryService>();
+        services.AddScoped<IConversationSessionQueryService>(sp => sp.GetRequiredService<ConversationSessionQueryService>());
         services.AddScoped<AgentConfigService>();
+        services.AddScoped<IAgentConfigService>(sp => sp.GetRequiredService<AgentConfigService>());
+        services.AddSingleton<SpecManager>();
+        services.AddSingleton<ISpecManager>(sp => sp.GetRequiredService<SpecManager>());
+        services.AddScoped<SprintService>();
+        services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
+        services.AddScoped<SprintArtifactService>();
+        services.AddScoped<ISprintArtifactService>(sp => sp.GetRequiredService<SprintArtifactService>());
+        services.AddScoped<RoundContextLoader>();
         services.AddSingleton(_executor);
         services.AddSingleton(_gitService);
         services.AddLogging();
@@ -122,34 +163,34 @@ public class TaskAssignmentWorkflowTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await initialization.InitializeAsync();
             await messages.PostHumanMessageAsync("main", "Assign the backend task.");
         }
 
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader = new AgentMemoryLoader(scopeFactory, NullLogger<AgentMemoryLoader>.Instance);
-        var breakoutLifecycle = new BreakoutLifecycleService(
+        var breakoutCompletion = new BreakoutCompletionService(
             scopeFactory, _catalog, _executor, new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            memoryLoader, NullLogger<BreakoutCompletionService>.Instance);
+        var breakoutLifecycle = new BreakoutLifecycleService(
+            scopeFactory, _catalog, _executor, new SpecManager(),
             _gitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
-            memoryLoader,
+            memoryLoader, breakoutCompletion,
             NullLogger<BreakoutLifecycleService>.Instance);
 
-        var orchestrator = new AgentOrchestrator(
-            scopeFactory,
-            _catalog,
-            _executor,
-            _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
-            new SpecManager(),
-            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            breakoutLifecycle,
-            new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance),
-            memoryLoader,
-            NullLogger<AgentOrchestrator>.Instance);
+        var pipeline = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
+        var taskAssignment = new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance);
+        var turnRunner = new AgentTurnRunner(
+            _executor, pipeline, taskAssignment, memoryLoader,
+            scopeFactory, NullLogger<AgentTurnRunner>.Instance);
 
-        await InvokeConversationRoundAsync(orchestrator, "main");
+        var roundRunner = new ConversationRoundRunner(
+            scopeFactory, _catalog, turnRunner,
+            NullLogger<ConversationRoundRunner>.Instance);
+
+        await roundRunner.RunRoundsAsync("main");
 
         // Allow fire-and-forget breakout loop to complete
         await Task.Delay(2000);
@@ -223,34 +264,34 @@ public class TaskAssignmentWorkflowTests : IDisposable
         using (var scope = _serviceProvider.CreateScope())
         {
             var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-            var messages = scope.ServiceProvider.GetRequiredService<MessageService>();
+            var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
             await initialization.InitializeAsync();
             await messages.PostHumanMessageAsync("main", "Build the widget please.");
         }
 
         var scopeFactory2 = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var memoryLoader2 = new AgentMemoryLoader(scopeFactory2, NullLogger<AgentMemoryLoader>.Instance);
-        var breakoutLifecycle2 = new BreakoutLifecycleService(
+        var breakoutCompletion2 = new BreakoutCompletionService(
             scopeFactory2, _catalog, _executor, new SpecManager(),
             new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
+            memoryLoader2, NullLogger<BreakoutCompletionService>.Instance);
+        var breakoutLifecycle2 = new BreakoutLifecycleService(
+            scopeFactory2, _catalog, _executor, new SpecManager(),
             mockGitService,
-            new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"),
-            memoryLoader2,
+            memoryLoader2, breakoutCompletion2,
             NullLogger<BreakoutLifecycleService>.Instance);
 
-        var orchestrator = new AgentOrchestrator(
-            scopeFactory2,
-            _catalog,
-            _executor,
-            _serviceProvider.GetRequiredService<ActivityBroadcaster>(),
-            new SpecManager(),
-            new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance),
-            breakoutLifecycle2,
-            new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance),
-            memoryLoader2,
-            NullLogger<AgentOrchestrator>.Instance);
+        var pipeline2 = new CommandPipeline(Array.Empty<ICommandHandler>(), NullLogger<CommandPipeline>.Instance);
+        var taskAssignment2 = new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance);
+        var turnRunner2 = new AgentTurnRunner(
+            _executor, pipeline2, taskAssignment2, memoryLoader2,
+            scopeFactory2, NullLogger<AgentTurnRunner>.Instance);
 
-        await InvokeConversationRoundAsync(orchestrator, "main");
+        var roundRunner2 = new ConversationRoundRunner(
+            scopeFactory2, _catalog, turnRunner2,
+            NullLogger<ConversationRoundRunner>.Instance);
+
+        await roundRunner2.RunRoundsAsync("main");
 
         // Allow fire-and-forget to settle
         await Task.Delay(2000);
@@ -281,19 +322,6 @@ public class TaskAssignmentWorkflowTests : IDisposable
         _connection.Dispose();
         if (Directory.Exists(_repoRoot))
             Directory.Delete(_repoRoot, recursive: true);
-    }
-
-    private static async Task InvokeConversationRoundAsync(AgentOrchestrator orchestrator, string roomId)
-    {
-        var method = typeof(AgentOrchestrator).GetMethod(
-            "RunConversationRoundAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("RunConversationRoundAsync not found");
-
-        var task = method.Invoke(orchestrator, [roomId]) as Task
-            ?? throw new InvalidOperationException("RunConversationRoundAsync did not return a Task");
-
-        await task;
     }
 
     private static void InitializeRepository(string repoRoot)

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -46,13 +47,13 @@ public sealed class AddTaskCommentHandler : ICommandHandler
                 {
                     Status = CommandStatus.Error,
                     ErrorCode = CommandErrorCode.Validation,
-                    Error = $"Invalid comment type: '{typeStr}'. Valid types: Comment, Finding, Evidence, Blocker"
+                    Error = $"Invalid comment type: '{typeStr}'. Valid types: Comment, Finding, Evidence, Blocker, Retrospective, Decision"
                 };
             }
         }
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try
         {

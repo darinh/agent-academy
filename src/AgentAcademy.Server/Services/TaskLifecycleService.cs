@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,41 +14,26 @@ namespace AgentAcademy.Server.Services;
 /// Task entity mutations for create/complete/reject are orchestrated by
 /// TaskOrchestrationService which delegates here for the task-state changes.
 /// </summary>
-public sealed class TaskLifecycleService
+public sealed partial class TaskLifecycleService : ITaskLifecycleService
 {
-    private const int MaxReviewRounds = 5;
-
-    /// <summary>
-    /// Valid evidence phases.
-    /// </summary>
-    public static readonly HashSet<string> ValidEvidencePhases = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Baseline", "After", "Review"
-    };
-
-    /// <summary>
-    /// Valid spec-task link types.
-    /// </summary>
-    public static readonly HashSet<string> ValidLinkTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Implements", "Modifies", "Fixes", "References"
-    };
-
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskLifecycleService> _logger;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityPublisher _activity;
+    private readonly IAgentCatalog _catalog;
+    private readonly IActivityPublisher _activity;
+    private readonly ITaskDependencyService _dependencies;
 
     public TaskLifecycleService(
         AgentAcademyDbContext db,
         ILogger<TaskLifecycleService> logger,
-        AgentCatalogOptions catalog,
-        ActivityPublisher activity)
+        IAgentCatalog catalog,
+        IActivityPublisher activity,
+        ITaskDependencyService dependencies)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
         _activity = activity;
+        _dependencies = dependencies;
     }
 
     // ── Task State Transitions ──────────────────────────────────
@@ -61,29 +47,64 @@ public sealed class TaskLifecycleService
         var entity = await _db.Tasks.FindAsync(taskId)
             ?? throw new InvalidOperationException($"Task '{taskId}' not found");
 
+        // Block claiming tasks with unmet dependencies
+        var blockers = await _dependencies.GetBlockingTasksAsync(taskId);
+        if (blockers.Count > 0)
+        {
+            var blockerList = string.Join(", ", blockers.Select(b => $"'{b.Title}' ({b.Status})"));
+            throw new InvalidOperationException(
+                $"Task '{taskId}' has unmet dependencies: {blockerList}. Complete them first.");
+        }
+
         if (!string.IsNullOrEmpty(entity.AssignedAgentId) && entity.AssignedAgentId != agentId)
             throw new InvalidOperationException(
                 $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
 
         var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
-        entity.AssignedAgentId = agent?.Id ?? agentId;
-        entity.AssignedAgentName = agent?.Name ?? agentName;
+        var canonicalName = agent?.Name ?? agentName;
 
         var now = DateTime.UtcNow;
-        entity.UpdatedAt = now;
+        var nextStatus = entity.Status == nameof(Shared.Models.TaskStatus.Queued)
+            ? nameof(Shared.Models.TaskStatus.Active)
+            : entity.Status;
+        var startedAt = entity.StartedAt ?? (nextStatus == nameof(Shared.Models.TaskStatus.Active) ? now : (DateTime?)null);
 
-        // Auto-activate queued tasks when claimed
-        if (entity.Status == nameof(Shared.Models.TaskStatus.Queued))
+        // Atomic conditional claim: only succeeds if the row is still
+        // unclaimed (or already owned by this agent — idempotent re-claim).
+        // This eliminates the TOCTOU race where two agents both read
+        // AssignedAgentId == null and both succeed when SaveChangesAsync runs.
+        // ExecuteUpdateAsync issues a single UPDATE ... WHERE that the
+        // database executes atomically.
+        var rowsAffected = await _db.Tasks
+            .Where(t => t.Id == taskId
+                && (t.AssignedAgentId == null || t.AssignedAgentId == "" || t.AssignedAgentId == agentId))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.AssignedAgentId, agentId)
+                .SetProperty(t => t.AssignedAgentName, canonicalName)
+                .SetProperty(t => t.UpdatedAt, now)
+                .SetProperty(t => t.Status, nextStatus)
+                .SetProperty(t => t.StartedAt, startedAt));
+
+        if (rowsAffected == 0)
         {
-            entity.Status = nameof(Shared.Models.TaskStatus.Active);
-            entity.StartedAt ??= now;
+            // Lost the race — re-read to surface the actual current owner.
+            await _db.Entry(entity).ReloadAsync();
+            throw new InvalidOperationException(
+                $"Task '{taskId}' is already claimed by {entity.AssignedAgentName ?? entity.AssignedAgentId}");
         }
+
+        // Refresh the in-memory entity so downstream callers see the new state.
+        await _db.Entry(entity).ReloadAsync();
 
         Publish(ActivityEventType.TaskClaimed, entity.RoomId, agentId, taskId,
             $"{entity.AssignedAgentName} claimed task: {Truncate(entity.Title, 80)}");
 
+        // ExecuteUpdateAsync above persisted the task row, but Publish only
+        // adds the activity event to the change tracker — flush it now so
+        // observers and audit logs see the claim.
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -111,83 +132,7 @@ public sealed class TaskLifecycleService
             $"{releasedName} released task: {Truncate(entity.Title, 80)}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
-    }
-
-    /// <summary>
-    /// Approves a task after review. Records the reviewer and increments review rounds.
-    /// </summary>
-    public async Task<TaskSnapshot> ApproveTaskAsync(string taskId, string reviewerAgentId, string? findings = null)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to approve");
-
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.Approved);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        if (!string.IsNullOrWhiteSpace(findings) && !string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"✅ **Approved** by {reviewerName}\n\n{findings}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskApproved, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} approved task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
-    }
-
-    /// <summary>
-    /// Requests changes on a task after review. Records the reviewer and increments review rounds.
-    /// </summary>
-    public async Task<TaskSnapshot> RequestChangesAsync(string taskId, string reviewerAgentId, string findings)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.InReview) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.AwaitingValidation))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be InReview or AwaitingValidation to request changes");
-
-        if (entity.ReviewRounds >= MaxReviewRounds)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
-
-        var now = DateTime.UtcNow;
-        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"🔄 **Changes Requested** by {reviewerName}\n\n{findings}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskChangesRequested, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} requested changes on task: {Truncate(entity.Title, 80)}");
-
-        await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -211,7 +156,7 @@ public sealed class TaskLifecycleService
             $"PR #{entity.PullRequestNumber} status changed: {oldStatus} → {newStatus}");
 
         await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     // ── Task Comments ──────────────────────────────────────────
@@ -243,198 +188,7 @@ public sealed class TaskLifecycleService
 
         await _db.SaveChangesAsync();
 
-        return TaskQueryService.BuildTaskComment(comment);
-    }
-
-    // ── Task Evidence Ledger ──────────────────────────────────
-
-    /// <summary>
-    /// Records a structured verification check against a task.
-    /// </summary>
-    public async Task<TaskEvidence> RecordEvidenceAsync(
-        string taskId, string agentId, string agentName,
-        EvidencePhase phase, string checkName, string tool,
-        string? command, int? exitCode, string? outputSnippet, bool passed)
-    {
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var entity = new TaskEvidenceEntity
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            TaskId = taskId,
-            Phase = phase.ToString(),
-            CheckName = checkName,
-            Tool = tool,
-            Command = command,
-            ExitCode = exitCode,
-            OutputSnippet = outputSnippet?.Length > 500 ? outputSnippet[..500] : outputSnippet,
-            Passed = passed,
-            AgentId = agentId,
-            AgentName = agentName,
-            CreatedAt = DateTime.UtcNow
-        };
-        _db.TaskEvidence.Add(entity);
-
-        Publish(ActivityEventType.EvidenceRecorded, task.RoomId, agentId, taskId,
-            $"{agentName} recorded {phase.ToString().ToLower()} evidence: {checkName} — {(passed ? "passed" : "FAILED")}");
-
-        await _db.SaveChangesAsync();
-        return TaskQueryService.BuildTaskEvidence(entity);
-    }
-
-    /// <summary>
-    /// Checks whether a task meets the minimum evidence requirements for a phase transition.
-    /// Gate definitions (based on task status):
-    /// - Active → AwaitingValidation: ≥1 "After" check passed
-    /// - AwaitingValidation → InReview: ≥2 "After" checks passed
-    /// - InReview → Approved: ≥1 "Review" check passed
-    /// </summary>
-    public async Task<GateCheckResult> CheckGatesAsync(string taskId)
-    {
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var allEvidence = await _db.TaskEvidence
-            .Where(e => e.TaskId == taskId)
-            .OrderBy(e => e.CreatedAt)
-            .ToListAsync();
-
-        var evidenceModels = allEvidence.Select(TaskQueryService.BuildTaskEvidence).ToList();
-        var currentStatus = task.Status;
-        string targetStatus;
-        int requiredChecks;
-        string requiredPhaseFilter;
-        List<string> suggestedChecks;
-
-        switch (currentStatus)
-        {
-            case "Active":
-                targetStatus = "AwaitingValidation";
-                requiredChecks = 1;
-                requiredPhaseFilter = "After";
-                suggestedChecks = new List<string> { "build", "tests", "type-check" };
-                break;
-            case "AwaitingValidation":
-                targetStatus = "InReview";
-                requiredChecks = 2;
-                requiredPhaseFilter = "After";
-                suggestedChecks = new List<string> { "build", "tests", "type-check", "lint" };
-                break;
-            case "InReview":
-                targetStatus = "Approved";
-                requiredChecks = 1;
-                requiredPhaseFilter = "Review";
-                suggestedChecks = new List<string> { "code-review" };
-                break;
-            default:
-                targetStatus = "N/A";
-                requiredChecks = 0;
-                requiredPhaseFilter = "After";
-                suggestedChecks = new List<string>();
-                break;
-        }
-
-        var relevantPassed = allEvidence
-            .Where(e => e.Phase == requiredPhaseFilter && e.Passed)
-            .Select(e => e.CheckName)
-            .Distinct()
-            .ToList();
-
-        var missingChecks = suggestedChecks
-            .Where(s => !relevantPassed.Contains(s, StringComparer.OrdinalIgnoreCase))
-            .ToList();
-
-        Publish(ActivityEventType.GateChecked, task.RoomId, null, taskId,
-            $"Gate check for {currentStatus} → {targetStatus}: {relevantPassed.Count}/{requiredChecks} checks passed" +
-            (missingChecks.Count > 0 ? $". Missing: {string.Join(", ", missingChecks)}" : ""));
-
-        return new GateCheckResult(
-            TaskId: taskId,
-            CurrentPhase: currentStatus,
-            TargetPhase: targetStatus,
-            Met: relevantPassed.Count >= requiredChecks,
-            RequiredChecks: requiredChecks,
-            PassedChecks: relevantPassed.Count,
-            MissingChecks: missingChecks,
-            Evidence: evidenceModels
-        );
-    }
-
-    // ── Spec–Task Linking ───────────────────────────────────────
-
-    /// <summary>
-    /// Links a task to a spec section. Idempotent — updates link type if the pair already exists.
-    /// </summary>
-    public async Task<SpecTaskLink> LinkTaskToSpecAsync(
-        string taskId, string specSectionId, string agentId, string agentName,
-        string linkType = "Implements", string? note = null)
-    {
-        if (string.IsNullOrWhiteSpace(taskId))
-            throw new ArgumentException("taskId is required");
-        if (string.IsNullOrWhiteSpace(specSectionId))
-            throw new ArgumentException("specSectionId is required");
-        if (!ValidLinkTypes.Contains(linkType))
-            throw new ArgumentException(
-                $"Invalid link type '{linkType}'. Valid types: {string.Join(", ", ValidLinkTypes)}");
-
-        var task = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        // Upsert with retry: catch unique constraint violation on concurrent insert
-        try
-        {
-            return await UpsertSpecLinkCoreAsync(
-                task, taskId, specSectionId, agentId, agentName, linkType, note);
-        }
-        catch (DbUpdateException)
-        {
-            // Concurrent insert hit unique constraint — reload and update
-            _db.ChangeTracker.Clear();
-            return await UpsertSpecLinkCoreAsync(
-                task, taskId, specSectionId, agentId, agentName, linkType, note);
-        }
-    }
-
-    private async Task<SpecTaskLink> UpsertSpecLinkCoreAsync(
-        TaskEntity task, string taskId, string specSectionId,
-        string agentId, string agentName, string linkType, string? note)
-    {
-        var existing = await _db.SpecTaskLinks
-            .FirstOrDefaultAsync(l => l.TaskId == taskId && l.SpecSectionId == specSectionId);
-
-        if (existing is not null)
-        {
-            existing.LinkType = linkType;
-            existing.Note = note ?? existing.Note;
-            existing.LinkedByAgentId = agentId;
-            existing.LinkedByAgentName = agentName;
-
-            Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
-                $"{agentName} updated spec link: {specSectionId} → {task.Title}");
-            await _db.SaveChangesAsync();
-
-            return TaskQueryService.BuildSpecTaskLink(existing);
-        }
-
-        var entity = new SpecTaskLinkEntity
-        {
-            Id = Guid.NewGuid().ToString("N")[..12],
-            TaskId = taskId,
-            SpecSectionId = specSectionId,
-            LinkType = linkType,
-            LinkedByAgentId = agentId,
-            LinkedByAgentName = agentName,
-            Note = note,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _db.SpecTaskLinks.Add(entity);
-        Publish(ActivityEventType.SpecTaskLinked, task.RoomId, agentId, taskId,
-            $"{agentName} linked spec {specSectionId} to task: {Truncate(task.Title, 60)}");
-        await _db.SaveChangesAsync();
-
-        return TaskQueryService.BuildSpecTaskLink(entity);
+        return TaskSnapshotFactory.BuildTaskComment(comment);
     }
 
     // ── Task Create / Complete / Reject ────────────────────────
@@ -459,6 +213,9 @@ public sealed class TaskLifecycleService
 
         var preferredRoles = request.PreferredRoles
             .Select(r => r.Trim())
+            // Stryker disable once String : equivalent mutant — `(r!="")`.
+            // `.Trim()` above throws NRE on null entries, so r is never null here;
+            // thus `(r!="")` is behaviourally identical to `!string.IsNullOrEmpty(r)`.
             .Where(r => !string.IsNullOrEmpty(r))
             .Distinct()
             .ToList();
@@ -479,7 +236,8 @@ public sealed class TaskLifecycleService
             ImplementationSummary: "Implementation has not started yet.",
             PreferredRoles: preferredRoles,
             CreatedAt: now,
-            UpdatedAt: now
+            UpdatedAt: now,
+            Priority: request.Priority
         );
 
         var taskEntity = new TaskEntity
@@ -499,6 +257,7 @@ public sealed class TaskLifecycleService
             PreferredRoles = JsonSerializer.Serialize(task.PreferredRoles),
             RoomId = roomId,
             WorkspacePath = workspacePath,
+            Priority = (int)task.Priority,
             StartedAt = now,
             CreatedAt = now,
             UpdatedAt = now
@@ -539,15 +298,17 @@ public sealed class TaskLifecycleService
     /// </summary>
     public async Task AssociateTaskWithActiveSprintAsync(string taskId, string? workspacePath)
     {
-        if (workspacePath is null) return;
-
+        // Note: no early return needed for null workspacePath — SprintEntity.WorkspacePath
+        // has a NOT NULL constraint, so the query below cannot match when workspacePath
+        // is null (EF translates `== null` to `IS NULL`, which no row satisfies).
         var activeSprint = await _db.Sprints
             .FirstOrDefaultAsync(s => s.WorkspacePath == workspacePath && s.Status == "Active");
 
         if (activeSprint is not null)
         {
-            var taskEntity = _db.Tasks.Local.FirstOrDefault(t => t.Id == taskId)
-                ?? await _db.Tasks.FindAsync(taskId);
+            // FindAsync checks the context state manager first, so it returns
+            // the staged (Added) entity from Local without issuing a DB query.
+            var taskEntity = await _db.Tasks.FindAsync(taskId);
             if (taskEntity is not null)
                 taskEntity.SprintId = activeSprint.Id;
         }
@@ -572,66 +333,17 @@ public sealed class TaskLifecycleService
         entity.MergeCommitSha = mergeCommitSha;
         entity.UpdatedAt = now;
 
+        // Before saving, compute which downstream tasks become unblocked.
+        // The query treats this task as already satisfied (not yet persisted).
+        var unblockedTasks = await _dependencies.GetTasksUnblockedByCompletionAsync(taskId);
+        foreach (var (unblockedTaskId, title, unblockedRoomId) in unblockedTasks)
+        {
+            Publish(ActivityEventType.TaskUnblocked, unblockedRoomId, null, unblockedTaskId,
+                $"Task unblocked: \"{Truncate(title, 80)}\" — all dependencies now satisfied");
+        }
+
         await _db.SaveChangesAsync();
-        return (TaskQueryService.BuildTaskSnapshot(entity), entity.RoomId);
-    }
-
-    /// <summary>
-    /// Rejects a task (from Approved or Completed state). Updates status, adds review message,
-    /// publishes activity. Does NOT save — the caller owns the unit of work so room/breakout
-    /// reopen can be committed atomically with the rejection.
-    /// </summary>
-    public async Task<RejectTaskResult> RejectTaskCoreAsync(
-        string taskId, string reviewerAgentId, string reason, string? revertCommitSha = null)
-    {
-        var entity = await _db.Tasks.FindAsync(taskId)
-            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
-
-        var currentStatus = entity.Status;
-        if (currentStatus != nameof(Shared.Models.TaskStatus.Approved) &&
-            currentStatus != nameof(Shared.Models.TaskStatus.Completed))
-            throw new InvalidOperationException(
-                $"Task '{taskId}' is in '{currentStatus}' state — must be Approved or Completed to reject");
-
-        if (entity.ReviewRounds >= MaxReviewRounds)
-            throw new InvalidOperationException(
-                $"Task '{taskId}' has reached the maximum of {MaxReviewRounds} review rounds. Consider cancelling the task or breaking it into smaller pieces.");
-
-        var now = DateTime.UtcNow;
-        var wasCompleted = currentStatus == nameof(Shared.Models.TaskStatus.Completed);
-
-        entity.Status = nameof(Shared.Models.TaskStatus.ChangesRequested);
-        entity.ReviewerAgentId = reviewerAgentId;
-        entity.ReviewRounds++;
-        entity.UpdatedAt = now;
-
-        if (wasCompleted)
-        {
-            entity.MergeCommitSha = null;
-            entity.CompletedAt = null;
-        }
-
-        var reviewerName = _catalog.Agents.FirstOrDefault(a => a.Id == reviewerAgentId)?.Name ?? reviewerAgentId;
-
-        var statusNote = revertCommitSha is not null ? " (merge reverted)" : "";
-        if (!string.IsNullOrEmpty(entity.RoomId))
-        {
-            var msgEntity = CreateMessageEntity(entity.RoomId, MessageKind.Review,
-                $"❌ **Rejected** by {reviewerName}{statusNote}\n\n{reason}", null, now);
-            _db.Messages.Add(msgEntity);
-        }
-
-        Publish(ActivityEventType.TaskRejected, entity.RoomId, reviewerAgentId, taskId,
-            $"{reviewerName} rejected task: {Truncate(entity.Title, 80)}");
-
-        // NOTE: Does NOT call SaveChangesAsync — the caller (TaskOrchestrationService.RejectTaskAsync)
-        // performs room/breakout reopen and saves everything in one atomic commit.
-
-        return new RejectTaskResult(
-            Snapshot: TaskQueryService.BuildTaskSnapshot(entity),
-            RoomId: entity.RoomId,
-            TaskId: taskId,
-            ReviewerName: reviewerName);
+        return (TaskSnapshotFactory.BuildTaskSnapshot(entity), entity.RoomId);
     }
 
     /// <summary>
@@ -644,15 +356,6 @@ public sealed class TaskLifecycleService
 
         return $"# {title}\n\n## Plan\n1. Review requirements\n2. Design solution\n3. Implement\n4. Validate";
     }
-
-    /// <summary>
-    /// Result of a task rejection, containing the info needed for room/breakout reopen.
-    /// </summary>
-    public sealed record RejectTaskResult(
-        TaskSnapshot Snapshot,
-        string? RoomId,
-        string TaskId,
-        string ReviewerName);
 
     // ── Shared Helpers ──────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -103,36 +104,67 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var sc = new ServiceCollection();
         sc.AddDbContext<AgentAcademyDbContext>(o => o.UseSqlite(_connection));
         sc.AddSingleton<ActivityBroadcaster>();
+        sc.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        sc.AddSingleton<MessageBroadcaster>();
+        sc.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         sc.AddScoped<ActivityPublisher>();
+        sc.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         sc.AddSingleton(new AgentCatalogOptions("main", "Main Room",
             new List<AgentDefinition>
             {
                 new("eng-1", "Hephaestus", "SoftwareEngineer", "Engineer",
                     "You are an engineer.", null, ["impl"], ["code"], true)
             }));
+        sc.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         sc.AddSingleton<ILogger<TaskQueryService>>(NullLogger<TaskQueryService>.Instance);
         sc.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
+        sc.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         sc.AddSingleton<ILogger<ConversationSessionService>>(NullLogger<ConversationSessionService>.Instance);
         sc.AddSingleton(Substitute.For<IAgentExecutor>());
         sc.AddScoped<SystemSettingsService>();
+        sc.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         sc.AddScoped<ConversationSessionService>();
+            sc.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
+        sc.AddScoped<TaskDependencyService>();
+        sc.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         sc.AddScoped<TaskQueryService>();
+        sc.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         sc.AddScoped<TaskLifecycleService>();
+        sc.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         sc.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         sc.AddScoped<MessageService>();
+        sc.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         sc.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         sc.AddScoped<AgentLocationService>();
+            sc.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         sc.AddScoped<PlanService>();
         sc.AddScoped<BreakoutRoomService>();
+        sc.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         sc.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         sc.AddScoped<TaskItemService>();
+        sc.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
         sc.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
+        sc.AddScoped<PhaseTransitionValidator>();
+        sc.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         sc.AddScoped<RoomService>();
+        sc.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        sc.AddScoped<RoomSnapshotBuilder>();
+
+        sc.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        sc.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        sc.AddScoped<WorkspaceRoomService>();
+
+        sc.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        sc.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        sc.AddScoped<RoomLifecycleService>();
+        sc.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         sc.AddScoped<CrashRecoveryService>();
+        sc.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         sc.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         sc.AddScoped<InitializationService>();
         sc.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         sc.AddScoped<TaskOrchestrationService>();
+        sc.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         sc.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         sc.AddSingleton(_github);
 
@@ -143,9 +175,9 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
         db.Database.EnsureCreated();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 
@@ -164,9 +196,9 @@ public class PullRequestSyncServiceIntegrationTests : IAsyncDisposable
     {
         await using var scope = _services.CreateAsyncScope();
         var initialization = scope.ServiceProvider.GetRequiredService<InitializationService>();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskLifecycle = scope.ServiceProvider.GetRequiredService<ITaskLifecycleService>();
+        var taskOrchestration = scope.ServiceProvider.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var result = await taskOrchestration.CreateTaskAsync(new TaskAssignmentRequest(
             Title: $"Test task PR#{prNumber}",
             Description: "Test description",
@@ -410,15 +442,17 @@ public class PrSyncHelperTests : IDisposable
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         var settingsService = new SystemSettingsService(_db);
         var sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog);
-        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, _activityPublisher);
+        _taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, catalog, taskDeps);
+        _taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, catalog, _activityPublisher, taskDeps);
         var agentLocations = new AgentLocationService(_db, catalog, _activityPublisher);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, catalog, _activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, catalog, _activityPublisher, sessionService, _taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, _activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, catalog, _activityPublisher, sessionService, messageService);
-        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService);
-        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _activityPublisher, messageService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, catalog, _activityPublisher);
+        _initialization = new InitializationService(_db, NullLogger<InitializationService>.Instance, catalog, _activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, catalog, _activityPublisher));
+        _taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, catalog, _activityPublisher, _taskLifecycle, _taskQueries, roomService, new RoomSnapshotBuilder(_db, catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         _initialization.InitializeAsync().GetAwaiter().GetResult();
     }
 

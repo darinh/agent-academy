@@ -160,6 +160,44 @@ public static class HumanCommandRegistry
             IsDestructive: true,
             DestructiveWarning: "This will archive all stale rooms where tasks are complete. Multiple rooms may be affected."),
 
+        new("LIST_AGENT_STATS", "Agent stats", "analytics",
+            "Per-agent task effectiveness metrics.",
+            "Returns completion rate, cycle time, review rounds, first-pass approval rate, and rework rate for each agent. Useful for data-driven task assignments.",
+            IsAsync: false,
+            Fields:
+            [
+                new("hoursBack", "Time window (hours)", "number",
+                    "Limit metrics to the last N hours (1-8760). Omit for all-time.",
+                    Required: false),
+                new("agentId", "Agent filter", "text",
+                    "Filter to a single agent by ID or name.",
+                    Required: false),
+            ]),
+
+        new("LIST_WORKTREES", "List worktrees", "workspace",
+            "Show all active worktrees with task and agent info.",
+            "Returns branch, path, created time, and linked task/agent enrichment for every active worktree.",
+            IsAsync: false,
+            Fields:
+            [
+                new("status", "Task status filter", "text",
+                    "Filter worktrees by their linked task's status (e.g., Active, Completed).",
+                    Required: false),
+            ]),
+
+        new("CLEANUP_WORKTREES", "Cleanup worktrees", "operations",
+            "Remove worktrees for completed or cancelled tasks.",
+            "Cleans up stale worktrees that are no longer needed. Uncommitted changes in those worktrees will be lost.",
+            IsAsync: false,
+            Fields:
+            [
+                new("includeOrphans", "Include orphans", "text",
+                    "Set to 'true' to also remove worktrees with no linked task.",
+                    Required: false),
+            ],
+            IsDestructive: true,
+            DestructiveWarning: "This will remove worktrees for completed/cancelled tasks. Uncommitted changes in those worktrees will be lost."),
+
         new("INVITE_TO_ROOM", "Invite to room", "workspace",
             "Move another agent to a specified room.",
             "Useful for assembling a team in a breakout room or pulling in a specialist.",
@@ -175,6 +213,16 @@ public static class HumanCommandRegistry
         new("RUN_BUILD", "Run build", "operations",
             "Kick off a backend build and poll for the result.",
             "Async on purpose so the UI stays responsive while the server serializes build access.",
+            IsAsync: true, Fields: []),
+
+        new("RUN_FRONTEND_BUILD", "Run frontend build", "operations",
+            "Run npm build in the client directory and poll for the result.",
+            "Serialized with the frontend lock to prevent concurrent npm operations.",
+            IsAsync: true, Fields: []),
+
+        new("RUN_TYPECHECK", "Run typecheck", "operations",
+            "Run TypeScript type checking (tsc --noEmit) and poll for the result.",
+            "Shares the frontend lock — cannot run concurrently with a frontend build.",
             IsAsync: true, Fields: []),
 
         new("RUN_TESTS", "Run tests", "operations",
@@ -196,6 +244,126 @@ public static class HumanCommandRegistry
             [
                 new("category", "Category", "text", "Optional category filter.",
                     Placeholder: "pattern"),
+            ]),
+
+        new("CALL_ENDPOINT", "Call endpoint", "operations",
+            "Make an HTTP GET request to a local server API endpoint.",
+            "Restricted to Planner/Reviewer roles. Denied paths: /api/auth, /api/commands. v1 is GET-only.",
+            IsAsync: false,
+            Fields:
+            [
+                new("path", "Path", "text", "API path starting with /.",
+                    Placeholder: "/api/rooms", Required: true),
+            ]),
+
+        new("TAIL_LOGS", "Tail logs", "operations",
+            "Read recent application log entries from the in-memory buffer.",
+            "Returns structured log entries with timestamp, level, category, and message. Supports text filtering.",
+            IsAsync: false,
+            Fields:
+            [
+                new("lines", "Lines", "number", "Number of recent entries to return (1-500).",
+                    Placeholder: "100", DefaultValue: "100"),
+                new("filter", "Filter", "text", "Optional case-insensitive substring filter.",
+                    Placeholder: "error"),
+            ]),
+
+        new("SHOW_CONFIG", "Show config", "operations",
+            "Display current configuration for allowed sections with secrets masked.",
+            "Allowed sections: Logging, Cors, AllowedHosts, Copilot. Sensitive values are replaced with ***.",
+            IsAsync: false,
+            Fields:
+            [
+                new("section", "Section", "text", "Optional section name to filter.",
+                    Placeholder: "Logging"),
+            ]),
+
+        // ── Tier 2F — Data & Operations ─────────────────────────────────
+
+        new("QUERY_DB", "Query database", "operations",
+            "Execute a read-only SQL query against the application database.",
+            "Human-only. Uses a read-only SQLite connection. Restricted tables: AgentMemories, NotificationConfigs, SystemSettings, AgentConfigs, InstructionTemplates. Max 1000 rows.",
+            IsAsync: false,
+            Fields:
+            [
+                new("query", "SQL Query", "text", "A SELECT query to execute.",
+                    Placeholder: "SELECT Id, Title, Status FROM Tasks WHERE Status = 'Active'", Required: true),
+                new("limit", "Row limit", "number", "Maximum rows to return (1-1000).",
+                    Placeholder: "100", DefaultValue: "100"),
+            ]),
+
+        new("RUN_MIGRATIONS", "Run migrations", "operations",
+            "Apply all pending EF Core database migrations.",
+            "Human-only, destructive. Uses a process-wide lock to prevent concurrent migrations. Requires confirm=true.",
+            IsAsync: true, Fields: []),
+
+        new("SHOW_MIGRATION_STATUS", "Migration status", "operations",
+            "Show applied and pending database migrations.",
+            "Lists all EF Core migration IDs grouped by applied/pending status.",
+            IsAsync: false, Fields: []),
+
+        new("HEALTHCHECK", "Health check", "operations",
+            "System health summary covering database, uptime, entities, resources, and connections.",
+            "Returns per-subsystem health status (healthy/warning/unhealthy) and an overall status.",
+            IsAsync: false, Fields: []),
+
+        new("SHOW_ACTIVE_CONNECTIONS", "Active connections", "operations",
+            "Show active SignalR connections for this server instance.",
+            "Planner/Reviewer/Human only. Shows connection count, durations, and instance name. Current-instance only.",
+            IsAsync: false, Fields: []),
+
+        // ── Tier 2G — Audit & Debug ──
+
+        new("SHOW_AUDIT_EVENTS", "Show audit events", "operations",
+            "Query the activity event log with filters.",
+            "Returns recent activity events sorted by time (newest first). Filter by type, severity, actor, room, or time range.",
+            IsAsync: false,
+            Fields:
+            [
+                new("type", "Event type", "text", "Filter by event type (e.g. AgentErrorOccurred, CommandExecuted)."),
+                new("severity", "Severity", "text", "Filter by severity (Info, Warning, Error)."),
+                new("actorId", "Actor ID", "text", "Filter by agent/actor ID."),
+                new("roomId", "Room ID", "text", "Filter by room ID."),
+                new("since", "Since", "text", "ISO 8601 datetime — only events after this time.",
+                    Placeholder: "2026-04-20T00:00:00Z"),
+                new("count", "Count", "text", "Number of events to return (default 20, max 100).",
+                    Placeholder: "20"),
+            ]),
+
+        new("SHOW_LAST_ERROR", "Show last error", "operations",
+            "Show the most recent errors from both activity events and failed commands.",
+            "Merges runtime errors (AgentErrorOccurred, SubagentFailed) with command failures into a single chronological timeline.",
+            IsAsync: false,
+            Fields:
+            [
+                new("count", "Count", "text", "Number of errors to return (default 5, max 25).",
+                    Placeholder: "5"),
+                new("agentId", "Agent ID", "text", "Filter errors by a specific agent."),
+            ]),
+
+        new("TRACE_REQUEST", "Trace request", "operations",
+            "Trace events by correlation ID across activity log and command audit trail.",
+            "Returns a unified timeline of all events sharing a correlation ID, from both activity events and command audits.",
+            IsAsync: false,
+            Fields:
+            [
+                new("correlationId", "Correlation ID", "text", "The correlation ID to trace.",
+                    Required: true),
+            ]),
+
+        new("LIST_SYSTEM_SETTINGS", "System settings", "operations",
+            "List all runtime system settings with current values.",
+            "Shows all key-value pairs from the system settings store, with defaults filled in for known keys.",
+            IsAsync: false, Fields: []),
+
+        new("RETRY_FAILED_JOB", "Retry failed job", "operations",
+            "Re-execute a previously failed command from the audit trail.",
+            "Planner/Human only. Only retry-safe (idempotent/read-only) commands can be retried. Creates a new correlation ID for tracking.",
+            IsAsync: false,
+            Fields:
+            [
+                new("auditId", "Audit ID", "text", "The ID of the failed command audit entry to retry.",
+                    Required: true),
             ]),
 
         new("CREATE_TASK_ITEM", "Create task item", "workspace",
@@ -326,8 +494,8 @@ public static class HumanCommandRegistry
             Fields: []),
 
         new("UPDATE_TASK", "Update task", "workspace",
-            "Update a task's status, blocker, or note.",
-            "Change task state directly. Allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued. Use CANCEL_TASK or APPROVE_TASK + MERGE_TASK for terminal states.",
+            "Update a task's status, priority, blocker, or note.",
+            "Change task state directly. Allowed statuses: Active, Blocked, AwaitingValidation, InReview, Queued. Allowed priorities: Critical, High, Medium, Low. Use CANCEL_TASK or APPROVE_TASK + MERGE_TASK for terminal states.",
             IsAsync: false,
             Fields:
             [
@@ -335,6 +503,8 @@ public static class HumanCommandRegistry
                     Required: true),
                 new("status", "Status", "text", "New status for the task.",
                     Placeholder: "Completed"),
+                new("priority", "Priority", "text", "Priority level: Critical, High, Medium, Low.",
+                    Placeholder: "Medium"),
                 new("blocker", "Blocker", "text", "Blocker description (implies Blocked status)."),
                 new("note", "Note", "text", "Note to attach to the task."),
             ]),
@@ -556,6 +726,17 @@ public static class HumanCommandRegistry
             [
                 new("taskId", "Task ID", "text", "The task to check gates for.",
                     Required: true),
+            ]),
+
+        new("GENERATE_DIGEST", "Generate digest", "operations",
+            "Manually trigger learning digest generation.",
+            "Synthesizes accumulated retrospective summaries into cross-cutting shared memories via the planner agent. Use force=true to bypass the threshold check.",
+            IsAsync: true,
+            Fields:
+            [
+                new("force", "Force", "text",
+                    "Set to 'true' to bypass the retrospective threshold and generate immediately.",
+                    Required: false),
             ]),
     ];
 

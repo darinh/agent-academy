@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace AgentAcademy.Server.Services;
 /// Handles all message operations: room messages (agent, human, system),
 /// direct messages, breakout room messages, and message trimming.
 /// </summary>
-public sealed class MessageService
+public sealed class MessageService : IMessageService
 {
     private const int MaxRecentMessages = 200;
 
@@ -22,22 +23,25 @@ public sealed class MessageService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<MessageService> _logger;
-    private readonly AgentCatalogOptions _catalog;
-    private readonly ActivityPublisher _activity;
-    private readonly ConversationSessionService _sessionService;
+    private readonly IAgentCatalog _catalog;
+    private readonly IActivityPublisher _activity;
+    private readonly IConversationSessionService _sessionService;
+    private readonly IMessageBroadcaster _messageBroadcaster;
 
     public MessageService(
         AgentAcademyDbContext db,
         ILogger<MessageService> logger,
-        AgentCatalogOptions catalog,
-        ActivityPublisher activity,
-        ConversationSessionService sessionService)
+        IAgentCatalog catalog,
+        IActivityPublisher activity,
+        IConversationSessionService sessionService,
+        IMessageBroadcaster messageBroadcaster)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
         _activity = activity;
         _sessionService = sessionService;
+        _messageBroadcaster = messageBroadcaster;
     }
 
     // ── Room Messages ───────────────────────────────────────────
@@ -104,11 +108,10 @@ public sealed class MessageService
 
         await _db.SaveChangesAsync();
 
+        _messageBroadcaster.Broadcast(request.RoomId, envelope);
+
         return envelope;
     }
-
-    /// <summary>
-    /// Posts a human message to a room.
     /// When identity parameters are provided, the message is attributed to that user.
     /// Otherwise falls back to generic "Human" identity.
     /// </summary>
@@ -170,6 +173,8 @@ public sealed class MessageService
 
         await _db.SaveChangesAsync();
 
+        _messageBroadcaster.Broadcast(roomId, envelope);
+
         return envelope;
     }
 
@@ -201,6 +206,10 @@ public sealed class MessageService
 
         room.UpdatedAt = now;
         await _db.SaveChangesAsync();
+
+        _messageBroadcaster.Broadcast(roomId, new ChatEnvelope(
+            msgEntity.Id, roomId, "system", "System", null,
+            MessageSenderKind.System, MessageKind.System, content, now));
     }
 
     /// <summary>
@@ -220,6 +229,10 @@ public sealed class MessageService
             $"System: {Truncate(message, 100)}");
 
         await _db.SaveChangesAsync();
+
+        _messageBroadcaster.Broadcast(roomId, new ChatEnvelope(
+            entity.Id, roomId, "system", "System", null,
+            MessageSenderKind.System, MessageKind.System, message, now));
     }
 
     // ── Direct Messaging ────────────────────────────────────────
@@ -249,6 +262,10 @@ public sealed class MessageService
         };
         _db.Messages.Add(msgEntity);
 
+        string? dmNotifyRoomId = null;
+        string? dmNotifyMsgId = null;
+        string? dmNotifyContent = null;
+
         if (recipientId != "human")
         {
             var recipientLocation = await _db.AgentLocations.FindAsync(recipientId);
@@ -256,6 +273,7 @@ public sealed class MessageService
             var notifyRoom = await _db.Rooms.FindAsync(notifyRoomId);
             if (notifyRoom is not null)
             {
+                var sysMsgContent = $"📩 {senderName} sent a direct message to {recipientId}.";
                 var sysMsg = new MessageEntity
                 {
                     Id = Guid.NewGuid().ToString("N"),
@@ -264,11 +282,15 @@ public sealed class MessageService
                     SenderName = "System",
                     SenderKind = nameof(MessageSenderKind.System),
                     Kind = nameof(MessageKind.System),
-                    Content = $"📩 {senderName} sent a direct message to {recipientId}.",
+                    Content = sysMsgContent,
                     SentAt = now
                 };
                 _db.Messages.Add(sysMsg);
                 notifyRoom.UpdatedAt = now;
+
+                dmNotifyRoomId = notifyRoomId;
+                dmNotifyMsgId = sysMsg.Id;
+                dmNotifyContent = sysMsgContent;
             }
         }
 
@@ -276,6 +298,28 @@ public sealed class MessageService
             $"DM from {senderName} to {recipientId}");
 
         await _db.SaveChangesAsync();
+
+        // Broadcast room-visible DM notification AFTER commit to avoid ghost messages
+        if (dmNotifyRoomId is not null)
+        {
+            _messageBroadcaster.Broadcast(dmNotifyRoomId, new ChatEnvelope(
+                dmNotifyMsgId!, dmNotifyRoomId, "system", "System", null,
+                MessageSenderKind.System, MessageKind.System, dmNotifyContent!, now));
+        }
+
+        // Broadcast DM to SSE subscribers on the agent's DM thread
+        var isHumanSide = HumanSideSenderIds.Contains(senderId);
+        var dmAgentId = isHumanSide ? recipientId : senderId;
+        _messageBroadcaster.BroadcastDm(dmAgentId, new DmMessage(
+            Id: messageId,
+            SenderId: senderId,
+            SenderName: senderName,
+            SenderRole: senderRole,
+            Content: message,
+            SentAt: now,
+            IsFromHuman: isHumanSide
+        ));
+
         return messageId;
     }
 
@@ -332,64 +376,126 @@ public sealed class MessageService
     }
 
     /// <summary>
+     /// Maximum number of DM threads returned by <see cref="GetDmThreadsForHumanAsync"/>.
+     /// Threads are aggregated per agent first (so a chatty agent cannot drown out quieter
+     /// threads), then the most recent <see cref="MaxDmThreads"/> threads are returned.
+     /// </summary>
+    internal const int MaxDmThreads = 200;
+
+    /// <summary>
     /// Returns DM thread summaries for the human user, grouped by agent.
     /// </summary>
+    /// <remarks>
+    /// Aggregates per-thread on the database side so that a single high-volume thread
+    /// cannot push quieter threads off the result. The full-message-count, latest
+    /// timestamp, and latest-message preview are computed from a single SQL snapshot
+    /// (one aggregate query + one bounded content lookup), avoiding both the N+1
+    /// per-thread round-trip and the read-tearing window the previous two-query
+    /// implementation had.
+    /// </remarks>
     public async Task<List<DmThreadSummary>> GetDmThreadsForHumanAsync()
     {
-        var humanDms = await _db.Messages
+        // Aggregate query: per-thread MessageCount, LastMessageAt, and the Id of the
+        // most recent message in that thread. EF Core 8 translates the inner
+        // OrderByDescending(...).Select(...).FirstOrDefault() to a correlated subquery.
+        // Pulling only the message Id (not the full row) keeps the projection narrow.
+        var threadAggregates = await _db.Messages
             .Where(m => m.RecipientId != null &&
                         (HumanSideSenderIds.Contains(m.RecipientId) ||
                          HumanSideSenderIds.Contains(m.SenderId)))
-            .OrderByDescending(m => m.SentAt)
-            .Take(500)
+            .Select(m => new
+            {
+                ThreadKey = HumanSideSenderIds.Contains(m.SenderId) ? m.RecipientId! : m.SenderId,
+                m.SentAt,
+                m.Id
+            })
+            .GroupBy(x => x.ThreadKey)
+            .Select(g => new
+            {
+                AgentId = g.Key,
+                LastMessageAt = g.Max(x => x.SentAt),
+                MessageCount = g.Count(),
+                LastMessageId = g
+                    .OrderByDescending(x => x.SentAt)
+                    .ThenByDescending(x => x.Id)
+                    .Select(x => x.Id)
+                    .FirstOrDefault()
+            })
+            .OrderByDescending(x => x.LastMessageAt)
+            .Take(MaxDmThreads)
             .ToListAsync();
 
-        var threads = new Dictionary<string, DmThreadSummary>(StringComparer.OrdinalIgnoreCase);
+        if (threadAggregates.Count == 0)
+            return new List<DmThreadSummary>();
 
-        foreach (var dm in humanDms)
+        // Bulk-fetch the preview content for the picked message Ids in one round-trip.
+        var lastMessageIds = threadAggregates
+            .Where(a => a.LastMessageId != null)
+            .Select(a => a.LastMessageId!)
+            .ToList();
+
+        var contentById = await _db.Messages
+            .Where(m => lastMessageIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.Content })
+            .ToDictionaryAsync(x => x.Id, x => x.Content, StringComparer.Ordinal);
+
+        var threads = new List<DmThreadSummary>(threadAggregates.Count);
+        foreach (var agg in threadAggregates)
         {
-            var agentId = HumanSideSenderIds.Contains(dm.SenderId) ? dm.RecipientId! : dm.SenderId;
-
-            if (!threads.ContainsKey(agentId))
+            var preview = "";
+            if (agg.LastMessageId != null && contentById.TryGetValue(agg.LastMessageId, out var content))
             {
-                var agent = _catalog.Agents.FirstOrDefault(
-                    a => string.Equals(a.Id, agentId, StringComparison.OrdinalIgnoreCase));
-                var agentName = agent?.Name ?? agentId;
-                var agentRole = agent?.Role ?? "Agent";
-
-                threads[agentId] = new DmThreadSummary(
-                    AgentId: agentId,
-                    AgentName: agentName,
-                    AgentRole: agentRole,
-                    LastMessage: dm.Content.Length > 100 ? dm.Content[..100] + "…" : dm.Content,
-                    LastMessageAt: dm.SentAt,
-                    MessageCount: 0
-                );
+                preview = content.Length > 100 ? content[..100] + "…" : content;
             }
 
-            threads[agentId] = threads[agentId] with
-            {
-                MessageCount = threads[agentId].MessageCount + 1
-            };
+            var agent = _catalog.Agents.FirstOrDefault(
+                a => string.Equals(a.Id, agg.AgentId, StringComparison.OrdinalIgnoreCase));
+            var agentName = agent?.Name ?? agg.AgentId;
+            var agentRole = agent?.Role ?? "Agent";
+
+            threads.Add(new DmThreadSummary(
+                AgentId: agg.AgentId,
+                AgentName: agentName,
+                AgentRole: agentRole,
+                LastMessage: preview,
+                LastMessageAt: agg.LastMessageAt,
+                MessageCount: agg.MessageCount));
         }
 
-        return threads.Values
-            .OrderByDescending(t => t.LastMessageAt)
-            .ToList();
+        return threads;
     }
 
     /// <summary>
     /// Returns messages in a DM thread between the human and a specific agent.
     /// </summary>
-    public async Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50)
+    public async Task<List<MessageEntity>> GetDmThreadMessagesAsync(string agentId, int limit = 50, string? afterMessageId = null)
     {
-        return await _db.Messages
+        limit = Math.Clamp(limit, 1, 200);
+
+        IQueryable<MessageEntity> query = _db.Messages
             .Where(m => m.RecipientId != null &&
                         ((HumanSideSenderIds.Contains(m.SenderId) && m.RecipientId == agentId) ||
-                         (m.SenderId == agentId && HumanSideSenderIds.Contains(m.RecipientId!))))
-            .OrderByDescending(m => m.SentAt)
-            .Take(limit)
+                         (m.SenderId == agentId && HumanSideSenderIds.Contains(m.RecipientId!))));
+
+        if (!string.IsNullOrEmpty(afterMessageId))
+        {
+            var cursor = await _db.Messages
+                .Where(m => m.Id == afterMessageId)
+                .Select(m => new { m.SentAt, m.Id })
+                .FirstOrDefaultAsync();
+
+            if (cursor is not null)
+            {
+                query = query.Where(m =>
+                    m.SentAt > cursor.SentAt ||
+                    (m.SentAt == cursor.SentAt && string.Compare(m.Id, cursor.Id) > 0));
+            }
+        }
+
+        return await query
             .OrderBy(m => m.SentAt)
+            .ThenBy(m => m.Id)
+            .Take(limit)
             .ToListAsync();
     }
 
@@ -461,17 +567,28 @@ public sealed class MessageService
     }
 
     /// <summary>
-    /// Trims room messages to the most recent <see cref="MaxRecentMessages"/>.
+    /// Trims the active session's messages to <see cref="MaxRecentMessages"/>.
+    /// Only trims messages from the current active session and legacy untagged
+    /// messages. Archived session messages are never deleted — they are the
+    /// historical record for session browsing and export.
     /// </summary>
     public async Task TrimMessagesAsync(string roomId)
     {
-        var messageCount = await _db.Messages.CountAsync(m => m.RoomId == roomId && m.RecipientId == null);
+        var activeSession = await _db.ConversationSessions
+            .Where(s => s.RoomId == roomId && s.Status == "Active")
+            .Select(s => s.Id)
+            .FirstOrDefaultAsync();
+
+        var messageCount = await _db.Messages
+            .CountAsync(m => m.RoomId == roomId && m.RecipientId == null
+                && (m.SessionId == null || m.SessionId == activeSession));
         var totalAfterSave = messageCount + 1;
 
         if (totalAfterSave <= MaxRecentMessages) return;
 
         var toRemove = await _db.Messages
-            .Where(m => m.RoomId == roomId && m.RecipientId == null)
+            .Where(m => m.RoomId == roomId && m.RecipientId == null
+                && (m.SessionId == null || m.SessionId == activeSession))
             .OrderBy(m => m.SentAt)
             .Take(totalAfterSave - MaxRecentMessages)
             .ToListAsync();

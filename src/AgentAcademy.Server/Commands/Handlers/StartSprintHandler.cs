@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -14,8 +15,8 @@ public sealed class StartSprintHandler : ICommandHandler
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
-        var roomService = context.Services.GetRequiredService<RoomService>();
-        var sprintService = context.Services.GetRequiredService<SprintService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
+        var sprintService = context.Services.GetRequiredService<ISprintService>();
 
         var workspacePath = await roomService.GetActiveWorkspacePathAsync();
         if (string.IsNullOrEmpty(workspacePath))

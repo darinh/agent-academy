@@ -17,7 +17,7 @@ public class AgentConfigEntity
     public string? StartupPromptOverride { get; set; }
 
     /// <summary>
-    /// If set, replaces the agent's catalog Model (e.g., "claude-opus-4.6" → "gpt-5.4").
+    /// If set, replaces the agent's catalog Model (e.g., "claude-opus-4.7" → "gpt-5.4").
     /// </summary>
     public string? ModelOverride { get; set; }
 

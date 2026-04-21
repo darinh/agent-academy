@@ -2,6 +2,7 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -13,13 +14,13 @@ using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
-public class AgentErrorTrackerTests : IDisposable
+public class AgentErrorTrackerBasicTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly ServiceProvider _serviceProvider;
     private readonly AgentErrorTracker _tracker;
 
-    public AgentErrorTrackerTests()
+    public AgentErrorTrackerBasicTests()
     {
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
@@ -248,18 +249,20 @@ public class ErrorApiEndpointTests : IDisposable
         var sessionService = new ConversationSessionService(
             _db, new SystemSettingsService(_db), executor,
             NullLogger<ConversationSessionService>.Instance);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
         var activityBus = new ActivityBroadcaster();
         var activityPublisher = new ActivityPublisher(_db, activityBus);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher, taskDeps);
         var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
         var planService = new PlanService(_db);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, sessionService, messageService);
-        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, activityPublisher, messageService, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, activityPublisher);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, activityPublisher));
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         _activityPublisher = activityPublisher;
         _roomService = roomService;
         _agentLocationService = agentLocations;
@@ -368,8 +371,10 @@ public class ErrorApiEndpointTests : IDisposable
             _roomService, _agentLocationService,
             new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, _activityPublisher,
                 new ConversationSessionService(_db, new SystemSettingsService(_db),
-                    Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance)),
-            _catalog, usageTracker, _errorTracker,
+                    Substitute.For<IAgentExecutor>(), NullLogger<ConversationSessionService>.Instance), new MessageBroadcaster()),
+            new MessageBroadcaster(), _catalog, usageTracker, _errorTracker,
+            new RoomArtifactTracker(_db, _activityPublisher, NullLogger<RoomArtifactTracker>.Instance),
+            new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance),
             NullLogger<RoomController>.Instance);
     }
 
@@ -380,7 +385,8 @@ public class ErrorApiEndpointTests : IDisposable
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<LlmUsageTracker>.Instance);
         return new SystemController(
-            _roomService, _agentLocationService, _breakoutRoomService, _activityPublisher,
+            _roomService, _agentLocationService, _breakoutRoomService,
+            Substitute.For<IGoalCardService>(), _activityPublisher,
             executor, _catalog, _db, usageTracker, _errorTracker,
             NullLogger<SystemController>.Instance);
     }

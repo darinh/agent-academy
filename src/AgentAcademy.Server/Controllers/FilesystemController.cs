@@ -35,7 +35,7 @@ public class FilesystemController : ControllerBase
 
         // Must be absolute
         if (!Path.IsPathRooted(targetPath))
-            return BadRequest(new { code = "invalid_path", message = "Path must be absolute" });
+            return BadRequest(ApiProblem.BadRequest("Path must be absolute", "invalid_path"));
 
         var resolved = Path.GetFullPath(targetPath);
 
@@ -43,11 +43,11 @@ public class FilesystemController : ControllerBase
         if (!resolved.StartsWith(homeDir + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             && resolved != homeDir)
         {
-            return BadRequest(new { code = "invalid_path", message = "Path must be within the user's home directory" });
+            return BadRequest(ApiProblem.BadRequest("Path must be within the user's home directory", "invalid_path"));
         }
 
         if (!Directory.Exists(resolved))
-            return NotFound(new { code = "not_found", message = $"Directory not found: {resolved}" });
+            return NotFound(ApiProblem.NotFound($"Directory not found: {resolved}", "not_found"));
 
         var includeHidden = string.Equals(showHidden, "true", StringComparison.Ordinal);
 

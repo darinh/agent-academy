@@ -1,36 +1,26 @@
 import type {
   RoomSnapshot,
   AgentLocation,
+  AgentContextUsage,
   ConversationSessionSnapshot,
   RoomMessagesResponse,
   ChatEnvelope,
   CollaborationPhase,
   SessionListResponse,
   SessionStats,
+  CompactRoomResult,
+  ArtifactRecord,
+  RoomEvaluationResponse,
+  CleanupResponse,
 } from "./types";
-import { apiUrl, request } from "./core";
+import { apiUrl, request, downloadFile } from "./core";
 
 // ── Rooms ──────────────────────────────────────────────────────────────
-
-export function getRooms(): Promise<RoomSnapshot[]> {
-  return request<RoomSnapshot[]>(apiUrl("/api/rooms"));
-}
-
-export function getRoom(roomId: string): Promise<RoomSnapshot> {
-  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}`));
-}
 
 export function createRoom(name: string, description?: string): Promise<RoomSnapshot> {
   return request<RoomSnapshot>(apiUrl("/api/rooms"), {
     method: "POST",
     body: JSON.stringify({ name, description }),
-  });
-}
-
-export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {
-  return request<RoomSnapshot>(apiUrl(`/api/rooms/${roomId}/name`), {
-    method: "PUT",
-    body: JSON.stringify({ name }),
   });
 }
 
@@ -126,4 +116,50 @@ export function getRoomSessions(
       `/api/rooms/${encodeURIComponent(roomId)}/sessions${qs ? `?${qs}` : ""}`,
     ),
   );
+}
+
+// ── Conversation Export ──────────────────────────────────────────────────
+
+export function exportRoomMessages(roomId: string, format: "json" | "markdown" = "json"): Promise<void> {
+  const params = new URLSearchParams({ format });
+  const ext = format === "markdown" ? "md" : "json";
+  return downloadFile(apiUrl(`/api/export/rooms/${encodeURIComponent(roomId)}/messages?${params}`), `room-export.${ext}`);
+}
+
+// ── Compaction ──────────────────────────────────────────────────────────
+
+export function compactRoom(roomId: string): Promise<CompactRoomResult> {
+  return request<CompactRoomResult>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/compact`), {
+    method: "POST",
+  });
+}
+
+// ── Context Usage ──────────────────────────────────────────────────────
+
+export function getRoomContextUsage(roomId: string): Promise<AgentContextUsage[]> {
+  return request<AgentContextUsage[]>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/context-usage`));
+}
+
+// ── Artifacts & Evaluations ────────────────────────────────────────────
+
+export function getRoomArtifacts(roomId: string, limit = 100): Promise<ArtifactRecord[]> {
+  const qs = limit !== 100 ? `?limit=${limit}` : "";
+  return request<ArtifactRecord[]>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/artifacts${qs}`));
+}
+
+export function getRoomEvaluations(roomId: string): Promise<RoomEvaluationResponse> {
+  return request<RoomEvaluationResponse>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/evaluations`));
+}
+
+// ── Room Management ────────────────────────────────────────────────────
+
+export function renameRoom(roomId: string, name: string): Promise<RoomSnapshot> {
+  return request<RoomSnapshot>(apiUrl(`/api/rooms/${encodeURIComponent(roomId)}/name`), {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function cleanupRooms(): Promise<CleanupResponse> {
+  return request<CleanupResponse>(apiUrl("/api/rooms/cleanup"), { method: "POST" });
 }

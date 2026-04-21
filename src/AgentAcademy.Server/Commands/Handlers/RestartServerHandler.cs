@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -106,8 +107,8 @@ public sealed class RestartServerHandler : ICommandHandler
             // Post a system message so the restart is visible in chat history.
             try
             {
-                var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var messages = context.Services.GetRequiredService<MessageService>();
+                var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
                 await messages.PostSystemStatusAsync(catalog.DefaultRoomId,
                     $"🔄 **Server restarting**: {parsed.Reason} (requested by {context.AgentName})");
             }

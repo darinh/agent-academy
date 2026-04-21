@@ -61,7 +61,7 @@ Stale memories:
 
 ### LastAccessedAt Tracking
 
-Every read path (RECALL, LIST_MEMORIES, prompt injection via `LoadAgentMemoriesAsync`) updates `LastAccessedAt` for all returned memories. This is best-effort and batched per agent for efficiency.
+Every read path (RECALL, LIST_MEMORIES, prompt injection via `AgentMemoryLoader.LoadAsync`) updates `LastAccessedAt` for all returned memories. This is best-effort and batched per agent for efficiency.
 
 ## Data Model
 
@@ -164,6 +164,158 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 - Non-shared memory content is never included in other agents' prompts
 - Shared memory content is included in all agents' prompts (in a `=== SHARED KNOWLEDGE ===` section)
 
+## Post-Task Retrospectives
+
+> **Status: Implemented** — `RetrospectiveService` runs automated retrospectives after task merge.
+
+After a task is merged via `MERGE_TASK`, the system automatically runs a retrospective for the assigned agent. This creates a feedback loop where agents learn from completed work.
+
+### Flow
+
+1. `MergeTaskHandler` completes the merge successfully
+2. Fire-and-forget: `RetrospectiveService.RunRetrospectiveAsync(taskId, agentId)` starts
+3. Service gathers context: task details, metrics (cycle time, review rounds, commit count), review messages, task comments
+4. Builds a retrospective prompt via `PromptBuilder.BuildRetrospectivePrompt`
+5. Runs the agent with **restricted permissions** (REMEMBER only, no tools) on a synthetic session (`retrospective:{taskId}`)
+6. Processes REMEMBER commands from the response (agent stores learnings)
+7. Saves the remaining text (commands stripped) as a `TaskCommentType.Retrospective` comment
+8. Publishes `ActivityEventType.TaskRetrospectiveCompleted`
+9. Invalidates the synthetic session (in `finally` — runs on all exit paths)
+
+### Design Decisions
+
+- **Fire-and-forget**: Retrospectives don't block the merge response. If the server restarts mid-retrospective, the learning is lost — acceptable since it's supplementary.
+- **Restricted agent**: The agent runs with only `REMEMBER` permission and no tools. This prevents accidental code edits or shell commands during reflection.
+- **Idempotency**: If a `Retrospective` comment already exists for a task, the retrospective is skipped.
+- **Session isolation**: Uses `retrospective:{taskId}` as the room ID to prevent contaminating the agent's real conversation sessions.
+- **Latest review feedback**: Fetches the 20 most recent review messages (descending by time), reversed for chronological display in the prompt. Last 5 shown.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `src/AgentAcademy.Server/Services/RetrospectiveService.cs` | Orchestrates the retrospective lifecycle |
+| `src/AgentAcademy.Server/Services/PromptBuilder.cs` | `BuildRetrospectivePrompt` method |
+| `src/AgentAcademy.Server/Commands/Handlers/MergeTaskHandler.cs` | Fire-and-forget trigger |
+| `tests/AgentAcademy.Server.Tests/RetrospectiveServiceTests.cs` | 24 tests |
+
+## Learning Digests
+
+> **Status: Implemented** — `LearningDigestService` periodically synthesizes retrospective summaries into cross-cutting shared memories.
+
+After enough retrospective comments accumulate (configurable threshold, default: 5), the system automatically asks the planner agent to review them and extract cross-cutting learnings. These learnings are stored as `category: shared` memories visible to all agents.
+
+### Lifecycle
+
+1. After each retrospective completes, `RetrospectiveService` triggers `LearningDigestService.TryGenerateDigestAsync()` (fire-and-forget)
+2. Service checks for undigested retrospective comments (`CommentType == Retrospective` not claimed by a `Completed` digest)
+3. If count ≥ threshold (or `force: true`), creates a `Pending` digest and claims sources transactionally
+4. Builds a digest prompt via `PromptBuilder.BuildDigestPrompt`
+5. Runs the planner agent with **restricted permissions** (REMEMBER only, no tools) on a synthetic session (`digest:{digestId}`)
+6. Processes REMEMBER commands from the response
+7. Enforces `category: shared` on all created memories (defense-in-depth via `EnforceSharedCategoryAsync`)
+8. Updates digest entity with summary and memories count; marks `Completed`
+9. Publishes `ActivityEventType.LearningDigestCompleted`
+
+### Failure Recovery
+
+- **Failed digests release their claims**: If the executor throws, the digest is marked `Failed` and its `LearningDigestSource` rows are deleted. The retrospectives become available for the next digest.
+- **Concurrent trigger safety**: A `SemaphoreSlim` prevents concurrent digest generation. If a second trigger arrives while one is running, a `_pendingRerun` flag ensures one more pass after the current run finishes (no lost triggers).
+- **Unique constraint on sources**: Each retrospective comment can only be claimed by one digest. Concurrent claim attempts fail cleanly via `DbUpdateException` catch.
+
+### Configuration
+
+| Setting | Key | Default | Description |
+|---------|-----|---------|-------------|
+| Digest threshold | `digest.retrospectiveThreshold` | 5 | Minimum undigested retrospectives before auto-generating |
+
+### Manual Triggering
+
+> **Status: Implemented** — `GENERATE_DIGEST` command allows manual/admin digest generation.
+
+The `GENERATE_DIGEST` command wraps `LearningDigestService.TryGenerateDigestAsync()`, enabling the planner agent or human (via Consultant API) to trigger digest generation on demand.
+
+**Args:**
+- `force` (bool, optional, default: `false`): When `true`, bypasses the threshold check and generates a digest from any available undigested retrospectives. When `false`, only generates if undigested count meets the configured threshold.
+
+**Response:**
+- `generated` (bool): Whether a digest was created.
+- `digestId` (int, present when `generated=true`): The ID of the created digest.
+- `message` (string): Human-readable status.
+
+**Permissions:** Planner (`Aristotle`) only. Also available via `POST /api/commands/execute` (async — returns 202 + polling).
+
+**Not retry-safe:** Digest generation runs the planner agent and creates persistent state. Not idempotent.
+
+### REST API
+
+> **Status: Implemented** — Read-only REST endpoints for digest history at `/api/digests`.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/digests` | GET | Paginated digest list. Query params: `status` (Pending/Completed/Failed), `limit` (1-100, default 20), `offset` (default 0). Returns `{ digests, total, limit, offset }`. |
+| `/api/digests/{id}` | GET | Single digest with source retrospective details. Returns digest fields + `sources[]` (commentId, taskId, agentId, content, createdAt). Returns 404 if not found. |
+| `/api/digests/stats` | GET | Aggregate statistics: totalDigests, byStatus, totalMemoriesCreated, totalRetrospectivesProcessed, undigestedRetrospectives, lastCompletedAt. Undigested count excludes retrospectives claimed by Completed digests only (Failed digest claims don't count). |
+
+All endpoints require authentication. Status filter is case-insensitive; invalid values return 400.
+
+### Data Model
+
+```
+learning_digests
+├── Id (int, PK)
+├── CreatedAt (datetime)
+├── Summary (text)
+├── MemoriesCreated (int)
+├── RetrospectivesProcessed (int)
+└── Status (text: Pending/Completed/Failed)
+
+learning_digest_sources
+├── DigestId (int, FK → learning_digests)
+├── RetrospectiveCommentId (text, FK → task_comments, UNIQUE)
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `src/AgentAcademy.Server/Services/LearningDigestService.cs` | Orchestrates digest lifecycle |
+| `src/AgentAcademy.Server/Data/Entities/LearningDigestEntity.cs` | Digest persistence entity |
+| `src/AgentAcademy.Server/Data/Entities/LearningDigestSourceEntity.cs` | Junction entity |
+| `src/AgentAcademy.Server/Services/PromptBuilder.cs` | `BuildDigestPrompt` method |
+| `src/AgentAcademy.Server/Commands/Handlers/GenerateDigestHandler.cs` | `GENERATE_DIGEST` command handler |
+| `tests/AgentAcademy.Server.Tests/LearningDigestServiceTests.cs` | 19 tests |
+| `tests/AgentAcademy.Server.Tests/GenerateDigestHandlerTests.cs` | 12 tests |
+| `src/AgentAcademy.Server/Controllers/DigestController.cs` | REST endpoints for digest history |
+| `tests/AgentAcademy.Server.Tests/DigestControllerTests.cs` | 18 tests |
+
+### Retrospective History REST API
+
+> **Status: Implemented** — Read-only REST endpoints for retrospective history at `/api/retrospectives`.
+
+`RetrospectiveController` exposes retrospective comments (created by `RetrospectiveService` after task merge) as a read-only REST API:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/retrospectives` | Paginated list (default 20, max 100). Optional `agentId` and `taskId` filters (combinable). Returns `RetrospectiveListItem[]` with truncated content preview (200 chars). |
+| `GET /api/retrospectives/{commentId}` | Single retrospective with full content and current task metadata (title, status, completedAt). Returns 404 if comment doesn't exist or isn't a retrospective. |
+| `GET /api/retrospectives/stats` | Aggregate statistics: total count, per-agent breakdown (ordered by count), average content length, latest retrospective timestamp. |
+
+**Implementation notes:**
+- Queries `TaskCommentEntity` filtered by `CommentType == nameof(TaskCommentType.Retrospective)`.
+- Detail endpoint joins to `TaskEntity` for current task metadata (not historical snapshot — task fields may change after retrospective creation).
+- Stats uses client-side aggregation (lightweight projection loaded first) because SQLite provider can't translate `GroupBy` on anonymous types.
+- All endpoints require authentication.
+- Content preview truncation uses `Substring(0, 200)` with "…" suffix.
+
+**Files:**
+
+| File | Purpose |
+|------|---------|
+| `src/AgentAcademy.Server/Controllers/RetrospectiveController.cs` | REST endpoints + DTOs |
+| `tests/AgentAcademy.Server.Tests/RetrospectiveControllerTests.cs` | 21 tests |
+| `src/agent-academy-client/src/api/retrospectives.ts` | Frontend API client |
+
 ## Known Gaps
 
 - ~~**Memory search**: `RECALL` with `query` implies full-text search. Need to decide: exact key match only, LIKE patterns, or FTS5?~~ **Resolved** — FTS5 with BM25 ranking, LIKE fallback.
@@ -205,3 +357,8 @@ Own shared memories (created by the same agent) appear in `=== YOUR MEMORIES ===
 | 2026-04-04 | Added `shared` category for cross-agent knowledge sharing. Shared memories visible to all agents in RECALL, LIST_MEMORIES, and prompt injection. Known gap resolved. | shared-memory-category |
 | 2026-04-04 | Added EXPORT_MEMORIES and IMPORT_MEMORIES commands + REST endpoints for bulk memory operations. Import validates categories, 500-char limit, 500-entry cap, upsert semantics. Known gap resolved. | memory-import-export |
 | 2026-04-04 | Added memory decay/TTL: optional TTL (hours) on REMEMBER/IMPORT, ExpiresAt filtering on all reads, LastAccessedAt tracking, staleness detection (30-day threshold), ⚠️STALE prompt tags, REST cleanup endpoint. Known gap resolved. | memory-decay-ttl |
+| 2026-04-13 | Added memory browser: `GET /api/memories/browse` (FTS5 search, category filter, expired exclusion, agent-scoped), `GET /api/memories/stats` (per-category counts), `DELETE /api/memories?agentId&key` (individual delete). Frontend `MemoryBrowserPanel` in sidebar. CancellationToken on all endpoints. | feat/memory-browser |
+| 2026-04-13 | Added post-task retrospectives. `RetrospectiveService` runs an automated retrospective after MERGE_TASK — the assigned agent reflects on the task, stores learnings via REMEMBER, and produces a Retrospective comment. `TaskCommentType.Retrospective` added. Fire-and-forget from MergeTaskHandler with session cleanup in finally block. Restricted agent permissions (REMEMBER only, no tools). Idempotency guard. 24 new tests (4302 total). | feat/agent-retrospectives |
+| 2026-04-13 | Added learning digests. `LearningDigestService` periodically synthesizes retrospective summaries into cross-cutting shared memories. Planner reviews accumulated retrospectives, stores shared learnings. Failure recovery (failed digests release claims), concurrent trigger safety (rerun flag), configurable threshold (default: 5). Triggered from RetrospectiveService after each retrospective completes. 19 new tests. | feat/learning-digest |
+| 2026-04-13 | Added `GENERATE_DIGEST` command for manual/admin digest triggering. Optional `force` arg bypasses threshold. Added to planner permissions, human command allowlist (async), and startup prompt. 12 new tests. | feat/generate-digest-command |
+| 2026-04-14 | Added real-time SignalR refresh for MemoryBrowserPanel. When `LearningDigestCompleted` fires, `useWorkspace` increments `memoryVersion` counter → `WorkspaceContent` → `MemoryBrowserPanel.refreshTrigger` prop with `useRef` guard. Follows `digestVersion`/`retroVersion` pattern. 3 new tests (2273 total frontend). | develop |

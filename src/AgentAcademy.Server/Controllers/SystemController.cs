@@ -1,6 +1,8 @@
 using AgentAcademy.Server.Commands.Handlers;
+using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,34 +16,37 @@ namespace AgentAcademy.Server.Controllers;
 [ApiController]
 public class SystemController : ControllerBase
 {
-    private readonly RoomService _roomService;
-    private readonly AgentLocationService _agentLocationService;
-    private readonly BreakoutRoomService _breakoutRoomService;
-    private readonly ActivityPublisher _activity;
+    private readonly IRoomService _roomService;
+    private readonly IAgentLocationService _agentLocationService;
+    private readonly IBreakoutRoomService _breakoutRoomService;
+    private readonly IGoalCardService _goalCardService;
+    private readonly IActivityPublisher _activity;
     private readonly IAgentExecutor _executor;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly AgentAcademyDbContext _db;
-    private readonly LlmUsageTracker _usageTracker;
-    private readonly AgentErrorTracker _errorTracker;
+    private readonly ILlmUsageTracker _usageTracker;
+    private readonly IAgentErrorTracker _errorTracker;
     private readonly ILogger<SystemController> _logger;
 
     private static readonly DateTime StartedAt = DateTime.UtcNow;
 
     public SystemController(
-        RoomService roomService,
-        AgentLocationService agentLocationService,
-        BreakoutRoomService breakoutRoomService,
-        ActivityPublisher activity,
+        IRoomService roomService,
+        IAgentLocationService agentLocationService,
+        IBreakoutRoomService breakoutRoomService,
+        IGoalCardService goalCardService,
+        IActivityPublisher activity,
         IAgentExecutor executor,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         AgentAcademyDbContext db,
-        LlmUsageTracker usageTracker,
-        AgentErrorTracker errorTracker,
+        ILlmUsageTracker usageTracker,
+        IAgentErrorTracker errorTracker,
         ILogger<SystemController> logger)
     {
         _roomService = roomService;
         _agentLocationService = agentLocationService;
         _breakoutRoomService = breakoutRoomService;
+        _goalCardService = goalCardService;
         _activity = activity;
         _executor = executor;
         _catalog = catalog;
@@ -96,7 +101,6 @@ public class SystemController : ControllerBase
                 "GET  /api/agents/:agentId/knowledge",
                 "POST /api/agents/:agentId/knowledge",
                 "GET  /api/knowledge",
-                "POST /api/agents/:agentId/run",
                 "GET  /api/activity/recent",
             },
         });
@@ -152,6 +156,7 @@ public class SystemController : ControllerBase
             var agentLocations = await _agentLocationService.GetAgentLocationsAsync();
             var breakoutRooms = await _breakoutRoomService.GetAllBreakoutRoomsAsync();
             var recentActivity = _activity.GetRecentActivity();
+            var goalCardSummary = await _goalCardService.GetSummaryAsync();
 
             var overview = new WorkspaceOverview(
                 ConfiguredAgents: [.. _catalog.Agents],
@@ -159,6 +164,7 @@ public class SystemController : ControllerBase
                 RecentActivity: [.. recentActivity],
                 AgentLocations: agentLocations,
                 BreakoutRooms: breakoutRooms,
+                GoalCards: goalCardSummary,
                 GeneratedAt: DateTime.UtcNow
             );
             return Ok(overview);
@@ -317,7 +323,7 @@ public class SystemController : ControllerBase
         try
         {
             if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+                return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
             var since = hoursBack.HasValue
                 ? DateTime.UtcNow.AddHours(-hoursBack.Value)
@@ -364,7 +370,7 @@ public class SystemController : ControllerBase
         try
         {
             if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+                return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
             var since = hoursBack.HasValue
                 ? DateTime.UtcNow.AddHours(-hoursBack.Value)
@@ -391,7 +397,7 @@ public class SystemController : ControllerBase
         try
         {
             if (hoursBack.HasValue && (hoursBack.Value < 1 || hoursBack.Value > 8760))
-                return BadRequest(new { code = "invalid_hours_back", message = "hoursBack must be between 1 and 8760" });
+                return BadRequest(ApiProblem.BadRequest("hoursBack must be between 1 and 8760", "invalid_hours_back"));
 
             var since = hoursBack.HasValue
                 ? DateTime.UtcNow.AddHours(-hoursBack.Value)
@@ -408,6 +414,7 @@ public class SystemController : ControllerBase
             return Problem("Failed to retrieve error records.");
         }
     }
+
 }
 
 public record ServerInstanceDto(

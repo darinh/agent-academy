@@ -19,6 +19,7 @@ import {
   DeleteRegular,
   DismissRegular,
   DocumentRegular,
+  ErrorCircleRegular,
 } from "@fluentui/react-icons";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -39,6 +40,18 @@ const useLocalStyles = makeStyles({
   toolbarTitle: { display: "none" },
   spacer: { flex: 1 },
   errorText: { color: tokens.colorPaletteRedForeground1, fontSize: "13px" },
+  errorBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    ...shorthands.padding("8px", "16px"),
+    ...shorthands.margin("0", "24px", "0"),
+    ...shorthands.borderRadius("6px"),
+    backgroundColor: "rgba(220, 53, 69, 0.08)",
+    border: "1px solid rgba(220, 53, 69, 0.2)",
+    color: "var(--aa-copper, #dc3545)",
+    fontSize: "13px",
+  },
   content: {
     flex: 1,
     overflow: "auto",
@@ -199,7 +212,6 @@ export default function PlanPanel({ roomId }: PlanPanelProps) {
       <div className={s.toolbar}>
         <span className={s.toolbarTitle}>Collaboration Plan</span>
         <span className={s.spacer} />
-        {error && <span className={s.errorText}>{error}</span>}
 
         {editing ? (
           <>
@@ -237,6 +249,14 @@ export default function PlanPanel({ roomId }: PlanPanelProps) {
           </>
         )}
       </div>
+
+      {error && (
+        <div className={s.errorBanner}>
+          <ErrorCircleRegular fontSize={16} />
+          <span style={{ flex: 1 }}>{error}</span>
+          <Button appearance="subtle" size="small" onClick={() => setError(null)}>Dismiss</Button>
+        </div>
+      )}
 
       <div className={s.content}>
         {editing ? (

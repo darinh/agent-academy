@@ -1,0 +1,97 @@
+using System.Text.Json.Serialization;
+
+namespace AgentAcademy.Forge.Models;
+
+/// <summary>
+/// On-disk run.json trace contract. This is the consumer-facing run summary.
+/// </summary>
+public sealed record RunTrace
+{
+    [JsonPropertyName("runId")]
+    public required string RunId { get; init; }
+
+    [JsonPropertyName("taskId")]
+    public required string TaskId { get; init; }
+
+    [JsonPropertyName("methodologyVersion")]
+    public required string MethodologyVersion { get; init; }
+
+    [JsonPropertyName("startedAt")]
+    public required DateTime StartedAt { get; init; }
+
+    [JsonPropertyName("endedAt")]
+    public DateTime? EndedAt { get; init; }
+
+    [JsonPropertyName("outcome")]
+    public required string Outcome { get; init; }
+
+    [JsonPropertyName("controlOutcome")]
+    public string? ControlOutcome { get; init; }
+
+    [JsonPropertyName("pipelineTokens")]
+    public required TokenCount PipelineTokens { get; init; }
+
+    [JsonPropertyName("controlTokens")]
+    public required TokenCount ControlTokens { get; init; }
+
+    [JsonPropertyName("pipelineCost")]
+    public decimal? PipelineCost { get; init; }
+
+    [JsonPropertyName("controlCost")]
+    public decimal? ControlCost { get; init; }
+
+    [JsonPropertyName("costRatio")]
+    public double? CostRatio { get; init; }
+
+    /// <summary>Hash of the control arm artifact (sha256:... prefixed), when control was executed.</summary>
+    [JsonPropertyName("controlArtifactHash")]
+    public string? ControlArtifactHash { get; init; }
+
+    /// <summary>Reason the run was aborted, when Outcome is "aborted" (e.g. "budget_exceeded").</summary>
+    [JsonPropertyName("abortReason")]
+    public string? AbortReason { get; init; }
+
+    /// <summary>
+    /// Outcome of the terminal fidelity phase: "pass", "fail", "partial", or null if fidelity was not configured.
+    /// Independent of the pipeline Outcome — a succeeded pipeline may have fidelity "fail".
+    /// </summary>
+    [JsonPropertyName("fidelityOutcome")]
+    public string? FidelityOutcome { get; init; }
+
+    /// <summary>Hash of the fidelity result artifact (sha256:... prefixed), or null.</summary>
+    [JsonPropertyName("fidelityArtifactHash")]
+    public string? FidelityArtifactHash { get; init; }
+
+    /// <summary>Hash of the source-intent artifact (sha256:... prefixed), or null.</summary>
+    [JsonPropertyName("sourceIntentArtifactHash")]
+    public string? SourceIntentArtifactHash { get; init; }
+
+    /// <summary>Drift codes detected by the fidelity phase. Empty list means no drift.</summary>
+    [JsonPropertyName("driftCodes")]
+    public IReadOnlyList<string>? DriftCodes { get; init; }
+
+    /// <summary>Token count for source-intent generation + fidelity checking (separate from pipeline).</summary>
+    [JsonPropertyName("fidelityTokens")]
+    public TokenCount? FidelityTokens { get; init; }
+
+    /// <summary>Cost of source-intent generation + fidelity checking.</summary>
+    [JsonPropertyName("fidelityCost")]
+    public decimal? FidelityCost { get; init; }
+
+    /// <summary>
+    /// Map keyed by phaseId. Omit key if phase produced no terminal artifact.
+    /// Values are "sha256:..." prefixed hashes.
+    /// </summary>
+    [JsonPropertyName("finalArtifactHashes")]
+    public required Dictionary<string, string> FinalArtifactHashes { get; init; }
+}
+
+/// <summary>Token count for input/output.</summary>
+public sealed record TokenCount
+{
+    [JsonPropertyName("in")]
+    public int In { get; init; }
+
+    [JsonPropertyName("out")]
+    public int Out { get; init; }
+}

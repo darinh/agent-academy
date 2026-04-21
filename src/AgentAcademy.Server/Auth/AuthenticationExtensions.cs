@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
@@ -15,12 +16,20 @@ namespace AgentAcademy.Server.Auth;
 public static class AuthenticationExtensions
 {
     /// <summary>
+    /// Name of the cookie that carries the authenticated user session. Shared
+    /// with the CSRF protection middleware so it can detect cookie-authenticated
+    /// browser requests without taking a dependency on the CookieAuthenticationOptions.
+    /// </summary>
+    public const string AuthCookieName = "AgentAcademy.Auth";
+
+    /// <summary>
     /// Registers GitHub OAuth, Consultant key auth, and authorization policies
     /// based on the precomputed <see cref="AppAuthSetup"/>.
     /// </summary>
     public static IServiceCollection AddAppAuthentication(
         this IServiceCollection services,
-        AppAuthSetup setup)
+        AppAuthSetup setup,
+        IWebHostEnvironment environment)
     {
         if (!setup.AnyAuthEnabled)
             return services;
@@ -30,12 +39,16 @@ public static class AuthenticationExtensions
             if (setup.GitHubAuthEnabled && setup.ConsultantAuthEnabled)
             {
                 options.DefaultScheme = "MultiAuth";
-                options.DefaultChallengeScheme = "GitHub";
+                // Challenge via the cookie scheme so unauthenticated API/SignalR
+                // requests get a 401 (via OnRedirectToLogin) instead of a 302 to
+                // GitHub's OAuth authorize URL. The SPA initiates login explicitly
+                // by navigating to /api/auth/login, which Challenges "GitHub".
+                options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             }
             else if (setup.GitHubAuthEnabled)
             {
                 options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = "GitHub";
+                options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
             }
             else
             {
@@ -45,7 +58,7 @@ public static class AuthenticationExtensions
 
         if (setup.GitHubAuthEnabled)
         {
-            AddGitHubOAuth(authBuilder, setup);
+            AddGitHubOAuth(authBuilder, setup, environment);
         }
 
         if (setup.ConsultantAuthEnabled)
@@ -71,16 +84,31 @@ public static class AuthenticationExtensions
 
     private static void AddGitHubOAuth(
         AuthenticationBuilder authBuilder,
-        AppAuthSetup setup)
+        AppAuthSetup setup,
+        IWebHostEnvironment environment)
     {
+        // Spec 015 §2.1: auth cookie is HttpOnly + SameSite=None + Secure=true
+        // in production so it survives cross-site redirects from the GitHub
+        // OAuth callback and is usable from the SPA over HTTPS. Browsers drop
+        // Secure cookies over plain HTTP and drop SameSite=None cookies that
+        // lack Secure, so Development relaxes both: SameAsRequest (emits the
+        // Secure attribute only when the request itself is HTTPS) and
+        // SameSite=Lax (dev SPA proxies /api through Vite at the same origin).
+        var isDevelopment = environment.IsDevelopment();
+        var sameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None;
+        var securePolicy = isDevelopment
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+
         authBuilder
             .AddCookie(options =>
             {
                 options.LoginPath = "/api/auth/login";
                 options.LogoutPath = "/api/auth/logout";
-                options.Cookie.Name = "AgentAcademy.Auth";
+                options.Cookie.Name = AuthCookieName;
                 options.Cookie.HttpOnly = true;
-                options.Cookie.SameSite = SameSiteMode.Lax;
+                options.Cookie.SameSite = sameSite;
+                options.Cookie.SecurePolicy = securePolicy;
                 options.ExpireTimeSpan = TimeSpan.FromDays(7);
                 options.SlidingExpiration = true;
 
@@ -129,7 +157,7 @@ public static class AuthenticationExtensions
                         if (!string.IsNullOrEmpty(context.AccessToken))
                         {
                             var tokenProvider = context.HttpContext.RequestServices
-                                .GetRequiredService<CopilotTokenProvider>();
+                                .GetRequiredService<ICopilotTokenProvider>();
                             // GitHub App refresh tokens are valid for 6 months (15,811,200 seconds).
                             var refreshTokenExpiry = !string.IsNullOrEmpty(context.RefreshToken)
                                 ? TimeSpan.FromDays(180)

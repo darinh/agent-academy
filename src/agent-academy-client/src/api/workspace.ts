@@ -1,27 +1,21 @@
 import type {
   WorkspaceOverview,
-  HealthResult,
   InstanceHealthResult,
   WorkspaceMeta,
   ProjectScanResult,
   OnboardResult,
   BrowseResult,
   PlanContent,
-  ActivityEvent,
   RestartHistoryResponse,
   RestartStatsDto,
   SystemSettings,
 } from "./types";
-import { apiUrl, request } from "./core";
+import { apiUrl, request, downloadFile } from "./core";
 
 // ── Overview & Health ──────────────────────────────────────────────────
 
 export function getOverview(): Promise<WorkspaceOverview> {
   return request<WorkspaceOverview>(apiUrl("/api/overview"));
-}
-
-export function getHealth(): Promise<HealthResult> {
-  return request<HealthResult>(apiUrl("/healthz"));
 }
 
 export function getInstanceHealth(): Promise<InstanceHealthResult> {
@@ -36,12 +30,6 @@ export function getRestartHistory(limit = 20, offset = 0): Promise<RestartHistor
 
 export function getRestartStats(hours = 24): Promise<RestartStatsDto> {
   return request<RestartStatsDto>(apiUrl(`/api/system/restarts/stats?hours=${hours}`));
-}
-
-// ── Activity ───────────────────────────────────────────────────────────
-
-export function getRecentActivity(): Promise<ActivityEvent[]> {
-  return request<ActivityEvent[]>(apiUrl("/api/activity/recent"));
 }
 
 // ── Workspace / Project ────────────────────────────────────────────────
@@ -128,4 +116,27 @@ export async function updateSystemSettings(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
   });
+}
+
+// ── Data Export ─────────────────────────────────────────────────────────
+
+export function exportAgents(format: "json" | "csv" = "json"): Promise<void> {
+  const ext = format === "csv" ? "csv" : "json";
+  return downloadFile(apiUrl(`/api/export/agents?format=${format}`), `agents-export.${ext}`);
+}
+
+export function exportUsage(
+  format: "json" | "csv" = "json",
+  hoursBack?: number,
+): Promise<void> {
+  const params = new URLSearchParams({ format });
+  if (hoursBack != null) params.set("hoursBack", String(hoursBack));
+  const ext = format === "csv" ? "csv" : "json";
+  return downloadFile(apiUrl(`/api/export/usage?${params}`), `usage-export.${ext}`);
+}
+
+// ── Setting by Key ─────────────────────────────────────────────────────
+
+export function getSettingByKey(key: string): Promise<{ key: string; value: string }> {
+  return request<{ key: string; value: string }>(apiUrl(`/api/settings/${encodeURIComponent(key)}`));
 }

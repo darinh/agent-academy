@@ -19,6 +19,8 @@ public class SprintServiceEventTests : IDisposable
     private readonly AgentAcademyDbContext _db;
     private readonly ActivityBroadcaster _broadcaster;
     private readonly SprintService _service;
+    private readonly SprintStageService _stageService;
+    private readonly SprintArtifactService _artifactService;
     private readonly List<ActivityEvent> _capturedEvents = [];
 
     public SprintServiceEventTests()
@@ -36,7 +38,9 @@ public class SprintServiceEventTests : IDisposable
         _broadcaster = new ActivityBroadcaster();
         _broadcaster.Subscribe(evt => _capturedEvents.Add(evt));
 
-        _service = new SprintService(_db, _broadcaster, NullLogger<SprintService>.Instance);
+        _service = new SprintService(_db, _broadcaster, new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
+        _stageService = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance);
+        _artifactService = new SprintArtifactService(_db, _broadcaster, NullLogger<SprintArtifactService>.Instance);
     }
 
     public void Dispose()
@@ -89,11 +93,11 @@ public class SprintServiceEventTests : IDisposable
     public async Task AdvanceStage_SignOffRequired_BroadcastsSignoffRequestedMetadata()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
         _capturedEvents.Clear();
 
         // Advance from Intake → Planning (requires sign-off by default)
-        await _service.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
 
         var evt = Assert.Single(_capturedEvents);
         Assert.Equal(ActivityEventType.SprintStageAdvanced, evt.Type);
@@ -108,11 +112,11 @@ public class SprintServiceEventTests : IDisposable
     public async Task ApproveAdvance_BroadcastsApprovedMetadata()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
-        await _service.AdvanceStageAsync(sprint.Id); // triggers sign-off
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _stageService.AdvanceStageAsync(sprint.Id); // triggers sign-off
         _capturedEvents.Clear();
 
-        await _service.ApproveAdvanceAsync(sprint.Id);
+        await _stageService.ApproveAdvanceAsync(sprint.Id);
 
         var evt = Assert.Single(_capturedEvents);
         Assert.NotNull(evt.Metadata);
@@ -125,11 +129,11 @@ public class SprintServiceEventTests : IDisposable
     public async Task RejectAdvance_BroadcastsRejectedMetadata()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
-        await _service.AdvanceStageAsync(sprint.Id); // triggers sign-off
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await _stageService.AdvanceStageAsync(sprint.Id); // triggers sign-off
         _capturedEvents.Clear();
 
-        await _service.RejectAdvanceAsync(sprint.Id);
+        await _stageService.RejectAdvanceAsync(sprint.Id);
 
         var evt = Assert.Single(_capturedEvents);
         Assert.NotNull(evt.Metadata);
@@ -146,7 +150,7 @@ public class SprintServiceEventTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         _capturedEvents.Clear();
 
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
 
         var evt = Assert.Single(_capturedEvents);
         Assert.Equal(ActivityEventType.SprintArtifactStored, evt.Type);
@@ -161,10 +165,10 @@ public class SprintServiceEventTests : IDisposable
     public async Task StoreArtifact_UpdateExisting_BroadcastsWithIsUpdateTrue()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
         _capturedEvents.Clear();
 
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
 
         var evt = Assert.Single(_capturedEvents);
         Assert.NotNull(evt.Metadata);
@@ -177,7 +181,7 @@ public class SprintServiceEventTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         _capturedEvents.Clear();
 
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
 
         var evt = Assert.Single(_capturedEvents);
         Assert.NotNull(evt.Metadata);
@@ -188,10 +192,10 @@ public class SprintServiceEventTests : IDisposable
     public async Task StoreArtifact_UpdateExisting_MetadataIncludesArtifactId()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
         _capturedEvents.Clear();
 
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "agent-1");
 
         var evt = Assert.Single(_capturedEvents);
         Assert.NotNull(evt.Metadata);
@@ -280,10 +284,10 @@ public class SprintServiceEventTests : IDisposable
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
         Assert.Single(_capturedEvents);
 
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
         Assert.Equal(2, _capturedEvents.Count);
 
-        await _service.AdvanceStageAsync(sprint.Id);
+        await _stageService.AdvanceStageAsync(sprint.Id);
         Assert.Equal(3, _capturedEvents.Count);
 
         // Verify each event has distinct type/metadata
@@ -298,9 +302,9 @@ public class SprintServiceEventTests : IDisposable
     public async Task AllEvents_IncludeSprintIdInMetadata()
     {
         var sprint = await _service.CreateSprintAsync(TestWorkspace);
-        await _service.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
-        await _service.AdvanceStageAsync(sprint.Id);
-        await _service.ApproveAdvanceAsync(sprint.Id);
+        await _artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument, "a1");
+        await _stageService.AdvanceStageAsync(sprint.Id);
+        await _stageService.ApproveAdvanceAsync(sprint.Id);
         await _service.CompleteSprintAsync(sprint.Id, force: true);
 
         Assert.Equal(5, _capturedEvents.Count);

@@ -1,6 +1,8 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -8,14 +10,19 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// Handles MERGE_TASK — squash-merges a task branch into develop.
 /// Only Reviewer or Planner roles may invoke this command.
 /// The task must be in Approved status and have a branch name set.
+/// After a successful merge, fires a post-task retrospective (fire-and-forget).
 /// </summary>
 public sealed class MergeTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
+    private readonly ILogger<MergeTaskHandler> _logger;
 
-    public MergeTaskHandler(GitService gitService)
+    public MergeTaskHandler(
+        IGitService gitService,
+        ILogger<MergeTaskHandler> logger)
     {
         _gitService = gitService;
+        _logger = logger;
     }
 
     public string CommandName => "MERGE_TASK";
@@ -88,9 +95,9 @@ public sealed class MergeTaskHandler : ICommandHandler
             taskId = taskIdValue;
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var taskOrchestration = context.Services.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Validate task exists
         var task = await taskQueries.GetTaskAsync(taskId);
@@ -128,8 +135,24 @@ public sealed class MergeTaskHandler : ICommandHandler
 
         try
         {
-            // Set task to Merging status before git ops
-            await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Merging);
+            // Atomically claim Approved → Merging. If two MERGE_TASK handlers
+            // race after the validation check above, only one will win this
+            // claim — the loser returns Conflict instead of double-merging.
+            var claimed = await taskQueries.TryClaimForMergeAsync(taskId);
+            if (!claimed)
+            {
+                // Re-read for an accurate error message — task likely transitioned
+                // to Merging or Completed between the validation read and the claim.
+                var current = await taskQueries.GetTaskAsync(taskId);
+                var actualStatus = current?.Status.ToString() ?? "unknown";
+                return command with
+                {
+                    Status = CommandStatus.Error,
+                    ErrorCode = CommandErrorCode.Conflict,
+                    Error = $"Task is no longer in Approved status (current: {actualStatus}). " +
+                            "Another merge may have started concurrently."
+                };
+            }
 
             var commitMessage = BuildCommitMessage(task.Type, task.Title);
             var mergeCommitSha = await _gitService.SquashMergeAsync(task.BranchName, commitMessage, context.GitIdentity);
@@ -141,6 +164,24 @@ public sealed class MergeTaskHandler : ICommandHandler
                 await messages.PostSystemStatusAsync(context.RoomId,
                     $"✅ Task \"{task.Title}\" merged from {task.BranchName} into develop.");
             }
+
+            // Fire-and-forget: run post-task retrospective for the assigned agent
+            // Resolved at execution time to break DI cycle:
+            // RetrospectiveService → CommandPipeline → MergeTaskHandler → RetrospectiveService
+            var retrospective = context.Services.GetRequiredService<IRetrospectiveService>();
+            var retroTaskId = taskId;
+            var retroAgentId = task.AssignedAgentId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await retrospective.RunRetrospectiveAsync(retroTaskId, retroAgentId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Post-merge retrospective failed for task {TaskId}", retroTaskId);
+                }
+            });
 
             return command with
             {

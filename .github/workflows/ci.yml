@@ -7,6 +7,18 @@ on:
     branches: [develop, main]
 
 jobs:
+  spec-drift:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for spec drift
+        run: scripts/check-spec-drift.sh
+
   commit-lint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -90,8 +102,21 @@ jobs:
       - name: Build .NET
         run: dotnet build --no-restore
 
-      - name: Test .NET
-        run: dotnet test --no-build
+      - name: Test .NET with coverage
+        run: >-
+          dotnet test --no-build
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Generate .NET coverage report
+        run: >-
+          reportgenerator
+          -reports:"TestResults/**/coverage.cobertura.xml"
+          -targetdir:"TestResults/report"
+          -reporttypes:"Cobertura;TextSummary;MarkdownSummaryGithub"
 
       - name: Install client deps
         working-directory: src/agent-academy-client
@@ -101,10 +126,55 @@ jobs:
         working-directory: src/agent-academy-client
         run: npm run build
 
-      - name: Test client
+      - name: Test client with coverage
         working-directory: src/agent-academy-client
-        run: npm test
+        run: npm run test:coverage
 
       - name: Typecheck client
         working-directory: src/agent-academy-client
         run: npx tsc --noEmit
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # .NET coverage
+          echo "### Backend (.NET)" >> $GITHUB_STEP_SUMMARY
+          if [ -f TestResults/report/Summary.txt ]; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat TestResults/report/Summary.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No backend coverage report generated._" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Frontend coverage — parse Cobertura XML for line-rate
+          echo "### Frontend (Vitest)" >> $GITHUB_STEP_SUMMARY
+          FRONTEND_COV="src/agent-academy-client/coverage/cobertura-coverage.xml"
+          if [ -f "$FRONTEND_COV" ]; then
+            LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$FRONTEND_COV" | head -1)
+            if [ -n "$LINE_RATE" ]; then
+              PERCENT=$(echo "$LINE_RATE * 100" | bc -l | xargs printf "%.1f")
+              echo "**Line coverage**: ${PERCENT}%" >> $GITHUB_STEP_SUMMARY
+            fi
+            BRANCH_RATE=$(grep -oP 'branch-rate="\K[^"]+' "$FRONTEND_COV" | head -1)
+            if [ -n "$BRANCH_RATE" ]; then
+              PERCENT=$(echo "$BRANCH_RATE * 100" | bc -l | xargs printf "%.1f")
+              echo "**Branch coverage**: ${PERCENT}%" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "_No frontend coverage report generated._" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            TestResults/report/
+            src/agent-academy-client/coverage/
+          retention-days: 30

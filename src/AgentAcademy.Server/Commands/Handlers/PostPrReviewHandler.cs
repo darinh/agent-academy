@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -84,8 +85,8 @@ public sealed class PostPrReviewHandler : ICommandHandler
             }
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Load task
         var task = await taskQueries.GetTaskAsync(taskId);

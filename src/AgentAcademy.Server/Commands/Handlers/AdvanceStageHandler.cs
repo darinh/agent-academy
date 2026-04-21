@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -22,9 +23,24 @@ public sealed class AdvanceStageHandler : ICommandHandler
             sprintId = sid;
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
-        var sprintService = context.Services.GetRequiredService<SprintService>();
-        var sessionService = context.Services.GetRequiredService<ConversationSessionService>();
+        // force=true skips prerequisites — restricted to Human role only.
+        // Agents cannot bypass task completion gates autonomously.
+        var force = false;
+        if (string.Equals(context.AgentRole, "Human", StringComparison.OrdinalIgnoreCase)
+            && command.Args.TryGetValue("force", out var forceObj))
+        {
+            force = forceObj switch
+            {
+                bool b => b,
+                string s => s.Equals("true", StringComparison.OrdinalIgnoreCase),
+                _ => false
+            };
+        }
+
+        var roomService = context.Services.GetRequiredService<IRoomService>();
+        var sprintService = context.Services.GetRequiredService<ISprintService>();
+        var stageService = context.Services.GetRequiredService<ISprintStageService>();
+        var sessionService = context.Services.GetRequiredService<IConversationSessionService>();
 
         // If no explicit sprintId, resolve from active workspace
         if (string.IsNullOrEmpty(sprintId))
@@ -57,7 +73,7 @@ public sealed class AdvanceStageHandler : ICommandHandler
         try
         {
             var previousStage = (await sprintService.GetSprintByIdAsync(sprintId))?.CurrentStage;
-            var sprint = await sprintService.AdvanceStageAsync(sprintId);
+            var sprint = await stageService.AdvanceStageAsync(sprintId, force);
 
             // If awaiting sign-off, return a specific message — don't create a new session
             if (sprint.AwaitingSignOff)
@@ -79,21 +95,23 @@ public sealed class AdvanceStageHandler : ICommandHandler
                 };
             }
 
-            // Create a new conversation session for the new stage.
-            // Non-fatal: stage advancement succeeds even if session creation fails
-            // (matches graceful degradation pattern used throughout sprint context loading).
+            // Rotate conversation sessions for every room in the sprint's
+            // workspace so each stage gets a clean session boundary. Mirrors
+            // the HTTP approve path (SprintController.ApproveAdvance) which
+            // calls the same method — without this, agent-driven advances
+            // leave other rooms stuck on the previous stage's session and
+            // bleed context across iterations (spec 013 §Stage Advancement).
+            // Non-fatal: stage already advanced; failures are surfaced as a
+            // warning so the command succeeds end-to-end.
             string? sessionWarning = null;
-            if (!string.IsNullOrEmpty(context.RoomId))
+            try
             {
-                try
-                {
-                    await sessionService.CreateSessionForStageAsync(
-                        context.RoomId, sprint.Id, sprint.CurrentStage);
-                }
-                catch (Exception)
-                {
-                    sessionWarning = "Stage advanced but new conversation session could not be created.";
-                }
+                await sessionService.RotateWorkspaceSessionsForStageAsync(
+                    sprint.WorkspacePath, sprint.Id, sprint.CurrentStage);
+            }
+            catch (Exception)
+            {
+                sessionWarning = "Stage advanced but workspace conversation sessions could not be rotated.";
             }
 
             return command with
@@ -106,7 +124,9 @@ public sealed class AdvanceStageHandler : ICommandHandler
                     ["previousStage"] = previousStage,
                     ["currentStage"] = sprint.CurrentStage,
                     ["warning"] = sessionWarning,
+                    ["forced"] = force,
                     ["message"] = $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}"
+                        + (force ? " (forced — prerequisites skipped)" : "")
                         + (sessionWarning is not null ? $" ⚠️ {sessionWarning}" : "")
                 }
             };

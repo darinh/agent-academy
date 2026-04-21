@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -67,10 +68,10 @@ public sealed class InviteToRoomHandler : ICommandHandler
 
         roomId = roomId.Trim();
 
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var agentLocations = context.Services.GetRequiredService<AgentLocationService>();
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var agentLocations = context.Services.GetRequiredService<IAgentLocationService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
 
         // Resolve agent by name or ID
         var allAgents = catalog.Agents;

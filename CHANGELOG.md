@@ -3,7 +3,54 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
+## Unreleased
+
+### Fixes
+
+- **005-workspace-runtime / 300-frontend-ui**: Fix archived session messages not showing agent messages. Root cause: `TrimMessagesAsync` deleted messages across all sessions indiscriminately, and the query leaked User messages cross-session into archived views. Fix: trim only active session messages (never delete archived session history); when an explicit sessionId is requested, return only that session's messages without cross-session leaking. Aligns `GetRoomMessagesAsync` with `RoomSnapshotBuilder` contract.
+- **300-frontend-ui**: Fix expanded messages auto-collapsing when new messages arrive. Root cause: `setExpandedMsgs` reset effect depended on `room` object reference (which changes on every poll) instead of `room?.id`. Also removed `thinkingAgents.length` from scroll-to-bottom effect so agent thinking state changes no longer force-scroll the viewport.
+
+### Features
+
+- **300-frontend-ui**: Expand/collapse all toggle for chat messages. "⊞ Expand" / "⊟ Collapse" button in SessionToolbar controls default expand state (persisted in localStorage). Per-message toggles override the default. State model: `defaultExpanded` boolean + `overrides` set (messages toggled opposite to default).
+- **300-frontend-ui**: Improved sidebar collapse behavior. Collapsed mode shows nav icons with tooltips (not just room dots). « / » toggle button always visible. Thumbtack pin button: when unpinned, sidebar auto-collapses on narrow viewports (< 900px) via `matchMedia`. Pin state persisted in localStorage.
+
+### Features
+
+- **019-forge-engine**: Crash recovery (`PipelineRunner.ResumeAsync`). Rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts (including crashed phases), resumes from first non-succeeded phase. Budget guard prevents overspend on resume. Idempotent for terminal runs. `IRunStore` gains `ReadTaskAsync`/`ReadMethodologyAsync`. 8 new tests (254 forge tests total). Closes Known Gap #6.
+- **010-task-management**: Task priority system. `TaskPriority` enum (`Critical`, `High`, `Medium`, `Low`) with int DB storage (0–3) for correct `ORDER BY ASC`. Priority on `TaskSnapshot`, `TaskAssignmentRequest`, `TaskEntity`. `PUT /api/tasks/{id}/priority` REST endpoint. `UPDATE_TASK` command accepts `priority` arg. `create_task` agent tool accepts optional priority. Tasks sorted by priority then createdAt in `GetTasksAsync`. Breakout sub-tasks inherit parent task priority. `PromptBuilder` includes priority in agent context. Frontend: priority badge in task list/detail, priority-first sort, `updateTaskPriority` API function. 20 new backend tests (4622 total).
+- **300-frontend-ui**: Manual session compaction button in `SessionToolbar`. "⟳ Compact" button calls `POST /api/rooms/{roomId}/compact` to reset agent CLI sessions and free context window space. Shows loading state, success/error feedback with auto-dismiss, fires `onCompacted` callback. `CompactRoomResult` type and `compactRoom()` API function in `api/rooms.ts`. 7 new frontend tests (2327 total).
+
+### CI/Infrastructure
+
+- **018-testing-strategy**: Automated CI coverage reporting. Backend uses coverlet + ReportGenerator for Cobertura XML + text summary. Frontend uses `@vitest/coverage-v8` with Cobertura + HTML output. Both uploaded as artifacts with 30-day retention. Job summary shows line/branch percentages. Local convenience script: `scripts/coverage.sh`.
+
+### Features
+
+- **008-agent-memory**: `GENERATE_DIGEST` command for manual/admin learning digest triggering. Optional `force` arg bypasses retrospective threshold. Added to planner permissions, human command allowlist (async execution), and planner startup prompt. 12 new tests (4362 total).
+
+### Documentation
+
+- **300-frontend-ui**: Document DigestPanel (learning digest history tab with stats, paginated list, detail with source retrospectives, race condition guards) and WorktreeStatusPanel (live worktree health widget in dashboard with auto-refresh, diff stats, dirty file preview).
+
+### Features
+
+- **008-agent-memory**: Retrospective history REST API. `RetrospectiveController` exposes read-only endpoints at `/api/retrospectives`: paginated list with agent filter, single retrospective with task metadata, and aggregate statistics (total, per-agent breakdown, average content length, latest timestamp). 21 new tests (4426 total).
+
+### Refactoring
+
+- **001-domain-model**: Extract 31 inline entity configurations from `AgentAcademyDbContext.OnModelCreating` into 10 `IEntityTypeConfiguration<T>` files in `Data/Configurations/`. DbContext reduced from 623→54 lines. Uses `ApplyConfigurationsFromAssembly` for automatic discovery.
+
+### Tests
+
+- **003-agent-system**: Add 22 behavioral tests for `AgentOrchestrator` — queue mechanics, conversation rounds, DM handling, startup recovery (4476 total).
+
 ## v2.0.1 (2026-04-12)
+
+### Refactoring
+
+- extract SprintArtifactService from SprintService (835→635 lines)
+- extract RoomLifecycleService from RoomService (887→679 lines)
 
 ### Fixes
 

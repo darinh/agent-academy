@@ -3,6 +3,7 @@ using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -30,38 +31,78 @@ public class SprintCommandHandlerTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddScoped<SprintService>();
+        services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
+        services.AddScoped<SprintStageService>();
+        services.AddScoped<ISprintStageService>(sp => sp.GetRequiredService<SprintStageService>());
+        services.AddScoped<SprintArtifactService>();
+        services.AddScoped<ISprintArtifactService>(sp => sp.GetRequiredService<SprintArtifactService>());
+        services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton(NullLogger<SprintService>.Instance)
             .AddSingleton(typeof(ILogger<SprintService>), sp => NullLogger<SprintService>.Instance);
+        services.AddSingleton(typeof(ILogger<SprintStageService>), sp => NullLogger<SprintStageService>.Instance);
+        services.AddSingleton(typeof(ILogger<SprintArtifactService>), sp => NullLogger<SprintArtifactService>.Instance);
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddSingleton(typeof(ILogger<ConversationSessionService>), sp => NullLogger<ConversationSessionService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton(typeof(ILogger<SystemSettingsService>), sp => NullLogger<SystemSettingsService>.Instance);
         services.AddSingleton(Substitute.For<IAgentExecutor>());
 
         // WorkspaceRuntime and its dependencies
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
+        services.AddSingleton<ILogger<TaskDependencyService>>(NullLogger<TaskDependencyService>.Instance);
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
         services.AddSingleton<ILogger<MessageService>>(NullLogger<MessageService>.Instance);
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddSingleton<ILogger<BreakoutRoomService>>(NullLogger<BreakoutRoomService>.Instance);
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddSingleton(typeof(ILogger<TaskQueryService>), sp => NullLogger<TaskQueryService>.Instance);
         services.AddSingleton<ILogger<TaskLifecycleService>>(NullLogger<TaskLifecycleService>.Instance);
         services.AddSingleton(CreateTestCatalog());
+        services.AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<AgentCatalogOptions>());
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -163,8 +204,9 @@ public class SprintCommandHandlerTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
         var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
-        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         var handler = new AdvanceStageHandler();
         var result = await handler.ExecuteAsync(
@@ -198,8 +240,9 @@ public class SprintCommandHandlerTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
         var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
-        await sprintService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
+        await artifactService.StoreArtifactAsync(sprint.Id, "Intake", "RequirementsDocument", TestArtifactContent.RequirementsDocument);
 
         var handler = new AdvanceStageHandler();
         var result = await handler.ExecuteAsync(
@@ -222,6 +265,154 @@ public class SprintCommandHandlerTests : IDisposable
 
         Assert.Equal(CommandStatus.Error, result.Status);
         Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_IncompleteTasks_BlocksAgent()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Implementation";
+        db.Rooms.Add(new RoomEntity { Id = "prereq-room", Name = "Test", Status = "Active",
+            WorkspacePath = TestWorkspace, CreatedAt = DateTime.UtcNow });
+        db.Tasks.Add(new TaskEntity { Id = "t-1", Title = "Unfinished", Description = "d",
+            SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room",
+            SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE"), CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Cannot advance from Implementation", result.Error);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_ForceIgnoredForAgents()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Implementation";
+        db.Rooms.Add(new RoomEntity { Id = "prereq-room2", Name = "Test", Status = "Active",
+            WorkspacePath = TestWorkspace, CreatedAt = DateTime.UtcNow });
+        db.Tasks.Add(new TaskEntity { Id = "t-2", Title = "Unfinished", Description = "d",
+            SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room2",
+            SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        // Agent sends force=true, but it should be ignored (AgentRole="Planner", not "Human")
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE", new Dictionary<string, object?> { ["force"] = true }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Contains("Cannot advance from Implementation", result.Error);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Implementation_ForceAllowedForHumans()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Implementation";
+        db.Rooms.Add(new RoomEntity { Id = "prereq-room3", Name = "Test", Status = "Active",
+            WorkspacePath = TestWorkspace, CreatedAt = DateTime.UtcNow });
+        db.Tasks.Add(new TaskEntity { Id = "t-3", Title = "Unfinished", Description = "d",
+            SuccessCriteria = "s", Status = "Active", RoomId = "prereq-room3",
+            SprintId = sprint.Id, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        var humanContext = new CommandContext(
+            AgentId: "human", AgentName: "Human", AgentRole: "Human",
+            RoomId: "main", BreakoutRoomId: null, Services: scope.ServiceProvider);
+
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE", new Dictionary<string, object?> { ["force"] = true }),
+            humanContext);
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["forced"]);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_AgentPath_RotatesSessionsForAllWorkspaceRooms()
+    {
+        // Regression for the agent-path stage advance only rotating the
+        // current room's session. Mirrors the HTTP path
+        // (SprintController.ApproveAdvance) which calls
+        // RotateWorkspaceSessionsForStageAsync to give every room in the
+        // workspace a fresh session boundary at the new stage.
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var sprintService = scope.ServiceProvider.GetRequiredService<SprintService>();
+        var artifactService = scope.ServiceProvider.GetRequiredService<SprintArtifactService>();
+
+        // Validation → FinalSynthesis is a non-sign-off transition, so the
+        // handler runs the rotation branch (sign-off branch returns early).
+        var sprint = await sprintService.CreateSprintAsync(TestWorkspace);
+        sprint.CurrentStage = "Validation";
+        await artifactService.StoreArtifactAsync(sprint.Id, "Validation", "ValidationReport", TestArtifactContent.ValidationReport);
+
+        // Three rooms in TestWorkspace plus one in a different workspace and
+        // one archived — only the active TestWorkspace rooms should rotate.
+        db.Rooms.AddRange(
+            new RoomEntity { Id = "room-a", Name = "A", Status = "Active",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-b", Name = "B", Status = "Active",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-c", Name = "C", Status = "Active",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-other-workspace", Name = "Other", Status = "Active",
+                WorkspacePath = "/tmp/other-workspace", CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow },
+            new RoomEntity { Id = "room-archived", Name = "Old", Status = "Archived",
+                WorkspacePath = TestWorkspace, CurrentPhase = "Implementation",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var handler = new AdvanceStageHandler();
+        // context.RoomId = "main" — pre-fix the handler only rotated this
+        // single room. Post-fix it rotates all workspace rooms regardless of
+        // the room the command came from.
+        var result = await handler.ExecuteAsync(
+            MakeCommand("ADVANCE_STAGE"), CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("Validation", dict["previousStage"]);
+        Assert.Equal("Implementation", dict["currentStage"]);
+
+        // Verify each non-archived room in TestWorkspace got a session tagged
+        // with the new sprint + stage.
+        await using var verifyDb = new AgentAcademyDbContext(
+            new DbContextOptionsBuilder<AgentAcademyDbContext>().UseSqlite(_connection).Options);
+        var sessions = await verifyDb.ConversationSessions
+            .Where(s => s.SprintId == sprint.Id && s.SprintStage == "Implementation")
+            .ToListAsync();
+
+        var rotatedRoomIds = sessions.Select(s => s.RoomId).ToHashSet();
+        Assert.Contains("room-a", rotatedRoomIds);
+        Assert.Contains("room-b", rotatedRoomIds);
+        Assert.Contains("room-c", rotatedRoomIds);
+        // Archived room and other-workspace room must NOT be rotated.
+        Assert.DoesNotContain("room-archived", rotatedRoomIds);
+        Assert.DoesNotContain("room-other-workspace", rotatedRoomIds);
     }
 
     // ── STORE_ARTIFACT ───────────────────────────────────────────
@@ -427,7 +618,8 @@ public class SprintCommandHandlerTests : IDisposable
         Assert.Equal("Intake", advDict["currentStage"]);
 
         // Approve the advance
-        await sprintService.ApproveAdvanceAsync(sprintId);
+        var stageService = scope.ServiceProvider.GetRequiredService<SprintStageService>();
+        await stageService.ApproveAdvanceAsync(sprintId);
 
         // Force-complete
         var completeResult = await new CompleteSprintHandler().ExecuteAsync(
@@ -440,5 +632,269 @@ public class SprintCommandHandlerTests : IDisposable
         // Verify sprint is completed
         var sprint = await sprintService.GetSprintByIdAsync(sprintId);
         Assert.Equal("Completed", sprint!.Status);
+    }
+
+    // ── SCHEDULE_SPRINT ──────────────────────────────────────────
+
+    [Fact]
+    public async Task ScheduleSprint_Get_ReturnsNoScheduleWhenNoneExists()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(false, dict["hasSchedule"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_CreatesNewSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+                ["timezone"] = "UTC",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["hasSchedule"]);
+        Assert.Equal("0 9 * * 1", dict["cronExpression"]);
+        Assert.Equal("UTC", dict["timeZoneId"]);
+        Assert.Equal(true, dict["enabled"]);
+        Assert.NotNull(dict["scheduleId"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_UpdatesExistingSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        // Create first
+        await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        // Update
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 10 * * 2",
+                ["enabled"] = "false",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal("0 10 * * 2", dict["cronExpression"]);
+        Assert.Equal(false, dict["enabled"]);
+        Assert.Contains("updated", (string)dict["message"]!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_RejectsMissingCron()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "set" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("cron", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_RejectsInvalidCron()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "not-a-cron",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("Invalid cron", result.Error!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_RejectsInvalidTimezone()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+                ["timezone"] = "Mars/Olympus_Mons",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("Unknown timezone", result.Error!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Delete_RemovesExistingSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        // Create first
+        await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        // Delete
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "delete" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["deleted"]);
+
+        // Verify gone
+        var getResult = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+        var getDict = Assert.IsType<Dictionary<string, object?>>(getResult.Result);
+        Assert.Equal(false, getDict["hasSchedule"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Delete_FailsWhenNoSchedule()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "delete" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.NotFound, result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_DefaultActionIsGet()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        // No action arg — should default to "get"
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT"),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(false, dict["hasSchedule"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_RejectsUnknownAction()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "purge" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("purge", result.Error!);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_FailsWithNoActiveWorkspace()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
+        var ws = await db.Workspaces.FirstAsync();
+        ws.IsActive = false;
+        await db.SaveChangesAsync();
+
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Error, result.Status);
+        Assert.Equal(CommandErrorCode.Validation, result.ErrorCode);
+        Assert.Contains("workspace", result.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Get_ReturnsScheduleAfterSet()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+
+        await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "30 14 * * 5",
+                ["timezone"] = "America/New_York",
+                ["enabled"] = false,
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new() { ["action"] = "get" }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["hasSchedule"]);
+        Assert.Equal("30 14 * * 5", dict["cronExpression"]);
+        Assert.Equal("America/New_York", dict["timeZoneId"]);
+        Assert.Equal(false, dict["enabled"]);
+        Assert.NotNull(dict["nextRunAtUtc"]);
+    }
+
+    [Fact]
+    public async Task ScheduleSprint_Set_EnabledBoolArgWorks()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var handler = new ScheduleSprintHandler();
+        var result = await handler.ExecuteAsync(
+            MakeCommand("SCHEDULE_SPRINT", new()
+            {
+                ["action"] = "set",
+                ["cron"] = "0 9 * * 1",
+                ["enabled"] = true,
+            }),
+            CreateContext(scope.ServiceProvider));
+
+        Assert.Equal(CommandStatus.Success, result.Status);
+        var dict = Assert.IsType<Dictionary<string, object?>>(result.Result);
+        Assert.Equal(true, dict["enabled"]);
     }
 }

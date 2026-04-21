@@ -1,14 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text.Json;
-using AgentAcademy.Server.Commands.Handlers;
-using AgentAcademy.Server.Data;
-using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Services;
 
@@ -24,15 +20,15 @@ namespace AgentAcademy.Server.Services;
 /// Write tools (task-write, memory) capture the calling agent's identity
 /// via closures and are created per-agent session.
 /// </summary>
-public sealed class AgentToolFunctions
+public sealed class AgentToolFunctions : IAgentToolFunctions
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
     private readonly ILogger<AgentToolFunctions> _logger;
 
     public AgentToolFunctions(
         IServiceScopeFactory scopeFactory,
-        AgentCatalogOptions catalog,
+        IAgentCatalog catalog,
         ILogger<AgentToolFunctions> logger)
     {
         _scopeFactory = scopeFactory;
@@ -115,7 +111,7 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: list_tasks (status={Status})", status);
 
         using var scope = _scopeFactory.CreateScope();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
         var tasks = await taskQueries.GetTasksAsync();
 
         if (!string.IsNullOrWhiteSpace(status) &&
@@ -143,7 +139,7 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: list_rooms (includeArchived={IncludeArchived})", includeArchived);
 
         using var scope = _scopeFactory.CreateScope();
-        var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+        var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
         var rooms = await roomService.GetRoomsAsync(includeArchived);
 
         if (rooms.Count == 0)
@@ -163,7 +159,7 @@ public sealed class AgentToolFunctions
         _logger.LogDebug("Tool call: show_agents");
 
         using var scope = _scopeFactory.CreateScope();
-        var agentLocations = scope.ServiceProvider.GetRequiredService<AgentLocationService>();
+        var agentLocations = scope.ServiceProvider.GetRequiredService<IAgentLocationService>();
         var locations = await agentLocations.GetAgentLocationsAsync();
 
         var agentLines = new List<string>();
@@ -195,12 +191,22 @@ public sealed class AgentToolFunctions
         var projectRoot = FindProjectRoot();
         var fullPath = Path.GetFullPath(Path.Combine(projectRoot, path));
 
-        // Security: path must be within the project directory
+        // Security: path must be within the project directory.
         var rootWithSep = projectRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         if (!fullPath.StartsWith(rootWithSep, StringComparison.Ordinal) &&
             !fullPath.Equals(projectRoot, StringComparison.Ordinal))
         {
             return "Error: Path traversal denied — file must be within the project directory.";
+        }
+
+        // Security: also reject if any path segment is a symlink whose final
+        // target falls outside the project root. Path.GetFullPath only
+        // canonicalizes . and .. — it does NOT follow symlinks. Without this
+        // check, `repo/innocent-link` → `/etc/passwd` would pass the prefix
+        // test above and exfiltrate arbitrary files.
+        if (!IsResolvedPathInsideRoot(fullPath, projectRoot))
+        {
+            return "Error: Path traversal denied — symlink target is outside the project directory.";
         }
 
         if (Directory.Exists(fullPath))
@@ -319,6 +325,13 @@ public sealed class AgentToolFunctions
             if (process is null)
                 return "Error: Failed to start search process.";
 
+            // Start draining stderr BEFORE reading stdout to prevent pipe deadlock:
+            // if we read only N stdout lines then stop, the process blocks writing to
+            // the full stdout pipe buffer. If stderr isn't being drained concurrently,
+            // ReadToEndAsync(stderr) would wait for process exit while the process waits
+            // for us to drain stdout — classic deadlock.
+            var stderrTask = process.StandardError.ReadToEndAsync();
+
             // Read stdout line-by-line with a global cap to prevent
             // unbounded memory usage (--max-count is per-file in git grep).
             var lines = new List<string>(maxResults);
@@ -329,15 +342,13 @@ public sealed class AgentToolFunctions
                 lines.Add(line);
             }
 
-            // Drain stderr concurrently to prevent deadlock
-            // (filled stderr pipe buffer blocks the process).
-            var stderr = await process.StandardError.ReadToEndAsync();
-
             // Kill the process if it's still running (we have enough results)
             if (!process.HasExited)
             {
                 try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
             }
+
+            var stderr = await stderrTask;
 
             // Use a timeout to avoid hanging forever
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -367,398 +378,6 @@ public sealed class AgentToolFunctions
         }
     }
 
-    // ── Inner wrapper classes for contextual (per-agent) tools ──
-
-    /// <summary>
-    /// Wrapper that captures agent identity for task-write tool functions.
-    /// Methods have proper default parameter values so <see cref="AIFunctionFactory"/>
-    /// treats nullable parameters as optional.
-    /// </summary>
-    internal sealed class TaskWriteToolWrapper
-    {
-        private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ILogger _logger;
-        private readonly string _agentId;
-        private readonly string _agentName;
-
-        internal TaskWriteToolWrapper(
-            IServiceScopeFactory scopeFactory, ILogger logger,
-            string agentId, string agentName)
-        {
-            _scopeFactory = scopeFactory;
-            _logger = logger;
-            _agentId = agentId;
-            _agentName = agentName;
-        }
-
-        private static readonly HashSet<string> AllowedTaskStatuses = new(StringComparer.OrdinalIgnoreCase)
-        {
-            nameof(Shared.Models.TaskStatus.Active),
-            nameof(Shared.Models.TaskStatus.Blocked),
-            nameof(Shared.Models.TaskStatus.AwaitingValidation),
-            nameof(Shared.Models.TaskStatus.InReview),
-            nameof(Shared.Models.TaskStatus.Queued),
-        };
-
-        [Description("Create a new task in the workspace.")]
-        internal async Task<string> CreateTaskAsync(
-            [Description("Task title")] string title,
-            [Description("Detailed description of the task")] string description,
-            [Description("Success criteria — what must be true for the task to be considered done")] string successCriteria,
-            [Description("Preferred agent roles (e.g., SoftwareEngineer, Reviewer)")] string[]? preferredRoles = null,
-            [Description("Task type: Feature, Bug, Refactor, Documentation, Test (default: Feature)")] string? type = null)
-        {
-            _logger.LogDebug("Tool call: create_task by {AgentId} (title={Title})", _agentId, title);
-
-            if (string.IsNullOrWhiteSpace(title))
-                return "Error: title is required.";
-            if (string.IsNullOrWhiteSpace(description))
-                return "Error: description is required.";
-            if (string.IsNullOrWhiteSpace(successCriteria))
-                return "Error: successCriteria is required.";
-
-            var taskType = TaskType.Feature;
-            if (!string.IsNullOrWhiteSpace(type) &&
-                !Enum.TryParse<TaskType>(type, ignoreCase: true, out taskType))
-            {
-                return $"Error: Invalid task type '{type}'. Valid: Feature, Bug, Refactor, Documentation, Test";
-            }
-
-            var roles = preferredRoles?.Where(r => !string.IsNullOrWhiteSpace(r)).ToList()
-                ?? new List<string>();
-
-            using var scope = _scopeFactory.CreateScope();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-
-            try
-            {
-                var request = new TaskAssignmentRequest(
-                    Title: title,
-                    Description: description,
-                    SuccessCriteria: successCriteria,
-                    RoomId: null,
-                    PreferredRoles: roles,
-                    Type: taskType
-                );
-
-                var result = await taskOrchestration.CreateTaskAsync(request);
-                return $"Task created successfully.\n" +
-                       $"- ID: {result.Task.Id}\n" +
-                       $"- Title: {result.Task.Title}\n" +
-                       $"- Status: {result.Task.Status}\n" +
-                       $"- Room: {result.Room.Name} (ID: {result.Room.Id})\n" +
-                       $"- Type: {taskType}";
-            }
-            catch (Exception ex)
-            {
-                return $"Error creating task: {ex.Message}";
-            }
-        }
-
-        [Description("Update a task's status, report a blocker, or post a note.")]
-        internal async Task<string> UpdateTaskStatusAsync(
-            [Description("ID of the task to update")] string taskId,
-            [Description("New status: Active, Blocked, AwaitingValidation, InReview, Queued")] string? status = null,
-            [Description("Blocker description (implies Blocked status — cannot be combined with status)")] string? blocker = null,
-            [Description("Note to post on the task")] string? note = null)
-        {
-            _logger.LogDebug("Tool call: update_task_status by {AgentId} (taskId={TaskId})", _agentId, taskId);
-
-            if (string.IsNullOrWhiteSpace(taskId))
-                return "Error: taskId is required.";
-
-            var hasStatus = !string.IsNullOrWhiteSpace(status);
-            var hasBlocker = !string.IsNullOrWhiteSpace(blocker);
-            var hasNote = !string.IsNullOrWhiteSpace(note);
-
-            if (!hasStatus && !hasBlocker && !hasNote)
-                return "Error: At least one of status, blocker, or note is required.";
-
-            if (hasBlocker && hasStatus)
-                return "Error: Cannot specify both 'blocker' and 'status' — blocker implies Blocked status.";
-
-            if (hasStatus && !AllowedTaskStatuses.Contains(status!))
-                return $"Error: Invalid status '{status}'. Allowed: {string.Join(", ", AllowedTaskStatuses.Order())}";
-
-            using var scope = _scopeFactory.CreateScope();
-            var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
-            var taskOrchestration = scope.ServiceProvider.GetRequiredService<TaskOrchestrationService>();
-
-            try
-            {
-                var task = await taskQueries.GetTaskAsync(taskId);
-                if (task is null)
-                    return $"Error: Task '{taskId}' not found.";
-
-                var actions = new List<string>();
-
-                if (hasBlocker)
-                {
-                    await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Blocked);
-                    await taskOrchestration.PostTaskNoteAsync(taskId,
-                        $"🚫 Blocked by {_agentName}: {blocker}");
-                    actions.Add($"status → Blocked (blocker: {blocker})");
-                }
-                else if (hasStatus)
-                {
-                    var parsed = Enum.Parse<Shared.Models.TaskStatus>(status!, ignoreCase: true);
-                    await taskQueries.UpdateTaskStatusAsync(taskId, parsed);
-                    actions.Add($"status → {parsed}");
-                }
-
-                if (hasNote)
-                {
-                    await taskOrchestration.PostTaskNoteAsync(taskId,
-                        $"📝 Note from {_agentName}: {note}");
-                    actions.Add("note posted");
-                }
-
-                var finalTask = await taskQueries.GetTaskAsync(taskId);
-                var title = finalTask?.Title ?? task.Title;
-                return $"Task '{title}' updated: {string.Join("; ", actions)}\n" +
-                       $"- ID: {taskId}\n" +
-                       $"- Status: {finalTask?.Status.ToString() ?? task.Status.ToString()}";
-            }
-            catch (Exception ex)
-            {
-                return $"Error: {ex.Message}";
-            }
-        }
-
-        [Description("Add a comment, finding, evidence, or blocker to a task.")]
-        internal async Task<string> AddTaskCommentAsync(
-            [Description("ID of the task to comment on")] string taskId,
-            [Description("Comment content")] string content,
-            [Description("Comment type: Comment, Finding, Evidence, Blocker (default: Comment)")] string? commentType = null)
-        {
-            _logger.LogDebug("Tool call: add_task_comment by {AgentId} (taskId={TaskId})", _agentId, taskId);
-
-            if (string.IsNullOrWhiteSpace(taskId))
-                return "Error: taskId is required.";
-            if (string.IsNullOrWhiteSpace(content))
-                return "Error: content is required.";
-
-            var parsedType = TaskCommentType.Comment;
-            if (!string.IsNullOrWhiteSpace(commentType) &&
-                !Enum.TryParse<TaskCommentType>(commentType, ignoreCase: true, out parsedType))
-            {
-                return $"Error: Invalid comment type '{commentType}'. Valid: Comment, Finding, Evidence, Blocker";
-            }
-
-            using var scope = _scopeFactory.CreateScope();
-            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-
-            try
-            {
-                var comment = await taskLifecycle.AddTaskCommentAsync(
-                    taskId, _agentId, _agentName, parsedType, content);
-                return $"Comment added to task '{taskId}'.\n" +
-                       $"- Type: {parsedType}\n" +
-                       $"- ID: {comment.Id}";
-            }
-            catch (Exception ex)
-            {
-                return $"Error: {ex.Message}";
-            }
-        }
-    }
-
-    /// <summary>
-    /// Wrapper that captures agent identity for memory tool functions.
-    /// </summary>
-    internal sealed class MemoryToolWrapper
-    {
-        private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ILogger _logger;
-        private readonly string _agentId;
-
-        internal MemoryToolWrapper(
-            IServiceScopeFactory scopeFactory, ILogger logger, string agentId)
-        {
-            _scopeFactory = scopeFactory;
-            _logger = logger;
-            _agentId = agentId;
-        }
-
-        [Description("Store a memory that persists across sessions.")]
-        internal async Task<string> RememberAsync(
-            [Description("Unique key for this memory (e.g., 'auth-pattern', 'deploy-gotcha')")] string key,
-            [Description("The knowledge to remember")] string value,
-            [Description("Category: decision, lesson, pattern, preference, invariant, risk, gotcha, incident, constraint, finding, spec-drift, mapping, verification, gap-pattern, shared")] string category,
-            [Description("Optional time-to-live in hours (max 87600). Memory expires after this. Omit for permanent.")] int? ttl = null,
-            [Description("Set to true to remove any existing TTL and make the memory permanent")] bool permanent = false)
-        {
-            _logger.LogDebug("Tool call: remember by {AgentId} (key={Key}, category={Category})",
-                _agentId, key, category);
-
-            if (string.IsNullOrWhiteSpace(key))
-                return "Error: key is required.";
-            if (string.IsNullOrWhiteSpace(value))
-                return "Error: value is required.";
-            if (string.IsNullOrWhiteSpace(category))
-                return "Error: category is required.";
-
-            if (!RememberHandler.ValidCategories.Contains(category))
-                return $"Error: Invalid category '{category}'. Valid: {string.Join(", ", RememberHandler.ValidCategories.Order())}";
-
-            if (ttl.HasValue && (ttl.Value <= 0 || ttl.Value > 87600))
-                return "Error: ttl must be between 1 and 87600 hours.";
-
-            category = category.ToLowerInvariant();
-
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-                var existing = await db.AgentMemories.FindAsync(_agentId, key);
-                var now = DateTime.UtcNow;
-                DateTime? expiresAt = ttl.HasValue ? now.AddHours(ttl.Value) : null;
-
-                if (existing != null)
-                {
-                    existing.Category = category;
-                    existing.Value = value;
-                    existing.UpdatedAt = now;
-                    if (permanent)
-                        existing.ExpiresAt = null;
-                    else if (ttl.HasValue)
-                        existing.ExpiresAt = expiresAt;
-                }
-                else
-                {
-                    db.AgentMemories.Add(new AgentMemoryEntity
-                    {
-                        AgentId = _agentId,
-                        Key = key,
-                        Category = category,
-                        Value = value,
-                        CreatedAt = now,
-                        ExpiresAt = expiresAt
-                    });
-                }
-
-                try
-                {
-                    await db.SaveChangesAsync();
-                }
-                catch (DbUpdateException) when (existing == null)
-                {
-                    // Concurrent insert race — retry as update
-                    db.ChangeTracker.Clear();
-                    var conflict = await db.AgentMemories.FindAsync(_agentId, key);
-                    if (conflict != null)
-                    {
-                        conflict.Category = category;
-                        conflict.Value = value;
-                        conflict.UpdatedAt = now;
-                        if (permanent)
-                            conflict.ExpiresAt = null;
-                        else if (ttl.HasValue)
-                            conflict.ExpiresAt = expiresAt;
-                        await db.SaveChangesAsync();
-                        existing = conflict; // for the action message
-                    }
-                }
-
-                var action = existing != null ? "updated" : "created";
-                var result = $"Memory {action}: [{category}] {key}";
-                if (permanent)
-                    result += " (permanent)";
-                else if (expiresAt.HasValue)
-                    result += $" (expires: {expiresAt.Value:u})";
-                return result;
-            }
-            catch (Exception ex)
-            {
-                return $"Error storing memory: {ex.Message}";
-            }
-        }
-
-        [Description("Search and retrieve memories.")]
-        internal async Task<string> RecallAsync(
-            [Description("Free-text search query (uses full-text search with BM25 ranking)")] string? query = null,
-            [Description("Filter by category")] string? category = null,
-            [Description("Filter by exact key")] string? key = null,
-            [Description("Include expired memories (default: false)")] bool includeExpired = false)
-        {
-            _logger.LogDebug("Tool call: recall by {AgentId} (query={Query}, category={Category})",
-                _agentId, query, category);
-
-            // Normalize category to match remember's lowercase storage
-            if (!string.IsNullOrWhiteSpace(category))
-                category = category.ToLowerInvariant();
-
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-
-                var now = DateTime.UtcNow;
-                List<AgentMemoryEntity> memories;
-
-                if (!string.IsNullOrWhiteSpace(query))
-                {
-                    memories = await RecallHandler.SearchWithFts5Async(
-                        db, _agentId, query, category, key);
-                }
-                else
-                {
-                    var q = db.AgentMemories.Where(m => m.AgentId == _agentId || m.Category == "shared");
-
-                    if (!string.IsNullOrWhiteSpace(category))
-                        q = q.Where(m => m.Category == category);
-                    if (!string.IsNullOrWhiteSpace(key))
-                        q = q.Where(m => m.Key == key);
-
-                    memories = await q.OrderBy(m => m.Category).ThenBy(m => m.Key).ToListAsync();
-                }
-
-                if (!includeExpired)
-                    memories = memories.Where(m => m.ExpiresAt == null || m.ExpiresAt > now).ToList();
-
-                // Update LastAccessedAt for staleness tracking (best-effort, matching RecallHandler)
-                if (memories.Count > 0)
-                {
-                    try
-                    {
-                        foreach (var group in memories.GroupBy(m => m.AgentId))
-                        {
-                            var keyList = group.Select(g => g.Key).Distinct().ToList();
-                            var placeholders = string.Join(", ", keyList.Select((_, i) => $"{{{i + 2}}}"));
-                            var sql = $"UPDATE agent_memories SET LastAccessedAt = {{0}} WHERE AgentId = {{1}} AND Key IN ({placeholders})";
-                            var parameters = new List<object> { now, group.Key };
-                            parameters.AddRange(keyList);
-                            await db.Database.ExecuteSqlRawAsync(sql, parameters.ToArray());
-                        }
-                    }
-                    catch { /* LastAccessedAt update is best-effort */ }
-                }
-
-                if (memories.Count == 0)
-                    return "No memories found.";
-
-                var lines = memories.Select(m =>
-                {
-                    var line = $"- [{m.Category}] {m.Key}: {m.Value}";
-                    if (m.Category == "shared" && m.AgentId != _agentId)
-                        line += $" (from {m.AgentId})";
-                    if (RecallHandler.IsStale(m, now))
-                        line += " ⚠️ stale";
-                    if (m.ExpiresAt.HasValue)
-                        line += $" (expires: {m.ExpiresAt.Value:u})";
-                    return line;
-                });
-
-                return $"Memories ({memories.Count}):\n{string.Join('\n', lines)}";
-            }
-            catch (Exception ex)
-            {
-                return $"Error recalling memories: {ex.Message}";
-            }
-        }
-    }
-
     // ── Code-Write Tools ────────────────────────────────────────
 
     /// <summary>
@@ -767,9 +386,9 @@ public sealed class AgentToolFunctions
     /// calling agent. Only agents with <c>code-write</c> in their
     /// <c>EnabledTools</c> (typically SoftwareEngineer role) receive these tools.
     /// </summary>
-    public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null)
+    public IReadOnlyList<AIFunction> CreateCodeWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
     {
-        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName, gitIdentity);
+        var wrapper = new CodeWriteToolWrapper(_scopeFactory, _logger, agentId, agentName, gitIdentity, roomId);
         return
         [
             AIFunctionFactory.Create(wrapper.WriteFileAsync, "write_file",
@@ -782,206 +401,27 @@ public sealed class AgentToolFunctions
     }
 
     /// <summary>
-    /// Wrapper that captures agent identity for code-write tool functions.
-    /// Enforces path restrictions: files must be within <c>src/</c> and cannot
-    /// modify protected infrastructure files.
+    /// Creates <see cref="AIFunction"/> instances for the "spec-write" tool group.
+    /// These tools write files to the <c>specs/</c> and <c>docs/</c> directories
+    /// only and are scoped to the calling agent. Typically granted to the Technical
+    /// Writer role (Thucydides) so the spec corpus and documentation tree can be
+    /// maintained by its owner without granting general code-write access.
     /// </summary>
-    internal sealed class CodeWriteToolWrapper
+    public IReadOnlyList<AIFunction> CreateSpecWriteTools(string agentId, string agentName, AgentGitIdentity? gitIdentity = null, string? roomId = null)
     {
-        private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ILogger _logger;
-        private readonly string _agentId;
-        private readonly string _agentName;
-        private readonly AgentGitIdentity? _gitIdentity;
-
-        // Files that agents must never modify (core infrastructure).
-        private static readonly string[] ProtectedPaths =
+        var wrapper = new CodeWriteToolWrapper(
+            _scopeFactory, _logger, agentId, agentName, gitIdentity, roomId,
+            allowedRoots: new[] { "specs", "docs" },
+            protectedPaths: CodeWriteToolWrapper.SpecWriteProtectedPaths);
+        return
         [
-            "Services/AgentToolFunctions.cs",
-            "Services/AgentToolRegistry.cs",
-            "Services/IAgentToolRegistry.cs",
-            "Services/CopilotExecutor.cs",
-            "Services/AgentOrchestrator.cs",
-            "Services/GitService.cs",
-            "Program.cs",
+            AIFunctionFactory.Create(wrapper.WriteFileAsync, "write_file",
+                "Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
+                "The file is automatically staged for commit. Paths must be within specs/ or docs/ and relative to the project root."),
+            AIFunctionFactory.Create(wrapper.CommitChangesAsync, "commit_changes",
+                "Commit all staged changes with a conventional commit message. Use after write_file to persist your changes. " +
+                "Returns the commit SHA on success."),
         ];
-
-        private const int MaxContentLength = 100_000; // 100 KB
-
-        internal CodeWriteToolWrapper(
-            IServiceScopeFactory scopeFactory, ILogger logger,
-            string agentId, string agentName, AgentGitIdentity? gitIdentity = null)
-        {
-            _scopeFactory = scopeFactory;
-            _logger = logger;
-            _agentId = agentId;
-            _agentName = agentName;
-            _gitIdentity = gitIdentity;
-        }
-
-        [Description("Write content to a file in the project. Creates the file if it doesn't exist, overwrites if it does. " +
-                     "The file is automatically staged for commit. Paths must be within src/ and relative to the project root.")]
-        internal async Task<string> WriteFileAsync(
-            [Description("File path relative to the project root (e.g., src/AgentAcademy.Server/Models/MyModel.cs)")]
-            string path,
-            [Description("The full content to write to the file")]
-            string content)
-        {
-            _logger.LogInformation("Tool call: write_file by {AgentId} (path={Path}, length={Length})",
-                _agentId, path, content?.Length ?? 0);
-
-            if (string.IsNullOrWhiteSpace(path))
-                return "Error: path is required.";
-            if (content is null)
-                return "Error: content is required (use empty string for empty file).";
-            if (content.Length > MaxContentLength)
-                return $"Error: Content too large ({content.Length:N0} chars). Maximum is {MaxContentLength:N0} chars.";
-
-            // Reject binary content (null bytes)
-            if (content.Contains('\0'))
-                return "Error: Binary content detected (null bytes). Only text files are supported.";
-
-            var projectRoot = FindProjectRoot();
-            var fullPath = Path.GetFullPath(Path.Combine(projectRoot, path));
-
-            // Security: path must be within the project directory
-            var rootWithSep = projectRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (!fullPath.StartsWith(rootWithSep, StringComparison.Ordinal))
-                return "Error: Path traversal denied — file must be within the project directory.";
-
-            // Restrict writes to src/ directory only
-            var relativePath = Path.GetRelativePath(projectRoot, fullPath);
-            if (!relativePath.StartsWith("src" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                return "Error: Writes are restricted to the src/ directory. Cannot write to: " + relativePath;
-
-            // Block protected infrastructure files
-            // Normalize separators to forward slashes for cross-platform comparison
-            var normalizedRelative = relativePath.Replace('\\', '/');
-            foreach (var protectedPath in ProtectedPaths)
-            {
-                if (normalizedRelative.EndsWith(protectedPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogWarning(
-                        "Agent {AgentId} attempted to write protected file: {Path}",
-                        _agentId, relativePath);
-                    return $"Error: {Path.GetFileName(protectedPath)} is a protected infrastructure file and cannot be modified by agents.";
-                }
-            }
-
-            try
-            {
-                // Create parent directories if needed
-                var directory = Path.GetDirectoryName(fullPath);
-                if (directory is not null && !Directory.Exists(directory))
-                    Directory.CreateDirectory(directory);
-
-                var isNew = !File.Exists(fullPath);
-                await File.WriteAllTextAsync(fullPath, content);
-
-                _logger.LogInformation(
-                    "Agent {AgentId} ({AgentName}) wrote file: {Path} ({Length} chars, new={IsNew})",
-                    _agentId, _agentName, relativePath, content.Length, isNew);
-
-                // Stage the file for commit
-                var staged = await StageFileAsync(projectRoot, relativePath);
-
-                var action = isNew ? "Created" : "Updated";
-                var stageStatus = staged ? "staged for commit" : "written but NOT staged (git add failed)";
-                return $"{action}: {relativePath} ({content.Length:N0} chars, {stageStatus})";
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return $"Error: Permission denied writing to {relativePath}.";
-            }
-            catch (IOException ex)
-            {
-                return $"Error writing file: {ex.Message}";
-            }
-        }
-
-        private async Task<bool> StageFileAsync(string projectRoot, string relativePath)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    WorkingDirectory = projectRoot
-                };
-                psi.ArgumentList.Add("add");
-                psi.ArgumentList.Add("--");
-                psi.ArgumentList.Add(relativePath);
-
-                using var process = Process.Start(psi);
-                if (process is not null)
-                {
-                    await process.WaitForExitAsync();
-                    if (process.ExitCode != 0)
-                    {
-                        var stderr = await process.StandardError.ReadToEndAsync();
-                        _logger.LogWarning("git add failed for {Path}: {Error}", relativePath, stderr);
-                        return false;
-                    }
-                    return true;
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to stage file {Path} — file was written but not staged", relativePath);
-                return false;
-            }
-        }
-
-        [Description("Commit all staged changes with a conventional commit message. " +
-                     "Use after write_file to persist your changes. Returns the commit SHA on success.")]
-        internal async Task<string> CommitChangesAsync(
-            [Description("Conventional commit message (e.g., 'feat: add user endpoint with validation'). " +
-                         "Use prefixes: feat:, fix:, refactor:, test:, docs:")]
-            string message)
-        {
-            _logger.LogInformation("Tool call: commit_changes by {AgentId} (message={Message})",
-                _agentId, message);
-
-            if (string.IsNullOrWhiteSpace(message))
-                return "Error: message is required. Provide a conventional commit message (e.g., 'feat: add ITimeProvider abstraction').";
-
-            if (message.Length > 5000)
-                return "Error: Commit message exceeds 5000 characters.";
-
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var gitService = scope.ServiceProvider.GetRequiredService<GitService>();
-
-                var commitSha = await gitService.CommitAsync(message, _gitIdentity);
-
-                _logger.LogInformation(
-                    "commit_changes by {AgentId} ({AgentName}): {CommitSha} — {Message}",
-                    _agentId, _agentName, commitSha, message);
-
-                return $"Committed: {commitSha.Trim()}\nMessage: {message}";
-            }
-            catch (InvalidOperationException ex) when (
-                ex.Message.Contains("nothing to commit", StringComparison.OrdinalIgnoreCase)
-                || ex.Message.Contains("no changes", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Error: Nothing to commit. Stage files first (write_file auto-stages, or use other file operations).";
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(ex, "commit_changes failed for {AgentId}", _agentId);
-                return $"Error: Commit failed — {ex.Message}";
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in commit_changes for {AgentId}", _agentId);
-                return $"Error: Unexpected failure — {ex.Message}";
-            }
-        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────
@@ -997,5 +437,60 @@ public sealed class AgentToolFunctions
         }
         throw new InvalidOperationException(
             "AgentAcademy.sln not found — cannot determine project root for tool sandboxing.");
+    }
+
+    /// <summary>
+    /// Resolves any symlinks in <paramref name="fullPath"/> and reports whether
+    /// the final canonical target lies within <paramref name="projectRoot"/>.
+    /// Walks the path so an intermediate-segment symlink (e.g. a subdir that
+    /// links outside the repo) is also caught. Returns true when the path
+    /// does not exist (caller will report "not found"), so this method only
+    /// blocks confirmed escapes.
+    /// </summary>
+    internal static bool IsResolvedPathInsideRoot(string fullPath, string projectRoot)
+    {
+        try
+        {
+            var rootCanonical = ResolveCanonical(projectRoot);
+            if (rootCanonical is null) return true; // can't validate; defer to other checks
+
+            // If the file/dir doesn't exist yet, fall back to the deepest existing
+            // ancestor for symlink resolution. This still catches "ancestor is a
+            // symlink" escapes while not blocking legitimate not-found responses.
+            string? probe = fullPath;
+            while (probe is not null && !File.Exists(probe) && !Directory.Exists(probe))
+            {
+                probe = Path.GetDirectoryName(probe);
+            }
+            if (probe is null) return true;
+
+            var targetCanonical = ResolveCanonical(probe);
+            if (targetCanonical is null) return true;
+
+            var rootWithSep = rootCanonical.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            return targetCanonical.Equals(rootCanonical, StringComparison.Ordinal)
+                || targetCanonical.StartsWith(rootWithSep, StringComparison.Ordinal);
+        }
+        catch
+        {
+            // On any unexpected I/O error, deny rather than allow.
+            return false;
+        }
+    }
+
+    private static string? ResolveCanonical(string path)
+    {
+        // FileSystemInfo.ResolveLinkTarget(returnFinalTarget: true) follows
+        // an arbitrarily long symlink chain. Path.GetFullPath then normalizes
+        // any relative target. Returns null if the path doesn't refer to an
+        // existing entry (caller decides what to do).
+        FileSystemInfo? info = Directory.Exists(path)
+            ? new DirectoryInfo(path)
+            : File.Exists(path) ? new FileInfo(path) : null;
+        if (info is null) return null;
+
+        var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
+        var finalPath = resolved?.FullName ?? info.FullName;
+        return Path.GetFullPath(finalPath);
     }
 }

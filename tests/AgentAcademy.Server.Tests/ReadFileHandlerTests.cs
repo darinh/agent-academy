@@ -8,6 +8,7 @@ namespace AgentAcademy.Server.Tests;
 /// Tests for the ReadFileHandler including truncation, line ranges,
 /// directory listing, and path traversal protection.
 /// </summary>
+[Collection("CwdMutating")]
 public sealed class ReadFileHandlerTests : IDisposable
 {
     private readonly ReadFileHandler _handler = new();

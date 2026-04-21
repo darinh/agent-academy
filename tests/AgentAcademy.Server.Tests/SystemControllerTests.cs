@@ -28,7 +28,8 @@ public sealed class SystemControllerTests : IDisposable
         _svc = new TestServiceGraph([TestAgent]);
         _controller = new SystemController(
             _svc.RoomService, _svc.AgentLocationService,
-            _svc.BreakoutRoomService, _svc.ActivityPublisher,
+            _svc.BreakoutRoomService, _svc.GoalCardService,
+            _svc.ActivityPublisher,
             _svc.Executor, _svc.Catalog, _svc.Db,
             _svc.UsageTracker, _svc.ErrorTracker,
             NullLogger<SystemController>.Instance);
@@ -85,6 +86,7 @@ public sealed class SystemControllerTests : IDisposable
         var overview = Assert.IsType<WorkspaceOverview>(ok.Value);
         Assert.Single(overview.ConfiguredAgents); // Our test agent
         Assert.Empty(overview.Rooms);
+        Assert.Equal(0, overview.GoalCards.Total);
     }
 
     [Fact]

@@ -1,0 +1,1093 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { FluentProvider, webDarkTheme } from "@fluentui/react-components";
+import RetrospectivePanel from "../RetrospectivePanel";
+import type {
+  RetrospectiveListItem,
+  RetrospectiveListResponse,
+  RetrospectiveDetailResponse,
+  RetrospectiveStatsResponse,
+  RetrospectiveAgentStat,
+} from "../api";
+
+vi.mock("../api", () => ({
+  listRetrospectives: vi.fn(),
+  getRetrospective: vi.fn(),
+  getRetrospectiveStats: vi.fn(),
+}));
+
+import { listRetrospectives, getRetrospective, getRetrospectiveStats } from "../api";
+
+const mockListRetrospectives = vi.mocked(listRetrospectives);
+const mockGetRetrospective = vi.mocked(getRetrospective);
+const mockGetRetrospectiveStats = vi.mocked(getRetrospectiveStats);
+
+// ── Factories ──
+
+function makeRetroItem(overrides: Partial<RetrospectiveListItem> = {}): RetrospectiveListItem {
+  return {
+    id: "retro-1",
+    taskId: "task-42",
+    taskTitle: "Implement user authentication",
+    agentId: "coder-1",
+    agentName: "Coder",
+    contentPreview: "Learned that JWT rotation tokens need careful handling for security compliance.",
+    createdAt: "2026-04-10T12:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeListResponse(
+  retrospectives: RetrospectiveListItem[] = [makeRetroItem()],
+  overrides: Partial<RetrospectiveListResponse> = {},
+): RetrospectiveListResponse {
+  return {
+    retrospectives,
+    total: retrospectives.length,
+    limit: 20,
+    offset: 0,
+    ...overrides,
+  };
+}
+
+function makeAgentStat(overrides: Partial<RetrospectiveAgentStat> = {}): RetrospectiveAgentStat {
+  return {
+    agentId: "coder-1",
+    agentName: "Coder",
+    count: 5,
+    ...overrides,
+  };
+}
+
+function makeStats(overrides: Partial<RetrospectiveStatsResponse> = {}): RetrospectiveStatsResponse {
+  return {
+    totalRetrospectives: 12,
+    byAgent: [
+      makeAgentStat(),
+      makeAgentStat({ agentId: "reviewer-1", agentName: "Reviewer", count: 7 }),
+    ],
+    averageContentLength: 450,
+    latestRetrospectiveAt: "2026-04-10T14:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeDetail(overrides: Partial<RetrospectiveDetailResponse> = {}): RetrospectiveDetailResponse {
+  return {
+    id: "retro-1",
+    taskId: "task-42",
+    taskTitle: "Implement user authentication",
+    taskStatus: "Completed",
+    agentId: "coder-1",
+    agentName: "Coder",
+    content: "Learned that JWT rotation tokens need careful handling for security compliance. Also discovered that bcrypt cost factor 12 provides a good balance of security and speed.",
+    createdAt: "2026-04-10T12:00:00Z",
+    taskCompletedAt: "2026-04-10T11:55:00Z",
+    ...overrides,
+  };
+}
+
+function renderPanel() {
+  return render(
+    <FluentProvider theme={webDarkTheme}>
+      <RetrospectivePanel />
+    </FluentProvider>,
+  );
+}
+
+// ── Helpers ──
+
+function setupSuccess(
+  listOverrides?: Partial<RetrospectiveListResponse>,
+  statsOverrides?: Partial<RetrospectiveStatsResponse>,
+  retrospectives?: RetrospectiveListItem[],
+) {
+  mockListRetrospectives.mockResolvedValue(makeListResponse(retrospectives, listOverrides));
+  mockGetRetrospectiveStats.mockResolvedValue(makeStats(statsOverrides));
+}
+
+function getRetroRows(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll("div[role='button'][tabindex='0']"));
+}
+
+describe("RetrospectivePanel", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = "";
+  });
+
+  // ── Loading state ──
+
+  describe("loading state", () => {
+    it("shows spinner while loading", () => {
+      mockListRetrospectives.mockReturnValue(new Promise(() => {}));
+      mockGetRetrospectiveStats.mockReturnValue(new Promise(() => {}));
+      renderPanel();
+      expect(screen.getByText("Loading retrospectives…")).toBeInTheDocument();
+    });
+
+    it("does not show spinner if data already present", async () => {
+      setupSuccess();
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.queryByText("Loading retrospectives…")).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  // ── Error state ──
+
+  describe("error state", () => {
+    it("shows error message when list fetch fails", async () => {
+      mockListRetrospectives.mockRejectedValue(new Error("Network error"));
+      mockGetRetrospectiveStats.mockResolvedValue(makeStats());
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText(/Network error/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows generic error for non-Error rejections", async () => {
+      mockListRetrospectives.mockRejectedValue("something broke");
+      mockGetRetrospectiveStats.mockResolvedValue(makeStats());
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load retrospectives/)).toBeInTheDocument();
+      });
+    });
+
+    it("still renders list when stats fetch fails", async () => {
+      mockListRetrospectives.mockResolvedValue(makeListResponse([makeRetroItem()]));
+      mockGetRetrospectiveStats.mockRejectedValue(new Error("Stats failed"));
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Stats failed/)).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Empty state ──
+
+  describe("empty state", () => {
+    it("shows empty state when no retrospectives", async () => {
+      setupSuccess({}, {}, []);
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("No retrospectives yet")).toBeInTheDocument();
+      });
+      expect(screen.getByText(/Retrospectives are created automatically/)).toBeInTheDocument();
+    });
+
+    it("does not show empty state when loading", () => {
+      mockListRetrospectives.mockReturnValue(new Promise(() => {}));
+      mockGetRetrospectiveStats.mockReturnValue(new Promise(() => {}));
+      renderPanel();
+      expect(screen.queryByText("No retrospectives yet")).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Stats display ──
+
+  describe("stats display", () => {
+    it("shows stats cards when data loads", async () => {
+      setupSuccess({}, {
+        totalRetrospectives: 12,
+        byAgent: [makeAgentStat(), makeAgentStat({ agentId: "r1", agentName: "Reviewer", count: 7 })],
+        averageContentLength: 450,
+      });
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("12")).toBeInTheDocument();
+      });
+      expect(screen.getByText("Total")).toBeInTheDocument();
+      expect(screen.getByText("2")).toBeInTheDocument();
+      expect(screen.getByText("Agents")).toBeInTheDocument();
+      expect(screen.getByText("450")).toBeInTheDocument();
+      expect(screen.getByText("Avg length")).toBeInTheDocument();
+    });
+
+    it("shows latest retrospective timestamp", async () => {
+      setupSuccess({}, { latestRetrospectiveAt: "2026-04-10T14:00:00Z" });
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Latest")).toBeInTheDocument();
+      });
+    });
+
+    it("does not show latest card when null", async () => {
+      setupSuccess({}, { latestRetrospectiveAt: null });
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Total")).toBeInTheDocument();
+      });
+      expect(screen.queryByText("Latest")).not.toBeInTheDocument();
+    });
+
+    it("shows agent breakdown chips", async () => {
+      setupSuccess({}, {
+        byAgent: [
+          makeAgentStat({ agentId: "c1", agentName: "Coder", count: 5 }),
+          makeAgentStat({ agentId: "r1", agentName: "Reviewer", count: 7 }),
+        ],
+      });
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText(/Coder:/)).toBeInTheDocument();
+      });
+      expect(screen.getByText(/Reviewer:/)).toBeInTheDocument();
+    });
+  });
+
+  // ── List rendering ──
+
+  describe("list rendering", () => {
+    it("renders retrospective rows with agent badge and task title", async () => {
+      const items = [
+        makeRetroItem({ id: "r1", agentName: "Coder", taskTitle: "Auth feature" }),
+        makeRetroItem({ id: "r2", agentName: "Tester", taskTitle: "Write tests" }),
+      ];
+      setupSuccess({}, {}, items);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+      expect(screen.getByText("Write tests")).toBeInTheDocument();
+      const rows = getRetroRows(container);
+      expect(rows).toHaveLength(2);
+    });
+
+    it("truncates long preview text", async () => {
+      const longPreview = "A".repeat(150);
+      const items = [makeRetroItem({ contentPreview: longPreview })];
+      setupSuccess({}, {}, items);
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText(/A{50,}…/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows total count badge in header", async () => {
+      setupSuccess({ total: 42 }, {}, [makeRetroItem()]);
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("42 total")).toBeInTheDocument();
+      });
+    });
+  });
+
+  // ── Detail view ──
+
+  describe("detail view", () => {
+    it("loads and shows detail when row is clicked", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      // Detail content includes "bcrypt cost factor" which is NOT in the preview
+      await waitFor(() => {
+        expect(screen.getByText(/bcrypt cost factor/)).toBeInTheDocument();
+      });
+      expect(mockGetRetrospective).toHaveBeenCalledWith("retro-1");
+    });
+
+    it("shows task status badge in detail", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail({ taskStatus: "Completed" }));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Completed")).toBeInTheDocument();
+      });
+    });
+
+    it("shows task completed timestamp when available", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail({ taskCompletedAt: "2026-04-10T11:55:00Z" }));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Task completed:/)).toBeInTheDocument();
+      });
+    });
+
+    it("hides detail when same row is clicked again", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+      await waitFor(() => {
+        expect(screen.getByText(/bcrypt cost factor/)).toBeInTheDocument();
+      });
+
+      await user.click(getRetroRows(container)[0]);
+      await waitFor(() => {
+        expect(screen.queryByText(/bcrypt cost factor/)).not.toBeInTheDocument();
+      });
+    });
+
+    it("shows failure message when detail fetch fails", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockRejectedValue(new Error("Not found"));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to load detail")).toBeInTheDocument();
+      });
+    });
+
+    it("shows loading spinner while detail loads", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockReturnValue(new Promise(() => {}));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      expect(screen.getByText("Loading detail…")).toBeInTheDocument();
+    });
+
+    it("supports keyboard navigation (Enter to open)", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      getRetroRows(container)[0].focus();
+      await user.keyboard("{Enter}");
+
+      await waitFor(() => {
+        expect(mockGetRetrospective).toHaveBeenCalledWith("retro-1");
+      });
+    });
+  });
+
+  // ── Agent filter ──
+
+  describe("agent filter", () => {
+    it("populates agent filter from stats", async () => {
+      setupSuccess({}, {
+        byAgent: [
+          makeAgentStat({ agentId: "c1", agentName: "Coder", count: 5 }),
+          makeAgentStat({ agentId: "r1", agentName: "Reviewer", count: 7 }),
+        ],
+      });
+      renderPanel();
+      // Wait for stats-derived options to render, not just the combobox shell
+      // (the select exists from first render with only "All agents" — the
+      // agent options arrive after the stats fetch resolves, and asserting
+      // before that is the root cause of CI flakiness).
+      await waitFor(() => {
+        const select = screen.getByRole("combobox", { name: /filter by agent/i });
+        expect(select.querySelectorAll("option")).toHaveLength(3);
+      });
+
+      const select = screen.getByRole("combobox", { name: /filter by agent/i });
+      const options = Array.from(select.querySelectorAll("option"));
+      expect(options).toHaveLength(3);
+      expect(options[0]).toHaveTextContent("All agents");
+      // Sorted by count descending: Reviewer (7) then Coder (5)
+      expect(options[1]).toHaveTextContent("Reviewer (7)");
+      expect(options[2]).toHaveTextContent("Coder (5)");
+    });
+
+    it("filters by agent when selection changes", async () => {
+      setupSuccess({}, {
+        byAgent: [
+          makeAgentStat({ agentId: "c1", agentName: "Coder", count: 5 }),
+        ],
+      });
+      renderPanel();
+      // Wait for the specific "c1" option, not just the combobox — otherwise
+      // user.selectOptions runs before the option exists in the DOM.
+      await waitFor(() => {
+        const select = screen.getByRole("combobox", { name: /filter by agent/i });
+        expect(select.querySelector('option[value="c1"]')).not.toBeNull();
+      });
+
+      const user = userEvent.setup();
+      const select = screen.getByRole("combobox", { name: /filter by agent/i });
+      await user.selectOptions(select, "c1");
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledWith(
+          expect.objectContaining({ agentId: "c1" }),
+        );
+      });
+    });
+
+    it("resets pagination and clears detail on filter change", async () => {
+      setupSuccess(
+        { total: 25 },
+        { byAgent: [makeAgentStat({ agentId: "c1", agentName: "Coder" })] },
+        [makeRetroItem()],
+      );
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      // Open detail
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+      await waitFor(() => {
+        expect(screen.getByText(/bcrypt cost factor/)).toBeInTheDocument();
+      });
+
+      // Change filter — wait for the option to exist before selecting
+      // (stats promise may resolve after the retros promise).
+      await waitFor(() => {
+        const sel = screen.getByRole("combobox", { name: /filter by agent/i });
+        expect(sel.querySelector('option[value="c1"]')).not.toBeNull();
+      });
+      const select = screen.getByRole("combobox", { name: /filter by agent/i });
+      await user.selectOptions(select, "c1");
+
+      // Detail should be gone
+      await waitFor(() => {
+        expect(screen.queryByText(/bcrypt cost factor/)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  // ── Pagination ──
+
+  describe("pagination", () => {
+    it("does not show pagination when total fits in one page", async () => {
+      setupSuccess({ total: 5 }, {}, [makeRetroItem()]);
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.queryByText(/Page /)).not.toBeInTheDocument();
+      });
+    });
+
+    it("shows pagination when multiple pages", async () => {
+      setupSuccess({ total: 45 }, {}, Array(20).fill(null).map((_, i) => makeRetroItem({ id: `r-${i}` })));
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+      });
+    });
+
+    it("disables prev on first page", async () => {
+      setupSuccess({ total: 45 }, {}, Array(20).fill(null).map((_, i) => makeRetroItem({ id: `r-${i}` })));
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("← Prev")).toBeDisabled();
+      });
+      expect(screen.getByText("Next →")).not.toBeDisabled();
+    });
+
+    it("navigates to next page", async () => {
+      setupSuccess({ total: 45 }, {}, Array(20).fill(null).map((_, i) => makeRetroItem({ id: `r-${i}` })));
+      renderPanel();
+      await waitFor(() => {
+        expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+      });
+
+      const user = userEvent.setup();
+      await user.click(screen.getByText("Next →"));
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledWith(
+          expect.objectContaining({ offset: 20 }),
+        );
+      });
+    });
+  });
+
+  // ── Refresh ──
+
+  describe("refresh", () => {
+    it("re-fetches when refresh button is clicked", async () => {
+      setupSuccess();
+      renderPanel();
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /refresh/i }));
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("re-fetches when refreshTrigger prop changes", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={0} />
+        </FluentProvider>,
+      );
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+      });
+
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={1} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("does not re-fetch when refreshTrigger stays the same", async () => {
+      setupSuccess();
+      const { rerender } = render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={5} />
+        </FluentProvider>,
+      );
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+      });
+
+      rerender(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel refreshTrigger={5} />
+        </FluentProvider>,
+      );
+
+      // Should still be 1 — no extra fetch
+      expect(mockListRetrospectives).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Race condition handling ──
+
+  describe("race conditions", () => {
+    it("ignores stale list responses", async () => {
+      let resolveFirst: (v: RetrospectiveListResponse) => void;
+      const firstPromise = new Promise<RetrospectiveListResponse>((r) => { resolveFirst = r; });
+      const secondResponse = makeListResponse(
+        [makeRetroItem({ id: "r2", taskTitle: "Second result" })],
+        { total: 1 },
+      );
+
+      mockListRetrospectives.mockReturnValueOnce(firstPromise);
+      mockGetRetrospectiveStats.mockResolvedValue(makeStats());
+      renderPanel();
+
+      // Trigger a second fetch before the first resolves
+      mockListRetrospectives.mockResolvedValueOnce(secondResponse);
+      const user = userEvent.setup();
+
+      // Click refresh to trigger second fetch
+      await user.click(screen.getByRole("button", { name: /refresh/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Second result")).toBeInTheDocument();
+      });
+
+      // Now resolve the stale first response
+      resolveFirst!(makeListResponse(
+        [makeRetroItem({ id: "r1", taskTitle: "Stale result" })],
+      ));
+
+      // Wait a tick — stale response should be ignored
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByText("Stale result")).not.toBeInTheDocument();
+      expect(screen.getByText("Second result")).toBeInTheDocument();
+    });
+
+    it("ignores stale detail responses", async () => {
+      const items = [
+        makeRetroItem({ id: "r1", taskTitle: "First task" }),
+        makeRetroItem({ id: "r2", taskTitle: "Second task" }),
+      ];
+      setupSuccess({}, {}, items);
+
+      let resolveFirst: (v: RetrospectiveDetailResponse) => void;
+      const firstDetailPromise = new Promise<RetrospectiveDetailResponse>((r) => { resolveFirst = r; });
+
+      mockGetRetrospective.mockReturnValueOnce(firstDetailPromise);
+      mockGetRetrospective.mockResolvedValueOnce(makeDetail({ id: "r2", taskTitle: "Second task detail", content: "Content from second" }));
+
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(2);
+      });
+
+      const user = userEvent.setup();
+      // Click first row
+      await user.click(getRetroRows(container)[0]);
+      // Immediately click second row (before first resolves)
+      await user.click(getRetroRows(container)[1]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Content from second")).toBeInTheDocument();
+      });
+
+      // Resolve stale first
+      resolveFirst!(makeDetail({ id: "r1", content: "Stale content from first" }));
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(screen.queryByText("Stale content from first")).not.toBeInTheDocument();
+      expect(screen.getByText("Content from second")).toBeInTheDocument();
+    });
+  });
+
+  // ── Task status badge variants ──
+
+  describe("task status badges", () => {
+    const statusCases: Array<{ status: string; label: string }> = [
+      { status: "Completed", label: "Completed" },
+      { status: "InProgress", label: "In progress" },
+      { status: "Failed", label: "Failed" },
+      { status: "Blocked", label: "Blocked" },
+      { status: "Unknown", label: "Unknown" },
+    ];
+
+    for (const { status, label } of statusCases) {
+      it(`shows "${label}" badge for status "${status}"`, async () => {
+        setupSuccess();
+        mockGetRetrospective.mockResolvedValue(makeDetail({ taskStatus: status }));
+        const { container } = renderPanel();
+        await waitFor(() => {
+          expect(getRetroRows(container)).toHaveLength(1);
+        });
+
+        const user = userEvent.setup();
+        await user.click(getRetroRows(container)[0]);
+
+        await waitFor(() => {
+          expect(screen.getByText(label)).toBeInTheDocument();
+        });
+      });
+    }
+  });
+
+  // ── Edge cases (test backfill) ──
+
+  describe("keyboard navigation", () => {
+    it("opens detail with Space key", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      getRetroRows(container)[0].focus();
+      await user.keyboard(" ");
+
+      await waitFor(() => {
+        expect(mockGetRetrospective).toHaveBeenCalledWith("retro-1");
+      });
+    });
+  });
+
+  describe("pagination edge cases", () => {
+    it("disables next button on last page", async () => {
+      const items = Array.from({ length: 20 }, (_, i) =>
+        makeRetroItem({ id: `retro-${i}` }),
+      );
+      setupSuccess({ total: 25 }, undefined, items);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(20);
+      });
+
+      const user = userEvent.setup();
+      const nextBtn = screen.getByText("Next →");
+      await user.click(nextBtn);
+
+      // After navigating to page 2, next should be disabled
+      mockListRetrospectives.mockResolvedValue(
+        makeListResponse(
+          Array.from({ length: 5 }, (_, i) => makeRetroItem({ id: `retro-p2-${i}` })),
+          { total: 25, offset: 20 },
+        ),
+      );
+
+      await waitFor(() => {
+        const nextAfter = screen.getByText("Next →");
+        expect(nextAfter).toBeDisabled();
+      });
+    });
+
+    it("shows correct page count text", async () => {
+      const items = Array.from({ length: 20 }, (_, i) =>
+        makeRetroItem({ id: `retro-${i}` }),
+      );
+      setupSuccess({ total: 60 }, undefined, items);
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("content preview truncation", () => {
+    it("client-side truncates preview longer than 100 chars", async () => {
+      const longPreview = "A".repeat(150);
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ contentPreview: longPreview }),
+      ]);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      // The span with title=full preview contains the truncated text
+      const previewEl = container.querySelector(`[title="${longPreview}"]`);
+      expect(previewEl).toBeTruthy();
+      // Client truncates at 100 chars + "…"
+      expect(previewEl!.textContent!.length).toBeLessThanOrEqual(101);
+    });
+
+    it("does not truncate short preview", async () => {
+      const shortPreview = "Short text.";
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ contentPreview: shortPreview }),
+      ]);
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const previewEl = container.querySelector(`[title="${shortPreview}"]`);
+      expect(previewEl?.textContent).toBe("Short text.");
+    });
+  });
+
+  describe("detail error handling", () => {
+    it("shows failure text when detail fetch rejects", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockRejectedValue(new Error("Server error"));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to load detail")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("detail without completed timestamp", () => {
+    it("hides task completed line when taskCompletedAt is null", async () => {
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail({ taskCompletedAt: null }));
+      const { container } = renderPanel();
+      await waitFor(() => {
+        expect(getRetroRows(container)).toHaveLength(1);
+      });
+
+      const user = userEvent.setup();
+      await user.click(getRetroRows(container)[0]);
+
+      // Wait for detail-specific content that only appears in the detail panel
+      await waitFor(() => {
+        expect(screen.getByText(/Agent: Coder/)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/Task completed:/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("task title navigation", () => {
+    function renderWithNav(onNavigateToTask = vi.fn()) {
+      return {
+        onNavigateToTask,
+        ...render(
+          <FluentProvider theme={webDarkTheme}>
+            <RetrospectivePanel onNavigateToTask={onNavigateToTask} />
+          </FluentProvider>,
+        ),
+      };
+    }
+
+    it("renders task titles as links when onNavigateToTask is provided", async () => {
+      setupSuccess();
+      renderWithNav();
+
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Implement user authentication");
+      expect(titleEl).toHaveAttribute("role", "link");
+    });
+
+    it("does not render task titles as links when onNavigateToTask is absent", async () => {
+      setupSuccess();
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Implement user authentication");
+      expect(titleEl).not.toHaveAttribute("role", "link");
+    });
+
+    it("calls onNavigateToTask with correct taskId when clicking task title in list", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Auth feature");
+      await userEvent.click(titleEl);
+
+      expect(onNav).toHaveBeenCalledTimes(1);
+      expect(onNav).toHaveBeenCalledWith("task-42");
+    });
+
+    it("calls onNavigateToTask with correct taskId when clicking task title in detail", async () => {
+      const onNav = vi.fn();
+      setupSuccess();
+      mockGetRetrospective.mockResolvedValue(makeDetail());
+      const { container } = renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Implement user authentication")).toBeInTheDocument();
+      });
+
+      // Click row to expand detail
+      const rows = getRetroRows(container);
+      await userEvent.click(rows[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Agent: Coder/)).toBeInTheDocument();
+      });
+
+      // The detail header also shows the task title as a link
+      const detailTitles = screen.getAllByText("Implement user authentication");
+      // After expanding, there are two: one in the list row, one in the detail header
+      const links = detailTitles.filter((el) => el.getAttribute("role") === "link");
+      expect(links.length).toBeGreaterThanOrEqual(2);
+
+      // Click the last link (detail header)
+      await userEvent.click(links[links.length - 1]);
+      expect(onNav).toHaveBeenCalledWith("task-42");
+    });
+
+    it("does not toggle row selection when clicking task title link", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Auth feature");
+      await userEvent.click(titleEl);
+
+      // Should NOT have expanded the detail (click was on the title link, not the row)
+      expect(mockGetRetrospective).not.toHaveBeenCalled();
+    });
+
+    it("navigates to different tasks when clicking different retro items", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-10", taskTitle: "Auth feature" }),
+        makeRetroItem({ id: "r-2", taskId: "task-20", taskTitle: "Database migration" }),
+        makeRetroItem({ id: "r-3", taskId: "task-30", taskTitle: "API refactor" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByText("Auth feature"));
+      await userEvent.click(screen.getByText("Database migration"));
+      await userEvent.click(screen.getByText("API refactor"));
+
+      expect(onNav).toHaveBeenCalledTimes(3);
+      expect(onNav).toHaveBeenNthCalledWith(1, "task-10");
+      expect(onNav).toHaveBeenNthCalledWith(2, "task-20");
+      expect(onNav).toHaveBeenNthCalledWith(3, "task-30");
+    });
+
+    it("renders open icon on task title links when onNavigateToTask is provided", async () => {
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav();
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      // The link span should contain an SVG icon (OpenRegular)
+      const titleEl = screen.getByText("Auth feature");
+      const svg = titleEl.querySelector("svg");
+      expect(svg).not.toBeNull();
+    });
+
+    it("does not render open icon when onNavigateToTask is absent", async () => {
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText("Auth feature")).toBeInTheDocument();
+      });
+
+      const titleEl = screen.getByText("Auth feature");
+      const svg = titleEl.querySelector("svg");
+      expect(svg).toBeNull();
+    });
+
+    it("multiple retros for the same task all navigate to the same taskId", async () => {
+      const onNav = vi.fn();
+      setupSuccess(undefined, undefined, [
+        makeRetroItem({ id: "r-1", taskId: "task-42", taskTitle: "Auth feature" }),
+        makeRetroItem({ id: "r-2", taskId: "task-42", taskTitle: "Auth feature" }),
+      ]);
+      renderWithNav(onNav);
+
+      await waitFor(() => {
+        const titles = screen.getAllByText("Auth feature");
+        expect(titles.length).toBe(2);
+      });
+
+      const titles = screen.getAllByText("Auth feature");
+      await userEvent.click(titles[0]);
+      await userEvent.click(titles[1]);
+
+      expect(onNav).toHaveBeenCalledTimes(2);
+      expect(onNav).toHaveBeenNthCalledWith(1, "task-42");
+      expect(onNav).toHaveBeenNthCalledWith(2, "task-42");
+    });
+  });
+
+  // ── Task filter from cross-panel navigation ──
+
+  describe("filterTaskId (cross-panel task filter)", () => {
+    it("passes filterTaskId to the API when provided", async () => {
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId="task-42" />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledWith(
+          expect.objectContaining({ taskId: "task-42" }),
+        );
+      });
+    });
+
+    it("does not pass taskId to API when filterTaskId is null", async () => {
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId={null} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(mockListRetrospectives).toHaveBeenCalledWith(
+          expect.objectContaining({ taskId: undefined }),
+        );
+      });
+    });
+
+    it("shows task filter indicator when filterTaskId is provided", async () => {
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId="task-42" />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Filtered by task: task-42/)).toBeInTheDocument();
+      });
+    });
+
+    it("does not show task filter indicator when filterTaskId is absent", async () => {
+      setupSuccess();
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Filtered by task:/)).not.toBeInTheDocument();
+      });
+    });
+
+    it("calls onClearTaskFilter when dismiss button is clicked", async () => {
+      const onClear = vi.fn();
+      setupSuccess();
+      render(
+        <FluentProvider theme={webDarkTheme}>
+          <RetrospectivePanel filterTaskId="task-42" onClearTaskFilter={onClear} />
+        </FluentProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Filtered by task: task-42/)).toBeInTheDocument();
+      });
+
+      await userEvent.click(screen.getByLabelText("Clear task filter"));
+      expect(onClear).toHaveBeenCalledTimes(1);
+    });
+  });
+});

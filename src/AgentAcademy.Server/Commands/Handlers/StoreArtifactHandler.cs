@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -52,8 +53,9 @@ public sealed class StoreArtifactHandler : ICommandHandler
             stage = stg;
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
-        var sprintService = context.Services.GetRequiredService<SprintService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
+        var sprintService = context.Services.GetRequiredService<ISprintService>();
+        var artifactService = context.Services.GetRequiredService<ISprintArtifactService>();
 
         // Resolve sprint if not explicitly given
         if (string.IsNullOrEmpty(sprintId))
@@ -102,7 +104,7 @@ public sealed class StoreArtifactHandler : ICommandHandler
 
         try
         {
-            var artifact = await sprintService.StoreArtifactAsync(
+            var artifact = await artifactService.StoreArtifactAsync(
                 sprintId, stage, artifactType, content, context.AgentId);
 
             return command with

@@ -2,6 +2,7 @@ using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
@@ -23,10 +24,10 @@ public sealed class RoomAgentEndpointTests : IDisposable
     private readonly AgentAcademyDbContext _db;
     private readonly RoomService _roomService;
     private readonly AgentLocationService _agentLocationService;
-    private readonly MessageService _messageService;
+    private readonly IMessageService _messageService;
     private readonly BreakoutRoomService _breakoutRoomService;
     private readonly ConversationSessionService _sessionService;
-    private readonly AgentConfigService _configService;
+    private readonly IAgentConfigService _configService;
     private readonly AgentCatalogOptions _catalog;
     private readonly string _mainRoomId = "main";
 
@@ -65,16 +66,18 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var executor = Substitute.For<IAgentExecutor>();
         var sessionLogger = Substitute.For<ILogger<ConversationSessionService>>();
         _sessionService = new ConversationSessionService(_db, settingsService, executor, sessionLogger);
-        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog);
-        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher);
+        var taskDeps = new TaskDependencyService(_db, NullLogger<TaskDependencyService>.Instance, activityPublisher);
+        var taskQueries = new TaskQueryService(_db, NullLogger<TaskQueryService>.Instance, _catalog, taskDeps);
+        var taskLifecycle = new TaskLifecycleService(_db, NullLogger<TaskLifecycleService>.Instance, _catalog, activityPublisher, taskDeps);
         var agentLocations = new AgentLocationService(_db, _catalog, activityPublisher);
         var planService = new PlanService(_db);
-        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService);
+        var messageService = new MessageService(_db, NullLogger<MessageService>.Instance, _catalog, activityPublisher, _sessionService, new MessageBroadcaster());
         var breakouts = new BreakoutRoomService(_db, NullLogger<BreakoutRoomService>.Instance, _catalog, activityPublisher, _sessionService, taskQueries, agentLocations);
         var crashRecovery = new CrashRecoveryService(_db, NullLogger<CrashRecoveryService>.Instance, breakouts, agentLocations, messageService, activityPublisher);
-        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, _catalog, activityPublisher, _sessionService, messageService);
-        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService);
-        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, roomService, agentLocations, messageService, breakouts);
+        var roomService = new RoomService(_db, NullLogger<RoomService>.Instance, activityPublisher, messageService, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), new PhaseTransitionValidator(_db));
+        var roomLifecycle = new RoomLifecycleService(_db, NullLogger<RoomLifecycleService>.Instance, _catalog, activityPublisher);
+        var initializationService = new InitializationService(_db, NullLogger<InitializationService>.Instance, _catalog, activityPublisher, crashRecovery, roomService, new WorkspaceRoomService(_db, NullLogger<WorkspaceRoomService>.Instance, _catalog, activityPublisher));
+        var taskOrchestration = new TaskOrchestrationService(_db, NullLogger<TaskOrchestrationService>.Instance, _catalog, activityPublisher, taskLifecycle, taskQueries, roomService, new RoomSnapshotBuilder(_db, _catalog, new PhaseTransitionValidator(_db)), roomLifecycle, agentLocations, messageService, breakouts, NSubstitute.Substitute.For<AgentAcademy.Server.Services.Contracts.IWorktreeService>());
         _roomService = roomService;
         _agentLocationService = agentLocations;
         _messageService = messageService;
@@ -322,7 +325,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_ValidRequest_ReturnsCreated()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("My Researcher", "You research things carefully."));
@@ -337,7 +340,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_GeneratesKebabCaseId()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Code Review Expert", "You review code."));
@@ -350,20 +353,20 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_WithModel_IncludesModel()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
-            new CreateCustomAgentRequest("My Agent", "Prompt", "claude-opus-4.6"));
+            new CreateCustomAgentRequest("My Agent", "Prompt", "claude-opus-4.7"));
 
         var created = Assert.IsType<CreatedAtActionResult>(result.Result);
         var agent = Assert.IsType<AgentDefinition>(created.Value);
-        Assert.Equal("claude-opus-4.6", agent.Model);
+        Assert.Equal("claude-opus-4.7", agent.Model);
     }
 
     [Fact]
     public async Task CreateCustomAgent_PersistsConfig()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Persisted Agent", "Do things."));
@@ -376,7 +379,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_EmptyName_ReturnsBadRequest()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("", "Some prompt"));
@@ -387,7 +390,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_EmptyPrompt_ReturnsBadRequest()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Valid Name", ""));
@@ -398,7 +401,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_ConflictsWithCatalog_ReturnsConflict()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Planner", "Custom planner prompt"));
@@ -409,7 +412,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_DuplicateCustomName_ReturnsConflict()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Unique Bot", "First version."));
@@ -423,7 +426,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task CreateCustomAgent_SpecialCharsInName_ProducesCleanId()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("My Agent!! (v2)", "Prompt"));
@@ -438,7 +441,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_ExistingCustom_ReturnsOk()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Deletable Agent", "To be deleted."));
 
@@ -450,7 +453,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_RemovesFromDatabase()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
         await controller.CreateCustomAgent(
             new CreateCustomAgentRequest("Gone Agent", "Will be gone."));
 
@@ -463,7 +466,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_BuiltInAgent_ReturnsBadRequest()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.DeleteCustomAgent("planner");
 
@@ -473,7 +476,7 @@ public sealed class RoomAgentEndpointTests : IDisposable
     [Fact]
     public async Task DeleteCustomAgent_NonexistentAgent_ReturnsNotFound()
     {
-        var controller = CreateAgentController();
+        var controller = CreateAgentConfigController();
 
         var result = await controller.DeleteCustomAgent("no-such-agent");
 
@@ -502,7 +505,10 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var errorTracker = new AgentErrorTracker(scopeFactory, NullLogger<AgentErrorTracker>.Instance);
-        return new RoomController(_roomService, _agentLocationService, _messageService, _catalog, usageTracker, errorTracker, logger);
+        var activityPublisher = new ActivityPublisher(_db, new ActivityBroadcaster());
+        var artifactTracker = new RoomArtifactTracker(_db, activityPublisher, NullLogger<RoomArtifactTracker>.Instance);
+        var evaluator = new ArtifactEvaluatorService(_db, NullLogger<ArtifactEvaluatorService>.Instance);
+        return new RoomController(_roomService, _agentLocationService, _messageService, new MessageBroadcaster(), _catalog, usageTracker, errorTracker, artifactTracker, evaluator, logger);
     }
 
     private AgentController CreateAgentController()
@@ -512,6 +518,12 @@ public sealed class RoomAgentEndpointTests : IDisposable
         var scopeFactory = Substitute.For<IServiceScopeFactory>();
         var usageTracker = new LlmUsageTracker(scopeFactory, NullLogger<LlmUsageTracker>.Instance);
         var quotaService = new AgentQuotaService(scopeFactory, usageTracker, NullLogger<AgentQuotaService>.Instance);
-        return new AgentController(_agentLocationService, _breakoutRoomService, executor, _catalog, _configService, quotaService, logger);
+        return new AgentController(_agentLocationService, _breakoutRoomService, executor, _catalog, quotaService, logger);
+    }
+
+    private AgentConfigController CreateAgentConfigController()
+    {
+        var logger = Substitute.For<ILogger<AgentConfigController>>();
+        return new AgentConfigController(_catalog, _configService, logger);
     }
 }

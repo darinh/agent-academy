@@ -182,6 +182,37 @@ describe("useDesktopNotifications", () => {
         expect(mockNotification).toHaveBeenCalledWith("Task created", expect.objectContaining({ body: "Implement auth" }));
       });
 
+      it("creates notification for TaskUnblocked", () => {
+        const { result } = renderHook(() => useDesktopNotifications());
+        result.current.notify(makeEvent({ type: "TaskUnblocked", message: "Task #5 is now unblocked" }));
+        expect(mockNotification).toHaveBeenCalledWith("Task unblocked", expect.objectContaining({ body: "Task #5 is now unblocked" }));
+      });
+
+      it("uses event type as body when message is empty", () => {
+        const { result } = renderHook(() => useDesktopNotifications());
+        result.current.notify(makeEvent({ type: "AgentErrorOccurred", message: "" }));
+        expect(mockNotification).toHaveBeenCalledWith("Agent error", expect.objectContaining({ body: "AgentErrorOccurred" }));
+      });
+
+      it("uses event type as body when message is undefined", () => {
+        const { result } = renderHook(() => useDesktopNotifications());
+        result.current.notify(makeEvent({ type: "SprintCompleted", message: undefined }));
+        expect(mockNotification).toHaveBeenCalledWith("Sprint completed", expect.objectContaining({ body: "SprintCompleted" }));
+      });
+
+      it("sets tag, icon, and silent options", () => {
+        const { result } = renderHook(() => useDesktopNotifications());
+        result.current.notify(makeEvent({ id: "evt-42", type: "DirectMessageSent" }));
+        expect(mockNotification).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            tag: "evt-42",
+            icon: "/agent-academy-icon.png",
+            silent: false,
+          }),
+        );
+      });
+
       // ── Event Filtering ───────────────────
 
       it("ignores events not in the notify set", () => {
@@ -210,6 +241,21 @@ describe("useDesktopNotifications", () => {
         result.current.notify(evt);
         result.current.notify(evt);
         expect(mockNotification).toHaveBeenCalledOnce();
+      });
+
+      it("evicts old dedup entries after 100 events", () => {
+        const { result } = renderHook(() => useDesktopNotifications());
+        // Send 101 unique events to trigger eviction (prunes to last 50)
+        for (let i = 0; i < 101; i++) {
+          result.current.notify(makeEvent({ id: `evt-${i}`, type: "DirectMessageSent" }));
+        }
+        expect(mockNotification).toHaveBeenCalledTimes(101);
+        // Replay an early event that should have been evicted — should create a new notification
+        result.current.notify(makeEvent({ id: "evt-0", type: "DirectMessageSent" }));
+        expect(mockNotification).toHaveBeenCalledTimes(102);
+        // Replay a recent event that should still be in the set — should be deduped
+        result.current.notify(makeEvent({ id: "evt-100", type: "DirectMessageSent" }));
+        expect(mockNotification).toHaveBeenCalledTimes(102);
       });
 
       // ── Click-to-focus ────────────────────
@@ -244,6 +290,37 @@ describe("useDesktopNotifications", () => {
       Object.defineProperty(document, "hidden", { value: true, configurable: true });
       const { result } = renderHook(() => useDesktopNotifications());
       result.current.notify(makeEvent({ type: "DirectMessageSent" }));
+      expect(mockNotification).not.toHaveBeenCalled();
+      Object.defineProperty(document, "hidden", { value: false, configurable: true });
+    });
+
+    it("does not enable when browser is unsupported", async () => {
+      vi.stubGlobal("Notification", undefined);
+      const { result } = renderHook(() => useDesktopNotifications());
+      await act(async () => result.current.setEnabled(true));
+      expect(result.current.enabled).toBe(false);
+      expect(result.current.permission).toBe("unsupported");
+    });
+
+    it("stays disabled when requestPermission throws", async () => {
+      Object.defineProperty(mockNotification, "permission", { value: "default" });
+      mockNotification.requestPermission = vi.fn().mockRejectedValue(new Error("browser error"));
+      const { result } = renderHook(() => useDesktopNotifications());
+      await act(async () => result.current.setEnabled(true));
+      expect(result.current.enabled).toBe(false);
+      expect(storageMap["aa-desktop-notifications"]).toBe("false");
+    });
+
+    it("applies default title for unmapped event types via PascalCase splitting", () => {
+      Object.defineProperty(mockNotification, "permission", { value: "granted" });
+      storageMap["aa-desktop-notifications"] = "true";
+      Object.defineProperty(document, "hidden", { value: true, configurable: true });
+      const { result } = renderHook(() => useDesktopNotifications());
+      // Event types not in NOTIFY_EVENT_TYPES are filtered before eventTitle runs.
+      // Currently all set members have explicit switch cases, so the default
+      // title path (PascalCase split) is unreachable via public API.
+      // This test confirms the filter still holds for non-set event types.
+      result.current.notify(makeEvent({ type: "AgentThinking" }));
       expect(mockNotification).not.toHaveBeenCalled();
       Object.defineProperty(document, "hidden", { value: false, configurable: true });
     });

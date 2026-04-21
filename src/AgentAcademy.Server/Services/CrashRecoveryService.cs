@@ -1,5 +1,6 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,7 +12,7 @@ namespace AgentAcademy.Server.Services;
 /// detecting unclean shutdowns, closing orphaned breakout rooms,
 /// resetting stuck agents, and resetting abandoned tasks.
 /// </summary>
-public sealed class CrashRecoveryService
+public sealed class CrashRecoveryService : ICrashRecoveryService
 {
     private static readonly HashSet<string> InProgressStatuses = new(StringComparer.Ordinal)
     {
@@ -28,18 +29,18 @@ public sealed class CrashRecoveryService
 
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<CrashRecoveryService> _logger;
-    private readonly BreakoutRoomService _breakouts;
-    private readonly AgentLocationService _agentLocations;
-    private readonly MessageService _messages;
-    private readonly ActivityPublisher _activity;
+    private readonly IBreakoutRoomService _breakouts;
+    private readonly IAgentLocationService _agentLocations;
+    private readonly IMessageService _messages;
+    private readonly IActivityPublisher _activity;
 
     public CrashRecoveryService(
         AgentAcademyDbContext db,
         ILogger<CrashRecoveryService> logger,
-        BreakoutRoomService breakouts,
-        AgentLocationService agentLocations,
-        MessageService messages,
-        ActivityPublisher activity)
+        IBreakoutRoomService breakouts,
+        IAgentLocationService agentLocations,
+        IMessageService messages,
+        IActivityPublisher activity)
     {
         _db = db;
         _logger = logger;
@@ -48,11 +49,6 @@ public sealed class CrashRecoveryService
         _messages = messages;
         _activity = activity;
     }
-
-    public sealed record CrashRecoveryResult(
-        int ClosedBreakoutRooms,
-        int ResetWorkingAgents,
-        int ResetTasks);
 
     /// <summary>
     /// The ID of the current server instance. Set during

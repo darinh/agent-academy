@@ -126,6 +126,7 @@ function makeOverview(overrides: Partial<WorkspaceOverview> = {}): WorkspaceOver
     recentActivity: [makeEvent()],
     agentLocations: [],
     breakoutRooms: [],
+    goalCards: { total: 0, active: 0, challenged: 0, completed: 0, abandoned: 0, verdictProceed: 0, verdictProceedWithCaveat: 0, verdictChallenge: 0 },
     generatedAt: "2026-04-01T00:00:00Z",
     ...overrides,
   };
@@ -218,6 +219,101 @@ describe("DashboardPanel (interactive)", () => {
       });
       const zeroes = screen.getAllByText("0");
       expect(zeroes.length).toBeGreaterThanOrEqual(4);
+    });
+  });
+
+  // ── Goal Card Stat Card ──
+
+  describe("goal card stat card", () => {
+    it("renders goal card total", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 7, active: 3, challenged: 1, completed: 2, abandoned: 1, verdictProceed: 4, verdictProceedWithCaveat: 2, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByText("Goal Cards")).toBeInTheDocument();
+      expect(screen.getByText("7")).toBeInTheDocument();
+    });
+
+    it("shows active count in label", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 5, active: 3, challenged: 0, completed: 2, abandoned: 0, verdictProceed: 3, verdictProceedWithCaveat: 1, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByText(/3 active/)).toBeInTheDocument();
+    });
+
+    it("shows challenged count in label when challenged > 0", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 4, active: 2, challenged: 2, completed: 0, abandoned: 0, verdictProceed: 2, verdictProceedWithCaveat: 1, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByText(/2 challenged/)).toBeInTheDocument();
+    });
+
+    it("hides challenged from label when challenged is 0", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 3, active: 3, challenged: 0, completed: 0, abandoned: 0, verdictProceed: 3, verdictProceedWithCaveat: 0, verdictChallenge: 0 },
+        }),
+      });
+      expect(screen.queryByText(/challenged/)).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Goal Card Breakdown Section ──
+
+  describe("goal card breakdown", () => {
+    it("hides breakdown when total is 0", () => {
+      renderPanel(); // default goalCards has total: 0
+      expect(screen.queryByText("Goal Card Breakdown")).not.toBeInTheDocument();
+    });
+
+    it("shows breakdown section when total > 0", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 4, active: 2, challenged: 1, completed: 1, abandoned: 0, verdictProceed: 2, verdictProceedWithCaveat: 1, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByText("Goal Card Breakdown")).toBeInTheDocument();
+    });
+
+    it("renders status rows with correct counts", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 6, active: 2, challenged: 1, completed: 2, abandoned: 1, verdictProceed: 3, verdictProceedWithCaveat: 2, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByText("Active")).toBeInTheDocument();
+      expect(screen.getByText("Challenged")).toBeInTheDocument();
+      expect(screen.getByText("Completed")).toBeInTheDocument();
+      expect(screen.getByText("Abandoned")).toBeInTheDocument();
+    });
+
+    it("renders verdict summary line", () => {
+      renderPanel({
+        overview: makeOverview({
+          goalCards: { total: 5, active: 3, challenged: 0, completed: 2, abandoned: 0, verdictProceed: 3, verdictProceedWithCaveat: 1, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByText(/3 proceed/)).toBeInTheDocument();
+      expect(screen.getByText(/1 caveat/)).toBeInTheDocument();
+      expect(screen.getByText(/1 challenge/)).toBeInTheDocument();
+    });
+
+    it("renders V3Badge with correct colors for each status", () => {
+      renderPanel({
+        overview: makeOverview({
+          rooms: [], // avoid phase-distribution badges clashing
+          goalCards: { total: 4, active: 1, challenged: 1, completed: 1, abandoned: 1, verdictProceed: 2, verdictProceedWithCaveat: 1, verdictChallenge: 1 },
+        }),
+      });
+      expect(screen.getByTestId("badge-active")).toBeInTheDocument();
+      expect(screen.getByTestId("badge-warn")).toBeInTheDocument();
+      expect(screen.getByTestId("badge-done")).toBeInTheDocument();
+      expect(screen.getByTestId("badge-cancel")).toBeInTheDocument();
     });
   });
 

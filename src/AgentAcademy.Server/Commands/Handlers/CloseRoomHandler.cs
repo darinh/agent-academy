@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -37,7 +38,9 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
+        var lifecycle = context.Services.GetRequiredService<IRoomLifecycleService>();
+        var locations = context.Services.GetRequiredService<IAgentLocationService>();
         var room = await roomService.GetRoomAsync(roomId);
         if (room is null)
         {
@@ -49,7 +52,7 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        if (await roomService.IsMainCollaborationRoomAsync(roomId))
+        if (await lifecycle.IsMainCollaborationRoomAsync(roomId))
         {
             return command with
             {
@@ -59,17 +62,23 @@ public sealed class CloseRoomHandler : ICommandHandler
             };
         }
 
-        if (room.Participants.Count > 0)
+        // Use raw location data (not phase-filtered snapshot participants) so occupancy
+        // matches what RoomLifecycleService.CloseRoomAsync enforces. Otherwise a room
+        // in Intake with a SoftwareEngineer present would pass this check and then
+        // throw inside CloseRoomAsync.
+        var allLocations = await locations.GetAgentLocationsAsync();
+        var activeParticipantCount = allLocations.Count(l => l.RoomId == roomId && l.BreakoutRoomId is null);
+        if (activeParticipantCount > 0)
         {
             return command with
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Conflict,
-                Error = $"Room '{room.Name}' has {room.Participants.Count} active participant(s) and cannot be closed."
+                Error = $"Room '{room.Name}' has {activeParticipantCount} active participant(s) and cannot be closed."
             };
         }
 
-        await roomService.CloseRoomAsync(roomId);
+        await lifecycle.CloseRoomAsync(roomId);
 
         return command with
         {

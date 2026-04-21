@@ -1,5 +1,7 @@
 using AgentAcademy.Server.Notifications;
+using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -54,10 +56,10 @@ public sealed class DmHandler : ICommandHandler
     private static async Task<CommandEnvelope> SendToHumanAsync(
         CommandEnvelope command, CommandContext context, string message)
     {
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
-        var notificationManager = context.Services.GetRequiredService<NotificationManager>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
+        var notificationManager = context.Services.GetRequiredService<INotificationManager>();
 
         var roomId = context.RoomId ?? "main";
 
@@ -121,9 +123,9 @@ public sealed class DmHandler : ICommandHandler
     private static async Task<CommandEnvelope> SendToAgentAsync(
         CommandEnvelope command, CommandContext context, string recipientId, string message)
     {
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
 
         // Validate agent exists (case-insensitive, use canonical ID)
         var agents = catalog.Agents;
@@ -161,7 +163,7 @@ public sealed class DmHandler : ICommandHandler
             context.AgentRole ?? "Agent", targetAgent.Id, message, roomId);
 
         // Forward DM to Discord Messages category (channel message, no thread)
-        var notificationManager = context.Services.GetRequiredService<NotificationManager>();
+        var notificationManager = context.Services.GetRequiredService<INotificationManager>();
         var roomName = roomId;
         try
         {
@@ -181,7 +183,7 @@ public sealed class DmHandler : ICommandHandler
         ));
 
         // Trigger recipient agent to respond promptly
-        var orchestrator = context.Services.GetRequiredService<AgentOrchestrator>();
+        var orchestrator = context.Services.GetRequiredService<IAgentOrchestrator>();
         orchestrator.HandleDirectMessage(targetAgent.Id);
 
         return command with

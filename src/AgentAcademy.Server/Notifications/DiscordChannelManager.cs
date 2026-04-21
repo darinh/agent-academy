@@ -4,30 +4,26 @@ using Discord;
 using Discord.Webhook;
 using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Notifications;
 
 /// <summary>
 /// Manages Discord channel and category lifecycle for Agent Academy rooms and agent DM channels.
-/// Owns all channel/webhook caching, creation, renaming, deletion, and startup rebuild.
-/// Extracted from DiscordNotificationProvider to separate channel infrastructure from messaging logic.
+/// Owns channel/webhook caching, creation, renaming, deletion, and startup rebuild.
+/// Naming utilities live in <see cref="DiscordNameFormatter"/>.
+/// Rebuild/discovery logic lives in <see cref="DiscordChannelRebuilder"/>.
 /// </summary>
 public sealed class DiscordChannelManager : IAsyncDisposable
 {
     private readonly ILogger<DiscordChannelManager> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
 
-    // Maps Discord channel ID → agent routing info (for agent question channels)
     private readonly ConcurrentDictionary<ulong, AgentChannelInfo> _agentChannels = new();
-    // Maps workspace roomId → Discord category ID (for ASK_HUMAN)
     private readonly ConcurrentDictionary<string, ulong> _workspaceCategories = new();
-    // Maps AA roomId → Discord channel ID (for room-based routing)
     private readonly ConcurrentDictionary<string, ulong> _roomChannels = new();
-    // Maps Discord channel ID → AA roomId (for reverse routing of human replies)
     private readonly ConcurrentDictionary<ulong, string> _channelToRoom = new();
-    // Maps Discord channel ID → webhook client (for agent-identity messages)
     private readonly ConcurrentDictionary<ulong, DiscordWebhookClient> _webhooks = new();
-    // Discord category ID for room channels (keyed by project name, "__default__" for legacy)
     private readonly ConcurrentDictionary<string, ulong> _roomCategories = new();
 
     internal const string DefaultCategoryKey = "__default__";
@@ -208,13 +204,12 @@ public sealed class DiscordChannelManager : IAsyncDisposable
 
     /// <summary>
     /// Rebuilds in-memory channel mappings from existing Discord state.
-    /// Clears stale state first, then scans categories for agent and room channels.
+    /// Delegates scanning to <see cref="DiscordChannelRebuilder"/> and applies results.
     /// </summary>
     public Task RebuildAsync(SocketGuild guild)
     {
         try
         {
-            // Clear stale state before rebuilding
             _agentChannels.Clear();
             _workspaceCategories.Clear();
             _roomChannels.Clear();
@@ -222,133 +217,28 @@ public sealed class DiscordChannelManager : IAsyncDisposable
             _roomCategories.Clear();
             // Keep webhooks — they survive reconnect and are keyed by channel ID
 
-            var restoredAgentChannels = 0;
-            var restoredRoomChannels = 0;
+            var result = DiscordChannelRebuilder.ScanGuild(guild, _logger);
 
-            // Rebuild DM/message agent channel mappings (under "*Messages" categories, legacy "aa-*")
-            foreach (var category in guild.CategoryChannels
-                         .Where(c => c.Name.EndsWith(" Messages", StringComparison.OrdinalIgnoreCase) ||
-                                     c.Name.StartsWith("aa-", StringComparison.OrdinalIgnoreCase)))
-            {
-                var channels = guild.TextChannels.Where(c => c.CategoryId == category.Id).ToList();
+            foreach (var (channelId, info) in result.AgentChannels)
+                _agentChannels[channelId] = info;
 
-                foreach (var channel in channels)
-                {
-                    var topic = channel.Topic ?? "";
-                    var agentName = channel.Name;
+            foreach (var (roomId, channelId) in result.RoomChannels)
+                _roomChannels[roomId] = channelId;
 
-                    // Parse roomId from topic — supports both formats:
-                    // New: "Direct messages — {agentName} · Room: {roomId}"
-                    // Legacy: "Agent Academy — {agentName} questions (Room: {roomId})"
-                    var restoredRoomId = "unknown";
+            foreach (var (channelId, roomId) in result.ChannelToRoom)
+                _channelToRoom[channelId] = roomId;
 
-                    // Try new format first: "· Room: {roomId}"
-                    var roomMarkerNew = "· Room: ";
-                    var roomStartNew = topic.IndexOf(roomMarkerNew, StringComparison.Ordinal);
-                    if (roomStartNew >= 0)
-                    {
-                        restoredRoomId = topic[(roomStartNew + roomMarkerNew.Length)..].Trim();
+            foreach (var (key, categoryId) in result.RoomCategories)
+                _roomCategories[key] = categoryId;
 
-                        // Parse agent name from "Direct messages — {agentName}"
-                        var dashIdx = topic.IndexOf('—');
-                        if (dashIdx >= 0)
-                        {
-                            var afterDash = topic[(dashIdx + 1)..].Trim();
-                            var dotIdx = afterDash.IndexOf('·');
-                            if (dotIdx > 0)
-                                agentName = afterDash[..dotIdx].Trim();
-                        }
-                    }
-                    else if (topic.Contains("Agent Academy"))
-                    {
-                        // Legacy format: "Agent Academy — {agentName} questions (Room: {roomId})"
-                        var dashIdx = topic.IndexOf('—');
-                        if (dashIdx >= 0)
-                        {
-                            var afterDash = topic[(dashIdx + 1)..].Trim();
-                            var questionsIdx = afterDash.IndexOf(" questions", StringComparison.OrdinalIgnoreCase);
-                            if (questionsIdx > 0)
-                                agentName = afterDash[..questionsIdx].Trim();
-                        }
+            var agentCount = result.AgentChannels.Count;
+            var roomCount = result.RoomChannels.Count;
 
-                        var roomMarker = "(Room: ";
-                        var roomStart = topic.IndexOf(roomMarker, StringComparison.Ordinal);
-                        if (roomStart >= 0)
-                        {
-                            var roomValue = topic[(roomStart + roomMarker.Length)..];
-                            var roomEnd = roomValue.IndexOf(')');
-                            if (roomEnd > 0)
-                                restoredRoomId = roomValue[..roomEnd];
-                        }
-                    }
-
-                    _agentChannels[channel.Id] = new AgentChannelInfo(
-                        AgentId: channel.Name,
-                        AgentName: agentName,
-                        RoomId: restoredRoomId
-                    );
-                    restoredAgentChannels++;
-                }
-            }
-
-            // Rebuild room channel mappings from project categories ("* Rooms") and legacy ("AA: *", "Agent Academy", "Rooms")
-            foreach (var roomCategory in guild.CategoryChannels.Where(
-                         c => c.Name.EndsWith(" Rooms", StringComparison.OrdinalIgnoreCase) ||
-                              c.Name.Equals("Rooms", StringComparison.OrdinalIgnoreCase) ||
-                              c.Name.StartsWith("AA: ", StringComparison.OrdinalIgnoreCase) ||
-                              c.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase)))
-            {
-                // Cache the category under the appropriate key
-                string categoryKey;
-                if (roomCategory.Name.Equals("Rooms", StringComparison.OrdinalIgnoreCase) ||
-                    roomCategory.Name.Equals("Agent Academy", StringComparison.OrdinalIgnoreCase))
-                    categoryKey = DefaultCategoryKey;
-                else if (roomCategory.Name.EndsWith(" Rooms", StringComparison.OrdinalIgnoreCase))
-                    categoryKey = roomCategory.Name[..^6]; // Strip " Rooms" suffix to get project name
-                else
-                    categoryKey = roomCategory.Name[4..]; // Strip "AA: " prefix (legacy)
-                _roomCategories[categoryKey] = roomCategory.Id;
-
-                foreach (var channel in guild.TextChannels.Where(c => c.CategoryId == roomCategory.Id))
-                {
-                    var topic = channel.Topic ?? "";
-                    // Parse roomId from topic — supports both formats:
-                    // Old: "Agent Academy — Room: {roomName} (ID: {roomId})"
-                    // New: "... · ID: {roomId}"
-                    string? roomId = null;
-
-                    var oldMarker = "(ID: ";
-                    var oldStart = topic.IndexOf(oldMarker, StringComparison.Ordinal);
-                    if (oldStart >= 0)
-                    {
-                        var idValue = topic[(oldStart + oldMarker.Length)..];
-                        var idEnd = idValue.IndexOf(')');
-                        if (idEnd > 0)
-                            roomId = idValue[..idEnd];
-                    }
-
-                    if (roomId is null)
-                    {
-                        var newMarker = "· ID: ";
-                        var newStart = topic.IndexOf(newMarker, StringComparison.Ordinal);
-                        if (newStart >= 0)
-                            roomId = topic[(newStart + newMarker.Length)..].Trim();
-                    }
-
-                    if (roomId is not null)
-                    {
-                        _roomChannels[roomId] = channel.Id;
-                        _channelToRoom[channel.Id] = roomId;
-                        restoredRoomChannels++;
-                    }
-                }
-            }
-
-            if (restoredAgentChannels > 0 || restoredRoomChannels > 0)
+            if (agentCount > 0 || roomCount > 0)
             {
                 _logger.LogInformation(
                     "Rebuilt Discord channel mapping: {AgentChannels} agent channels, {RoomChannels} room channels",
-                    restoredAgentChannels, restoredRoomChannels);
+                    agentCount, roomCount);
             }
         }
         catch (Exception ex)
@@ -359,69 +249,23 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    // ── Static Helpers ──────────────────────────────────────────
+    // ── Static Helpers (delegated to DiscordNameFormatter) ────
 
-    /// <summary>
-    /// Sanitizes a name for use as a Discord channel name.
-    /// Discord channel names: lowercase, hyphens instead of spaces, max 100 chars.
-    /// </summary>
+    /// <inheritdoc cref="DiscordNameFormatter.SanitizeChannelName"/>
     internal static string SanitizeChannelName(string name, string? fallbackId = null)
-    {
-        var sanitized = name.ToLowerInvariant()
-            .Replace(' ', '-')
-            .Replace('_', '-');
+        => DiscordNameFormatter.SanitizeChannelName(name, fallbackId);
 
-        // Remove chars not allowed in Discord channel names
-        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"[^a-z0-9\-]", "");
-
-        // Collapse multiple hyphens and trim leading/trailing hyphens
-        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"-{2,}", "-").Trim('-');
-
-        // Fallback for empty results (e.g., non-ASCII input)
-        if (string.IsNullOrEmpty(sanitized))
-            sanitized = fallbackId is not null ? $"agent-{fallbackId[..Math.Min(8, fallbackId.Length)]}" : "unknown";
-
-        return sanitized.Length > 100 ? sanitized[..100] : sanitized;
-    }
-
-    /// <summary>
-    /// Sanitizes a name for use as a Discord category name.
-    /// Categories allow spaces and mixed case but have a 100-char limit.
-    /// </summary>
+    /// <inheritdoc cref="DiscordNameFormatter.SanitizeCategoryName"/>
     internal static string SanitizeCategoryName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return "General";
+        => DiscordNameFormatter.SanitizeCategoryName(name);
 
-        return name.Length > 100 ? name[..100] : name;
-    }
-
-    /// <summary>
-    /// Formats an agent ID or name into a display name for Discord webhook messages.
-    /// </summary>
+    /// <inheritdoc cref="DiscordNameFormatter.FormatAgentDisplayName"/>
     internal static string FormatAgentDisplayName(string agentNameOrId)
-    {
-        if (string.IsNullOrWhiteSpace(agentNameOrId))
-            return "Agent Academy";
+        => DiscordNameFormatter.FormatAgentDisplayName(agentNameOrId);
 
-        // If it looks like an ID (contains hyphens, all lowercase), try to humanize
-        if (agentNameOrId.Contains('-') && agentNameOrId == agentNameOrId.ToLowerInvariant())
-        {
-            return string.Join(' ', agentNameOrId.Split('-')
-                .Select(s => s.Length > 0 ? char.ToUpper(s[0]) + s[1..] : s));
-        }
-
-        return agentNameOrId;
-    }
-
-    /// <summary>
-    /// Returns a unique avatar URL for each agent using DiceBear Identicons.
-    /// </summary>
+    /// <inheritdoc cref="DiscordNameFormatter.GetAgentAvatarUrl"/>
     internal static string GetAgentAvatarUrl(string agentNameOrId)
-    {
-        var seed = Uri.EscapeDataString(agentNameOrId.ToLowerInvariant());
-        return $"https://api.dicebear.com/9.x/identicon/png?seed={seed}&size=128";
-    }
+        => DiscordNameFormatter.GetAgentAvatarUrl(agentNameOrId);
 
     // ── Disposal ────────────────────────────────────────────────
 
@@ -443,7 +287,7 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
             projectName = await roomService.GetProjectNameForRoomAsync(roomId);
 
             if (projectName is null)
@@ -557,7 +401,7 @@ public sealed class DiscordChannelManager : IAsyncDisposable
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var roomService = scope.ServiceProvider.GetRequiredService<RoomService>();
+            var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
             var room = await roomService.GetRoomAsync(roomId);
             if (room is not null)
                 roomName = room.Name;

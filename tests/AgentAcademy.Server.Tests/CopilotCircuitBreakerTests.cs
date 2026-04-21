@@ -1,13 +1,19 @@
 using AgentAcademy.Server.Services;
+using Microsoft.Extensions.Time.Testing;
 
 namespace AgentAcademy.Server.Tests;
 
 public class CopilotCircuitBreakerTests
 {
+    private readonly FakeTimeProvider _time = new();
+
+    private CopilotCircuitBreaker Create(int failureThreshold = 5, TimeSpan? openDuration = null)
+        => new(failureThreshold, openDuration, _time);
+
     [Fact]
     public void InitialState_IsClosed()
     {
-        var cb = new CopilotCircuitBreaker();
+        var cb = Create();
         Assert.Equal(CircuitState.Closed, cb.State);
         Assert.Equal(0, cb.ConsecutiveFailures);
         Assert.Null(cb.LastFailureUtc);
@@ -16,14 +22,14 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void AllowRequest_WhenClosed_ReturnsTrue()
     {
-        var cb = new CopilotCircuitBreaker();
+        var cb = Create();
         Assert.True(cb.AllowRequest());
     }
 
     [Fact]
     public void RecordSuccess_WhenClosed_RemainsClosedAndZeroFailures()
     {
-        var cb = new CopilotCircuitBreaker();
+        var cb = Create();
         cb.RecordSuccess();
         Assert.Equal(CircuitState.Closed, cb.State);
         Assert.Equal(0, cb.ConsecutiveFailures);
@@ -32,7 +38,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void RecordFailure_BelowThreshold_RemainsClosed()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 5);
+        var cb = Create(failureThreshold: 5);
 
         for (int i = 0; i < 4; i++)
             cb.RecordFailure();
@@ -45,7 +51,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void RecordFailure_AtThreshold_OpensCircuit()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 3);
+        var cb = Create(failureThreshold: 3);
 
         cb.RecordFailure();
         cb.RecordFailure();
@@ -58,7 +64,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void AllowRequest_WhenOpen_ReturnsFalse()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1);
+        var cb = Create(failureThreshold: 1);
         cb.RecordFailure();
 
         Assert.Equal(CircuitState.Open, cb.State);
@@ -68,14 +74,12 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void Open_TransitionsToHalfOpen_AfterCooldown()
     {
-        // Use a tiny cooldown for testing
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
         cb.RecordFailure();
 
         Assert.Equal(CircuitState.Open, cb.State);
 
-        // Wait for cooldown
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
 
         Assert.Equal(CircuitState.HalfOpen, cb.State);
     }
@@ -83,10 +87,10 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void HalfOpen_AllowsOneRequest()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
         cb.RecordFailure();
 
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.Equal(CircuitState.HalfOpen, cb.State);
 
         // First request allowed (probe)
@@ -99,10 +103,10 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void HalfOpen_ProbeSuccess_ResetsToClosed()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
         cb.RecordFailure();
 
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.True(cb.AllowRequest()); // probe allowed
 
         cb.RecordSuccess();
@@ -115,10 +119,10 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void HalfOpen_ProbeFailure_ReopensCircuit()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
         cb.RecordFailure();
 
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.True(cb.AllowRequest()); // probe allowed
 
         cb.RecordFailure();
@@ -130,7 +134,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void RecordSuccess_ResetsConsecutiveFailures()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 5);
+        var cb = Create(failureThreshold: 5);
 
         cb.RecordFailure();
         cb.RecordFailure();
@@ -145,7 +149,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void SuccessAfterFailures_PreventsOpening()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 3);
+        var cb = Create(failureThreshold: 3);
 
         cb.RecordFailure();
         cb.RecordFailure();
@@ -160,7 +164,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void Reset_RestoresClosedState()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1);
+        var cb = Create(failureThreshold: 1);
         cb.RecordFailure();
         Assert.Equal(CircuitState.Open, cb.State);
 
@@ -174,12 +178,12 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void LastFailureUtc_TracksLatestFailure()
     {
-        var cb = new CopilotCircuitBreaker();
+        var cb = Create();
         Assert.Null(cb.LastFailureUtc);
 
-        var before = DateTime.UtcNow;
+        var before = _time.GetUtcNow().UtcDateTime;
         cb.RecordFailure();
-        var after = DateTime.UtcNow;
+        var after = _time.GetUtcNow().UtcDateTime;
 
         Assert.NotNull(cb.LastFailureUtc);
         Assert.True(cb.LastFailureUtc >= before);
@@ -189,21 +193,21 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void DefaultThreshold_IsFive()
     {
-        var cb = new CopilotCircuitBreaker();
+        var cb = Create();
         Assert.Equal(5, cb.FailureThreshold);
     }
 
     [Fact]
     public void DefaultOpenDuration_IsSixtySeconds()
     {
-        var cb = new CopilotCircuitBreaker();
+        var cb = Create();
         Assert.Equal(TimeSpan.FromSeconds(60), cb.OpenDuration);
     }
 
     [Fact]
     public void CustomParameters_AreRespected()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 10, openDuration: TimeSpan.FromMinutes(5));
+        var cb = Create(failureThreshold: 10, openDuration: TimeSpan.FromMinutes(5));
         Assert.Equal(10, cb.FailureThreshold);
         Assert.Equal(TimeSpan.FromMinutes(5), cb.OpenDuration);
     }
@@ -211,7 +215,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void MoreFailuresBeyondThreshold_StaysOpen()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 2);
+        var cb = Create(failureThreshold: 2);
         cb.RecordFailure();
         cb.RecordFailure();
         Assert.Equal(CircuitState.Open, cb.State);
@@ -225,7 +229,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public async Task ThreadSafety_ConcurrentFailures_DoNotCorrupt()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 100);
+        var cb = Create(failureThreshold: 100);
         var tasks = new Task[50];
 
         for (int i = 0; i < 50; i++)
@@ -250,7 +254,7 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public async Task ThreadSafety_MixedSuccessAndFailure_DoNotCorrupt()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 100);
+        var cb = Create(failureThreshold: 100);
         var tasks = new Task[20];
 
         for (int i = 0; i < 20; i++)
@@ -280,9 +284,9 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void Reset_DuringHalfOpen_RestoresClosed()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
         cb.RecordFailure();
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
 
         Assert.Equal(CircuitState.HalfOpen, cb.State);
 
@@ -295,11 +299,11 @@ public class CopilotCircuitBreakerTests
     [Fact]
     public void FailedProbe_RestartsCooldown()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(100));
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(60));
         cb.RecordFailure(); // trip
 
-        // Wait for half-open
-        Thread.Sleep(150);
+        // Advance past cooldown → half-open
+        _time.Advance(TimeSpan.FromSeconds(60));
         Assert.Equal(CircuitState.HalfOpen, cb.State);
 
         // Probe request allowed
@@ -310,18 +314,18 @@ public class CopilotCircuitBreakerTests
         Assert.Equal(CircuitState.Open, cb.State);
 
         // Should NOT be half-open yet (cooldown just restarted)
-        Thread.Sleep(50);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.Equal(CircuitState.Open, cb.State);
 
         // Wait full cooldown from the failed probe
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.Equal(CircuitState.HalfOpen, cb.State);
     }
 
     [Fact]
     public void FullLifecycle_Closed_Open_HalfOpen_ProbeFail_Open_HalfOpen_ProbeSuccess_Closed()
     {
-        var cb = new CopilotCircuitBreaker(failureThreshold: 2, openDuration: TimeSpan.FromMilliseconds(50));
+        var cb = Create(failureThreshold: 2, openDuration: TimeSpan.FromSeconds(30));
 
         // Start closed
         Assert.Equal(CircuitState.Closed, cb.State);
@@ -333,7 +337,7 @@ public class CopilotCircuitBreakerTests
         Assert.False(cb.AllowRequest());
 
         // Wait for half-open
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.Equal(CircuitState.HalfOpen, cb.State);
 
         // Probe fails
@@ -342,7 +346,7 @@ public class CopilotCircuitBreakerTests
         Assert.Equal(CircuitState.Open, cb.State);
 
         // Wait again
-        Thread.Sleep(100);
+        _time.Advance(TimeSpan.FromSeconds(30));
         Assert.Equal(CircuitState.HalfOpen, cb.State);
 
         // Probe succeeds
@@ -350,5 +354,18 @@ public class CopilotCircuitBreakerTests
         cb.RecordSuccess();
         Assert.Equal(CircuitState.Closed, cb.State);
         Assert.True(cb.AllowRequest());
+    }
+
+    [Fact]
+    public void Open_DoesNotTransition_BeforeCooldownExpires()
+    {
+        var cb = Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(60));
+        cb.RecordFailure();
+
+        _time.Advance(TimeSpan.FromSeconds(59));
+        Assert.Equal(CircuitState.Open, cb.State);
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(CircuitState.HalfOpen, cb.State);
     }
 }

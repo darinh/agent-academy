@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,8 +51,8 @@ public sealed class LinkTaskToSpecHandler : ICommandHandler
             note = n;
         }
 
-        var taskLifecycle = context.Services.GetRequiredService<TaskLifecycleService>();
-        var specManager = context.Services.GetRequiredService<SpecManager>();
+        var taskLifecycle = context.Services.GetRequiredService<ITaskLifecycleService>();
+        var specManager = context.Services.GetRequiredService<ISpecManager>();
 
         // Validate the spec section exists on disk
         var specContent = await specManager.GetSpecContentAsync(specSectionId);

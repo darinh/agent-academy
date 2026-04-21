@@ -1,0 +1,74 @@
+x-common-env: &common-env
+  ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+  # CORS — configure origins for cross-origin access
+  Cors__Origins__0: ${CORS_ORIGIN_0:-http://localhost:8080}
+  Cors__Origins__1: ${CORS_ORIGIN_1:-http://localhost:5173}
+  # GitHub OAuth (optional — app runs without auth)
+  GitHub__AppId: ${GITHUB_APP_ID:-}
+  GitHub__ClientId: ${GITHUB_CLIENT_ID:-}
+  GitHub__ClientSecret: ${GITHUB_CLIENT_SECRET:-}
+  GitHub__FrontendUrl: ${GITHUB_FRONTEND_URL:-http://localhost:8080}
+  # Consultant API (optional — for external agent access)
+  # Env var name matches the .NET config key (`:` → `__`) for consistency
+  # between host-side docs and in-container config binding. The second
+  # fallback preserves backward compatibility for deployments that were
+  # configured with the legacy `CONSULTANT_SHARED_SECRET` host var name;
+  # this alias will be removed in a future release.
+  ConsultantApi__SharedSecret: ${ConsultantApi__SharedSecret:-${CONSULTANT_SHARED_SECRET:-}}
+  # Discord notifications (optional)
+  Discord__BotToken: ${DISCORD_BOT_TOKEN:-}
+  Discord__GuildId: ${DISCORD_GUILD_ID:-}
+
+x-common-healthcheck: &common-healthcheck
+  test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+  interval: 30s
+  timeout: 5s
+  start_period: 10s
+  retries: 3
+
+services:
+  # App-only container — serves web UI and API but cannot execute agents.
+  # Default: `docker compose up`
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-academy
+    ports:
+      - "${AA_PORT:-8080}:8080"
+    environment:
+      <<: *common-env
+    volumes:
+      - aa-data:/data
+    restart: unless-stopped
+    healthcheck: *common-healthcheck
+
+  # Runner container — full agent execution with .NET SDK, Node.js, and Git.
+  # Activate with: `docker compose --profile runner up runner`
+  # Mutually exclusive with 'app' — do not run both on the same port.
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: agent-academy-runner
+    ports:
+      - "${AA_RUNNER_PORT:-8081}:8080"
+    environment:
+      <<: *common-env
+      # Copilot authentication (provide a GitHub token for agent LLM access)
+      Copilot__GitHubToken: ${COPILOT_GITHUB_TOKEN:-}
+    volumes:
+      - aa-data:/data
+      - ${AA_WORKSPACE:-.}:/workspace
+    # Match host file ownership so the container can read/write the workspace.
+    # Default UID/GID 1000 matches the first user on most Linux systems.
+    user: "${RUNNER_UID:-1000}:${RUNNER_GID:-1000}"
+    profiles:
+      - runner
+    restart: unless-stopped
+    healthcheck: *common-healthcheck
+
+volumes:
+  aa-data:
+    driver: local

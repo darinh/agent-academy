@@ -158,6 +158,22 @@ public record AgentUsageWindow(
 );
 
 /// <summary>
+/// Current context window usage for an agent in a room.
+/// <c>CurrentTokens</c> is the input token count from the most recent LLM call
+/// (each call sends the full conversation, so the latest input = context size).
+/// <c>MaxTokens</c> is the model's known context window limit.
+/// </summary>
+public record AgentContextUsage(
+    string AgentId,
+    string? RoomId,
+    string? Model,
+    long CurrentTokens,
+    long MaxTokens,
+    double Percentage,
+    DateTime UpdatedAt
+);
+
+/// <summary>
 /// Result of a quota check — whether the agent is allowed to proceed.
 /// </summary>
 public record QuotaStatus(
@@ -173,7 +189,7 @@ public record QuotaStatus(
 /// Wrapper for plan content text.
 /// </summary>
 public record PlanContent(
-    [property: Required, MinLength(1), StringLength(100_000)] string Content
+    [Required, MinLength(1), StringLength(100_000)] string Content
 );
 
 /// <summary>
@@ -188,4 +204,29 @@ public record InstanceHealthResult(
     bool ExecutorOperational,
     bool AuthFailed,
     string CircuitBreakerState = "Closed"
+);
+
+/// <summary>
+/// Snapshot of a git worktree's status, enriched with linked task and agent info.
+/// </summary>
+public record WorktreeStatusSnapshot(
+    string Branch,
+    string RelativePath,
+    DateTimeOffset CreatedAt,
+    bool StatusAvailable,
+    string? Error,
+    int TotalDirtyFiles,
+    List<string> DirtyFilesPreview,
+    int FilesChanged,
+    int Insertions,
+    int Deletions,
+    string? LastCommitSha,
+    string? LastCommitMessage,
+    string? LastCommitAuthor,
+    DateTimeOffset? LastCommitDate,
+    string? TaskId,
+    string? TaskTitle,
+    string? TaskStatus,
+    string? AgentId,
+    string? AgentName
 );

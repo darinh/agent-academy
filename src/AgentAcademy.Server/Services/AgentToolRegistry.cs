@@ -1,4 +1,5 @@
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,8 @@ namespace AgentAcademy.Server.Services;
 /// <list type="bullet">
 /// <item><c>task-state</c> — list_tasks, list_rooms, show_agents (read-only, shared)</item>
 /// <item><c>code</c> — read_file, search_code (read-only, shared)</item>
-/// <item><c>code-write</c> — write_file (per-agent, SoftwareEngineer only)</item>
+/// <item><c>code-write</c> — write_file (per-agent, SoftwareEngineer only; writes restricted to <c>src/</c>)</item>
+/// <item><c>spec-write</c> — write_file (per-agent, TechnicalWriter only; writes restricted to <c>specs/</c> and <c>docs/</c>)</item>
 /// <item><c>task-write</c> — create_task, update_task_status, add_task_comment (per-agent)</item>
 /// <item><c>memory</c> — remember, recall (per-agent)</item>
 /// </list>
@@ -21,19 +23,19 @@ namespace AgentAcademy.Server.Services;
 /// </summary>
 public sealed class AgentToolRegistry : IAgentToolRegistry
 {
-    private readonly AgentToolFunctions _toolFunctions;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentToolFunctions _toolFunctions;
+    private readonly IAgentCatalog _catalog;
     private readonly Dictionary<string, IReadOnlyList<AIFunction>> _staticGroups;
     private readonly IReadOnlyList<string> _allToolNames;
     private readonly ILogger<AgentToolRegistry> _logger;
 
     // Groups that require agent context (created per-agent session)
     private static readonly HashSet<string> ContextualGroups =
-        new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory", "code-write" };
+        new(StringComparer.OrdinalIgnoreCase) { "task-write", "memory", "code-write", "spec-write" };
 
     public AgentToolRegistry(
-        AgentToolFunctions toolFunctions,
-        AgentCatalogOptions catalog,
+        IAgentToolFunctions toolFunctions,
+        IAgentCatalog catalog,
         ILogger<AgentToolRegistry> logger)
     {
         _toolFunctions = toolFunctions;
@@ -75,7 +77,8 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     public IReadOnlyList<AIFunction> GetToolsForAgent(
         IEnumerable<string> enabledTools,
         string? agentId = null,
-        string? agentName = null)
+        string? agentName = null,
+        string? roomId = null)
     {
         var tools = new List<AIFunction>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -104,7 +107,7 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
                     continue;
                 }
 
-                var contextualTools = CreateContextualTools(group, agentId, agentName ?? agentId);
+                var contextualTools = CreateContextualTools(group, agentId, agentName ?? agentId, roomId);
                 foreach (var tool in contextualTools)
                 {
                     if (seen.Add(tool.Name))
@@ -129,14 +132,16 @@ public sealed class AgentToolRegistry : IAgentToolRegistry
     public IReadOnlyList<string> GetAllToolNames() => _allToolNames;
 
     private IReadOnlyList<AIFunction> CreateContextualTools(
-        string group, string agentId, string agentName)
+        string group, string agentId, string agentName, string? roomId)
     {
         return group.ToLowerInvariant() switch
         {
             "task-write" => _toolFunctions.CreateTaskWriteTools(agentId, agentName),
             "memory" => _toolFunctions.CreateMemoryTools(agentId),
             "code-write" => _toolFunctions.CreateCodeWriteTools(agentId, agentName,
-                _catalog.Agents.Find(a => a.Id == agentId)?.GitIdentity),
+                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId),
+            "spec-write" => _toolFunctions.CreateSpecWriteTools(agentId, agentName,
+                _catalog.Agents.FirstOrDefault(a => a.Id == agentId)?.GitIdentity, roomId),
             _ => []
         };
     }

@@ -6,32 +6,12 @@ namespace AgentAcademy.Server.Commands;
 
 /// <summary>
 /// Extracts structured commands from agent text responses.
-/// Commands use COMMAND_NAME: syntax. Coexists with legacy
-/// TASK ASSIGNMENT/WORK REPORT/REVIEW blocks.
+/// Commands use COMMAND_NAME: syntax. Any uppercase header that is not in
+/// <see cref="KnownCommands"/> (including legacy TASK ASSIGNMENT /
+/// WORK REPORT / REVIEW blocks) passes through untouched to RemainingText.
 /// </summary>
 public sealed class CommandParser
 {
-    // Matches: COMMAND_NAME: single-line args
-    // Or:      COMMAND_NAME:\n  Key: value\n  Key: value
-    private static readonly Regex CommandPattern = new(
-        @"^([A-Z][A-Z0-9_]+):\s*(.*?)(?=\n[A-Z][A-Z0-9_]+:|\n\n|\z)",
-        RegexOptions.Multiline | RegexOptions.Singleline
-    );
-
-    // Multi-line arg: Key: value (indented under a command)
-    private static readonly Regex ArgLinePattern = new(
-        @"^\s{2,}([A-Za-z_][A-Za-z0-9_]*):\s*(.*)",
-        RegexOptions.Multiline
-    );
-
-    // Legacy blocks that should NOT be parsed as commands
-    private static readonly HashSet<string> LegacyBlocks = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "TASK ASSIGNMENT",
-        "WORK REPORT",
-        "REVIEW"
-    };
-
     // Commands whose inline value is always raw text, never key=value pairs.
     // Prevents ParseInlineArgs from splitting commit messages like "fix: set timeout=30s".
     private static readonly HashSet<string> RawValueCommands = new(StringComparer.OrdinalIgnoreCase)
@@ -40,7 +20,7 @@ public sealed class CommandParser
     };
 
     // Known command names — prevents false positives from random UPPERCASE: text
-    private static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "READ_FILE", "SEARCH_CODE", "LIST_ROOMS", "LIST_AGENTS", "LIST_TASKS",
         "REMEMBER", "RECALL", "LIST_MEMORIES", "FORGET", "EXPORT_MEMORIES", "IMPORT_MEMORIES",
@@ -54,7 +34,37 @@ public sealed class CommandParser
         "CREATE_PR", "POST_PR_REVIEW", "GET_PR_REVIEWS", "MERGE_PR",
         "RECORD_EVIDENCE", "QUERY_EVIDENCE", "CHECK_GATES",
         "COMMIT_CHANGES",
-        "START_SPRINT", "ADVANCE_STAGE", "STORE_ARTIFACT", "COMPLETE_SPRINT"
+        "START_SPRINT", "ADVANCE_STAGE", "STORE_ARTIFACT", "COMPLETE_SPRINT",
+        "SCHEDULE_SPRINT",
+        "ADD_TASK_DEPENDENCY", "REMOVE_TASK_DEPENDENCY",
+        "LIST_WORKTREES", "CLEANUP_WORKTREES", "LIST_AGENT_STATS",
+        "RETURN_TO_MAIN", "INVITE_TO_ROOM", "ROOM_TOPIC",
+        "REBASE_TASK", "CREATE_TASK_ITEM", "UPDATE_TASK_ITEM",
+        "GENERATE_DIGEST",
+        // Tier 2A — Task Workflow
+        "TASK_STATUS", "SHOW_TASK_HISTORY", "SHOW_DEPENDENCIES", "REQUEST_REVIEW", "WHOAMI",
+        // Tier 2 — Goal Cards, Task Items, List Commands
+        "CREATE_GOAL_CARD", "UPDATE_GOAL_CARD_STATUS", "LIST_TASK_ITEMS", "LIST_COMMANDS",
+        // Tier 2B — Communication
+        "MENTION_TASK_OWNER", "BROADCAST_TO_ROOM",
+        // Tier 2C — Task Management
+        "MARK_BLOCKED", "SHOW_DECISIONS",
+        // Tier 2D — Code & Spec
+        "OPEN_SPEC", "SEARCH_SPEC", "OPEN_COMPONENT", "FIND_REFERENCES",
+        // Tier 2E — Backend Execution
+        "RUN_FRONTEND_BUILD", "RUN_TYPECHECK", "CALL_ENDPOINT", "TAIL_LOGS", "SHOW_CONFIG",
+        // Tier 2F — Data & Operations
+        "QUERY_DB", "RUN_MIGRATIONS", "SHOW_MIGRATION_STATUS", "HEALTHCHECK", "SHOW_ACTIVE_CONNECTIONS",
+        // Tier 2G — Audit & Debug
+        "SHOW_AUDIT_EVENTS", "SHOW_LAST_ERROR", "TRACE_REQUEST", "LIST_SYSTEM_SETTINGS", "RETRY_FAILED_JOB",
+        // Tier 3A — Spec Verification
+        "VERIFY_SPEC_SECTION", "COMPARE_SPEC_TO_CODE", "DETECT_ORPHANED_SECTIONS",
+        // Tier 3B — Context
+        "HANDOFF_SUMMARY", "PLATFORM_STATUS",
+        // Tier 3C — Frontend/UX
+        "SHOW_ROUTES",
+        // Forge — Pipeline Engine commands
+        "RUN_FORGE", "FORGE_STATUS", "LIST_FORGE_RUNS"
     };
 
     /// <summary>
@@ -81,15 +91,9 @@ public sealed class CommandParser
                 var commandName = match.Groups[1].Value.Replace(" ", "_");
                 var firstLineValue = match.Groups[2].Value.Trim();
 
-                // Skip legacy blocks
-                if (LegacyBlocks.Contains(commandName.Replace("_", " ")))
-                {
-                    remaining.AppendLine(line);
-                    i++;
-                    continue;
-                }
-
-                // Skip unknown commands (prevents false positives)
+                // Skip unknown commands (prevents false positives).
+                // Legacy blocks like "TASK ASSIGNMENT" flow through this path
+                // unchanged — they are not known commands, so they go to remaining.
                 if (!KnownCommands.Contains(commandName))
                 {
                     remaining.AppendLine(line);

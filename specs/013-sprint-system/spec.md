@@ -6,7 +6,7 @@ Defines the sprint lifecycle used to structure multi-agent collaboration into di
 
 ## Current Behavior
 
-> **Status: Implemented** — Full sprint lifecycle operational: creation with overflow carry-forward, six-stage advancement with artifact gates and human sign-off, artifact storage with upsert, completion/cancellation, real-time event broadcasting, orchestrator integration (stage-aware prompts and role roster filtering), REST API, agent commands, and frontend panel.
+> **Status: Implemented** — Full sprint lifecycle operational: creation with overflow carry-forward, six-stage advancement with artifact gates, task prerequisites, and human sign-off, artifact storage with upsert, completion/cancellation, real-time event broadcasting, orchestrator integration (stage-aware prompts and role roster filtering), REST API, agent commands, and frontend panel.
 
 ### Sprint Lifecycle
 
@@ -31,9 +31,14 @@ Stages advance forward only — there is no mechanism to revert to a previous st
 
 **Artifact gates**: Stages with a required artifact cannot be advanced until an artifact of that type has been stored for the current stage.
 
+**Stage prerequisites**: Stages may define task-based prerequisites that must be satisfied before advancement. Currently:
+- **Implementation**: All tasks linked to the sprint (`TaskEntity.SprintId`) must be in a terminal status (`Completed` or `Cancelled`). Prevents premature advancement to FinalSynthesis while work is still in progress. The `force` flag on `AdvanceStageAsync` (and the REST endpoint `?force=true`) skips prerequisite checks — artifact gates and sign-off requirements are never skipped. **The `force` flag is restricted to Human role in the command handler** — agents cannot bypass prerequisites autonomously via `ADVANCE_STAGE: Force=true`. Forced advancement records `forced=true` in the activity event metadata for audit.
+
 **Human sign-off**: Intake and Planning stages enter an `AwaitingSignOff` state when agents request advancement. A human must approve (advancing to the next stage) or reject (keeping the sprint at the current stage for revision). Other stages advance immediately.
 
-**Role roster**: The orchestrator filters agents per stage. Agents whose role is not in the roster for the current stage are excluded from conversation rounds. Stages not listed in the roster map (Validation, Implementation, FinalSynthesis) admit all roles.
+**Role roster**: The orchestrator filters agents per stage at **two presentation points** — conversation turn selection (`ConversationRoundRunner` keyed on `sprint.CurrentStage` via `SprintPreambles.FilterByStageRoster`) and room participant snapshots (`RoomSnapshotBuilder.BuildParticipants` keyed on `room.CurrentPhase` via `SprintPreambles.IsRoleAllowedInStage`). Agents whose role is not in the roster are excluded from conversation rounds and hidden from snapshots for that stage/phase. Stages not listed in the roster map (Validation, Implementation, FinalSynthesis) admit all roles. Roster filtering is a presentation-layer contract: `AgentLocations` records are *not* mutated on phase transition — the filter is reapplied on every snapshot/round. See `specs/005-workspace-runtime/spec.md` ("Phase-scoped room membership") for the data-layer semantics.
+
+**Room phase sync (resolves #57)**: `sprint.CurrentStage` is the authoritative driver for the workspace. Whenever `SprintStageService.AdvanceStageAsync` (or `ApproveAdvanceAsync` on an approved sign-off) mutates `sprint.CurrentStage`, the new stage is mirrored to every `RoomEntity` in the same workspace (`Room.WorkspacePath == sprint.WorkspacePath`) whose `CurrentPhase` differs and whose `Status` is **not** `Archived` or `Completed`. Archived rooms are terminal historical state; Completed rooms (e.g., from a prior sprint that reached `FinalSynthesis` in the same workspace) are excluded to preserve the invariant *`Status == Completed` ⇒ `phase == FinalSynthesis`*. The mirror is silent — it bypasses `PhasePrerequisiteValidator` (the sprint has already advanced, so room-level gating would be redundant), does not create coordination messages, and does not mutate per-task `CurrentPhase`. Each updated room emits a `PhaseChanged` activity event tagged with `source: "sprint-sync"` and the originating `sprintId` for observability. Advancing to `FinalSynthesis` also sets `room.Status = Completed`, matching the semantics of `RoomService.TransitionPhaseAsync`. Sign-off-requested and sign-off-rejected transitions do **not** trigger the sync because `sprint.CurrentStage` does not change in those paths. Rooms already at the target phase are skipped (idempotent). The human-only endpoint `POST /api/rooms/{id}/phase` (→ `RoomService.TransitionPhaseAsync`) remains the per-room manual-override path for rooms that need to diverge (e.g., workspaces with no active sprint, or drift repair).
 
 ### Sprint States
 
@@ -54,6 +59,71 @@ When the previous sprint in the workspace has an `OverflowRequirements` artifact
 3. The overflow content is appended to the Intake stage preamble in agent prompts
 
 This ensures unfinished work is not silently dropped between sprints.
+
+### Auto-Start on Completion
+
+When the system setting `sprint.autoStartOnCompletion` is enabled (default: `false`), completing a sprint automatically creates the next sprint for the same workspace. The auto-started sprint carries over overflow requirements (see above). If auto-start fails (e.g., race condition), the failure is logged as a warning but does not fail the original completion.
+
+The `SprintStarted` activity event for auto-started sprints includes `trigger: "auto"` in its metadata. Manually started sprints have `trigger: null`.
+
+Cancelling a sprint does **not** trigger auto-start — only successful completion does.
+
+**Setting**: `sprint.autoStartOnCompletion` via `SystemSettingsService` / `PUT /api/settings`.
+**Frontend**: Toggle in Settings → Advanced → Sprint Automation.
+
+### Scheduled Sprints (Cron)
+
+Sprints can be created on a recurring schedule using standard 5-field cron expressions (minute, hour, day-of-month, month, day-of-week). Each workspace may have **at most one schedule** (enforced by unique index on `WorkspacePath`).
+
+**Background service**: `SprintSchedulerService` (`BackgroundService`) polls every 60 seconds (configurable via `SprintScheduler:CheckIntervalSeconds`). On each tick it queries enabled schedules whose `NextRunAtUtc` has passed and attempts to create a sprint via `CreateSprintAsync(workspace, trigger: "scheduled")`.
+
+**Timezone support**: Each schedule stores an IANA timezone ID (e.g., `"America/New_York"`). The cron expression is evaluated in that timezone, and the next occurrence is stored as UTC in `NextRunAtUtc`. This ensures DST transitions are handled correctly.
+
+**Misfire policy**: No catch-up. If the server was down when a schedule was due, it evaluates on the next tick and creates at most one sprint. Since only one active sprint is allowed per workspace, missed runs do not accumulate.
+
+**Outcome tracking**: Each evaluation records:
+- `LastEvaluatedAt` — when the schedule was last checked
+- `LastTriggeredAt` — when a sprint was last *successfully* created
+- `LastOutcome` — `"started"`, `"skipped_active"` (active sprint exists), or `"error"`
+
+**Interaction with auto-start**: Both triggers can coexist. If auto-start-on-completion creates a sprint before the schedule fires, the scheduler detects the active sprint and records `skipped_active`. No conflict or double-creation.
+
+**REST API**:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/sprints/schedule` | GET | Get schedule for active workspace (404 if none) |
+| `/api/sprints/schedule` | PUT | Create/update schedule (upsert). Body: `SprintScheduleRequest` |
+| `/api/sprints/schedule` | DELETE | Remove schedule for active workspace |
+
+**Request model** (`SprintScheduleRequest`):
+```json
+{
+  "cronExpression": "0 9 * * 1",
+  "timeZoneId": "America/New_York",
+  "enabled": true
+}
+```
+
+**Validation**:
+- Cron expression must parse as valid 5-field format (seconds-based 6-field is rejected)
+- Timezone must resolve via `TimeZoneInfo.FindSystemTimeZoneById`
+- Workspace must exist (active workspace check)
+
+**Source**: `SprintSchedulerService.cs`, `SprintScheduleEntity.cs`
+**Config section**: `SprintScheduler` (settings: `Enabled`, `CheckIntervalSeconds`)
+
+**Frontend UI** (Settings → Advanced → Sprint Schedule):
+
+The schedule management form lives in `AdvancedTab.tsx` below the Sprint Automation section. It provides:
+- **Cron expression input**: Text field with monospace font. Client-side hint when field count ≠ 5; server performs authoritative validation.
+- **Timezone selector**: Dropdown of ~30 common IANA timezones plus the browser's detected timezone. If the saved schedule uses a timezone outside this list, it is dynamically added to prevent data loss on edit.
+- **Enable/disable toggle**: Checkbox. Disabled schedules remain stored but are not evaluated by the background service.
+- **Read-only metadata**: Next run (displayed in schedule timezone + UTC), last triggered time, and last outcome.
+- **Save**: `PUT /api/sprints/schedule` — creates or updates. Server validation errors displayed inline.
+- **Delete**: Two-click confirmation (first click shows "Confirm Delete?" for 3 seconds, second click executes). Calls `DELETE /api/sprints/schedule`.
+- **Mutual exclusion**: Save and Delete buttons are disabled while either operation is in-flight.
+
+**Source**: `settings/AdvancedTab.tsx`, `api/sprints.ts` (`getSprintSchedule`, `upsertSprintSchedule`, `deleteSprintSchedule`)
 
 ## Entities
 
@@ -106,6 +176,29 @@ This ensures unfinished work is not silently dropped between sprints.
 - `idx_sprint_artifacts_sprint_stage_type_unique` on `(SprintId, Stage, Type)` — unique
 
 **Constraint**: One artifact of each type per stage per sprint (enforced by unique index). Storing the same type again for the same stage upserts the content.
+
+### SprintScheduleEntity
+
+> **Source**: `src/AgentAcademy.Server/Data/Entities/SprintScheduleEntity.cs`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Id` | `string` | GUID primary key |
+| `WorkspacePath` | `string` | Owning workspace path |
+| `CronExpression` | `string` | 5-field cron expression |
+| `TimeZoneId` | `string` | IANA timezone ID (default: `"UTC"`) |
+| `Enabled` | `bool` | Whether the schedule is active |
+| `NextRunAtUtc` | `DateTime?` | Precomputed next evaluation time (UTC) |
+| `LastTriggeredAt` | `DateTime?` | Last successful sprint creation (UTC) |
+| `LastEvaluatedAt` | `DateTime?` | Last evaluation attempt (UTC) |
+| `LastOutcome` | `string?` | `"started"` / `"skipped_active"` / `"error"` |
+| `CreatedAt` | `DateTime` | UTC creation timestamp |
+| `UpdatedAt` | `DateTime` | UTC last-modified timestamp |
+
+**Table**: `sprint_schedules`
+**Indexes**:
+- `idx_sprint_schedules_workspace_unique` on `WorkspacePath` — unique (one schedule per workspace)
+- `idx_sprint_schedules_enabled_next_run` on `(Enabled, NextRunAtUtc)` — for efficient scheduler queries
 
 ## Shared Models
 
@@ -177,17 +270,18 @@ public record SprintReport(string Summary, List<string> Delivered,
 
 ## Service Layer
 
-> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs` (626 lines)
+> **Source**: `src/AgentAcademy.Server/Services/SprintService.cs`, `src/AgentAcademy.Server/Services/SprintStageService.cs`, `src/AgentAcademy.Server/Services/SprintArtifactService.cs`, `src/AgentAcademy.Server/Services/SprintMetricsCalculator.cs`
 
 ### SprintService
 
-Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintService>`.
+Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `SystemSettingsService`, `ILogger<SprintService>`.
+
+Owns sprint lifecycle: creation, completion, cancellation, and queries. Stage advancement, sign-off gates, and stage state machine are handled by `SprintStageService`. Artifact management is handled by `SprintArtifactService`. Read-only metrics are handled by `SprintMetricsCalculator`.
 
 #### Constants
 
 | Name | Type | Value |
 |------|------|-------|
-| `Stages` | `ReadOnlyCollection<string>` | `["Intake", "Planning", "Discussion", "Validation", "Implementation", "FinalSynthesis"]` |
 | `RequiredArtifactByStage` | `IReadOnlyDictionary<string, string>` | Intake→RequirementsDocument, Planning→SprintPlan, Validation→ValidationReport, FinalSynthesis→SprintReport |
 | `SignOffRequiredStages` | `IReadOnlySet<string>` | `{"Intake", "Planning"}` |
 
@@ -195,35 +289,76 @@ Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaste
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `CreateSprintAsync(workspacePath)` | `SprintEntity` | Creates next sprint. Throws if active sprint exists. Links overflow from previous sprint. |
+| `CreateSprintAsync(workspacePath, trigger?)` | `SprintEntity` | Creates next sprint. Throws if active sprint exists. Links overflow from previous sprint. Optional `trigger` label ("auto") included in `SprintStarted` event metadata. |
 | `GetActiveSprintAsync(workspacePath)` | `SprintEntity?` | Returns the active sprint for a workspace. |
 | `GetSprintByIdAsync(sprintId)` | `SprintEntity?` | Lookup by ID. |
 | `GetSprintsForWorkspaceAsync(workspace, limit, offset)` | `(List<SprintEntity>, int)` | Paginated list, ordered by number descending. |
-| `StoreArtifactAsync(sprintId, stage, type, content, agentId?)` | `SprintArtifactEntity` | Upserts artifact. Validates sprint is active and stage is valid. |
-| `GetSprintArtifactsAsync(sprintId, stage?)` | `List<SprintArtifactEntity>` | Returns artifacts, optionally filtered by stage. |
-| `AdvanceStageAsync(sprintId)` | `SprintEntity` | Advances to next stage. Checks artifact gate and sign-off requirement. |
+| `CompleteSprintAsync(sprintId, force)` | `SprintEntity` | Completes the sprint. Must be in FinalSynthesis unless force=true. Checks SprintReport artifact. If `sprint.autoStartOnCompletion` setting is enabled, auto-starts the next sprint. |
+| `CancelSprintAsync(sprintId)` | `SprintEntity` | Cancels an active sprint. |
+
+### SprintStageService
+
+Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintStageService>`.
+
+Manages the sprint stage state machine: advancement, sign-off gating, approval/rejection, timeout handling, and stage prerequisites (task completion gates). Extracted from `SprintService` to separate stage logic from sprint lifecycle.
+
+#### Constants
+
+| Name | Type | Value |
+|------|------|-------|
+| `Stages` | `ReadOnlyCollection<string>` | `["Intake", "Planning", "Discussion", "Validation", "Implementation", "FinalSynthesis"]` |
+
+#### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `AdvanceStageAsync(sprintId, force)` | `SprintEntity` | Advances to next stage. Checks artifact gate, stage prerequisites (unless `force=true`), and sign-off requirement. |
 | `ApproveAdvanceAsync(sprintId)` | `SprintEntity` | Approves pending sign-off. Moves to the pending stage. |
 | `RejectAdvanceAsync(sprintId)` | `SprintEntity` | Rejects pending sign-off. Clears AwaitingSignOff without advancing. |
-| `CompleteSprintAsync(sprintId, force)` | `SprintEntity` | Completes the sprint. Must be in FinalSynthesis unless force=true. Checks SprintReport artifact. |
-| `CancelSprintAsync(sprintId)` | `SprintEntity` | Cancels an active sprint. |
+| `TimeOutSignOffAsync(sprintId, ct)` | `SprintEntity` | Auto-rejects a timed-out sign-off request. |
 | `GetStageIndex(stage)` | `int` | Returns index of stage in the sequence (-1 if invalid). Static. |
 | `GetNextStage(stage)` | `string?` | Returns the stage after the given one, or null if last. Static. |
 
+### SprintArtifactService
+
+Registered as scoped. Dependencies: `AgentAcademyDbContext`, `ActivityBroadcaster`, `ILogger<SprintArtifactService>`.
+
+Manages sprint artifact storage, retrieval, and validation. Extracted from `SprintService` to separate artifact concerns from sprint lifecycle.
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `StoreArtifactAsync(sprintId, stage, type, content, agentId?)` | `SprintArtifactEntity` | Upserts artifact. Validates sprint is active, stage is valid, and content matches schema. |
+| `GetSprintArtifactsAsync(sprintId, stage?)` | `List<SprintArtifactEntity>` | Returns artifacts, optionally filtered by stage. |
+| `ValidateArtifactContent(type, content)` | `void` | Internal static. Validates JSON content against artifact type schema. |
+
 #### Event Broadcasting
 
-Every state change queues an `ActivityEvent` which is persisted to the `activity_events` table and broadcast via `ActivityBroadcaster` after `SaveChangesAsync`. Events use these types:
+Every state change is persisted to the `activity_events` table and broadcast via `ActivityBroadcaster` after `SaveChangesAsync`. `SprintService` emits lifecycle events; `SprintStageService` emits stage events; `SprintArtifactService` emits artifact events. Event types:
 
-| Operation | ActivityEventType | Metadata Keys |
-|-----------|-------------------|---------------|
-| Create sprint | `SprintStarted` | sprintId, sprintNumber, status, currentStage |
-| Store artifact | `SprintArtifactStored` | sprintId, artifactId (if update), stage, artifactType, createdByAgentId, isUpdate |
-| Advance stage | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff |
-| Complete sprint | `SprintCompleted` | sprintId, status (Completed) |
-| Cancel sprint | `SprintCancelled` | sprintId, status (Cancelled) |
+| Operation | Service | ActivityEventType | Metadata Keys |
+|-----------|---------|-------------------|---------------|
+| Create sprint | SprintService | `SprintStarted` | sprintId, sprintNumber, status, currentStage |
+| Store artifact | SprintArtifactService | `SprintArtifactStored` | sprintId, artifactId (if update), stage, artifactType, createdByAgentId, isUpdate |
+| Advance stage | SprintStageService | `SprintStageAdvanced` | sprintId, action (advanced/signoff_requested/approved/rejected), previousStage, currentStage, pendingStage, awaitingSignOff, forced |
+| Complete sprint | SprintService | `SprintCompleted` | sprintId, status (Completed) |
+| Cancel sprint | SprintService | `SprintCancelled` | sprintId, status (Cancelled) |
+
+### SprintMetricsCalculator
+
+Registered as scoped. Dependencies: `AgentAcademyDbContext`.
+
+Read-only analytics over sprint lifecycle events. Extracted from `SprintService` to separate mutation (lifecycle) from observation (metrics).
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `GetSprintMetricsAsync(sprintId)` | `SprintMetrics?` | Per-sprint rollup: duration, stage timing, task/artifact counts, stage transitions. |
+| `GetMetricsSummaryAsync(workspacePath)` | `SprintMetricsSummary` | Workspace-level averages across all sprints: counts, durations, time per stage. |
+
+Stage timing is derived from `SprintStageAdvanced` events in the activity log. For active sprints, the current stage uses `DateTime.UtcNow` as the end boundary. Events are loaded in a single query per sprint (or batched for the summary) to avoid N+1 patterns.
 
 ## Stage Preambles & Role Roster
 
-> **Source**: `src/AgentAcademy.Server/Services/SprintPreambles.cs` (162 lines)
+> **Source**: `src/AgentAcademy.Server/Services/SprintPreambles.cs`
 
 ### SprintPreambles (static class)
 
@@ -261,19 +396,19 @@ Controls which agents participate in each stage. See the Stages table above for 
 
 ## Orchestrator Integration
 
-> **Source**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
+> **Source**: `src/AgentAcademy.Server/Services/RoundContextLoader.cs` (context loading), `src/AgentAcademy.Server/Services/ConversationRoundRunner.cs` (roster filtering)
 
-The orchestrator integrates sprint context into conversation rounds:
+Sprint context is loaded by `RoundContextLoader` and consumed by `ConversationRoundRunner`:
 
-1. **LoadSprintContextAsync**: Loads the active sprint, builds the preamble from stage instructions + prior stage context + overflow. Returns `(Preamble, ActiveStage)`.
+1. **LoadSprintContextAsync** (in `RoundContextLoader`, private): Loads the active sprint, builds the preamble from stage instructions + prior stage context + overflow. Returns `(Preamble, ActiveStage)`.
 
-2. **Prompt injection**: The sprint preamble is passed to `PromptBuilder.BuildConversationPrompt` and included in every agent's prompt for both main room and DM conversations.
+2. **Prompt injection**: The sprint preamble is included in the `RoundContext` record and passed to `PromptBuilder.BuildConversationPrompt` for every agent's prompt in both main room and DM conversations.
 
-3. **Roster filtering**: Before running conversation rounds, the orchestrator:
+3. **Roster filtering**: Before running conversation rounds, `ConversationRoundRunner`:
    - Excludes the planner if their role isn't in the current stage's roster
    - Filters the agent list through `SprintPreambles.FilterByStageRoster`
 
-4. **Session management**: When `ADVANCE_STAGE` is executed, `ConversationSessionService.CreateSessionForStageAsync` archives the current session and creates a new one tagged with the sprint ID and stage. This provides clean context boundaries per stage.
+4. **Session management**: When `ADVANCE_STAGE` is executed (agent path) or a sign-off is approved via `POST /api/sprints/{id}/approve-advance` (HTTP path), `ConversationSessionService.RotateWorkspaceSessionsForStageAsync` archives the current session and creates a new one tagged with the sprint ID and stage **for every active room in the workspace** (not just the room the command came from). Both code paths use this rotation so per-room session boundaries stay aligned with stage transitions. *Known gap*: the non-approval HTTP endpoint `POST /api/sprints/{id}/advance` does **not** currently rotate — see ADVANCE_STAGE handler note below.
 
 ### Sprint Context in Sessions
 
@@ -285,7 +420,7 @@ The orchestrator integrates sprint context into conversation rounds:
 
 ## REST API
 
-> **Source**: `src/AgentAcademy.Server/Controllers/SprintController.cs` (341 lines)
+> **Source**: `src/AgentAcademy.Server/Controllers/SprintController.cs`
 
 All endpoints require authentication (cookie auth or consultant key) when auth is configured. If no auth provider is enabled (e.g., local development without OAuth), the authorization fallback policy is not registered and endpoints are accessible without credentials. This is a system-wide pattern, not sprint-specific.
 
@@ -309,7 +444,7 @@ Query parameters:
 | Method | Path | Description | Returns |
 |--------|------|-------------|---------|
 | POST | `/api/sprints` | Start new sprint | `SprintDetailResponse` or 409 |
-| POST | `/api/sprints/{id}/advance` | Advance to next stage | `SprintDetailResponse` or 409 |
+| POST | `/api/sprints/{id}/advance?force=true` | Advance to next stage (force skips prerequisites) | `SprintDetailResponse` or 409 |
 | POST | `/api/sprints/{id}/complete` | Complete sprint | `SprintSnapshot` or 409 |
 | POST | `/api/sprints/{id}/cancel` | Cancel sprint | `SprintSnapshot` or 409 |
 | POST | `/api/sprints/{id}/approve-advance` | Approve pending sign-off | `SprintDetailResponse` or 409 |
@@ -345,10 +480,11 @@ Query parameters:
 ### ADVANCE_STAGE
 
 **Handler**: `AdvanceStageHandler`
-**Args**: `SprintId` (optional — resolves from active workspace if omitted)
+**Args**: `SprintId` (optional — resolves from active workspace if omitted), `Force` (optional boolean — skips stage prerequisites, not artifact gates or sign-off)
 **Agent permissions**: Planner only (Aristotle). Human/Consultant access via REST API.
-**Behavior**: Advances the sprint to the next stage. Validates artifact gate. If sign-off required, enters AwaitingSignOff. On success, creates a new conversation session for the new stage (best-effort — failure becomes a warning, not a rollback).
-**Result**: `{ sprintId, number, previousStage, currentStage, pendingStage?, awaitingSignOff, warning?, message }`
+**Behavior**: Advances the sprint to the next stage. Validates artifact gate. Checks stage prerequisites (e.g., Implementation requires all tasks completed/cancelled) — skipped if `Force=true`. If sign-off required, enters AwaitingSignOff. On success, rotates conversation sessions for the new stage across **every active room in the workspace** via `ConversationSessionService.RotateWorkspaceSessionsForStageAsync` — matching both the human-approved sign-off path (`SprintController.ApproveAdvance`) and the non-approval HTTP path (`SprintController.AdvanceSprint`) so agent-initiated and human-initiated advancement produce identical session boundaries (best-effort — failure becomes a warning, not a rollback). Rotation is skipped when entering `AwaitingSignOff` (the subsequent `ApproveAdvance` call performs it). Forced advancement records `forced=true` in activity event metadata.
+
+**Result**: `{ sprintId, number, previousStage, currentStage, pendingStage?, awaitingSignOff, forced, warning?, message }`
 
 ### STORE_ARTIFACT
 
@@ -366,9 +502,19 @@ Query parameters:
 **Behavior**: Marks the sprint as completed. Must be in FinalSynthesis with SprintReport artifact unless force=true.
 **Result**: `{ sprintId, number, status, completedAt, message }`
 
+### SCHEDULE_SPRINT
+
+**Handler**: `ScheduleSprintHandler`
+**Args**: `Action` (get|set|delete, default: get), `Cron` (5-field cron, required for set), `Timezone` (IANA ID, default UTC), `Enabled` (boolean, default true)
+**Agent permissions**: Planner only (Aristotle). Human/Consultant access via `CommandController` allowlist.
+**Behavior**: Manages the cron-based sprint schedule for the active workspace. `get` returns current schedule or indicates none exists. `set` creates or updates with cron validation, timezone validation, and precomputed next-run time. `delete` removes the schedule. Upsert handles concurrent creation via DbUpdateException retry.
+**Result (get)**: `{ hasSchedule, scheduleId?, cronExpression?, timeZoneId?, enabled?, nextRunAtUtc?, lastTriggeredAt?, lastOutcome? }`
+**Result (set)**: Same as get + `{ message }`
+**Result (delete)**: `{ deleted, message }`
+
 ## Frontend
 
-> **Source**: `src/agent-academy-client/src/SprintPanel.tsx` (1148 lines)
+> **Source**: `src/agent-academy-client/src/SprintPanel.tsx`
 
 ### SprintPanel Component
 
@@ -480,10 +626,11 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 | `SprintServiceEventTests.cs` | Activity event emission | 17 tests |
 | `SprintMetricsTests.cs` | Per-sprint metrics and workspace-level summary | 15 tests |
 | `SprintTimeoutTests.cs` | Sign-off/duration timeout + background service | 19 tests |
+| `SprintSchedulerServiceTests.cs` | Cron scheduler: evaluation, outcomes, timezone, validation | 23 tests |
 | `sprintPanel.test.ts` | Frontend panel rendering and interactions | 53 tests |
 | `sprintRealtime.test.ts` | Real-time event handling | 34 tests |
 
-**Total: 241 tests** across backend and frontend.
+**Total: 272 tests** across backend and frontend.
 
 ## Known Gaps
 
@@ -495,6 +642,13 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 
 | Date | Change | Task/Branch |
 |------|--------|-------------|
+| 2026-04-18 | Spec sync — `ADVANCE_STAGE` (agent path) now rotates conversation sessions across **every active room in the workspace** via `ConversationSessionService.RotateWorkspaceSessionsForStageAsync`, matching `SprintController.ApproveAdvance` (sign-off approval HTTP path). Updates orchestrator integration §4 and ADVANCE_STAGE handler description. Reflects audit fix #105 (rooms outside the originating room previously stayed on the prior stage's session). Also flagged a divergence: the non-approval HTTP endpoint `POST /api/sprints/{id}/advance` does not call rotate — known gap. Removed stale hardcoded line counts from source pointers to prevent re-drift. | Anvil |
+| 2026-04-13 | Cron-scheduled sprints — `SprintSchedulerService` background service evaluates cron expressions on a 60s timer. `SprintScheduleEntity` stores per-workspace schedules with IANA timezone, outcome tracking (`started`/`skipped_active`/`error`). REST: `GET/PUT/DELETE /api/sprints/schedule` scoped to active workspace. Cronos 0.8.4 for cron parsing. 23 new tests. | feat/scheduled-sprints |
+| 2026-04-13 | Sprint auto-start on completion — `sprint.autoStartOnCompletion` system setting. `CompleteSprintAsync` auto-creates next sprint when enabled. `CreateSprintAsync` gains optional `trigger` param for event metadata. Frontend toggle in Settings → Advanced. 8 backend + 5 frontend tests. | feat/sprint-auto-start |
+| 2026-04-13 | Stage prerequisites — Implementation stage requires all sprint tasks to be Completed/Cancelled before advancement. Force flag skips prerequisites (not artifact gates or sign-off). `AdvanceStageAsync(sprintId, force)`, `PrerequisiteResult` record, reuses `RoomLifecycleService.TerminalTaskStatuses`. REST: `?force=true`. Command: `Force: true`. Forced events include `forced=true` in metadata. 12 new tests. | feat/stage-prerequisites |
+| 2026-04-13 | Spec sync — documented `SprintStageService` (341 lines) extracted from `SprintService` (635→380 lines). Stage state machine (advancement, sign-off, approval/rejection, timeout) now in dedicated class. Updated service layer, methods, constants, and event broadcasting tables. | develop |
+| 2026-04-12 | Structural refactor — extracted `SprintArtifactService` (265 lines) from `SprintService` (835→635 lines). Artifact storage, retrieval, and validation now in dedicated class. `SprintController` and `StoreArtifactHandler` inject the new service. Zero behavioral changes. | develop |
+| 2026-04-12 | Structural refactor — extracted `SprintMetricsCalculator` (289 lines) from `SprintService` (1123→835 lines). Read-only metrics computation now in dedicated class. `SprintController` injects both services. Zero behavioral changes. | develop |
 | 2026-04-11 | Initial spec — documenting implemented sprint system | — |
 | 2026-04-11 | Fix 3 known gaps: SprintCancelled event type, stage-aware overflow, active sprint unique index | develop |
 | 2026-04-11 | Sprint metrics aggregation: per-sprint and workspace-level rollup endpoints with 15 tests | develop |

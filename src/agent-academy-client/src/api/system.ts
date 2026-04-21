@@ -4,12 +4,17 @@ import type {
   ConfigureResponse,
   ConnectResponse,
   TestNotificationResponse,
+  NotificationDeliveryDto,
+  NotificationDeliveryStats,
   DmThreadSummary,
   DmMessage,
   SearchResults,
   SearchScope,
+  WorktreeStatusSnapshot,
+  ModelsResponse,
+  ActivityEvent,
 } from "./types";
-import { apiUrl, request } from "./core";
+import { apiUrl, request, downloadFile } from "./core";
 
 // ── Notification Providers ─────────────────────────────────────────────
 
@@ -51,6 +56,14 @@ export function testNotification(): Promise<TestNotificationResponse> {
   return request<TestNotificationResponse>(apiUrl(`${NOTIF_BASE}/test`), { method: "POST" });
 }
 
+export function getNotificationDeliveries(limit = 50): Promise<NotificationDeliveryDto[]> {
+  return request<NotificationDeliveryDto[]>(apiUrl(`${NOTIF_BASE}/deliveries?limit=${limit}`));
+}
+
+export function getNotificationDeliveryStats(): Promise<NotificationDeliveryStats> {
+  return request<NotificationDeliveryStats>(apiUrl(`${NOTIF_BASE}/deliveries/stats`));
+}
+
 // ── Direct Messaging ───────────────────────────────────────────────────
 
 export function getDmThreads(): Promise<DmThreadSummary[]> {
@@ -88,4 +101,30 @@ export function searchWorkspace(
   if (options?.messageLimit != null) params.set("messageLimit", String(options.messageLimit));
   if (options?.taskLimit != null) params.set("taskLimit", String(options.taskLimit));
   return request<SearchResults>(apiUrl(`/api/search?${params}`));
+}
+
+// ── DM Conversation Export ──────────────────────────────────────────────
+
+export function exportDmMessages(agentId: string, format: "json" | "markdown" = "json"): Promise<void> {
+  const params = new URLSearchParams({ format });
+  const ext = format === "markdown" ? "md" : "json";
+  return downloadFile(apiUrl(`/api/export/dm/${encodeURIComponent(agentId)}/messages?${params}`), `dm-export.${ext}`);
+}
+
+// ── Worktrees ────────────────────────────────────────────────────────────
+
+export function getWorktreeStatus(): Promise<WorktreeStatusSnapshot[]> {
+  return request<WorktreeStatusSnapshot[]>(apiUrl("/api/worktrees"));
+}
+
+// ── Models ───────────────────────────────────────────────────────────────
+
+export function getAvailableModels(): Promise<ModelsResponse> {
+  return request<ModelsResponse>(apiUrl("/api/models"));
+}
+
+// ── Activity ─────────────────────────────────────────────────────────────
+
+export function getRecentActivity(limit = 50): Promise<ActivityEvent[]> {
+  return request<ActivityEvent[]>(apiUrl(`/api/activity/recent?limit=${limit}`));
 }

@@ -21,11 +21,13 @@ public class DestructiveCommandDiscoveryTests
     {
         "CANCEL_TASK",
         "CLEANUP_ROOMS",
+        "CLEANUP_WORKTREES",
         "CLOSE_ROOM",
         "FORGET",
         "MERGE_TASK",
         "REJECT_TASK",
         "RESTART_SERVER",
+        "RUN_MIGRATIONS",
     };
 
     private static IReadOnlyList<ICommandHandler> DiscoverHandlers()

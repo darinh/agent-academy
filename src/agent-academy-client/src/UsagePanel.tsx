@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Spinner,
   Tooltip,
-  makeStyles,
-  shorthands,
 } from "@fluentui/react-components";
 import V3Badge from "./V3Badge";
 import {
@@ -20,197 +18,9 @@ import {
 } from "./api";
 import Sparkline from "./Sparkline";
 import { bucketByTime, bucketByTimeSum } from "./sparklineUtils";
+import { useUsagePanelStyles } from "./usage/usagePanelStyles";
 
-// ── Styles ──
-
-const useLocalStyles = makeStyles({
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  },
-  statsRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
-    gap: "8px",
-    marginBottom: "12px",
-  },
-  statCard: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    ...shorthands.padding("8px", "10px"),
-    ...shorthands.borderRadius("6px"),
-    border: "1px solid var(--aa-border)",
-    backgroundColor: "var(--aa-bg)",
-  },
-  statValue: {
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "var(--aa-text)",
-    lineHeight: 1,
-  },
-  statLabel: {
-    fontFamily: "var(--mono)",
-    color: "var(--aa-soft)",
-    fontSize: "10px",
-    textAlign: "center" as const,
-  },
-  tableWrap: {
-    overflowX: "auto" as const,
-    maxHeight: "240px",
-    overflowY: "auto" as const,
-    border: "1px solid var(--aa-border)",
-    ...shorthands.borderRadius("6px"),
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse" as const,
-  },
-  th: {
-    textAlign: "left" as const,
-    color: "var(--aa-soft)",
-    fontSize: "10px",
-    fontWeight: 600,
-    fontFamily: "var(--mono)",
-    letterSpacing: "0.04em",
-    textTransform: "uppercase" as const,
-    ...shorthands.padding("5px", "10px"),
-    borderBottom: "1px solid var(--aa-border)",
-    position: "sticky" as const,
-    top: 0,
-    background: "var(--aa-panel)",
-    zIndex: 1,
-  },
-  thRight: {
-    textAlign: "right" as const,
-    color: "var(--aa-soft)",
-    fontSize: "10px",
-    fontWeight: 600,
-    fontFamily: "var(--mono)",
-    letterSpacing: "0.04em",
-    textTransform: "uppercase" as const,
-    ...shorthands.padding("5px", "10px"),
-    borderBottom: "1px solid var(--aa-border)",
-    position: "sticky" as const,
-    top: 0,
-    background: "var(--aa-panel)",
-    zIndex: 1,
-  },
-  td: {
-    ...shorthands.padding("5px", "10px"),
-    borderBottom: "1px solid var(--aa-border)",
-    color: "var(--aa-muted)",
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-    verticalAlign: "middle" as const,
-  },
-  tdRight: {
-    ...shorthands.padding("5px", "10px"),
-    borderBottom: "1px solid var(--aa-border)",
-    color: "var(--aa-muted)",
-    fontFamily: "var(--mono)",
-    fontSize: "11px",
-    verticalAlign: "middle" as const,
-    textAlign: "right" as const,
-  },
-  mono: {
-    fontFamily: "var(--mono, monospace)",
-    fontSize: "12px",
-    color: "var(--aa-muted)",
-  },
-  emptyNote: {
-    color: "var(--aa-muted)",
-    fontSize: "13px",
-    textAlign: "center" as const,
-    ...shorthands.padding("24px"),
-  },
-  error: {
-    color: "var(--aa-copper)",
-    fontSize: "13px",
-    ...shorthands.padding("12px"),
-    ...shorthands.borderRadius("8px"),
-    backgroundColor: "rgba(248, 81, 73, 0.08)",
-  },
-  headerRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  refreshBtn: {
-    background: "none",
-    ...shorthands.border("none"),
-    color: "var(--aa-soft)",
-    cursor: "pointer",
-    fontSize: "12px",
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    ":hover": {
-      color: "var(--aa-text)",
-    },
-  },
-  modelTag: {
-    display: "inline-block",
-    ...shorthands.padding("2px", "8px"),
-    ...shorthands.borderRadius("6px"),
-    fontSize: "11px",
-    fontWeight: 600,
-    letterSpacing: "0.02em",
-    backgroundColor: "rgba(108, 182, 255, 0.10)",
-    color: "var(--aa-cyan)",
-    marginRight: "6px",
-    marginBottom: "4px",
-  },
-  sectionTitle: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    fontSize: "13px",
-    fontWeight: 600,
-    color: "var(--aa-text)",
-  },
-  pagerRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: "12px",
-    color: "var(--aa-muted)",
-  },
-  pagerBtn: {
-    background: "none",
-    ...shorthands.border("1px", "solid", "var(--aa-border)"),
-    ...shorthands.borderRadius("8px"),
-    ...shorthands.padding("4px", "12px"),
-    color: "var(--aa-text)",
-    cursor: "pointer",
-    fontSize: "12px",
-    ":hover": {
-      backgroundColor: "rgba(255, 255, 255, 0.06)",
-    },
-    ":disabled": {
-      opacity: 0.4,
-      cursor: "default",
-    },
-  },
-  sparklineRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    ...shorthands.padding("8px", "12px"),
-    ...shorthands.borderRadius("6px"),
-    backgroundColor: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid var(--aa-border)",
-  },
-  sparklineLabel: {
-    color: "var(--aa-muted)",
-    fontSize: "11px",
-    fontWeight: 600,
-    letterSpacing: "0.06em",
-    textTransform: "uppercase" as const,
-    whiteSpace: "nowrap" as const,
-  },
-});// ── Helpers ──
+// ── Helpers ──
 
 function formatLatency(ms: number | null): string {
   if (ms == null) return "—";
@@ -227,7 +37,7 @@ interface UsagePanelProps {
 }
 
 export default function UsagePanel({ hoursBack }: UsagePanelProps) {
-  const s = useLocalStyles();
+  const s = useUsagePanelStyles();
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [records, setRecords] = useState<LlmUsageRecord[]>([]);
   const [loading, setLoading] = useState(true);

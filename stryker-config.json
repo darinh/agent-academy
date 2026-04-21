@@ -1,0 +1,38 @@
+{
+  "stryker-config": {
+    "project-info": {
+      "name": "AgentAcademy",
+      "module": "Server"
+    },
+    "test-projects": [
+      "tests/AgentAcademy.Server.Tests/AgentAcademy.Server.Tests.csproj"
+    ],
+    "mutate": [
+      "Commands/CommandParser.cs",
+      "Commands/CommandAuthorizer.cs",
+      "Commands/CommandPipeline.cs",
+      "Commands/ShellCommand.cs",
+      "Commands/Handlers/SearchCodeHandler.cs",
+      "Services/PromptSanitizer.cs",
+      "Services/TaskLifecycleService.cs",
+      "Services/TaskLifecycleService.Review.cs",
+      "Services/TaskLifecycleService.SpecLinks.cs",
+      "!**/*.Designer.cs",
+      "!**/Migrations/**"
+    ],
+    "reporters": [
+      "html",
+      "json",
+      "progress",
+      "cleartext"
+    ],
+    "verbosity": "info",
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 50
+    },
+    "concurrency": 4,
+    "language-version": "latest"
+  }
+}

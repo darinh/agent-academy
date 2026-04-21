@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import {
   Button,
   FluentProvider,
-  webDarkTheme,
   mergeClasses,
   Spinner,
   Toaster,
@@ -12,16 +11,13 @@ import {
   ToastTitle,
   ToastBody,
 } from "@fluentui/react-components";
-import type { Theme, MenuCheckedValueChangeData } from "@fluentui/react-components";
 import { useLayoutStyles, useWorkspaceStyles, useRecoveryStyles } from "./styles";
 import { useWorkspace } from "./useWorkspace";
 import { useDesktopNotifications } from "./useDesktopNotifications";
-import { getActiveWorkspace, switchWorkspace, createRoom, createRoomSession, addAgentToRoom, removeAgentFromRoom } from "./api";
-import type { OnboardResult, WorkspaceMeta, ActivityEvent, ActivityEventType, CollaborationPhase } from "./api";
+import type { ActivityEvent, CollaborationPhase, WorkspaceMeta } from "./api";
+import { renameRoom } from "./api";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
-import { loadFilters, saveFilters } from "./chatUtils";
-import type { MessageFilter } from "./chatUtils";
 import ConfirmDialog from "./ConfirmDialog";
 import ChunkErrorBoundary from "./ChunkErrorBoundary";
 import StatusBanners from "./StatusBanners";
@@ -40,6 +36,10 @@ import {
   isWorkspaceLimited,
   shouldRenderWorkspace,
 } from "./authPresentation";
+import { VIEW_TITLES, TOAST_EVENT_TYPES, toastIntent, matrixTheme } from "./appConstants";
+import { useChatFilters } from "./useChatFilters";
+import { useProjectSelection } from "./useProjectSelection";
+import { useRoomCallbacks } from "./useRoomCallbacks";
 
 // Lazy-loaded panels
 const ProjectSelectorPage = lazy(() => import("./ProjectSelectorPage"));
@@ -48,49 +48,6 @@ const SettingsPanel = lazy(() => import("./SettingsPanel"));
 const AgentSessionPanel = lazy(() => import("./AgentSessionPanel"));
 const CommandPalette = lazy(() => import("./CommandPalette"));
 const KeyboardShortcutsDialog = lazy(() => import("./KeyboardShortcutsDialog"));
-
-/** View title lookup for header bar. */
-const VIEW_TITLES: Record<string, { title: string; meta: string }> = {
-  chat: { title: "Conversation", meta: "Live room stream" },
-  tasks: { title: "Tasks", meta: "Delivery queue" },
-  plan: { title: "Room Plan", meta: "" },
-  commands: { title: "Command Deck", meta: "" },
-  sprint: { title: "Sprint", meta: "Active iteration" },
-  timeline: { title: "Activity Timeline", meta: "" },
-  dashboard: { title: "Metrics", meta: "System telemetry" },
-  overview: { title: "Overview", meta: "Room state" },
-  directMessages: { title: "Direct Messages", meta: "" },
-  search: { title: "Search", meta: "Find messages & tasks" },
-};
-
-const TOAST_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
-  "AgentErrorOccurred",
-  "AgentWarningOccurred",
-  "SubagentFailed",
-  "AgentFinished",
-  "TaskCreated",
-  "PhaseChanged",
-  "SubagentCompleted",
-]);
-
-function toastIntent(evt: ActivityEvent): "error" | "warning" | "info" {
-  if (evt.severity === "Error" || evt.type === "AgentErrorOccurred" || evt.type === "SubagentFailed") return "error";
-  if (evt.severity === "Warning" || evt.type === "AgentWarningOccurred") return "warning";
-  return "info";
-}
-
-/** Override Fluent UI's 14px/20px defaults to match v3 mockup's 13px/1.5 base. */
-const matrixTheme: Theme = {
-  ...webDarkTheme,
-  fontSizeBase200: "11px",
-  fontSizeBase300: "13px",
-  fontSizeBase400: "14px",
-  fontSizeBase500: "16px",
-  lineHeightBase200: "16px",
-  lineHeightBase300: "18px",
-  lineHeightBase400: "20px",
-  lineHeightBase500: "22px",
-};
 
 export default function App() {
   return (
@@ -119,21 +76,7 @@ function AppShell() {
   });
 
   /* ── Chat filter state (lifted here so toolbar + content can share) ── */
-  const [hiddenFilters, setHiddenFilters] = useState<Set<MessageFilter>>(loadFilters);
-  const chatFilterChecked = useMemo(() => {
-    const visible: string[] = [];
-    if (!hiddenFilters.has("system")) visible.push("system");
-    if (!hiddenFilters.has("commands")) visible.push("commands");
-    return { show: visible };
-  }, [hiddenFilters]);
-  const onChatFilterChange = useCallback((_: unknown, data: MenuCheckedValueChangeData) => {
-    const nowVisible = new Set(data.checkedItems);
-    const next = new Set<MessageFilter>();
-    if (!nowVisible.has("system")) next.add("system");
-    if (!nowVisible.has("commands")) next.add("commands");
-    setHiddenFilters(next);
-    saveFilters(next);
-  }, []);
+  const { hiddenFilters, chatFilterChecked, onChatFilterChange } = useChatFilters();
 
   /* ── Desktop notifications ── */
   const desktopNotif = useDesktopNotifications();
@@ -160,30 +103,98 @@ function AppShell() {
     activity,
     thinkingAgentList,
     thinkingByRoom,
+    roomContextUsage,
     recoveryBanner,
     connectionStatus,
     breakoutRooms,
     sprintVersion,
     lastSprintEvent,
+    retroVersion,
+    digestVersion,
+    memoryVersion,
+    artifactVersion,
+    goalCardVersion,
     err,
     busy,
     tab,
     setTab,
     sidebarOpen,
+    sidebarPinned,
     handleRoomSelect,
     handleManualRefresh,
     handleToggleSidebar,
+    handleToggleSidebarPin,
     handleSendMessage,
     handlePhaseTransition,
   } = useWorkspace({ onActivityEvent: handleActivityToast });
 
   const { circuitBreakerState } = useCircuitBreakerPolling();
 
+  /* ── Workspace / project selection state ── */
+  const {
+    workspace,
+    loading,
+    showProjectSelector,
+    setShowProjectSelector,
+    switchError,
+    handleProjectSelected,
+    handleProjectOnboarded,
+  } = useProjectSelection({
+    onSwitched: handleManualRefresh,
+    onSwitchedToast: useCallback((ws: WorkspaceMeta) => {
+      dispatchToast(
+        <Toast>
+          <ToastTitle>Switched to {ws.projectName ?? ws.path}</ToastTitle>
+        </Toast>,
+        { intent: "success", timeout: 2000 },
+      );
+    }, [dispatchToast]),
+  });
+
+  const {
+    phaseTransitioning,
+    selectedWorkspaceId,
+    wrappedPhaseTransition,
+    wrappedRoomSelect,
+    handleCreateRoom,
+    handleWorkspaceSelect,
+    handleCreateSession,
+    handleToggleAgent,
+  } = useRoomCallbacks({
+    handlePhaseTransition,
+    handleRoomSelect,
+    handleManualRefresh,
+    setTab,
+  });
+
   /* ── Task data ── */
-  const [showProjectSelector, setShowProjectSelector] = useState(false);
   const { allTasks, tasksLoading, tasksError, activeSprintId, refreshTasks } = useTaskData({
     enabled: !showProjectSelector && tab === "tasks",
   });
+
+  /* ── Task focus (cross-panel navigation) ── */
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const handleNavigateToTask = useCallback((taskId: string) => {
+    setFocusTaskId(taskId);
+    setTab("tasks");
+  }, [setTab]);
+  const handleFocusTaskHandled = useCallback(() => {
+    setFocusTaskId(null);
+  }, []);
+
+  /* ── Retro filter (cross-panel navigation from tasks) ── */
+  const [retroFilterTaskId, setRetroFilterTaskId] = useState<string | null>(null);
+  const handleNavigateToRetro = useCallback((taskId: string) => {
+    setRetroFilterTaskId(taskId);
+    setTab("retrospectives");
+  }, [setTab]);
+  const handleClearRetroTaskFilter = useCallback(() => {
+    setRetroFilterTaskId(null);
+  }, []);
+  // Clear task filter when navigating away from retrospectives tab
+  useEffect(() => {
+    if (tab !== "retrospectives") setRetroFilterTaskId(null);
+  }, [tab]);
 
   /* ── Keyboard shortcuts ── */
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -203,149 +214,7 @@ function AppShell() {
     return result;
   }, [thinkingByRoom]);
 
-  /* ── Workspace / project selection state ── */
-  const [workspace, setWorkspace] = useState<WorkspaceMeta | null>(null);
-  const [phaseTransitioning, setPhaseTransitioning] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [switching, setSwitching] = useState(false);
-  const [switchError, setSwitchError] = useState("");
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-
-  // On mount, check for active workspace — retry on failure (backend may still be starting)
-  useEffect(() => {
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    async function checkWorkspace(attempt: number) {
-      if (cancelled) return;
-      try {
-        const data = await getActiveWorkspace();
-        if (cancelled) return;
-        if (data.active) {
-          setWorkspace(data.active);
-        } else {
-          setShowProjectSelector(true);
-        }
-        setLoading(false);
-      } catch {
-        if (cancelled) return;
-        if (attempt < 3) {
-          retryTimer = setTimeout(() => void checkWorkspace(attempt + 1), 2000);
-        } else {
-          setShowProjectSelector(true);
-          setLoading(false);
-        }
-      }
-    }
-    void checkWorkspace(0);
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, []);
-
-  /* ── Callbacks ── */
-  const handleProjectSelected = useCallback(
-    async (workspacePath: string) => {
-      if (switching) return;
-      setSwitching(true);
-      setSwitchError("");
-      try {
-        const ws = await switchWorkspace(workspacePath);
-        setWorkspace(ws);
-        setShowProjectSelector(false);
-        handleManualRefresh();
-        dispatchToast(
-          <Toast>
-            <ToastTitle>Switched to {ws.projectName ?? ws.path}</ToastTitle>
-          </Toast>,
-          { intent: "success", timeout: 2000 },
-        );
-      } catch (e) {
-        setSwitchError(e instanceof Error ? e.message : "Failed to switch workspace");
-      } finally {
-        setSwitching(false);
-      }
-    },
-    [dispatchToast, handleManualRefresh, switching],
-  );
-
-  const handleProjectOnboarded = useCallback(
-    (result: OnboardResult) => {
-      setWorkspace(result.workspace);
-      setShowProjectSelector(false);
-      handleManualRefresh();
-    },
-    [handleManualRefresh],
-  );
-
-  const wrappedPhaseTransition = useCallback(
-    async (phase: Parameters<typeof handlePhaseTransition>[0]) => {
-      setPhaseTransitioning(true);
-      try { await handlePhaseTransition(phase); }
-      finally { setPhaseTransitioning(false); }
-    },
-    [handlePhaseTransition],
-  );
-
-  const wrappedRoomSelect = useCallback(
-    (id: string) => {
-      setSelectedWorkspaceId(null);
-      handleRoomSelect(id);
-      setTab("chat");
-    },
-    [handleRoomSelect],
-  );
-
-  const handleCreateRoom = useCallback(
-    async (name: string) => {
-      try {
-        const newRoom = await createRoom(name);
-        handleRoomSelect(newRoom.id);
-        setSelectedWorkspaceId(null);
-        setTab("chat");
-        handleManualRefresh();
-      } catch (e) {
-        console.error("Failed to create room:", e);
-      }
-    },
-    [handleRoomSelect, handleManualRefresh, setTab],
-  );
-
-  const handleWorkspaceSelect = useCallback(
-    (breakoutId: string) => {
-      setSelectedWorkspaceId(breakoutId);
-    },
-    [],
-  );
-
-  const handleCreateSession = useCallback(
-    async (roomId: string) => {
-      try {
-        await createRoomSession(roomId);
-        handleManualRefresh();
-      } catch (e) {
-        console.error("Failed to create session:", e);
-      }
-    },
-    [handleManualRefresh],
-  );
-
-  const handleToggleAgent = useCallback(
-    async (roomId: string, agentId: string, currentlyInRoom: boolean) => {
-      try {
-        if (currentlyInRoom) {
-          await removeAgentFromRoom(roomId, agentId);
-        } else {
-          await addAgentToRoom(roomId, agentId);
-        }
-        handleManualRefresh();
-      } catch (e) {
-        console.error("Failed to toggle agent:", e);
-      }
-    },
-    [handleManualRefresh],
-  );
 
   /* ── Document title ── */
   useEffect(() => {
@@ -356,9 +225,20 @@ function AppShell() {
       : `${roomName} | Agent Academy`;
   }, [room?.name, room?.currentPhase]);
 
+  /* ── Room rename handler (must be declared before early returns to keep hook order stable) ── */
+  const handleRoomRename = useCallback(async (newName: string) => {
+    if (!room) return;
+    await renameRoom(room.id, newName);
+    handleManualRefresh();
+  }, [room, handleManualRefresh]);
+
   /* ── Early returns ── */
   if (auth === null || loading) {
-    return <div className={s.root} />;
+    return (
+      <div className={s.root} style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Spinner size="large" label="Loading Agent Academy…" />
+      </div>
+    );
   }
 
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
@@ -388,6 +268,8 @@ function AppShell() {
     : null;
 
   /* ── Header model ── */
+  const isRoomView = tab === "chat" && !!room && !sessionAgent && !selectedBreakout;
+
   const headerModel: HeaderModel = {
     title: sessionAgent
       ? `${sessionAgent.name}'s Sessions`
@@ -407,6 +289,8 @@ function AppShell() {
     workspaceLimited,
     degradedEyebrow: degradedCopy?.eyebrow ?? null,
     circuitBreakerState,
+    canRename: isRoomView,
+    onRename: handleRoomRename,
   };
 
   /* ── Toolbar model ── */
@@ -448,6 +332,7 @@ function AppShell() {
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
           <SidebarPanel
             sidebarOpen={sidebarOpen}
+            sidebarPinned={sidebarPinned}
             busy={busy}
             rooms={ov.rooms}
             room={selectedWorkspaceId ? null : room}
@@ -458,9 +343,11 @@ function AppShell() {
             thinkingByRoomIds={thinkingByRoomIds}
             onRefresh={handleManualRefresh}
             onToggleSidebar={handleToggleSidebar}
+            onToggleSidebarPin={handleToggleSidebarPin}
             onSelectRoom={wrappedRoomSelect}
             onSelectWorkspace={handleWorkspaceSelect}
             onCreateRoom={handleCreateRoom}
+            onCleanupRooms={async () => { await (await import("./api")).cleanupRooms(); handleManualRefresh(); }}
             activeView={tab}
             onViewChange={setTab}
             workspace={
@@ -473,6 +360,7 @@ function AppShell() {
             onLogout={logoutDialog.request}
             onOpenSettings={() => setShowSettings(true)}
             sprintVersion={sprintVersion}
+            contextUsage={roomContextUsage}
           />
 
           <main className={s.workspace} aria-label="Workspace content">
@@ -564,9 +452,20 @@ function AppShell() {
                 circuitBreakerState={circuitBreakerState}
                 sprintVersion={sprintVersion}
                 lastSprintEvent={lastSprintEvent}
+                retroVersion={retroVersion}
+                digestVersion={digestVersion}
+                memoryVersion={memoryVersion}
+                artifactVersion={artifactVersion}
+                goalCardVersion={goalCardVersion}
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}
+                onNavigateToTask={handleNavigateToTask}
+                onNavigateToRetro={handleNavigateToRetro}
+                retroFilterTaskId={retroFilterTaskId}
+                onClearRetroTaskFilter={handleClearRetroTaskFilter}
+                focusTaskId={focusTaskId}
+                onFocusTaskHandled={handleFocusTaskHandled}
                 styles={s}
               />
             )}

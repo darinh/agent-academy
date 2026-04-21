@@ -18,11 +18,16 @@ Defines how Agent Academy sends prompts to LLM providers and receives responses.
                ▼
 ┌──────────────────────────────────┐
 │        CopilotExecutor           │
-│  • Delegates to ClientFactory   │
-│  • Caches sessions per agent    │
-│  • Streams & collects response  │
-│  • Falls back to StubExecutor   │
-├──────────────────────────────────┤
+│  • Coordinates pool & sender    │
+│  • Auth-state transitions       │
+│  • Circuit breaker & fallback   │
+├──────────────┬───────────────────┤
+│ CopilotSessionPool │ CopilotSdkSender  │
+│ • TTL cache        │ • Send & collect  │
+│ • Per-key locks    │ • Retry/backoff   │
+│ • Cleanup timer    │ • Error classify  │
+│ • Send serialize   │ • Usage tracking  │
+├──────────────┴───────────────────┤
 │      CopilotClientFactory        │
 │  • Token resolution chain       │
 │  • Client creation & caching    │
@@ -71,12 +76,12 @@ public interface IAgentExecutor
 | `InvalidateAllSessionsAsync` | Disposes all sessions across all rooms and agents |
 | `DisposeAsync` | Releases all resources |
 
-### Implementation: `CopilotExecutor` + `CopilotClientFactory`
+### Implementation: `CopilotExecutor` + `CopilotSessionPool` + `CopilotSdkSender` + `CopilotClientFactory`
 
-**Files**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`, `src/AgentAcademy.Server/Services/CopilotClientFactory.cs`
+**Files**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`, `src/AgentAcademy.Server/Services/CopilotSessionPool.cs`, `src/AgentAcademy.Server/Services/CopilotSdkSender.cs`, `src/AgentAcademy.Server/Services/CopilotClientFactory.cs`
 **NuGet**: `GitHub.Copilot.SDK` v0.2.2
 
-`CopilotClientFactory` owns client lifecycle (token resolution, client creation, worktree clients). `CopilotExecutor` owns session management, retry logic, error classification, and circuit breaker.
+`CopilotClientFactory` owns client lifecycle (token resolution, client creation, worktree clients). `CopilotSessionPool` owns session caching with TTL and send serialization. `CopilotSdkSender` owns SDK communication: streamed response collection, error classification, and retry with backoff. `CopilotExecutor` is a thin coordinator that owns auth-state transitions, circuit breaker, and fallback management.
 
 Key behaviors:
 - **Lazy client initialization** *(CopilotClientFactory)*: `CopilotClient` is created on first use and cached.
@@ -86,7 +91,7 @@ Key behaviors:
   3. **Environment / CLI** — `null` passed to SDK, which checks `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, or copilot CLI login state
 - **CLI path configuration**: `Copilot:CliPath` in `appsettings.json` controls which copilot binary the SDK uses. Must be set to `"copilot"` (system PATH) or an explicit path to an already-authenticated copilot CLI. The SDK's bundled binary (at `runtimes/linux-x64/native/copilot`) ships with no auth state and will fail to connect. The system copilot CLI (e.g., `~/.local/bin/copilot`) uses existing `copilot auth login` credentials.
 - **Token-change awareness** *(CopilotClientFactory)*: When the resolved token changes (e.g., user logs in after server was using a config token), the old `CopilotClient` is disposed, all sessions are cleared, and a new client is created with the new token. Failure state is reset so the new token gets a fresh attempt. If the executor was in an auth-failed state, a recovery message is posted to the main room.
-- **Error classification**: `SessionErrorEvent.Data.ErrorType` is classified into typed exceptions:
+- **Error classification** *(CopilotSdkSender)*: `SessionErrorEvent.Data.ErrorType` is classified into typed exceptions:
   - `authentication` → `CopilotAuthException` (definitive — no retry, triggers auth failure notification)
   - `authorization` → `CopilotAuthorizationException` (no retry — token lacks required permissions)
   - `quota`, `rate_limit` → `CopilotQuotaException` (retried with longer backoff: 5s/15s/30s, max 3 attempts)
@@ -94,11 +99,11 @@ Key behaviors:
 - **Auth failure handling**: On definitive auth failure, the executor sets `IsAuthFailed = true`, posts a re-authentication notice to the main room, and notifies via the notification system. When the user re-authenticates (token changes), the flag is cleared and a recovery message is posted automatically.
 - **Proactive auth expiry probe**: `CopilotAuthMonitorService` runs every 5 minutes and issues a lightweight `GET https://api.github.com/user` probe using the current GitHub token source. Only HTTP `401` and `403` are treated as definitive auth degradation; success clears a prior degraded state, while timeouts, transport failures, and other status codes are logged as transient and do not change auth state. Before probing, the monitor checks if the token is expiring soon (within 30 minutes); if so, it proactively refreshes via `ICopilotAuthProbe.RefreshTokenAsync()`. On auth failure, a refresh is attempted before degrading the system.
 - **Permission handling**: Sessions use `AgentPermissionHandler.Create()` which approves tool calls for the registered tools. When no tools are registered for an agent, all permissions are approved (same as `PermissionHandler.ApproveAll`). The handler logs all permission requests for diagnostics.
-- **Session-per-agent-per-room**: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`. Worktree-scoped sessions use the key `{worktreePath}:{agentId}:{roomId}`.
+- **Session-per-agent-per-room** *(CopilotSessionPool)*: Sessions keyed by `{agentId}:{roomId}`, default room is `"default"`. Worktree-scoped sessions use the key `wt:{worktreePath}:{agentId}:{roomId}`. The pool manages caching with a 10-minute sliding TTL, per-key creation locks (double-check pattern), per-session send serialization via `UseAsync<T>`, and automatic cleanup every 2 minutes.
 - **Per-worktree CopilotClient** *(CopilotClientFactory)*: When an agent works in a git worktree (breakout room), a dedicated `CopilotClient` is created with `Cwd` set to the worktree directory, ensuring the CLI's built-in tools operate in the correct filesystem location. Worktree clients are stored in a `ConcurrentDictionary<string, CopilotClient>` keyed by path. Lifecycle: created on first use per worktree path, disposed when the breakout room closes, and all worktree clients are disposed on token rotation. `EnsureWorktreeClientAsync` avoids deadlocks by returning `null` (caller falls back to the default client) rather than calling `EnsureClientAsync` while holding the lock.
-- **Streaming aggregation**: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
-- **Session priming**: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity. The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
-- **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"gpt-5"`.
+- **Streaming aggregation** *(CopilotSdkSender)*: Subscribes to `AssistantMessageDeltaEvent` for incremental tokens, uses `AssistantMessageEvent` for the final complete content.
+- **Session priming** *(CopilotExecutor)*: Sends `AgentDefinition.StartupPrompt` as the first message to establish agent identity via `CreatePrimedSessionAsync` (the factory callback passed to the pool). The startup prompt is NOT repeated in per-round prompts — it lives only in the session priming to avoid redundant context accumulation.
+- **Model selection**: Uses `AgentDefinition.Model` in `SessionConfig`, defaults to `"claude-opus-4.7"` (see `CopilotExecutor.cs`).
 - **TTL cleanup**: Sessions expire after 10 minutes of inactivity; a background timer runs every 2 minutes.
 - **Automatic fallback**: If `CopilotClient.StartAsync()` fails or any individual call fails (after retry exhaustion), delegates to `StubExecutor`.
 - **Circuit breaker**: Prevents burning through retries when the API is consistently failing. Global (not per-agent) since all agents share the same token. States: Closed (normal flow), Open (immediate fallback, no retries), HalfOpen (one probe allowed after cooldown). Trips after 5 consecutive failures (quota, transient, or unknown — auth errors do NOT trip the circuit). Cooldown: 60 seconds before probing. Auto-resets on token change. State exposed via `GET /api/health/instance` (`CircuitBreakerState` field) and `IAgentExecutor.CircuitBreakerState`. Open-circuit events are recorded in `AgentErrors` with type `circuit_open`.
@@ -138,11 +143,12 @@ Singleton service bridging GitHub OAuth login to `CopilotExecutor`:
                                                           ▼
 ┌──────────────────┐     ┌───────────────────┐   ┌──────────────────┐
 │  Agent           │────▶│  CopilotExecutor  │──▶│ CopilotClient    │
-│  Orchestrator    │     │  (sessions, retry)│   │ Factory          │
-│  (background)    │     └───────────────────┘   │  ResolveToken()  │
-└──────────────────┘                             │  → CopilotClient │
-                                                 │  (SDK CLI proc)  │
-                                                 └──────────────────┘
+│  Orchestrator    │     │  (auth, circuit   │   │ Factory          │
+│  (background)    │     │   breaker)        │   │  ResolveToken()  │
+└──────────────────┘     ├───────┬───────────┤   │  → CopilotClient │
+                         │Session│  Sdk      │   │  (SDK CLI proc)  │
+                         │ Pool  │  Sender   │   └──────────────────┘
+                         └───────┴───────────┘
 
          ┌──────────────────────────────────────────────────┐
          │  CopilotAuthMonitorService (every 5 min)         │
@@ -193,10 +199,13 @@ The message includes the agent's name and role so users can identify which agent
 
 ```csharp
 builder.Services.AddSingleton<CopilotClientFactory>();
-builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
+builder.Services.AddSingleton<CopilotSessionPool>();
+builder.Services.AddSingleton<CopilotSdkSender>();
+builder.Services.AddSingleton<CopilotExecutor>();
+builder.Services.AddSingleton<IAgentExecutor>(sp => sp.GetRequiredService<CopilotExecutor>());
 ```
 
-`CopilotClientFactory` is registered as a singleton. `CopilotExecutor` takes it as a constructor dependency and is registered as `IAgentExecutor`. It internally creates and manages a `StubExecutor` fallback — consumers only depend on `IAgentExecutor`.
+`CopilotClientFactory`, `CopilotSessionPool`, and `CopilotSdkSender` are registered as singletons. `CopilotExecutor` takes all three as constructor dependencies and is registered as `IAgentExecutor`. It internally creates and manages a `StubExecutor` fallback — consumers only depend on `IAgentExecutor`.
 
 ### Tests
 
@@ -220,9 +229,9 @@ builder.Services.AddSingleton<IAgentExecutor, CopilotExecutor>();
 
 - `IAgentExecutor.RunAsync` never returns null or throws for valid inputs (except cancellation).
 - `CopilotExecutor` never leaves the system without an executor — it always falls back to `StubExecutor`.
-- Session keys are deterministic: `{agentId}:{roomId ?? "default"}`.
-- Expired sessions are cleaned up within `CleanupInterval` (2 minutes).
-- All sessions are invalidated on workspace/project switch via `InvalidateAllSessionsAsync()`.
+- Session keys are deterministic: `{agentId}:{roomId ?? "default"}` for standard, `wt:{worktreePath}:{agentId}:{roomId}` for worktree-scoped.
+- Expired sessions are cleaned up within `CleanupInterval` (2 minutes) by `CopilotSessionPool`.
+- All sessions are invalidated on workspace/project switch via `InvalidateAllSessionsAsync()` → `CopilotSessionPool.InvalidateAllAsync()`.
 
 ## Known Gaps
 
@@ -244,13 +253,13 @@ These are intentional safety constraints, not missing features:
 
 - ~~**No agent-to-agent direct communication**~~ — **Accepted**: Agents communicate via rooms and DMs, mediated by `AgentOrchestrator`. This is intentional — room-based communication provides auditable, observable message flow. Direct peer-to-peer would bypass logging and rate limiting.
 - ~~**No streaming of agent responses to UI**~~ — **Accepted**: `CopilotExecutor` enables SDK streaming internally (`Streaming = true`) but collects deltas into a single response before returning to the orchestrator. True streaming to the frontend would require significant SignalR/SSE changes for marginal UX benefit given typical response times.
-- ~~**No agent hot-reload**~~ — **Accepted**: `AgentCatalogLoader` reads `agents.json` once at startup (singleton). Catalog changes require server restart. Agent *configuration* overrides (model, prompt, templates) are hot-reloadable via DB — only structural changes (adding/removing agents) need restart.
+- ~~**No agent hot-reload**~~ — **Resolved**: `AgentCatalogWatcher` (hosted service) monitors `agents.json` via `FileSystemWatcher` + periodic SHA256 hash polling (30s fallback). On change: debounce 500ms, diff old vs new catalog, swap volatile `AgentCatalog` reference, reconcile DB (`AgentLocations` created for added agents, removed agents set to `Offline`), invalidate Copilot sessions for modified/removed agents, broadcast `AgentCatalogReloaded` activity event. Manual trigger: `POST /api/system/reload-catalog`. Concurrent reloads serialized via `SemaphoreSlim`. Parse failures preserve the existing catalog. `IAgentCatalog` interface decouples all 30+ consumers from the concrete data type. 20 tests.
 - ~~**No agent versioning**~~ — **Accepted**: `AgentDefinition` has no version field. Agent behavior changes are tracked via `agent_configs.UpdatedAt` for overrides and git history for catalog changes. Formal versioning would add complexity with little benefit for a single-user product.
 
 ### Genuine Gaps (Low Priority)
 
-- ~~**No per-agent resource quotas**~~ — **Resolved**: `AgentQuotaService` enforces per-agent resource limits configured in `agent_configs` (nullable `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` columns — null = unlimited). Request-rate limiting uses an authoritative in-memory sliding window (1-hour window). Token/cost checks are best-effort via DB aggregation against the `llm_usage` table (concurrent calls may slightly overshoot). Quota is checked in `CopilotExecutor.RunAsync` before the circuit breaker, and each retry attempt counts toward the request limit. Quota violations throw `AgentQuotaExceededException`, caught by `AgentOrchestrator.RunAgentAsync` which returns a system-style pause message. Configuration via `PUT /api/agents/{id}/quota`, status via `GET /api/agents/{id}/quota`. Cache invalidated on config change. Composite index `(AgentId, RecordedAt)` on `llm_usage` ensures efficient aggregation.
-- **No prompt injection mitigation**: User-supplied text (room messages, DMs, task descriptions) is interpolated verbatim into agent prompts in `AgentOrchestrator.BuildConversationPrompt` and `BuildBreakoutPrompt`. No input sanitization or prompt boundary markers exist. Low risk in single-user context (the user *is* the operator), but would need attention for any multi-user deployment.
+- ~~**No per-agent resource quotas**~~ — **Resolved**: `AgentQuotaService` enforces per-agent resource limits configured in `agent_configs` (nullable `MaxRequestsPerHour`, `MaxTokensPerHour`, `MaxCostPerHour` columns — null = unlimited). Request-rate limiting uses an authoritative in-memory sliding window (1-hour window). Token/cost checks are best-effort via DB aggregation against the `llm_usage` table (concurrent calls may slightly overshoot). Quota is checked in `CopilotExecutor.RunAsync` before the circuit breaker, and each retry attempt counts toward the request limit. Quota violations throw `AgentQuotaExceededException`, caught by `AgentTurnRunner.RunAgentAsync` which returns a system-style pause message. Configuration via `PUT /api/agents/{id}/quota`, status via `GET /api/agents/{id}/quota`. Cache invalidated on config change. Composite index `(AgentId, RecordedAt)` on `llm_usage` ensures efficient aggregation.
+- ~~**No prompt injection mitigation**~~ — **Resolved**: `PromptSanitizer` provides defense-in-depth for all user-supplied content interpolated into LLM prompts. Three layers: (1) **Boundary markers** — all user-content sections (messages, tasks, DMs, memories, work reports, session summaries) are enclosed in `[UNTRUSTED_CONTENT]`/`[/UNTRUSTED_CONTENT]` delimiters. (2) **Boundary instruction** — a security preamble in every prompt tells the LLM to treat marked content as conversation context, not system-level instructions. (3) **Metadata sanitization** — sender names, room names, and memory keys have newlines/control characters stripped to prevent prompt-structure injection via metadata fields. Marker sequences within content are escaped to prevent marker injection. Applied to all `PromptBuilder` methods (conversation, breakout, review) and `ConversationSessionService.GenerateSummaryAsync` (sender names sanitized via `SanitizeMetadata`, content escaped via `EscapeMarkers`, conversation block wrapped with `WrapBlock` boundary markers, `BoundaryInstruction` added to prompt). No remaining unsanitized LLM prompt surfaces.
 - ~~**No agent-level rate limiting**~~ — **Resolved**: `AgentQuotaService` includes per-agent LLM call-rate limiting via an in-memory sliding window. Each LLM attempt (including retries in `SendAndCollectWithRetryAsync`) is recorded. Configurable via `MaxRequestsPerHour` in `agent_configs`. See "No per-agent resource quotas" above for full details.
 
 ### SDK Tool Calling
@@ -280,10 +289,13 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 | Group | Tools | Type | Agents |
 |-------|-------|------|--------|
 | `task-state` | `list_tasks`, `list_rooms`, `show_agents` | Read-only (shared) | All agents |
-| `code` | `read_file`, `search_code` | Read-only (shared) | Engineers, Writer |
+| `code` | `read_file`, `search_code` | Read-only (shared) | All agents (Planner, Architect, Engineers, Reviewer, Writer) |
+| `code-write` | `write_file`, `commit_changes` | Write (per-agent) | Engineers (agents with code-write permission, e.g. Prometheus/Hephaestus/Hermes) |
 | `task-write` | `create_task`, `update_task_status`, `add_task_comment` | Write (per-agent) | All agents |
 | `memory` | `remember`, `recall` | Write/Read (per-agent) | All agents |
 | `chat` | (platform concept, not an SDK tool) | — | All agents |
+
+> Tool groups are resolved by `AgentToolRegistry` based on `AgentDefinition.EnabledTools`. The `task-write`, `code-write`, and `memory` groups are contextual (created per-agent) because their handlers need the calling agent's identity for audit/scoping. The `write_file` and `commit_changes` SDK tools are registered in `AgentToolFunctions.cs` and invoke the agent's file write / commit flow in its working directory (worktree-scoped).
 
 #### Tool Functions
 
@@ -317,7 +329,7 @@ SessionConfig.OnPermissionRequest = AgentPermissionHandler.Create(toolNames, log
 - Write tools capture `agentId` at session creation via closures — agents cannot impersonate other agents
 - Memory isolation: agents only see their own memories plus `shared` category memories from other agents
 
-**Implementation**: Read-only tools are created once and shared. Write tools use inner wrapper classes (`TaskWriteToolWrapper`, `MemoryToolWrapper`) that capture agent identity via closures. All tools use `IServiceScopeFactory` to resolve scoped services at invocation time.
+**Implementation**: Read-only tools are created once and shared. Write tools use dedicated wrapper classes (`TaskWriteToolWrapper`, `MemoryToolWrapper`, `CodeWriteToolWrapper`) in their own files that capture agent identity via constructor parameters. All tools use `IServiceScopeFactory` to resolve scoped services at invocation time.
 
 #### Registry
 
@@ -335,7 +347,9 @@ Maps `AgentDefinition.EnabledTools` group names to `AIFunction` instances. Read-
 - Approves all permissions when no tools are registered (backward-compatible)
 - Approves only safe permission kinds (`custom-tool`, `read`, `tool`) when tools are registered
 - Denies dangerous permission kinds (`shell`, `write`, `url`, `mcp`) with `DeniedByRules`
-- Logs all approved and denied permission requests for diagnostics
+- Logs all approved and denied permission requests for diagnostics (first 3 denials at Warning, 4th as a suppression notice, subsequent at Debug)
+
+The denial counter is **closure-local** — each `Create` call allocates its own `DenialState` captured by the returned delegate, so state is scoped to exactly one Copilot session and garbage-collected together with it. No static dictionary accumulates across session churn. `ClearSession(string)` is retained as an `[Obsolete]` no-op for source compatibility.
 
 Note: The SDK's `write` permission kind refers to file write operations by the SDK itself, not our custom tool write operations. Our custom tools (including write tools) use the `custom-tool` or `tool` permission kind.
 
@@ -343,7 +357,7 @@ Note: The SDK's `write` permission kind refers to file write operations by the S
 
 **File**: `src/AgentAcademy.Server/Services/CopilotExecutor.cs`
 
-In `GetOrCreateSessionEntryAsync`, the executor:
+In `CreatePrimedSessionAsync` (the session factory callback passed to `CopilotSessionPool.UseAsync`), the executor:
 1. Calls `_toolRegistry.GetToolsForAgent(agent.EnabledTools, agent.Id, agent.Name)` to resolve tools (passing agent identity for contextual groups)
 2. Creates `SessionConfig` with `Tools = [.. tools]`
 3. Sets `OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger)`
@@ -358,7 +372,7 @@ In `GetOrCreateSessionEntryAsync`, the executor:
 | `AgentToolRegistryTests` | 17 | Group resolution (static + contextual), dedup, case-insensitive, all tool names, planner/engineer config, task-write/memory groups, no-agentId fallback |
 | `AgentToolFunctionsTests` | 15 | Tool creation, list_tasks/rooms/agents execution, read_file (happy path, not found, path traversal, directory, line range), search_code (results, no results, glob filter, path traversal), FindProjectRoot |
 | `AgentWriteToolTests` | 23 | create_task (valid, missing title, invalid type, with type), update_task_status (valid, invalid, blocker, blocker+status, note, nonexistent, no args), add_task_comment (valid, finding type, invalid type, nonexistent), remember (create, upsert, TTL, invalid category, invalid TTL), recall (empty, after remember, by category, by key, agent isolation, shared visibility, expired exclusion, expired inclusion) |
-| `AgentPermissionHandlerTests` | 7 | No-tools approval, tool-call approval, read approval, shell denial, write denial, URL denial, multiple safe kinds |
+| `AgentPermissionHandlerTests` | 10 | No-tools approval, safe-kind approval (case-insensitive), unsafe-kind denial (shell/write/url/execute/unknown), denial log escalation (Warning→suppression→Debug), per-closure denial state, `ClearSession` obsolete no-op, null session-id fallback |
 
 ### Conversation Session Management
 
@@ -372,16 +386,17 @@ In `GetOrCreateSessionEntryAsync`, the executor:
 
 - **`ConversationSessionEntity`** (`src/AgentAcademy.Server/Data/Entities/ConversationSessionEntity.cs`): Tracks epoch boundaries per room. Fields: `Id`, `RoomId`, `RoomType` (Main/Breakout), `SequenceNumber`, `Status` (Active/Archived), `Summary`, `MessageCount`.
 - **`ConversationSessionService`** (`src/AgentAcademy.Server/Services/ConversationSessionService.cs`): Manages epoch lifecycle — creation, threshold checks, LLM summarization, rotation, and SDK session invalidation.
+- **`ConversationSessionQueryService`** (`src/AgentAcademy.Server/Services/ConversationSessionQueryService.cs`): Read-only queries — room session history, session stats, and context retrieval for agents (`GetSessionContextAsync`, `GetStageContextAsync`, `GetSprintContextAsync`, `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync`). Extracted from `ConversationSessionService` to separate queries from lifecycle mutations.
 - **`SystemSettingsService`** (`src/AgentAcademy.Server/Services/SystemSettingsService.cs`): Configurable thresholds via `conversation.mainRoomEpochSize` (default 50) and `conversation.breakoutEpochSize` (default 30).
 
 **Epoch rotation flow**:
-1. Before each conversation round, `AgentOrchestrator` calls `CheckAndRotateAsync(roomId)`
+1. Before each conversation round, `ConversationRoundRunner` calls `CheckAndRotateAsync(roomId)`
 2. If message count ≥ threshold, loads session messages and generates an LLM summary
 3. Archives current session with summary, creates new active session
 4. Invalidates all SDK sessions for the room via `InvalidateRoomSessionsAsync()`
 5. New prompts include the archived session summary under `=== PREVIOUS CONVERSATION SUMMARY ===`
 
-**Prompt deduplication**: `BuildConversationPrompt` and `BuildBreakoutPrompt` no longer include `agent.StartupPrompt` — it's already sent as session priming in `CopilotExecutor.GetOrCreateSessionEntryAsync`. This eliminates the largest source of redundant context.
+**Prompt deduplication**: `BuildConversationPrompt` and `BuildBreakoutPrompt` no longer include `agent.StartupPrompt` — it's already sent as session priming in `CopilotExecutor.CreatePrimedSessionAsync`. This eliminates the largest source of redundant context.
 
 **Message tagging**: `MessageEntity.SessionId` and `BreakoutMessageEntity.SessionId` tag messages by epoch. `BuildRoomSnapshotAsync` loads only messages from the active session (plus legacy untagged messages for backwards compatibility).
 
@@ -523,15 +538,18 @@ public sealed class AgentConfigService
 ### Orchestrator Integration
 
 **File**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`
+**File**: `src/AgentAcademy.Server/Services/AgentTurnRunner.cs`
 
-The orchestrator resolves `AgentConfigService` from its scoped `IServiceScopeFactory` and applies overrides before building prompts or calling the executor:
+The orchestrator manages the queue-based message processing loop. `ConversationRoundRunner` handles conversation round structure and agent selection. Per-turn agent execution (config resolution, memory/DM loading, prompt building, LLM execution, command processing, message posting, and task assignments) is delegated to `AgentTurnRunner`.
 
-| Method | Change |
-|--------|--------|
-| `RunConversationRoundAsync` | Resolves effective agent for planner and each conversation participant |
-| `RunBreakoutLoopAsync` | Resolves effective agent before breakout rounds |
-| `HandleBreakoutCompleteAsync` | Resolves effective agent for presenting agent |
-| `RunReviewCycleAsync` | Resolves effective reviewer agent |
+| Component | Responsibility |
+|-----------|---------------|
+| `AgentOrchestrator` | Queue management, message dispatch, startup recovery |
+| `ConversationRoundRunner` | Planner-led conversation rounds, agent selection, sprint stage filtering |
+| `DirectMessageRouter` | DM routing — breakout forwarding or targeted room turns |
+| `RoundContextLoader` | Loads shared per-round context (spec, session, sprint) |
+| `AgentTurnRunner.RunAgentTurnAsync` | Single agent turn: resolve config → load memories/DMs → build prompt → execute → process commands → post message → handle task assignments |
+| `AgentTurnResult` | Immutable return type: resolved `AgentDefinition`, raw response, `IsNonPass` flag |
 
 The agent catalog (`AgentCatalogOptions`) is used by domain services for identity-only operations (location tracking, room assignment, task claims). Config overrides are not needed for these operations.
 
@@ -572,7 +590,7 @@ The agent catalog (`AgentCatalogOptions`) is used by domain services for identit
 ```json
 {
   "agentId": "planner-1",
-  "effectiveModel": "claude-opus-4.6",
+  "effectiveModel": "claude-opus-4.7",
   "effectiveStartupPrompt": "...(merged prompt)...",
   "hasOverride": true,
   "override": {
@@ -657,6 +675,155 @@ The agent catalog (`AgentCatalogOptions`) is used by domain services for identit
 | `DeleteTemplate_NotFound_ReturnsFalse` | Missing row |
 | `DeleteTemplate_NullifiesFkOnAgentConfigs` | FK SetNull cascade |
 
+#### Agent Locations
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/locations` | Returns all agent locations across rooms |
+| `PUT` | `/api/agents/{agentId}/location` | Move an agent to a room/state |
+
+**GET `/api/agents/locations`** — returns `List<AgentLocation>`:
+```json
+[
+  {
+    "agentId": "planner-1",
+    "roomId": "main",
+    "state": "active",
+    "breakoutRoomId": null
+  }
+]
+```
+
+**PUT `/api/agents/{agentId}/location`** request:
+```json
+{
+  "roomId": "main",
+  "state": "active",
+  "breakoutRoomId": null
+}
+```
+Returns `AgentLocation` on success.
+
+**Validation**:
+- `agentId` must exist in the agent catalog → `404` if not found
+
+**Implementation**: Endpoints on `AgentController`. Delegates to `AgentLocationService`.
+
+#### Agent Knowledge
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/knowledge` | Agent-specific knowledge entries (non-expired) |
+| `POST` | `/api/agents/{agentId}/knowledge` | Append a knowledge entry (upsert into memory system) |
+| `GET` | `/api/knowledge` | All non-expired knowledge across all agents |
+
+These endpoints are thin wrappers over the agent memory system (spec 008). They return memories as formatted strings `[category] key: value`. For structured memory access, use the `/api/memories/` endpoints instead.
+
+**GET `/api/agents/{agentId}/knowledge`** — returns non-expired memories for the agent:
+```json
+{
+  "entries": ["[pattern] ef-core-include: EF Core requires explicit Include()", "[gotcha] sqlite-wal: WAL mode locks differ"]
+}
+```
+Returns `404` if `agentId` is not in the agent catalog.
+
+**POST `/api/agents/{agentId}/knowledge`** — creates or updates a memory entry with `category = "knowledge"`. The key is auto-generated from the entry text (first 60 chars, kebab-cased). If a memory with the same key exists, its value is updated (upsert).
+```json
+// Request
+{ "entry": "The build command is dotnet build AgentAcademy.sln" }
+// Response
+{ "agentId": "coder-1", "key": "the-build-command-is-dotnet-build-agentacademy-sln", "category": "knowledge", "entry": "..." }
+```
+Returns `404` if `agentId` is not in the agent catalog. Returns `400` if `entry` is empty.
+
+**GET `/api/knowledge`** — returns `Dictionary<string, string[]>` of all non-expired memories keyed by agent ID:
+```json
+{
+  "planner-1": ["[pattern] fact-a: ...", "[decision] fact-b: ..."],
+  "coder-1": ["[gotcha] fact-c: ..."]
+}
+```
+
+**Implementation**: Endpoints on `AgentController`. Queries `AgentMemories` DbSet directly.
+
+#### Agent Execution
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/agents/{agentId}/run` | Execute a prompt against an agent |
+
+**POST `/api/agents/{agentId}/run`** — reads the raw request body as the prompt text. Returns:
+```json
+{
+  "agentId": "coder-1",
+  "response": "Here is the generated code..."
+}
+```
+
+**Validation**:
+- `agentId` must exist in the agent catalog → `404` if not found
+
+**Implementation**: Endpoints on `AgentController`.
+
+#### Agent Sessions
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/sessions` | Breakout room sessions for an agent |
+
+**GET `/api/agents/{agentId}/sessions`** — returns `List<BreakoutRoom>`, both active and archived, most recent first.
+
+**Implementation**: Endpoints on `AgentController`.
+
+#### Agent Quotas
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/agents/{agentId}/quota` | Current quota status and usage |
+| `PUT` | `/api/agents/{agentId}/quota` | Update quota limits |
+| `DELETE` | `/api/agents/{agentId}/quota` | Remove quota limits (unlimited) |
+
+**GET `/api/agents/{agentId}/quota`** — returns `QuotaStatus` (limits + current usage counts).
+
+**PUT `/api/agents/{agentId}/quota`** request:
+```json
+{
+  "maxRequestsPerHour": 100,
+  "maxTokensPerHour": 500000,
+  "maxCostPerHour": 5.00
+}
+```
+All fields nullable — null means no limit for that dimension. Returns `QuotaStatus`.
+
+**DELETE `/api/agents/{agentId}/quota`** — removes all quota limits (unlimited). Returns:
+```json
+{
+  "status": "removed",
+  "agentId": "coder-1"
+}
+```
+
+> **Note**: Quota enforcement is already described in the Known Gaps resolved section. These are the REST API endpoints that manage it.
+
+**Implementation**: Endpoints on `AgentController`. Delegates to `AgentQuotaService`.
+
+#### Auth Logout
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/auth/logout` | Sign out and clear the auth cookie |
+
+**POST `/api/auth/logout`** — signs out and clears the auth cookie. Returns:
+```json
+{
+  "message": "Logged out."
+}
+```
+
+**Authorization**: `[AllowAnonymous]` — does not require authentication.
+
+**Implementation**: Endpoints on `AuthController`.
+
 ### Frontend: Agent Configuration UI
 
 > **Status: Implemented** — Settings panel with agent config cards and template management.
@@ -737,3 +904,7 @@ Templates are inserted in `Up()` and deleted in `Down()` using stable GUIDs for 
 | 2026-04-05 | Session history UI — `ConversationSessionService` extended with `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync` query methods with pagination, status filtering, and `hoursBack` time window. New `SessionController` (`GET /api/sessions`, `GET /api/sessions/stats`), room sessions endpoint (`GET /api/rooms/{roomId}/sessions`). Frontend: `SessionHistoryPanel` in dashboard with stats cards, filter tabs, expandable summaries, pagination. `ChatPanel` session resume indicator shows when agents have archived context. 21 new backend tests (1319 total), 16 new frontend tests (218 total). | session-history |
 | 2026-04-05 | OAuth refresh token — `CopilotTokenProvider` extended with `RefreshToken`, `ExpiresAtUtc`, `IsTokenExpiringSoon`, `CanRefresh`, cookie write-back flag. `ICopilotAuthProbe.RefreshTokenAsync()` exchanges refresh tokens at GitHub's OAuth endpoint. `CopilotAuthMonitorService` proactively refreshes 30 min before expiry and attempts refresh before degrading on auth failure. `Program.cs` captures refresh token in OAuth callback, restores from cookie on restart, merges refreshed tokens into cookie. Access tokens auto-renew for up to 6 months without re-authentication. 21 new tests (1343 total). Adversarial review (GPT-5.2, Claude Sonnet 4, Claude Haiku 4.5): timeout handling, token clobbering, and cookie error handling fixed. | token-refresh |
 | 2026-04-12 | Structural refactor — extracted `CopilotClientFactory` from `CopilotExecutor` (client lifecycle, token resolution, worktree clients). `CopilotExecutor` retains session management, retry logic, error classification, circuit breaker. Zero behavioral changes. `ResolveToken()` divergence between Factory (returns null for SDK fallback) and `CopilotAuthProbe` (checks env vars for raw HTTP probes) documented as intentional. | copilot-client-factory |
+| 2026-04-13 | Spec sync — documented `ConversationSessionQueryService` (read-only session queries) extracted from `ConversationSessionService`. Query methods: `GetSessionContextAsync`, `GetStageContextAsync`, `GetSprintContextAsync`, `GetRoomSessionsAsync`, `GetAllSessionsAsync`, `GetSessionStatsAsync`. | spec-sync-decomposition |
+| 2026-04-14 | Knowledge endpoints wired to memory system — `GET /api/agents/{agentId}/knowledge` returns non-expired memories, `POST` creates/upserts memories in "knowledge" category with auto-generated key, `GET /api/knowledge` returns all memories grouped by agent. Removed 501 stub. | knowledge-endpoints |
+| 2026-04-14 | Platform review — agent capability fixes. Added `code` tool group to Planner and Architect (were blind to codebase). Added `RUN_BUILD`, `RUN_TESTS`, `SHOW_DIFF`, `GIT_LOG`, `READ_FILE`, `SEARCH_CODE` commands to engineers. Fixed prompt-permission mismatches across all 6 agents. Added SDK Tools documentation section to all agent prompts. Updated `AgentCatalogWatcher.AgentsEqual` to compare `Permissions` and `GitIdentity`. Added conversation kickoff on fresh startup. | platform-review |
+| 2026-04-12 | Structural refactor — extracted `CopilotSessionPool` (session cache with TTL, per-key locks, send serialization, cleanup timer) and `CopilotSdkSender` (streamed response collection, error classification, retry/backoff, usage tracking) from `CopilotExecutor`. Executor reduced from 779→424 lines. Zero behavioral changes. Adversarial review (GPT-5.3 Codex): 1 finding fixed (auth-failure invalidation scope). | session-pool-sender |

@@ -1048,19 +1048,20 @@ Agent Academy supports pluggable notification providers for sending agent messag
 X-Consultant-Key: your-secret-key-here
 ```
 
-**Security**: Keep `SharedSecret` in environment variables, not committed to source:
+**Security**: Keep `SharedSecret` in environment variables or user-secrets, never committed to source. The canonical env var name uses the .NET double-underscore convention that maps `:` → `__`:
+
 ```bash
-export CONSULTANT_API_SECRET="your-secret-key-here"
+export ConsultantApi__SharedSecret="your-secret-key-here"
 ```
 
-Reference in `appsettings.json`:
-```json
-{
-  "ConsultantApi": {
-    "SharedSecret": "${CONSULTANT_API_SECRET}"
-  }
-}
+For local development, prefer `dotnet user-secrets` instead of shell env vars:
+
+```bash
+dotnet user-secrets set "ConsultantApi:SharedSecret" "your-secret-key-here" \
+  --project src/AgentAcademy.Server
 ```
+
+> ⚠️ **Do not** reference a shell variable inside `appsettings.json` (e.g. `"SharedSecret": "${MY_VAR}"`). ASP.NET Core's JSON configuration provider reads the value literally — it does not expand `${...}` — so `SharedSecret` would end up containing the literal brace-wrapped string, not the intended secret. Set the env var at process level (as shown above) and let the Environment Variables configuration provider bind it.
 
 ### Server Configuration
 

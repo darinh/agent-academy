@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,7 +51,7 @@ public sealed class UpdateTaskItemHandler : ICommandHandler
         string? evidence = command.Args.TryGetValue("evidence", out var evObj)
             && evObj is string ev && !string.IsNullOrWhiteSpace(ev) ? ev : null;
 
-        var taskItems = context.Services.GetRequiredService<TaskItemService>();
+        var taskItems = context.Services.GetRequiredService<ITaskItemService>();
 
         var item = await taskItems.GetTaskItemAsync(taskItemId);
         if (item is null)

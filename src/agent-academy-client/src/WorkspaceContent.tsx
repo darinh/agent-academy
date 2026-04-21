@@ -18,6 +18,15 @@ const DmPanel = lazy(() => import("./DmPanel"));
 const CommandsPanel = lazy(() => import("./CommandsPanel"));
 const SprintPanel = lazy(() => import("./SprintPanel"));
 const SearchPanel = lazy(() => import("./SearchPanel"));
+const MemoryBrowserPanel = lazy(() => import("./MemoryBrowserPanel"));
+const DigestPanel = lazy(() => import("./DigestPanel"));
+const RetrospectivePanel = lazy(() => import("./RetrospectivePanel"));
+const ArtifactsPanel = lazy(() => import("./ArtifactsPanel"));
+const ActivityFeedPanel = lazy(() => import("./ActivityFeedPanel"));
+const SpecSearchPanel = lazy(() => import("./SpecSearchPanel"));
+const AgentKnowledgePanel = lazy(() => import("./AgentKnowledgePanel"));
+const GoalCardPanel = lazy(() => import("./GoalCardPanel"));
+const ForgePanel = lazy(() => import("./ForgePanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -43,9 +52,20 @@ export interface WorkspaceContentProps {
   circuitBreakerState: CircuitBreakerState;
   sprintVersion: number;
   lastSprintEvent: SprintRealtimeEvent | null;
+  retroVersion: number;
+  digestVersion: number;
+  memoryVersion: number;
+  artifactVersion: number;
+  goalCardVersion: number;
   activity: ActivityEvent[];
   onSelectRoom: (id: string) => void;
   onNavigateToTasks: () => void;
+  onNavigateToTask: (taskId: string) => void;
+  onNavigateToRetro: (taskId: string) => void;
+  retroFilterTaskId: string | null;
+  onClearRetroTaskFilter: () => void;
+  focusTaskId: string | null;
+  onFocusTaskHandled: () => void;
   styles: Record<string, string>;
 }
 
@@ -79,6 +99,9 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onRefresh={props.onRefreshTasks}
               activeSprintId={props.activeSprintId}
               agents={props.configuredAgents}
+              focusTaskId={props.focusTaskId}
+              onFocusHandled={props.onFocusTaskHandled}
+              onViewRetros={props.onNavigateToRetro}
             />
           )}
           {tab === "plan" && (
@@ -86,6 +109,9 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
           )}
           {tab === "commands" && (
             <CommandsPanel roomId={props.room?.id ?? null} readOnly={props.workspaceLimited} />
+          )}
+          {tab === "artifacts" && (
+            <ArtifactsPanel roomId={props.room?.id ?? null} refreshTrigger={props.artifactVersion} />
           )}
           {tab === "sprint" && <SprintPanel sprintVersion={props.sprintVersion} lastSprintEvent={props.lastSprintEvent} />}
           {tab === "timeline" && (
@@ -119,6 +145,31 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onNavigateToTasks={props.onNavigateToTasks}
             />
           )}
+          {tab === "memories" && (
+            <MemoryBrowserPanel agents={props.configuredAgents} refreshTrigger={props.memoryVersion} />
+          )}
+          {tab === "knowledge" && (
+            <AgentKnowledgePanel agents={props.configuredAgents} />
+          )}
+          {tab === "activity" && <ActivityFeedPanel />}
+          {tab === "specs" && <SpecSearchPanel />}
+          {tab === "digests" && <DigestPanel refreshTrigger={props.digestVersion} onNavigateToTask={props.onNavigateToTask} />}
+          {tab === "retrospectives" && (
+            <RetrospectivePanel
+              refreshTrigger={props.retroVersion}
+              onNavigateToTask={props.onNavigateToTask}
+              filterTaskId={props.retroFilterTaskId}
+              onClearTaskFilter={props.onClearRetroTaskFilter}
+            />
+          )}
+          {tab === "goalCards" && (
+            <GoalCardPanel
+              roomId={props.room?.id}
+              refreshTrigger={props.goalCardVersion}
+              onNavigateToTask={props.onNavigateToTask}
+            />
+          )}
+          {tab === "forge" && <ForgePanel />}
         </section>
       </Suspense>
     </ChunkErrorBoundary>

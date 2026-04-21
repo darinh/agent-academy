@@ -9,6 +9,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ReadFileHandler : ICommandHandler
 {
     public string CommandName => "READ_FILE";
+    public bool IsRetrySafe => true;
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {

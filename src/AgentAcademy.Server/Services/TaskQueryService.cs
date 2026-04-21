@@ -1,6 +1,6 @@
-using System.Text.Json;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,20 +10,23 @@ namespace AgentAcademy.Server.Services;
 /// <summary>
 /// Handles task queries and low-coupling task mutations (no room/messaging/activity side-effects).
 /// </summary>
-public sealed class TaskQueryService
+public sealed class TaskQueryService : ITaskQueryService
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<TaskQueryService> _logger;
-    private readonly AgentCatalogOptions _catalog;
+    private readonly IAgentCatalog _catalog;
+    private readonly ITaskDependencyService _dependencies;
 
     public TaskQueryService(
         AgentAcademyDbContext db,
         ILogger<TaskQueryService> logger,
-        AgentCatalogOptions catalog)
+        IAgentCatalog catalog,
+        ITaskDependencyService dependencies)
     {
         _db = db;
         _logger = logger;
         _catalog = catalog;
+        _dependencies = dependencies;
     }
 
     // ── Task Queries ────────────────────────────────────────────
@@ -48,8 +51,14 @@ public sealed class TaskQueryService
             query = query.Where(t => t.SprintId == sprintId);
         }
 
-        var entities = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
-        return entities.Select(e => BuildTaskSnapshot(e)).ToList();
+        var entities = await query.OrderBy(t => t.Priority).ThenByDescending(t => t.CreatedAt).ToListAsync();
+        var taskIds = entities.Select(e => e.Id).ToList();
+        var depMap = await _dependencies.GetBatchDependencyIdsAsync(taskIds);
+        return entities.Select(e =>
+        {
+            depMap.TryGetValue(e.Id, out var deps);
+            return TaskSnapshotFactory.BuildTaskSnapshot(e, dependsOnIds: deps.DependsOn, blockingIds: deps.Blocking);
+        }).ToList();
     }
 
     /// <summary>
@@ -60,7 +69,9 @@ public sealed class TaskQueryService
         var entity = await _db.Tasks.FindAsync(taskId);
         if (entity is null) return null;
         var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == taskId);
-        return BuildTaskSnapshot(entity, commentCount);
+        var depMap = await _dependencies.GetBatchDependencyIdsAsync([taskId]);
+        depMap.TryGetValue(taskId, out var deps);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity, commentCount, deps.DependsOn, deps.Blocking);
     }
 
     /// <summary>
@@ -74,7 +85,7 @@ public sealed class TaskQueryService
             .FirstOrDefaultAsync();
         if (entity is null) return null;
         var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == entity.Id);
-        return BuildTaskSnapshot(entity, commentCount);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity, commentCount);
     }
 
     /// <summary>
@@ -93,7 +104,7 @@ public sealed class TaskQueryService
             .OrderBy(t => t.CreatedAt)
             .ToListAsync();
 
-        return entities.Select(e => BuildTaskSnapshot(e)).ToList();
+        return entities.Select(e => TaskSnapshotFactory.BuildTaskSnapshot(e)).ToList();
     }
 
     /// <summary>
@@ -130,7 +141,7 @@ public sealed class TaskQueryService
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
 
-        return comments.Select(BuildTaskComment).ToList();
+        return comments.Select(TaskSnapshotFactory.BuildTaskComment).ToList();
     }
 
     /// <summary>
@@ -156,7 +167,7 @@ public sealed class TaskQueryService
             query = query.Where(e => e.Phase == phase.Value.ToString());
 
         var entities = await query.OrderBy(e => e.CreatedAt).ToListAsync();
-        return entities.Select(BuildTaskEvidence).ToList();
+        return entities.Select(TaskSnapshotFactory.BuildTaskEvidence).ToList();
     }
 
     /// <summary>
@@ -172,7 +183,7 @@ public sealed class TaskQueryService
             .OrderBy(l => l.SpecSectionId)
             .ToListAsync();
 
-        return links.Select(BuildSpecTaskLink).ToList();
+        return links.Select(TaskSnapshotFactory.BuildSpecTaskLink).ToList();
     }
 
     /// <summary>
@@ -185,7 +196,7 @@ public sealed class TaskQueryService
             .OrderByDescending(l => l.CreatedAt)
             .ToListAsync();
 
-        return links.Select(BuildSpecTaskLink).ToList();
+        return links.Select(TaskSnapshotFactory.BuildSpecTaskLink).ToList();
     }
 
     /// <summary>
@@ -208,7 +219,7 @@ public sealed class TaskQueryService
         foreach (var entity in unlinkedTasks)
         {
             var commentCount = await _db.TaskComments.CountAsync(c => c.TaskId == entity.Id);
-            snapshots.Add(BuildTaskSnapshot(entity, commentCount));
+            snapshots.Add(TaskSnapshotFactory.BuildTaskSnapshot(entity, commentCount));
         }
         return snapshots;
     }
@@ -237,7 +248,7 @@ public sealed class TaskQueryService
 
         entity.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -247,6 +258,19 @@ public sealed class TaskQueryService
     {
         var entity = await _db.Tasks.FindAsync(taskId)
             ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        // Block activation of tasks with unmet dependencies
+        if (status == Shared.Models.TaskStatus.Active)
+        {
+            var blockers = await _dependencies.GetBlockingTasksAsync(taskId);
+            if (blockers.Count > 0)
+            {
+                var blockerList = string.Join(", ", blockers.Select(b => $"'{b.Title}' ({b.Status})"));
+                throw new InvalidOperationException(
+                    $"Cannot activate task '{taskId}' — unmet dependencies: {blockerList}");
+            }
+        }
+
         var now = DateTime.UtcNow;
         entity.Status = status.ToString();
         entity.UpdatedAt = now;
@@ -260,7 +284,59 @@ public sealed class TaskQueryService
             entity.CompletedAt = null;
 
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
+    /// Atomically transitions a task from Approved → Merging using a single
+    /// SQL UPDATE with a status predicate. Returns true if the row was updated
+    /// (this caller won the claim), false if the task was not in Approved
+    /// status. This prevents the classic check-then-set race where two
+    /// concurrent MERGE_TASK handlers both observe Approved and proceed to
+    /// squash-merge — only one will see rowsAffected > 0.
+    /// </summary>
+    public async Task<bool> TryClaimForMergeAsync(string taskId)
+    {
+        var now = DateTime.UtcNow;
+        var approvedStatus = nameof(Shared.Models.TaskStatus.Approved);
+        var mergingStatus = nameof(Shared.Models.TaskStatus.Merging);
+
+        var rowsAffected = await _db.Tasks
+            .Where(t => t.Id == taskId && t.Status == approvedStatus)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.Status, mergingStatus)
+                .SetProperty(t => t.UpdatedAt, now));
+
+        if (rowsAffected > 0)
+        {
+            // ExecuteUpdate bypasses the change tracker, so any previously
+            // loaded entity for this task is now stale (still says Approved
+            // with an Approved snapshot). Detach it so the next read in this
+            // scope (e.g. failure rollback's FindAsync) goes back to the DB
+            // and sees the Merging status — without this, EF compares against
+            // the stale Approved snapshot and skips the rollback UPDATE.
+            var tracked = _db.Tasks.Local.FirstOrDefault(t => t.Id == taskId);
+            if (tracked is not null)
+            {
+                _db.Entry(tracked).State = EntityState.Detached;
+            }
+        }
+
+        return rowsAffected > 0;
+    }
+
+    /// <summary>
+    /// Updates a task's priority level.
+    /// </summary>
+    public async Task<TaskSnapshot> UpdateTaskPriorityAsync(string taskId, TaskPriority priority)
+    {
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        entity.Priority = (int)priority;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -281,11 +357,11 @@ public sealed class TaskQueryService
             entity.BranchName = branchName;
             entity.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
-            return BuildTaskSnapshot(entity);
+            return TaskSnapshotFactory.BuildTaskSnapshot(entity);
         }
 
         if (string.Equals(entity.BranchName, branchName, StringComparison.Ordinal))
-            return BuildTaskSnapshot(entity);
+            return TaskSnapshotFactory.BuildTaskSnapshot(entity);
 
         _logger.LogError(
             "Refusing to reassign branch for task {TaskId}: existing {ExistingBranch}, attempted {AttemptedBranch}",
@@ -309,7 +385,7 @@ public sealed class TaskQueryService
         entity.PullRequestStatus = status.ToString();
         entity.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
-        return BuildTaskSnapshot(entity);
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
     }
 
     /// <summary>
@@ -326,6 +402,102 @@ public sealed class TaskQueryService
         await _db.SaveChangesAsync();
     }
 
+    // ── Bulk Operations ───────────────────────────────────────
+
+    /// <summary>
+    /// Statuses that are safe for bulk update (no dedicated lifecycle handlers).
+    /// </summary>
+    private static readonly HashSet<Shared.Models.TaskStatus> BulkSafeStatuses =
+    [
+        Shared.Models.TaskStatus.Queued,
+        Shared.Models.TaskStatus.Active,
+        Shared.Models.TaskStatus.Blocked,
+        Shared.Models.TaskStatus.AwaitingValidation,
+        Shared.Models.TaskStatus.InReview,
+    ];
+
+    /// <summary>
+    /// Updates the status of multiple tasks. Skips tasks that fail validation
+    /// (not found, dependency-blocked) and returns per-item results.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkUpdateStatusAsync(
+        IReadOnlyList<string> taskIds, Shared.Models.TaskStatus status)
+    {
+        if (!BulkSafeStatuses.Contains(status))
+            throw new ArgumentException(
+                $"Status '{status}' is not allowed for bulk update. " +
+                $"Allowed: {string.Join(", ", BulkSafeStatuses)}.");
+
+        var dedupedIds = taskIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var updated = new List<TaskSnapshot>();
+        var errors = new List<BulkOperationError>();
+
+        foreach (var taskId in dedupedIds)
+        {
+            try
+            {
+                var snapshot = await UpdateTaskStatusAsync(taskId, status);
+                updated.Add(snapshot);
+            }
+            catch (InvalidOperationException ex)
+            {
+                var code = ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)
+                    ? "NOT_FOUND" : "VALIDATION";
+                errors.Add(new BulkOperationError(taskId, code, ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Bulk status update failed for task '{TaskId}'", taskId);
+                errors.Add(new BulkOperationError(taskId, "INTERNAL", $"Unexpected error: {ex.Message}"));
+            }
+        }
+
+        return new BulkOperationResult(dedupedIds.Count, updated.Count, errors.Count, updated, errors);
+    }
+
+    /// <summary>
+    /// Assigns multiple tasks to a single agent. Skips tasks that fail validation
+    /// (not found) and returns per-item results.
+    /// </summary>
+    public async Task<BulkOperationResult> BulkAssignAsync(
+        IReadOnlyList<string> taskIds, string agentId, string? agentName)
+    {
+        var dedupedIds = taskIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // Resolve agent — if not in catalog, require agentName
+        var agent = _catalog.Agents.FirstOrDefault(a => a.Id == agentId);
+        var resolvedName = agent?.Name ?? agentName;
+        if (string.IsNullOrWhiteSpace(resolvedName))
+            throw new ArgumentException(
+                $"Agent '{agentId}' is not in the catalog. Provide agentName for unknown agents.");
+
+        var updated = new List<TaskSnapshot>();
+        var errors = new List<BulkOperationError>();
+
+        foreach (var taskId in dedupedIds)
+        {
+            try
+            {
+                var snapshot = await AssignTaskAsync(taskId, agent?.Id ?? agentId, resolvedName);
+                updated.Add(snapshot);
+            }
+            catch (InvalidOperationException ex)
+            {
+                errors.Add(new BulkOperationError(taskId, "NOT_FOUND", ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Bulk assign failed for task '{TaskId}'", taskId);
+                errors.Add(new BulkOperationError(taskId, "INTERNAL", $"Unexpected error: {ex.Message}"));
+            }
+        }
+
+        return new BulkOperationResult(dedupedIds.Count, updated.Count, errors.Count, updated, errors);
+    }
+
     // ── Shared Helpers (workspace query) ────────────────────────
 
     internal async Task<string?> GetActiveWorkspacePathAsync()
@@ -336,90 +508,4 @@ public sealed class TaskQueryService
             .FirstOrDefaultAsync();
     }
 
-    // ── Snapshot Builders ───────────────────────────────────────
-
-    internal static TaskSnapshot BuildTaskSnapshot(TaskEntity entity, int commentCount = 0)
-    {
-        return new TaskSnapshot(
-            Id: entity.Id,
-            Title: entity.Title,
-            Description: entity.Description,
-            SuccessCriteria: entity.SuccessCriteria,
-            Status: Enum.Parse<Shared.Models.TaskStatus>(entity.Status),
-            Type: Enum.TryParse<TaskType>(entity.Type, out var tt) ? tt : TaskType.Feature,
-            CurrentPhase: Enum.Parse<CollaborationPhase>(entity.CurrentPhase),
-            CurrentPlan: entity.CurrentPlan,
-            ValidationStatus: Enum.Parse<WorkstreamStatus>(entity.ValidationStatus),
-            ValidationSummary: entity.ValidationSummary,
-            ImplementationStatus: Enum.Parse<WorkstreamStatus>(entity.ImplementationStatus),
-            ImplementationSummary: entity.ImplementationSummary,
-            PreferredRoles: JsonSerializer.Deserialize<List<string>>(entity.PreferredRoles) ?? [],
-            CreatedAt: entity.CreatedAt,
-            UpdatedAt: entity.UpdatedAt,
-            Size: string.IsNullOrEmpty(entity.Size) ? null : Enum.Parse<TaskSize>(entity.Size),
-            StartedAt: entity.StartedAt,
-            CompletedAt: entity.CompletedAt,
-            AssignedAgentId: entity.AssignedAgentId,
-            AssignedAgentName: entity.AssignedAgentName,
-            UsedFleet: entity.UsedFleet,
-            FleetModels: JsonSerializer.Deserialize<List<string>>(entity.FleetModels) ?? [],
-            BranchName: entity.BranchName,
-            PullRequestUrl: entity.PullRequestUrl,
-            PullRequestNumber: entity.PullRequestNumber,
-            PullRequestStatus: string.IsNullOrEmpty(entity.PullRequestStatus) ? null : Enum.Parse<PullRequestStatus>(entity.PullRequestStatus),
-            ReviewerAgentId: entity.ReviewerAgentId,
-            ReviewRounds: entity.ReviewRounds,
-            TestsCreated: JsonSerializer.Deserialize<List<string>>(entity.TestsCreated) ?? [],
-            CommitCount: entity.CommitCount,
-            MergeCommitSha: entity.MergeCommitSha,
-            CommentCount: commentCount,
-            WorkspacePath: entity.WorkspacePath,
-            SprintId: entity.SprintId
-        );
-    }
-
-    internal static TaskComment BuildTaskComment(TaskCommentEntity entity)
-    {
-        return new TaskComment(
-            Id: entity.Id,
-            TaskId: entity.TaskId,
-            AgentId: entity.AgentId,
-            AgentName: entity.AgentName,
-            CommentType: Enum.TryParse<TaskCommentType>(entity.CommentType, out var ct) ? ct : TaskCommentType.Comment,
-            Content: entity.Content,
-            CreatedAt: entity.CreatedAt
-        );
-    }
-
-    internal static TaskEvidence BuildTaskEvidence(TaskEvidenceEntity entity)
-    {
-        return new TaskEvidence(
-            Id: entity.Id,
-            TaskId: entity.TaskId,
-            Phase: Enum.TryParse<EvidencePhase>(entity.Phase, out var p) ? p : EvidencePhase.After,
-            CheckName: entity.CheckName,
-            Tool: entity.Tool,
-            Command: entity.Command,
-            ExitCode: entity.ExitCode,
-            OutputSnippet: entity.OutputSnippet,
-            Passed: entity.Passed,
-            AgentId: entity.AgentId,
-            AgentName: entity.AgentName,
-            CreatedAt: entity.CreatedAt
-        );
-    }
-
-    internal static SpecTaskLink BuildSpecTaskLink(SpecTaskLinkEntity entity)
-    {
-        return new SpecTaskLink(
-            Id: entity.Id,
-            TaskId: entity.TaskId,
-            SpecSectionId: entity.SpecSectionId,
-            LinkType: Enum.TryParse<SpecLinkType>(entity.LinkType, out var lt) ? lt : SpecLinkType.Implements,
-            LinkedByAgentId: entity.LinkedByAgentId,
-            LinkedByAgentName: entity.LinkedByAgentName,
-            Note: entity.Note,
-            CreatedAt: entity.CreatedAt
-        );
-    }
 }

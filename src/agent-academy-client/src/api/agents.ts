@@ -7,6 +7,9 @@ import type {
   UpdateQuotaRequest,
   InstructionTemplate,
   InstructionTemplateRequest,
+  AgentLocation,
+  AgentKnowledgeResponse,
+  AllKnowledgeResponse,
 } from "./types";
 import { apiUrl, request } from "./core";
 
@@ -92,10 +95,6 @@ export function getInstructionTemplates(): Promise<InstructionTemplate[]> {
   return request<InstructionTemplate[]>(apiUrl("/api/instruction-templates"));
 }
 
-export function getInstructionTemplate(id: string): Promise<InstructionTemplate> {
-  return request<InstructionTemplate>(apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`));
-}
-
 export function createInstructionTemplate(
   req: InstructionTemplateRequest,
 ): Promise<InstructionTemplate> {
@@ -120,4 +119,32 @@ export function deleteInstructionTemplate(id: string): Promise<{ status: string;
     apiUrl(`/api/instruction-templates/${encodeURIComponent(id)}`),
     { method: "DELETE" },
   );
+}
+
+// ── Agent Locations ────────────────────────────────────────────────────
+
+export function getAgentLocations(): Promise<AgentLocation[]> {
+  return request<AgentLocation[]>(apiUrl("/api/agents/locations"));
+}
+
+// ── Agent Knowledge ────────────────────────────────────────────────────
+
+export function getAgentKnowledge(agentId: string): Promise<AgentKnowledgeResponse> {
+  return request<AgentKnowledgeResponse>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/knowledge`),
+  );
+}
+
+export function addAgentKnowledge(
+  agentId: string,
+  entry: string,
+): Promise<{ added: number }> {
+  return request<{ added: number }>(
+    apiUrl(`/api/agents/${encodeURIComponent(agentId)}/knowledge`),
+    { method: "POST", body: JSON.stringify({ entry }) },
+  );
+}
+
+export function getAllKnowledge(): Promise<AllKnowledgeResponse> {
+  return request<AllKnowledgeResponse>(apiUrl("/api/knowledge"));
 }

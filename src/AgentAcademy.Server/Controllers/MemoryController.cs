@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
@@ -18,6 +19,7 @@ public class MemoryController : ControllerBase
 {
     private readonly AgentAcademyDbContext _db;
     private readonly ILogger<MemoryController> _logger;
+    private readonly AppAuthSetup _authSetup;
 
     /// <summary>Max entries per import request to prevent payload abuse.</summary>
     internal const int MaxImportEntries = 500;
@@ -25,10 +27,11 @@ public class MemoryController : ControllerBase
     /// <summary>Max error messages returned in import response.</summary>
     private const int MaxReportedErrors = 50;
 
-    public MemoryController(AgentAcademyDbContext db, ILogger<MemoryController> logger)
+    public MemoryController(AgentAcademyDbContext db, ILogger<MemoryController> logger, AppAuthSetup authSetup)
     {
         _db = db;
         _logger = logger;
+        _authSetup = authSetup;
     }
 
     /// <summary>
@@ -38,11 +41,11 @@ public class MemoryController : ControllerBase
     [HttpGet("export")]
     public async Task<IActionResult> Export([FromQuery] string? agentId, [FromQuery] string? category)
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         var query = _db.AgentMemories.Where(m => m.AgentId == agentId);
 
@@ -75,14 +78,14 @@ public class MemoryController : ControllerBase
     [HttpPost("import")]
     public async Task<IActionResult> Import([FromBody] MemoryImportRequest? request)
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (request?.Memories is null || request.Memories.Count == 0)
-            return BadRequest(new { code = "invalid_request", message = "Request must contain a non-empty 'memories' array." });
+            return BadRequest(ApiProblem.BadRequest("Request must contain a non-empty 'memories' array.", "invalid_request"));
 
         if (request.Memories.Count > MaxImportEntries)
-            return BadRequest(new { code = "payload_too_large", message = $"Import is capped at {MaxImportEntries} entries per request. Got {request.Memories.Count}." });
+            return BadRequest(ApiProblem.BadRequest($"Import is capped at {MaxImportEntries} entries per request. Got {request.Memories.Count}.", "payload_too_large"));
 
         var now = DateTime.UtcNow;
         int created = 0, updated = 0, skipped = 0;
@@ -165,11 +168,11 @@ public class MemoryController : ControllerBase
     [HttpDelete("expired")]
     public async Task<IActionResult> CleanupExpired([FromQuery] string? agentId)
     {
-        if (User.Identity?.IsAuthenticated != true)
-            return Unauthorized(new { code = "not_authenticated", message = "Authentication is required." });
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
         if (string.IsNullOrWhiteSpace(agentId))
-            return BadRequest(new { code = "missing_agent_id", message = "agentId query parameter is required." });
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
 
         var now = DateTime.UtcNow;
         var expired = await _db.AgentMemories
@@ -184,6 +187,140 @@ public class MemoryController : ControllerBase
 
         return Ok(new { removed = expired.Count });
     }
+
+    /// <summary>
+    /// GET /api/memories/browse?agentId=X&amp;category=Y&amp;search=Z&amp;includeExpired=false
+    /// Browse memories with optional category filter and text search.
+    /// Uses FTS5 when search is provided, with LIKE fallback.
+    /// </summary>
+    [HttpGet("browse")]
+    public async Task<IActionResult> Browse(
+        [FromQuery] string? agentId,
+        [FromQuery] string? category,
+        [FromQuery] string? search,
+        [FromQuery] bool includeExpired = false,
+        CancellationToken ct = default)
+    {
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
+
+        if (string.IsNullOrWhiteSpace(agentId))
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
+
+        var now = DateTime.UtcNow;
+
+        // Use FTS5 search path when a search term is provided
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var results = await RecallHandler.SearchWithFts5Async(_db, agentId, search, category?.ToLowerInvariant(), null);
+            // SearchWithFts5Async includes shared memories from other agents (by design for RECALL).
+            // Browse is agent-scoped, so filter to only the requested agent.
+            results = results.Where(m => m.AgentId == agentId).ToList();
+            if (!includeExpired)
+                results = results.Where(m => m.ExpiresAt == null || m.ExpiresAt > now).ToList();
+
+            return Ok(new BrowseResponse
+            {
+                Total = results.Count,
+                Memories = results.Select(MapToDto).ToList(),
+            });
+        }
+
+        // Non-search: simple EF query
+        IQueryable<AgentMemoryEntity> query = _db.AgentMemories.Where(m => m.AgentId == agentId);
+
+        if (!includeExpired)
+            query = query.Where(m => m.ExpiresAt == null || m.ExpiresAt > now);
+
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(m => m.Category == category.ToLowerInvariant());
+
+        query = query.OrderBy(m => m.Category).ThenBy(m => m.Key);
+
+        var memories = await query.AsNoTracking().ToListAsync(ct);
+
+        return Ok(new BrowseResponse
+        {
+            Total = memories.Count,
+            Memories = memories.Select(MapToDto).ToList(),
+        });
+    }
+
+    /// <summary>
+    /// GET /api/memories/stats?agentId=X — per-category memory counts.
+    /// </summary>
+    [HttpGet("stats")]
+    public async Task<IActionResult> Stats([FromQuery] string? agentId, CancellationToken ct = default)
+    {
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
+
+        if (string.IsNullOrWhiteSpace(agentId))
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
+
+        var now = DateTime.UtcNow;
+        var stats = await _db.AgentMemories
+            .Where(m => m.AgentId == agentId)
+            .GroupBy(m => m.Category)
+            .Select(g => new CategoryStat
+            {
+                Category = g.Key,
+                Total = g.Count(),
+                Active = g.Count(m => m.ExpiresAt == null || m.ExpiresAt > now),
+                Expired = g.Count(m => m.ExpiresAt != null && m.ExpiresAt <= now),
+                LastUpdated = g.Max(m => m.UpdatedAt ?? m.CreatedAt),
+            })
+            .OrderByDescending(s => s.Active)
+            .ToListAsync(ct);
+
+        return Ok(new StatsResponse
+        {
+            AgentId = agentId,
+            TotalMemories = stats.Sum(s => s.Total),
+            ActiveMemories = stats.Sum(s => s.Active),
+            ExpiredMemories = stats.Sum(s => s.Expired),
+            Categories = stats,
+        });
+    }
+
+    /// <summary>
+    /// DELETE /api/memories?agentId=X&amp;key=Y — delete a single memory entry.
+    /// </summary>
+    [HttpDelete]
+    public async Task<IActionResult> Delete([FromQuery] string? agentId, [FromQuery] string? key, CancellationToken ct = default)
+    {
+        if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
+            return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
+
+        if (string.IsNullOrWhiteSpace(agentId))
+            return BadRequest(ApiProblem.BadRequest("agentId query parameter is required.", "missing_agent_id"));
+
+        if (string.IsNullOrWhiteSpace(key))
+            return BadRequest(ApiProblem.BadRequest("key query parameter is required.", "missing_key"));
+
+        var entity = await _db.AgentMemories.FindAsync(new object[] { agentId, key }, ct);
+        if (entity is null)
+            return NotFound(ApiProblem.NotFound($"Memory '{key}' not found for agent '{agentId}'.", "not_found"));
+
+        _db.AgentMemories.Remove(entity);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Memory deleted: agent={AgentId} key={Key}", agentId, key);
+
+        return Ok(new { status = "deleted", agentId, key });
+    }
+
+    private static MemoryExportDto MapToDto(AgentMemoryEntity m) => new()
+    {
+        AgentId = m.AgentId,
+        Category = m.Category,
+        Key = m.Key,
+        Value = m.Value,
+        CreatedAt = m.CreatedAt,
+        UpdatedAt = m.UpdatedAt,
+        LastAccessedAt = m.LastAccessedAt,
+        ExpiresAt = m.ExpiresAt,
+    };
 
     public record MemoryExportDto
     {
@@ -215,5 +352,29 @@ public class MemoryController : ControllerBase
         public string Value { get; init; } = "";
         [Range(1, 87_600)]
         public int? TtlHours { get; init; }
+    }
+
+    public record BrowseResponse
+    {
+        public int Total { get; init; }
+        public List<MemoryExportDto> Memories { get; init; } = [];
+    }
+
+    public record StatsResponse
+    {
+        public string AgentId { get; init; } = "";
+        public int TotalMemories { get; init; }
+        public int ActiveMemories { get; init; }
+        public int ExpiredMemories { get; init; }
+        public List<CategoryStat> Categories { get; init; } = [];
+    }
+
+    public record CategoryStat
+    {
+        public string Category { get; init; } = "";
+        public int Total { get; init; }
+        public int Active { get; init; }
+        public int Expired { get; init; }
+        public DateTime LastUpdated { get; init; }
     }
 }

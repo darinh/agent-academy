@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -11,11 +12,13 @@ namespace AgentAcademy.Server.Commands.Handlers;
 /// </summary>
 public sealed class CancelTaskHandler : ICommandHandler
 {
-    private readonly GitService _gitService;
+    private readonly IGitService _gitService;
+    private readonly IWorktreeService? _worktreeService;
 
-    public CancelTaskHandler(GitService gitService)
+    public CancelTaskHandler(IGitService gitService, IWorktreeService? worktreeService = null)
     {
         _gitService = gitService;
+        _worktreeService = worktreeService;
     }
 
     public string CommandName => "CANCEL_TASK";
@@ -66,8 +69,8 @@ public sealed class CancelTaskHandler : ICommandHandler
             _ = bool.TryParse(delStr, out deleteBranch);
         }
 
-        var messages = context.Services.GetRequiredService<MessageService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var messages = context.Services.GetRequiredService<IMessageService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         var task = await taskQueries.GetTaskAsync(taskId);
         if (task is null)
@@ -95,10 +98,26 @@ public sealed class CancelTaskHandler : ICommandHandler
         {
             await taskQueries.UpdateTaskStatusAsync(taskId, Shared.Models.TaskStatus.Cancelled);
 
-            // Clean up the task branch if requested (default: yes)
+            // Clean up the task branch if requested (default: yes).
+            // Per spec 005 §Workspace Isolation the worktree persists through
+            // the breakout lifecycle and is only disposed on task terminal
+            // transition — here at cancellation, before deleting the branch
+            // (git refuses to delete a branch checked out in a worktree).
             string? deletedBranch = null;
             if (deleteBranch && !string.IsNullOrWhiteSpace(task.BranchName))
             {
+                if (_worktreeService is not null)
+                {
+                    try
+                    {
+                        await _worktreeService.RemoveWorktreeAsync(task.BranchName);
+                    }
+                    catch
+                    {
+                        // Worktree may already be gone or never existed — not fatal
+                    }
+                }
+
                 try
                 {
                     await _gitService.DeleteBranchAsync(task.BranchName);

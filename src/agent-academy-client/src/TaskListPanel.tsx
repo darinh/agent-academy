@@ -1,81 +1,34 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
-  Button,
   makeStyles,
   mergeClasses,
   shorthands,
-  Spinner,
-  Textarea,
 } from "@fluentui/react-components";
 import {
   TaskListLtrRegular,
-  ArrowSyncRegular,
-  CheckmarkCircleRegular,
-  ErrorCircleRegular,
-  ClockRegular,
   ChevronDownRegular,
   ChevronRightRegular,
   CheckmarkRegular,
   DismissRegular,
-  EditRegular,
-  MergeRegular,
-  CommentRegular,
-  FilterRegular,
-  LinkRegular,
-  ShieldCheckmarkRegular,
-  PersonAddRegular,
 } from "@fluentui/react-icons";
 import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
 import SkeletonLoader from "./SkeletonLoader";
 import { formatElapsed } from "./panelUtils";
-import type {
-  TaskSnapshot,
-  TaskStatus,
-  TaskSize,
-  TaskComment,
-  TaskCommentType,
-  CommandExecutionResponse,
-  SpecTaskLink,
-  EvidenceRow,
-  GateCheckResult,
-  AgentDefinition,
-} from "./api";
-import { executeCommand, getTaskComments, getTaskSpecLinks, assignTask } from "./api";
+import type { TaskSnapshot, AgentDefinition, TaskStatus, BulkOperationResult } from "./api";
+import { bulkUpdateStatus, bulkAssign } from "./api";
 import V3Badge from "./V3Badge";
-import type { BadgeColor } from "./V3Badge";
-
-// ── Filter definitions ──────────────────────────────────────────────────
-
-type TaskFilter = "all" | "review" | "active" | "completed";
-
-const FILTER_ITEMS: { value: TaskFilter; label: string; icon: React.ReactNode }[] = [
-  { value: "all", label: "All", icon: <FilterRegular fontSize={14} /> },
-  { value: "review", label: "Review Queue", icon: <ClockRegular fontSize={14} /> },
-  { value: "active", label: "Active", icon: <ArrowSyncRegular fontSize={14} /> },
-  { value: "completed", label: "Completed", icon: <CheckmarkCircleRegular fontSize={14} /> },
-];
-
-const REVIEW_STATUSES: TaskStatus[] = ["InReview", "AwaitingValidation", "Approved", "ChangesRequested"];
-const ACTIVE_STATUSES: TaskStatus[] = ["Active", "Merging", "Blocked", "Queued"];
-const COMPLETED_STATUSES: TaskStatus[] = ["Completed", "Cancelled"];
-
-function filterTasks(tasks: TaskSnapshot[], filter: TaskFilter): TaskSnapshot[] {
-  switch (filter) {
-    case "review":
-      return tasks.filter((t) => REVIEW_STATUSES.includes(t.status));
-    case "active":
-      return tasks.filter((t) => ACTIVE_STATUSES.includes(t.status));
-    case "completed":
-      return tasks.filter((t) => COMPLETED_STATUSES.includes(t.status));
-    default:
-      return tasks;
-  }
-}
-
-function filterCount(tasks: TaskSnapshot[], filter: TaskFilter): number {
-  return filterTasks(tasks, filter).length;
-}
+import {
+  TaskDetail,
+  type TaskFilter,
+  FILTER_ITEMS,
+  filterTasks,
+  filterCount,
+  statusBadgeColor,
+  typeBadgeColor,
+  sizeBadgeColor,
+  priorityBadgeColor,
+} from "./taskList";
 
 // ── Styles ──────────────────────────────────────────────────────────────
 
@@ -167,184 +120,6 @@ const useLocalStyles = makeStyles({
     fontSize: "10px",
     color: "var(--aa-soft)",
   },
-  expandedSection: {
-    marginTop: "14px",
-    ...shorthands.padding("12px", "0", "0"),
-    borderTop: "1px solid var(--aa-border)",
-  },
-  descriptionText: {
-    fontSize: "13px",
-    color: "var(--aa-soft)",
-    lineHeight: 1.6,
-    whiteSpace: "pre-wrap",
-    marginBottom: "12px",
-  },
-  sectionLabel: {
-    fontSize: "11px",
-    fontWeight: 600,
-    color: "var(--aa-muted)",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-    marginBottom: "6px",
-    marginTop: "12px",
-  },
-  actionBar: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    marginTop: "14px",
-    ...shorthands.padding("10px", "0", "0"),
-    borderTop: "1px solid var(--aa-border)",
-  },
-  actionFeedback: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    fontSize: "12px",
-    color: "var(--aa-soft)",
-    marginTop: "8px",
-  },
-  actionError: {
-    color: "var(--error)",
-  },
-  actionSuccess: {
-    color: "var(--aa-lime)",
-  },
-  reasonArea: {
-    marginTop: "10px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  },
-  reasonActions: {
-    display: "flex",
-    gap: "6px",
-    justifyContent: "flex-end",
-  },
-  commentsSection: {
-    marginTop: "14px",
-    ...shorthands.padding("10px", "0", "0"),
-    borderTop: "1px solid var(--aa-border)",
-  },
-  commentCard: {
-    ...shorthands.padding("8px", "10px"),
-    marginBottom: "6px",
-    ...shorthands.borderRadius("6px"),
-    background: "rgba(255, 255, 255, 0.02)",
-    border: "1px solid var(--aa-border)",
-  },
-  commentHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    marginBottom: "4px",
-    fontSize: "12px",
-  },
-  commentAuthor: {
-    fontWeight: 600,
-    color: "var(--aa-text-strong)",
-  },
-  commentTime: {
-    color: "var(--aa-muted)",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-  },
-  commentContent: {
-    fontSize: "13px",
-    color: "var(--aa-soft)",
-    lineHeight: 1.5,
-    whiteSpace: "pre-wrap",
-  },
-  reviewMeta: {
-    display: "flex",
-    gap: "12px",
-    flexWrap: "wrap",
-    marginTop: "8px",
-    fontFamily: "var(--mono)",
-    fontSize: "10px",
-    color: "var(--aa-muted)",
-  },
-  specLinkRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    ...shorthands.padding("6px", "8px"),
-    ...shorthands.borderRadius("4px"),
-    background: "rgba(255, 255, 255, 0.02)",
-    marginBottom: "4px",
-    fontSize: "12px",
-  },
-  specLinkSection: {
-    fontFamily: "var(--mono)",
-    fontWeight: 600,
-    color: "var(--aa-text-strong)",
-    fontSize: "12px",
-  },
-  specLinkNote: {
-    fontSize: "11px",
-    color: "var(--aa-muted)",
-    marginLeft: "auto",
-  },
-  evidenceTable: {
-    width: "100%",
-    borderCollapse: "collapse",
-    fontSize: "11px",
-    fontFamily: "var(--mono)",
-    marginTop: "6px",
-  },
-  evidenceTh: {
-    textAlign: "left",
-    ...shorthands.padding("4px", "8px"),
-    borderBottom: "1px solid var(--aa-border)",
-    color: "var(--aa-muted)",
-    fontWeight: 600,
-    fontSize: "10px",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  evidenceTd: {
-    ...shorthands.padding("4px", "8px"),
-    borderBottom: "1px solid var(--aa-hairline)",
-    color: "var(--aa-soft)",
-    fontSize: "11px",
-  },
-  gateBox: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    ...shorthands.padding("8px", "10px"),
-    ...shorthands.borderRadius("6px"),
-    border: "1px solid var(--aa-border)",
-    background: "rgba(255, 255, 255, 0.02)",
-    marginTop: "6px",
-    fontSize: "12px",
-  },
-  gateMetBorder: {
-    ...shorthands.borderColor("rgba(76, 175, 80, 0.3)"),
-  },
-  gateNotMetBorder: {
-    ...shorthands.borderColor("rgba(255, 152, 0, 0.3)"),
-  },
-  assignPicker: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "6px",
-    marginTop: "8px",
-  },
-  assignPickerBtn: {
-    cursor: "pointer",
-    ...shorthands.padding("4px", "10px"),
-    ...shorthands.borderRadius("4px"),
-    fontSize: "12px",
-    border: "1px solid var(--aa-border)",
-    background: "transparent",
-    color: "var(--aa-text)",
-    transitionProperty: "background, border-color",
-    transitionDuration: "0.15s",
-    ":hover": {
-      background: "var(--aa-border)",
-    },
-  },
   empty: {
     display: "flex",
     flexDirection: "column",
@@ -354,595 +129,101 @@ const useLocalStyles = makeStyles({
     gap: "12px",
     color: "var(--aa-soft)",
   },
-  emptyIcon: { fontSize: "26px" },
+  checkbox: {
+    width: "16px",
+    height: "16px",
+    ...shorthands.borderRadius("3px"),
+    border: "1.5px solid var(--aa-border-strong)",
+    background: "transparent",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    transitionProperty: "background, border-color",
+    transitionDuration: "0.15s",
+    ":hover": {
+      ...shorthands.borderColor("rgba(91, 141, 239, 0.6)"),
+    },
+  },
+  checkboxChecked: {
+    background: "rgba(91, 141, 239, 0.8)",
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.8)"),
+  },
+  cardSelected: {
+    ...shorthands.borderColor("rgba(91, 141, 239, 0.4)"),
+    background: "rgba(91, 141, 239, 0.05)",
+  },
+  bulkBar: {
+    position: "sticky",
+    bottom: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    ...shorthands.padding("10px", "14px"),
+    ...shorthands.borderRadius("8px"),
+    background: "var(--aa-panel)",
+    border: "1px solid rgba(91, 141, 239, 0.3)",
+    boxShadow: "0 -2px 12px rgba(0,0,0,0.3)",
+    marginTop: "8px",
+    flexWrap: "wrap",
+  },
+  bulkCount: {
+    fontSize: "12px",
+    fontWeight: 600,
+    color: "var(--aa-text-strong)",
+    whiteSpace: "nowrap",
+  },
+  bulkSelect: {
+    fontSize: "11px",
+    ...shorthands.padding("4px", "8px"),
+    ...shorthands.borderRadius("4px"),
+    background: "transparent",
+    border: "1px solid var(--aa-border)",
+    color: "var(--aa-text-strong)",
+    cursor: "pointer",
+  },
+  bulkBtn: {
+    fontSize: "11px",
+    fontWeight: 600,
+    ...shorthands.padding("5px", "10px"),
+    ...shorthands.borderRadius("4px"),
+    background: "rgba(91, 141, 239, 0.15)",
+    border: "1px solid rgba(91, 141, 239, 0.3)",
+    color: "var(--aa-text-strong)",
+    cursor: "pointer",
+    ":hover": {
+      background: "rgba(91, 141, 239, 0.25)",
+    },
+    ":disabled": {
+      opacity: 0.4,
+      cursor: "default",
+    },
+  },
+  bulkClear: {
+    marginLeft: "auto",
+    fontSize: "11px",
+    ...shorthands.padding("4px", "8px"),
+    ...shorthands.borderRadius("4px"),
+    background: "transparent",
+    border: "1px solid var(--aa-border)",
+    color: "var(--aa-soft)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+  },
+  bulkResult: {
+    fontSize: "11px",
+    color: "var(--aa-soft)",
+  },
 });
 
-// ── Helpers ─────────────────────────────────────────────────────────────
+// ── Constants ───────────────────────────────────────────────────────────
 
-function statusBadgeColor(status: TaskStatus): BadgeColor {
-  switch (status) {
-    case "Active": case "Merging":       return "active";
-    case "InReview":                     return "review";
-    case "AwaitingValidation":           return "warn";
-    case "Approved":                     return "ok";
-    case "ChangesRequested":             return "warn";
-    case "Blocked":                      return "err";
-    case "Completed":                    return "done";
-    case "Cancelled":                    return "cancel";
-    case "Queued": default:              return "info";
-  }
-}
-
-function typeBadgeColor(type: string): BadgeColor {
-  switch (type) {
-    case "Bug":     return "bug";
-    case "Feature": return "feat";
-    default:        return "muted";
-  }
-}
-
-function sizeBadgeColor(size: TaskSize): BadgeColor {
-  switch (size) {
-    case "XS": case "S": return "muted";
-    case "M":            return "info";
-    case "L": case "XL": return "warn";
-  }
-}
-
-function commentTypeBadge(type: TaskCommentType): BadgeColor {
-  switch (type) {
-    case "Finding":  return "warn";
-    case "Blocker":  return "err";
-    case "Evidence": return "ok";
-    case "Comment": default: return "muted";
-  }
-}
-
-function specLinkBadge(type: string): BadgeColor {
-  switch (type) {
-    case "Implements": return "ok";
-    case "Modifies":   return "warn";
-    case "Fixes":      return "err";
-    case "References": return "info";
-    default:           return "muted";
-  }
-}
-
-function evidencePhaseBadge(phase: string): BadgeColor {
-  switch (phase) {
-    case "Baseline": return "info";
-    case "After":    return "ok";
-    case "Review":   return "review";
-    default:         return "muted";
-  }
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  if (diffMs < 60_000) return "just now";
-  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
-  return d.toLocaleDateString();
-}
-
-// Actions available per task status
-type TaskAction = "approve" | "requestChanges" | "reject" | "merge";
-
-function getAvailableActions(status: TaskStatus): TaskAction[] {
-  switch (status) {
-    case "InReview":
-    case "AwaitingValidation":
-      return ["approve", "requestChanges"];
-    case "Approved":
-      return ["merge", "reject"];
-    case "Completed":
-      return ["reject"];
-    default:
-      return [];
-  }
-}
-
-const ACTION_META: Record<TaskAction, { label: string; icon: React.ReactElement; appearance: "primary" | "subtle" | "outline"; command: string; needsReason: boolean }> = {
-  approve:        { label: "Approve",         icon: <CheckmarkRegular />, appearance: "primary", command: "APPROVE_TASK",     needsReason: false },
-  requestChanges: { label: "Request Changes", icon: <EditRegular />,     appearance: "outline", command: "REQUEST_CHANGES",  needsReason: true },
-  reject:         { label: "Reject",          icon: <DismissRegular />,  appearance: "subtle",  command: "REJECT_TASK",      needsReason: true },
-  merge:          { label: "Merge",           icon: <MergeRegular />,    appearance: "primary", command: "MERGE_TASK",        needsReason: false },
-};
-
-// ── Task detail / expanded card ─────────────────────────────────────────
-
-interface DetailCacheEntry {
-  updatedAt: string;
-  specLinks?: SpecTaskLink[];
-  evidence?: EvidenceRow[];
-  gate?: GateCheckResult;
-  comments?: TaskComment[];
-}
-
-const CACHE_MAX_SIZE = 50;
-
-// Bounded LRU cache for task detail data
-const detailCache = new Map<string, DetailCacheEntry>();
-
-function getCached(taskId: string, updatedAt: string): DetailCacheEntry {
-  const c = detailCache.get(taskId);
-  if (c && c.updatedAt === updatedAt) {
-    // Move to end for LRU ordering
-    detailCache.delete(taskId);
-    detailCache.set(taskId, c);
-    return c;
-  }
-  // Evict oldest entries if at capacity
-  if (detailCache.size >= CACHE_MAX_SIZE) {
-    const oldest = detailCache.keys().next().value;
-    if (oldest !== undefined) detailCache.delete(oldest);
-  }
-  const fresh: DetailCacheEntry = { updatedAt };
-  detailCache.set(taskId, fresh);
-  return fresh;
-}
-
-interface TaskDetailProps {
-  task: TaskSnapshot;
-  agents: AgentDefinition[];
-  onRefresh: () => void;
-}
-
-function TaskDetail({ task, agents, onRefresh }: TaskDetailProps) {
-  const s = useLocalStyles();
-  const cached = getCached(task.id, task.updatedAt);
-
-  const [comments, setComments] = useState<TaskComment[]>(cached.comments ?? []);
-  const [commentsLoading, setCommentsLoading] = useState(!cached.comments);
-  const [commentsError, setCommentsError] = useState(false);
-
-  const [specLinks, setSpecLinks] = useState<SpecTaskLink[]>(cached.specLinks ?? []);
-  const [specLinksLoading, setSpecLinksLoading] = useState(!cached.specLinks);
-
-  const [evidence, setEvidence] = useState<EvidenceRow[]>(cached.evidence ?? []);
-  const [evidenceLoading, setEvidenceLoading] = useState(false);
-  const [evidenceLoaded, setEvidenceLoaded] = useState(!!cached.evidence);
-
-  const [gate, setGate] = useState<GateCheckResult | null>(cached.gate ?? null);
-  const [gateLoading, setGateLoading] = useState(false);
-
-  const [actionPending, setActionPending] = useState<TaskAction | null>(null);
-  const [actionResult, setActionResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [reasonAction, setReasonAction] = useState<TaskAction | null>(null);
-  const [reasonText, setReasonText] = useState("");
-  const [showAssignPicker, setShowAssignPicker] = useState(false);
-  const [assignPending, setAssignPending] = useState(false);
-  const mountedRef = useRef(true);
-  // Request versioning: ignore stale responses when task changes
-  const fetchVersionRef = useRef(0);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  // Bump version on task identity change
-  useEffect(() => {
-    fetchVersionRef.current += 1;
-  }, [task.id, task.updatedAt]);
-
-  // Fetch comments on expand (cached)
-  const fetchComments = useCallback(() => {
-    const version = fetchVersionRef.current;
-    setCommentsLoading(true);
-    setCommentsError(false);
-    getTaskComments(task.id)
-      .then((c) => {
-        if (!mountedRef.current || fetchVersionRef.current !== version) return;
-        setComments(c);
-        const cache = getCached(task.id, task.updatedAt);
-        cache.comments = c;
-      })
-      .catch(() => { if (mountedRef.current && fetchVersionRef.current === version) setCommentsError(true); })
-      .finally(() => { if (mountedRef.current && fetchVersionRef.current === version) setCommentsLoading(false); });
-  }, [task.id, task.updatedAt]);
-
-  // Fetch spec links on expand (cached)
-  const fetchSpecLinks = useCallback(() => {
-    const version = fetchVersionRef.current;
-    setSpecLinksLoading(true);
-    getTaskSpecLinks(task.id)
-      .then((links) => {
-        if (!mountedRef.current || fetchVersionRef.current !== version) return;
-        setSpecLinks(links);
-        const cache = getCached(task.id, task.updatedAt);
-        cache.specLinks = links;
-      })
-      .catch(() => { if (mountedRef.current && fetchVersionRef.current === version) setSpecLinks([]); })
-      .finally(() => { if (mountedRef.current && fetchVersionRef.current === version) setSpecLinksLoading(false); });
-  }, [task.id, task.updatedAt]);
-
-  useEffect(() => {
-    if (!cached.comments) fetchComments();
-    if (!cached.specLinks) fetchSpecLinks();
-  }, [task.id, task.updatedAt]);
-
-  // Fetch evidence on demand (user clicks "Load")
-  const fetchEvidence = useCallback(() => {
-    const version = fetchVersionRef.current;
-    setEvidenceLoading(true);
-    executeCommand({ command: "QUERY_EVIDENCE", args: { taskId: task.id } })
-      .then((resp) => {
-        if (!mountedRef.current || fetchVersionRef.current !== version) return;
-        if (resp.status === "completed" && resp.result) {
-          const result = resp.result as Record<string, unknown>;
-          const items = (Array.isArray(result.evidence) ? result.evidence : []) as EvidenceRow[];
-          setEvidence(items);
-          const cache = getCached(task.id, task.updatedAt);
-          cache.evidence = items;
-        }
-        setEvidenceLoaded(true);
-      })
-      .catch(() => { if (mountedRef.current && fetchVersionRef.current === version) setEvidenceLoaded(true); })
-      .finally(() => { if (mountedRef.current && fetchVersionRef.current === version) setEvidenceLoading(false); });
-  }, [task.id, task.updatedAt]);
-
-  // Check gates on demand
-  const checkGates = useCallback(() => {
-    const version = fetchVersionRef.current;
-    setGateLoading(true);
-    executeCommand({ command: "CHECK_GATES", args: { taskId: task.id } })
-      .then((resp) => {
-        if (!mountedRef.current || fetchVersionRef.current !== version) return;
-        if (resp.status === "completed" && resp.result) {
-          const result = resp.result as Record<string, unknown>;
-          const gate: GateCheckResult = {
-            taskId: (result.taskId as string) ?? task.id,
-            currentPhase: (result.currentPhase as string) ?? "",
-            targetPhase: (result.targetPhase as string) ?? "",
-            met: (result.met as boolean) ?? false,
-            requiredChecks: (result.requiredChecks as number) ?? 0,
-            passedChecks: (result.passedChecks as number) ?? 0,
-            missingChecks: (Array.isArray(result.missingChecks) ? result.missingChecks : []) as string[],
-            evidence: (Array.isArray(result.evidence) ? result.evidence : []) as GateCheckResult["evidence"],
-            message: (result.message as string) ?? "",
-          };
-          setGate(gate);
-          const cache = getCached(task.id, task.updatedAt);
-          cache.gate = gate;
-        }
-      })
-      .catch(() => {})
-      .finally(() => { if (mountedRef.current && fetchVersionRef.current === version) setGateLoading(false); });
-  }, [task.id, task.updatedAt]);
-
-  const actions = getAvailableActions(task.status);
-
-  const handleAction = useCallback(async (action: TaskAction) => {
-    const meta = ACTION_META[action];
-
-    if (meta.needsReason && (reasonAction !== action || !reasonText.trim())) {
-      setReasonAction(action);
-      if (reasonAction !== action) setReasonText("");
-      return;
-    }
-
-    const args: Record<string, string> = { taskId: task.id };
-    if (meta.needsReason && reasonText.trim()) {
-      if (action === "requestChanges") args.findings = reasonText.trim();
-      else args.reason = reasonText.trim();
-    }
-
-    setActionPending(action);
-    setActionResult(null);
-    try {
-      const resp: CommandExecutionResponse = await executeCommand({ command: meta.command, args });
-      if (!mountedRef.current) return;
-      if (resp.status === "completed") {
-        setActionResult({ ok: true, message: `${meta.label} successful` });
-        setReasonAction(null);
-        setReasonText("");
-        onRefresh();
-      } else if (resp.status === "denied") {
-        setActionResult({ ok: false, message: resp.error ?? "Permission denied" });
-      } else {
-        setActionResult({ ok: false, message: resp.error ?? "Command failed" });
-      }
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setActionResult({ ok: false, message: err instanceof Error ? err.message : "Request failed" });
-    } finally {
-      if (mountedRef.current) setActionPending(null);
-    }
-  }, [task.id, reasonAction, reasonText, onRefresh]);
-
-  const cancelReason = useCallback(() => {
-    setReasonAction(null);
-    setReasonText("");
-  }, []);
-
-  const handleAssign = useCallback(async (agent: AgentDefinition) => {
-    setAssignPending(true);
-    setActionResult(null);
-    try {
-      await assignTask(task.id, agent.id, agent.name);
-      if (!mountedRef.current) return;
-      setActionResult({ ok: true, message: `Assigned to ${agent.name}` });
-      setShowAssignPicker(false);
-      onRefresh();
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setActionResult({ ok: false, message: err instanceof Error ? err.message : "Assignment failed" });
-    } finally {
-      if (mountedRef.current) setAssignPending(false);
-    }
-  }, [task.id, onRefresh]);
-
-  // Gate-relevant statuses — user can check gates for these
-  const canCheckGates = ["Active", "AwaitingValidation", "InReview"].includes(task.status);
-  // Can assign — only Queued or unassigned tasks
-  const canAssign = task.status === "Queued" && !task.assignedAgentId;
-
-  return (
-    <div className={s.expandedSection}>
-      {/* Description */}
-      {task.description && (
-        <>
-          <div className={s.sectionLabel}>Description</div>
-          <div className={s.descriptionText}>{task.description}</div>
-        </>
-      )}
-
-      {/* Success criteria */}
-      {task.successCriteria && (
-        <>
-          <div className={s.sectionLabel}>Success Criteria</div>
-          <div className={s.descriptionText}>{task.successCriteria}</div>
-        </>
-      )}
-
-      {/* Review metadata */}
-      {(task.reviewRounds != null && task.reviewRounds > 0) && (
-        <div className={s.reviewMeta}>
-          <span>Review round {task.reviewRounds}</span>
-          {task.reviewerAgentId && <span>Reviewer: {task.reviewerAgentId}</span>}
-          {task.mergeCommitSha && <span>Merge: {task.mergeCommitSha.slice(0, 8)}</span>}
-        </div>
-      )}
-
-      {/* Implementation / Validation summaries */}
-      {task.implementationSummary && (
-        <>
-          <div className={s.sectionLabel}>Implementation</div>
-          <div className={s.descriptionText}>{task.implementationSummary}</div>
-        </>
-      )}
-      {task.validationSummary && (
-        <>
-          <div className={s.sectionLabel}>Validation</div>
-          <div className={s.descriptionText}>{task.validationSummary}</div>
-        </>
-      )}
-
-      {/* Tests created */}
-      {task.testsCreated && task.testsCreated.length > 0 && (
-        <>
-          <div className={s.sectionLabel}>Tests Created</div>
-          <div className={s.descriptionText}>{task.testsCreated.join("\n")}</div>
-        </>
-      )}
-
-      {/* Spec links */}
-      <div className={s.commentsSection}>
-        <div className={s.sectionLabel}>
-          <LinkRegular fontSize={13} style={{ marginRight: 4 }} />
-          Spec Links {specLinks.length > 0 ? `(${specLinks.length})` : ""}
-        </div>
-        {specLinksLoading && <Spinner size="tiny" label="Loading spec links…" />}
-        {!specLinksLoading && specLinks.length === 0 && (
-          <div style={{ fontSize: "12px", color: "var(--aa-muted)", marginTop: "4px" }}>No spec links</div>
-        )}
-        {specLinks.map((link) => (
-          <div key={link.id} className={s.specLinkRow}>
-            <V3Badge color={specLinkBadge(link.linkType)}>{link.linkType}</V3Badge>
-            <span className={s.specLinkSection}>{link.specSectionId}</span>
-            <span style={{ fontSize: "11px", color: "var(--aa-muted)" }}>
-              by {link.linkedByAgentName}
-            </span>
-            {link.note && <span className={s.specLinkNote} title={link.note}>{link.note}</span>}
-          </div>
-        ))}
-      </div>
-
-      {/* Evidence ledger */}
-      <div className={s.commentsSection}>
-        <div className={s.sectionLabel} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <ShieldCheckmarkRegular fontSize={13} />
-          Evidence Ledger
-          {!evidenceLoaded && (
-            <Button size="small" appearance="subtle" onClick={fetchEvidence} disabled={evidenceLoading}>
-              {evidenceLoading ? <Spinner size="tiny" /> : "Load"}
-            </Button>
-          )}
-        </div>
-        {evidenceLoaded && evidence.length === 0 && (
-          <div style={{ fontSize: "12px", color: "var(--aa-muted)", marginTop: "4px" }}>No evidence recorded</div>
-        )}
-        {evidence.length > 0 && (
-          <table className={s.evidenceTable}>
-            <thead>
-              <tr>
-                <th className={s.evidenceTh}>Phase</th>
-                <th className={s.evidenceTh}>Check</th>
-                <th className={s.evidenceTh}>Result</th>
-                <th className={s.evidenceTh}>Tool</th>
-                <th className={s.evidenceTh}>Agent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {evidence.map((ev) => (
-                <tr key={ev.id}>
-                  <td className={s.evidenceTd}>
-                    <V3Badge color={evidencePhaseBadge(ev.phase)}>{ev.phase}</V3Badge>
-                  </td>
-                  <td className={s.evidenceTd}>{ev.checkName}</td>
-                  <td className={s.evidenceTd}>
-                    <V3Badge color={ev.passed ? "ok" : "err"}>
-                      {ev.passed ? "Pass" : "Fail"}
-                    </V3Badge>
-                  </td>
-                  <td className={s.evidenceTd} title={ev.command ?? undefined}>{ev.tool}</td>
-                  <td className={s.evidenceTd}>{ev.agentName}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Gate status */}
-      {canCheckGates && (
-        <div className={s.commentsSection}>
-          <div className={s.sectionLabel} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <ShieldCheckmarkRegular fontSize={13} />
-            Gate Status
-            <Button size="small" appearance="subtle" onClick={checkGates} disabled={gateLoading}>
-              {gateLoading ? <Spinner size="tiny" /> : gate ? "Recheck" : "Check Gates"}
-            </Button>
-          </div>
-          {gate && (
-            <div className={mergeClasses(s.gateBox, gate.met ? s.gateMetBorder : s.gateNotMetBorder)}>
-              <V3Badge color={gate.met ? "ok" : "warn"}>
-                {gate.met ? "Gate met" : `${gate.passedChecks}/${gate.requiredChecks} required`}
-              </V3Badge>
-              <span style={{ fontSize: "11px", color: "var(--aa-muted)" }}>
-                {gate.currentPhase} → {gate.targetPhase}
-              </span>
-              {gate.missingChecks.length > 0 && (
-                <span style={{ fontSize: "11px", color: "var(--aa-soft)" }}>
-                  Missing: {gate.missingChecks.join(", ")}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Comments */}
-      <div className={s.commentsSection}>
-        <div className={s.sectionLabel}>
-          <CommentRegular fontSize={13} style={{ marginRight: 4 }} />
-          Comments {task.commentCount != null && task.commentCount > 0 ? `(${task.commentCount})` : ""}
-        </div>
-        {commentsLoading && <Spinner size="tiny" label="Loading comments…" />}
-        {!commentsLoading && commentsError && (
-          <div style={{ fontSize: "12px", color: "var(--error)", marginTop: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
-            <ErrorCircleRegular fontSize={13} />
-            Failed to load comments
-            <Button size="small" appearance="subtle" onClick={fetchComments}>Retry</Button>
-          </div>
-        )}
-        {!commentsLoading && !commentsError && comments.length === 0 && (
-          <div style={{ fontSize: "12px", color: "var(--aa-muted)", marginTop: "4px" }}>No comments yet</div>
-        )}
-        {comments.map((c) => (
-          <div key={c.id} className={s.commentCard}>
-            <div className={s.commentHeader}>
-              <span className={s.commentAuthor}>{c.agentName}</span>
-              <V3Badge color={commentTypeBadge(c.commentType)}>
-                {c.commentType}
-              </V3Badge>
-              <span className={s.commentTime}>{formatTime(c.createdAt)}</span>
-            </div>
-            <div className={s.commentContent}>{c.content}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Assign task (for Queued tasks without assignee) */}
-      {canAssign && (
-        <div className={s.actionBar}>
-          <Button
-            size="small"
-            appearance="primary"
-            icon={<PersonAddRegular />}
-            onClick={(e) => { e.stopPropagation(); setShowAssignPicker(!showAssignPicker); }}
-            disabled={assignPending}
-          >
-            Assign Agent
-          </Button>
-          {showAssignPicker && (
-            <div className={s.assignPicker}>
-              {agents.map((agent) => (
-                <button
-                  key={agent.id}
-                  className={s.assignPickerBtn}
-                  onClick={(e) => { e.stopPropagation(); handleAssign(agent); }}
-                  disabled={assignPending}
-                >
-                  {agent.name} ({agent.role})
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Review actions */}
-      {actions.length > 0 && (
-        <div className={s.actionBar}>
-          {actions.map((action) => {
-            const meta = ACTION_META[action];
-            return (
-              <Button
-                key={action}
-                size="small"
-                appearance={meta.appearance}
-                icon={meta.icon}
-                disabled={actionPending != null || (reasonAction != null && reasonAction !== action)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAction(action);
-                }}
-              >
-                {actionPending === action ? <Spinner size="tiny" /> : meta.label}
-              </Button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Reason input for request changes / reject */}
-      {reasonAction && (
-        <div className={s.reasonArea}>
-          <Textarea
-            placeholder={reasonAction === "requestChanges" ? "Describe the changes needed…" : "Reason for rejection…"}
-            value={reasonText}
-            onChange={(_, data) => setReasonText(data.value)}
-            rows={3}
-            style={{ fontSize: "13px" }}
-          />
-          <div className={s.reasonActions}>
-            <Button size="small" appearance="subtle" onClick={cancelReason}>Cancel</Button>
-            <Button
-              size="small"
-              appearance="primary"
-              disabled={!reasonText.trim() || actionPending != null}
-              onClick={() => handleAction(reasonAction)}
-            >
-              {actionPending ? <Spinner size="tiny" /> : `Submit ${ACTION_META[reasonAction].label}`}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Action feedback */}
-      {actionResult && (
-        <div className={mergeClasses(s.actionFeedback, actionResult.ok ? s.actionSuccess : s.actionError)}>
-          {actionResult.ok ? <CheckmarkCircleRegular fontSize={14} /> : <ErrorCircleRegular fontSize={14} />}
-          {actionResult.message}
-        </div>
-      )}
-    </div>
-  );
-}
+const BULK_SAFE_STATUSES: TaskStatus[] = [
+  "Queued", "Active", "Blocked", "AwaitingValidation", "InReview",
+];
 
 // ── Main Component ──────────────────────────────────────────────────────
 
@@ -953,21 +234,133 @@ interface TaskListPanelProps {
   onRefresh?: () => void;
   activeSprintId?: string | null;
   agents?: AgentDefinition[];
+  focusTaskId?: string | null;
+  onFocusHandled?: () => void;
+  onViewRetros?: (taskId: string) => void;
 }
 
-export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId, agents = [] }: TaskListPanelProps) {
+export default function TaskListPanel({ tasks, loading, error, onRefresh, activeSprintId, agents = [], focusTaskId, onFocusHandled, onViewRetros }: TaskListPanelProps) {
   const s = useLocalStyles();
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sprintOnly, setSprintOnly] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkOperationResult | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  // Auto-expand a task when navigating from another panel (e.g. RetrospectivePanel)
+  const lastFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusTaskId && focusTaskId !== lastFocusRef.current && tasks.length > 0) {
+      const exists = tasks.some((t) => t.id === focusTaskId);
+      if (exists) {
+        lastFocusRef.current = focusTaskId;
+        setFilter("all");
+        setSprintOnly(false);
+        setExpandedId(focusTaskId);
+        onFocusHandled?.();
+      }
+    }
+  }, [focusTaskId, tasks]);
 
   const baseTasks = sprintOnly && activeSprintId
     ? tasks.filter((t) => t.sprintId === activeSprintId)
     : tasks;
 
   const sortedTasks = [...filterTasks(baseTasks, filter)].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    (a, b) => {
+      const priA = a.priority ?? "Medium";
+      const priB = b.priority ?? "Medium";
+      const PRIORITY_ORDER: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+      const priDiff = (PRIORITY_ORDER[priA] ?? 2) - (PRIORITY_ORDER[priB] ?? 2);
+      if (priDiff !== 0) return priDiff;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    },
   );
+
+  const visibleIds = new Set(sortedTasks.map((t) => t.id));
+
+  // Prune selection when filter or task list changes (remove hidden/deleted tasks)
+  const visibleIdKey = sortedTasks.map((t) => t.id).join(",");
+  useEffect(() => {
+    setSelected((prev) => {
+      const pruned = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return pruned.size === prev.size ? prev : pruned;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, sprintOnly, activeSprintId, visibleIdKey]);
+
+  // Escape to clear selection (only when no input is focused)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selected.size > 0) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        setSelected(new Set());
+        setBulkResult(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selected.size]);
+
+  const toggleSelect = useCallback((taskId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+    setBulkResult(null);
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelected(new Set(sortedTasks.map((t) => t.id)));
+    setBulkResult(null);
+  }, [sortedTasks]);
+
+  const clearSelection = useCallback(() => {
+    setSelected(new Set());
+    setBulkResult(null);
+  }, []);
+
+  const handleBulkStatus = useCallback(async (status: TaskStatus) => {
+    if (selected.size === 0) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    setBulkError(null);
+    try {
+      const result = await bulkUpdateStatus([...selected], status);
+      setBulkResult(result);
+      // Remove successfully updated tasks from selection
+      const failedIds = new Set(result.errors.map((e) => e.taskId));
+      setSelected(failedIds);
+      onRefresh?.();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Bulk status update failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selected, onRefresh]);
+
+  const handleBulkAssign = useCallback(async (agentId: string, agentName: string) => {
+    if (selected.size === 0) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    setBulkError(null);
+    try {
+      const result = await bulkAssign([...selected], agentId, agentName);
+      setBulkResult(result);
+      const failedIds = new Set(result.errors.map((e) => e.taskId));
+      setSelected(failedIds);
+      onRefresh?.();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Bulk assign failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selected, onRefresh]);
 
   const handleRefresh = useCallback(() => {
     onRefresh?.();
@@ -1026,6 +419,17 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
             </button>
           </>
         )}
+        {sortedTasks.length > 0 && (
+          <>
+            <span style={{ borderLeft: "1px solid #333", height: "16px", margin: "0 4px" }} />
+            <button
+              className={s.filterChip}
+              onClick={() => selected.size === sortedTasks.length ? clearSelection() : selectAllVisible()}
+            >
+              {selected.size === sortedTasks.length && sortedTasks.length > 0 ? "Deselect all" : "Select all"}
+            </button>
+          </>
+        )}
       </div>
 
       {/* Task list */}
@@ -1037,13 +441,28 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
 
       {sortedTasks.map((task) => {
         const isExpanded = expandedId === task.id;
+        const isSelected = selected.has(task.id);
         return (
           <div
             key={task.id}
-            className={mergeClasses(s.card, isExpanded && s.cardExpanded)}
+            className={mergeClasses(
+              s.card,
+              isExpanded && s.cardExpanded,
+              isSelected && !isExpanded && s.cardSelected,
+            )}
             onClick={() => !isExpanded && setExpandedId(task.id)}
           >
             <div className={s.cardHeader}>
+              <button
+                className={mergeClasses(s.checkbox, isSelected && s.checkboxChecked)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleSelect(task.id);
+                }}
+                aria-label={isSelected ? `Deselect ${task.title}` : `Select ${task.title}`}
+              >
+                {isSelected && <CheckmarkRegular fontSize={11} style={{ color: "#fff" }} />}
+              </button>
               <span
                 className={s.cardTitle}
                 onClick={(e) => {
@@ -1058,6 +477,12 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
                 <V3Badge color={sizeBadgeColor(task.size)}>{task.size}</V3Badge>
               )}
               <V3Badge color={statusBadgeColor(task.status)}>{task.status}</V3Badge>
+              {task.priority && task.priority !== "Medium" && (
+                <V3Badge color={priorityBadgeColor(task.priority)}>{task.priority}</V3Badge>
+              )}
+              {task.blockingTaskIds && task.blockingTaskIds.length > 0 && (
+                <V3Badge color="err">🔗 {task.blockingTaskIds.length} blocked</V3Badge>
+              )}
               {task.type && task.type !== "Feature" && (
                 <V3Badge color={typeBadgeColor(task.type)}>{task.type}</V3Badge>
               )}
@@ -1086,11 +511,75 @@ export default function TaskListPanel({ tasks, loading, error, onRefresh, active
               )}
             </div>
 
-            {/* Expanded detail */}
-            {isExpanded && <TaskDetail task={task} agents={agents} onRefresh={handleRefresh} />}
+            {isExpanded && <TaskDetail task={task} agents={agents} onRefresh={handleRefresh} onViewRetros={onViewRetros} />}
           </div>
         );
       })}
+
+      {/* Bulk action bar */}
+      {(selected.size > 0 || bulkResult !== null || bulkError !== null) && (
+        <div className={s.bulkBar}>
+          {selected.size > 0 && (
+            <span className={s.bulkCount}>{selected.size} selected</span>
+          )}
+
+          {selected.size > 0 && (
+            <select
+              className={s.bulkSelect}
+              defaultValue=""
+              disabled={bulkBusy}
+              onChange={(e) => {
+                if (e.target.value) handleBulkStatus(e.target.value as TaskStatus);
+                e.target.value = "";
+              }}
+            >
+              <option value="" disabled>Set status…</option>
+              {BULK_SAFE_STATUSES.map((st) => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </select>
+          )}
+
+          {selected.size > 0 && agents.length > 0 && (
+            <select
+              className={s.bulkSelect}
+              defaultValue=""
+              disabled={bulkBusy}
+              onChange={(e) => {
+                const agent = agents.find((a) => a.id === e.target.value);
+                if (agent) handleBulkAssign(agent.id, agent.name);
+                e.target.value = "";
+              }}
+            >
+              <option value="" disabled>Assign to…</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          )}
+
+          {bulkResult && (
+            <span className={s.bulkResult}>
+              ✓ {bulkResult.succeeded} updated
+              {bulkResult.failed > 0 && `, ${bulkResult.failed} failed`}
+            </span>
+          )}
+
+          {bulkError && (
+            <span className={s.bulkResult} style={{ color: "var(--aa-err, #f44)" }}>
+              ✗ {bulkError}
+            </span>
+          )}
+
+          <button
+            className={s.bulkClear}
+            onClick={() => { clearSelection(); setBulkResult(null); setBulkError(null); }}
+            disabled={bulkBusy}
+          >
+            <DismissRegular fontSize={11} /> {(bulkResult || bulkError) && selected.size === 0 ? "Dismiss" : "Clear"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

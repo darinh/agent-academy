@@ -12,6 +12,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListCommandsHandler : ICommandHandler
 {
     public string CommandName => "LIST_COMMANDS";
+    public bool IsRetrySafe => true;
 
     private static readonly Dictionary<string, string> CommandDescriptions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -67,6 +68,38 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["RECORD_EVIDENCE"] = "Record a structured verification check (build, tests, review) against a task",
         ["QUERY_EVIDENCE"] = "Query the evidence ledger for a task, optionally filtered by phase",
         ["CHECK_GATES"] = "Check if a task meets evidence requirements for the next phase transition",
+        ["TASK_STATUS"] = "Get deep detail on a single task: status, dependencies, evidence, timeline",
+        ["SHOW_TASK_HISTORY"] = "Show interleaved chronological comments and evidence for a task",
+        ["SHOW_DEPENDENCIES"] = "Show the dependency graph for a task (upstream and downstream)",
+        ["REQUEST_REVIEW"] = "Submit a task for review — validates state, transitions to InReview, posts notification",
+        ["WHOAMI"] = "Return your identity, role, current room, and available capabilities",
+        // Tier 2E — Backend Execution
+        ["RUN_FRONTEND_BUILD"] = "Run the frontend build (npm run build) and return output",
+        ["RUN_TYPECHECK"] = "Run the TypeScript type checker (tsc --noEmit) and return output",
+        ["CALL_ENDPOINT"] = "Make an HTTP GET request to a local server endpoint (Planner/Reviewer only)",
+        ["TAIL_LOGS"] = "Read recent application log entries with optional filter",
+        ["SHOW_CONFIG"] = "Display current configuration for allowed sections (secrets masked)",
+        // Tier 2F — Data & Operations
+        ["QUERY_DB"] = "Execute a read-only SQL query against the application database (Human only)",
+        ["RUN_MIGRATIONS"] = "Apply pending EF Core database migrations (Human only, destructive)",
+        ["SHOW_MIGRATION_STATUS"] = "Show applied and pending database migrations",
+        ["HEALTHCHECK"] = "System health summary: DB, uptime, entities, resources, connections",
+        ["SHOW_ACTIVE_CONNECTIONS"] = "Show active SignalR connections for this server instance (Planner/Reviewer only)",
+        // Tier 2G — Audit & Debug
+        ["SHOW_AUDIT_EVENTS"] = "Query the activity event log with filters (type, severity, actor, room, since, count)",
+        ["SHOW_LAST_ERROR"] = "Show recent errors from activity events and failed commands, merged chronologically",
+        ["TRACE_REQUEST"] = "Trace events by correlation ID across activity log and command audit trail",
+        ["LIST_SYSTEM_SETTINGS"] = "List all runtime system settings with current values and defaults",
+        ["RETRY_FAILED_JOB"] = "Re-execute a previously failed retry-safe command from the audit trail (Planner/Human only)",
+        // Tier 3A — Spec Verification
+        ["VERIFY_SPEC_SECTION"] = "Verify that file paths and handler references in a spec section actually exist",
+        ["COMPARE_SPEC_TO_CODE"] = "Compare spec section claims against real code, reporting mismatches",
+        ["DETECT_ORPHANED_SECTIONS"] = "Scan spec sections for broken file references (orphaned paths)",
+        // Tier 3B — Context
+        ["HANDOFF_SUMMARY"] = "Generate a structured snapshot of your current state for handoff (tasks, location, memories)",
+        ["PLATFORM_STATUS"] = "Comprehensive platform status: server health, agents, tasks, sprint, connections",
+        // Tier 3C — Frontend/UX
+        ["SHOW_ROUTES"] = "List registered API endpoints with paths, HTTP methods, and controllers",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
@@ -74,7 +107,7 @@ public sealed class ListCommandsHandler : ICommandHandler
         // Resolve handlers at execution time to avoid circular DI dependency
         var allHandlers = context.Services.GetServices<ICommandHandler>();
         var authorizer = new CommandAuthorizer();
-        var agentDef = context.Services.GetRequiredService<AgentCatalogOptions>()
+        var agentDef = context.Services.GetRequiredService<IAgentCatalog>()
             .Agents
             .FirstOrDefault(a => a.Id == context.AgentId);
 

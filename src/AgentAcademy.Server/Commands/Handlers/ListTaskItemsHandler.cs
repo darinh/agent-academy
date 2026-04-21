@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,6 +12,7 @@ namespace AgentAcademy.Server.Commands.Handlers;
 public sealed class ListTaskItemsHandler : ICommandHandler
 {
     public string CommandName => "LIST_TASK_ITEMS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -34,7 +36,7 @@ public sealed class ListTaskItemsHandler : ICommandHandler
             statusFilter = parsed;
         }
 
-        var taskItems = context.Services.GetRequiredService<TaskItemService>();
+        var taskItems = context.Services.GetRequiredService<ITaskItemService>();
         var items = await taskItems.GetTaskItemsAsync(roomId, statusFilter);
 
         var itemsList = items.Select(i => new Dictionary<string, object?>

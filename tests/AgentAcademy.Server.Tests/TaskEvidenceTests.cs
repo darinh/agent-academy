@@ -3,6 +3,7 @@ using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -53,27 +54,59 @@ public class TaskEvidenceTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AgentAcademyDbContext>(opt => opt.UseSqlite(_connection));
         services.AddSingleton<ActivityBroadcaster>();
+        services.AddSingleton<IActivityBroadcaster>(sp => sp.GetRequiredService<ActivityBroadcaster>());
+        services.AddSingleton<MessageBroadcaster>();
+        services.AddSingleton<IMessageBroadcaster>(sp => sp.GetRequiredService<MessageBroadcaster>());
         services.AddScoped<ActivityPublisher>();
+        services.AddScoped<IActivityPublisher>(sp => sp.GetRequiredService<ActivityPublisher>());
         services.AddSingleton(catalog);
+        services.AddSingleton<IAgentCatalog>(catalog);
+        services.AddScoped<TaskDependencyService>();
+        services.AddScoped<ITaskDependencyService>(sp => sp.GetRequiredService<TaskDependencyService>());
         services.AddScoped<TaskQueryService>();
+        services.AddScoped<ITaskQueryService>(sp => sp.GetRequiredService<TaskQueryService>());
         services.AddScoped<TaskLifecycleService>();
+        services.AddScoped<ITaskLifecycleService>(sp => sp.GetRequiredService<TaskLifecycleService>());
+        services.AddScoped<TaskEvidenceService>();
+        services.AddScoped<ITaskEvidenceService>(sp => sp.GetRequiredService<TaskEvidenceService>());
         services.AddScoped<MessageService>();
+        services.AddScoped<IMessageService>(sp => sp.GetRequiredService<MessageService>());
         services.AddScoped<AgentLocationService>();
+        services.AddScoped<IAgentLocationService>(sp => sp.GetRequiredService<AgentLocationService>());
         services.AddScoped<PlanService>();
         services.AddScoped<BreakoutRoomService>();
+        services.AddScoped<IBreakoutRoomService>(sp => sp.GetRequiredService<BreakoutRoomService>());
         services.AddSingleton<ILogger<TaskItemService>>(NullLogger<TaskItemService>.Instance);
         services.AddSingleton<ILogger<RoomService>>(NullLogger<RoomService>.Instance);
         services.AddScoped<TaskItemService>();
+        services.AddScoped<ITaskItemService>(sp => sp.GetRequiredService<TaskItemService>());
+        services.AddScoped<PhaseTransitionValidator>();
+        services.AddScoped<IPhaseTransitionValidator>(sp => sp.GetRequiredService<PhaseTransitionValidator>());
         services.AddScoped<RoomService>();
+        services.AddScoped<IRoomService>(sp => sp.GetRequiredService<RoomService>());
+        services.AddScoped<RoomSnapshotBuilder>();
+
+        services.AddScoped<IRoomSnapshotBuilder>(sp => sp.GetRequiredService<RoomSnapshotBuilder>());
+        services.AddSingleton<ILogger<WorkspaceRoomService>>(NullLogger<WorkspaceRoomService>.Instance);
+        services.AddScoped<WorkspaceRoomService>();
+
+        services.AddScoped<IWorkspaceRoomService>(sp => sp.GetRequiredService<WorkspaceRoomService>());
+        services.AddSingleton<ILogger<RoomLifecycleService>>(NullLogger<RoomLifecycleService>.Instance);
+        services.AddScoped<RoomLifecycleService>();
+        services.AddScoped<IRoomLifecycleService>(sp => sp.GetRequiredService<RoomLifecycleService>());
         services.AddScoped<CrashRecoveryService>();
+        services.AddScoped<ICrashRecoveryService>(sp => sp.GetRequiredService<CrashRecoveryService>());
         services.AddSingleton<ILogger<CrashRecoveryService>>(NullLogger<CrashRecoveryService>.Instance);
         services.AddScoped<InitializationService>();
         services.AddSingleton<ILogger<InitializationService>>(NullLogger<InitializationService>.Instance);
         services.AddScoped<TaskOrchestrationService>();
+        services.AddScoped<ITaskOrchestrationService>(sp => sp.GetRequiredService<TaskOrchestrationService>());
         services.AddSingleton<ILogger<TaskOrchestrationService>>(NullLogger<TaskOrchestrationService>.Instance);
         services.AddScoped<SystemSettingsService>();
+        services.AddScoped<ISystemSettingsService>(sp => sp.GetRequiredService<SystemSettingsService>());
         services.AddSingleton<IAgentExecutor>(NSubstitute.Substitute.For<IAgentExecutor>());
         services.AddScoped<ConversationSessionService>();
+        services.AddScoped<IConversationSessionService>(sp => sp.GetRequiredService<ConversationSessionService>());
         services.AddLogging();
         _serviceProvider = services.BuildServiceProvider();
 
@@ -95,10 +128,10 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
-        var evidence = await taskLifecycle.RecordEvidenceAsync(
+        var evidence = await taskEvidence.RecordEvidenceAsync(
             taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash",
             "dotnet build", 0, "Build succeeded", true);
@@ -120,11 +153,11 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         var longOutput = new string('x', 1000);
-        var evidence = await taskLifecycle.RecordEvidenceAsync(
+        var evidence = await taskEvidence.RecordEvidenceAsync(
             taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "tests", "bash",
             "dotnet test", 0, longOutput, true);
@@ -137,11 +170,11 @@ public class TaskEvidenceTests : IDisposable
     public async Task RecordEvidence_ThrowsOnMissingTask()
     {
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            taskLifecycle.RecordEvidenceAsync(
+            taskEvidence.RecordEvidenceAsync(
                 "nonexistent", "engineer-1", "Hephaestus",
                 EvidencePhase.After, "build", "bash",
                 null, null, null, true));
@@ -155,14 +188,14 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.Baseline, "build", "bash", "dotnet build", 0, "OK", true);
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash", "dotnet build", 0, "OK", true);
-        await taskLifecycle.RecordEvidenceAsync(taskId, "reviewer-1", "Socrates",
+        await taskEvidence.RecordEvidenceAsync(taskId, "reviewer-1", "Socrates",
             EvidencePhase.Review, "code-review", "manual", null, null, "LGTM", true);
 
         var all = await taskQueries.GetTaskEvidenceAsync(taskId);
@@ -175,14 +208,14 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask();
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.Baseline, "build", "bash", null, 0, "OK", true);
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash", null, 0, "OK", true);
-        await taskLifecycle.RecordEvidenceAsync(taskId, "reviewer-1", "Socrates",
+        await taskEvidence.RecordEvidenceAsync(taskId, "reviewer-1", "Socrates",
             EvidencePhase.Review, "review", "manual", null, null, "OK", true);
 
         var afterOnly = await taskQueries.GetTaskEvidenceAsync(taskId, EvidencePhase.After);
@@ -194,8 +227,8 @@ public class TaskEvidenceTests : IDisposable
     public async Task GetEvidence_ThrowsOnMissingTask()
     {
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             taskQueries.GetTaskEvidenceAsync("nonexistent"));
@@ -209,10 +242,10 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask(status: "Active");
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
-        var result = await taskLifecycle.CheckGatesAsync(taskId);
+        var result = await taskEvidence.CheckGatesAsync(taskId);
 
         Assert.False(result.Met);
         Assert.Equal("Active", result.CurrentPhase);
@@ -228,13 +261,13 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask(status: "Active");
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash", "dotnet build", 0, "OK", true);
 
-        var result = await taskLifecycle.CheckGatesAsync(taskId);
+        var result = await taskEvidence.CheckGatesAsync(taskId);
 
         Assert.True(result.Met);
         Assert.Equal(1, result.PassedChecks);
@@ -246,23 +279,23 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask(status: "AwaitingValidation");
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         // Only 1 check — not enough
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash", null, 0, "OK", true);
 
-        var result = await taskLifecycle.CheckGatesAsync(taskId);
+        var result = await taskEvidence.CheckGatesAsync(taskId);
         Assert.False(result.Met);
         Assert.Equal(2, result.RequiredChecks);
         Assert.Equal(1, result.PassedChecks);
 
         // Add second check — now met
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "tests", "bash", null, 0, "OK", true);
 
-        result = await taskLifecycle.CheckGatesAsync(taskId);
+        result = await taskEvidence.CheckGatesAsync(taskId);
         Assert.True(result.Met);
         Assert.Equal(2, result.PassedChecks);
     }
@@ -273,21 +306,21 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask(status: "InReview");
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
         // After-phase evidence doesn't count for InReview→Approved
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash", null, 0, "OK", true);
 
-        var result = await taskLifecycle.CheckGatesAsync(taskId);
+        var result = await taskEvidence.CheckGatesAsync(taskId);
         Assert.False(result.Met);
 
         // Review-phase evidence meets the gate
-        await taskLifecycle.RecordEvidenceAsync(taskId, "reviewer-1", "Socrates",
+        await taskEvidence.RecordEvidenceAsync(taskId, "reviewer-1", "Socrates",
             EvidencePhase.Review, "code-review", "manual", null, null, "LGTM", true);
 
-        result = await taskLifecycle.CheckGatesAsync(taskId);
+        result = await taskEvidence.CheckGatesAsync(taskId);
         Assert.True(result.Met);
     }
 
@@ -297,13 +330,13 @@ public class TaskEvidenceTests : IDisposable
         var taskId = await CreateTestTask(status: "Active");
 
         using var scope = _serviceProvider.CreateScope();
-        var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-        var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
+        var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+        var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
 
-        await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+        await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
             EvidencePhase.After, "build", "bash", null, 1, "FAILED", false);
 
-        var result = await taskLifecycle.CheckGatesAsync(taskId);
+        var result = await taskEvidence.CheckGatesAsync(taskId);
         Assert.False(result.Met);
         Assert.Equal(0, result.PassedChecks);
     }
@@ -429,11 +462,11 @@ public class TaskEvidenceTests : IDisposable
         // Record some evidence via runtime
         using (var scope = _serviceProvider.CreateScope())
         {
-            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-            var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
-            await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+            var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+            var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
+            await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
                 EvidencePhase.After, "build", "bash", null, 0, "OK", true);
-            await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+            await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
                 EvidencePhase.After, "tests", "bash", null, 0, "OK", true);
         }
 
@@ -458,11 +491,11 @@ public class TaskEvidenceTests : IDisposable
 
         using (var scope = _serviceProvider.CreateScope())
         {
-            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-            var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
-            await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+            var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+            var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
+            await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
                 EvidencePhase.Baseline, "build", "bash", null, 0, "OK", true);
-            await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+            await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
                 EvidencePhase.After, "build", "bash", null, 0, "OK", true);
         }
 
@@ -518,9 +551,9 @@ public class TaskEvidenceTests : IDisposable
 
         using (var scope = _serviceProvider.CreateScope())
         {
-            var taskLifecycle = scope.ServiceProvider.GetRequiredService<TaskLifecycleService>();
-            var taskQueries = scope.ServiceProvider.GetRequiredService<TaskQueryService>();
-            await taskLifecycle.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
+            var taskEvidence = scope.ServiceProvider.GetRequiredService<TaskEvidenceService>();
+            var taskQueries = scope.ServiceProvider.GetRequiredService<ITaskQueryService>();
+            await taskEvidence.RecordEvidenceAsync(taskId, "engineer-1", "Hephaestus",
                 EvidencePhase.After, "build", "bash", null, 0, "OK", true);
         }
 

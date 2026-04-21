@@ -119,9 +119,9 @@ describe("ProjectSelectorPage (interactive)", () => {
   // ── Tab switching ────────────────────────────────────────────────────
 
   describe("tab switching", () => {
-    it("defaults to the onboard tab", () => {
+    it("defaults to the onboard tab", async () => {
       renderPage();
-      const onboardTab = screen.getByRole("tab", { name: /onboard/i });
+      const onboardTab = await screen.findByRole("tab", { name: /onboard/i });
       expect(onboardTab).toHaveAttribute("aria-selected", "true");
     });
 
@@ -282,11 +282,12 @@ describe("ProjectSelectorPage (interactive)", () => {
 
       await user.click(screen.getByRole("button", { name: /onboard project/i }));
 
-      // Wait for dialog (same pattern as the passing "error" test)
-      await waitFor(() => { expect(screen.getByRole("dialog")).toBeInTheDocument(); });
-
-      const dialog = screen.getByRole("dialog");
-      const confirmBtn = within(dialog).getByRole("button", { name: /^onboard$/i });
+      // Gate on dialog + confirm button via findByRole (async, timeout-aware).
+      // Fluent v9's Dialog portal can attach role="dialog" before the body content
+      // paints, so `within(dialog).getByRole(...)` (synchronous) is racy.
+      // findByRole polls until the button is actually in the DOM.
+      const dialog = await screen.findByRole("dialog", undefined, { timeout: 5000 });
+      const confirmBtn = await within(dialog).findByRole("button", { name: /^onboard$/i }, { timeout: 5000 });
       await user.click(confirmBtn);
 
       await waitFor(() => {
@@ -336,10 +337,11 @@ describe("ProjectSelectorPage (interactive)", () => {
       });
 
       await user.click(screen.getByRole("button", { name: /onboard project/i }));
-      await waitFor(() => { expect(screen.getByRole("dialog")).toBeInTheDocument(); });
-
-      const dialog = screen.getByRole("dialog");
-      await user.click(within(dialog).getByRole("button", { name: /^onboard$/i }));
+      // findByRole is async and timeout-aware — avoids the sync `within().getByRole`
+      // race where Fluent's Dialog role attaches before the body paints.
+      const dialog = await screen.findByRole("dialog", undefined, { timeout: 5000 });
+      const confirmBtn = await within(dialog).findByRole("button", { name: /^onboard$/i }, { timeout: 5000 });
+      await user.click(confirmBtn);
 
       await waitFor(() => {
         expect(within(dialog).getByText("Workspace init failed")).toBeInTheDocument();

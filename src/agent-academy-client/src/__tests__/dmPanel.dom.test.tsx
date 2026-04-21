@@ -39,6 +39,14 @@ vi.mock("../api", () => ({
   sendDmToAgent: vi.fn(),
 }));
 
+vi.mock("../useMessageSSE", () => ({
+  useMessageSSE: () => "disconnected",
+}));
+
+vi.mock("../useDmThreadSSE", () => ({
+  useDmThreadSSE: () => "disconnected",
+}));
+
 import DmPanel from "../DmPanel";
 import type { DmThreadSummary, DmMessage } from "../api";
 import { getDmThreads, getDmThreadMessages, sendDmToAgent } from "../api";
@@ -772,6 +780,11 @@ describe("DmPanel (interactive)", () => {
         const sendBtn = screen.getByTitle("Send");
         expect(sendBtn).not.toBeDisabled();
       });
+
+      // Error message should be visible to the user
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to send message/)).toBeInTheDocument();
+      });
     });
   });
 
@@ -850,7 +863,7 @@ describe("DmPanel (interactive)", () => {
   // ── Polling ────────────────────────────────────────────────────────
 
   describe("polling", () => {
-    it("refreshes threads every 10 seconds", async () => {
+    it("does not poll threads on a timer — SSE handles live updates", async () => {
       mockGetDmThreads.mockResolvedValue([makeThread()]);
       renderDm();
 
@@ -861,12 +874,11 @@ describe("DmPanel (interactive)", () => {
       const initialCalls = mockGetDmThreads.mock.calls.length;
 
       await act(async () => {
-        vi.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(30_000);
       });
 
-      expect(mockGetDmThreads.mock.calls.length).toBeGreaterThan(
-        initialCalls,
-      );
+      // No additional fetches — SSE invalidation replaces 10s polling
+      expect(mockGetDmThreads.mock.calls.length).toBe(initialCalls);
     });
 
     it("does not poll for threads in read-only mode", async () => {
@@ -886,7 +898,7 @@ describe("DmPanel (interactive)", () => {
       expect(mockGetDmThreads.mock.calls.length).toBe(callsAfterLoad);
     });
 
-    it("polls messages every 3 seconds when thread selected", async () => {
+    it("does not poll messages — SSE handles live delivery", async () => {
       mockGetDmThreads.mockResolvedValue([makeThread()]);
       mockGetDmThreadMessages.mockResolvedValue([
         makeMsg({ id: "dm-1", content: "Initial" }),
@@ -904,12 +916,11 @@ describe("DmPanel (interactive)", () => {
       const msgCalls = mockGetDmThreadMessages.mock.calls.length;
 
       await act(async () => {
-        vi.advanceTimersByTime(3_000);
+        vi.advanceTimersByTime(15_000);
       });
 
-      expect(mockGetDmThreadMessages.mock.calls.length).toBeGreaterThan(
-        msgCalls,
-      );
+      // No additional fetches — SSE replaces polling for message delivery
+      expect(mockGetDmThreadMessages.mock.calls.length).toBe(msgCalls);
     });
 
     it("does not poll messages in read-only mode", async () => {

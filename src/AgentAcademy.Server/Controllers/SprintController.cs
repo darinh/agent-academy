@@ -1,6 +1,8 @@
+using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -12,17 +14,32 @@ namespace AgentAcademy.Server.Controllers;
 [Route("api/sprints")]
 public class SprintController : ControllerBase
 {
-    private readonly SprintService _sprintService;
-    private readonly RoomService _roomService;
+    private readonly ISprintService _sprintService;
+    private readonly ISprintStageService _stageService;
+    private readonly ISprintArtifactService _artifactService;
+    private readonly ISprintMetricsCalculator _metricsCalculator;
+    private readonly ISprintScheduleService _scheduleService;
+    private readonly IRoomService _roomService;
+    private readonly IConversationSessionService _sessionService;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
-        SprintService sprintService,
-        RoomService roomService,
+        ISprintService sprintService,
+        ISprintStageService stageService,
+        ISprintArtifactService artifactService,
+        ISprintMetricsCalculator metricsCalculator,
+        ISprintScheduleService scheduleService,
+        IRoomService roomService,
+        IConversationSessionService sessionService,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
+        _stageService = stageService;
+        _artifactService = artifactService;
+        _metricsCalculator = metricsCalculator;
+        _scheduleService = scheduleService;
         _roomService = roomService;
+        _sessionService = sessionService;
         _logger = logger;
     }
 
@@ -68,11 +85,11 @@ public class SprintController : ControllerBase
             if (sprint is null)
                 return NoContent();
 
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (Exception ex)
         {
@@ -93,11 +110,11 @@ public class SprintController : ControllerBase
             if (sprint is null)
                 return NotFound();
 
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (Exception ex)
         {
@@ -118,7 +135,7 @@ public class SprintController : ControllerBase
             if (sprint is null)
                 return NotFound();
 
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(id, stage);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(id, stage);
             return Ok(artifacts.Select(ToArtifactSnapshot).ToList());
         }
         catch (Exception ex)
@@ -140,18 +157,18 @@ public class SprintController : ControllerBase
         {
             var workspace = await _roomService.GetActiveWorkspacePathAsync();
             if (workspace is null)
-                return BadRequest(new { error = "No active workspace." });
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
 
             var sprint = await _sprintService.CreateSprintAsync(workspace);
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -164,23 +181,52 @@ public class SprintController : ControllerBase
     /// POST /api/sprints/{id}/advance — advance the sprint to the next stage.
     /// </summary>
     [HttpPost("{id}/advance")]
-    public async Task<IActionResult> AdvanceSprint(string id)
+    public async Task<IActionResult> AdvanceSprint(string id, [FromQuery] bool force = false)
     {
         try
         {
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _sprintService.AdvanceStageAsync(id);
-            var artifacts = await _sprintService.GetSprintArtifactsAsync(sprint.Id);
+            var sprint = await _stageService.AdvanceStageAsync(id, force);
+
+            // Per spec 013 §Stage Advancement: rotate the conversation session
+            // for every room in the sprint's workspace so each stage gets a
+            // clean session boundary. Mirrors AdvanceStageHandler (agent path)
+            // and ApproveAdvance (HTTP approve path) — without this, the HTTP
+            // advance path would leave rooms stuck on the previous stage's
+            // session and bleed context across stages.
+            //
+            // Skip when the sprint is now AwaitingSignOff: the stage didn't
+            // actually change yet (a human still has to approve), so rotating
+            // sessions here would create empty sessions that ApproveAdvance
+            // would immediately rotate again.
+            if (!sprint.AwaitingSignOff)
+            {
+                try
+                {
+                    await _sessionService.RotateWorkspaceSessionsForStageAsync(
+                        sprint.WorkspacePath, sprint.Id, sprint.CurrentStage);
+                }
+                catch (Exception ex)
+                {
+                    // Non-fatal: stage already advanced; log and continue so
+                    // the user sees a successful advance.
+                    _logger.LogWarning(ex,
+                        "Failed to rotate sessions after advancing sprint {SprintId} → {Stage}",
+                        sprint.Id, sprint.CurrentStage);
+                }
+            }
+
+            var artifacts = await _artifactService.GetSprintArtifactsAsync(sprint.Id);
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
                 artifacts.Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -205,7 +251,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -230,7 +276,7 @@ public class SprintController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -250,16 +296,37 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _sprintService.ApproveAdvanceAsync(id);
+            var sprint = await _stageService.ApproveAdvanceAsync(id);
+
+            // Per spec 013 §Stage Advancement: rotate the conversation session
+            // for every room in the sprint's workspace so each stage gets a
+            // clean session boundary. Without this, approve-path advances
+            // leave rooms on the previous stage's session and bleed context
+            // across iterations. Mirrors what AdvanceStageHandler does for
+            // the agent-driven path.
+            try
+            {
+                await _sessionService.RotateWorkspaceSessionsForStageAsync(
+                    sprint.WorkspacePath, sprint.Id, sprint.CurrentStage);
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: stage already advanced; log and continue so the
+                // user sees a successful approval.
+                _logger.LogWarning(ex,
+                    "Failed to rotate sessions after approving sprint {SprintId} → {Stage}",
+                    sprint.Id, sprint.CurrentStage);
+            }
+
             return Ok(new SprintDetailResponse(
                 ToSnapshot(sprint),
-                (await _sprintService.GetSprintArtifactsAsync(sprint.Id))
+                (await _artifactService.GetSprintArtifactsAsync(sprint.Id))
                     .Select(ToArtifactSnapshot).ToList(),
-                SprintService.Stages.ToList()));
+                SprintStageService.Stages.ToList()));
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -279,12 +346,12 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var sprint = await _sprintService.RejectAdvanceAsync(id);
+            var sprint = await _stageService.RejectAdvanceAsync(id);
             return Ok(ToSnapshot(sprint));
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { error = ex.Message });
+            return Conflict(ApiProblem.Conflict(ex.Message));
         }
         catch (Exception ex)
         {
@@ -304,7 +371,7 @@ public class SprintController : ControllerBase
             var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
             if (ownerError is not null) return ownerError;
 
-            var metrics = await _sprintService.GetSprintMetricsAsync(id);
+            var metrics = await _metricsCalculator.GetSprintMetricsAsync(id);
             if (metrics is null) return NotFound();
 
             return Ok(metrics);
@@ -329,13 +396,92 @@ public class SprintController : ControllerBase
                 return Ok(new SprintMetricsSummary(0, 0, 0, 0, null, 0, 0,
                     new Dictionary<string, double>()));
 
-            var summary = await _sprintService.GetMetricsSummaryAsync(workspace);
+            var summary = await _metricsCalculator.GetMetricsSummaryAsync(workspace);
             return Ok(summary);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get sprint metrics summary");
             return Problem("Failed to retrieve sprint metrics summary.");
+        }
+    }
+
+    // ── Schedule CRUD ──────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/sprints/schedule — get the sprint schedule for the active workspace.
+    /// </summary>
+    [HttpGet("schedule")]
+    public async Task<IActionResult> GetSchedule()
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
+
+            var schedule = await _scheduleService.GetScheduleAsync(workspace);
+            if (schedule is null)
+                return NotFound();
+
+            return Ok(schedule);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sprint schedule");
+            return Problem("Failed to retrieve sprint schedule.");
+        }
+    }
+
+    /// <summary>
+    /// PUT /api/sprints/schedule — create or update the sprint schedule for the active workspace.
+    /// </summary>
+    [HttpPut("schedule")]
+    public async Task<IActionResult> UpsertSchedule([FromBody] SprintScheduleRequest request)
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
+
+            var response = await _scheduleService.UpsertScheduleAsync(
+                workspace, request.CronExpression, request.TimeZoneId, request.Enabled);
+            return Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiProblem.BadRequest(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upsert sprint schedule");
+            return Problem("Failed to save sprint schedule.");
+        }
+    }
+
+    /// <summary>
+    /// DELETE /api/sprints/schedule — remove the sprint schedule for the active workspace.
+    /// </summary>
+    [HttpDelete("schedule")]
+    public async Task<IActionResult> DeleteSchedule()
+    {
+        try
+        {
+            var workspace = await _roomService.GetActiveWorkspacePathAsync();
+            if (workspace is null)
+                return BadRequest(ApiProblem.BadRequest("No active workspace."));
+
+            var deleted = await _scheduleService.DeleteScheduleAsync(workspace);
+            if (!deleted)
+                return NotFound();
+
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete sprint schedule");
+            return Problem("Failed to delete sprint schedule.");
         }
     }
 
@@ -358,7 +504,7 @@ public class SprintController : ControllerBase
     {
         var workspace = await _roomService.GetActiveWorkspacePathAsync();
         if (workspace is null)
-            return (null, BadRequest(new { error = "No active workspace." }));
+            return (null, BadRequest(ApiProblem.BadRequest("No active workspace.")));
 
         var sprint = await _sprintService.GetSprintByIdAsync(id);
         if (sprint is null || sprint.WorkspacePath != workspace)

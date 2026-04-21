@@ -83,14 +83,15 @@ The `InitializationService` and `CrashRecoveryService` manage instance lifecycle
 5. Proceed with existing initialization (default room, agents, welcome message)
 6. Resolve the authoritative main room for the active workspace, if any
 7. If `CrashDetected = true`, ask `AgentOrchestrator` to run startup recovery before normal work resumes
-8. Startup recovery closes every active breakout via `CloseBreakoutRoomAsync(..., ClosedByRecovery)`, resets any lingering `Working` agents to `Idle`, and posts a main-room system message beginning with `"System recovered from crash"`
+8. Startup recovery closes every active breakout via `CloseBreakoutRoomAsync(..., ClosedByRecovery)`, resets any lingering `Working` agents to `Idle`, clears `AssignedAgentId`/`AssignedAgentName` on orphaned in-progress tasks (see spec 005 §Crash Recovery for the full status list), and posts a main-room system message beginning with `"System recovered from crash"`
+9. Reconcile in-memory worktree tracking with the on-disk git state via `IWorktreeService.SyncWithGitAsync()` so post-restart worktree listings, breakout reopen, and cleanup reflect reality (failures are logged and swallowed so a sync error does not block init from completing)
 
-**On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `Program.cs`):
+**On Shutdown** (`IHostApplicationLifetime.ApplicationStopping`, **implemented** in `WebApplicationExtensions.ConfigureShutdownHook()`, wired from `Program.cs`):
 1. Locate the current instance (by `CurrentInstanceId`)
 2. Set `ShutdownAt = DateTime.UtcNow`
 3. Set `ExitCode = Environment.ExitCode`
 
-**Files**: `src/AgentAcademy.Server/Services/InitializationService.cs`, `src/AgentAcademy.Server/Services/CrashRecoveryService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Program.cs`
+**Files**: `src/AgentAcademy.Server/Services/InitializationService.cs`, `src/AgentAcademy.Server/Services/CrashRecoveryService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `src/AgentAcademy.Server/Startup/WebApplicationExtensions.cs`, `src/AgentAcademy.Server/Program.cs`
 
 ### 4. Client Reconnect Protocol
 
@@ -158,7 +159,7 @@ Open-ended breakout loops need explicit termination semantics so a restart or re
 | `complete` | Agent posts `WORK REPORT:` with status `COMPLETE` | Close breakout, return the agent to the parent-room flow, persist the final work report, and treat the breakout as successfully finished |
 | `recall` | Planner/operator recalls the working agent | Close breakout, move the agent to `Idle` in the parent room, and post recall notices so the termination is visible to the team |
 | `cancel` | Planner/operator explicitly aborts the breakout | Record a cancellation reason, stop further breakout work, close the breakout, and leave the linked task in a non-success terminal state |
-| `stuck-detected` | Agent produces `MaxConsecutiveIdleRounds` (5) consecutive responses with zero parsed commands, **or** the breakout exceeds `MaxBreakoutRounds` (200) total rounds | Close breakout with `StuckDetected` reason, mark linked task as `Blocked`, move agent to `Idle` in parent room, post 🔴 warning to parent room. **Implemented** in `AgentOrchestrator.RunBreakoutLoopAsync`. |
+| `stuck-detected` | Agent produces `MaxConsecutiveIdleRounds` (5) consecutive responses with zero parsed commands, **or** the breakout exceeds `MaxBreakoutRounds` (200) total rounds | Close breakout with `StuckDetected` reason, mark linked task as `Blocked`, move agent to `Idle` in parent room, post 🔴 warning to parent room. **Implemented** in `BreakoutLifecycleService.RunBreakoutLoopAsync`. |
 | `closed-by-recovery` | Server startup detects the previous instance crashed while breakout work was active | Close the breakout during startup recovery, persist `ClosedByRecovery` as the close reason, return the assigned agent to `Idle`, and notify the main room so interrupted work can be re-evaluated |
 
 Recovery expectations:
@@ -314,6 +315,64 @@ Arguments:
 Result: Server exits with code 75, wrapper restarts process
 ```
 
+### System & Diagnostic Endpoints
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/healthz` | Basic health probe |
+| `GET` | `/api/activity/recent` | Recent activity events |
+| `GET` | `/api/models` | Available LLM models and executor status |
+| `GET` | `/api/usage/records` | Recent individual LLM call records (global) |
+| `GET` | `/api/errors` | Global error summary |
+| `GET` | `/api/errors/records` | Individual error records |
+| `GET` | `/api/settings` | All system settings with defaults |
+| `GET` | `/api/settings/{key}` | Single setting by key |
+| `PUT` | `/api/settings` | Bulk upsert settings |
+
+#### `GET /healthz`
+- Returns `HealthResult` — minimal health check for load balancers/probes
+- `[AllowAnonymous]` — no auth required
+- Distinct from `/api/health/instance` which returns detailed instance info
+- Source: `SystemController.cs`
+
+#### `GET /api/activity/recent`
+- Returns `IReadOnlyList<ActivityEvent>`
+- Complements the SSE stream (`/api/activity/stream`) — provides a snapshot of recent events for initial page load
+- Source: `ActivityController.cs`
+
+#### `GET /api/models`
+- Returns `{ models: ModelInfo[], executorOperational: bool }`
+- Source: `SystemController.cs`
+
+#### `GET /api/usage/records`
+- Query params: `agentId?` (filter by agent), `limit?` (default 50)
+- Returns `List<LlmUsageRecord>`
+- Complements `GET /api/usage` (aggregated summary) with per-call detail
+- Source: `SystemController.cs`
+
+#### `GET /api/errors`
+- Query params: `hoursBack?`
+- Returns `ErrorSummary`
+
+#### `GET /api/errors/records`
+- Query params: `agentId?`, `hoursBack?`, `limit?` (default 50)
+- Returns `List<ErrorRecord>`
+- Source: `SystemController.cs`
+
+#### `GET /api/settings`
+- Returns `Dictionary<string, string>` — all settings with defaults filled in
+- Source: `SettingsController.cs`
+
+#### `GET /api/settings/{key}`
+- Returns `SettingResponse { Key, Value }` or `404` if key not recognized
+- Source: `SettingsController.cs`
+
+#### `PUT /api/settings`
+- Accepts `Dictionary<string, string>` — bulk upsert of settings
+- Returns updated `Dictionary<string, string>` (all settings with defaults)
+- Live-reconfigures rate limiter if `commands.rateLimitMaxCommands` or `commands.rateLimitWindowSeconds` keys change
+- Source: `SettingsController.cs`
+
 ## Invariants
 
 1. **Single active instance**: Only one `ServerInstanceEntity` with `ShutdownAt = NULL` exists at any time
@@ -337,14 +396,15 @@ Result: Server exits with code 75, wrapper restarts process
 - ~~`RESTART_SERVER` command handler~~ — **Implemented**: `RestartServerHandler.cs`
 - ~~Startup crash recovery actions~~ — **Implemented**: crash-detected boot now closes active breakouts with `ClosedByRecovery`, resets lingering `Working` agents to `Idle`, and posts a main-room recovery notification
 - ~~Frontend health check and reconnect logic not yet implemented~~ — **Implemented**: `healthCheck.ts` with `evaluateReconnect()`, global `RecoveryBanner` with 4 tones, reconnect/disconnect handling in `useWorkspace.ts`
-- ~~Breakout cancellation and stuck-detection controls are not yet implemented~~ — **Implemented**: `AgentOrchestrator.RunBreakoutLoopAsync` tracks consecutive idle rounds (no commands parsed) and enforces an absolute round cap. On detection, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room.
+- ~~Breakout cancellation and stuck-detection controls are not yet implemented~~ — **Implemented**: `BreakoutLifecycleService.RunBreakoutLoopAsync` tracks consecutive idle rounds (no commands parsed) and enforces an absolute round cap. On detection, closes breakout with `StuckDetected`, marks linked task as `Blocked`, and notifies the parent room.
 - Persisted breakout close reasons cover `Completed`, `Recalled`, `ClosedByRecovery`, `StuckDetected`, and `Failed`; `Cancelled` is emitted on branch setup failure
 - ~~No mechanism to prevent restart loops (crash → restart → crash → restart)~~ — **Resolved**: `wrapper.sh` implements exponential backoff (2^(n-1) seconds, capped at 32s), configurable crash limit (AA_MAX_CRASH, default 5), and health threshold (AA_HEALTH_SEC, default 60s — resets counter for long-running instances).
-- No restart history UI (list of past restarts with timestamps and reasons) — **resolved**: REST API at `GET /api/system/restarts` and `GET /api/system/restarts/stats`; frontend panel implemented in `DashboardPanel` with stats cards, paginated instance table, crash recovery badges, and graceful error handling
+- No restart history UI (list of past restarts with timestamps and reasons) — **resolved**: REST API at `GET /api/system/restarts` and `GET /api/system/restarts/stats`; frontend panel `RestartHistoryPanel.tsx` embedded in `DashboardPanel` with stats cards, paginated instance table, crash recovery badges, and graceful error handling (see spec 300 § Server Instance History)
 - ~~No maximum restart count enforcement in the server (only in wrapper)~~ — **resolved**: `RestartServerHandler` enforces a server-side rate limit of 10 intentional restarts per hour via `SemaphoreSlim`-guarded check against `ServerInstances` table. Returns `RATE_LIMIT` error when exceeded.
 
 ## Revision History
 
+- **2026-04-18**: Spec sync — startup recovery now reconciles in-memory worktree tracking with the on-disk git state via `IWorktreeService.SyncWithGitAsync()` (added as step 9 of `InitializeAsync`; failures logged and swallowed). Reflects audit fix #105. | Anvil
 - **2026-04-04**: Restart history UI. `RestartHistoryPanel` component in Dashboard shows 24h stats (crashes, restarts, clean shutdowns, running) and paginated server instance table with shutdown-reason badges and crash-recovery indicators. Uses `Promise.allSettled` for independent endpoint failure, `useRef`-based request sequencing to prevent stale response races, inline error banners on failed refresh, and offset clamping when total shrinks. API types and functions added to `api.ts`. 9 new frontend tests.
 - **2026-04-04**: Server-side restart rate limiting and restart history API. `RestartServerHandler` enforces max 10 intentional restarts per hour with `SemaphoreSlim`-guarded check against `ServerInstances` table. New endpoints: `GET /api/system/restarts` (paginated instance history with derived shutdown reason) and `GET /api/system/restarts/stats` (aggregated counts by type with configurable time window, SQL-level aggregation). Adversarial review by GPT-5.3 Codex found 3 issues: race condition (fixed with semaphore), stats window logic (fixed ShutdownAt-based filtering), memory materialization (pushed to SQL). 18 new tests.
 - **2026-04-04**: Implemented breakout stuck-detection. `AgentOrchestrator.RunBreakoutLoopAsync` tracks consecutive idle rounds (zero commands parsed) and enforces absolute max-round cap. On detection: closes breakout with `StuckDetected`, marks linked task as `Blocked`, notifies parent room. Thresholds: `MaxConsecutiveIdleRounds=5`, `MaxBreakoutRounds=200`. 3 new tests. Updated Known Gaps.

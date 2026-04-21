@@ -1,4 +1,5 @@
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,9 +51,9 @@ public sealed class CreateTaskItemHandler : ICommandHandler
             && brObj is string br && !string.IsNullOrWhiteSpace(br)
             ? br : context.BreakoutRoomId;
 
-        var catalog = context.Services.GetRequiredService<AgentCatalogOptions>();
-        var roomService = context.Services.GetRequiredService<RoomService>();
-        var taskItems = context.Services.GetRequiredService<TaskItemService>();
+        var catalog = context.Services.GetRequiredService<IAgentCatalog>();
+        var roomService = context.Services.GetRequiredService<IRoomService>();
+        var taskItems = context.Services.GetRequiredService<ITaskItemService>();
 
         // Resolve assignee: accept agent ID or name, normalize to ID
         var agents = catalog.Agents;

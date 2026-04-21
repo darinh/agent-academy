@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 
@@ -11,8 +10,10 @@ namespace AgentAcademy.Server.Services;
 /// When no tools are registered for a session, approves all permissions
 /// (same as <see cref="PermissionHandler.ApproveAll"/> — nothing to gate).
 ///
-/// Tracks denial counts per session to log escalating warnings and avoid
-/// flooding the log with identical denial messages.
+/// The denial counter is scoped per <see cref="Create"/> call (per Copilot
+/// session). The closure holds a <see cref="DenialState"/> instance that is
+/// garbage-collected together with the session config — no static state
+/// accumulates across session churn.
 /// </summary>
 public static class AgentPermissionHandler
 {
@@ -27,13 +28,11 @@ public static class AgentPermissionHandler
         "tool",
     };
 
-    // Per-session denial counter to reduce log noise. Key: sessionId.
-    private static readonly ConcurrentDictionary<string, int> DenialCounts = new();
-
     /// <summary>
     /// Creates a <see cref="PermissionRequestHandler"/> that approves
     /// tool-related permissions and denies unrecognized request kinds.
-    /// Logs the first 3 denials per session at Warning, then only at Debug.
+    /// Logs the first 3 denials at Warning, the 4th as a suppression
+    /// notice, and subsequent denials at Debug.
     /// </summary>
     /// <param name="registeredToolNames">
     /// The set of tool names registered for the session. If empty,
@@ -44,6 +43,10 @@ public static class AgentPermissionHandler
         IReadOnlySet<string> registeredToolNames,
         ILogger logger)
     {
+        // Per-handler state. Captured by the returned closure, so it is
+        // scoped to exactly one Copilot session and GCs with that session.
+        var state = new DenialState();
+
         return (PermissionRequest request, PermissionInvocation invocation) =>
         {
             // When no tools are registered, approve everything
@@ -71,7 +74,7 @@ public static class AgentPermissionHandler
             }
 
             var sessionId = invocation.SessionId ?? "unknown";
-            var count = DenialCounts.AddOrUpdate(sessionId, 1, (_, c) => c + 1);
+            var count = Interlocked.Increment(ref state.Count);
 
             if (count <= 3)
             {
@@ -100,10 +103,18 @@ public static class AgentPermissionHandler
     }
 
     /// <summary>
-    /// Clears denial counts for a session that has been disposed.
+    /// No-op retained for backward compatibility. Denial counts are now
+    /// closure-local and GC'd with the session; callers no longer need to
+    /// clear state manually.
     /// </summary>
+    [Obsolete("Denial counts are now closure-local and GC'd with the session; this call is a no-op.")]
     public static void ClearSession(string sessionId)
     {
-        DenialCounts.TryRemove(sessionId, out _);
+        // Intentional no-op.
+    }
+
+    private sealed class DenialState
+    {
+        public int Count;
     }
 }

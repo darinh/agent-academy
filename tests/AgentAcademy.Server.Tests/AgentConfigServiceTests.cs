@@ -69,14 +69,14 @@ public class AgentConfigServiceTests : IDisposable
         _db.AgentConfigs.Add(new AgentConfigEntity
         {
             AgentId = CatalogAgent.Id,
-            ModelOverride = "claude-opus-4.6",
+            ModelOverride = "claude-opus-4.7",
             UpdatedAt = DateTime.UtcNow
         });
         await _db.SaveChangesAsync();
 
         var result = await _service.GetEffectiveAgentAsync(CatalogAgent);
 
-        Assert.Equal("claude-opus-4.6", result.Model);
+        Assert.Equal("claude-opus-4.7", result.Model);
         Assert.Equal(CatalogAgent.StartupPrompt, result.StartupPrompt);
     }
 

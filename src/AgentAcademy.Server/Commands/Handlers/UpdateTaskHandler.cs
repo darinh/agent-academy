@@ -2,6 +2,7 @@ using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using TaskStatus = AgentAcademy.Shared.Models.TaskStatus;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -41,19 +42,21 @@ public sealed class UpdateTaskHandler : ICommandHandler
             && !string.IsNullOrWhiteSpace(blockerStr);
         var hasNote = command.Args.TryGetValue("note", out var noteObj) && noteObj is string noteStr
             && !string.IsNullOrWhiteSpace(noteStr);
+        var hasPriority = command.Args.TryGetValue("priority", out var priorityObj) && priorityObj is string priorityStr
+            && !string.IsNullOrWhiteSpace(priorityStr);
 
-        if (!hasStatus && !hasBlocker && !hasNote)
+        if (!hasStatus && !hasBlocker && !hasNote && !hasPriority)
         {
             return command with
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Validation,
-                Error = "At least one of status, blocker, or note is required"
+                Error = "At least one of status, blocker, note, or priority is required"
             };
         }
 
-        var taskOrchestration = context.Services.GetRequiredService<TaskOrchestrationService>();
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskOrchestration = context.Services.GetRequiredService<ITaskOrchestrationService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         try
         {
@@ -116,6 +119,24 @@ public sealed class UpdateTaskHandler : ICommandHandler
                 actions.Add("note posted");
             }
 
+            // Handle priority change
+            if (hasPriority)
+            {
+                var pStr = (string)priorityObj!;
+                if (!Enum.TryParse<TaskPriority>(pStr, ignoreCase: true, out var parsedPriority)
+                    || !Enum.IsDefined(parsedPriority))
+                {
+                    return command with
+                    {
+                        Status = CommandStatus.Error,
+                        ErrorCode = CommandErrorCode.Validation,
+                        Error = $"Invalid priority '{pStr}'. Allowed: Critical, High, Medium, Low"
+                    };
+                }
+                await taskQueries.UpdateTaskPriorityAsync(taskId, parsedPriority);
+                actions.Add($"priority → {parsedPriority}");
+            }
+
             // Fetch final state
             var finalTask = await taskQueries.GetTaskAsync(taskId)
                 ?? throw new InvalidOperationException($"Task '{taskId}' not found after update");
@@ -128,6 +149,7 @@ public sealed class UpdateTaskHandler : ICommandHandler
                     ["taskId"] = finalTask.Id,
                     ["title"] = finalTask.Title,
                     ["status"] = finalTask.Status.ToString(),
+                    ["priority"] = finalTask.Priority.ToString(),
                     ["actions"] = string.Join("; ", actions),
                     ["message"] = $"Task '{finalTask.Title}' updated: {string.Join("; ", actions)}"
                 }

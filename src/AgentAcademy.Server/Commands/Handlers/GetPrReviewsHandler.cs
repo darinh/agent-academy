@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Commands.Handlers;
 
@@ -18,6 +19,7 @@ public sealed class GetPrReviewsHandler : ICommandHandler
     }
 
     public string CommandName => "GET_PR_REVIEWS";
+    public bool IsRetrySafe => true;
 
     public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
@@ -33,7 +35,7 @@ public sealed class GetPrReviewsHandler : ICommandHandler
             };
         }
 
-        var taskQueries = context.Services.GetRequiredService<TaskQueryService>();
+        var taskQueries = context.Services.GetRequiredService<ITaskQueryService>();
 
         // Load task
         var task = await taskQueries.GetTaskAsync(taskId);

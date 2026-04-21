@@ -11,6 +11,7 @@ const NOTIFY_EVENT_TYPES: ReadonlySet<ActivityEventType> = new Set([
   "SprintCompleted",
   "SprintCancelled",
   "TaskCreated",
+  "TaskUnblocked",
 ]);
 
 function loadEnabled(): boolean {
@@ -52,6 +53,8 @@ function eventTitle(evt: ActivityEvent): string {
       return "Sprint cancelled";
     case "TaskCreated":
       return "Task created";
+    case "TaskUnblocked":
+      return "Task unblocked";
     default:
       return evt.type.replace(/([A-Z])/g, " $1").trim();
   }
