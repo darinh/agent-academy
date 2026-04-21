@@ -126,8 +126,6 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
     private async Task ProcessQueueAsync()
     {
-        if (!TryBeginProcessing()) return;
-
         try
         {
             while (!_cts.IsCancellationRequested)
@@ -164,16 +162,6 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             }
 
             _queue.Enqueue(new QueueItem(RoomId: string.Empty, TargetAgentId: recipientAgentId));
-            return true;
-        }
-    }
-
-    private bool TryBeginProcessing()
-    {
-        lock (_lock)
-        {
-            if (_processing) return false;
-            _processing = true;
             return true;
         }
     }
@@ -227,15 +215,33 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
 
             if (!_cts.IsCancellationRequested && _queue.Count > 0)
             {
+                _processing = true;
                 shouldRestart = true;
             }
         }
 
         if (shouldRestart)
         {
-            SignalProcessing();
+            _ = ProcessQueueAsync();
         }
     }
 
-    private void SignalProcessing() => _ = ProcessQueueAsync();
+    private void SignalProcessing()
+    {
+        var shouldStart = false;
+
+        lock (_lock)
+        {
+            if (!_processing && !_cts.IsCancellationRequested && _queue.Count > 0)
+            {
+                _processing = true;
+                shouldStart = true;
+            }
+        }
+
+        if (shouldStart)
+        {
+            _ = ProcessQueueAsync();
+        }
+    }
 }
