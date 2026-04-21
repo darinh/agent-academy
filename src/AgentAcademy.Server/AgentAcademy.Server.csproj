@@ -27,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AgentAcademy.Forge\AgentAcademy.Forge.csproj" />
     <ProjectReference Include="..\AgentAcademy.Shared\AgentAcademy.Shared.csproj" />
   </ItemGroup>
 

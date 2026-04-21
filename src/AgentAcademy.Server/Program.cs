@@ -64,6 +64,7 @@ builder.Services.AddAgentPipeline();
 builder.Services.AddCommandSystem();
 builder.Services.AddNotificationSystem();
 builder.Services.AddBackgroundServices(builder.Configuration);
+builder.Services.AddForge(builder.Configuration, builder.Environment);
 
 // ── Logging ─────────────────────────────────────────────────────────────────
 
