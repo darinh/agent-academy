@@ -175,6 +175,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     {
         lock (_lock)
         {
+            if (_cts.IsCancellationRequested)
+            {
+                item = default!;
+                return false;
+            }
+
             if (_queue.TryDequeue(out var dequeuedItem))
             {
                 if (dequeuedItem.TargetAgentId is { } targetAgentId)

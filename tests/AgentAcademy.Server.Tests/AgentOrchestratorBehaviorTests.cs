@@ -363,6 +363,68 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
     }
 
     [Fact]
+    public async Task Stop_DuringLockContention_DoesNotProcessNextQueuedItem()
+    {
+        await SeedRoomAsync("room-1", "Test Room");
+        await SeedAgentLocationAsync("engineer-1", "room-1", AgentState.Idle);
+        await SeedAgentLocationAsync("reviewer-1", "room-1", AgentState.Idle);
+        await SeedDirectMessageAsync("engineer-1", "human", "User", "First DM", "room-1");
+        await SeedDirectMessageAsync("reviewer-1", "human", "User", "Second DM", "room-1");
+        await SeedMessageAsync("room-1", "human", "User", nameof(MessageSenderKind.User), "Context");
+
+        var unblockFirstCall = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCallStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callCount = 0;
+
+        _executor.RunAsync(
+            Arg.Any<AgentDefinition>(), Arg.Any<string>(),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var agent = callInfo.Arg<AgentDefinition>();
+                var prompt = callInfo.ArgAt<string>(1);
+                var callNumber = Interlocked.Increment(ref callCount);
+                lock (_executorCalls) { _executorCalls.Add((agent.Id, prompt)); }
+                _executorGate.Release();
+
+                if (callNumber == 1)
+                {
+                    firstCallStarted.TrySetResult();
+                    await unblockFirstCall.Task;
+                }
+
+                return "PASS";
+            });
+
+        _orchestrator.HandleDirectMessage("engineer-1");
+        _orchestrator.HandleDirectMessage("reviewer-1");
+
+        await firstCallStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var lockField = typeof(AgentOrchestrator).GetField(
+            "_lock",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(lockField);
+        var queueLock = lockField!.GetValue(_orchestrator);
+        Assert.NotNull(queueLock);
+
+        Monitor.Enter(queueLock!);
+        try
+        {
+            unblockFirstCall.SetResult();
+            Thread.Sleep(50);
+            _orchestrator.Stop();
+        }
+        finally
+        {
+            Monitor.Exit(queueLock!);
+        }
+
+        await Task.Delay(300);
+        Assert.Equal(1, Volatile.Read(ref callCount));
+    }
+
+    [Fact]
     public async Task QueueContinuesProcessingAfterItemFailure()
     {
         await SeedRoomAsync("room-1", "Bad Room");
