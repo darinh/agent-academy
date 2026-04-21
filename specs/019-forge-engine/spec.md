@@ -850,7 +850,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 2. **No authentication on forge endpoints**: Endpoints are unprotected. Should add `[Authorize]` with a dedicated policy for cost-incurring execution endpoints.
 3. **No workspace scoping**: Forge runs are global, not scoped to a workspace/room. Multi-user deployments would expose cross-tenant data.
 4. **Resume not implemented**: `POST /api/forge/runs/{runId}/resume` returns 501.
-5. **No agent commands**: Agents cannot trigger forge runs via the command system yet. Future: `RUN_FORGE`, `FORGE_STATUS`, `LIST_FORGE_RUNS`.
+5. ~~**No agent commands**~~: Resolved. Agents can trigger forge runs via `RUN_FORGE`, check status via `FORGE_STATUS`, and list jobs via `LIST_FORGE_RUNS`. See spec 007 for command details. Handlers use `IForgeJobService` interface for testability. Path traversal and symlink protections applied to methodology file loading.
 6. **No SignalR events**: No real-time progress updates during pipeline execution.
 7. **No frontend UI**: No forge panel in the React frontend yet.
 

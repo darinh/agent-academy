@@ -363,6 +363,20 @@ Shared utility `SpecReferenceExtractor` handles markdown file path extraction (l
 
 **Evidence**: `src/AgentAcademy.Server/Commands/Handlers/ShowRoutesHandler.cs`
 
+#### Forge Pipeline Commands — IMPLEMENTED
+
+| Command | Args | Returns | Implementation |
+|---------|------|---------|----------------|
+| `RUN_FORGE` | `title` (required), `description` (required), `methodologyPath` (required — path to methodology JSON), `taskId?` (optional) | `jobId`, `status`, `createdAt`, `taskId`, guidance message | `RunForgeHandler.cs` — loads methodology from disk, validates structure (id + phases), path traversal + symlink protection, pre-checks Forge enabled/available before queueing. Returns immediately; pipeline runs in background. Not retry-safe, not destructive. |
+| `FORGE_STATUS` | `jobId?` (optional) | If jobId: job details (jobId, runId, status, error, timestamps, taskId, taskTitle). If omitted: engine summary (enabled, executionAvailable, activeJobs, totalJobs, completedJobs, failedJobs). | `ForgeStatusHandler.cs` — read-only, retry-safe. Dual-mode: specific job lookup or engine health summary. |
+| `LIST_FORGE_RUNS` | `status?` (optional: queued/running/completed/failed) | Job list with jobId, runId, status, error, timestamps, taskId, taskTitle; count. Case-insensitive filter. | `ListForgeRunsHandler.cs` — read-only, retry-safe. Returns in-memory job data (not durable across restarts). |
+
+**Permissions**: `RUN_FORGE` — Aristotle (Planner), Hephaestus, Athena, Socrates (same agents with `RUN_BUILD`). `FORGE_STATUS` — all agents (explicit). `LIST_FORGE_RUNS` — all agents (via `LIST_*` wildcard).
+
+**DI**: Handlers use `IForgeJobService` interface (implemented by `ForgeRunService`). When Forge is disabled, handlers return structured errors rather than throwing DI exceptions.
+
+**Evidence**: `src/AgentAcademy.Server/Commands/Handlers/RunForgeHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/ForgeStatusHandler.cs`, `src/AgentAcademy.Server/Commands/Handlers/ListForgeRunsHandler.cs`, `src/AgentAcademy.Server/Services/IForgeJobService.cs`
+
 #### Context — IMPLEMENTED
 
 | Command | Args | Returns | Implementation |

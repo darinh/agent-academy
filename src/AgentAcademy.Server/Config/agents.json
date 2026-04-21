@@ -120,7 +120,9 @@
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
             "PLATFORM_STATUS",
-            "SHOW_ROUTES"
+            "SHOW_ROUTES",
+            "FORGE_STATUS",
+            "RUN_FORGE"
           ],
           "Denied": []
         }
@@ -207,7 +209,8 @@
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
             "PLATFORM_STATUS",
-            "SHOW_ROUTES"
+            "SHOW_ROUTES",
+            "FORGE_STATUS"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -306,7 +309,9 @@
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
             "PLATFORM_STATUS",
-            "SHOW_ROUTES"
+            "SHOW_ROUTES",
+            "FORGE_STATUS",
+            "RUN_FORGE"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -407,7 +412,9 @@
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
             "PLATFORM_STATUS",
-            "SHOW_ROUTES"
+            "SHOW_ROUTES",
+            "FORGE_STATUS",
+            "RUN_FORGE"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -513,7 +520,9 @@
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
             "PLATFORM_STATUS",
-            "SHOW_ROUTES"
+            "SHOW_ROUTES",
+            "FORGE_STATUS",
+            "RUN_FORGE"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -600,7 +609,8 @@
             "DETECT_ORPHANED_SECTIONS",
             "HANDOFF_SUMMARY",
             "PLATFORM_STATUS",
-            "SHOW_ROUTES"
+            "SHOW_ROUTES",
+            "FORGE_STATUS"
           ],
           "Denied": [
             "APPROVE_TASK",

@@ -68,6 +68,7 @@ public static class ForgeServiceRegistration
 
         // Background service for processing forge runs
         services.AddSingleton<ForgeRunService>();
+        services.AddSingleton<IForgeJobService>(sp => sp.GetRequiredService<ForgeRunService>());
         services.AddHostedService(sp => sp.GetRequiredService<ForgeRunService>());
 
         return services;

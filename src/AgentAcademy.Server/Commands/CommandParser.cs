@@ -62,7 +62,9 @@ public sealed class CommandParser
         // Tier 3B — Context
         "HANDOFF_SUMMARY", "PLATFORM_STATUS",
         // Tier 3C — Frontend/UX
-        "SHOW_ROUTES"
+        "SHOW_ROUTES",
+        // Forge — Pipeline Engine commands
+        "RUN_FORGE", "FORGE_STATUS", "LIST_FORGE_RUNS"
     };
 
     /// <summary>

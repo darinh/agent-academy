@@ -13,7 +13,7 @@ namespace AgentAcademy.Server.Services;
 /// Runs are enqueued via <see cref="StartRunAsync"/> and processed sequentially
 /// by the background worker. Job status is tracked in memory.
 /// </summary>
-public sealed class ForgeRunService : BackgroundService
+public sealed class ForgeRunService : BackgroundService, IForgeJobService
 {
     private readonly PipelineRunner _pipelineRunner;
     private readonly ForgeOptions _options;
