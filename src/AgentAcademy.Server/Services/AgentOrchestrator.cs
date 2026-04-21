@@ -19,6 +19,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Queue<QueueItem> _queue = new();
+    private readonly HashSet<string> _queuedRooms = new(StringComparer.Ordinal);
     private readonly HashSet<string> _queuedDirectMessages = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private bool _processing;
@@ -82,11 +83,11 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
             return;
         }
 
-        EnqueueRooms(pendingRoomIds);
+        var enqueuedCount = EnqueueRooms(pendingRoomIds);
 
         _logger.LogInformation(
-            "Queue reconstruction: re-enqueued {Count} room(s) with pending human messages: {RoomIds}",
-            pendingRoomIds.Count, string.Join(", ", pendingRoomIds));
+            "Queue reconstruction: enqueued {Count} room(s) with pending human messages: {RoomIds}",
+            enqueuedCount, string.Join(", ", pendingRoomIds));
 
         StartProcessingIfNeeded();
     }
@@ -99,7 +100,12 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     /// </summary>
     public void HandleHumanMessage(string roomId)
     {
-        EnqueueAndProcess(new QueueItem(roomId));
+        if (!TryEnqueueRoom(roomId))
+        {
+            return;
+        }
+
+        StartProcessingIfNeeded();
     }
 
     /// <summary>
@@ -139,21 +145,39 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         }
     }
 
-    private void EnqueueAndProcess(QueueItem item)
+    private bool TryEnqueueRoom(string roomId)
     {
-        lock (_lock) { _queue.Enqueue(item); }
-        StartProcessingIfNeeded();
+        lock (_lock)
+        {
+            if (!_queuedRooms.Add(roomId))
+            {
+                return false;
+            }
+
+            _queue.Enqueue(new QueueItem(roomId));
+            return true;
+        }
     }
 
-    private void EnqueueRooms(IReadOnlyCollection<string> roomIds)
+    private int EnqueueRooms(IReadOnlyCollection<string> roomIds)
     {
+        var enqueuedCount = 0;
+
         lock (_lock)
         {
             foreach (var roomId in roomIds)
             {
+                if (!_queuedRooms.Add(roomId))
+                {
+                    continue;
+                }
+
                 _queue.Enqueue(new QueueItem(roomId));
+                enqueuedCount++;
             }
         }
+
+        return enqueuedCount;
     }
 
     private bool TryEnqueueDirectMessage(string recipientAgentId)
@@ -186,6 +210,10 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
                 if (dequeuedItem.TargetAgentId is { } targetAgentId)
                 {
                     _queuedDirectMessages.Remove(targetAgentId);
+                }
+                else
+                {
+                    _queuedRooms.Remove(dequeuedItem.RoomId);
                 }
 
                 item = dequeuedItem;

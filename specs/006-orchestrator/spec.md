@@ -25,12 +25,12 @@ Ported from v1 TypeScript `CollaborationOrchestrator` to C# with async/await pat
 
 `AgentOrchestrator` is a pure queue manager. It accepts human messages and DM triggers, enqueues them as `QueueItem` records, and dispatches to `ConversationRoundRunner` or `DirectMessageRouter` for execution. All conversation logic and DM routing have been extracted out.
 
-- Entry point: `HandleHumanMessage(roomId)` — enqueues `{RoomId}` and kicks off `ProcessQueueAsync()`
+- Entry point: `HandleHumanMessage(roomId)` — enqueues with dedupe (skips if that room already has a queued trigger) and kicks off `ProcessQueueAsync()`
 - Entry point: `HandleDirectMessage(recipientAgentId)` — enqueues with dedupe (skips if a DM trigger for the same agent is already queued)
 - Processing is serialized via `_processing` flag + `_lock` — only one item is processed at a time
 - Dispatch: items with `TargetAgentId` go to `DirectMessageRouter.RouteAsync()`; room items go to `ConversationRoundRunner.RunRoundsAsync()`
 - The orchestrator can be stopped via `Stop()`, which cancels the `CancellationTokenSource` and halts queue processing
-- **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `RoomService.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, re-enqueues them, and kicks off processing. This prevents message loss when the server restarts while human messages are pending.
+- **Queue reconstruction on startup**: `ReconstructQueueAsync()` runs on every server startup (crash or clean). It queries `RoomService.GetRoomsWithPendingHumanMessagesAsync()` for rooms whose most recent message has `SenderKind = User`, enqueues them with the same room-level dedupe as live triggers, and kicks off processing. This prevents message loss when the server restarts while human messages are pending without inflating duplicate queue items.
 - **Conversation kickoff on fresh start**: During `WebApplicationExtensions.InitializeAsync()` (step 7), if the main room has no `User` or `Agent` messages and crash recovery did not run, a system kickoff message is posted and the room is enqueued. This bootstraps agent collaboration on a fresh workspace without requiring a manual human message. The check is idempotent — once agents have spoken, subsequent restarts skip the kickoff.
 
 ### Conversation Rounds
@@ -357,14 +357,15 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 ## Invariants
 
 1. Queue processing is serialized — at most one room is being processed at any time
-2. Agents run sequentially within a round so each sees prior responses
-3. Breakout loops run asynchronously (fire-and-forget via `Task.Run`) to not block the main conversation
-4. The planner always runs first if one exists
-5. PASS responses are never posted to the room
-6. Task assignment parsing requires both Agent and Title fields
-7. The orchestrator tolerates individual agent failures without aborting the round
-8. Non-planner agents can only create Bug tasks; other types become proposals
-9. Branch-backed tasks skip auto-review in favor of manual APPROVE_TASK/MERGE_TASK
+2. Queue dedupe prevents duplicate queued triggers for the same room or DM recipient at the same time
+3. Agents run sequentially within a round so each sees prior responses
+4. Breakout loops run asynchronously (fire-and-forget via `Task.Run`) to not block the main conversation
+5. The planner always runs first if one exists
+6. PASS responses are never posted to the room
+7. Task assignment parsing requires both Agent and Title fields
+8. The orchestrator tolerates individual agent failures without aborting the round
+9. Non-planner agents can only create Bug tasks; other types become proposals
+10. Branch-backed tasks skip auto-review in favor of manual APPROVE_TASK/MERGE_TASK
 
 ## Known Gaps
 
@@ -378,6 +379,7 @@ internal record ParsedReviewVerdict(string Verdict, List<string> Findings);
 
 | Date | Change | Task |
 |------|--------|------|
+| 2026-04-21 | Stabilization: room triggers now dedupe in `AgentOrchestrator` (`_queuedRooms`) so repeated `HandleHumanMessage(roomId)` calls do not flood the queue while one trigger is pending. `ReconstructQueueAsync()` now uses the same dedupe path. Added regression test `HandleHumanMessage_DeduplicatesSameRoomInQueue`. | stabilize-agent-orchestrator-room-dedupe |
 | 2026-04-18 | Spec sync — documented LRU ordering for the idle-agent fallback in the conversation round (`GetIdleAgentsInRoomAsync` orders candidates by `AgentLocation.UpdatedAt` ascending; ties preserve catalog order via stable sort). Reflects audit fix #105 preventing starvation when more than 3 idle agents share a room. | Anvil |
 | 2026-04-15 | Interface extraction sprint: extracted 16 new interface contracts across sprint services (`ISprintArtifactService`, `ISprintMetricsCalculator`, `ISprintScheduleService`), conversation services (`IConversationKickoffService`, `IConversationSessionQueryService`, `IConversationExportService`), utility services (`IRoomArtifactTracker`, `IArtifactEvaluatorService`, `IPlanService`), and infrastructure services (`ISearchService`, `ISystemSettingsService`, `IWorkspaceService`, `IInitializationService`, `IPhaseTransitionValidator`). All consumers migrated to interfaces. | interface-extraction-sprint |
 | 2026-04-15 | Extracted `IAgentTurnRunner` interface contract. Updated DI registration (concrete + forwarding), dependency tables for `ConversationRoundRunner` and `DirectMessageRouter` to show `IAgentTurnRunner`. | refactor/agent-turn-runner-contract |

@@ -310,6 +310,19 @@ public sealed class AgentOrchestratorBehaviorTests : IDisposable
     }
 
     [Fact]
+    public async Task HandleHumanMessage_DeduplicatesSameRoomInQueue()
+    {
+        _orchestrator.Stop();
+        await Task.Delay(50);
+
+        _orchestrator.HandleHumanMessage("room-1");
+        _orchestrator.HandleHumanMessage("room-1"); // duplicate
+        _orchestrator.HandleHumanMessage("room-1"); // duplicate
+
+        Assert.Equal(1, _orchestrator.QueueDepth);
+    }
+
+    [Fact]
     public async Task HandleDirectMessage_DeduplicatesSameAgentInQueue()
     {
         // Stop processing so items stay in queue for dedup check
