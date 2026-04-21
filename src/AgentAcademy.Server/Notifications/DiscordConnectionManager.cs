@@ -20,7 +20,7 @@ namespace AgentAcademy.Server.Notifications;
 /// <see cref="DisposeClientAsync"/> with their own lock.
 /// </para>
 /// </summary>
-public sealed class DiscordConnectionManager : IAsyncDisposable
+public sealed class DiscordConnectionManager : IDiscordConnectionManager
 {
     private readonly ILogger<DiscordConnectionManager> _logger;
 

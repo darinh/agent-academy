@@ -19,11 +19,12 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly DiscordInputHandler _inputHandler;
     private readonly DiscordMessageSender _sender;
     private readonly DiscordMessageRouter _router;
-    private readonly DiscordConnectionManager _connection;
+    private readonly IDiscordConnectionManager _connection;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
 
     private DiscordProviderConfig? _config;
     private bool _messageReceivedHooked;
+    private int _disposed;
 
     public DiscordNotificationProvider(
         ILogger<DiscordNotificationProvider> logger,
@@ -31,7 +32,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         DiscordInputHandler inputHandler,
         DiscordMessageSender sender,
         DiscordMessageRouter router,
-        DiscordConnectionManager connection)
+        IDiscordConnectionManager connection)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _channelManager = channelManager ?? throw new ArgumentNullException(nameof(channelManager));
@@ -77,6 +78,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// <inheritdoc />
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
         var config = _config
             ?? throw new InvalidOperationException("Discord provider must be configured before connecting. Call ConfigureAsync first.");
 
@@ -95,16 +98,36 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
 
             await _connection.ConnectAsync(config.BotToken, cancellationToken);
 
+            try
+            {
+                // Rebuild channel mapping from existing Discord state (survives restarts).
+                var guild = _connection.Client!.GetGuild(config.GuildId);
+                if (guild is not null)
+                    await _channelManager.RebuildAsync(guild);
+
+                // Attach inbound message router AFTER rebuild so channel mappings are ready.
+                _connection.Client.MessageReceived += _router.HandleMessageReceivedAsync;
+                _messageReceivedHooked = true;
+            }
+            catch (Exception ex)
+            {
+                // Post-connect init failed: the client is alive but the provider
+                // would be in an inconsistent state. Tear down so that a retry
+                // can reconnect cleanly and we don't leak the underlying client.
+                _logger.LogError(ex, "Discord provider post-connect initialization failed; tearing down client");
+                UnhookRouter();
+                try
+                {
+                    await _connection.DisposeClientAsync();
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogWarning(disposeEx, "Error disposing Discord client after failed post-connect init");
+                }
+                throw;
+            }
+
             _logger.LogInformation("Discord provider connected");
-
-            // Rebuild channel mapping from existing Discord state (survives restarts).
-            var guild = _connection.Client!.GetGuild(config.GuildId);
-            if (guild is not null)
-                await _channelManager.RebuildAsync(guild);
-
-            // Attach inbound message router AFTER rebuild so channel mappings are ready.
-            _connection.Client.MessageReceived += _router.HandleMessageReceivedAsync;
-            _messageReceivedHooked = true;
         }
         finally
         {
@@ -115,6 +138,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// <inheritdoc />
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
@@ -215,9 +240,29 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     /// <inheritdoc cref="IAsyncDisposable.DisposeAsync" />
     public async ValueTask DisposeAsync()
     {
-        UnhookRouter();
-        await _connection.DisposeClientAsync();
-        _connectLock.Dispose();
+        // Single-winner dispose gate. Interlocked.Exchange ensures exactly one
+        // caller proceeds to teardown; other concurrent callers return immediately
+        // without touching _connectLock. This prevents the ObjectDisposedException
+        // race where one thread could Dispose the semaphore while another was
+        // still waiting on or releasing it.
+        if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+
+        // Serialize with any in-flight ConnectAsync/DisconnectAsync so we don't
+        // tear down the client mid-connect and leave orphaned handlers.
+        await _connectLock.WaitAsync();
+        try
+        {
+            UnhookRouter();
+            await _connection.DisposeClientAsync();
+        }
+        finally
+        {
+            _connectLock.Release();
+            // Intentionally NOT disposing _connectLock. SemaphoreSlim only needs
+            // Dispose for its AvailableWaitHandle (unused here), and disposing
+            // it while other callers (e.g. a late ConnectAsync) may still race
+            // into WaitAsync/Release is precisely the bug we're avoiding.
+        }
     }
 
     /// <summary>
