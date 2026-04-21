@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using AgentAcademy.Forge;
 using AgentAcademy.Forge.Artifacts;
 using AgentAcademy.Forge.Models;
 using AgentAcademy.Forge.Schemas;
@@ -120,7 +121,7 @@ public sealed class ForgeController : ControllerBase
     [Authorize]
     public async Task<IActionResult> ResumeRun(string runId)
     {
-        if (!ForgeRunService.IsValidRunId(runId))
+        if (!ForgeIdentifiers.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
 
         if (!_options.ExecutionAvailable)
@@ -178,7 +179,7 @@ public sealed class ForgeController : ControllerBase
     [HttpGet("runs/{runId}")]
     public async Task<IActionResult> GetRun(string runId, CancellationToken ct)
     {
-        if (!ForgeRunService.IsValidRunId(runId))
+        if (!ForgeIdentifiers.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
 
         var trace = await _runStore.ReadRunAsync(runId, ct);
@@ -192,7 +193,7 @@ public sealed class ForgeController : ControllerBase
     [HttpGet("runs/{runId}/phases")]
     public async Task<IActionResult> GetRunPhases(string runId, CancellationToken ct)
     {
-        if (!ForgeRunService.IsValidRunId(runId))
+        if (!ForgeIdentifiers.IsValidRunId(runId))
             return BadRequest(new { error = "Invalid run ID format. Expected R_ + 26-char ULID." });
 
         var phases = await _runStore.ReadPhaseRunsRollupAsync(runId, ct);
@@ -206,7 +207,7 @@ public sealed class ForgeController : ControllerBase
     [HttpGet("artifacts/{hash}")]
     public async Task<IActionResult> GetArtifact(string hash, CancellationToken ct)
     {
-        var normalized = ForgeRunService.NormalizeArtifactHash(hash);
+        var normalized = ForgeIdentifiers.NormalizeArtifactHash(hash);
         if (normalized is null)
             return BadRequest(new { error = "Invalid artifact hash. Expected 64 hex chars, optionally prefixed with sha256:." });
 

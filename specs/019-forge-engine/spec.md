@@ -848,7 +848,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 
 ### Security
 
-- **Path traversal**: Run IDs validated against `R_[0-9A-HJKMNP-TV-Z]{26}` regex; artifact hashes validated as 64 hex chars (with optional `sha256:` prefix normalization)
+- **Path traversal**: Run IDs and artifact hashes are validated via shared `AgentAcademy.Forge.ForgeIdentifiers` helpers (`IsValidRunId`, `NormalizeArtifactHash`). Run IDs must match `R_[0-9A-HJKMNP-TV-Z]{26}`; artifact hashes must be 64 lowercase hex chars (with optional `sha256:` prefix normalization).
 - **Authentication**: Execution endpoints (`POST /api/forge/jobs`, `POST .../resume`, `PUT .../methodologies/{id}`) carry explicit `[Authorize]` attributes. Read-only GET endpoints are protected by the global `FallbackPolicy` (requires authenticated user when auth is enabled; see spec 015 §2). When auth is disabled (`AnyAuthEnabled = false`), neither middleware is registered and all endpoints are open — this is by design for single-user local development.
 - **Execution gating**: `ExecutionEnabled` controls whether execution endpoints and queueing are available; read-only endpoints remain available when disabled
 - **Methodology IDs**: Strict allowlist regex `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,98}[a-zA-Z0-9]$`; resolved paths validated against catalog root; atomic writes via unique temp files

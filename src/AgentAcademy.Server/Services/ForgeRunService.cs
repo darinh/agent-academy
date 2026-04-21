@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using AgentAcademy.Forge;
 using AgentAcademy.Forge.Execution;
@@ -35,12 +34,6 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
     };
-
-    /// <summary>Regex for valid run IDs: R_ + 26 Crockford Base32 chars.</summary>
-    private static readonly Regex RunIdPattern = new(@"^R_[0-9A-HJKMNP-TV-Z]{26}$", RegexOptions.Compiled);
-
-    /// <summary>Regex for valid artifact hashes: 64 hex chars, optionally prefixed with sha256:.</summary>
-    private static readonly Regex ArtifactHashPattern = new(@"^(sha256:)?[0-9a-f]{64}$", RegexOptions.Compiled);
 
     public ForgeRunService(
         PipelineRunner pipelineRunner,
@@ -149,22 +142,6 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
             .ToListAsync();
 
         return entities.Select(EntityToJob).ToList();
-    }
-
-    /// <summary>Validate a run ID format (R_ + ULID).</summary>
-    public static bool IsValidRunId(string? runId) =>
-        !string.IsNullOrEmpty(runId) && RunIdPattern.IsMatch(runId);
-
-    /// <summary>
-    /// Validate and normalize an artifact hash. Strips optional sha256: prefix.
-    /// Returns the raw 64-char hex hash, or null if invalid.
-    /// </summary>
-    public static string? NormalizeArtifactHash(string? hash)
-    {
-        if (string.IsNullOrEmpty(hash) || !ArtifactHashPattern.IsMatch(hash))
-            return null;
-
-        return hash.StartsWith("sha256:", StringComparison.Ordinal) ? hash[7..] : hash;
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AgentAcademy.Forge;
 using AgentAcademy.Forge.Artifacts;
 using AgentAcademy.Forge.Execution;
 using AgentAcademy.Forge.Llm;
@@ -387,14 +388,14 @@ public sealed class ForgeRunServiceTests : IDisposable
     [InlineData("R_short", false)]
     public void IsValidRunId_RejectsInvalid(string? runId, bool expected)
     {
-        Assert.Equal(expected, ForgeRunService.IsValidRunId(runId));
+        Assert.Equal(expected, ForgeIdentifiers.IsValidRunId(runId));
     }
 
     [Fact]
     public void IsValidRunId_AcceptsValidUlid()
     {
         var runId = "R_" + Ulid.NewUlid().ToString();
-        Assert.True(ForgeRunService.IsValidRunId(runId));
+        Assert.True(ForgeIdentifiers.IsValidRunId(runId));
     }
 
     // ── Artifact Hash Normalization ─────────────────────────────────────
@@ -407,14 +408,14 @@ public sealed class ForgeRunServiceTests : IDisposable
     [InlineData("../../traversal", null)]
     public void NormalizeArtifactHash_RejectsInvalid(string? hash, string? expected)
     {
-        Assert.Equal(expected, ForgeRunService.NormalizeArtifactHash(hash));
+        Assert.Equal(expected, ForgeIdentifiers.NormalizeArtifactHash(hash));
     }
 
     [Fact]
     public void NormalizeArtifactHash_AcceptsRawHex()
     {
         var hash = new string('a', 64);
-        Assert.Equal(hash, ForgeRunService.NormalizeArtifactHash(hash));
+        Assert.Equal(hash, ForgeIdentifiers.NormalizeArtifactHash(hash));
     }
 
     [Fact]
@@ -422,7 +423,7 @@ public sealed class ForgeRunServiceTests : IDisposable
     {
         var rawHash = new string('b', 64);
         var prefixed = "sha256:" + rawHash;
-        Assert.Equal(rawHash, ForgeRunService.NormalizeArtifactHash(prefixed));
+        Assert.Equal(rawHash, ForgeIdentifiers.NormalizeArtifactHash(prefixed));
     }
 
     // ── Job management ──────────────────────────────────────────────────
