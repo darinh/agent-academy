@@ -11,6 +11,7 @@ All changes to specifications are documented here.
 ### Fixed
 - **019-forge-engine §Job Queue**: `EntityToJob` now catches `JsonException` on malformed `TaskBriefJson`/`MethodologyJson` and returns fallback values instead of crashing the entire job listing. Tests updated to verify fallback behavior.
 - **007-agent-commands §Phase 4 Human Command API**: `RUN_FORGE` now executes through the async polling path in `CommandController` (`AsyncCommands` set includes `RUN_FORGE`), so `POST /api/commands/execute` returns `202 Accepted` with `status: "pending"` and transitions via polling like other async commands. Added controller tests covering Forge command metadata visibility and taskId propagation/audit through async execution.
+- **015-security-model §8.1 CORS**: `AddCoreInfrastructure` now treats `Cors:Origins` entries that are empty/whitespace as invalid and falls back to `http://localhost:5173` instead of registering an effectively empty origin list. Added regression tests for missing, blank, and explicitly configured origin arrays in `ServiceRegistrationWiringTests`.
 
 ### Added
 - **019-forge-engine §Security**: Auth on forge endpoints. Execution endpoints (`POST /api/forge/jobs`, `POST .../resume`, `PUT .../methodologies/{id}`) carry explicit `[Authorize]` attributes — unauthenticated requests get 401. Read-only GET endpoints protected by global `FallbackPolicy` (requires authenticated user when auth is enabled; open in dev mode when auth is disabled). Closes Integration Gap #2.

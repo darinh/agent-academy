@@ -1,8 +1,11 @@
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
+using AgentAcademy.Server.Startup;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -172,6 +175,59 @@ public sealed class ServiceRegistrationWiringTests
         // ActivityHubBroadcaster, ActivityNotificationBroadcaster, NotificationRestoreService,
         // CopilotAuthMonitorService, PullRequestSyncService, SprintTimeoutService, SprintSchedulerService
         Assert.Equal(7, hostedServiceRegistrations.Count);
+    }
+
+    [Fact]
+    public void AddCoreInfrastructure_uses_localhost_cors_origin_when_missing_or_empty()
+    {
+        var missingConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection()
+            .Build();
+        var servicesMissing = new ServiceCollection();
+        servicesMissing.AddCoreInfrastructure(missingConfig);
+        using var providerMissing = servicesMissing.BuildServiceProvider();
+        var missingCors = providerMissing.GetRequiredService<IOptions<CorsOptions>>().Value;
+        var missingPolicy = missingCors.GetPolicy(missingCors.DefaultPolicyName);
+        Assert.NotNull(missingPolicy);
+        Assert.Contains("http://localhost:5173", missingPolicy!.Origins);
+
+        var emptyConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Cors:Origins:0"] = ""
+            })
+            .Build();
+        var servicesEmpty = new ServiceCollection();
+        servicesEmpty.AddCoreInfrastructure(emptyConfig);
+        using var providerEmpty = servicesEmpty.BuildServiceProvider();
+        var emptyCors = providerEmpty.GetRequiredService<IOptions<CorsOptions>>().Value;
+        var emptyPolicy = emptyCors.GetPolicy(emptyCors.DefaultPolicyName);
+        Assert.NotNull(emptyPolicy);
+        Assert.Contains("http://localhost:5173", emptyPolicy!.Origins);
+    }
+
+    [Fact]
+    public void AddCoreInfrastructure_uses_configured_cors_origins()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Cors:Origins:0"] = "https://app.example.com",
+                ["Cors:Origins:1"] = "https://admin.example.com",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddCoreInfrastructure(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var corsOptions = provider.GetRequiredService<IOptions<CorsOptions>>().Value;
+        var policy = corsOptions.GetPolicy(corsOptions.DefaultPolicyName);
+
+        Assert.NotNull(policy);
+        Assert.Equal(2, policy!.Origins.Count);
+        Assert.Contains("https://app.example.com", policy.Origins);
+        Assert.Contains("https://admin.example.com", policy.Origins);
     }
 
     [Fact]
