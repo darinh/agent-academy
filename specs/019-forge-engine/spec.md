@@ -821,19 +821,19 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
-| `/api/forge/jobs` | POST | — | Start pipeline run (202 + job ID) |
-| `/api/forge/jobs` | GET | — | List all jobs |
-| `/api/forge/jobs/{jobId}` | GET | — | Get job status + run ID |
-| `/api/forge/runs` | GET | — | List completed runs from disk store |
-| `/api/forge/runs/{runId}` | GET | — | Get full run trace |
-| `/api/forge/runs/{runId}/phases` | GET | — | Get phase-level traces |
-| `/api/forge/runs/{runId}/resume` | POST | — | Resume crashed run (501 placeholder) |
-| `/api/forge/artifacts/{hash}` | GET | — | Get artifact by content hash |
-| `/api/forge/schemas` | GET | — | List registered schemas |
-| `/api/forge/status` | GET | — | Engine status + job counts |
-| `/api/forge/methodologies` | GET | — | List saved methodology templates |
-| `/api/forge/methodologies/{id}` | GET | — | Get a methodology by ID |
-| `/api/forge/methodologies/{id}` | PUT | — | Save/update a methodology template |
+| `/api/forge/jobs` | POST | `[Authorize]` | Start pipeline run (202 + job ID) |
+| `/api/forge/jobs` | GET | FallbackPolicy | List all jobs |
+| `/api/forge/jobs/{jobId}` | GET | FallbackPolicy | Get job status + run ID |
+| `/api/forge/runs` | GET | FallbackPolicy | List completed runs from disk store |
+| `/api/forge/runs/{runId}` | GET | FallbackPolicy | Get full run trace |
+| `/api/forge/runs/{runId}/phases` | GET | FallbackPolicy | Get phase-level traces |
+| `/api/forge/runs/{runId}/resume` | POST | `[Authorize]` | Resume crashed run (501 placeholder) |
+| `/api/forge/artifacts/{hash}` | GET | FallbackPolicy | Get artifact by content hash |
+| `/api/forge/schemas` | GET | FallbackPolicy | List registered schemas |
+| `/api/forge/status` | GET | FallbackPolicy | Engine status + job counts |
+| `/api/forge/methodologies` | GET | FallbackPolicy | List saved methodology templates |
+| `/api/forge/methodologies/{id}` | GET | FallbackPolicy | Get a methodology by ID |
+| `/api/forge/methodologies/{id}` | PUT | `[Authorize]` | Save/update a methodology template |
 
 ### Job Queue
 
@@ -847,6 +847,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 ### Security
 
 - **Path traversal**: Run IDs validated against `R_[0-9A-HJKMNP-TV-Z]{26}` regex; artifact hashes validated as 64 hex chars (with optional `sha256:` prefix normalization)
+- **Authentication**: Execution endpoints (`POST /api/forge/jobs`, `POST .../resume`, `PUT .../methodologies/{id}`) carry explicit `[Authorize]` attributes. Read-only GET endpoints are protected by the global `FallbackPolicy` (requires authenticated user when auth is enabled; see spec 015 §2). When auth is disabled (`AnyAuthEnabled = false`), neither middleware is registered and all endpoints are open — this is by design for single-user local development.
 - **Execution gating**: `UnavailableLlmClient` throws on `GenerateAsync`, preventing accidental execution when no API key is configured
 - **Methodology IDs**: Strict allowlist regex `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,98}[a-zA-Z0-9]$`; resolved paths validated against catalog root; atomic writes via unique temp files
 
@@ -881,7 +882,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 ### Known Integration Gaps
 
 1. **Jobs are not durable**: In-memory job store is lost on restart. A restart between 202 Accepted and execution start loses the job.
-2. **No authentication on forge endpoints**: Endpoints are unprotected. Should add `[Authorize]` with a dedicated policy for cost-incurring execution endpoints.
+2. ~~**No authentication on forge endpoints**~~: Resolved. Execution endpoints (`POST jobs`, `POST resume`, `PUT methodologies`) carry explicit `[Authorize]`. Read-only GET endpoints are protected by the global `FallbackPolicy` (authenticated when auth enabled, open when auth disabled). See Security section above.
 3. **No workspace scoping**: Forge runs are global, not scoped to a workspace/room. Multi-user deployments would expose cross-tenant data.
 4. **Resume not implemented**: `POST /api/forge/runs/{runId}/resume` returns 501.
 5. ~~**No agent commands**~~: Resolved. Agents can trigger forge runs via `RUN_FORGE`, check status via `FORGE_STATUS`, and list jobs via `LIST_FORGE_RUNS`. See spec 007 for command details. Handlers use `IForgeJobService` interface for testability. Path traversal and symlink protections applied to methodology file loading.
@@ -908,3 +909,4 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-21 | Server integration — REST API, job queue, DI wiring, path validation, conditional LLM, 35 tests, closes Known Gap #10 | `feat/forge-integration` |
 | 2026-04-21 | Start-run UI — New Run button, form with title/description/methodology JSON editor, 11 new tests, closes Integration Gap #7 | `develop` |
 | 2026-04-21 | Methodology catalog — disk-backed catalog, REST endpoints, UI selector with save-as-template, 26 new tests | `feat/methodology-browser` |
+| 2026-04-21 | Auth on forge endpoints — `[Authorize]` on execution endpoints (POST jobs, POST resume, PUT methodologies), read-only GET endpoints protected by FallbackPolicy, closes Integration Gap #2 | `feat/methodology-browser` |

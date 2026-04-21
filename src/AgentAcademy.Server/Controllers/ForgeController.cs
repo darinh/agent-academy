@@ -6,6 +6,7 @@ using AgentAcademy.Forge.Storage;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AgentAcademy.Server.Controllers;
@@ -47,6 +48,7 @@ public sealed class ForgeController : ControllerBase
     /// <summary>Start a new forge pipeline run.</summary>
     /// <returns>202 Accepted with job ID, or 503 if execution is unavailable.</returns>
     [HttpPost("jobs")]
+    [Authorize]
     public async Task<IActionResult> StartRun([FromBody] StartForgeRunRequest request)
     {
         if (!_options.ExecutionAvailable)
@@ -115,6 +117,7 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>Resume a crashed/failed forge run.</summary>
     [HttpPost("runs/{runId}/resume")]
+    [Authorize]
     public IActionResult ResumeRun(string runId)
     {
         if (!ForgeRunService.IsValidRunId(runId))
@@ -268,6 +271,7 @@ public sealed class ForgeController : ControllerBase
 
     /// <summary>Save or update a methodology template.</summary>
     [HttpPut("methodologies/{methodologyId}")]
+    [Authorize]
     public async Task<IActionResult> SaveMethodology(
         string methodologyId,
         [FromBody] MethodologyDefinition methodology,

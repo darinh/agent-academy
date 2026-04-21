@@ -35,7 +35,6 @@ import {
   startForgeRun,
   listMethodologies,
   getMethodology,
-  saveMethodology,
 } from "../api";
 
 const mockGetStatus = vi.mocked(getForgeStatus);
@@ -46,7 +45,6 @@ const mockGetPhases = vi.mocked(getForgeRunPhases);
 const mockStartRun = vi.mocked(startForgeRun);
 const mockListMethodologies = vi.mocked(listMethodologies);
 const mockGetMethodology = vi.mocked(getMethodology);
-const mockSaveMethodology = vi.mocked(saveMethodology);
 
 // ── Factories ──
 
