@@ -117,7 +117,9 @@
             "RETRY_FAILED_JOB",
             "VERIFY_SPEC_SECTION",
             "COMPARE_SPEC_TO_CODE",
-            "DETECT_ORPHANED_SECTIONS"
+            "DETECT_ORPHANED_SECTIONS",
+            "HANDOFF_SUMMARY",
+            "PLATFORM_STATUS"
           ],
           "Denied": []
         }
@@ -201,7 +203,9 @@
             "LIST_SYSTEM_SETTINGS",
             "VERIFY_SPEC_SECTION",
             "COMPARE_SPEC_TO_CODE",
-            "DETECT_ORPHANED_SECTIONS"
+            "DETECT_ORPHANED_SECTIONS",
+            "HANDOFF_SUMMARY",
+            "PLATFORM_STATUS"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -297,7 +301,9 @@
             "LIST_SYSTEM_SETTINGS",
             "VERIFY_SPEC_SECTION",
             "COMPARE_SPEC_TO_CODE",
-            "DETECT_ORPHANED_SECTIONS"
+            "DETECT_ORPHANED_SECTIONS",
+            "HANDOFF_SUMMARY",
+            "PLATFORM_STATUS"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -395,7 +401,9 @@
             "LIST_SYSTEM_SETTINGS",
             "VERIFY_SPEC_SECTION",
             "COMPARE_SPEC_TO_CODE",
-            "DETECT_ORPHANED_SECTIONS"
+            "DETECT_ORPHANED_SECTIONS",
+            "HANDOFF_SUMMARY",
+            "PLATFORM_STATUS"
           ],
           "Denied": [
             "APPROVE_TASK",
@@ -498,7 +506,9 @@
             "LIST_SYSTEM_SETTINGS",
             "VERIFY_SPEC_SECTION",
             "COMPARE_SPEC_TO_CODE",
-            "DETECT_ORPHANED_SECTIONS"
+            "DETECT_ORPHANED_SECTIONS",
+            "HANDOFF_SUMMARY",
+            "PLATFORM_STATUS"
           ],
           "Denied": [
             "RESTART_SERVER"
@@ -582,7 +592,9 @@
             "LIST_SYSTEM_SETTINGS",
             "VERIFY_SPEC_SECTION",
             "COMPARE_SPEC_TO_CODE",
-            "DETECT_ORPHANED_SECTIONS"
+            "DETECT_ORPHANED_SECTIONS",
+            "HANDOFF_SUMMARY",
+            "PLATFORM_STATUS"
           ],
           "Denied": [
             "APPROVE_TASK",

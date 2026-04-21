@@ -91,6 +91,13 @@ public sealed class ListCommandsHandler : ICommandHandler
         ["TRACE_REQUEST"] = "Trace events by correlation ID across activity log and command audit trail",
         ["LIST_SYSTEM_SETTINGS"] = "List all runtime system settings with current values and defaults",
         ["RETRY_FAILED_JOB"] = "Re-execute a previously failed retry-safe command from the audit trail (Planner/Human only)",
+        // Tier 3A — Spec Verification
+        ["VERIFY_SPEC_SECTION"] = "Verify that file paths and handler references in a spec section actually exist",
+        ["COMPARE_SPEC_TO_CODE"] = "Compare spec section claims against real code, reporting mismatches",
+        ["DETECT_ORPHANED_SECTIONS"] = "Scan spec sections for broken file references (orphaned paths)",
+        // Tier 3B — Context
+        ["HANDOFF_SUMMARY"] = "Generate a structured snapshot of your current state for handoff (tasks, location, memories)",
+        ["PLATFORM_STATUS"] = "Comprehensive platform status: server health, agents, tasks, sprint, connections",
     };
 
     public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
