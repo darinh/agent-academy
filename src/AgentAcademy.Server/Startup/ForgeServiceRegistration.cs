@@ -81,6 +81,7 @@ public static class ForgeServiceRegistration
             sp.GetRequiredService<AgentAcademy.Forge.Execution.PipelineRunner>(),
             sp.GetRequiredService<ForgeOptions>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<IActivityBroadcaster>(),
             sp.GetRequiredService<ILogger<ForgeRunService>>()));
         services.AddSingleton<IForgeJobService>(sp => sp.GetRequiredService<ForgeRunService>());
         services.AddHostedService(sp => sp.GetRequiredService<ForgeRunService>());

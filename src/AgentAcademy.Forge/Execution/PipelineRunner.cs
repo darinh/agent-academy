@@ -65,7 +65,8 @@ public sealed class PipelineRunner
     public async Task<RunTrace> ExecuteAsync(
         TaskBrief task,
         MethodologyDefinition methodology,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IProgress<ForgeProgressEvent>? progress = null)
     {
         // Validate that all models are priced when budget is set
         _costCalculator.ValidatePricingForBudget(methodology);
@@ -86,6 +87,7 @@ public sealed class PipelineRunner
         // Transition to Running
         runTrace = runTrace with { Outcome = "running" };
         await _runStore.WriteRunSnapshotAsync(runId, runTrace, ct);
+        progress?.Report(new ForgeProgressEvent { RunId = runId, Kind = ForgeProgressKind.RunStarted });
 
         // Step 1: Generate source-intent artifact (when fidelity is configured)
         ArtifactEnvelope? sourceIntentEnvelope = null;
@@ -118,7 +120,8 @@ public sealed class PipelineRunner
         // Step 2: Execute the pipeline phases (with source-intent injected into first phase inputs)
         var pipelineResult = await ExecutePipelinePhasesAsync(
             runId, task, methodology, runTrace, ct,
-            sourceIntentEnvelope: sourceIntentEnvelope);
+            sourceIntentEnvelope: sourceIntentEnvelope,
+            progress: progress);
         runTrace = pipelineResult.RunTrace;
         var phaseRunTraces = pipelineResult.PhaseRunTraces;
 
@@ -134,6 +137,12 @@ public sealed class PipelineRunner
             fidelityTokensIn += fidelityCheck.TokensIn;
             fidelityTokensOut += fidelityCheck.TokensOut;
             fidelityCost += fidelityCheck.Cost;
+            progress?.Report(new ForgeProgressEvent
+            {
+                RunId = runId, Kind = ForgeProgressKind.FidelityCompleted,
+                Passed = runTrace.FidelityOutcome == "passed",
+                Message = runTrace.FidelityOutcome
+            });
         }
 
         // Stamp fidelity token/cost totals
@@ -150,6 +159,11 @@ public sealed class PipelineRunner
         if (methodology.Control is not null && _controlExecutor is not null && runTrace.Outcome != "aborted")
         {
             runTrace = await RunControlArmAsync(runTrace, task, methodology, ct);
+            progress?.Report(new ForgeProgressEvent
+            {
+                RunId = runId, Kind = ForgeProgressKind.ControlCompleted,
+                Outcome = runTrace.ControlOutcome
+            });
         }
 
         // Stamp EndedAt after all post-pipeline steps
@@ -158,6 +172,14 @@ public sealed class PipelineRunner
         // Single finalize path: persist final state.
         var writeCt = runTrace.Outcome == "aborted" ? CancellationToken.None : ct;
         await WriteRunFinalState(runId, runTrace, phaseRunTraces, writeCt);
+
+        // Report terminal outcome
+        progress?.Report(new ForgeProgressEvent
+        {
+            RunId = runId,
+            Kind = runTrace.Outcome == "succeeded" ? ForgeProgressKind.RunCompleted : ForgeProgressKind.RunFailed,
+            Outcome = runTrace.Outcome
+        });
 
         if (runTrace.Outcome == "succeeded")
         {
@@ -191,7 +213,8 @@ public sealed class PipelineRunner
     /// <param name="runId">Run ID to resume.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Final run trace after resumption.</returns>
-    public async Task<RunTrace> ResumeAsync(string runId, CancellationToken ct = default)
+    public async Task<RunTrace> ResumeAsync(string runId, CancellationToken ct = default,
+        IProgress<ForgeProgressEvent>? progress = null)
     {
         // 1. Read the persisted run snapshot
         var runTrace = await _runStore.ReadRunAsync(runId, ct);
@@ -320,7 +343,8 @@ public sealed class PipelineRunner
             initialTokensIn: resumeState.AccumulatedTokensIn,
             initialTokensOut: resumeState.AccumulatedTokensOut,
             initialCost: resumeState.AccumulatedCost,
-            sourceIntentEnvelope: sourceIntentEnvelope);
+            sourceIntentEnvelope: sourceIntentEnvelope,
+            progress: progress);
 
         runTrace = pipelineResult.RunTrace;
         var phaseRunTraces = MergePhaseRunTraces(resumeState.PhaseRunTraces, pipelineResult.PhaseRunTraces);
@@ -359,7 +383,8 @@ public sealed class PipelineRunner
         int initialTokensIn = 0,
         int initialTokensOut = 0,
         decimal initialCost = 0m,
-        ArtifactEnvelope? sourceIntentEnvelope = null)
+        ArtifactEnvelope? sourceIntentEnvelope = null,
+        IProgress<ForgeProgressEvent>? progress = null)
     {
         var phaseRunTraces = new List<PhaseRunTrace>();
         var acceptedArtifacts = initialAcceptedArtifacts ?? new Dictionary<string, ArtifactEnvelope>();
@@ -381,11 +406,18 @@ public sealed class PipelineRunner
 
         var waves = BuildExecutionWaves(phases, availableArtifactIds, completedPhaseIds);
 
+        var waveIndex = 0;
         try
         {
             foreach (var wave in waves)
             {
                 ct.ThrowIfCancellationRequested();
+                waveIndex++;
+                progress?.Report(new ForgeProgressEvent
+                {
+                    RunId = runId, Kind = ForgeProgressKind.WaveStarted,
+                    Wave = waveIndex, Message = $"Wave {waveIndex}/{waves.Count} ({wave.Count} phases)"
+                });
 
                 // Pre-wave budget check
                 if (methodology.Budget.HasValue && totalCost >= methodology.Budget.Value)
@@ -434,6 +466,12 @@ public sealed class PipelineRunner
                     {
                         _logger.LogWarning("Pipeline run {RunId}: phase {PhaseId} failed after all attempts",
                             runId, waveResult.Phase.Id);
+                        progress?.Report(new ForgeProgressEvent
+                        {
+                            RunId = runId, Kind = ForgeProgressKind.PhaseFailed,
+                            PhaseId = waveResult.Phase.Id,
+                            Attempt = waveResult.ExecutorResult.PhaseRunTrace.Attempts.Count
+                        });
                         anyFailed = true;
                         continue;
                     }
@@ -454,6 +492,12 @@ public sealed class PipelineRunner
                     }
 
                     _logger.LogInformation("Pipeline run {RunId}: phase {PhaseId} succeeded", runId, waveResult.Phase.Id);
+                    progress?.Report(new ForgeProgressEvent
+                    {
+                        RunId = runId, Kind = ForgeProgressKind.PhaseCompleted,
+                        PhaseId = waveResult.Phase.Id,
+                        Attempt = waveResult.ExecutorResult.PhaseRunTrace.Attempts.Count
+                    });
                 }
 
                 if (anyFailed)

@@ -63,7 +63,7 @@ public sealed class ForgeControllerTests : IDisposable
 
         var pipelineRunner = CreatePipelineRunner();
         _runService = new ForgeRunService(
-            pipelineRunner, _options, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ForgeRunService>.Instance);
+            pipelineRunner, _options, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), new ActivityBroadcaster(), NullLogger<ForgeRunService>.Instance);
 
         _controller = new ForgeController(
             _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, _options);
@@ -600,6 +600,6 @@ public sealed class ForgeRunServiceTests : IDisposable
             costCalculator, TimeProvider.System,
             NullLogger<PipelineRunner>.Instance);
 
-        return new ForgeRunService(pipelineRunner, options, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ForgeRunService>.Instance);
+        return new ForgeRunService(pipelineRunner, options, _serviceProvider.GetRequiredService<IServiceScopeFactory>(), new ActivityBroadcaster(), NullLogger<ForgeRunService>.Instance);
     }
 }

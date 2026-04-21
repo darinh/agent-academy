@@ -8,6 +8,8 @@ using AgentAcademy.Forge.Models;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services.Contracts;
+using AgentAcademy.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Services;
@@ -23,6 +25,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
     private readonly PipelineRunner _pipelineRunner;
     private readonly ForgeOptions _options;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IActivityBroadcaster _activityBus;
     private readonly ILogger<ForgeRunService> _logger;
     private readonly ConcurrentDictionary<string, ForgeJob> _activeJobs = new();
     private readonly Channel<string> _queue = Channel.CreateBounded<string>(100);
@@ -43,11 +46,13 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         PipelineRunner pipelineRunner,
         ForgeOptions options,
         IServiceScopeFactory scopeFactory,
+        IActivityBroadcaster activityBus,
         ILogger<ForgeRunService> logger)
     {
         _pipelineRunner = pipelineRunner;
         _options = options;
         _scopeFactory = scopeFactory;
+        _activityBus = activityBus;
         _logger = logger;
     }
 
@@ -83,6 +88,7 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
         }
 
         _logger.LogInformation("Forge job {JobId} queued for task {TaskId}", job.JobId, task.TaskId);
+        BroadcastForgeEvent(ActivityEventType.ForgeJobQueued, job.JobId, $"Forge job queued: {task.Title}");
         return job;
     }
 
@@ -221,12 +227,15 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
                 job.Status = ForgeJobStatus.Running;
                 job.StartedAt = DateTime.UtcNow;
                 await UpdateJobStatusAsync(job);
+                BroadcastForgeEvent(ActivityEventType.ForgeJobStarted, job.JobId,
+                    $"Forge job started: {job.TaskBrief.Title}");
 
                 _logger.LogInformation("Forge job {JobId} starting execution for task {TaskId}",
                     job.JobId, job.TaskBrief.TaskId);
 
+                var progress = new Progress<ForgeProgressEvent>(evt => OnForgeProgress(job.JobId, evt));
                 var result = await _pipelineRunner.ExecuteAsync(
-                    job.TaskBrief, job.Methodology, stoppingToken);
+                    job.TaskBrief, job.Methodology, stoppingToken, progress);
 
                 job.RunId = result.RunId;
                 job.Status = result.Outcome == "succeeded"
@@ -237,6 +246,13 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
 
                 await UpdateJobStatusAsync(job);
                 _activeJobs.TryRemove(jobId, out _);
+
+                var eventType = result.Outcome == "succeeded"
+                    ? ActivityEventType.ForgeJobCompleted
+                    : ActivityEventType.ForgeJobFailed;
+                BroadcastForgeEvent(eventType, job.JobId,
+                    $"Forge job {result.Outcome}: {job.TaskBrief.Title}",
+                    new Dictionary<string, object?> { ["runId"] = result.RunId, ["outcome"] = result.Outcome });
 
                 _logger.LogInformation(
                     "Forge job {JobId} completed with outcome {Outcome}, runId {RunId}",
@@ -364,6 +380,51 @@ public sealed class ForgeRunService : BackgroundService, IForgeJobService
             StartedAt = entity.StartedAt,
             CompletedAt = entity.CompletedAt
         };
+    }
+
+    private void OnForgeProgress(string jobId, ForgeProgressEvent evt)
+    {
+        var (eventType, message) = evt.Kind switch
+        {
+            ForgeProgressKind.WaveStarted => (ActivityEventType.ForgePhaseStarted, evt.Message ?? "Wave started"),
+            ForgeProgressKind.PhaseCompleted => (ActivityEventType.ForgePhaseCompleted, $"Phase {evt.PhaseId} completed"),
+            ForgeProgressKind.PhaseFailed => (ActivityEventType.ForgePhaseFailed, $"Phase {evt.PhaseId} failed"),
+            ForgeProgressKind.PhaseStarted => (ActivityEventType.ForgePhaseStarted, $"Phase {evt.PhaseId} started"),
+            _ => (default(ActivityEventType?), (string?)null)
+        };
+
+        if (eventType is null) return;
+
+        var metadata = new Dictionary<string, object?>
+        {
+            ["jobId"] = jobId,
+            ["runId"] = evt.RunId,
+            ["phaseId"] = evt.PhaseId,
+            ["wave"] = evt.Wave,
+            ["kind"] = evt.Kind.ToString()
+        };
+
+        BroadcastForgeEvent(eventType.Value, jobId, message!, metadata);
+    }
+
+    private void BroadcastForgeEvent(ActivityEventType type, string jobId, string message,
+        Dictionary<string, object?>? metadata = null)
+    {
+        metadata ??= new Dictionary<string, object?>();
+        metadata["jobId"] = jobId;
+
+        _activityBus.Broadcast(new ActivityEvent(
+            Id: Guid.NewGuid().ToString("N"),
+            Type: type,
+            Severity: ActivitySeverity.Info,
+            RoomId: null,
+            ActorId: null,
+            TaskId: null,
+            Message: message,
+            CorrelationId: jobId,
+            OccurredAt: DateTime.UtcNow,
+            Metadata: metadata
+        ));
     }
 }
 

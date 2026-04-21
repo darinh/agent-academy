@@ -449,6 +449,7 @@ public sealed class ForgeRunServiceEdgeCaseTests : IDisposable
         return new ForgeRunService(
             pipelineRunner, options,
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new ActivityBroadcaster(),
             NullLogger<ForgeRunService>.Instance);
     }
 }

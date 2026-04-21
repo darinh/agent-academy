@@ -114,6 +114,7 @@ function AppShell() {
     memoryVersion,
     artifactVersion,
     goalCardVersion,
+    forgeVersion,
     err,
     busy,
     tab,
@@ -457,6 +458,7 @@ function AppShell() {
                 memoryVersion={memoryVersion}
                 artifactVersion={artifactVersion}
                 goalCardVersion={goalCardVersion}
+                forgeVersion={forgeVersion}
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}
