@@ -33,6 +33,8 @@ vi.mock("../ArtifactsPanel", () => ({
     />
   ),
 }));
+vi.mock("../GoalCardPanel", () => ({ default: () => <div data-testid="goal-card-panel" /> }));
+vi.mock("../ForgePanel", () => ({ default: () => <div data-testid="forge-panel" /> }));
 vi.mock("../ChunkErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <div data-testid="error-boundary">{children}</div>,
 }));
@@ -202,6 +204,16 @@ describe("WorkspaceContent", () => {
   it("renders RetrospectivePanel when tab is 'retrospectives'", async () => {
     renderContent({ tab: "retrospectives" });
     expect(await screen.findByTestId("retrospective-panel")).toBeInTheDocument();
+  });
+
+  it("renders GoalCardPanel when tab is 'goalCards'", async () => {
+    renderContent({ tab: "goalCards" });
+    expect(await screen.findByTestId("goal-card-panel")).toBeInTheDocument();
+  });
+
+  it("renders ForgePanel when tab is 'forge'", async () => {
+    renderContent({ tab: "forge" });
+    expect(await screen.findByTestId("forge-panel")).toBeInTheDocument();
   });
 
   it("does not render any known panel for unknown tab", async () => {

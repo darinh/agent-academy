@@ -46,7 +46,7 @@ const SIDEBAR_STORAGE_KEY = "aa-sidebar-open";
 const SIDEBAR_PIN_KEY = "aa-sidebar-pinned";
 const NARROW_VIEWPORT_PX = 900;
 
-const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts", "goalCards"]);
+const VALID_TABS = new Set(["chat", "tasks", "plan", "commands", "timeline", "dashboard", "overview", "directMessages", "search", "sprint", "memories", "digests", "retrospectives", "artifacts", "goalCards", "forge"]);
 
 function loadTab(): string {
   try {

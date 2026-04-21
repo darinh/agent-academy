@@ -26,6 +26,7 @@ const ActivityFeedPanel = lazy(() => import("./ActivityFeedPanel"));
 const SpecSearchPanel = lazy(() => import("./SpecSearchPanel"));
 const AgentKnowledgePanel = lazy(() => import("./AgentKnowledgePanel"));
 const GoalCardPanel = lazy(() => import("./GoalCardPanel"));
+const ForgePanel = lazy(() => import("./ForgePanel"));
 
 export interface WorkspaceContentProps {
   tab: string;
@@ -168,6 +169,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
               onNavigateToTask={props.onNavigateToTask}
             />
           )}
+          {tab === "forge" && <ForgePanel />}
         </section>
       </Suspense>
     </ChunkErrorBoundary>

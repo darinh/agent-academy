@@ -21,3 +21,4 @@ export * from "./memories";
 export * from "./digests";
 export * from "./retrospectives";
 export * from "./goalCards";
+export * from "./forge";

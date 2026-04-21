@@ -488,6 +488,7 @@ describe("SidebarPanel", () => {
       expect(screen.getByText("Sprint")).toBeInTheDocument();
       expect(screen.getByText("Metrics")).toBeInTheDocument();
       expect(screen.getByText("Commands")).toBeInTheDocument();
+      expect(screen.getByText("Forge")).toBeInTheDocument();
     });
 
     it("calls onViewChange when a nav item is clicked", async () => {
