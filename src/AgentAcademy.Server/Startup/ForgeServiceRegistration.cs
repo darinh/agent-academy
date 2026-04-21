@@ -1,8 +1,11 @@
 using System.Net.Http.Headers;
+using System.Text.Json;
 using AgentAcademy.Forge;
 using AgentAcademy.Forge.Llm;
+using AgentAcademy.Forge.Models;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Startup;
 
@@ -40,6 +43,13 @@ public static class ForgeServiceRegistration
 
         Directory.CreateDirectory(runsDir);
 
+        // Resolve methodologies directory relative to content root
+        var methodologiesDir = Path.IsPathRooted(options.MethodologiesDirectory)
+            ? options.MethodologiesDirectory
+            : Path.Combine(environment.ContentRootPath, options.MethodologiesDirectory);
+
+        Directory.CreateDirectory(methodologiesDir);
+
         services.AddSingleton(options);
 
         // TimeProvider is required by PipelineRunner
@@ -71,7 +81,99 @@ public static class ForgeServiceRegistration
         services.AddSingleton<IForgeJobService>(sp => sp.GetRequiredService<ForgeRunService>());
         services.AddHostedService(sp => sp.GetRequiredService<ForgeRunService>());
 
+        // Methodology catalog
+        services.AddSingleton<IMethodologyCatalog>(sp =>
+            new DiskMethodologyCatalog(
+                methodologiesDir,
+                sp.GetRequiredService<ILogger<DiskMethodologyCatalog>>()));
+
         return services;
+    }
+
+    /// <summary>
+    /// Seed the default methodology into the catalog if it doesn't already exist.
+    /// Called during app initialization.
+    /// </summary>
+    public static async Task SeedDefaultMethodologyAsync(this WebApplication app)
+    {
+        var options = app.Services.GetRequiredService<ForgeOptions>();
+        if (!options.Enabled)
+            return;
+
+        var catalog = app.Services.GetRequiredService<IMethodologyCatalog>();
+        if (catalog is not DiskMethodologyCatalog diskCatalog)
+            return;
+
+        var defaultMethodology = LoadDefaultMethodology();
+        if (defaultMethodology is not null)
+        {
+            await diskCatalog.SeedAsync(defaultMethodology);
+        }
+    }
+
+    private static MethodologyDefinition? LoadDefaultMethodology()
+    {
+        try
+        {
+            return new MethodologyDefinition
+            {
+                Id = "spike-default-v1",
+                Description = "Five-phase software engineering pipeline",
+                MaxAttemptsDefault = 3,
+                ModelDefaults = new ModelDefaults
+                {
+                    Generation = "gpt-4o",
+                    Judge = "gpt-4o-mini"
+                },
+                Phases =
+                [
+                    new PhaseDefinition
+                    {
+                        Id = "requirements",
+                        Goal = "Decompose the task brief into testable functional and non-functional requirements.",
+                        Inputs = [],
+                        OutputSchema = "requirements/v1",
+                        Instructions = "Read the task brief carefully. Produce a complete requirements artifact. Make assumptions explicit in open_questions[].assumed_answer rather than refusing."
+                    },
+                    new PhaseDefinition
+                    {
+                        Id = "contract",
+                        Goal = "Define the external interface the implementation must satisfy.",
+                        Inputs = ["requirements"],
+                        OutputSchema = "contract/v1",
+                        Instructions = "Treat the requirements as ground truth. Every must-priority FR must be satisfied by at least one interface. Provide concrete signatures."
+                    },
+                    new PhaseDefinition
+                    {
+                        Id = "function_design",
+                        Goal = "Decompose the contract into internal components, responsibilities, and data flow.",
+                        Inputs = ["requirements", "contract"],
+                        OutputSchema = "function_design/v1",
+                        Instructions = "Produce a DAG of components. Each component must have a single, narrow responsibility. Do not write code — only structural design."
+                    },
+                    new PhaseDefinition
+                    {
+                        Id = "implementation",
+                        Goal = "Produce the file contents that realize the function design.",
+                        Inputs = ["contract", "function_design"],
+                        OutputSchema = "implementation/v1",
+                        Instructions = "Output complete, runnable file contents — no placeholders, no TODOs. Use the contract signatures verbatim."
+                    },
+                    new PhaseDefinition
+                    {
+                        Id = "review",
+                        Goal = "Adversarially review the implementation against requirements, contract, and design.",
+                        Inputs = ["requirements", "contract", "function_design", "implementation"],
+                        OutputSchema = "review/v1",
+                        Instructions = "Adopt an adversarial stance: assume the implementation is wrong until proven otherwise. Surface every defect."
+                    }
+                ]
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 

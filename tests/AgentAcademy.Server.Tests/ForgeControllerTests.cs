@@ -8,6 +8,7 @@ using AgentAcademy.Forge.Storage;
 using AgentAcademy.Server.Config;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,6 +22,7 @@ public sealed class ForgeControllerTests : IDisposable
     private readonly IRunStore _runStore;
     private readonly IArtifactStore _artifactStore;
     private readonly SchemaRegistry _schemaRegistry;
+    private readonly IMethodologyCatalog _methodologyCatalog;
     private readonly ForgeOptions _options;
     private readonly ForgeController _controller;
 
@@ -36,13 +38,16 @@ public sealed class ForgeControllerTests : IDisposable
             Path.Combine(_tempDir, "artifacts"),
             NullLogger<DiskArtifactStore>.Instance);
         _schemaRegistry = new SchemaRegistry();
+        _methodologyCatalog = new DiskMethodologyCatalog(
+            Path.Combine(_tempDir, "methodologies"),
+            NullLogger<DiskMethodologyCatalog>.Instance);
 
         var pipelineRunner = CreatePipelineRunner();
         _runService = new ForgeRunService(
             pipelineRunner, _options, NullLogger<ForgeRunService>.Instance);
 
         _controller = new ForgeController(
-            _runService, _runStore, _artifactStore, _schemaRegistry, _options);
+            _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, _options);
     }
 
     public void Dispose()
@@ -108,7 +113,7 @@ public sealed class ForgeControllerTests : IDisposable
     {
         var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
         var controller = new ForgeController(
-            _runService, _runStore, _artifactStore, _schemaRegistry, noKeyOptions);
+            _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
         var result = controller.GetStatus();
 
@@ -157,7 +162,7 @@ public sealed class ForgeControllerTests : IDisposable
     {
         var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
         var controller = new ForgeController(
-            _runService, _runStore, _artifactStore, _schemaRegistry, noKeyOptions);
+            _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
         var request = new StartForgeRunRequest
         {
@@ -302,7 +307,7 @@ public sealed class ForgeControllerTests : IDisposable
     {
         var noKeyOptions = new ForgeOptions { Enabled = true, OpenAiApiKey = "" };
         var controller = new ForgeController(
-            _runService, _runStore, _artifactStore, _schemaRegistry, noKeyOptions);
+            _runService, _runStore, _artifactStore, _schemaRegistry, _methodologyCatalog, noKeyOptions);
 
         var runId = "R_" + Ulid.NewUlid().ToString();
         var result = controller.ResumeRun(runId);
