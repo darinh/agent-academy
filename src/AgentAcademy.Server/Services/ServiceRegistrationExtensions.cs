@@ -109,6 +109,9 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<ArtifactEvaluatorService>();
         services.AddScoped<IArtifactEvaluatorService>(sp => sp.GetRequiredService<ArtifactEvaluatorService>());
 
+        // Human command audit persistence (used by CommandController)
+        services.AddSingleton<HumanCommandAuditor>();
+
         return services;
     }
 }

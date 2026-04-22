@@ -1,12 +1,9 @@
-using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using AgentAcademy.Server.Auth;
 using AgentAcademy.Server.Commands;
-using AgentAcademy.Server.Data;
-using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace AgentAcademy.Server.Controllers;
 
@@ -21,7 +18,6 @@ public sealed class CommandController : ControllerBase
     private const string HumanAgentId = "human";
     private const string HumanAgentName = "Human";
     private const string HumanAgentRole = "Human";
-    private const string HumanUiSource = "human-ui";
     private const string PendingAuditStatus = "Pending";
 
     private static readonly HashSet<string> AllowedCommands = new(StringComparer.OrdinalIgnoreCase)
@@ -97,17 +93,20 @@ public sealed class CommandController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CommandController> _logger;
     private readonly AppAuthSetup _authSetup;
+    private readonly HumanCommandAuditor _auditor;
 
     public CommandController(
         IEnumerable<ICommandHandler> handlers,
         IServiceScopeFactory scopeFactory,
         ILogger<CommandController> logger,
-        AppAuthSetup authSetup)
+        AppAuthSetup authSetup,
+        HumanCommandAuditor auditor)
     {
         _handlers = handlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
         _scopeFactory = scopeFactory;
         _logger = logger;
         _authSetup = authSetup;
+        _auditor = auditor;
     }
 
     /// <summary>
@@ -187,14 +186,14 @@ public sealed class CommandController : ControllerBase
                 ExecutedBy: HumanAgentId);
 
             // Audit the confirmation-required attempt for traceability
-            await CreateConfirmationAuditAsync(commandName, normalizedArgs, correlationId);
+            await _auditor.CreateConfirmationRequiredAsync(commandName, normalizedArgs, correlationId);
 
             return Ok(response);
         }
 
         if (AsyncCommands.Contains(commandName))
         {
-            await CreatePendingAuditAsync(commandName, normalizedArgs, correlationId);
+            await _auditor.CreatePendingAsync(commandName, normalizedArgs, correlationId);
 
             _ = Task.Run(() => ExecuteAsyncCommandAsync(commandName, normalizedArgs, correlationId, handler));
 
@@ -210,7 +209,7 @@ public sealed class CommandController : ControllerBase
         }
 
         var envelope = await ExecuteHandlerAsync(commandName, normalizedArgs, correlationId, handler);
-        await CreateCompletedAuditAsync(envelope);
+        await _auditor.CreateCompletedAsync(envelope);
         return Ok(ToResponse(envelope));
     }
 
@@ -223,12 +222,7 @@ public sealed class CommandController : ControllerBase
         if (_authSetup.AnyAuthEnabled && User.Identity?.IsAuthenticated != true)
             return Unauthorized(ApiProblem.Unauthorized("Authentication is required.", "not_authenticated"));
 
-        var audit = await WithDbContextAsync(db => db.CommandAudits
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a =>
-                a.CorrelationId == correlationId &&
-                a.AgentId == HumanAgentId &&
-                a.Source == HumanUiSource));
+        var audit = await _auditor.GetByCorrelationIdAsync(correlationId);
 
         if (audit is null)
         {
@@ -252,7 +246,7 @@ public sealed class CommandController : ControllerBase
 
         try
         {
-            await UpdateAuditAsync(envelope);
+            await _auditor.UpdateAsync(envelope);
         }
         catch (Exception ex)
         {
@@ -302,115 +296,6 @@ public sealed class CommandController : ControllerBase
         }
     }
 
-    private async Task CreatePendingAuditAsync(
-        string commandName,
-        Dictionary<string, object?> args,
-        string correlationId)
-    {
-        await WithDbContextAsync(db =>
-        {
-            db.CommandAudits.Add(new CommandAuditEntity
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                CorrelationId = correlationId,
-                AgentId = HumanAgentId,
-                Source = HumanUiSource,
-                Command = commandName,
-                ArgsJson = JsonSerializer.Serialize(args),
-                Status = PendingAuditStatus,
-                Timestamp = DateTime.UtcNow
-            });
-            return Task.CompletedTask;
-        });
-    }
-
-    private async Task CreateCompletedAuditAsync(CommandEnvelope envelope)
-    {
-        await WithDbContextAsync(db =>
-        {
-            db.CommandAudits.Add(CreateAuditEntity(envelope));
-            return Task.CompletedTask;
-        });
-    }
-
-    private async Task CreateConfirmationAuditAsync(
-        string commandName,
-        Dictionary<string, object?> args,
-        string correlationId)
-    {
-        await WithDbContextAsync(db =>
-        {
-            db.CommandAudits.Add(new CommandAuditEntity
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                CorrelationId = correlationId,
-                AgentId = HumanAgentId,
-                Source = HumanUiSource,
-                Command = commandName,
-                ArgsJson = JsonSerializer.Serialize(args),
-                Status = nameof(CommandStatus.Denied),
-                ErrorCode = CommandErrorCode.ConfirmationRequired,
-                ErrorMessage = "Confirmation required for destructive command",
-                Timestamp = DateTime.UtcNow
-            });
-            return Task.CompletedTask;
-        });
-    }
-
-    private async Task UpdateAuditAsync(CommandEnvelope envelope)
-    {
-        await WithDbContextAsync(async db =>
-        {
-            var audit = await db.CommandAudits.FirstOrDefaultAsync(a =>
-                a.CorrelationId == envelope.CorrelationId &&
-                a.AgentId == HumanAgentId &&
-                a.Source == HumanUiSource);
-
-            if (audit is null)
-            {
-                db.CommandAudits.Add(CreateAuditEntity(envelope));
-                return;
-            }
-
-            audit.Status = envelope.Status.ToString();
-            audit.ResultJson = envelope.Result is null ? null : JsonSerializer.Serialize(envelope.Result);
-            audit.ErrorMessage = envelope.Error;
-            audit.ErrorCode = envelope.ErrorCode;
-            audit.Timestamp = envelope.Timestamp;
-        });
-    }
-
-    private async Task<T> WithDbContextAsync<T>(Func<AgentAcademyDbContext, Task<T>> work)
-    {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        return await work(db);
-    }
-
-    private async Task WithDbContextAsync(Func<AgentAcademyDbContext, Task> work)
-    {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
-        await work(db);
-        await db.SaveChangesAsync();
-    }
-
-    private static CommandAuditEntity CreateAuditEntity(CommandEnvelope envelope)
-        => new()
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            CorrelationId = envelope.CorrelationId,
-            AgentId = HumanAgentId,
-            Source = HumanUiSource,
-            Command = envelope.Command,
-            ArgsJson = JsonSerializer.Serialize(envelope.Args),
-            Status = envelope.Status.ToString(),
-            ResultJson = envelope.Result is null ? null : JsonSerializer.Serialize(envelope.Result),
-            ErrorMessage = envelope.Error,
-            ErrorCode = envelope.ErrorCode,
-            Timestamp = envelope.Timestamp
-        };
-
     private static ExecuteCommandResponse ToResponse(CommandEnvelope envelope)
         => new(
             Command: envelope.Command,
@@ -422,7 +307,7 @@ public sealed class CommandController : ControllerBase
             Timestamp: envelope.Timestamp,
             ExecutedBy: envelope.ExecutedBy);
 
-    private static ExecuteCommandResponse ToResponse(CommandAuditEntity audit)
+    private static ExecuteCommandResponse ToResponse(Data.Entities.CommandAuditEntity audit)
         => new(
             Command: audit.Command,
             Status: MapAuditStatus(audit.Status),
@@ -477,42 +362,3 @@ public sealed class CommandController : ControllerBase
         };
 
 }
-
-public sealed record ExecuteCommandRequest(
-    [Required, MinLength(1), StringLength(10_000)] string Command,
-    Dictionary<string, JsonElement>? Args);
-
-public sealed record ExecuteCommandResponse(
-    string Command,
-    string Status,
-    object? Result,
-    string? Error,
-    string? ErrorCode,
-    string CorrelationId,
-    DateTime Timestamp,
-    string ExecutedBy);
-
-public sealed record AuditLogEntry(
-    string Id,
-    string CorrelationId,
-    string AgentId,
-    string? Source,
-    string Command,
-    string Status,
-    string? ErrorMessage,
-    string? ErrorCode,
-    string? RoomId,
-    DateTime Timestamp);
-
-public sealed record AuditLogResponse(
-    List<AuditLogEntry> Records,
-    int Total,
-    int Limit,
-    int Offset);
-
-public sealed record AuditStatsResponse(
-    int TotalCommands,
-    Dictionary<string, int> ByStatus,
-    Dictionary<string, int> ByAgent,
-    Dictionary<string, int> ByCommand,
-    int? WindowHours);

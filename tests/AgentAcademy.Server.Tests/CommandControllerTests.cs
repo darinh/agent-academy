@@ -5,6 +5,7 @@ using AgentAcademy.Server.Commands;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
+using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -79,11 +80,13 @@ public sealed class CommandControllerTests : IDisposable
     public async Task Execute_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
     {
         var handler = new CapturingHandler("LIST_ROOMS");
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var controller = new CommandController(
             new[] { handler },
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory,
             NullLogger<CommandController>.Instance,
-            new AppAuthSetup(false, false, "http://localhost:5173"));
+            new AppAuthSetup(false, false, "http://localhost:5173"),
+            new HumanCommandAuditor(scopeFactory));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
@@ -253,11 +256,13 @@ public sealed class CommandControllerTests : IDisposable
     public void GetMetadata_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
     {
         var handler = new CapturingHandler("LIST_ROOMS");
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var controller = new CommandController(
             new[] { (ICommandHandler)handler },
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory,
             NullLogger<CommandController>.Instance,
-            new AppAuthSetup(false, false, "http://localhost:5173"));
+            new AppAuthSetup(false, false, "http://localhost:5173"),
+            new HumanCommandAuditor(scopeFactory));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
@@ -272,11 +277,13 @@ public sealed class CommandControllerTests : IDisposable
     public async Task GetStatus_Unauthenticated_WhenAuthDisabled_AllowsAnonymous()
     {
         var handler = new CapturingHandler("LIST_ROOMS");
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var controller = new CommandController(
             new[] { (ICommandHandler)handler },
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory,
             NullLogger<CommandController>.Instance,
-            new AppAuthSetup(false, false, "http://localhost:5173"));
+            new AppAuthSetup(false, false, "http://localhost:5173"),
+            new HumanCommandAuditor(scopeFactory));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
@@ -640,11 +647,13 @@ public sealed class CommandControllerTests : IDisposable
 
     private CommandController CreateController(IEnumerable<ICommandHandler> handlers, bool authenticated = true)
     {
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var controller = new CommandController(
             handlers,
-            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            scopeFactory,
             NullLogger<CommandController>.Instance,
-            new AppAuthSetup(true, false, "http://localhost:5173"));
+            new AppAuthSetup(true, false, "http://localhost:5173"),
+            new HumanCommandAuditor(scopeFactory));
 
         controller.ControllerContext = new ControllerContext
         {
