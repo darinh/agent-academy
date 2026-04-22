@@ -63,6 +63,7 @@ Defines the standalone pipeline engine that transforms a task brief into validat
 | `SemanticValidator` | `Validation` | LLM-judge (configurable, default gpt-4o-mini) grades artifact against semantic rules |
 | `CrossArtifactValidator` | `Validation` | Reference integrity across artifact boundaries (pure code, no LLM) |
 | `AttemptResponseParser` | `Validation` | Parses LLM JSON response, extracts `body` field, wraps into `ArtifactEnvelope` |
+| `LlmJsonExtractor` | `Validation` | Strips markdown code fences and leading prose preambles from LLM responses before JSON parsing |
 | `IArtifactStore` | `Artifacts` | Content-addressed artifact storage (write, read, verify by SHA-256 hash) |
 | `DiskArtifactStore` | `Artifacts` | Disk implementation with hash-sharded directories, atomic writes, collision detection |
 | `CanonicalJson` | `Artifacts` | Deterministic JSON serialization (sorted keys, stable formatting) for content hashing |
@@ -192,7 +193,7 @@ judge_model = phase.JudgeModel ?? methodology.ModelDefaults?.Judge ?? "gpt-4o-mi
 
 The engine tracks LLM usage costs at per-attempt, per-phase, and per-run granularity. Cost calculation covers both generation and semantic judge calls.
 
-**Pricing** (`CostCalculator`): Maps model IDs to USD per million tokens (input and output). Ships with default prices for common OpenAI models. Case-insensitive lookup. Unknown models return $0 cost (but see budget enforcement below).
+**Pricing** (`CostCalculator`): Maps model IDs to USD per million tokens (input and output). Ships with default prices for common OpenAI and Anthropic Claude models. Case-insensitive lookup. Unknown models return $0 cost (but see budget enforcement below).
 
 **Per-attempt cost**: Each `AttemptTrace` includes:
 - `tokens` / `model` — generation call usage (existing)
@@ -920,3 +921,5 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-21 | Server integration refactor — extracted forge activity-event mapping/broadcasting into `ForgeActivityEventAdapter` with no API/event behavior change | `fix/forge-copilot-sdk-auth-alignment` |
 | 2026-04-22 | Fix 4 forge pipeline bugs — CopilotSdkLlmClient OnPermissionRequest, deprecated model auto-reseed, LlmJsonExtractor code fence stripping, SemanticValidator input artifact plumbing | `fix/forge-pipeline-bugs` (PR #122) |
 | 2026-04-22 | Spec sync — document auto-reseed behavior on deprecated models, input artifacts in semantic validator prompt | `stabilize/session-20260422` |
+| 2026-04-22 | Add Claude model pricing to CostCalculator, tighten LlmJsonExtractor prose stripping | `develop` (PR #124) |
+| 2026-04-22 | Spec sync — add LlmJsonExtractor to component table, update pricing description to include Anthropic Claude models | `develop` |
