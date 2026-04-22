@@ -62,7 +62,7 @@ App.tsx (FluentProvider + AppShell)
                 ├── ActivityFeedPanel.tsx (standalone activity feed with severity badges)
                 ├── SpecSearchPanel.tsx (full-text spec search with debounced input)
                 ├── AgentKnowledgePanel.tsx (per-agent knowledge browser with agent selector)
-                └── ForgePanel.tsx (pipeline engine status, jobs, runs, phases, artifacts)
+                └── ForgePanel.tsx (pipeline engine — list/detail/run views, methodology catalog, artifact viewer)
 
 Overlays (rendered at root, outside the sidebar/main split):
     ├── SettingsPanel.tsx — full-screen tabbed settings (opened via UserBadge → settings)
@@ -1530,6 +1530,51 @@ interface GoalCard {
 - No cards: "No goal cards yet" with explanation
 - No matching filters: "No matching cards" with clear-filters action
 
+## Forge Panel (`ForgePanel.tsx`)
+
+Pipeline engine dashboard with three views: list, detail, and new-run form.
+
+### Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `refreshTrigger` | `number?` | Incremented externally to trigger data re-fetch |
+
+### Data Flow
+
+1. **List view**: Fetches `getForgeStatus()`, `listForgeJobs()`, `listForgeRuns()` in parallel on mount and via 5-second polling interval.
+2. **Detail view**: Fetches `getForgeRun(runId)` and `getForgeRunPhases(runId)` when a run is selected. Auto-polls while run is active.
+3. **Artifact viewer**: Lazy-loads artifact content via `getForgeArtifact(hash)` with an in-memory `Map` cache (keyed by content hash). Displayed inline in the detail view.
+4. **Methodology catalog**: Fetches `listMethodologies()` for the run form dropdown. Supports `getMethodology(id)` to load a template into the editor and `saveMethodology(name, json)` to persist new templates.
+5. All fetches use `useRef`-based request IDs to prevent stale-response overwrites on rapid navigation.
+
+### UI
+
+- **List view** (`view === "list"`):
+  - Engine status card (queue depth, active job count)
+  - Jobs table with status badges (`V3Badge`: done/running/pending/failed/aborted/skipped)
+  - Runs table — click to navigate to detail view
+  - "New Run" button → switches to run form view
+  - Refresh button for manual re-fetch
+
+- **Detail view** (`view === "detail"`):
+  - Back button → returns to list view
+  - Run summary: title, status badge, cost (`formatCost`), token count (`formatTokenCount`), timestamps
+  - Expandable phase list — click chevron to toggle phase details
+  - Phase details: attempt list with status badges, latency (`formatLatencyMs`), validator results with severity-colored output, fidelity badge
+  - Artifact links — click to open inline artifact viewer with content display
+
+- **New run form** (`view === "new"`):
+  - Title and description text inputs
+  - Methodology selector (dropdown from catalog + save-as-template action)
+  - JSON editor for methodology content (pre-populated from `DEFAULT_METHODOLOGY_JSON` or selected template)
+  - Submit → `startForgeRun(title, description, methodology)` → navigates to list view on success
+  - Inline error display on validation or API failure
+
+### Types
+
+From `api/forge.ts`: `ForgeStatus`, `ForgeJobSummary`, `ForgeRunSummary`, `ForgeRunTrace`, `ForgePhaseRunTrace`, `ForgeArtifactResponse`, `MethodologySummary`.
+
 ## Known Gaps
 
 - ~~Artifact panel: SignalR-driven auto-refresh when `ArtifactEvaluated` events fire (currently requires manual refresh)~~ **Resolved** — `useWorkspace.ts` handles `ArtifactEvaluated` events by incrementing `artifactVersion` counter. `WorkspaceContent.tsx` passes it to `ArtifactsPanel` as `refreshTrigger`, triggering automatic re-fetch of both artifacts and evaluations. Also added `"artifacts"` to `VALID_TABS` for tab persistence.
@@ -1548,6 +1593,9 @@ interface GoalCard {
 - No visual regression tests — **Accepted**: component DOM tests in Vitest cover rendering and interaction; no screenshot diffing is currently configured.
 
 ## Revision History
+
+### 2026-04-22
+- **Added**: Forge Panel (`ForgePanel.tsx`) subsection — documents list/detail/run views, methodology catalog integration, artifact viewer, polling behavior, and type references. Resolves known gap from `d7aa30b` (feat: add Forge panel to frontend UI).
 
 ### 2026-04-20
 - **Added**: Goal Card Panel (`GoalCardPanel.tsx`) — read-only dashboard for agent intent artifacts. Room-scoped, client-side filtered (status + verdict), expandable card detail, task navigation. Styles in `goalCards/`. API module in `api/goalCards.ts`. Real-time refresh via `goalCardVersion` on `GoalCardCreated`/`GoalCardChallenged` events. Sidebar nav entry "Goals" (🎯). `GoalCardChallenged` added to toast events. Known gaps documented for status mutation UI and overview API enrichment.

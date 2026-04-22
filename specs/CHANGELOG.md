@@ -6,6 +6,7 @@ All changes to specifications are documented here.
 
 ### Added
 - **019-forge-engine §Server Integration**: Real-time SignalR events for Forge pipeline execution. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress. `ForgeRunService` broadcasts events (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`) via existing `ActivityBroadcaster` → `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives `refreshTrigger` version counter for instant re-fetch on events. Polling remains as fallback. Closes Integration Gap #6.
+- **300-frontend-ui §Forge Panel**: Added ForgePanel subsection documenting list/detail/run views, methodology catalog integration, artifact viewer, polling behavior, and API types.
 - **019-forge-engine §Server Integration**: Resume endpoint implemented. `POST /api/forge/runs/{runId}/resume` enqueues a resume job (returns 202 + job ID). Background worker calls `PipelineRunner.ResumeAsync`. Closes Integration Gap #4.
 - **019-forge-engine §Cost Tracking**: `CostCalculator` default prices now include Anthropic Claude models (`claude-opus-4.7`, `claude-haiku-4.5`) alongside existing OpenAI models.
 - **019-forge-engine §Component Table**: Added `LlmJsonExtractor` to component table — strips markdown code fences and leading prose preambles from LLM responses before JSON parsing.
