@@ -29,19 +29,25 @@ public sealed class SemanticValidator
     /// <param name="schemaEntry">Schema with semantic rules.</param>
     /// <param name="attemptNumber">Current attempt number.</param>
     /// <param name="model">Model to use for judging, or null to use the default (gpt-4o-mini).</param>
+    /// <param name="inputArtifacts">
+    /// Upstream artifacts the judge may need to evaluate cross-artifact rules
+    /// (e.g. the contract phase's rules reference "input requirements"). When
+    /// null or empty, the judge sees only the artifact under review.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<SemanticValidationResult> ValidateAsync(
         ArtifactEnvelope envelope,
         SchemaEntry schemaEntry,
         int attemptNumber,
         string? model = null,
+        IReadOnlyDictionary<string, ArtifactEnvelope>? inputArtifacts = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(schemaEntry.SemanticRules))
             return new SemanticValidationResult { Findings = [] };
 
         var effectiveModel = string.IsNullOrWhiteSpace(model) ? DefaultJudgeModel : model;
-        var prompt = BuildJudgePrompt(envelope, schemaEntry);
+        var prompt = BuildJudgePrompt(envelope, schemaEntry, inputArtifacts);
 
         LlmResponse response;
         try
@@ -100,18 +106,23 @@ public sealed class SemanticValidator
         Be strict: if a rule is ambiguous, err on the side of failing it.
         """;
 
-    private static string BuildJudgePrompt(ArtifactEnvelope envelope, SchemaEntry schemaEntry)
+    private static string BuildJudgePrompt(
+        ArtifactEnvelope envelope,
+        SchemaEntry schemaEntry,
+        IReadOnlyDictionary<string, ArtifactEnvelope>? inputArtifacts)
     {
         var payloadJson = envelope.Payload.ValueKind == JsonValueKind.Undefined
             ? "{}"
             : JsonSerializer.Serialize(envelope.Payload, SerializerOptions);
+
+        var inputsSection = BuildInputsSection(inputArtifacts);
 
         return $$"""
             === ARTIFACT ===
             Type: {{envelope.ArtifactType}} (schema: {{schemaEntry.SchemaId}})
             Payload:
             {{payloadJson}}
-
+            {{inputsSection}}
             === SEMANTIC RULES (evaluate each) ===
             {{schemaEntry.SemanticRules}}
 
@@ -123,6 +134,25 @@ public sealed class SemanticValidator
             """;
     }
 
+    private static string BuildInputsSection(IReadOnlyDictionary<string, ArtifactEnvelope>? inputArtifacts)
+    {
+        if (inputArtifacts is null || inputArtifacts.Count == 0)
+            return string.Empty;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("=== INPUT ARTIFACTS (consult when rules reference upstream phases) ===");
+        foreach (var (phaseId, env) in inputArtifacts)
+        {
+            var json = env.Payload.ValueKind == JsonValueKind.Undefined
+                ? "{}"
+                : JsonSerializer.Serialize(env.Payload, SerializerOptions);
+            sb.AppendLine($"--- {phaseId} ({env.ArtifactType}/v{env.SchemaVersion}) ---");
+            sb.AppendLine(json);
+        }
+        return sb.ToString();
+    }
+
     private IReadOnlyList<ValidatorResultTrace> ParseJudgeResponse(string content, int attemptNumber)
     {
         var results = new List<ValidatorResultTrace>();
@@ -130,7 +160,8 @@ public sealed class SemanticValidator
         JsonDocument doc;
         try
         {
-            doc = JsonDocument.Parse(content);
+            // Tolerate markdown code fences from chatty LLMs.
+            doc = JsonDocument.Parse(LlmJsonExtractor.Sanitize(content));
         }
         catch (JsonException ex)
         {

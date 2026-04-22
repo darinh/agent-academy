@@ -103,14 +103,52 @@ public sealed class DiskMethodologyCatalog : IMethodologyCatalog
     }
 
     /// <summary>Seed a methodology into the catalog only if it doesn't already exist.</summary>
+    /// <summary>
+    /// Seed a methodology into the catalog if it doesn't exist. Also re-seeds
+    /// when the existing on-disk methodology references a known-deprecated
+    /// model (e.g. gpt-4o, which is no longer served by Copilot) — this lets
+    /// stale catalogs auto-heal without operator intervention.
+    /// </summary>
     public async Task SeedAsync(MethodologyDefinition methodology, CancellationToken ct = default)
     {
         var filePath = GetFilePath(methodology.Id);
         if (File.Exists(filePath))
-            return;
+        {
+            if (!await ShouldReseedAsync(filePath, ct))
+                return;
+
+            _logger.LogWarning(
+                "Methodology '{Id}' on disk references deprecated model defaults — re-seeding with current defaults",
+                methodology.Id);
+        }
 
         await SaveAsync(methodology, ct);
         _logger.LogInformation("Seeded default methodology '{Id}' into catalog", methodology.Id);
+    }
+
+    private static readonly HashSet<string> DeprecatedModels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4o-2024-08-06"
+    };
+
+    private async Task<bool> ShouldReseedAsync(string filePath, CancellationToken ct)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(filePath, ct);
+            var existing = JsonSerializer.Deserialize<MethodologyDefinition>(json, JsonOptions);
+            if (existing?.ModelDefaults is null) return false;
+
+            return DeprecatedModels.Contains(existing.ModelDefaults.Generation ?? "")
+                || DeprecatedModels.Contains(existing.ModelDefaults.Judge ?? "");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read existing methodology at {Path}; leaving in place", filePath);
+            return false;
+        }
     }
 
     private string GetFilePath(string methodologyId) =>

@@ -35,11 +35,12 @@ public static class AttemptResponseParser
         string producedByPhase,
         int attemptNumber)
     {
-        // Step 1: Parse as JSON
+        // Step 1: Parse as JSON (tolerate markdown code fences from chatty LLMs)
+        var sanitized = LlmJsonExtractor.Sanitize(rawResponse);
         JsonDocument doc;
         try
         {
-            doc = JsonDocument.Parse(rawResponse);
+            doc = JsonDocument.Parse(sanitized);
         }
         catch (JsonException ex)
         {

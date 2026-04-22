@@ -61,7 +61,9 @@ public sealed class ValidatorPipeline
         }
 
         // Tier 2: Semantic (LLM judge)
-        var semanticResult = await _semantic.ValidateAsync(envelope, schemaEntry, attemptNumber, judgeModel, ct);
+        var semanticResult = await _semantic.ValidateAsync(
+            envelope, schemaEntry, attemptNumber, judgeModel,
+            inputArtifacts: inputArtifacts, ct: ct);
         allFindings.AddRange(semanticResult.Findings);
 
         if (HasBlockingFindings(semanticResult.Findings))
