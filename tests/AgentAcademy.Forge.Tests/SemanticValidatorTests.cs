@@ -308,6 +308,67 @@ public sealed class SemanticValidatorTests
     }
 
     [Fact]
+    public async Task InputArtifacts_IncludedInJudgePrompt()
+    {
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var validator = new SemanticValidator(llm, NullLogger<SemanticValidator>.Instance);
+        var envelope = MakeEnvelope("contract", "1", """
+        {
+          "interfaces": [
+            {"name": "start", "kind": "function", "signature": "() => void",
+             "description": "starts server", "preconditions": [], "postconditions": [],
+             "errors": [], "satisfies_fr_ids": ["FR1"]}
+          ],
+          "data_shapes": [],
+          "invariants": [],
+          "examples": []
+        }
+        """);
+        var reqEnvelope = MakeEnvelope("requirements", "1", """
+        {
+          "task_summary": "Build an MCP server",
+          "user_outcomes": [{"id": "U1", "outcome": "Server starts", "priority": "must"}],
+          "functional_requirements": [{"id": "FR1", "statement": "Server starts on port 3000", "outcome_ids": ["U1"]}],
+          "non_functional_requirements": [],
+          "out_of_scope": [],
+          "open_questions": []
+        }
+        """);
+        var inputs = new Dictionary<string, ArtifactEnvelope> { ["requirements"] = reqEnvelope };
+        var schema = new SchemaRegistry().GetSchema("contract/v1");
+
+        await validator.ValidateAsync(envelope, schema, 1, inputArtifacts: inputs);
+
+        Assert.Single(llm.ReceivedRequests);
+        var prompt = llm.ReceivedRequests[0].UserMessage;
+        Assert.Contains("INPUT ARTIFACTS", prompt);
+        Assert.Contains("requirements", prompt);
+        Assert.Contains("Build an MCP server", prompt);
+    }
+
+    [Fact]
+    public async Task NoInputArtifacts_OmitsInputSection()
+    {
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var validator = new SemanticValidator(llm, NullLogger<SemanticValidator>.Instance);
+        var envelope = MakeEnvelope("requirements", "1", """
+        {
+          "task_summary": "test",
+          "user_outcomes": [{"id": "U1", "outcome": "test", "priority": "must"}],
+          "functional_requirements": [{"id": "FR1", "statement": "test", "outcome_ids": ["U1"]}],
+          "non_functional_requirements": [],
+          "out_of_scope": [],
+          "open_questions": []
+        }
+        """);
+
+        await validator.ValidateAsync(envelope, RequirementsSchema, 1, inputArtifacts: null);
+
+        Assert.Single(llm.ReceivedRequests);
+        Assert.DoesNotContain("INPUT ARTIFACTS", llm.ReceivedRequests[0].UserMessage);
+    }
+
+    [Fact]
     public async Task CancellationToken_IsPropagated()
     {
         using var cts = new CancellationTokenSource();

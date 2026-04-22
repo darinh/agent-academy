@@ -147,6 +147,36 @@ public sealed class ValidatorPipelineTests
     }
 
     [Fact]
+    public async Task InputArtifacts_ThreadedToSemanticValidator()
+    {
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var pipeline = MakePipeline(llm);
+
+        var req = MakeEnvelope("requirements", "1", ValidRequirementsPayload);
+        var contract = MakeEnvelope("contract", "1", """
+        {
+          "interfaces": [
+            {"name": "startServer", "kind": "function", "signature": "() => void",
+             "description": "starts", "preconditions": [], "postconditions": [],
+             "errors": [], "satisfies_fr_ids": ["FR1"]}
+          ],
+          "data_shapes": [],
+          "invariants": [],
+          "examples": []
+        }
+        """);
+
+        var inputs = new Dictionary<string, ArtifactEnvelope> { ["requirements"] = req };
+        var result = await pipeline.ValidateAsync(contract, inputs, 1);
+
+        Assert.True(result.Passed);
+        Assert.Single(llm.ReceivedRequests);
+        var prompt = llm.ReceivedRequests[0].UserMessage;
+        Assert.Contains("INPUT ARTIFACTS", prompt);
+        Assert.Contains("requirements", prompt);
+    }
+
+    [Fact]
     public async Task AttemptNumber_PropagatedToAllFindings()
     {
         var llm = StubLlmClient.WithFixedResponse("""
