@@ -83,6 +83,8 @@ public sealed class CostCalculator
             ["gpt-4.1-mini"] = new(0.40m, 1.60m),
             ["gpt-4.1-nano"] = new(0.10m, 0.40m),
             ["o3-mini"] = new(1.10m, 4.40m),
+            ["claude-opus-4.7"] = new(5.00m, 25.00m),
+            ["claude-haiku-4.5"] = new(1.00m, 5.00m),
         };
 }
 

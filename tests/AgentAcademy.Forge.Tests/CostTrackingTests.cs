@@ -109,6 +109,16 @@ public sealed class CostTrackingTests : IDisposable
         Assert.False(calc.CanPrice("unknown-model"));
     }
 
+    [Theory]
+    [InlineData("claude-opus-4.7", 1_000_000, 1_000_000, 30.00)]
+    [InlineData("claude-haiku-4.5", 1_000_000, 1_000_000, 6.00)]
+    public void Calculate_ClaudeModels_ReturnsCorrectCost(string model, int input, int output, decimal expected)
+    {
+        var calc = new CostCalculator();
+        Assert.True(calc.CanPrice(model));
+        Assert.Equal(expected, calc.Calculate(model, input, output));
+    }
+
     [Fact]
     public void CustomPricing_OverridesDefaults()
     {

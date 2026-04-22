@@ -194,4 +194,74 @@ public sealed class ValidatorPipelineTests
 
         Assert.All(result.Findings, f => Assert.Equal(3, f.AttemptNumber));
     }
+
+    [Fact]
+    public async Task ContractPhase_WithInputArtifacts_FullCascade_Passes()
+    {
+        // Integration-style: exercises all three tiers with a contract artifact
+        // that depends on requirements input artifacts, locking in the plumbing
+        // where input artifacts thread through structural → semantic → cross-artifact.
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var pipeline = MakePipeline(llm);
+
+        var req = MakeEnvelope("requirements", "1", ValidRequirementsPayload);
+        var contract = MakeEnvelope("contract", "1", """
+        {
+          "interfaces": [
+            {"name": "startServer", "kind": "function", "signature": "() => void",
+             "description": "starts the server", "preconditions": ["port available"],
+             "postconditions": ["server listening"], "errors": [{"condition": "port in use", "behavior": "throws"}],
+             "satisfies_fr_ids": ["FR1"]}
+          ],
+          "data_shapes": [
+            {"name": "ServerConfig", "fields": [{"name": "port", "type": "number", "required": true}]}
+          ],
+          "invariants": ["Port is between 1024 and 65535"],
+          "examples": [
+            {"scenario": "Start on default port", "input": "{}", "output": "listening on 3000", "fr_id": "FR1"}
+          ]
+        }
+        """);
+
+        var inputs = new Dictionary<string, ArtifactEnvelope> { ["requirements"] = req };
+        var result = await pipeline.ValidateAsync(contract, inputs, 1);
+
+        Assert.True(result.Passed);
+        Assert.Null(result.StoppedAtTier);
+        Assert.Single(llm.ReceivedRequests);
+        var prompt = llm.ReceivedRequests[0].UserMessage;
+        Assert.Contains("INPUT ARTIFACTS", prompt);
+        Assert.Contains("requirements", prompt);
+    }
+
+    [Fact]
+    public async Task ContractPhase_MissingFrRef_CrossArtifactCatches()
+    {
+        // Structural + semantic pass, but cross-artifact finds a dangling FR reference.
+        var llm = StubLlmClient.WithFixedResponse("""{"findings": []}""");
+        var pipeline = MakePipeline(llm);
+
+        var req = MakeEnvelope("requirements", "1", ValidRequirementsPayload);
+        var contract = MakeEnvelope("contract", "1", """
+        {
+          "interfaces": [
+            {"name": "startServer", "kind": "function", "signature": "() => void",
+             "description": "starts the server", "preconditions": [],
+             "postconditions": [], "errors": [],
+             "satisfies_fr_ids": ["FR1", "FR_NONEXISTENT"]}
+          ],
+          "data_shapes": [],
+          "invariants": [],
+          "examples": []
+        }
+        """);
+
+        var inputs = new Dictionary<string, ArtifactEnvelope> { ["requirements"] = req };
+        var result = await pipeline.ValidateAsync(contract, inputs, 1);
+
+        Assert.False(result.Passed);
+        Assert.Equal(ValidatorPhase.CrossArtifact, result.StoppedAtTier);
+        Assert.Single(llm.ReceivedRequests); // Semantic still ran
+        Assert.Contains(result.Findings, f => f.Phase == "cross-artifact" && f.Blocking);
+    }
 }
