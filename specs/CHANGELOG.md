@@ -10,6 +10,11 @@ All changes to specifications are documented here.
 - **019-forge-engine §Cost Tracking**: `CostCalculator` default prices now include Anthropic Claude models (`claude-opus-4.7`, `claude-haiku-4.5`) alongside existing OpenAI models.
 - **019-forge-engine §Component Table**: Added `LlmJsonExtractor` to component table — strips markdown code fences and leading prose preambles from LLM responses before JSON parsing.
 
+### Changed
+- **007-agent-commands §Status**: Updated handler count from 101 to 104, reflecting Forge Pipeline Commands (RUN_FORGE, FORGE_STATUS, LIST_FORGE_RUNS).
+- **018-testing-strategy §Test Count**: Updated total test count from 8,103 (5,222 + 2,881) to 9,575 (6,562 + 3,013). Updated VsTest note to reference 6,500+ test suite.
+- **018-testing-strategy §Mutation Testing**: Updated mutation scores after fresh Stryker run. Overall ~85% → ~99%. 5 of 6 modules now at 100% (CommandParser ⬆️94.7→100, ShellCommand ⬆️86→100, SearchCodeHandler ⬆️83.2→100). TaskLifecycleService ⬆️79.2→95.1%. CommandAuthorizer restored to 100% with new Reviewer role-gate test. Updated survivor analysis and Known Gaps section.
+
 ### Fixed
 - **019-forge-engine §Server Integration**: Fix 4 bugs blocking forge pipeline execution: (1) `CopilotSdkLlmClient` missing `OnPermissionRequest` handler — SDK sessions now use `PermissionHandler.ApproveAll` since Forge registers no tools. (2) Default seed methodology referenced unavailable `gpt-4o` models — `DiskMethodologyCatalog.SeedAsync` now auto-reseeds when existing file references deprecated models (`gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`). (3) `LlmJsonExtractor` crashed on markdown code fences — now strips ```` ```json ``` ```` wrappers before parsing. (4) `SemanticValidator` judge prompt lacked upstream input artifacts — `ValidatorPipeline` now threads `inputArtifacts` through to `SemanticValidator.ValidateAsync` so cross-artifact rules see actual upstream content.
 - **019-forge-engine §Validation Cascade**: Documented that `SemanticValidator` includes upstream input artifacts in the judge prompt via `=== INPUT ARTIFACTS ===` section for cross-artifact rule evaluation.

@@ -34,7 +34,7 @@ Agent Academy follows a standard test pyramid with emphasis on unit tests:
 - **Unit Tests**: 139 test files (src/agent-academy-client/src/**/*.test.{ts,tsx})
 - **E2E Tests**: 18 Playwright specs (src/agent-academy-client/e2e/*.spec.ts)
 
-**Total Test Count**: 8,103 tests across both stacks (5,222 backend + 2,881 frontend). Exact count varies as tests are added.
+**Total Test Count**: 9,575 tests across both stacks (6,562 backend + 3,013 frontend). Exact count varies as tests are added.
 
 ## Backend Testing (xUnit)
 
@@ -464,17 +464,15 @@ Mutation testing focuses on security-critical and business-logic files:
 | File | Mutants | Score | Notes |
 |------|---------|-------|-------|
 | `Commands/CommandAuthorizer.cs` | 22 | **100%** | Permission matching, deny-overrides logic |
+| `Commands/CommandParser.cs` | 153 | **100%** | Command parsing |
+| `Commands/ShellCommand.cs` | 103 | **100%** | Shell command parsing and sandboxing |
 | `Services/PromptSanitizer.cs` | 16 | **100%** | Injection defense, Unicode control char stripping |
-| `Commands/CommandParser.cs` | 153 | **94.7%** | Command parsing |
-| `Commands/ShellCommand.cs` | 103 | **86%** | Shell command parsing and sandboxing |
-| `Services/TaskLifecycleService.Review.cs` | 92 | **79.1%** | PR review workflow |
-| `Services/TaskLifecycleService.cs` | 142 | **79.2%** | Core task state machine |
-| `Services/TaskLifecycleService.SpecLinks.cs` | 44 | **72.5%** | Spec-task traceability; filter broadened to include `SpecTaskLinkTests` |
-| `Commands/Handlers/SearchCodeHandler.cs` | 101 | **83.2%** | Git grep code search; newly added to mutation suite |
+| `Commands/Handlers/SearchCodeHandler.cs` | 101 | **100%** | Git grep code search |
+| `Services/TaskLifecycleService.cs` + `.Review.cs` + `.SpecLinks.cs` | 278 | **95.1%** | Core task state machine, PR review, spec links |
 
-**Current Overall**: ~85% (excluding Program.cs startup code). Previous baseline: 61.1%.
+**Current Overall**: ~99% (excluding Program.cs startup code and Stryker-ignored concurrency paths). Previous baseline: 61.1% → 85% → 99%.
 
-> **Note**: Scores are measured per-file using `test-case-filter` to scope the test runner to related tests. This is required because VsTest hangs when running the full 5,222-test suite under Stryker's mutation framework. True scores may be slightly higher since some cross-cutting tests are excluded by the filter.
+> **Note**: Scores are measured per-file using `test-case-filter` to scope the test runner to related tests. This is required because VsTest hangs when running the full 6,500+ test suite under Stryker's mutation framework. True scores may be slightly higher since some cross-cutting tests are excluded by the filter.
 
 ### Thresholds
 
@@ -492,12 +490,11 @@ scripts/run-mutation-tests.sh --since develop  # Only changed files
 
 ### Survivor Analysis
 
-Remaining surviving mutants are predominantly low-risk:
-- **String mutations on legacy constants**: `LegacyBlocks` entries in CommandParser survive because removing them doesn't change behavior (unknown commands also go to remaining text).
-- **NoCoverage mutants**: Code paths only exercised by integration tests excluded by the per-module test-case-filter.
-- **Null coalescing mutations**: Fallback value swaps in defensive code paths (e.g., agent catalog lookup fallbacks).
+5 of 6 modules are at 100% — zero surviving mutants. The remaining survivors in TaskLifecycleService are:
+- **Concurrency retry paths**: `Stryker disable all` blocks protect `DbUpdateException` retry logic (requires race between concurrent writers — infeasible in in-memory SQLite tests).
+- **Defensive null coalescing**: Fallback value swaps in code paths that only fire under database constraint violations.
 
-Security-critical modules (`CommandAuthorizer`, `PromptSanitizer`) maintain **100%** mutation score — zero surviving mutants.
+Security-critical modules (`CommandAuthorizer`, `PromptSanitizer`, `ShellCommand`) maintain **100%** mutation score — zero surviving mutants.
 
 ## Known Gaps
 
@@ -506,7 +503,7 @@ Security-critical modules (`CommandAuthorizer`, `PromptSanitizer`) maintain **10
 1. ~~**API Contract Tests**: No OpenAPI/Swagger validation tests. Controllers are tested via unit tests, not contract-driven tests.~~ **Resolved** — 35 OpenAPI contract tests via `WebApplicationFactory` + `ApiContractFixture` validate Swagger doc generation, route coverage, response schemas, and endpoint roundtrips.
 2. ~~**Performance Tests**: No load tests, stress tests, or benchmark suites.~~ **Resolved** — BenchmarkDotNet micro-benchmark suite in `tests/AgentAcademy.Server.Benchmarks/`. 5 benchmark classes covering: `CommandParser.Parse` (regex + string splitting, 5 scenarios), `CommandAuthorizer.Authorize` (permission matching, 5 scenarios), `PromptBuilder` (conversation/breakout/review prompt composition, 5 scenarios), `SpecManager` (search, relevance loading, tokenization, content hashing — parameterized by corpus size 5/20 sections, 11 methods), `TaskDependencyService` (BFS cycle detection + dependency queries over in-memory SQLite — parameterized by graph size 10/50/200 tasks, 4 methods). All benchmarks use `[MemoryDiagnoser]` for allocation tracking. Runner script: `scripts/run-benchmarks.sh`. Results exported to `BenchmarkDotNet.Artifacts/`.
 3. ~~**Security Tests**: No dedicated security test suite (e.g., OWASP Top 10 validation).~~ **Resolved** — 97 security tests in `tests/AgentAcademy.Server.Tests/Security/` covering path traversal (ReadFileHandler, CodeWriteToolWrapper, SearchCodeHandler, FilesystemController), shell command sandboxing (ShellCommand.TryParse injection attacks), prompt injection defenses (PromptSanitizer edge cases, Unicode control chars), input validation (API endpoint boundaries, auth enforcement), and documented accepted risks (symlink traversal per spec 015 §9.2). Also fixed SearchCodeHandler silently broadening search scope on out-of-root paths.
-4. ~~**Mutation Testing**: No mutation coverage (e.g., Stryker.NET).~~ **Resolved** — Stryker.NET 4.14.1 installed as a local dotnet tool (`.config/dotnet-tools.json`). Configuration at `stryker-config.json` targets 8 critical source files: `CommandParser`, `CommandAuthorizer`, `ShellCommand`, `SearchCodeHandler`, `PromptSanitizer`, and `TaskLifecycleService` (3 partials). Runner script: `scripts/run-mutation-tests.sh` with `--full`, `--security`, and `--since` modes. Uses per-module `test-case-filter` to prevent VsTest hanging with the full test suite. Current results: ~85% overall (CommandParser 94.7%, security modules 100%, TaskLifecycleService 79.2%). Reports: `StrykerOutput/reports/` (HTML + JSON). Thresholds: break=50%, low=60%, high=80%.
+4. ~~**Mutation Testing**: No mutation coverage (e.g., Stryker.NET).~~ **Resolved** — Stryker.NET 4.14.1 installed as a local dotnet tool (`.config/dotnet-tools.json`). Configuration at `stryker-config.json` targets 8 critical source files: `CommandParser`, `CommandAuthorizer`, `ShellCommand`, `SearchCodeHandler`, `PromptSanitizer`, and `TaskLifecycleService` (3 partials). Runner script: `scripts/run-mutation-tests.sh` with `--full`, `--security`, and `--since` modes. Uses per-module `test-case-filter` to prevent VsTest hanging with the full test suite. Current results: ~99% overall (5 of 6 modules at 100%, TaskLifecycleService at 95.1%). Reports: `StrykerOutput/reports/` (HTML + JSON). Thresholds: break=50%, low=60%, high=80%.
 
 ### Coverage Reporting in CI
 

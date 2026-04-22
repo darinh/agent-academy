@@ -395,6 +395,16 @@ public class CommandAuthorizerTests
         Assert.NotNull(result);
         Assert.Equal(CommandStatus.Denied, result.Status);
         Assert.Contains("restricted to roles", result.Error);
+        Assert.Contains("Planner, Reviewer", result.Error);
+    }
+
+    [Fact]
+    public void RestrictedRoles_Shell_AllowedForReviewer()
+    {
+        var agent = MakeAgentWithRole("reviewer-shell", "Reviewer",
+            new List<string> { "SHELL" });
+
+        Assert.Null(_authorizer.Authorize(MakeCommand("SHELL"), agent));
     }
 
     // ── Second SWE has same permissions as first ────────────────
