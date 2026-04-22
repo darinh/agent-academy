@@ -20,6 +20,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private readonly DiscordMessageSender _sender;
     private readonly DiscordMessageRouter _router;
     private readonly IDiscordConnectionManager _connection;
+    private readonly OperationDrainTracker _drainTracker = new();
     private readonly SemaphoreSlim _connectLock = new(1, 1);
 
     // _config is mutated under _connectLock (ConfigureAsync). Declared volatile so
@@ -29,20 +30,6 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
     private volatile DiscordProviderConfig? _config;
     private bool _messageReceivedHooked;
     private int _disposed;
-
-    // In-flight outbound operation tracking. Sends/inputs/lifecycle-notifications
-    // capture a snapshot of (client, config) and run async work outside _connectLock.
-    // Without coordination, DisconnectAsync/DisposeAsync could call DisposeClientAsync
-    // mid-send, tearing down the live client and forcing the catch-block to log a
-    // noisy ObjectDisposedException. We instead:
-    //   1. Set _teardownInProgress under _connectLock at the start of teardown so
-    //      new sends short-circuit cleanly (return false / no-op).
-    //   2. Wait for _inFlight to drain (with a bounded timeout) before tearing
-    //      down so already-started sends complete on the live client.
-    private long _inFlight;
-    private volatile bool _teardownInProgress;
-    private readonly object _drainLock = new();
-    private TaskCompletionSource<bool>? _drainTcs;
 
     // Bounded wait so a hung send (e.g. Discord API stall) can't block teardown
     // forever. After the timeout we proceed with teardown anyway; the in-flight
@@ -196,15 +183,10 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         await _connectLock.WaitAsync(cancellationToken);
         try
         {
-            // Block new outbound operations from starting; existing _connectLock
-            // already serialises us with Connect/Configure/other Disconnects.
-            _teardownInProgress = true;
+            _drainTracker.BeginTeardown();
             try
             {
-                // Wait for outbound operations that captured a (client, config)
-                // snapshot to finish before we tear down the client. Bounded so a
-                // wedged send can't deadlock teardown.
-                await WaitForDrainAsync(DrainTimeout, cancellationToken);
+                await WaitForDrainWithLoggingAsync(DrainTimeout, cancellationToken);
 
                 UnhookRouter();
                 await _channelManager.ResetAsync();
@@ -215,7 +197,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             {
                 // Allow sends again — the next ConnectAsync will spin up a fresh
                 // client and the provider becomes usable again.
-                _teardownInProgress = false;
+                _drainTracker.EndTeardown();
             }
         }
         finally
@@ -298,7 +280,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
         finally
         {
-            LeaveOperation();
+            _drainTracker.Leave();
         }
     }
 
@@ -331,8 +313,8 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
 
         // Reject any new outbound operations starting between here and teardown.
-        // _disposed alone isn't enough because tracked ops check _teardownInProgress.
-        _teardownInProgress = true;
+        // _disposed alone isn't enough because tracked ops check _drainTracker.
+        _drainTracker.BeginTeardown();
 
         // Serialize with any in-flight ConnectAsync/DisconnectAsync so we don't
         // tear down the client mid-connect and leave orphaned handlers.
@@ -342,7 +324,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
             // Wait for in-flight sends/inputs that captured a client snapshot to
             // complete before disposing the underlying client. Bounded so a wedged
             // operation can't deadlock disposal.
-            await WaitForDrainAsync(DrainTimeout, CancellationToken.None);
+            await WaitForDrainWithLoggingAsync(DrainTimeout, CancellationToken.None);
 
             UnhookRouter();
             await _connection.DisposeClientAsync();
@@ -477,7 +459,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
         finally
         {
-            LeaveOperation();
+            _drainTracker.Leave();
         }
     }
 
@@ -494,73 +476,42 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
         finally
         {
-            LeaveOperation();
+            _drainTracker.Leave();
         }
     }
 
     /// <summary>
-    /// Reserve a slot for an outbound operation that captures a (client, config)
-    /// snapshot. Returns false if the provider is being torn down — callers must
-    /// short-circuit cleanly without touching the snapshot.
+    /// Composite guard: checks provider-level disposed state, then delegates
+    /// to <see cref="OperationDrainTracker.TryEnter"/> for teardown checks.
     /// </summary>
     private bool TryEnterOperation()
     {
-        if (Volatile.Read(ref _disposed) == 1 || _teardownInProgress) return false;
-        Interlocked.Increment(ref _inFlight);
-        // Re-check after increment: teardown may have flipped between our read and
-        // our increment. If so, back out and let the teardown proceed.
-        if (Volatile.Read(ref _disposed) == 1 || _teardownInProgress)
+        if (Volatile.Read(ref _disposed) == 1) return false;
+        if (!_drainTracker.TryEnter()) return false;
+        // Re-check after entering: dispose may have set _disposed between our
+        // first check and the tracker increment.
+        if (Volatile.Read(ref _disposed) == 1)
         {
-            LeaveOperation();
+            _drainTracker.Leave();
             return false;
         }
         return true;
     }
 
-    private void LeaveOperation()
-    {
-        if (Interlocked.Decrement(ref _inFlight) != 0) return;
-
-        // Last operation out — wake any teardown waiter.
-        TaskCompletionSource<bool>? toComplete;
-        lock (_drainLock)
-        {
-            toComplete = _drainTcs;
-            _drainTcs = null;
-        }
-        toComplete?.TrySetResult(true);
-    }
-
     /// <summary>
-    /// Wait for in-flight outbound operations to drain. Returns immediately if
-    /// none are in flight. Bounded by <paramref name="timeout"/> so a wedged
-    /// operation can't deadlock teardown.
+    /// Waits for drain with provider-specific timeout logging.
     /// </summary>
-    private async Task WaitForDrainAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    private async Task WaitForDrainWithLoggingAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (Interlocked.Read(ref _inFlight) == 0) return;
-
-        TaskCompletionSource<bool> tcs;
-        lock (_drainLock)
-        {
-            // Re-check inside the lock — LeaveOperation may have already drained
-            // and there's nothing left to wait for.
-            if (Interlocked.Read(ref _inFlight) == 0) return;
-            _drainTcs ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcs = _drainTcs;
-        }
-
         try
         {
-            await tcs.Task.WaitAsync(timeout, cancellationToken);
+            await _drainTracker.WaitForDrainAsync(timeout, cancellationToken);
         }
         catch (TimeoutException)
         {
-            // Best-effort: log and proceed with teardown. In-flight ops will get
-            // ObjectDisposedException, which their catch handlers absorb.
             _logger.LogWarning(
                 "Discord provider teardown proceeding with {InFlight} operation(s) still in flight after {Timeout}",
-                Interlocked.Read(ref _inFlight), timeout);
+                _drainTracker.InFlightCount, timeout);
         }
     }
 
@@ -583,7 +534,7 @@ public sealed class DiscordNotificationProvider : INotificationProvider, IAsyncD
         }
         finally
         {
-            LeaveOperation();
+            _drainTracker.Leave();
         }
     }
 }
