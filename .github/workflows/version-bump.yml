@@ -89,6 +89,6 @@ jobs:
           git add Directory.Build.props src/agent-academy-client/package.json CHANGELOG.md
           git diff --staged --quiet || {
             git commit -m "chore: bump version to v${{ steps.new.outputs.version }}"
-            git tag "v${{ steps.new.outputs.version }}"
+            git tag -a "v${{ steps.new.outputs.version }}" -m "v${{ steps.new.outputs.version }}"
             git push --follow-tags
           }

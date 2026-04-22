@@ -41,7 +41,10 @@ public sealed class CopilotSdkLlmClient : ILlmClient
         await using var session = await acquisition.Client.CreateSessionAsync(new SessionConfig
         {
             Model = request.Model,
-            Streaming = true
+            Streaming = true,
+            // Forge SDK calls register no tools, so there is nothing to gate.
+            // ApproveAll mirrors AgentPermissionHandler's empty-tool-set behavior.
+            OnPermissionRequest = PermissionHandler.ApproveAll
         });
 
         var responseText = new StringBuilder();

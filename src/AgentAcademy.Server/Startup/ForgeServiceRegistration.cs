@@ -137,8 +137,8 @@ public static class ForgeServiceRegistration
                 MaxAttemptsDefault = 3,
                 ModelDefaults = new ModelDefaults
                 {
-                    Generation = "gpt-4o",
-                    Judge = "gpt-4o-mini"
+                    Generation = "claude-opus-4.7",
+                    Judge = "claude-haiku-4.5"
                 },
                 Phases =
                 [
