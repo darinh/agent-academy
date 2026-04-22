@@ -5,6 +5,8 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **018-testing-strategy §Test Counts**: Updated test census — backend 6,649 (6,224 Server + 425 Forge) across 245 test files, frontend 3,013 across 144 test files, total 9,662. Updated Coverage Philosophy section and VsTest note with current numbers.
+- **specs/README.md §Coverage Status**: Updated survey date to 2026-04-22, spec line count to ~14,000+.
 - **019-forge-engine §Server Integration**: Real-time SignalR events for Forge pipeline execution. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress. `ForgeRunService` broadcasts events (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`) via existing `ActivityBroadcaster` → `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives `refreshTrigger` version counter for instant re-fetch on events. Polling remains as fallback. Closes Integration Gap #6.
 - **300-frontend-ui §Forge Panel**: Added ForgePanel subsection documenting list/detail/run views, methodology catalog integration, artifact viewer, polling behavior, and API types.
 - **019-forge-engine §Server Integration**: Resume endpoint implemented. `POST /api/forge/runs/{runId}/resume` enqueues a resume job (returns 202 + job ID). Background worker calls `PipelineRunner.ResumeAsync`. Closes Integration Gap #4.

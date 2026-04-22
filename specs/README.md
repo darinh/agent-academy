@@ -61,10 +61,10 @@ After every code change:
 
 ## Coverage Status
 
-**Last Survey**: 2026-04-16
+**Last Survey**: 2026-04-22
 
 ### Summary
-- **Total Sections**: 21 specification documents (~11,000+ lines)
+- **Total Sections**: 21 specification documents (~14,000+ lines)
 - **Coverage Score**: 95/100 — Excellent
 - **All Features**: Documented with implementation status
 - **Backend Coverage**: 90% (domain model, commands, agents, tasks exhaustive)

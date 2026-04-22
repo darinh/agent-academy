@@ -25,16 +25,16 @@ Agent Academy follows a standard test pyramid with emphasis on unit tests:
 ### Distribution
 
 **Backend** (xUnit):
-- **Unit Tests**: 193 test files (tests/AgentAcademy.Server.Tests/*.cs)
+- **Unit Tests**: 245 test files (tests/AgentAcademy.Server.Tests/*.cs, tests/AgentAcademy.Forge.Tests/*.cs)
 - **Integration Tests**: 2 files using in-memory SQLite and DI container
   - `SubServiceIntegrationTests.cs` — service layer integration
   - `PullRequestSyncServiceTests.cs` — GitHub API integration
 
 **Frontend** (Vitest + Playwright):
-- **Unit Tests**: 139 test files (src/agent-academy-client/src/**/*.test.{ts,tsx})
+- **Unit Tests**: 144 test files (src/agent-academy-client/src/**/*.test.{ts,tsx})
 - **E2E Tests**: 18 Playwright specs (src/agent-academy-client/e2e/*.spec.ts)
 
-**Total Test Count**: 9,575 tests across both stacks (6,562 backend + 3,013 frontend). Exact count varies as tests are added.
+**Total Test Count**: 9,662 tests across both stacks (6,649 backend + 3,013 frontend). Exact count varies as tests are added.
 
 ## Backend Testing (xUnit)
 
@@ -346,7 +346,7 @@ npm run test:e2e:ui
 
 **Tool**: coverlet.collector 6.0.0 (integrated with `dotnet test`)
 
-**Target**: No explicit percentage target defined in codebase. Current test-to-source ratio: 170 test files covering ~200+ service/controller files.
+**Target**: No explicit percentage target defined in codebase. Current test-to-source ratio: 245 test files covering ~484 source files.
 
 **Run Coverage**:
 ```bash
@@ -370,8 +370,8 @@ npx vitest run --coverage
 
 Agent Academy prioritizes **test count** and **behavior coverage** over strict line coverage percentages:
 
-- **Backend**: 4,000+ xUnit tests ensure comprehensive behavior validation
-- **Frontend**: 116 unit tests + 18 E2E tests cover critical user journeys
+- **Backend**: 6,649 xUnit tests (6,224 Server + 425 Forge) ensure comprehensive behavior validation
+- **Frontend**: 3,013 tests across 144 test files cover critical user journeys
 - **Integration**: 2 integration tests validate cross-layer interactions
 
 No CI coverage gates exist. Coverage is collected automatically in CI (see below) and available via `scripts/coverage.sh` locally.
@@ -472,7 +472,7 @@ Mutation testing focuses on security-critical and business-logic files:
 
 **Current Overall**: ~99% (excluding Program.cs startup code and Stryker-ignored concurrency paths). Previous baseline: 61.1% → 85% → 99%.
 
-> **Note**: Scores are measured per-file using `test-case-filter` to scope the test runner to related tests. This is required because VsTest hangs when running the full 6,500+ test suite under Stryker's mutation framework. True scores may be slightly higher since some cross-cutting tests are excluded by the filter.
+> **Note**: Scores are measured per-file using `test-case-filter` to scope the test runner to related tests. This is required because VsTest hangs when running the full 6,600+ test suite under Stryker's mutation framework. True scores may be slightly higher since some cross-cutting tests are excluded by the filter.
 
 ### Thresholds
 
