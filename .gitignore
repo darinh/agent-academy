@@ -62,3 +62,6 @@ BenchmarkDotNet.Artifacts/
 
 # Stryker mutation testing output
 StrykerOutput/
+
+# Forge agent runtime data
+src/AgentAcademy.Server/forge-runs/
