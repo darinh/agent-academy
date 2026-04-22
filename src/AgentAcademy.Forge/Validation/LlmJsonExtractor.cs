@@ -8,10 +8,13 @@ namespace AgentAcademy.Forge.Validation;
 public static class LlmJsonExtractor
 {
     /// <summary>
-    /// Returns the content with surrounding markdown code fences removed.
+    /// Returns the content with surrounding markdown code fences and leading
+    /// prose preambles removed.
     /// If no fence is detected, returns the trimmed input unchanged.
     /// Handles ```json, ``` <lang>, and bare ``` fences. Tolerates
     /// optional language tag, leading/trailing whitespace, and CRLF.
+    /// Also strips prose lines that precede a JSON object/array or code fence
+    /// (e.g. "Here is the JSON:\n{...}").
     /// </summary>
     public static string Sanitize(string? content)
     {
@@ -19,6 +22,9 @@ public static class LlmJsonExtractor
             return content ?? string.Empty;
 
         var s = content.Trim();
+
+        // Strip leading prose preamble: lines before the first { [ or ``` fence.
+        s = StripProsePreamble(s);
 
         if (!s.StartsWith("```"))
             return s;
@@ -36,5 +42,40 @@ public static class LlmJsonExtractor
             inner = inner[..^3].TrimEnd();
 
         return inner;
+    }
+
+    /// <summary>
+    /// Removes leading prose lines that precede the actual JSON or code fence.
+    /// Scans forward for the first line starting with {, [, or ```.
+    /// Only strips if such a line is found; otherwise returns the input unchanged.
+    /// </summary>
+    private static string StripProsePreamble(string s)
+    {
+        if (s.Length == 0)
+            return s;
+
+        var firstChar = s[0];
+        if (firstChar is '{' or '[' or '`')
+            return s;
+
+        // Scan line by line for the JSON/fence start
+        var pos = 0;
+        while (pos < s.Length)
+        {
+            // Skip whitespace at start of line
+            var lineStart = pos;
+            while (lineStart < s.Length && s[lineStart] is ' ' or '\t')
+                lineStart++;
+
+            if (lineStart < s.Length && s[lineStart] is '{' or '[' or '`')
+                return s[lineStart..];
+
+            // Advance to next line
+            pos = s.IndexOf('\n', pos);
+            if (pos < 0) break;
+            pos++;
+        }
+
+        return s;
     }
 }
