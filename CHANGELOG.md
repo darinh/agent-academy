@@ -3,57 +3,165 @@
 All notable changes to Agent Academy are documented here.
 Generated from [conventional commits](https://www.conventionalcommits.org/).
 
-## Unreleased
+## v4.0.0 (2026-04-21)
+
+### Features
+
+- methodology catalog — browse, select, and save pipeline templates (#111)
+- add Forge panel to frontend UI
+- add Forge agent commands (RUN_FORGE, FORGE_STATUS, LIST_FORGE_RUNS)
+- integrate Forge Pipeline Engine into server with REST API
+- add Tier 3 Frontend/UX SHOW_ROUTES command (Phase 3C)
+- add Tier 3 Context commands (Phase 3B)
+- add Tier 3 Spec Verification commands (Phase 3A)
+- add Tier 2 Audit & Debug commands (Phase 2G)
+- add Tier 2 Data & Operations commands (Phase 2F)
+- add Tier 2 Backend Execution commands (Phase 2E)
+- add Tier 2 Code & Spec commands (Phase 2D)
+- add Tier 2 Task Management commands (Phase 2C)
+- add Tier 2 Communication commands (Phase 2B)
+- add Tier 2 task workflow commands (Phase 2A)
+- add shared frontend test data factory library
+- add shared Bogus test data fakers for backend tests
+- add goal card status mutation UI
+- enrich WorkspaceOverview API with goal card summary
+- add goal card dashboard panel to frontend
+- add goal card prompt template to agent breakout and sprint prompts
+- enrich PR descriptions with goal card content
+- add goal card system for structured intent tracking
+- add schema evolution strategy with lifecycle management
+- add parallel phase execution with wave-based scheduling
+- add seeded-defect benchmarks for fidelity detection accuracy
+- add intent fidelity with source-intent schema, fidelity phase, and drift taxonomy
+- add crash recovery with resume-from-snapshot logic
+- add control arm for A/B benchmarking against multi-phase pipeline
+- add cost tracking with per-attempt pricing and budget enforcement
+- add model configurability to forge pipeline engine
+- add PipelineRunner, OpenAI client, and benchmark infrastructure — Layer 3
+- add validation pipeline and phase executor — Layer 2b
+- add execution foundation — LLM abstraction, prompt builder, schemas, structural validator
+- add standalone Forge Pipeline Engine core library
+- extend spec-write scope to include docs/ (#102)
+- grant Thucydides scoped spec-write access to specs/ (#101)
+- mirror sprint stage to workspace room phases (closes #57) (#96)
+- add agent-runner Docker profile for containerized agent execution
+- add Stryker.NET mutation testing infrastructure
+- add BenchmarkDotNet performance benchmark suite
+- add Activity feed, Spec search, and Agent knowledge sidebar panels
+- add Models tab, notification delivery history, and data export to Settings
+- add frontend API coverage for 25+ uncovered backend endpoints
+- enable PR workflow and task dependency commands for agents
+- wire ArtifactEvaluated SignalR event for artifacts panel auto-refresh
+- add artifacts panel with quality evaluations and file operations log
+- add artifact evaluation service for room quality scoring
+- add room artifact tracking for agent file operations
+- add spec keyword search with relevance-ranked context
+- add context window visibility with real-time usage meters
+- add phase transition prerequisites with server-side validation
+- add manual session compaction button to SessionToolbar
+- add task priority (Critical/High/Medium/Low)
+- add API contract tests with WebApplicationFactory integration
+- add Dockerfile, docker-compose, and containerized deployment
+- add /health readiness probe with database and executor checks
+- add missing frontend error states, loading indicators, and empty states
+- fix agent capabilities, prompt alignment, and add conversation kickoff
+- wire knowledge endpoints to agent memory system
+- add bidirectional cross-panel navigation between Tasks and Retrospectives
+- add task navigation from DigestPanel source retrospectives
+- add task-detail navigation from RetrospectivePanel
+- add real-time SignalR refresh for MemoryBrowserPanel
+- add real-time SignalR refresh for DigestPanel
+- add real-time SignalR refresh for RetrospectivePanel
+- add taskId filter to GET /api/retrospectives
+- add retrospective panel UI with agent filter and detail view
+- add retrospective history REST API (GET /api/retrospectives)
+- add digest history panel with stats, list, and detail views
+- add digest history REST API (GET /api/digests)
+- add GENERATE_DIGEST command for manual digest triggering
+- add learning digests — periodic synthesis of retrospectives into shared memories
+- add post-task retrospectives for agent learning
+- add LIST_AGENT_STATS command and fix reviewer permissions
+- add LIST_WORKTREES and CLEANUP_WORKTREES agent commands
+- add worktree status API and dashboard widget
+- add SCHEDULE_SPRINT agent command for cron schedule management
+- add sprint schedule management UI in settings
+- add cron-scheduled sprints with per-workspace schedules
+- add sprint auto-start on completion
+- add bulk task operations for batch status/assign changes
+- add agent catalog hot-reload with file watcher
+- add agent memory browser with browse/stats/delete endpoints
+- add TaskUnblocked desktop notification support
+- add DM thread SSE streaming to replace 10s polling
+- add auto-unblock notifications when task dependencies are satisfied
+- add conversation export for rooms and DM threads
+- add stage prerequisites for sprint advancement
+- add task dependencies with DAG cycle detection
+- add useMessageSSE hook for real-time DM streaming
+- add DM thread SSE streaming endpoint
+- add SSE message streaming for consultant API
+- add consultant API rate limiting
+- add task cycle analytics endpoint and dashboard panel
+- add spec corpus versioning with content hash and prompt integration
+- sanitize summary prompts against prompt injection
+- add prompt injection mitigation with boundary markers and content escaping
+- add pipeline-level retry for safe commands
+- add automated spec drift detection CI job
 
 ### Fixes
 
-- **005-workspace-runtime / 300-frontend-ui**: Fix archived session messages not showing agent messages. Root cause: `TrimMessagesAsync` deleted messages across all sessions indiscriminately, and the query leaked User messages cross-session into archived views. Fix: trim only active session messages (never delete archived session history); when an explicit sessionId is requested, return only that session's messages without cross-session leaking. Aligns `GetRoomMessagesAsync` with `RoomSnapshotBuilder` contract.
-- **300-frontend-ui**: Fix expanded messages auto-collapsing when new messages arrive. Root cause: `setExpandedMsgs` reset effect depended on `room` object reference (which changes on every poll) instead of `room?.id`. Also removed `thinkingAgents.length` from scroll-to-bottom effect so agent thinking state changes no longer force-scroll the viewport.
-
-### Features
-
-- **300-frontend-ui**: Expand/collapse all toggle for chat messages. "⊞ Expand" / "⊟ Collapse" button in SessionToolbar controls default expand state (persisted in localStorage). Per-message toggles override the default. State model: `defaultExpanded` boolean + `overrides` set (messages toggled opposite to default).
-- **300-frontend-ui**: Improved sidebar collapse behavior. Collapsed mode shows nav icons with tooltips (not just room dots). « / » toggle button always visible. Thumbtack pin button: when unpinned, sidebar auto-collapses on narrow viewports (< 900px) via `matchMedia`. Pin state persisted in localStorage.
-
-### Features
-
-- **019-forge-engine**: Crash recovery (`PipelineRunner.ResumeAsync`). Rebuilds pipeline state from per-phase snapshots, accumulates tokens/cost from all persisted attempts (including crashed phases), resumes from first non-succeeded phase. Budget guard prevents overspend on resume. Idempotent for terminal runs. `IRunStore` gains `ReadTaskAsync`/`ReadMethodologyAsync`. 8 new tests (254 forge tests total). Closes Known Gap #6.
-- **010-task-management**: Task priority system. `TaskPriority` enum (`Critical`, `High`, `Medium`, `Low`) with int DB storage (0–3) for correct `ORDER BY ASC`. Priority on `TaskSnapshot`, `TaskAssignmentRequest`, `TaskEntity`. `PUT /api/tasks/{id}/priority` REST endpoint. `UPDATE_TASK` command accepts `priority` arg. `create_task` agent tool accepts optional priority. Tasks sorted by priority then createdAt in `GetTasksAsync`. Breakout sub-tasks inherit parent task priority. `PromptBuilder` includes priority in agent context. Frontend: priority badge in task list/detail, priority-first sort, `updateTaskPriority` API function. 20 new backend tests (4622 total).
-- **300-frontend-ui**: Manual session compaction button in `SessionToolbar`. "⟳ Compact" button calls `POST /api/rooms/{roomId}/compact` to reset agent CLI sessions and free context window space. Shows loading state, success/error feedback with auto-dismiss, fires `onCompacted` callback. `CompactRoomResult` type and `compactRoom()` API function in `api/rooms.ts`. 7 new frontend tests (2327 total).
-
-### CI/Infrastructure
-
-- **018-testing-strategy**: Automated CI coverage reporting. Backend uses coverlet + ReportGenerator for Cobertura XML + text summary. Frontend uses `@vitest/coverage-v8` with Cobertura + HTML output. Both uploaded as artifacts with 30-day retention. Job summary shows line/branch percentages. Local convenience script: `scripts/coverage.sh`.
-
-### Features
-
-- **008-agent-memory**: `GENERATE_DIGEST` command for manual/admin learning digest triggering. Optional `force` arg bypasses retrospective threshold. Added to planner permissions, human command allowlist (async execution), and planner startup prompt. 12 new tests (4362 total).
-
-### Documentation
-
-- **300-frontend-ui**: Document DigestPanel (learning digest history tab with stats, paginated list, detail with source retrospectives, race condition guards) and WorktreeStatusPanel (live worktree health widget in dashboard with auto-refresh, diff stats, dirty file preview).
-
-### Features
-
-- **008-agent-memory**: Retrospective history REST API. `RetrospectiveController` exposes read-only endpoints at `/api/retrospectives`: paginated list with agent filter, single retrospective with task metadata, and aggregate statistics (total, per-agent breakdown, average content length, latest timestamp). 21 new tests (4426 total).
-
-### Refactoring
-
-- **001-domain-model**: Extract 31 inline entity configurations from `AgentAcademyDbContext.OnModelCreating` into 10 `IEntityTypeConfiguration<T>` files in `Data/Configurations/`. DbContext reduced from 623→54 lines. Uses `ApplyConfigurationsFromAssembly` for automatic discovery.
-
-### Tests
-
-- **003-agent-system**: Add 22 behavioral tests for `AgentOrchestrator` — queue mechanics, conversation rounds, DM handling, startup recovery (4476 total).
-
-## v2.0.1 (2026-04-12)
-
-### Refactoring
-
-- extract SprintArtifactService from SprintService (835→635 lines)
-- extract RoomLifecycleService from RoomService (887→679 lines)
-
-### Fixes
-
+- show previous-session tail when active session is empty (#118)
+- close coverage gaps in drift-map.json (#117)
+- drain Discord outbound ops before client teardown (#116)
+- serialize Discord provider Configure/Connect on _config access (#115)
+- harden Discord provider connect/dispose lifecycle (#114)
+- align forge execution with copilot sdk auth + stabilization (#112)
+- clean up timers on unmount in AdvancedTab to eliminate test error
+- eliminate flaky test failures from cwd race conditions
+- update KnownCommands expected count from 76 to 80
+- add CSRF header to SignalR negotiate request
+- remove phase filtering from room participants and move session rotation after rounds
+- make onboard tab default test async to prevent timeout under load
+- archived session messages, expand/scroll, sidebar collapse
+- resolve pipe deadlock in SearchCodeAsync that hung the test suite
+- address all review findings in forge spike critical gaps doc
+- replace Thread.Sleep with FakeTimeProvider in circuit breaker tests
+- mock Fluent Dialog primitives in agentConfigCard to kill 6+ commit flake streak (#109)
+- rotate workspace sessions on HTTP advance path (#107)
+- audit - merge race, session rotation, fair scheduling, worktree sync (#105)
+- 4 medium-severity audit findings (memory cap, DM pagination, stale secrets, spec sync) (#104)
+- 7 bugs in sprint flow, claim race, and read_file sandbox (#103)
+- reconcile spec 300 with React client (closes #76) (#100)
+- document shipped PR workflow (#69) (#93)
+- rename Prometheus→Athena in spec 007 permission model (#92)
+- add CSRF protection for cookie-authenticated mutating endpoints (#91)
+- wire AgentPermissionHandler in CopilotExecutor (#62) (#90)
+- align breakout worktree lifecycle with spec 005 (#65) (#88)
+- invalidate content-hash cache on any spec file edit (#63) (#87)
+- stop leaking prior-session messages into room snapshots (#64) (#86)
+- stabilize projectSelector onboard dialog flake via findByRole (#84)
+- tighten waitFor conditions to stabilize flaky client DOM tests (#83)
+- gate auth cookie Secure/SameSite on environment (#60) (#79)
+- standardize Consultant API env var name across docs and compose (#82)
+- honor auth-disabled mode in controller auth checks (#59) (#78)
+- set local git identity in TaskAssignmentHandlerTests (#81)
+- scope room participants to current phase roster
+- return 401 (not 302) for unauthenticated SignalR/API requests
+- lift handleRoomRename useCallback above early returns in AppShell
+- prevent --since mode from hanging by using per-module test filters
+- remove unused imports in 4 frontend test files breaking tsc
+- sync frontend ActivityEventType with backend enum
+- register ICrashRecoveryService in test DI containers
+- harden ActivityHub authorization wiring
+- correct TypeScript type errors in frontend hook tests
+- standardize error responses to RFC 7807 ProblemDetails
+- exclude archived rooms from workspace default query
+- adopt orphaned legacy room on workspace activation
+- regenerate AddSprintSchedules migration with Designer file
+- remove [property:] attribute target from record types for ASP.NET Core 8
+- break circular DI dependency preventing server startup
+- resolve pre-existing TypeScript errors in frontend test files
+- add keyboard accessibility to RetrospectivePanel task-title links
+- resolve TypeScript errors in test files (unused vars, missing summary field)
 - stabilize flaky Fluent UI Dialog portal tests
 - resolve 8 TypeScript errors in frontend test files
 - stabilize dialog portal timing in agentConfigCard and templateCard tests
@@ -63,6 +171,86 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Documentation
 
+- add ForgePanel to frontend UI spec component tree
+- update forge spec and changelog for server integration
+- update spec 018 to reflect Bogus test data fakers
+- add GoalCardSummary to specs 016, 300, CHANGELOG
+- add goal card panel to frontend spec and changelog
+- add goal card PR enrichment to specs 010, CHANGELOG
+- add goal card system to specs 001, 007, 014, 016
+- sync specs 005, 012, 300 with session message query and sidebar changes
+- add spec 019 — Forge Pipeline Engine
+- fix T2 and T3 method counts (Socrates review)
+- add acceptance criteria for Forge spike benchmark tasks
+- document critical findings and post-spike scope additions
+- omit-key rule for finalArtifactHashes; nullable artifactHash on attempts (Socrates round 3)
+- lock finalArtifactHashes map-keying and phase-id casing
+- align storage-layout trace shapes with locked contract
+- apply v2 hash envelope corrections (Athena/Socrates round)
+- freeze architecture and design for pipeline engine spike
+- close AdvanceSprint rotation gap note (#108)
+- sync 4 audit-fix subsystems with implementation (#106)
+- reconcile spec 007 permission model with agents.json (closes #70) (#99)
+- close spec 001 missing records/fields (closes #67) (#98)
+- round-2 spec-gap sweep (closes #66 #71 #72 #73 #74 #75 #77) (#97)
+- document phase-scoped room membership as presentation-layer contract (closes #53) (#95)
+- fix spec 014 entity drift (closes #68) (#94)
+- document Fluent UI v9 Dialog flake-resistant test pattern (#85)
+- record phase-scoped participants fix in spec changelog
+- require npm run dev for server startup, warn against DLL-launch
+- add Known Gaps and Revision History to spec 300-frontend-ui
+- update mutation testing scores and fix Stryker runner
+- sync spec 018 test counts to verified actuals (8,103 tests)
+- document CORS configurability and add explicit config to appsettings
+- sync spec 300 for sidebar panels, settings sub-tabs, and new API endpoints
+- update spec 006 for interface extraction sprint batch 4
+- update spec 006 for interface extraction sprint batch 3
+- update spec 006 for interface extraction sprint
+- update spec 006 for IAgentTurnRunner contract extraction
+- fix stale AgentOrchestrator references across 8 specs
+- update spec 006 for orchestrator decomposition
+- update specs 005 and 010 for task service interface contracts
+- add full request/response schema definitions to API reference spec
+- add artifacts panel section to frontend spec and changelog
+- document rate limiting and pagination in API reference spec
+- mark gap 4.1 (manual compaction) as resolved
+- mark gap 2.1 (task prioritization) as resolved
+- update spec 010 and changelog for task priority feature
+- update spec 018 and changelog for API contract tests
+- add spec 017-deployment — deployment & operations guide
+- document ProblemDetails error format in API reference spec
+- add spec 015-security-model — consolidated threat model and permission reference
+- add spec 014-database-schema — consolidated entity reference
+- add spec 016-api-reference — unified REST endpoint catalog
+- update changelog with frontend error states feature
+- add spec 018-testing-strategy
+- update changelog with workspace room adoption fix
+- add spec coverage analysis and update README
+- update changelog and spec for DbContext refactoring
+- add REST API documentation for 33 unspecced endpoints
+- add RestartHistoryPanel and RoomStatsPanel to frontend spec
+- add MemoryBrowserPanel and worktree status API to specs
+- add task-detail navigation to RetrospectivePanel spec and changelog
+- add real-time refresh to MemoryBrowserPanel spec and changelog
+- add real-time refresh to DigestPanel spec and changelog
+- add real-time refresh to RetrospectivePanel spec and changelog
+- add DigestPanel and WorktreeStatusPanel to frontend spec
+- add sprint schedule UI to spec and changelog
+- add bulk task operations to specs and changelog
+- add agent catalog hot-reload to specs and changelog
+- add memory browser to specs and changelog
+- sync specs for auto-unblock notifications and TaskUnblocked desktop notification
+- add DM thread list SSE spec section
+- add conversation export spec section
+- sync specs and changelog for task cycle analytics
+- sync specs and drift map for decomposition series extractions
+- sync specs and changelog for TaskEvidenceService extraction
+- sync spec 013 and changelog for SprintArtifactService extraction
+- add 9 missing service entries to spec drift map
+- sync spec 003 for CopilotSessionPool and CopilotSdkSender extraction
+- sync spec 004 for DiscordMessageSender and DiscordMessageRouter extraction
+- sync spec 006 for AgentOrchestrator RoundContext extraction
+- sync spec 003 for summary prompt sanitization
 - regenerate changelog for v2.0.1 release prep
 - mark spec 007 phases 1B, 3, and 4 as IMPLEMENTED
 - sync specs for CopilotClientFactory and DiscordInputHandler extractions
@@ -71,17 +259,175 @@ Generated from [conventional commits](https://www.conventionalcommits.org/).
 
 ### Refactoring
 
+- extract App.tsx orchestration into focused hooks (#119)
+- extract DiscordProviderConfig value object (#113)
+- remove dead endpoints (reloadAgentCatalog, getRoomUsageRecords, runAgent)
+- register command/executor dependencies in DI (#55)
+- remove dead code identified by unused features audit
+- extract ICopilotClientFactory, ICopilotSessionPool, ITokenPersistenceService, IAgentToolFunctions contracts
+- extract ILearningDigestService, IRetrospectiveService, ISpecManager, IProjectScanner, IAgentMemoryLoader contracts
+- extract ISearchService, ISystemSettingsService, IWorkspaceService, IInitializationService, IPhaseTransitionValidator contracts
+- extract IRoomArtifactTracker, IArtifactEvaluatorService, IPlanService contracts
+- extract IConversationKickoffService, IConversationSessionQueryService, IConversationExportService contracts
+- extract ISprintArtifactService, ISprintMetricsCalculator, ISprintScheduleService contracts
+- extract IAgentTurnRunner interface contract
+- extract ISprintStageService interface contract
+- extract ICopilotSdkSender interface contract
+- extract IAgentAnalyticsService interface contract
+- extract IMessageBroadcaster interface contract
+- extract INotificationManager interface contract
+- extract IAgentQuotaService interface contract
+- extract IAgentErrorTracker interface contract
+- extract ILlmUsageTracker interface contract
+- extract IWorktreeService interface contract
+- extract IGitService interface contract
+- extract IAgentOrchestrator interface contract
+- extract IConversationSessionService interface contract
+- extract IAgentConfigService interface contract
+- extract ICopilotTokenProvider interface contract
+- extract ISprintService interface contract
+- extract IActivityPublisher and IActivityBroadcaster contracts
+- extract CommandController db-scope helper
+- inject crash recovery contract in initialization
+- extract breakout completion service contract
+- add crash recovery service contract
+- extract startup infrastructure seams
+- contractize orchestrator runtime seams
+- stabilize orchestrator DM queue dedupe
+- use ITaskAssignmentHandler in AgentTurnRunner
+- extract IRoomSnapshotBuilder interface contract
+- extract IWorkspaceRoomService contract
+- extract IRoomLifecycleService interface contract
+- extract IAgentLocationService interface contract
+- extract IRoomService interface contract
+- extract IMessageService interface contract
+- extract IBreakoutRoomService interface contract
+- migrate TaskDependencyService, TaskAnalyticsService, TaskEvidenceService consumers to interfaces
+- migrate TaskItemService consumers to ITaskItemService interface
+- migrate TaskOrchestrationService consumers to ITaskOrchestrationService
+- migrate TaskLifecycleService callers to ITaskLifecycleService
+- migrate TaskQueryService callers to interfaces and TaskSnapshotFactory
+- extract task service layer interface contracts
+- extract ConversationRoundRunner and DirectMessageRouter from AgentOrchestrator
+- extract bulk task ops from CollaborationController into TaskOrchestrationService
+- extract guard+guild helpers in DiscordNotificationProvider
+- extract SprintScheduleService and WorkspaceService from fat controllers
+- extract DbContext entity configurations into IEntityTypeConfiguration classes
+- extract Program.cs into focused extension methods
+- introduce IAgentCatalog interface for hot-reload support
+- extract RoundContextLoader from AgentOrchestrator
+- extract ConversationSessionQueryService and split TaskLifecycleService
+- extract GitService merge operations and CommandAuditController
+- extract AgentConfigController from AgentController
+- extract SprintStageService from SprintService
+- extract DiscordNameFormatter and DiscordChannelRebuilder from DiscordChannelManager
+- extract BreakoutCompletionService from BreakoutLifecycleService
+- extract RoomSnapshotBuilder and WorkspaceRoomService from RoomService
+- decompose SlackNotificationProvider into channel manager and message builder
+- decompose TaskDetail into submodules
+- decompose AgentDetailView and UsagePanel into submodules
+- decompose ErrorsPanel, AuditLogPanel, and NotificationSetupWizard into submodules
+- decompose App, AgentConfigCard, and ChatPanel into submodules
+- decompose CommandPalette into commandPalette submodule
+- decompose DmPanel into dm submodule
+- decompose CommandsPanel into commands submodule
+- decompose ProjectSelectorPage into projectSelector submodule
+- decompose SettingsPanel into tab subcomponents
+- decompose TaskListPanel into TaskDetail subcomponent
+- decompose SprintPanel into 6 subcomponents
+- extract TaskEvidenceService from TaskLifecycleService
+- extract SprintArtifactService from SprintService
+- extract RoomLifecycleService from RoomService
+- extract AgentTurnRunner from AgentOrchestrator
+- extract tool wrapper inner classes from AgentToolFunctions
+- extract SprintMetricsCalculator from SprintService
+- extract CopilotSessionPool and CopilotSdkSender from CopilotExecutor
+- extract DiscordMessageSender and DiscordMessageRouter from DiscordNotificationProvider
+- extract RoundContext to consolidate duplicated context loading in AgentOrchestrator
 - extract RunAgentTurnAsync to consolidate agent execution in orchestrator
 - extract DiscordInputHandler from DiscordNotificationProvider
 - extract CopilotClientFactory from CopilotExecutor
 
 ### Tests
 
+- add edge-case tests for Tier 2 task command handlers
+- add GoalCardController endpoint tests
+- add goal card dashboard panel DOM tests
+- add GoalCardPanel interactive DOM tests
+- add goal card prompt template tests for PromptBuilder and SprintPreambles
+- add test backfill for schema evolution, parallel phases, and seeded defects
+- add DI integration tests for ForgeServiceExtensions
+- cover auth-disabled mode across 5 controllers (#59) (#89)
+- cover TaskLifecycleService mutants to 100% (Stryker)
+- cover TokenPersistenceService mutants to 100% (Stryker)
+- cover CommandPipeline mutants to 100% (Stryker)
+- cover NoCoverage mutant on ShellCommand unreachable default arm
+- cover DbUpdateException retry path in LinkTaskToSpecAsync
+- raise TaskLifecycleService mutation score to 100% (from 81.60%)
+- raise SearchCodeHandler mutation score to 100% (from 83%)
+- raise CommandParser mutation score to 100% (from 94.66%)
+- raise ShellCommand mutation score to 99% (from 84%)
+- raise mutation coverage for TaskLifecycleService Review + SpecLinks
+- add SearchCodeHandler mutation module and improve SpecLinks score
+- add mutation-killing tests for CommandParser and TaskLifecycleService
+- add 25 mutation-killing tests for CommandParser and TaskLifecycleService
+- add 97 security tests and fix SearchCodeHandler path traversal
+- add 28 unit tests for ConversationRoundRunner, DirectMessageRouter, NotificationRestoreService
+- add 66 unit tests for TaskSnapshotFactory
+- add DOM tests for CreateSection, LoadExistingSection, AdvancedTab, ArtifactList
+- add DOM tests for TaskDetail, sub-sections, and StatusBadge
+- add DOM tests for 8 more untested frontend components
+- add DOM tests for 8 untested frontend components
+- add DOM tests for ModelsTab, NotificationDeliveriesSection, DataExportSection, ActivityFeedPanel, SpecSearchPanel, AgentKnowledgePanel
+- add DOM tests for TaskPropertyControls, WorkspaceHeader, and MemoryBrowserPanel
+- add permission matrix tests for PR workflow and task dependency commands
+- backfill DI wiring tests for 15 interface contracts
+- backfill artifact refresh coverage and harden queue processing
+- add tests for 5 frontend hooks
+- add tests for 6 frontend utility modules
+- add tests for WorkspaceService and SprintScheduleService
+- add tests for health response writer and SPA fallback helper
+- add frontend error state tests for ChatPanel and PlanPanel
+- add 27 tests for TaskAssignmentHandler and TaskLifecycleService review workflow
+- add tests for AgentsEqual permissions/identity and conversation kickoff
+- add 22 behavioral tests for AgentOrchestrator
+- add 17 edge-case tests for SignalR refresh and cross-panel navigation
+- add 36 edge-case tests for retrospective API, controller, and panel
+- add 54 tests for digest history UI and API client
+- add 25 edge-case tests for learning digests and GENERATE_DIGEST
+- add 29 edge-case tests for retrospectives, agent stats, and worktree commands
+- add sprint schedule UI tests for AdvancedTab
+- add 10 edge-case tests for memory browser
+- add 12 edge-case tests for agent catalog hot-reload
+- add 11 edge-case tests for bulk task operations
+- add 6 edge-case tests for desktop notifications hook
+- add 11 controller-level tests for DM thread SSE endpoint
+- add 30 tests for task dependency handlers and controller endpoints
+- add unit tests for CopilotTokenProvider, CopilotAuthProbe, CopilotSdkSender, and GitService branch/merge ops
+- add unit tests for ActivityBroadcaster, AgentToolRegistry, and InitializationService
+- add comprehensive xUnit tests for ActivityPublisher
+- add 177 unit tests for 9 services
+- add 142 unit tests for PlanService, TaskItemService, and BreakoutRoomService
+- add comprehensive tests for ConversationSessionQueryService and LlmUsageTracker
+- add 318 unit tests for RoomLifecycleService, SprintTimeoutService, SprintMetricsCalculator, SprintArtifactService, and TaskQueryService
+- add 168 unit tests for AgentTurnRunner, CrashRecoveryService, and TaskOrchestrationService
+- add 142 unit tests for SprintStageService, BreakoutCompletionService, and CopilotClientFactory
+- add 147 unit tests for MessageService, RoomService, and TaskLifecycleService
+- add 66 unit tests for OnboardSection, SessionToolbar, and SprintHistory
+- add 124 unit tests for 5 untested frontend submodules
+- add 61 unit tests for DiscordNameFormatter and DiscordChannelRebuilder
+- add 130 unit tests for 4 untested SDK tool wrappers
+- add 29 unit tests for CopilotSessionPool
 - add 41 tests for 8 untested command handlers
 - add 26 tests for AgentAnalyticsPanel and AgentDetailView
 - add 93 tests for 11 untested frontend components
 - add 111 tests for 5 more untested frontend components
 - add 107 tests for 4 untested frontend components
+
+### Other
+
+- Release v2.1.0 — Forge Engine, Command System Tiers 1-3, Goal Cards, Sprint Scheduling (#110)
+- ci: add automated coverage reporting to CI pipeline
 
 ## v2.0.0 (2026-04-12)
 
