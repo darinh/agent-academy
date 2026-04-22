@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, mergeClasses, Spinner } from "@fluentui/react-components";
-import { ArrowSyncRegular, ChevronLeftRegular, ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
+import { ArrowSyncRegular, ChevronLeftRegular, ChevronDownRegular, ChevronRightRegular, PlayRegular } from "@fluentui/react-icons";
 import V3Badge from "./V3Badge";
 import type { BadgeColor } from "./V3Badge";
 import EmptyState from "./EmptyState";
@@ -12,14 +12,20 @@ import {
   getForgeRun,
   getForgeRunPhases,
   getForgeArtifact,
+  startForgeRun,
+  listMethodologies,
+  getMethodology,
+  saveMethodology,
   type ForgeStatus,
   type ForgeJobSummary,
   type ForgeRunSummary,
   type ForgeRunTrace,
   type ForgePhaseRunTrace,
   type ForgeArtifactResponse,
+  type MethodologySummary,
 } from "./api";
 import { useForgePanelStyles } from "./forge";
+import { DEFAULT_METHODOLOGY_JSON } from "./forge/defaultMethodology";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -87,9 +93,9 @@ function formatLatencyMs(ms: number): string {
 
 // ── Main Panel ───────────────────────────────────────────────
 
-type ForgeView = "list" | "run-detail";
+type ForgeView = "list" | "run-detail" | "new-run";
 
-export default function ForgePanel() {
+export default function ForgePanel({ refreshTrigger }: { refreshTrigger?: number }) {
   const s = useForgePanelStyles();
 
   // List view state
@@ -116,6 +122,19 @@ export default function ForgePanel() {
   const [artifactLoading, setArtifactLoading] = useState(false);
   const artifactCache = useRef<Map<string, ForgeArtifactResponse>>(new Map());
   const artifactFetchIdRef = useRef(0);
+
+  // New run form state
+  const [newRunTitle, setNewRunTitle] = useState("");
+  const [newRunDescription, setNewRunDescription] = useState("");
+  const [newRunMethodology, setNewRunMethodology] = useState(DEFAULT_METHODOLOGY_JSON);
+  const [newRunSubmitting, setNewRunSubmitting] = useState(false);
+  const [newRunError, setNewRunError] = useState<string | null>(null);
+
+  // Methodology catalog state
+  const [methodologyCatalog, setMethodologyCatalog] = useState<MethodologySummary[]>([]);
+  const [selectedMethodologyId, setSelectedMethodologyId] = useState<string>("");
+  const [savingMethodology, setSavingMethodology] = useState(false);
+  const methodologyFetchIdRef = useRef(0);
 
   // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,7 +207,17 @@ export default function ForgePanel() {
   // ── Initial fetch ──
   useEffect(() => { fetchList(); }, [fetchList]);
 
-  // ── Conditional polling: poll when active jobs exist ──
+  // ── SignalR-driven refresh: re-fetch when forge events arrive ──
+  const prevTrigger = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevTrigger.current) {
+      prevTrigger.current = refreshTrigger;
+      fetchList();
+      if (selectedRunId) fetchRunDetail(selectedRunId);
+    }
+  }, [refreshTrigger, fetchList, fetchRunDetail, selectedRunId]);
+
+  // ── Conditional polling: poll when active jobs exist (fallback for no SignalR) ──
   useEffect(() => {
     const hasActive = status != null && status.activeJobs > 0;
     const isRunning = runTrace != null && (runTrace.outcome === "Running" || runTrace.outcome === "Pending");
@@ -241,6 +270,223 @@ export default function ForgePanel() {
       return next;
     });
   }, []);
+
+  // ── New run handlers ──
+
+  const handleOpenNewRun = useCallback(async () => {
+    setNewRunTitle("");
+    setNewRunDescription("");
+    setNewRunMethodology(DEFAULT_METHODOLOGY_JSON);
+    setNewRunError(null);
+    setSelectedMethodologyId("");
+    setView("new-run");
+    try {
+      const catalog = await listMethodologies();
+      setMethodologyCatalog(catalog);
+    } catch {
+      // Catalog is optional — form still works with manual JSON editing
+      setMethodologyCatalog([]);
+    }
+  }, []);
+
+  const handleCancelNewRun = useCallback(() => {
+    setView("list");
+    setNewRunError(null);
+  }, []);
+
+  const handleSubmitNewRun = useCallback(async () => {
+    setNewRunError(null);
+
+    if (!newRunTitle.trim()) {
+      setNewRunError("Title is required");
+      return;
+    }
+    if (!newRunDescription.trim()) {
+      setNewRunError("Description is required");
+      return;
+    }
+
+    let methodology;
+    try {
+      methodology = JSON.parse(newRunMethodology);
+    } catch {
+      setNewRunError("Methodology JSON is invalid");
+      return;
+    }
+
+    setNewRunSubmitting(true);
+    try {
+      await startForgeRun({
+        title: newRunTitle.trim(),
+        description: newRunDescription.trim(),
+        methodology,
+      });
+      setView("list");
+      fetchList();
+    } catch (err) {
+      setNewRunError(err instanceof Error ? err.message : "Failed to start run");
+    } finally {
+      setNewRunSubmitting(false);
+    }
+  }, [newRunTitle, newRunDescription, newRunMethodology, fetchList]);
+
+  const handleSelectMethodology = useCallback(async (id: string) => {
+    setSelectedMethodologyId(id);
+    if (!id) return; // "Custom" selected — keep current JSON
+    const fetchId = ++methodologyFetchIdRef.current;
+    try {
+      const methodology = await getMethodology(id);
+      if (fetchId !== methodologyFetchIdRef.current) return; // Stale response
+      setNewRunMethodology(JSON.stringify(methodology, null, 2));
+      setNewRunError(null);
+    } catch {
+      if (fetchId !== methodologyFetchIdRef.current) return;
+      setNewRunError(`Failed to load methodology "${id}"`);
+    }
+  }, []);
+
+  const handleSaveAsTemplate = useCallback(async () => {
+    let methodology;
+    try {
+      methodology = JSON.parse(newRunMethodology);
+    } catch {
+      setNewRunError("Cannot save: methodology JSON is invalid");
+      return;
+    }
+    if (!methodology.id) {
+      setNewRunError("Cannot save: methodology must have an 'id' field");
+      return;
+    }
+    setSavingMethodology(true);
+    setNewRunError(null);
+    try {
+      await saveMethodology(methodology.id, methodology);
+      const catalog = await listMethodologies();
+      setMethodologyCatalog(catalog);
+      setSelectedMethodologyId(methodology.id);
+      setNewRunError(null);
+    } catch (err) {
+      setNewRunError(err instanceof Error ? err.message : "Failed to save methodology");
+    } finally {
+      setSavingMethodology(false);
+    }
+  }, [newRunMethodology]);
+
+  // ── Render: New Run Form ──
+
+  if (view === "new-run") {
+    return (
+      <div className={s.root}>
+        <Button
+          className={s.backButton}
+          appearance="subtle"
+          size="small"
+          icon={<ChevronLeftRegular />}
+          onClick={handleCancelNewRun}
+        >
+          Cancel
+        </Button>
+
+        <div className={s.detail}>
+          <div className={s.detailHeader}>
+            <span style={{ fontFamily: "var(--aa-mono)", fontSize: "14px", fontWeight: 600 }}>
+              🚀 New Pipeline Run
+            </span>
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel} htmlFor="forge-title">Title</label>
+            <input
+              id="forge-title"
+              className={s.formInput}
+              type="text"
+              placeholder="e.g. Build auth module"
+              value={newRunTitle}
+              onChange={(e) => setNewRunTitle(e.target.value)}
+              disabled={newRunSubmitting}
+            />
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel} htmlFor="forge-description">Description</label>
+            <textarea
+              id="forge-description"
+              className={s.formTextarea}
+              placeholder="Describe the task for the pipeline…"
+              value={newRunDescription}
+              onChange={(e) => setNewRunDescription(e.target.value)}
+              disabled={newRunSubmitting}
+              rows={4}
+            />
+          </div>
+
+          <div className={s.formGroup}>
+            <label className={s.formLabel} htmlFor="forge-methodology-select">Methodology</label>
+            <select
+              id="forge-methodology-select"
+              className={s.formInput}
+              value={selectedMethodologyId}
+              onChange={(e) => handleSelectMethodology(e.target.value)}
+              disabled={newRunSubmitting}
+              style={{ cursor: "pointer" }}
+            >
+              <option value="">Custom (edit JSON below)</option>
+              {methodologyCatalog.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id} — {m.phaseCount} phases{m.description ? ` · ${m.description}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={s.formGroup}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <label className={s.formLabel} htmlFor="forge-methodology" style={{ marginBottom: 0 }}>
+                Methodology JSON
+              </label>
+              <Button
+                appearance="subtle"
+                size="small"
+                onClick={handleSaveAsTemplate}
+                disabled={newRunSubmitting || savingMethodology}
+                style={{ fontSize: "11px" }}
+              >
+                {savingMethodology ? "Saving…" : "💾 Save as Template"}
+              </Button>
+            </div>
+            <textarea
+              id="forge-methodology"
+              className={s.formTextarea}
+              value={newRunMethodology}
+              onChange={(e) => {
+                setNewRunMethodology(e.target.value);
+                setSelectedMethodologyId(""); // Mark as custom when editing
+              }}
+              disabled={newRunSubmitting}
+              rows={12}
+              style={{ fontSize: "11px" }}
+            />
+          </div>
+
+          {newRunError && (
+            <div style={{ color: "var(--aa-copper, #e06c75)", fontFamily: "var(--aa-mono)", fontSize: "12px" }}>
+              ⚠ {newRunError}
+            </div>
+          )}
+
+          <Button
+            appearance="primary"
+            size="small"
+            icon={newRunSubmitting ? <Spinner size="tiny" /> : <PlayRegular />}
+            onClick={handleSubmitNewRun}
+            disabled={newRunSubmitting}
+          >
+            {newRunSubmitting ? "Starting…" : "Start Run"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Render: Run Detail ──
 
@@ -511,6 +757,17 @@ export default function ForgePanel() {
           )}
         </div>
         <div className={s.controls}>
+          {status?.executionAvailable && (
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<PlayRegular />}
+              onClick={handleOpenNewRun}
+              aria-label="New run"
+            >
+              New Run
+            </Button>
+          )}
           <Button
             appearance="subtle"
             size="small"
@@ -611,7 +868,7 @@ export default function ForgePanel() {
             <EmptyState
               icon="🔥"
               title="No forge runs yet"
-              detail="Forge runs are created when agents execute the RUN_FORGE command. Completed runs and their artifacts appear here."
+              detail="Start a run from the New Run button above. Completed runs and their artifacts appear here."
             />
           )}
           {runs.length > 0 && (

@@ -223,4 +223,45 @@ export const useForgePanelStyles = makeStyles({
   backButton: {
     alignSelf: "flex-start",
   },
+  formGroup: {
+    display: "flex",
+    flexDirection: "column",
+    ...shorthands.gap("4px"),
+  },
+  formLabel: {
+    fontSize: "11px",
+    fontFamily: "var(--aa-mono)",
+    fontWeight: 600,
+    color: "var(--aa-soft)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.04em",
+  },
+  formInput: {
+    fontFamily: "var(--aa-mono)",
+    fontSize: "12px",
+    color: "var(--aa-text)",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
+    ...shorthands.borderRadius("4px"),
+    ...shorthands.padding("8px", "10px"),
+    outlineStyle: "none",
+    "&:focus": {
+      ...shorthands.borderColor("var(--aa-cyan, #5b8def)"),
+    },
+  },
+  formTextarea: {
+    fontFamily: "var(--aa-mono)",
+    fontSize: "12px",
+    color: "var(--aa-text)",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    ...shorthands.border("1px", "solid", "var(--aa-border)"),
+    ...shorthands.borderRadius("4px"),
+    ...shorthands.padding("8px", "10px"),
+    outlineStyle: "none",
+    resize: "vertical" as const,
+    lineHeight: "1.5",
+    "&:focus": {
+      ...shorthands.borderColor("var(--aa-cyan, #5b8def)"),
+    },
+  },
 });

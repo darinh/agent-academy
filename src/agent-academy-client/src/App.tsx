@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Button,
   FluentProvider,
@@ -9,12 +10,11 @@ import {
   useId,
   Toast,
   ToastTitle,
-  ToastBody,
 } from "@fluentui/react-components";
 import { useLayoutStyles, useWorkspaceStyles, useRecoveryStyles } from "./styles";
 import { useWorkspace } from "./useWorkspace";
 import { useDesktopNotifications } from "./useDesktopNotifications";
-import type { ActivityEvent, CollaborationPhase, WorkspaceMeta } from "./api";
+import type { CollaborationPhase, WorkspaceMeta } from "./api";
 import { renameRoom } from "./api";
 import SidebarPanel from "./SidebarPanel";
 import ChatPanel from "./ChatPanel";
@@ -36,10 +36,13 @@ import {
   isWorkspaceLimited,
   shouldRenderWorkspace,
 } from "./authPresentation";
-import { VIEW_TITLES, TOAST_EVENT_TYPES, toastIntent, matrixTheme } from "./appConstants";
+import { VIEW_TITLES, matrixTheme } from "./appConstants";
 import { useChatFilters } from "./useChatFilters";
 import { useProjectSelection } from "./useProjectSelection";
 import { useRoomCallbacks } from "./useRoomCallbacks";
+import { useCrossPanelNavigation } from "./useCrossPanelNavigation";
+import { useDocumentTitle } from "./useDocumentTitle";
+import { useActivityToast } from "./useActivityToast";
 
 // Lazy-loaded panels
 const ProjectSelectorPage = lazy(() => import("./ProjectSelectorPage"));
@@ -48,6 +51,19 @@ const SettingsPanel = lazy(() => import("./SettingsPanel"));
 const AgentSessionPanel = lazy(() => import("./AgentSessionPanel"));
 const CommandPalette = lazy(() => import("./CommandPalette"));
 const KeyboardShortcutsDialog = lazy(() => import("./KeyboardShortcutsDialog"));
+
+type LazyBoundaryProps = {
+  fallback: ReactNode;
+  children: ReactNode;
+};
+
+function LazyBoundary({ fallback, children }: LazyBoundaryProps) {
+  return (
+    <ChunkErrorBoundary>
+      <Suspense fallback={fallback}>{children}</Suspense>
+    </ChunkErrorBoundary>
+  );
+}
 
 export default function App() {
   return (
@@ -82,19 +98,7 @@ function AppShell() {
   const desktopNotif = useDesktopNotifications();
 
   /* ── Activity toast handler ── */
-  const handleActivityToast = useCallback((evt: ActivityEvent) => {
-    desktopNotif.notify(evt);
-    if (!TOAST_EVENT_TYPES.has(evt.type)) return;
-    const intent = toastIntent(evt);
-    const timeout = intent === "error" ? 8000 : 4000;
-    dispatchToast(
-      <Toast>
-        <ToastTitle>{evt.type.replace(/([A-Z])/g, " $1").trim()}</ToastTitle>
-        <ToastBody>{evt.message}</ToastBody>
-      </Toast>,
-      { intent, timeout },
-    );
-  }, [dispatchToast, desktopNotif]);
+  const handleActivityToast = useActivityToast(dispatchToast, desktopNotif);
 
   /* ── Workspace core ── */
   const {
@@ -114,6 +118,7 @@ function AppShell() {
     memoryVersion,
     artifactVersion,
     goalCardVersion,
+    forgeVersion,
     err,
     busy,
     tab,
@@ -172,29 +177,15 @@ function AppShell() {
     enabled: !showProjectSelector && tab === "tasks",
   });
 
-  /* ── Task focus (cross-panel navigation) ── */
-  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
-  const handleNavigateToTask = useCallback((taskId: string) => {
-    setFocusTaskId(taskId);
-    setTab("tasks");
-  }, [setTab]);
-  const handleFocusTaskHandled = useCallback(() => {
-    setFocusTaskId(null);
-  }, []);
-
-  /* ── Retro filter (cross-panel navigation from tasks) ── */
-  const [retroFilterTaskId, setRetroFilterTaskId] = useState<string | null>(null);
-  const handleNavigateToRetro = useCallback((taskId: string) => {
-    setRetroFilterTaskId(taskId);
-    setTab("retrospectives");
-  }, [setTab]);
-  const handleClearRetroTaskFilter = useCallback(() => {
-    setRetroFilterTaskId(null);
-  }, []);
-  // Clear task filter when navigating away from retrospectives tab
-  useEffect(() => {
-    if (tab !== "retrospectives") setRetroFilterTaskId(null);
-  }, [tab]);
+  /* ── Cross-panel navigation (task focus + retro task filter) ── */
+  const {
+    focusTaskId,
+    retroFilterTaskId,
+    handleNavigateToTask,
+    handleFocusTaskHandled,
+    handleNavigateToRetro,
+    handleClearRetroTaskFilter,
+  } = useCrossPanelNavigation(tab, setTab);
 
   /* ── Keyboard shortcuts ── */
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -217,13 +208,7 @@ function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
 
   /* ── Document title ── */
-  useEffect(() => {
-    const roomName = room?.name ?? "Agent Academy";
-    const phase = room?.currentPhase ?? "";
-    document.title = phase
-      ? `${roomName} · ${phase} | Agent Academy`
-      : `${roomName} | Agent Academy`;
-  }, [room?.name, room?.currentPhase]);
+  useDocumentTitle(room?.name, room?.currentPhase);
 
   /* ── Room rename handler (must be declared before early returns to keep hook order stable) ── */
   const handleRoomRename = useCallback(async (newName: string) => {
@@ -242,7 +227,11 @@ function AppShell() {
   }
 
   if (auth.authEnabled && !shouldRenderWorkspace(auth)) {
-    return <ChunkErrorBoundary><Suspense fallback={<div className={s.root} />}><LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} /></Suspense></ChunkErrorBoundary>;
+    return (
+      <LazyBoundary fallback={<div className={s.root} />}>
+        <LoginPage copilotStatus={auth.copilotStatus} user={auth.user ?? null} />
+      </LazyBoundary>
+    );
   }
 
   /* ── Derived state ── */
@@ -318,16 +307,14 @@ function AppShell() {
       />
 
       {showProjectSelector ? (
-        <ChunkErrorBoundary>
-        <Suspense fallback={<div className={s.root}><Spinner label="Loading…" /></div>}>
-        <ProjectSelectorPage
-          onProjectSelected={handleProjectSelected}
-          onProjectOnboarded={handleProjectOnboarded}
-          user={auth.user ?? null}
-          onLogout={logoutDialog.request}
-        />
-        </Suspense>
-        </ChunkErrorBoundary>
+        <LazyBoundary fallback={<div className={s.root}><Spinner label="Loading…" /></div>}>
+          <ProjectSelectorPage
+            onProjectSelected={handleProjectSelected}
+            onProjectOnboarded={handleProjectOnboarded}
+            user={auth.user ?? null}
+            onLogout={logoutDialog.request}
+          />
+        </LazyBoundary>
       ) : (
         <div className={mergeClasses(s.shell, sidebarOpen ? s.shellOpen : s.shellCollapsed)}>
           <SidebarPanel
@@ -390,43 +377,39 @@ function AppShell() {
 
             {/* ─ Content ─ */}
             {sessionAgent ? (
-              <ChunkErrorBoundary>
-                <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
-                  <section className={s.tabContent}>
-                    <AgentSessionPanel
-                      agent={sessionAgent}
-                      location={sessionAgentLocation}
-                      thinkingAgents={thinkingAgentList}
-                      connectionStatus={connectionStatus}
-                      onSendMessage={handleSendMessage}
-                    />
-                  </section>
-                </Suspense>
-              </ChunkErrorBoundary>
+              <LazyBoundary fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
+                <section className={s.tabContent}>
+                  <AgentSessionPanel
+                    agent={sessionAgent}
+                    location={sessionAgentLocation}
+                    thinkingAgents={thinkingAgentList}
+                    connectionStatus={connectionStatus}
+                    onSendMessage={handleSendMessage}
+                  />
+                </section>
+              </LazyBoundary>
             ) : selectedBreakout ? (
-              <ChunkErrorBoundary>
-                <Suspense fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
-                  <section className={s.tabContent}>
-                    <ChatPanel
-                      room={{
-                        id: selectedBreakout.id,
-                        name: selectedBreakout.name,
-                        status: selectedBreakout.status,
-                        currentPhase: "Implementation",
-                        activeTask: null,
-                        participants: [],
-                        recentMessages: selectedBreakout.recentMessages,
-                        createdAt: selectedBreakout.createdAt,
-                        updatedAt: selectedBreakout.updatedAt,
-                      }}
-                      thinkingAgents={thinkingAgentList}
-                      connectionStatus={connectionStatus}
-                      onSendMessage={handleSendMessage}
-                      readOnly
-                    />
-                  </section>
-                </Suspense>
-              </ChunkErrorBoundary>
+              <LazyBoundary fallback={<section className={s.tabContent}><Spinner label="Loading…" /></section>}>
+                <section className={s.tabContent}>
+                  <ChatPanel
+                    room={{
+                      id: selectedBreakout.id,
+                      name: selectedBreakout.name,
+                      status: selectedBreakout.status,
+                      currentPhase: "Implementation",
+                      activeTask: null,
+                      participants: [],
+                      recentMessages: selectedBreakout.recentMessages,
+                      createdAt: selectedBreakout.createdAt,
+                      updatedAt: selectedBreakout.updatedAt,
+                    }}
+                    thinkingAgents={thinkingAgentList}
+                    connectionStatus={connectionStatus}
+                    onSendMessage={handleSendMessage}
+                    readOnly
+                  />
+                </section>
+              </LazyBoundary>
             ) : (
               <WorkspaceContent
                 tab={tab}
@@ -457,6 +440,7 @@ function AppShell() {
                 memoryVersion={memoryVersion}
                 artifactVersion={artifactVersion}
                 goalCardVersion={goalCardVersion}
+                forgeVersion={forgeVersion}
                 activity={activity}
                 onSelectRoom={(id) => { handleRoomSelect(id); setTab("chat"); }}
                 onNavigateToTasks={() => setTab("tasks")}
@@ -475,30 +459,24 @@ function AppShell() {
 
       {/* ── Overlays ── */}
       {showSettings && (
-        <ChunkErrorBoundary>
-          <Suspense fallback={null}>
-            <SettingsPanel onClose={() => setShowSettings(false)} desktopNotifications={desktopNotif} />
-          </Suspense>
-        </ChunkErrorBoundary>
+        <LazyBoundary fallback={null}>
+          <SettingsPanel onClose={() => setShowSettings(false)} desktopNotifications={desktopNotif} />
+        </LazyBoundary>
       )}
-      <ChunkErrorBoundary>
-        <Suspense fallback={null}>
-          <CommandPalette
-            open={paletteOpen}
-            onDismiss={() => setPaletteOpen(false)}
-            roomId={room?.id ?? null}
-            readOnly={workspaceLimited}
-          />
-        </Suspense>
-      </ChunkErrorBoundary>
-      <ChunkErrorBoundary>
-        <Suspense fallback={null}>
-          <KeyboardShortcutsDialog
-            open={shortcutsOpen}
-            onClose={() => setShortcutsOpen(false)}
-          />
-        </Suspense>
-      </ChunkErrorBoundary>
+      <LazyBoundary fallback={null}>
+        <CommandPalette
+          open={paletteOpen}
+          onDismiss={() => setPaletteOpen(false)}
+          roomId={room?.id ?? null}
+          readOnly={workspaceLimited}
+        />
+      </LazyBoundary>
+      <LazyBoundary fallback={null}>
+        <KeyboardShortcutsDialog
+          open={shortcutsOpen}
+          onClose={() => setShortcutsOpen(false)}
+        />
+      </LazyBoundary>
       <ConfirmDialog
         open={logoutDialog.open}
         onConfirm={logoutDialog.confirm}

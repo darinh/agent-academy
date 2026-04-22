@@ -738,6 +738,39 @@ public static class HumanCommandRegistry
                     "Set to 'true' to bypass the retrospective threshold and generate immediately.",
                     Required: false),
             ]),
+
+        // ── Forge Pipeline ──────────────────────────────────────────────────
+
+        new("RUN_FORGE", "Run forge pipeline", "forge",
+            "Start a new forge pipeline run with a task brief.",
+            "Queues a forge pipeline run that executes in the background. Uses the same Copilot SDK authentication path as the rest of Agent Academy. Use FORGE_STATUS to monitor progress.",
+            IsAsync: true,
+            Fields:
+            [
+                new("title", "Task title", "text", "Short title for the task to generate.", Required: true),
+                new("description", "Task description", "text", "Detailed description of what to build.", Required: true),
+                new("methodology", "Methodology", "text",
+                    "Methodology ID to use (leave empty for default). Use LIST_FORGE_RUNS to see available methodologies.",
+                    Required: false),
+            ]),
+
+        new("FORGE_STATUS", "Forge status", "forge",
+            "Check forge engine status or details of a specific job.",
+            "Without a jobId, returns overall engine status and active jobs. With a jobId, returns detailed status of that specific job including phase progress.",
+            IsAsync: false,
+            Fields:
+            [
+                new("jobId", "Job ID", "text", "Optional job ID to get detailed status.", Required: false),
+            ]),
+
+        new("LIST_FORGE_RUNS", "List forge runs", "forge",
+            "List all forge pipeline runs with optional status filter.",
+            "Returns a table of all forge runs. Optionally filter by status: Queued, Running, Succeeded, Failed.",
+            IsAsync: false,
+            Fields:
+            [
+                new("status", "Status filter", "text", "Filter by status: Queued, Running, Succeeded, Failed.", Required: false),
+            ]),
     ];
 
     private static readonly Dictionary<string, HumanCommandMetadata> Index =

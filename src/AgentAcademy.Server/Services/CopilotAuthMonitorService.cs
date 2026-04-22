@@ -32,7 +32,22 @@ internal sealed class CopilotAuthMonitorService : BackgroundService
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                await ProbeOnceAsync(stoppingToken);
+                try
+                {
+                    await ProbeOnceAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    // Swallow unexpected exceptions so the monitor keeps running.
+                    // Without this, any unhandled error (e.g., ObjectDisposedException,
+                    // JsonException) propagates to the host and — with the default
+                    // StopHost behavior — kills the entire server.
+                    _logger.LogWarning(ex, "Unexpected error during auth probe — will retry on next cycle");
+                }
 
                 // Wait for either the interval or an early trigger from TokenChanged
                 try

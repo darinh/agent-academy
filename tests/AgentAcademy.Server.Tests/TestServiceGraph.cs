@@ -159,11 +159,13 @@ internal sealed class TestServiceGraph : IDisposable
         var turnRunner = new AgentTurnRunner(
             Executor, pipeline, taskAssignment, memoryLoader,
             scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+        var dispatchService = new OrchestratorDispatchService(
+            new ConversationRoundRunner(scopeFactory, Catalog, turnRunner, NullLogger<ConversationRoundRunner>.Instance),
+            new DirectMessageRouter(scopeFactory, Catalog, turnRunner, NullLogger<DirectMessageRouter>.Instance));
 
         Orchestrator = new AgentOrchestrator(
             scopeFactory,
-            new ConversationRoundRunner(scopeFactory, Catalog, turnRunner, NullLogger<ConversationRoundRunner>.Instance),
-            new DirectMessageRouter(scopeFactory, Catalog, turnRunner, NullLogger<DirectMessageRouter>.Instance),
+            dispatchService,
             breakoutLifecycle,
             NullLogger<AgentOrchestrator>.Instance);
     }

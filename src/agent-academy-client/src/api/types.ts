@@ -153,7 +153,14 @@ export type ActivityEventType =
   | "LearningDigestCompleted"
   | "ContextUsageUpdated"
   | "GoalCardCreated"
-  | "GoalCardChallenged";
+  | "GoalCardChallenged"
+  | "ForgeJobQueued"
+  | "ForgeJobStarted"
+  | "ForgePhaseCompleted"
+  | "ForgePhaseStarted"
+  | "ForgePhaseFailed"
+  | "ForgeJobCompleted"
+  | "ForgeJobFailed";
 
 export interface ActivityEvent {
   id: string;

@@ -31,15 +31,14 @@ public sealed class RunForgeHandler : ICommandHandler
             };
         }
 
-        // Check execution is available (API key configured)
+        // Check execution is enabled
         if (!options.ExecutionAvailable)
         {
             return command with
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Execution,
-                Error = "Forge execution is unavailable — no OpenAI API key configured. " +
-                        "Set Forge:OpenAiApiKey in appsettings.json or user-secrets."
+                Error = "Forge execution is disabled on this server. Set Forge:ExecutionEnabled=true in configuration."
             };
         }
 

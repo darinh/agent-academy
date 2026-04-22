@@ -5,7 +5,7 @@ Defines the standalone pipeline engine that transforms a task brief into validat
 
 ## Current Behavior
 
-> **Status: Implemented** — Core engine, five artifact schemas, three-tier validation, disk-based content-addressed storage, and benchmark infrastructure are compiled and tested. LLM integration requires an OpenAI API key; benchmarks have not yet been executed against live models.
+> **Status: Implemented** — Core engine, five artifact schemas, three-tier validation, disk-based content-addressed storage, and benchmark infrastructure are compiled and tested. Server-side LLM integration uses the same Copilot SDK authentication/token path as Agent Academy agent execution.
 
 ### Architecture
 
@@ -780,7 +780,7 @@ Returns exit code 0 if both thresholds are met, 1 otherwise.
 7. ~~**Control arm not implemented**~~: Resolved. `ControlExecutor` provides single-shot A/B benchmarking against the multi-phase pipeline. See Control Arm section above.
 8. ~~**Schema evolution**~~: Resolved. Multi-version `SchemaRegistry` with lifecycle statuses (Active/Deprecated/Retired), methodology validation at run start, version-dispatched validators, and engine-internal schema classification. See Schema Evolution section above.
 9. ~~**Seeded-defect benchmarks**~~: Resolved. `SeededDefectCatalog` provides 7 frozen test cases (covering all 5 drift codes) with ground-truth verdicts. `SeededDefectRunner` runs them through `FidelityExecutor` and computes detection rates with thresholds (80% blocking, 60% advisory). See Seeded-Defect Benchmarks section above.
-10. ~~**Server integration**~~: Resolved. Forge engine wired into `AgentAcademy.Server` via `AddForge()` DI extension. REST API at `/api/forge/*` with job queue, path validation, and conditional LLM wiring. See Server Integration section below.
+10. ~~**Server integration**~~: Resolved. Forge engine wired into `AgentAcademy.Server` via `AddForge()` DI extension. REST API at `/api/forge/*` with job queue, path validation, and Copilot SDK-backed LLM wiring. See Server Integration section below.
 
 ## Server Integration
 
@@ -795,16 +795,17 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
   "Forge": {
     "Enabled": true,
     "RunsDirectory": "forge-runs",
-    "OpenAiApiKey": "",
-    "OpenAiBaseUrl": "https://api.openai.com/v1"
+    "MethodologiesDirectory": "methodologies",
+    "ExecutionEnabled": true
   }
 }
 ```
 
 - `ForgeOptions` POCO bound from `Forge` section (`Config/ForgeOptions.cs`)
 - `RunsDirectory` resolved relative to `ContentRootPath`
-- `OpenAiApiKey` can be set via user-secrets or environment variables
-- When `OpenAiApiKey` is empty, execution endpoints return 503; read-only endpoints remain available
+- `MethodologiesDirectory` resolved relative to `ContentRootPath` (default: `methodologies/`)
+- `ExecutionEnabled` gates execution endpoints while preserving read-only endpoints
+- LLM auth/token resolution is inherited from the existing Agent Academy Copilot SDK path (`ICopilotClientFactory`)
 
 ### DI Wiring
 
@@ -812,47 +813,83 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 1. Reads `ForgeOptions` from configuration
 2. Registers `TimeProvider.System` (required by `PipelineRunner`)
 3. Calls `AddForgeEngine(runsDir)` from the Forge library
-4. Registers `ILlmClient`: `OpenAiLlmClient` when API key is present, `UnavailableLlmClient` otherwise
+4. Registers `ILlmClient` as `CopilotSdkLlmClient` (uses `ICopilotClientFactory` / shared SDK token path)
 5. Registers `ForgeRunService` as both singleton and `IHostedService`
 
 ### REST API
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
-| `/api/forge/jobs` | POST | — | Start pipeline run (202 + job ID) |
-| `/api/forge/jobs` | GET | — | List all jobs |
-| `/api/forge/jobs/{jobId}` | GET | — | Get job status + run ID |
-| `/api/forge/runs` | GET | — | List completed runs from disk store |
-| `/api/forge/runs/{runId}` | GET | — | Get full run trace |
-| `/api/forge/runs/{runId}/phases` | GET | — | Get phase-level traces |
-| `/api/forge/runs/{runId}/resume` | POST | — | Resume crashed run (501 placeholder) |
-| `/api/forge/artifacts/{hash}` | GET | — | Get artifact by content hash |
-| `/api/forge/schemas` | GET | — | List registered schemas |
-| `/api/forge/status` | GET | — | Engine status + job counts |
+| `/api/forge/jobs` | POST | `[Authorize]` | Start pipeline run (202 + job ID) |
+| `/api/forge/jobs` | GET | FallbackPolicy | List all jobs |
+| `/api/forge/jobs/{jobId}` | GET | FallbackPolicy | Get job status + run ID |
+| `/api/forge/runs` | GET | FallbackPolicy | List completed runs from disk store |
+| `/api/forge/runs/{runId}` | GET | FallbackPolicy | Get full run trace |
+| `/api/forge/runs/{runId}/phases` | GET | FallbackPolicy | Get phase-level traces |
+| `/api/forge/runs/{runId}/resume` | POST | `[Authorize]` | Resume crashed run (202 + job ID) |
+| `/api/forge/artifacts/{hash}` | GET | FallbackPolicy | Get artifact by content hash |
+| `/api/forge/schemas` | GET | FallbackPolicy | List registered schemas |
+| `/api/forge/status` | GET | FallbackPolicy | Engine status + job counts |
+| `/api/forge/methodologies` | GET | FallbackPolicy | List saved methodology templates |
+| `/api/forge/methodologies/{id}` | GET | FallbackPolicy | Get a methodology by ID |
+| `/api/forge/methodologies/{id}` | PUT | `[Authorize]` | Save/update a methodology template |
 
 ### Job Queue
 
 `ForgeRunService` (`Services/ForgeRunService.cs`):
-- Background service with bounded `Channel<string>` (capacity 100)
-- Jobs tracked in `ConcurrentDictionary<string, ForgeJob>` (in-memory, not durable across restarts)
-- Job lifecycle: Queued → Running → Completed/Failed
+- Background service with bounded `Channel<string>` (capacity 100) for in-process coordination
+- Jobs persisted to SQLite via `ForgeJobEntity` (`forge_jobs` table) for durability across restarts
+- Active (Queued/Running) jobs cached in `ConcurrentDictionary` for fast status polling; completed jobs evicted to DB-only
+- Job lifecycle: Queued → Running → Completed/Failed/Interrupted
 - POST returns immediately with 12-char job ID; pipeline executes in background
 - Run ID (`R_` + ULID) is generated by `PipelineRunner.ExecuteAsync`, populated on job after execution starts
+- On startup recovery: Running jobs marked as `Interrupted` (cannot resume mid-pipeline); Queued jobs re-enqueued if execution is available and queue has capacity; overflow jobs left as `queued` for next restart
+- TaskBrief and MethodologyDefinition serialized as JSON columns in the DB
 
 ### Security
 
-- **Path traversal**: Run IDs validated against `R_[0-9A-HJKMNP-TV-Z]{26}` regex; artifact hashes validated as 64 hex chars (with optional `sha256:` prefix normalization)
-- **Execution gating**: `UnavailableLlmClient` throws on `GenerateAsync`, preventing accidental execution when no API key is configured
+- **Path traversal**: Run IDs and artifact hashes are validated via shared `AgentAcademy.Forge.ForgeIdentifiers` helpers (`IsValidRunId`, `NormalizeArtifactHash`). Run IDs must match `R_[0-9A-HJKMNP-TV-Z]{26}`; artifact hashes must be 64 lowercase hex chars (with optional `sha256:` prefix normalization).
+- **Authentication**: Execution endpoints (`POST /api/forge/jobs`, `POST .../resume`, `PUT .../methodologies/{id}`) carry explicit `[Authorize]` attributes. Read-only GET endpoints are protected by the global `FallbackPolicy` (requires authenticated user when auth is enabled; see spec 015 §2). When auth is disabled (`AnyAuthEnabled = false`), neither middleware is registered and all endpoints are open — this is by design for single-user local development.
+- **Execution gating**: `ExecutionEnabled` controls whether execution endpoints and queueing are available; read-only endpoints remain available when disabled
+- **Methodology IDs**: Strict allowlist regex `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,98}[a-zA-Z0-9]$`; resolved paths validated against catalog root; atomic writes via unique temp files
+
+### Methodology Catalog
+
+`IMethodologyCatalog` / `DiskMethodologyCatalog` (`Services/DiskMethodologyCatalog.cs`):
+- Disk-backed catalog of saved methodology templates in `MethodologiesDirectory` (configurable, default `methodologies/`)
+- Filename derived from methodology `id` field (e.g., `spike-default-v1` → `spike-default-v1.json`)
+- `ListAsync()` scans directory, skips malformed files (logs warnings), returns summaries sorted by ID
+- `GetAsync(id)` returns full `MethodologyDefinition` or null if not found
+- `SaveAsync(methodology)` validates then writes atomically; returns methodology ID
+- `SeedAsync(methodology)` writes only if file doesn't already exist (idempotent startup seeding)
+
+**Validation on save:**
+- Non-empty ID matching allowlist regex
+- At least one phase with unique IDs
+- All phase inputs reference existing phases
+- No dependency cycles (DFS cycle detection)
+- Valid `max_attempts_default` (> 0), valid `budget` (> 0 if specified)
+- `fidelity.target_phase` references existing phase ID
+- `control.target_schema` is non-empty when control is configured
+
+**Default methodology**: `spike-default-v1` (5-phase pipeline) is seeded into the catalog on first startup via `SeedDefaultMethodologyAsync()`.
+
+**Frontend**: ForgePanel "New Run" form includes:
+- Methodology selector dropdown (populated from `GET /api/forge/methodologies`)
+- JSON editor pre-populated when a template is selected
+- "Save as Template" button to persist customized methodologies back to catalog
+- Graceful fallback when catalog is unavailable (form works with manual JSON editing)
+- Stale-response guard on methodology selection (fetch ID tracking)
 
 ### Known Integration Gaps
 
-1. **Jobs are not durable**: In-memory job store is lost on restart. A restart between 202 Accepted and execution start loses the job.
-2. **No authentication on forge endpoints**: Endpoints are unprotected. Should add `[Authorize]` with a dedicated policy for cost-incurring execution endpoints.
+1. ~~**Jobs are not durable**~~: Resolved. Jobs persisted to SQLite via `ForgeJobEntity` (`forge_jobs` table). On restart: Running jobs marked `Interrupted`, Queued jobs re-enqueued if execution available. Active jobs cached in memory; completed jobs served from DB. See Job Queue section above.
+2. ~~**No authentication on forge endpoints**~~: Resolved. Execution endpoints (`POST jobs`, `POST resume`, `PUT methodologies`) carry explicit `[Authorize]`. Read-only GET endpoints are protected by the global `FallbackPolicy` (authenticated when auth enabled, open when auth disabled). See Security section above.
 3. **No workspace scoping**: Forge runs are global, not scoped to a workspace/room. Multi-user deployments would expose cross-tenant data.
-4. **Resume not implemented**: `POST /api/forge/runs/{runId}/resume` returns 501.
+4. ~~**Resume not implemented**~~: Resolved. `POST /api/forge/runs/{runId}/resume` enqueues a resume job (returns 202 + job ID). `ForgeRunService` detects resume jobs (pre-populated `RunId`) and calls `PipelineRunner.ResumeAsync` instead of `ExecuteAsync`. The engine rebuilds state from phase snapshots and continues from the first non-succeeded phase.
 5. ~~**No agent commands**~~: Resolved. Agents can trigger forge runs via `RUN_FORGE`, check status via `FORGE_STATUS`, and list jobs via `LIST_FORGE_RUNS`. See spec 007 for command details. Handlers use `IForgeJobService` interface for testability. Path traversal and symlink protections applied to methodology file loading.
-6. **No SignalR events**: No real-time progress updates during pipeline execution.
-7. **No frontend UI**: No forge panel in the React frontend yet.
+6. ~~**No SignalR events**~~: Resolved. `PipelineRunner` accepts `IProgress<ForgeProgressEvent>` for phase-level progress reporting. `ForgeRunService` delegates forge event mapping/broadcasting to `ForgeActivityEventAdapter`, which emits `ActivityEvent` instances with forge-specific types (`ForgeJobQueued`, `ForgeJobStarted`, `ForgePhaseStarted`, `ForgePhaseCompleted`, `ForgePhaseFailed`, `ForgeJobCompleted`, `ForgeJobFailed`) through `IActivityBroadcaster`. Events flow through the existing `ActivityHub` → SignalR pipeline. Frontend `ForgePanel` receives a `refreshTrigger` version counter incremented on each forge event, triggering immediate re-fetch. Polling remains as fallback.
+7. ~~**No frontend UI**~~: Resolved. ForgePanel provides status dashboard, job list, run detail with phase/attempt/validator drill-down, inline artifact viewer, and start-run form with methodology JSON editor. See spec 300 for frontend details.
 
 ## Revision History
 
@@ -872,3 +909,11 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-20 | Parallel phase execution — wave-based scheduling, resume source-intent fix, closes Known Gap #5 | `feat/forge-parallel-phases` |
 | 2026-04-20 | Schema evolution — multi-version registry, lifecycle statuses, methodology validation, version-dispatched validators, closes Known Gap #8 | `feat/forge-schema-evolution` |
 | 2026-04-21 | Server integration — REST API, job queue, DI wiring, path validation, conditional LLM, 35 tests, closes Known Gap #10 | `feat/forge-integration` |
+| 2026-04-21 | Start-run UI — New Run button, form with title/description/methodology JSON editor, 11 new tests, closes Integration Gap #7 | `develop` |
+| 2026-04-21 | Methodology catalog — disk-backed catalog, REST endpoints, UI selector with save-as-template, 26 new tests | `feat/methodology-browser` |
+| 2026-04-21 | Auth on forge endpoints — `[Authorize]` on execution endpoints (POST jobs, POST resume, PUT methodologies), read-only GET endpoints protected by FallbackPolicy, closes Integration Gap #2 | `feat/methodology-browser` |
+| 2026-04-21 | Durable job store — SQLite persistence via ForgeJobEntity, startup recovery (interrupted/re-enqueue), async IForgeJobService, 4 new tests, closes Integration Gap #1 | `feat/durable-forge-jobs` |
+| 2026-04-21 | Real-time SignalR events — IProgress<ForgeProgressEvent> in PipelineRunner, ActivityBroadcaster integration, frontend version-counter-driven refresh, closes Integration Gap #6 | `feat/forge-signalr-progress` |
+| 2026-04-21 | Resume endpoint — ForgeRunService.ResumeRunAsync, controller 202+jobId, background worker PipelineRunner.ResumeAsync dispatch, closes Integration Gap #4 | `develop` |
+| 2026-04-21 | Execution auth alignment — removed OpenAI-key-specific server wiring; Forge now uses Agent Academy Copilot SDK token path via `CopilotSdkLlmClient`; `ForgeOptions` switched to `ExecutionEnabled` gate | `develop` |
+| 2026-04-21 | Server integration refactor — extracted forge activity-event mapping/broadcasting into `ForgeActivityEventAdapter` with no API/event behavior change | `fix/forge-copilot-sdk-auth-alignment` |

@@ -52,9 +52,29 @@ public sealed class ForgeCommandHandlerTests : IDisposable
             return Task.FromResult(job);
         }
 
-        public ForgeJob? GetJob(string jobId) => _jobs.FirstOrDefault(j => j.JobId == jobId);
+        public Task<ForgeJob?> GetJobAsync(string jobId) =>
+            Task.FromResult(_jobs.FirstOrDefault(j => j.JobId == jobId));
 
-        public IReadOnlyList<ForgeJob> ListJobs() => _jobs.OrderByDescending(j => j.CreatedAt).ToList();
+        public Task<IReadOnlyList<ForgeJob>> ListJobsAsync() =>
+            Task.FromResult<IReadOnlyList<ForgeJob>>(_jobs.OrderByDescending(j => j.CreatedAt).ToList());
+
+        public Task<ForgeJob> ResumeRunAsync(string runId)
+        {
+            if (ThrowQueueFull)
+                throw new InvalidOperationException("Run queue is full. Try again later.");
+
+            var job = new ForgeJob
+            {
+                JobId = Guid.NewGuid().ToString("N")[..12],
+                RunId = runId,
+                TaskBrief = new TaskBrief { TaskId = "resume", Title = $"Resume {runId}", Description = "" },
+                Methodology = new MethodologyDefinition { Id = "resume", Phases = [] },
+                Status = ForgeJobStatus.Queued,
+                CreatedAt = DateTime.UtcNow
+            };
+            _jobs.Add(job);
+            return Task.FromResult(job);
+        }
 
         public ForgeJob AddJob(ForgeJobStatus status, string? error = null, string? runId = null)
         {
@@ -116,7 +136,7 @@ public sealed class ForgeCommandHandlerTests : IDisposable
         ForgeOptions? options = null,
         StubForgeJobService? jobService = null)
     {
-        options ??= new ForgeOptions { Enabled = true, OpenAiApiKey = "test-key" };
+        options ??= new ForgeOptions { Enabled = true, ExecutionEnabled = true };
         jobService ??= new StubForgeJobService();
 
         var services = new ServiceCollection();
@@ -191,9 +211,9 @@ public sealed class ForgeCommandHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunForge_NoApiKey_ReturnsError()
+    public async Task RunForge_ExecutionDisabled_ReturnsError()
     {
-        var options = new ForgeOptions { Enabled = true, OpenAiApiKey = null };
+        var options = new ForgeOptions { Enabled = true, ExecutionEnabled = false };
         var (cmd, ctx) = MakeCommand("RUN_FORGE", new Dictionary<string, object?>
         {
             ["title"] = "Test",
@@ -205,7 +225,7 @@ public sealed class ForgeCommandHandlerTests : IDisposable
         var result = await handler.ExecuteAsync(cmd, ctx);
 
         Assert.Equal(CommandStatus.Error, result.Status);
-        Assert.Contains("unavailable", result.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("disabled", result.Error!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

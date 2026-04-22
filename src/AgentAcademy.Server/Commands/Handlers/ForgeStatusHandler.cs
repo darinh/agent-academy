@@ -15,17 +15,17 @@ public sealed class ForgeStatusHandler : ICommandHandler
     public string CommandName => "FORGE_STATUS";
     public bool IsRetrySafe => true;
 
-    public Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
+    public async Task<CommandEnvelope> ExecuteAsync(CommandEnvelope command, CommandContext context)
     {
         var options = context.Services.GetRequiredService<ForgeOptions>();
         if (!options.Enabled)
         {
-            return Task.FromResult(command with
+            return command with
             {
                 Status = CommandStatus.Error,
                 ErrorCode = CommandErrorCode.Execution,
                 Error = "Forge engine is disabled on this server."
-            });
+            };
         }
 
         var jobService = context.Services.GetRequiredService<IForgeJobService>();
@@ -34,18 +34,18 @@ public sealed class ForgeStatusHandler : ICommandHandler
         if (command.Args.TryGetValue("jobId", out var jobIdObj) && jobIdObj is string jobId
             && !string.IsNullOrWhiteSpace(jobId))
         {
-            var job = jobService.GetJob(jobId);
+            var job = await jobService.GetJobAsync(jobId);
             if (job is null)
             {
-                return Task.FromResult(command with
+                return command with
                 {
                     Status = CommandStatus.Error,
                     ErrorCode = CommandErrorCode.NotFound,
                     Error = $"Forge job '{jobId}' not found."
-                });
+                };
             }
 
-            return Task.FromResult(command with
+            return command with
             {
                 Status = CommandStatus.Success,
                 Result = new Dictionary<string, object?>
@@ -60,13 +60,13 @@ public sealed class ForgeStatusHandler : ICommandHandler
                     ["taskId"] = job.TaskBrief.TaskId,
                     ["taskTitle"] = job.TaskBrief.Title
                 }
-            });
+            };
         }
 
         // No jobId — return engine status summary
-        var jobs = jobService.ListJobs();
+        var jobs = await jobService.ListJobsAsync();
 
-        return Task.FromResult(command with
+        return command with
         {
             Status = CommandStatus.Success,
             Result = new Dictionary<string, object?>
@@ -79,6 +79,6 @@ public sealed class ForgeStatusHandler : ICommandHandler
                 ["completedJobs"] = jobs.Count(j => j.Status == ForgeJobStatus.Completed),
                 ["failedJobs"] = jobs.Count(j => j.Status == ForgeJobStatus.Failed)
             }
-        });
+        };
     }
 }

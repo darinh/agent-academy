@@ -139,10 +139,81 @@ export interface ForgeSchemaInfo {
   semanticRuleCount: number;
 }
 
+export interface StartForgeRunRequest {
+  taskId?: string;
+  title: string;
+  description: string;
+  methodology: MethodologyDefinition;
+}
+
+export interface StartForgeRunResponse {
+  jobId: string;
+  status: string;
+  createdAt: string;
+  taskId: string;
+}
+
+export interface MethodologyDefinition {
+  id: string;
+  description?: string;
+  max_attempts_default?: number;
+  model_defaults?: { generation?: string; judge?: string };
+  budget?: number;
+  control?: { target_schema: string; model?: string };
+  phases: MethodologyPhase[];
+  fidelity?: { target_phase: string; model?: string; judge_model?: string; max_attempts?: number };
+}
+
+export interface MethodologyPhase {
+  id: string;
+  goal: string;
+  inputs: string[];
+  output_schema: string;
+  instructions: string;
+  max_attempts?: number;
+  model?: string;
+  judge_model?: string;
+}
+
 // --- API functions ---
 
+function toBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function toString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
 export function getForgeStatus(): Promise<ForgeStatus> {
-  return request<ForgeStatus>(apiUrl("/api/forge/status"));
+  return request<Record<string, unknown>>(apiUrl("/api/forge/status")).then((raw) => {
+    const enabled = toBoolean(raw.enabled ?? raw.Enabled);
+    const executionAvailable = toBoolean(
+      raw.executionAvailable ?? raw.executionEnabled ?? raw.ExecutionAvailable ?? raw.ExecutionEnabled,
+      enabled,
+    );
+
+    return {
+      enabled,
+      executionAvailable,
+      runsDirectory: toString(raw.runsDirectory ?? raw.RunsDirectory),
+      activeJobs: toNumber(raw.activeJobs ?? raw.ActiveJobs),
+      totalJobs: toNumber(raw.totalJobs ?? raw.TotalJobs),
+      completedJobs: toNumber(raw.completedJobs ?? raw.CompletedJobs),
+      failedJobs: toNumber(raw.failedJobs ?? raw.FailedJobs),
+    };
+  });
+}
+
+export function startForgeRun(req: StartForgeRunRequest): Promise<StartForgeRunResponse> {
+  return request<StartForgeRunResponse>(apiUrl("/api/forge/jobs"), {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 }
 
 export function listForgeJobs(): Promise<ForgeJobSummary[]> {
@@ -171,4 +242,32 @@ export function getForgeArtifact(hash: string): Promise<ForgeArtifactResponse> {
 
 export function listForgeSchemas(): Promise<ForgeSchemaInfo[]> {
   return request<ForgeSchemaInfo[]>(apiUrl("/api/forge/schemas"));
+}
+
+// --- Methodology catalog ---
+
+export interface MethodologySummary {
+  id: string;
+  description?: string;
+  phaseCount: number;
+  generationModel?: string;
+  judgeModel?: string;
+  hasBudget: boolean;
+  hasFidelity: boolean;
+  hasControl: boolean;
+}
+
+export function listMethodologies(): Promise<MethodologySummary[]> {
+  return request<MethodologySummary[]>(apiUrl("/api/forge/methodologies"));
+}
+
+export function getMethodology(methodologyId: string): Promise<MethodologyDefinition> {
+  return request<MethodologyDefinition>(apiUrl(`/api/forge/methodologies/${encodeURIComponent(methodologyId)}`));
+}
+
+export function saveMethodology(methodologyId: string, methodology: MethodologyDefinition): Promise<{ id: string; message: string }> {
+  return request<{ id: string; message: string }>(apiUrl(`/api/forge/methodologies/${encodeURIComponent(methodologyId)}`), {
+    method: "PUT",
+    body: JSON.stringify(methodology),
+  });
 }

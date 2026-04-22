@@ -3,9 +3,11 @@ using AgentAcademy.Server.Services.Contracts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 
 namespace AgentAcademy.Server.Auth;
 
@@ -80,6 +82,53 @@ public static class AuthenticationExtensions
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Binds consultant API rate-limit settings and conditionally configures
+    /// the ASP.NET Core rate limiter middleware.
+    /// </summary>
+    public static ConsultantRateLimitSettings ConfigureConsultantRateLimiting(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        AppAuthSetup setup)
+    {
+        var consultantRateLimits = configuration
+            .GetSection(ConsultantRateLimitSettings.SectionName)
+            .Get<ConsultantRateLimitSettings>() ?? new();
+
+        if (setup.ConsultantAuthEnabled && consultantRateLimits.Enabled)
+        {
+            services.AddRateLimiter(options =>
+            {
+                options.GlobalLimiter = ConsultantRateLimitExtensions
+                    .CreateConsultantRateLimiter(consultantRateLimits);
+
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                options.OnRejected = async (ctx, cancellationToken) =>
+                {
+                    ctx.HttpContext.Response.ContentType = "application/problem+json";
+
+                    var retryAfter = ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue)
+                        ? retryAfterValue
+                        : TimeSpan.FromSeconds(10);
+
+                    ctx.HttpContext.Response.Headers.RetryAfter =
+                        ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+
+                    await ctx.HttpContext.Response.WriteAsJsonAsync(new
+                    {
+                        type = "https://tools.ietf.org/html/rfc6585#section-4",
+                        title = "Rate limit exceeded",
+                        status = 429,
+                        detail = $"Too many requests. Try again in {(int)Math.Ceiling(retryAfter.TotalSeconds)} seconds.",
+                    }, cancellationToken);
+                };
+            });
+        }
+
+        services.AddSingleton(consultantRateLimits);
+        return consultantRateLimits;
     }
 
     private static void AddGitHubOAuth(

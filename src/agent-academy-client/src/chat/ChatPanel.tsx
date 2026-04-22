@@ -80,11 +80,28 @@ const ChatPanel = memo(function ChatPanel(props: {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [sessionMessages, setSessionMessages] = useState<ChatEnvelope[] | null>(null);
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  // Tail of the most recently archived session, shown above the live session
+  // when the active session is nearly empty so users don't stare at an empty
+  // chat after an epoch rotation. Only populated for the live view.
+  const [previousTailMessages, setPreviousTailMessages] = useState<ChatEnvelope[] | null>(null);
+  const [previousTailSessionId, setPreviousTailSessionId] = useState<string | null>(null);
 
-  const displayMessages = sessionMessages ?? room?.recentMessages ?? [];
+  const liveMessages = sessionMessages ?? room?.recentMessages ?? [];
+  const viewingLive = selectedSessionId == null && sessionMessages == null;
+  const showPreviousTail = viewingLive && previousTailMessages != null && previousTailMessages.length > 0;
+  const filteredLiveMessages = useMemo(
+    () => liveMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)),
+    [hiddenFilters, liveMessages],
+  );
+  const filteredTailMessages = useMemo(
+    () => showPreviousTail ? previousTailMessages!.filter((m) => !shouldHideMessage(m, hiddenFilters)) : [],
+    [hiddenFilters, previousTailMessages, showPreviousTail],
+  );
+  // Combined count used for scroll/new-message tracking so the tail doesn't
+  // cause spurious "new messages" indicators on first load.
   const filteredMessages = useMemo(
-    () => displayMessages.filter((m) => !shouldHideMessage(m, hiddenFilters)),
-    [hiddenFilters, displayMessages],
+    () => [...filteredTailMessages, ...filteredLiveMessages],
+    [filteredTailMessages, filteredLiveMessages],
   );
 
   useEffect(() => {
@@ -140,6 +157,64 @@ const ChatPanel = memo(function ChatPanel(props: {
       .catch(() => { if (!cancelled) { setSessionMessages([]); setSessionLoadError("Failed to load session messages"); } });
     return () => { cancelled = true; };
   }, [selectedSessionId, room?.id, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When the active session is nearly empty (e.g., just after an epoch
+  // rotation), fetch a tail of the most recently archived session so the
+  // live view doesn't appear empty. Only applies to the live view — when
+  // viewing an archived session explicitly, the tail is hidden.
+  const liveMsgCount = room?.recentMessages.length ?? 0;
+  useEffect(() => {
+    if (!room) {
+      setPreviousTailMessages(null);
+      setPreviousTailSessionId(null);
+      return;
+    }
+    if (selectedSessionId) {
+      // Viewing an archived session — don't mix in another session's tail.
+      // Clear immediately so the tail doesn't linger during the archived fetch.
+      if (previousTailMessages != null) {
+        setPreviousTailMessages(null);
+        setPreviousTailSessionId(null);
+      }
+      return;
+    }
+    const NEAR_EMPTY_THRESHOLD = 10;
+    if (liveMsgCount >= NEAR_EMPTY_THRESHOLD) {
+      if (previousTailMessages != null) {
+        setPreviousTailMessages(null);
+        setPreviousTailSessionId(null);
+      }
+      return;
+    }
+    // sessions are ordered by sequenceNumber desc; first non-Active is most recent archive.
+    const mostRecentArchived = sessions.find(s => s.status !== "Active");
+    if (!mostRecentArchived) {
+      if (previousTailMessages != null) {
+        setPreviousTailMessages(null);
+        setPreviousTailSessionId(null);
+      }
+      return;
+    }
+    if (previousTailSessionId === mostRecentArchived.id && previousTailMessages != null) {
+      // Already fetched for this session.
+      return;
+    }
+    let cancelled = false;
+    const targetSessionId = mostRecentArchived.id;
+    getRoomMessages(room.id, { sessionId: targetSessionId, limit: 20 })
+      .then((res) => {
+        if (cancelled) return;
+        setPreviousTailMessages(res.messages);
+        setPreviousTailSessionId(targetSessionId);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Silent failure — the tail is a nice-to-have, not critical.
+        setPreviousTailMessages(null);
+        setPreviousTailSessionId(null);
+      });
+    return () => { cancelled = true; };
+  }, [room?.id, selectedSessionId, sessions, liveMsgCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNewSession = useCallback(() => {
     if (!room || !props.onCreateSession) return;
@@ -285,7 +360,7 @@ const ChatPanel = memo(function ChatPanel(props: {
             Viewing archived session. Messages are read-only.
           </div>
         )}
-        {hasArchivedContext && !viewingHistoricSession && (
+        {hasArchivedContext && !viewingHistoricSession && !showPreviousTail && (
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -330,9 +405,33 @@ const ChatPanel = memo(function ChatPanel(props: {
             }}>Retry</button>
           </div>
         ) : filteredMessages.length ? (
-          filteredMessages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} expanded={isExpanded(msg.id)} onToggle={toggleExpand} />
-          ))
+          <>
+            {filteredTailMessages.length > 0 && (
+              <>
+                {filteredTailMessages.map((msg) => (
+                  <MessageBubble key={`prev-${msg.id}`} message={msg} expanded={isExpanded(msg.id)} onToggle={toggleExpand} />
+                ))}
+                <div
+                  role="separator"
+                  aria-label="Previous session boundary"
+                  data-testid="previous-session-divider"
+                  style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "10px 0", margin: "8px 0",
+                    fontSize: "11px", color: "var(--aa-muted)",
+                    textTransform: "uppercase", letterSpacing: "0.08em",
+                  }}
+                >
+                  <span style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.12)" }} />
+                  <span>New session · fresh agent context</span>
+                  <span style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.12)" }} />
+                </div>
+              </>
+            )}
+            {filteredLiveMessages.map((msg) => (
+              <MessageBubble key={msg.id} message={msg} expanded={isExpanded(msg.id)} onToggle={toggleExpand} />
+            ))}
+          </>
         ) : (
           <EmptyState
             icon={<span style={{ fontSize: "48px", opacity: 0.5 }}>💬</span>}

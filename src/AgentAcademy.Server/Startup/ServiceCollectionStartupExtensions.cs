@@ -36,8 +36,12 @@ public static class ServiceCollectionStartupExtensions
             .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
             .AddCheck<AgentExecutorHealthCheck>("agent_executor", tags: ["ready"]);
 
-        var corsOrigins = configuration.GetSection("Cors:Origins").Get<string[]>()
-            ?? ["http://localhost:5173"];
+        var configuredOrigins = configuration.GetSection("Cors:Origins").Get<string[]>()?
+            .Where(static origin => !string.IsNullOrWhiteSpace(origin))
+            .ToArray();
+        var corsOrigins = configuredOrigins is { Length: > 0 }
+            ? configuredOrigins
+            : ["http://localhost:5173"];
         services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>

@@ -122,6 +122,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
   const [memoryVersion, setMemoryVersion] = useState(0);
   const [artifactVersion, setArtifactVersion] = useState(0);
   const [goalCardVersion, setGoalCardVersion] = useState(0);
+  const [forgeVersion, setForgeVersion] = useState(0);
   const [lastSprintEvent, setLastSprintEvent] = useState<SprintRealtimeEvent | null>(null);
   const processedSprintEventIds = useRef(new Set<string>());
 
@@ -282,6 +283,15 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
       case "GoalCardCreated":
       case "GoalCardChallenged":
         setGoalCardVersion((v) => v + 1);
+        break;
+      case "ForgeJobQueued":
+      case "ForgeJobStarted":
+      case "ForgePhaseCompleted":
+      case "ForgePhaseStarted":
+      case "ForgePhaseFailed":
+      case "ForgeJobCompleted":
+      case "ForgeJobFailed":
+        setForgeVersion((v) => v + 1);
         break;
     }
   }, []);
@@ -597,6 +607,7 @@ export function useWorkspace(options?: UseWorkspaceOptions) {
     memoryVersion,
     artifactVersion,
     goalCardVersion,
+    forgeVersion,
     err,
     busy,
     tab,
