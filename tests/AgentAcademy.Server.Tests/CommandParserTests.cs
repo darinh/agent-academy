@@ -271,8 +271,7 @@ public class CommandParserTests
         Assert.Equal("LIST_ROOMS", result.Commands[0].Command);
         Assert.Contains("This line must survive", result.RemainingText);
         // Legacy block line appears exactly once
-        Assert.Single(result.RemainingText.Split('\n')
-            .Where(l => l.Contains("TASK ASSIGNMENT:")));
+        Assert.Single(result.RemainingText.Split('\n'), l => l.Contains("TASK ASSIGNMENT:"));
     }
 
     [Fact]

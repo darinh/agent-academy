@@ -397,7 +397,7 @@ public class CopilotExecutorAuthTransitionTests
         await fixture.Executor.MarkAuthDegradedAsync();
 
         Assert.True(fixture.Executor.IsAuthFailed);
-        Assert.Single(fixture.Provider.Messages.Where(m => m.Title == "Copilot SDK authentication degraded"));
+        Assert.Single(fixture.Provider.Messages, m => m.Title == "Copilot SDK authentication degraded");
 
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
@@ -420,7 +420,7 @@ public class CopilotExecutorAuthTransitionTests
         await fixture.Executor.MarkAuthOperationalAsync();
 
         Assert.False(fixture.Executor.IsAuthFailed);
-        Assert.Single(fixture.Provider.Messages.Where(m => m.Title == "Copilot SDK authentication restored"));
+        Assert.Single(fixture.Provider.Messages, m => m.Title == "Copilot SDK authentication restored");
 
         await using var scope = fixture.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AgentAcademyDbContext>();
