@@ -153,6 +153,52 @@ public sealed class DiskMethodologyCatalogTests : IDisposable
         Assert.Equal(2, loaded.Phases.Count); // Original, not replacement
     }
 
+    [Theory]
+    [InlineData("gpt-4o", null)]
+    [InlineData(null, "gpt-4o-mini")]
+    [InlineData("gpt-4o", "gpt-4o-mini")]
+    [InlineData("gpt-4o-2024-08-06", null)]
+    public async Task SeedAsync_ReseedsWhenExistingHasDeprecatedModel(string? generation, string? judge)
+    {
+        var stale = MakeMethodology("reseed-deprecated", phases: 2) with
+        {
+            ModelDefaults = new ModelDefaults { Generation = generation, Judge = judge }
+        };
+        await _catalog.SaveAsync(stale);
+
+        var fresh = MakeMethodology("reseed-deprecated", phases: 3) with
+        {
+            ModelDefaults = new ModelDefaults { Generation = "claude-opus-4.7", Judge = "claude-haiku-4.5" }
+        };
+        await _catalog.SeedAsync(fresh);
+
+        var loaded = await _catalog.GetAsync("reseed-deprecated");
+        Assert.NotNull(loaded);
+        Assert.Equal(3, loaded.Phases.Count); // Replacement applied
+        Assert.Equal("claude-opus-4.7", loaded.ModelDefaults?.Generation);
+    }
+
+    [Fact]
+    public async Task SeedAsync_DoesNotReseedWhenModelsAreCurrent()
+    {
+        var current = MakeMethodology("no-reseed-current", phases: 2) with
+        {
+            ModelDefaults = new ModelDefaults { Generation = "claude-opus-4.7", Judge = "claude-haiku-4.5" }
+        };
+        await _catalog.SaveAsync(current);
+
+        var replacement = MakeMethodology("no-reseed-current", phases: 5) with
+        {
+            ModelDefaults = new ModelDefaults { Generation = "gpt-4.1", Judge = "gpt-4.1" }
+        };
+        await _catalog.SeedAsync(replacement);
+
+        var loaded = await _catalog.GetAsync("no-reseed-current");
+        Assert.NotNull(loaded);
+        Assert.Equal(2, loaded.Phases.Count); // Original kept
+        Assert.Equal("claude-opus-4.7", loaded.ModelDefaults?.Generation);
+    }
+
     // ── Validation ──────────────────────────────────────────────────────
 
     [Fact]

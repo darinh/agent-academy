@@ -423,6 +423,7 @@ The `ValidatorPipeline` runs tiers sequentially and short-circuits at the first 
 **Tier 2 — Semantic** (`SemanticValidator`):
 - LLM judge using `gpt-4o-mini`, temperature 0, JSON mode.
 - Grades the artifact against the schema's semantic rules.
+- When `inputArtifacts` are provided (upstream phase outputs), they are included in the judge prompt under an `=== INPUT ARTIFACTS ===` section so cross-artifact rules (e.g. "contract must satisfy all requirements FRs") can be evaluated against actual upstream content.
 - Empty semantic rules → tier skipped entirely.
 - LLM failures → blocking `SEMANTIC_LLM_FAILED`.
 - Parse failures → blocking `SEMANTIC_PARSE_FAILED`.
@@ -861,7 +862,7 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 - `ListAsync()` scans directory, skips malformed files (logs warnings), returns summaries sorted by ID
 - `GetAsync(id)` returns full `MethodologyDefinition` or null if not found
 - `SaveAsync(methodology)` validates then writes atomically; returns methodology ID
-- `SeedAsync(methodology)` writes only if file doesn't already exist (idempotent startup seeding)
+- `SeedAsync(methodology)` writes only if file doesn't already exist (idempotent startup seeding), **except** when the existing file references a deprecated model (e.g. `gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`) in `model_defaults.generation` or `model_defaults.judge` — in that case the stale file is overwritten with the new seed to auto-heal catalogs pointing at unavailable models
 
 **Validation on save:**
 - Non-empty ID matching allowlist regex
@@ -917,3 +918,5 @@ Connects the standalone Forge engine to the AgentAcademy server, exposing pipeli
 | 2026-04-21 | Resume endpoint — ForgeRunService.ResumeRunAsync, controller 202+jobId, background worker PipelineRunner.ResumeAsync dispatch, closes Integration Gap #4 | `develop` |
 | 2026-04-21 | Execution auth alignment — removed OpenAI-key-specific server wiring; Forge now uses Agent Academy Copilot SDK token path via `CopilotSdkLlmClient`; `ForgeOptions` switched to `ExecutionEnabled` gate | `develop` |
 | 2026-04-21 | Server integration refactor — extracted forge activity-event mapping/broadcasting into `ForgeActivityEventAdapter` with no API/event behavior change | `fix/forge-copilot-sdk-auth-alignment` |
+| 2026-04-22 | Fix 4 forge pipeline bugs — CopilotSdkLlmClient OnPermissionRequest, deprecated model auto-reseed, LlmJsonExtractor code fence stripping, SemanticValidator input artifact plumbing | `fix/forge-pipeline-bugs` (PR #122) |
+| 2026-04-22 | Spec sync — document auto-reseed behavior on deprecated models, input artifacts in semantic validator prompt | `stabilize/session-20260422` |
