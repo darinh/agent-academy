@@ -389,6 +389,22 @@ public class CollaborationController : ControllerBase
     }
 
     /// <summary>
+    /// PUT /api/tasks/{taskId}/sprint — associate the task with a sprint, or
+    /// clear the association by sending <c>{ "sprintId": null }</c>.
+    /// </summary>
+    [HttpPut("api/tasks/{taskId}/sprint")]
+    public async Task<ActionResult<TaskSnapshot>> UpdateTaskSprint(
+        string taskId, [FromBody] UpdateTaskSprintRequest request)
+    {
+        try
+        {
+            var task = await _taskQueries.UpdateTaskSprintAsync(taskId, request.SprintId);
+            return Ok(task);
+        }
+        catch (InvalidOperationException ex) { return NotFound(ApiProblem.NotFound(ex.Message)); }
+    }
+
+    /// <summary>
     /// PUT /api/tasks/{taskId}/pr — record PR information on task.
     /// </summary>
     [HttpPut("api/tasks/{taskId}/pr")]
@@ -514,6 +530,7 @@ public record AssignTaskRequest(
 public record UpdateTaskStatusRequest([EnumDataType(typeof(Shared.Models.TaskStatus))] Shared.Models.TaskStatus Status);
 public record UpdateTaskPriorityRequest([EnumDataType(typeof(TaskPriority))] TaskPriority Priority);
 public record UpdateTaskBranchRequest([Required, StringLength(300)] string BranchName);
+public record UpdateTaskSprintRequest([StringLength(200)] string? SprintId);
 public record UpdateTaskPrRequest(
     [Required, Url, StringLength(2000)] string Url,
     [Range(1, int.MaxValue)] int Number,

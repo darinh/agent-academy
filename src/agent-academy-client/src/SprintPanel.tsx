@@ -32,6 +32,7 @@ import {
   SprintHistory,
   SignOffBanner,
   SprintHeader,
+  SprintTasks,
   computeSprintMetrics,
 } from "./sprint";
 
@@ -483,6 +484,8 @@ export default function SprintPanel({
           artifacts={stageArtifacts}
         />
       )}
+
+      {detail && <SprintTasks sprintId={detail.sprint.id} />}
 
       <SprintHistory
         history={history}

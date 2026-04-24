@@ -86,6 +86,17 @@ export function updateTaskBranch(taskId: string, branchName: string): Promise<Ta
   });
 }
 
+/**
+ * Associates a task with a sprint, or clears the association when
+ * `sprintId` is null. Throws if the task or sprint is not found.
+ */
+export function updateTaskSprint(taskId: string, sprintId: string | null): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(apiUrl(`/api/tasks/${encodeURIComponent(taskId)}/sprint`), {
+    method: "PUT",
+    body: JSON.stringify({ sprintId }),
+  });
+}
+
 export function updateTaskPr(
   taskId: string,
   url: string,

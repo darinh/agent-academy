@@ -122,6 +122,15 @@ public interface ITaskQueryService
     Task<TaskSnapshot> UpdateTaskBranchAsync(string taskId, string branchName);
 
     /// <summary>
+    /// Associates a task with a sprint, or removes the association when
+    /// <paramref name="sprintId"/> is <c>null</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Task not found, or <paramref name="sprintId"/> refers to a non-existent sprint.
+    /// </exception>
+    Task<TaskSnapshot> UpdateTaskSprintAsync(string taskId, string? sprintId);
+
+    /// <summary>
     /// Records pull request information on a task.
     /// </summary>
     /// <exception cref="InvalidOperationException">Task not found.</exception>
