@@ -26,7 +26,10 @@ This directory is the **single source of truth** for Agent Academy. Every claim 
 | [017](./017-deployment/spec.md) | Deployment & Operations | Implemented |
 | [018](./018-testing-strategy/spec.md) | Testing Strategy | Implemented |
 | [019](./019-forge-engine/spec.md) | Forge Pipeline Engine | Implemented |
+| [100](./100-product-vision/spec.md) | **Product Vision & Active Roadmap** ⭐ | Authoritative |
 | [300](./300-frontend-ui/spec.md) | Frontend UI | Implemented |
+
+> ⭐ **Spec 100 is the source of truth for what this product is supposed to be and what to work on next.** Read it before any other spec. It supersedes implicit assumptions in earlier specs where they conflict.
 
 ## Conventions
 
