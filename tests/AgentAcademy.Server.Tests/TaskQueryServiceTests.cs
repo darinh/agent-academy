@@ -1270,6 +1270,183 @@ public class TaskQueryServiceTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // UpdateTaskSprintAsync
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_TaskNotFound_Throws()
+    {
+        _db.Sprints.Add(CreateSprint("sprint-1"));
+        await _db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateTaskSprintAsync("nonexistent", "sprint-1"));
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_EmptyTaskId_ThrowsArgumentException()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _sut.UpdateTaskSprintAsync("", "sprint-1"));
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_SprintNotFound_Throws()
+    {
+        _db.Tasks.Add(CreateTask("t1", "Task One"));
+        await _db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateTaskSprintAsync("t1", "no-such-sprint"));
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_OrphanTask_RejectsAssignment()
+    {
+        // Task with no WorkspacePath and no Room → unresolvable workspace.
+        _db.Sprints.Add(CreateSprint("sprint-1", workspacePath: "/ws/a"));
+        _db.Tasks.Add(CreateTask("t1", "Orphan task"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateTaskSprintAsync("t1", "sprint-1"));
+        Assert.Contains("workspace", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        var reloaded = await _db.Tasks.FindAsync("t1");
+        Assert.Null(reloaded!.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_AssignsSprint_PersistsAndUpdatesUpdatedAt()
+    {
+        _db.Sprints.Add(CreateSprint("sprint-1", workspacePath: "/ws/a"));
+        var task = CreateTask("t1", "Task One", workspacePath: "/ws/a");
+        task.UpdatedAt = DateTime.UtcNow.AddHours(-1);
+        _db.Tasks.Add(task);
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var before = DateTime.UtcNow;
+        var result = await _sut.UpdateTaskSprintAsync("t1", "sprint-1");
+
+        Assert.Equal("sprint-1", result.SprintId);
+        Assert.True(result.UpdatedAt >= before);
+
+        var reloaded = await _db.Tasks.FindAsync("t1");
+        Assert.Equal("sprint-1", reloaded!.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_NullSprintId_ClearsAssociation()
+    {
+        _db.Sprints.Add(CreateSprint("sprint-1", workspacePath: "/ws/a"));
+        _db.Tasks.Add(CreateTask("t1", "Task One", workspacePath: "/ws/a", sprintId: "sprint-1"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await _sut.UpdateTaskSprintAsync("t1", null);
+
+        Assert.Null(result.SprintId);
+        var reloaded = await _db.Tasks.FindAsync("t1");
+        Assert.Null(reloaded!.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_WhitespaceSprintId_ClearsAssociation()
+    {
+        _db.Sprints.Add(CreateSprint("sprint-1", workspacePath: "/ws/a"));
+        _db.Tasks.Add(CreateTask("t1", "Task One", workspacePath: "/ws/a", sprintId: "sprint-1"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await _sut.UpdateTaskSprintAsync("t1", "   ");
+
+        Assert.Null(result.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_SameSprint_IsNoOp()
+    {
+        _db.Sprints.Add(CreateSprint("sprint-1", workspacePath: "/ws/a"));
+        var task = CreateTask("t1", "Task One", workspacePath: "/ws/a", sprintId: "sprint-1");
+        var originalUpdatedAt = DateTime.UtcNow.AddHours(-2);
+        task.UpdatedAt = originalUpdatedAt;
+        _db.Tasks.Add(task);
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await _sut.UpdateTaskSprintAsync("t1", "sprint-1");
+
+        Assert.Equal("sprint-1", result.SprintId);
+        var reloaded = await _db.Tasks.FindAsync("t1");
+        // No-op should not bump UpdatedAt
+        Assert.Equal(originalUpdatedAt, reloaded!.UpdatedAt, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_ReassignsToDifferentSprint()
+    {
+        var sprint1 = CreateSprint("sprint-1", workspacePath: "/ws/a");
+        sprint1.Status = "Completed";
+        var sprint2 = CreateSprint("sprint-2", workspacePath: "/ws/a");
+        _db.Sprints.AddRange(sprint1, sprint2);
+        _db.Tasks.Add(CreateTask("t1", "Task One", workspacePath: "/ws/a", sprintId: "sprint-1"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await _sut.UpdateTaskSprintAsync("t1", "sprint-2");
+
+        Assert.Equal("sprint-2", result.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_CrossWorkspace_RejectsAssignment()
+    {
+        _db.Sprints.Add(CreateSprint("sprint-other", workspacePath: "/ws/other"));
+        _db.Tasks.Add(CreateTask("t1", "Task One", workspacePath: "/ws/active"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateTaskSprintAsync("t1", "sprint-other"));
+        Assert.Contains("workspace", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        var reloaded = await _db.Tasks.FindAsync("t1");
+        Assert.Null(reloaded!.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_WorkspaceFromRoom_AllowsMatchingSprint()
+    {
+        _db.Workspaces.Add(CreateWorkspace("/ws/active"));
+        _db.Rooms.Add(CreateRoom("room-1", "Room", workspacePath: "/ws/active"));
+        _db.Sprints.Add(CreateSprint("sprint-1", workspacePath: "/ws/active"));
+        // Task has no WorkspacePath of its own — workspace must be derived from room
+        _db.Tasks.Add(CreateTask("t1", "Task One", roomId: "room-1"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await _sut.UpdateTaskSprintAsync("t1", "sprint-1");
+
+        Assert.Equal("sprint-1", result.SprintId);
+    }
+
+    [Fact]
+    public async Task UpdateTaskSprintAsync_WorkspaceFromRoom_RejectsCrossWorkspaceSprint()
+    {
+        _db.Workspaces.Add(CreateWorkspace("/ws/active"));
+        _db.Rooms.Add(CreateRoom("room-1", "Room", workspacePath: "/ws/active"));
+        _db.Sprints.Add(CreateSprint("sprint-other", workspacePath: "/ws/other"));
+        _db.Tasks.Add(CreateTask("t1", "Task One", roomId: "room-1"));
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateTaskSprintAsync("t1", "sprint-other"));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // UpdateTaskPrAsync
     // ═══════════════════════════════════════════════════════════════
 

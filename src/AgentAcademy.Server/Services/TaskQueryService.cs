@@ -373,6 +373,66 @@ public sealed class TaskQueryService : ITaskQueryService
     }
 
     /// <summary>
+    /// Associates a task with a sprint, or clears the association when
+    /// <paramref name="sprintId"/> is <c>null</c>. Sprint assignment is
+    /// workspace-scoped: the sprint's workspace must match the task's
+    /// effective workspace (its <see cref="TaskEntity.WorkspacePath"/>, or
+    /// when null, the workspace of its associated room). Tasks with no
+    /// resolvable workspace cannot be assigned to any sprint.
+    /// </summary>
+    public async Task<TaskSnapshot> UpdateTaskSprintAsync(string taskId, string? sprintId)
+    {
+        if (string.IsNullOrWhiteSpace(taskId))
+            throw new ArgumentException("Task ID is required.", nameof(taskId));
+
+        var entity = await _db.Tasks.FindAsync(taskId)
+            ?? throw new InvalidOperationException($"Task '{taskId}' not found");
+
+        var normalizedSprintId = string.IsNullOrWhiteSpace(sprintId) ? null : sprintId;
+
+        if (normalizedSprintId is not null)
+        {
+            var sprint = await _db.Sprints.FindAsync(normalizedSprintId)
+                ?? throw new InvalidOperationException($"Sprint '{normalizedSprintId}' not found");
+
+            var taskWorkspace = entity.WorkspacePath;
+            if (taskWorkspace is null && entity.RoomId is not null)
+            {
+                taskWorkspace = await _db.Rooms
+                    .Where(r => r.Id == entity.RoomId)
+                    .Select(r => r.WorkspacePath)
+                    .FirstOrDefaultAsync();
+            }
+
+            // Reject by default if the task has no resolvable workspace —
+            // attaching it to any sprint would let it contaminate that
+            // sprint's metrics and stage advancement (see
+            // SprintStageService task counts) across workspace boundaries.
+            if (taskWorkspace is null)
+            {
+                throw new InvalidOperationException(
+                    $"Task '{taskId}' has no resolvable workspace and cannot be associated with a sprint. " +
+                    $"Set the task's WorkspacePath or assign it to a room first.");
+            }
+
+            if (!string.Equals(sprint.WorkspacePath, taskWorkspace, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Sprint '{normalizedSprintId}' belongs to workspace '{sprint.WorkspacePath}' " +
+                    $"and cannot be associated with task '{taskId}' in workspace '{taskWorkspace}'.");
+            }
+        }
+
+        if (entity.SprintId == normalizedSprintId)
+            return TaskSnapshotFactory.BuildTaskSnapshot(entity);
+
+        entity.SprintId = normalizedSprintId;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return TaskSnapshotFactory.BuildTaskSnapshot(entity);
+    }
+
+    /// <summary>
     /// Records PR information on a task.
     /// </summary>
     public async Task<TaskSnapshot> UpdateTaskPrAsync(
