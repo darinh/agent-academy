@@ -144,6 +144,7 @@ export default function WorkspaceContent(props: WorkspaceContentProps) {
             <SearchPanel
               onNavigateToRoom={(roomId) => { props.onSelectRoom(roomId); }}
               onNavigateToTasks={props.onNavigateToTasks}
+              onNavigateToTask={props.onNavigateToTask}
             />
           )}
           {tab === "memories" && (
