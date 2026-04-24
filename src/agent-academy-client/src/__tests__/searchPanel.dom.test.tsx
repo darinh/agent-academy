@@ -300,4 +300,58 @@ describe("SearchPanel (interactive)", () => {
       expect(screen.getByText(/Hephaestus/)).toBeTruthy();
     });
   });
+
+  it("calls onNavigateToTask with taskId when clicking a task result", async () => {
+    const onNavigateToTask = vi.fn();
+    mockSearch.mockResolvedValue(makeResults({
+      tasks: [{
+        taskId: "task-42",
+        title: "Focus Task",
+        status: "Active",
+        assignedAgentName: null,
+        snippet: "Should navigate",
+        createdAt: "2026-04-12T00:00:00Z",
+        roomId: null,
+      }],
+      totalCount: 1,
+      query: "focus",
+    }));
+    render(wrap(createElement(SearchPanel, { onNavigateToTask })));
+
+    const input = screen.getAllByPlaceholderText(/search messages/i)[0];
+    fireEvent.change(input, { target: { value: "focus" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Focus Task")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Focus Task"));
+    expect(onNavigateToTask).toHaveBeenCalledWith("task-42");
+  });
+
+  it("falls back to onNavigateToTasks when onNavigateToTask is not provided", async () => {
+    const onNavigateToTasks = vi.fn();
+    mockSearch.mockResolvedValue(makeResults({
+      tasks: [{
+        taskId: "task-99",
+        title: "Fallback Task",
+        status: "Active",
+        assignedAgentName: null,
+        snippet: "Should fallback",
+        createdAt: "2026-04-12T00:00:00Z",
+        roomId: null,
+      }],
+      totalCount: 1,
+      query: "fallback",
+    }));
+    render(wrap(createElement(SearchPanel, { onNavigateToTasks })));
+
+    const input = screen.getAllByPlaceholderText(/search messages/i)[0];
+    fireEvent.change(input, { target: { value: "fallback" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Fallback Task")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Fallback Task"));
+    expect(onNavigateToTasks).toHaveBeenCalled();
+  });
 });

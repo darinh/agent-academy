@@ -218,9 +218,10 @@ const STATUS_COLOR: Record<string, BadgeColor> = {
 interface SearchPanelProps {
   onNavigateToRoom?: (roomId: string) => void;
   onNavigateToTasks?: () => void;
+  onNavigateToTask?: (taskId: string) => void;
 }
 
-export default function SearchPanel({ onNavigateToRoom, onNavigateToTasks }: SearchPanelProps) {
+export default function SearchPanel({ onNavigateToRoom, onNavigateToTasks, onNavigateToTask }: SearchPanelProps) {
   const s = useLocalStyles();
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<SearchScope>("all");
@@ -272,8 +273,12 @@ export default function SearchPanel({ onNavigateToRoom, onNavigateToTasks }: Sea
     onNavigateToRoom?.(msg.roomId);
   };
 
-  const handleTaskClick = (_task: TaskSearchResult) => {
-    onNavigateToTasks?.();
+  const handleTaskClick = (task: TaskSearchResult) => {
+    if (onNavigateToTask) {
+      onNavigateToTask(task.taskId);
+    } else {
+      onNavigateToTasks?.();
+    }
   };
 
   const showMessages = scope !== "tasks" && results && results.messages.length > 0;
