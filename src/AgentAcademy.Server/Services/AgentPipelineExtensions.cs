@@ -84,8 +84,8 @@ public static class AgentPipelineExtensions
                 o => o.StallThresholdSeconds > 0
                      && o.ScanIntervalSeconds > 0
                      && o.ScanIntervalSeconds <= o.StallThresholdSeconds
-                     && o.MaxDenialsPerTurn > 0,
-                "invalid Orchestrator:AgentWatchdog thresholds (stall>0, scan>0, scan<=stall, maxDenials>0)")
+                     && o.MaxDenialsPerTurn >= 0,
+                "invalid Orchestrator:AgentWatchdog thresholds (stall>0, scan>0, scan<=stall, maxDenials>=0)")
             .ValidateOnStart();
         services.AddSingleton<AgentLivenessTracker>();
         services.AddSingleton<IAgentLivenessTracker>(sp => sp.GetRequiredService<AgentLivenessTracker>());

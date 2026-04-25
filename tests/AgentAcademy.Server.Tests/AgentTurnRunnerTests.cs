@@ -313,6 +313,30 @@ public class AgentTurnRunnerTests : IDisposable
         Assert.False(result.IsNonPass);
     }
 
+    [Fact]
+    public async Task RunAgentTurnAsync_OuterCancellationRequested_PropagatesOCE()
+    {
+        var agent = TestAgent();
+        // Executor honours the linked token: when the outer token is cancelled
+        // it throws OCE bound to that token.
+        _executor.RunAsync(agent, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
+            .ThrowsAsync(ci =>
+            {
+                var ct = ci.Arg<CancellationToken>();
+                ct.ThrowIfCancellationRequested();
+                return new InvalidOperationException("token was not cancelled");
+            });
+
+        using var outerCts = new CancellationTokenSource();
+        outerCts.Cancel();
+
+        var scope = CreateMockScope();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => _runner.RunAgentTurnAsync(
+            agent, scope, _messageService, _configService, _activityPublisher,
+            TestRoom(), "room-1", null,
+            cancellationToken: outerCts.Token));
+    }
+
     // ── EFFECTIVE AGENT CONFIG ───────────────────────────────────
 
     [Fact]

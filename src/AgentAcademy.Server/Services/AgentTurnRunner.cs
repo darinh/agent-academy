@@ -92,7 +92,15 @@ public sealed class AgentTurnRunner : IAgentTurnRunner
 
             response = await RunAgentAsync(agent, prompt, roomId, cts.Token, turnId);
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Outer / round-level cancellation — propagate so the round loop
+            // can shut down cleanly. Must be checked BEFORE the watchdog
+            // filter because cts is linked from cancellationToken: when the
+            // outer token fires, both IsCancellationRequested flags are true.
+            throw;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             // Watchdog-induced cancellation: log info and return empty so the
             // round loop continues on to the next agent. The watchdog has
