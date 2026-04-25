@@ -17,7 +17,7 @@ Today, when the Planner runs `ADVANCE_STAGE` from `Implementation`, `SprintStage
 2. Advances `CurrentStage` from `Implementation` → `FinalSynthesis`.
 3. Announces the advance to active rooms (P1.3).
 
-There is no checkpoint that asks **"did the implementation actually satisfy the requirements?"**. The task-completion check is purely a structural gate (status fields on `TaskEntity`), not a behavioural one. A sprint can leave Implementation with every task marked complete and still have shipped code that does not do what `RequirementsDocument.AcceptanceCriteria` asked for.
+There is no checkpoint that asks **"did the implementation actually satisfy the requirements?"**. The task-completion check is purely a structural gate (status fields on `TaskEntity`), not a behavioural one. A sprint can leave Implementation with every task marked complete and still have shipped code that does not satisfy the per-task `SuccessCriteria` the Planner authored when the task was created.
 
 This is the gap §10 step 8 of `spec.md` exposes: the acceptance test specifies that *before FinalSynthesis, the team must self-evaluate against acceptance criteria and only proceed if all criteria pass.* P1.4's narrow-scope subset (already shipped, see `roadmap.md §P1.4 partial`) gave us the **mechanism** to halt a sprint (`MarkSprintBlockedAsync` + `BlockedAt` + `SprintBlocked` notification). What it did **not** give us is the **trigger** that decides when to halt automatically. That trigger is this design doc.
 
@@ -36,7 +36,7 @@ These constrain every design decision below. Most are reuse opportunities flagge
 5. **Reuse the preamble surface.** `SprintPreambles.StagePreambles` (`SprintPreambles.cs:32–139`) is the existing C# constant dictionary for stage instructions. The self-eval preamble belongs here, keyed by a new substate identifier (§4.1). It does **not** belong in `Config/sprint-stages.json` or in agent-level config — preambles for sprint stages are already centralised in this one file and adding a parallel surface fragments the source of truth.
 6. **Counters live on the sprint, not in memory.** P1.2's design established this principle (`SprintEntity` carries `RoundsThisSprint` etc.). Self-eval attempts get a peer column `SelfEvalAttempts` so the counter survives restarts and is observable through the existing sprint API.
 7. **Don't add a 7th stage to `StagesArray`.** The full stage array (`SprintStageService.cs:21–29`) is referenced in dozens of places (rosters, preambles, prerequisite checks, advance announcements, frontend stage display, gap analysis spec). Adding `ImplementationSelfEval` as a real stage cascades across the codebase. Instead, model self-eval as a **substate of Implementation** signalled by a flag (§3.1). The Implementation→FinalSynthesis transition is the only place the substate matters; everywhere else the stage stays "Implementation".
-8. **Acceptance criteria come from `RequirementsDocument`, not `SprintPlan`.** `RequirementsDocument.AcceptanceCriteria: List<string>` (`Sprints.cs:63`) is the authoritative source. `SprintPlan` documents the *plan* to satisfy them; the *criteria themselves* live one stage earlier. Self-eval reads from the stored RequirementsDocument artifact for this sprint. (The roadmap text says "tracking artifact" — that wording is loose; the actual list lives in RequirementsDocument.)
+8. **Success criteria come from per-task `TaskEntity.SuccessCriteria`, not from a sprint-level criteria list.** `TaskEntity.SuccessCriteria: string` (`Tasks.cs:13`) is the authoritative, per-work-item criterion the Planner authored when the task was created. Sprint-level acceptance criteria as a separate concept were retired in PR #135 (the field was a category error: criteria belong on the work item that promised them, not on the sprint). Self-eval enumerates all non-cancelled `TaskEntity` rows for the sprint, copies each task's `SuccessCriteria` verbatim into the report, and renders a per-task verdict. A sprint with N non-cancelled tasks produces a report with exactly N items. (Tasks with `Status = Cancelled` are excluded — the team explicitly walked away from them, so there is nothing to evaluate.)
 9. **The orchestrator parses structured artifact JSON, never free-form chat.** Self-eval verdict parsing is a `JsonSerializer.Deserialize<SelfEvaluationReport>` against the stored artifact's `Content` column, not a regex against the agent's conversation message. Free-form parsing is the failure mode that makes self-eval theatre instead of a gate.
 
 ---
@@ -65,7 +65,8 @@ JSON shape:
 {
   "Attempt": 1,
   "Items": [
-    { "Criterion": "<verbatim from RequirementsDocument.AcceptanceCriteria>",
+    { "TaskId": "<TaskEntity.Id of a non-cancelled task in this sprint>",
+      "SuccessCriteria": "<verbatim from TaskEntity.SuccessCriteria for that TaskId>",
       "Verdict": "PASS" | "FAIL" | "UNVERIFIED",
       "Evidence": "<text — file path, test name, PR #, log line>",
       "FixPlan": "<required iff Verdict in (FAIL, UNVERIFIED), else null>"
@@ -78,12 +79,12 @@ JSON shape:
 
 `SprintArtifactService.ValidateContent` enforces:
 
-- `Items.Count == RequirementsDocument.AcceptanceCriteria.Count` (one entry per criterion — no skipping).
-- Each `Items[i].Criterion` matches the corresponding criterion exactly (string-equal, case-sensitive). This prevents the agent from silently rewording a criterion to make it easier to claim PASS.
+- The set of `Items[*].TaskId` exactly equals the set of `TaskEntity.Id` for the sprint where `Status != Cancelled`. No missing tasks, no extra tasks, no duplicate `TaskId`s. (One entry per non-cancelled task — no skipping, no doubling-up.)
+- Each `Items[i].SuccessCriteria` matches `TaskEntity.SuccessCriteria` of the task identified by `Items[i].TaskId` exactly (string-equal, case-sensitive, whitespace-significant). This prevents the agent from silently rewording a criterion to make it easier to claim PASS.
 - `OverallVerdict == "AllPass"` iff every `Items[*].Verdict == "PASS"`. Otherwise `AnyFail` (if any FAIL exists) else `Unverified` (only PASS+UNVERIFIED). Mismatch is a validation error — the agent cannot lie about the rollup.
 - Every non-PASS item has a non-empty `FixPlan`.
 
-If the RequirementsDocument is missing or malformed at the moment of validation, validation fails with a clear error — the sprint is structurally invalid for self-eval and the human must intervene (this is correct behaviour; we should not silently advance).
+If the sprint has zero non-cancelled tasks at the moment of validation, validation fails with a clear error — there is nothing to evaluate and self-eval is structurally meaningless. The team must either create tasks or the human must intervene (this is correct behaviour; we should not silently advance).
 
 ### 3.3 Caps (configurable, with safe defaults)
 
@@ -122,7 +123,7 @@ RUN_SELF_EVAL:
 Server effect:
 
 1. Validate sprint is `Active`, `CurrentStage == "Implementation"`, `BlockedAt == null`, and at least one task exists with status `Completed` or `Cancelled` (otherwise this is theatre — refuse with clear error).
-2. Validate `RequirementsDocument` artifact exists (otherwise refuse — see §3.2).
+2. Validate at least one non-cancelled `TaskEntity` exists for the sprint (otherwise refuse — see §3.2; there is nothing to evaluate).
 3. Set `SelfEvaluationInFlight = true`, save.
 4. Wake the orchestrator for this sprint's room (existing `OrchestratorDispatchService.WakeForRoomAsync` path) — the next round will inject the self-eval preamble.
 
@@ -213,12 +214,15 @@ criteria and produce a SelfEvaluationReport artifact. Do not write more
 code, do not open new PRs, do not refactor — that work waits for the
 verdict.
 
-**The acceptance criteria** for this sprint are stored in the
-RequirementsDocument artifact (Stage=Intake). Read them with
-GET_ARTIFACT and copy each one VERBATIM into your report. Do not reword
-them. Reworded criteria fail validation.
+**The success criteria** for this sprint are the per-task
+`SuccessCriteria` strings on every non-cancelled TaskEntity in the
+sprint. List the sprint's tasks (LIST_TASKS), and for each non-cancelled
+task copy its TaskId AND its SuccessCriteria VERBATIM into one Items
+entry. Do not reword the criteria. Reworded criteria fail validation.
+A sprint with N non-cancelled tasks produces exactly N report items —
+no missing tasks, no extras, no duplicates.
 
-**For each criterion, return one of three verdicts:**
+**For each task, return one of three verdicts:**
   PASS       — There is concrete evidence the criterion is met.
                Cite the evidence (file path + line, test name, PR #,
                log output). "We implemented it" is not evidence.
@@ -307,7 +311,7 @@ Order matters: each step depends only on prior steps. Tests must be written alon
 
 **q2. Should `MERGE_PR` / `CREATE_PR` be hard-blocked at the command layer when `SelfEvaluationInFlight == true`?** This doc deliberately does NOT block them — the preamble discourages them and that's enough for cooperative agents. Hard-blocking adds command-layer plumbing and a new failure mode (PR-in-flight when self-eval starts). Recommend: do not hard-block; revisit if observed misbehaviour.
 
-**q3. Where do acceptance criteria come from when `RequirementsDocument` is the wrong source?** A future sprint archetype might not produce a RequirementsDocument (e.g., a pure refactor sprint with no Intake). For now, refuse self-eval in that case (§3.2). Long-term, the criteria source could be configurable per archetype. Out of scope for P1.4 full; flagging here.
+**q3. Are per-task `SuccessCriteria` the right source for every sprint archetype?** This doc keys self-eval to per-task criteria (PR #135 retired the sprint-level list as a category error). That works whenever the sprint produces tasks. A future archetype that delivers value without producing TaskEntity rows (e.g., a pure documentation sprint that just edits markdown) would have nothing to evaluate against and would refuse self-eval per §3.2. If such archetypes prove common, the right answer is to make those archetypes produce tasks (even if the task body is "edit doc X to say Y") rather than re-introduce a sprint-level criteria field. Flagging here.
 
 **q4. Should `SelfEvaluationReport` content be append-only or last-write-wins?** This doc treats each report as a new row (multiple per sprint). The orchestrator reads "the most recent." Alternative: keep one row and overwrite. Append-only gives a clean audit trail (frontend can show "Attempt 1 found X, Attempt 2 fixed it") and matches `SprintArtifactEntity`'s natural shape. Recommend append-only.
 
@@ -317,7 +321,7 @@ Order matters: each step depends only on prior steps. Tests must be written alon
 
 ## 10. What this doc does NOT design
 
-- **Cost tracking / token caps tied to self-eval.** Same hook point as P1.2 §4.6; deferred to a separate item.
+- **Cost tracking / token caps tied to self-eval.** P1.2 §4.6 reserved the hook; the design now lives in `cost-tracking-design.md`. Self-eval triggers the same `MarkSprintBlockedAsync` halt path as a cost-anomaly breach, so no self-eval-specific cost plumbing is needed here.
 - **A persona-level "self-evaluator" agent role.** The current design uses the existing roster; the Planner synthesizes verdicts from team input. A dedicated `Evaluator` role might raise quality but adds roster + permissions surface. Defer until we see whether the existing roster can self-evaluate competently.
 - **Frontend self-eval timeline UI.** The GET endpoint (§6) is shaped for it; the UI is a follow-up task.
 - **Self-eval at stages other than Implementation.** Validation already has its own report, Planning has its own gate. Self-eval is specifically about *whether the code does what was promised* — that question is only meaningful at the boundary between Implementation and FinalSynthesis.
@@ -327,7 +331,7 @@ Order matters: each step depends only on prior steps. Tests must be written alon
 ## 11. Summary for the impatient
 
 - Add `["Implementation"] = "SelfEvaluationReport"` to `RequiredArtifactByStage`. Existing artifact gate now blocks Implementation→FinalSynthesis without a stored report.
-- New `SelfEvaluationReport` artifact type with strict JSON validation: one entry per acceptance criterion (verbatim, no skipping), evidence required, rollup verdict computed and cross-checked.
+- New `SelfEvaluationReport` artifact type with strict JSON validation: one entry per non-cancelled `TaskEntity` (TaskId + verbatim `SuccessCriteria`, no skipping, no extras), evidence required, rollup verdict computed and cross-checked.
 - New `RUN_SELF_EVAL` command opens the substate; agent-side preamble tells the team to evaluate, not code.
 - Verdict path runs server-side from `StoreArtifactAsync`: AllPass keeps the substate open for the Planner's `ADVANCE_STAGE`; AnyFail/Unverified re-opens Implementation; cap-exceeded calls existing `MarkSprintBlockedAsync` (the auto-block heuristic the roadmap reserved).
 - `AdvanceStageAsync` adds a second check requiring the latest report's `OverallVerdict == "AllPass"` to actually transition.
