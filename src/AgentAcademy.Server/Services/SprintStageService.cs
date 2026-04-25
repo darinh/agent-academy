@@ -56,13 +56,19 @@ public sealed class SprintStageService : ISprintStageService
 
     private readonly AgentAcademyDbContext _db;
     private readonly IActivityBroadcaster _activityBus;
+    private readonly ISprintStageAdvanceAnnouncer? _announcer;
     private readonly ILogger<SprintStageService> _logger;
 
-    public SprintStageService(AgentAcademyDbContext db, IActivityBroadcaster activityBus, ILogger<SprintStageService> logger)
+    public SprintStageService(
+        AgentAcademyDbContext db,
+        IActivityBroadcaster activityBus,
+        ILogger<SprintStageService> logger,
+        ISprintStageAdvanceAnnouncer? announcer = null)
     {
         _db = db;
         _activityBus = activityBus;
         _logger = logger;
+        _announcer = announcer;
     }
 
     // ── Stage Advancement ────────────────────────────────────────
@@ -166,6 +172,11 @@ public sealed class SprintStageService : ISprintStageService
                 ["forced"] = force,
             });
 
+        // Snapshot active rooms BEFORE sync — at FinalSynthesis the sync flips
+        // matched rooms to Status=Completed, which would otherwise hide them
+        // from the announcer's default "Status != Completed" workspace query.
+        var targetRoomIds = await CaptureActiveRoomIdsAsync(sprint.WorkspacePath);
+
         await SyncWorkspaceRoomsToStageAsync(sprint.WorkspacePath, sprintId, sprint.CurrentStage);
 
         await _db.SaveChangesAsync();
@@ -174,6 +185,15 @@ public sealed class SprintStageService : ISprintStageService
         _logger.LogInformation(
             "Advanced sprint #{Number} ({Id}) from {Previous} → {Current}",
             sprint.Number, sprint.Id, previousStage, sprint.CurrentStage);
+
+        // P1.3: announce the transition + wake the orchestrator so an agent
+        // round fires reflecting the new stage's intent. Best-effort —
+        // failures inside the announcer are logged and swallowed there.
+        if (_announcer is not null)
+        {
+            await _announcer.AnnounceAsync(
+                sprint, previousStage, trigger: force ? "forced" : null, targetRoomIds: targetRoomIds);
+        }
 
         return sprint;
     }
@@ -208,6 +228,9 @@ public sealed class SprintStageService : ISprintStageService
                 ["awaitingSignOff"] = false,
             });
 
+        // Snapshot before sync — see comment in AdvanceStageAsync.
+        var targetRoomIds = await CaptureActiveRoomIdsAsync(sprint.WorkspacePath);
+
         await SyncWorkspaceRoomsToStageAsync(sprint.WorkspacePath, sprintId, sprint.CurrentStage);
 
         await _db.SaveChangesAsync();
@@ -216,6 +239,13 @@ public sealed class SprintStageService : ISprintStageService
         _logger.LogInformation(
             "User approved sprint #{Number} ({Id}) advance: {Previous} → {Current}",
             sprint.Number, sprint.Id, previousStage, sprint.CurrentStage);
+
+        // P1.3: announce the transition + wake the orchestrator. Best-effort.
+        if (_announcer is not null)
+        {
+            await _announcer.AnnounceAsync(
+                sprint, previousStage, trigger: "approved", targetRoomIds: targetRoomIds);
+        }
 
         return sprint;
     }
@@ -371,6 +401,29 @@ public sealed class SprintStageService : ISprintStageService
     }
 
     // ── Room Phase Sync ─────────────────────────────────────────
+
+    /// <summary>
+    /// Captures the IDs of rooms eligible to receive the stage-advance
+    /// announcement before <see cref="SyncWorkspaceRoomsToStageAsync"/>
+    /// potentially flips them to <c>Completed</c> (which happens at
+    /// <c>Implementation → FinalSynthesis</c>). Returns rooms that are
+    /// currently neither archived nor completed in the workspace.
+    /// </summary>
+    private async Task<IReadOnlyCollection<string>> CaptureActiveRoomIdsAsync(string workspacePath)
+    {
+        if (string.IsNullOrEmpty(workspacePath))
+            return Array.Empty<string>();
+
+        var archived = nameof(RoomStatus.Archived);
+        var completed = nameof(RoomStatus.Completed);
+
+        return await _db.Rooms
+            .Where(r => r.WorkspacePath == workspacePath
+                && r.Status != archived
+                && r.Status != completed)
+            .Select(r => r.Id)
+            .ToListAsync();
+    }
 
     /// <summary>
     /// Mirrors the sprint's new stage to every room in the same workspace whose
