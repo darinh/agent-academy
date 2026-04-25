@@ -81,7 +81,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_WriteFileRegistered_WriteKindApproved(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "write_file" }, _logger);
+            new HashSet<string> { "write_file" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -93,7 +93,7 @@ public sealed class AgentPermissionHandlerTests
     {
         // write_file does NOT imply shell — only commit_changes does.
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "write_file" }, _logger);
+            new HashSet<string> { "write_file" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest("shell"), MakeInvocation($"isolated-{Guid.NewGuid():N}"));
 
@@ -107,7 +107,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_CommitChangesRegistered_ShellAndWriteApproved(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "commit_changes" }, _logger);
+            new HashSet<string> { "commit_changes" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -131,7 +131,7 @@ public sealed class AgentPermissionHandlerTests
             "remember", "recall",
             "write_file", "commit_changes",
         };
-        var handler = AgentPermissionHandler.Create(hephaestusTools, _logger);
+        var handler = AgentPermissionHandler.Create(hephaestusTools, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         Assert.Equal(
             PermissionRequestResultKind.Approved,
@@ -162,7 +162,7 @@ public sealed class AgentPermissionHandlerTests
             "read_file", "search_code", "list_tasks", "list_rooms",
             "show_agents", "remember", "recall",
         };
-        var handler = AgentPermissionHandler.Create(readOnlyTools, _logger);
+        var handler = AgentPermissionHandler.Create(readOnlyTools, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         Assert.Equal(
             PermissionRequestResultKind.DeniedByRules,
