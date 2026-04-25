@@ -87,6 +87,11 @@ public sealed class SelfDriveDecisionServiceTests : IDisposable
         _orchestrator.TryEnqueueSystemContinuation(Arg.Any<string>(), Arg.Any<string>())
             .Returns(true);
 
+        // Wrap the substitute in a tiny IServiceProvider so the SUT can resolve
+        // it lazily (the production wiring uses Lazy<IAgentOrchestrator> via
+        // IServiceProvider to break a singleton DI cycle).
+        var orchestratorProvider = new SingleServiceProvider<IAgentOrchestrator>(_orchestrator);
+
         _costGuard = Substitute.For<ICostGuard>();
         _costGuard.ShouldHaltAsync(Arg.Any<SprintEntity>(), Arg.Any<CancellationToken>())
             .Returns(false);
@@ -102,7 +107,7 @@ public sealed class SelfDriveDecisionServiceTests : IDisposable
 
         _sut = new SelfDriveDecisionService(
             _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            _orchestrator,
+            orchestratorProvider,
             _costGuard,
             Options.Create(_options),
             _logSink);
@@ -517,5 +522,13 @@ public sealed class SelfDriveDecisionServiceTests : IDisposable
                 Lines.Add($"[{level}] {formatter(state, ex)}{(ex != null ? "\n" + ex : "")}");
             }
         }
+    }
+
+    private sealed class SingleServiceProvider<TService> : IServiceProvider where TService : class
+    {
+        private readonly TService _service;
+        public SingleServiceProvider(TService service) => _service = service;
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(TService) ? _service : null;
     }
 }
