@@ -51,7 +51,7 @@
 
 **Critical safety requirement**: This loop MUST have:
 - A max-rounds-per-sprint cap (default: 50, configurable per sprint).
-- A max-cost-per-sprint cap if API costs are tracked (TBD — investigate).
+- A max-cost-per-sprint cap. Design landed in [`cost-tracking-design.md`](cost-tracking-design.md) — `LlmUsageTracker` already records per-call cost/tokens; `ICostGuard` plugs into the hook P1.2 §4.6 reserved.
 - An emergency stop that the human can trigger from the UI or API.
 
 **Recommend**: write a brief design doc (1–2 pages) and get a human review before implementing.
