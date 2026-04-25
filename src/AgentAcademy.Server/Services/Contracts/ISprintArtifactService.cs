@@ -19,4 +19,11 @@ public interface ISprintArtifactService
     /// </summary>
     Task<List<SprintArtifactEntity>> GetSprintArtifactsAsync(
         string sprintId, string? stage = null);
+
+    /// <summary>
+    /// Returns the most recent <c>SelfEvaluationReport</c> artifact for a sprint
+    /// (any stage, ordered by <c>CreatedAt</c> desc), or <c>null</c> if none has
+    /// been stored. Used by the API surface (P1.4 §6) and the verdict gate.
+    /// </summary>
+    Task<SprintArtifactEntity?> GetLatestSelfEvalReportAsync(string sprintId);
 }

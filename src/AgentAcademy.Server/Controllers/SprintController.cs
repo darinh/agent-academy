@@ -1,7 +1,11 @@
+using AgentAcademy.Server.Commands;
+using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using AgentAcademy.Server.Services.Contracts;
 
 namespace AgentAcademy.Server.Controllers;
@@ -21,6 +25,12 @@ public class SprintController : ControllerBase
     private readonly ISprintScheduleService _scheduleService;
     private readonly IRoomService _roomService;
     private readonly IConversationSessionService _sessionService;
+    private readonly IAgentOrchestrator _orchestrator;
+    private readonly HumanCommandAuditor _auditor;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly Dictionary<string, ICommandHandler> _commandHandlers;
+    private readonly AgentAcademyDbContext _db;
+    private readonly IOptions<SelfEvalOptions> _selfEvalOptions;
     private readonly ILogger<SprintController> _logger;
 
     public SprintController(
@@ -31,6 +41,12 @@ public class SprintController : ControllerBase
         ISprintScheduleService scheduleService,
         IRoomService roomService,
         IConversationSessionService sessionService,
+        IAgentOrchestrator orchestrator,
+        HumanCommandAuditor auditor,
+        IServiceScopeFactory scopeFactory,
+        IEnumerable<ICommandHandler> commandHandlers,
+        AgentAcademyDbContext db,
+        IOptions<SelfEvalOptions> selfEvalOptions,
         ILogger<SprintController> logger)
     {
         _sprintService = sprintService;
@@ -40,6 +56,12 @@ public class SprintController : ControllerBase
         _scheduleService = scheduleService;
         _roomService = roomService;
         _sessionService = sessionService;
+        _orchestrator = orchestrator;
+        _auditor = auditor;
+        _scopeFactory = scopeFactory;
+        _commandHandlers = commandHandlers.ToDictionary(h => h.CommandName, StringComparer.OrdinalIgnoreCase);
+        _db = db;
+        _selfEvalOptions = selfEvalOptions;
         _logger = logger;
     }
 
@@ -461,6 +483,172 @@ public class SprintController : ControllerBase
         }
     }
 
+    // ── Self-Evaluation (P1.4) ──────────────────────────────────
+
+    /// <summary>
+    /// POST /api/sprints/{id}/self-eval/start — server-side equivalent of the
+    /// agent-driven <c>RUN_SELF_EVAL</c> command. Audits as a human-issued
+    /// command via <see cref="HumanCommandAuditor"/>, executes the existing
+    /// <c>RunSelfEvalHandler</c>, then wakes the orchestrator on success so an
+    /// agent round picks up the self-eval preamble. See P1.4 §6.
+    /// </summary>
+    [HttpPost("{id}/self-eval/start")]
+    public async Task<IActionResult> StartSelfEval(string id)
+    {
+        var (_, ownerError) = await ValidateSprintOwnershipAsync(id);
+        if (ownerError is not null) return ownerError;
+
+        if (!_commandHandlers.TryGetValue("RUN_SELF_EVAL", out var handler))
+        {
+            _logger.LogError("RUN_SELF_EVAL handler is not registered.");
+            return Problem("Self-evaluation command is not currently available.");
+        }
+
+        var args = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["sprintId"] = id,
+        };
+        var correlationId = $"cmd-{Guid.NewGuid():N}";
+
+        CommandEnvelope envelope = new(
+            Command: "RUN_SELF_EVAL",
+            Args: args,
+            Status: CommandStatus.Success,
+            Result: null,
+            Error: null,
+            CorrelationId: correlationId,
+            Timestamp: DateTime.UtcNow,
+            ExecutedBy: "human");
+
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var context = new CommandContext(
+                AgentId: "human",
+                AgentName: "Human",
+                AgentRole: "Human",
+                RoomId: null,
+                BreakoutRoomId: null,
+                Services: scope.ServiceProvider);
+            envelope = await handler.ExecuteAsync(envelope, context);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "RUN_SELF_EVAL handler threw for sprint {Id}", id);
+            envelope = envelope with
+            {
+                Status = CommandStatus.Error,
+                ErrorCode = CommandErrorCode.Internal,
+                Error = "Self-evaluation failed due to an internal error.",
+            };
+        }
+
+        try
+        {
+            await _auditor.CreateCompletedAsync(envelope);
+        }
+        catch (Exception ex)
+        {
+            // Audit is best-effort; failure here must not mask the command result.
+            _logger.LogError(ex, "Failed to audit RUN_SELF_EVAL for sprint {Id}", id);
+        }
+
+        if (envelope.Status == CommandStatus.Success)
+        {
+            await TryWakeOrchestratorForSprintAsync(id);
+        }
+
+        var status = envelope.Status switch
+        {
+            CommandStatus.Success => StatusCodes.Status200OK,
+            CommandStatus.Error => envelope.ErrorCode switch
+            {
+                CommandErrorCode.NotFound => StatusCodes.Status404NotFound,
+                CommandErrorCode.Conflict => StatusCodes.Status409Conflict,
+                CommandErrorCode.Validation => StatusCodes.Status400BadRequest,
+                _ => StatusCodes.Status500InternalServerError,
+            },
+            _ => StatusCodes.Status500InternalServerError,
+        };
+
+        return StatusCode(status, new SelfEvalStartResponse(
+            CorrelationId: correlationId,
+            Status: envelope.Status.ToString(),
+            ErrorCode: envelope.ErrorCode,
+            Error: envelope.Error,
+            Result: envelope.Result));
+    }
+
+    /// <summary>
+    /// GET /api/sprints/{id}/self-eval/latest — returns the most recent
+    /// <c>SelfEvaluationReport</c> artifact for the sprint plus rollup verdict
+    /// and attempts/cap. Returns 204 No Content if no report has been stored.
+    /// See P1.4 §6 — shaped for the timeline-view UI.
+    /// </summary>
+    [HttpGet("{id}/self-eval/latest")]
+    public async Task<IActionResult> GetLatestSelfEval(string id)
+    {
+        var (sprint, ownerError) = await ValidateSprintOwnershipAsync(id);
+        if (ownerError is not null) return ownerError;
+
+        var artifact = await _artifactService.GetLatestSelfEvalReportAsync(id);
+        if (artifact is null) return NoContent();
+
+        var maxAttempts = Math.Max(1, _selfEvalOptions.Value.MaxSelfEvalAttempts);
+
+        return Ok(new SelfEvalLatestResponse(
+            SprintId: id,
+            Report: ToArtifactSnapshot(artifact),
+            Attempts: sprint!.SelfEvalAttempts,
+            MaxAttempts: maxAttempts,
+            LastVerdict: sprint.LastSelfEvalVerdict,
+            SelfEvaluationInFlight: sprint.SelfEvaluationInFlight));
+    }
+
+    /// <summary>
+    /// Wakes the orchestrator for every active room in the sprint's workspace
+    /// so an agent round picks up the self-eval preamble. Best-effort: errors
+    /// are logged but do not fail the API call (the flag is already flipped).
+    /// </summary>
+    private async Task TryWakeOrchestratorForSprintAsync(string sprintId)
+    {
+        try
+        {
+            var sprint = await _sprintService.GetSprintByIdAsync(sprintId);
+            if (sprint is null || string.IsNullOrEmpty(sprint.WorkspacePath))
+                return;
+
+            var archived = nameof(RoomStatus.Archived);
+            var completed = nameof(RoomStatus.Completed);
+            var roomIds = await _db.Rooms
+                .Where(r => r.WorkspacePath == sprint.WorkspacePath
+                    && r.Status != archived
+                    && r.Status != completed)
+                .Select(r => r.Id)
+                .ToListAsync();
+
+            foreach (var roomId in roomIds)
+            {
+                try
+                {
+                    _orchestrator.HandleHumanMessage(roomId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Self-eval API: failed to wake orchestrator for room {RoomId} (sprint {SprintId}); " +
+                        "agents will pick up the self-eval preamble on the next round.",
+                        roomId, sprintId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Self-eval API: failed to enumerate rooms to wake for sprint {SprintId}.", sprintId);
+        }
+    }
+
     // ── Schedule CRUD ──────────────────────────────────────────
 
     /// <summary>
@@ -588,3 +776,20 @@ public record SprintDetailResponse(
     SprintSnapshot Sprint,
     List<SprintArtifact> Artifacts,
     List<string> Stages);
+
+/// <summary>Response shape for POST /api/sprints/{id}/self-eval/start.</summary>
+public record SelfEvalStartResponse(
+    string CorrelationId,
+    string Status,
+    string? ErrorCode,
+    string? Error,
+    Dictionary<string, object?>? Result);
+
+/// <summary>Response shape for GET /api/sprints/{id}/self-eval/latest.</summary>
+public record SelfEvalLatestResponse(
+    string SprintId,
+    SprintArtifact Report,
+    int Attempts,
+    int MaxAttempts,
+    string? LastVerdict,
+    bool SelfEvaluationInFlight);

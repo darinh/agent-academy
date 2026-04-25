@@ -139,6 +139,75 @@ public class ActivityNotificationBroadcasterTests
         Assert.Null(result.AgentName);
     }
 
+    // ── P1.4 §7 — SelfEvalCompleted verdict-aware mapping ───────
+
+    [Fact]
+    public void MapToNotification_SelfEvalCompleted_AllPass_MapsToTaskComplete()
+    {
+        var evt = CreateSelfEvalEvent("AllPass", sprintNumber: 7, attempt: 1, cap: 3);
+        var result = ActivityNotificationBroadcaster.MapToNotification(evt);
+
+        Assert.NotNull(result);
+        Assert.Equal(NotificationType.TaskComplete, result!.Type);
+        Assert.Contains("Sprint #7", result.Title);
+        Assert.Contains("passed self-evaluation", result.Title);
+    }
+
+    [Fact]
+    public void MapToNotification_SelfEvalCompleted_AnyFail_MapsToAgentThinkingWithAttemptsInTitle()
+    {
+        var evt = CreateSelfEvalEvent("AnyFail", sprintNumber: 7, attempt: 2, cap: 3);
+        var result = ActivityNotificationBroadcaster.MapToNotification(evt);
+
+        Assert.NotNull(result);
+        Assert.Equal(NotificationType.AgentThinking, result!.Type);
+        Assert.Contains("Sprint #7", result.Title);
+        Assert.Contains("found issues", result.Title);
+        Assert.Contains("2/3", result.Title);
+    }
+
+    [Fact]
+    public void MapToNotification_SelfEvalCompleted_Unverified_MapsToAgentThinkingWithAttemptsInTitle()
+    {
+        var evt = CreateSelfEvalEvent("Unverified", sprintNumber: 7, attempt: 3, cap: 3);
+        var result = ActivityNotificationBroadcaster.MapToNotification(evt);
+
+        Assert.NotNull(result);
+        Assert.Equal(NotificationType.AgentThinking, result!.Type);
+        Assert.Contains("unverified items", result.Title);
+        Assert.Contains("3/3", result.Title);
+    }
+
+    [Fact]
+    public void MapToNotification_SelfEvalCompleted_MissingMetadata_StillProducesNotification()
+    {
+        var evt = CreateEvent(ActivityEventType.SelfEvalCompleted, "Self-eval done");
+        var result = ActivityNotificationBroadcaster.MapToNotification(evt);
+
+        Assert.NotNull(result);
+        // Default fallback when verdict unknown: AgentThinking with generic title.
+        Assert.Equal(NotificationType.AgentThinking, result!.Type);
+        Assert.Contains("Sprint", result.Title);
+    }
+
+    private static ActivityEvent CreateSelfEvalEvent(
+        string verdict, int sprintNumber, int attempt, int cap)
+    {
+        var metadata = new Dictionary<string, object?>
+        {
+            ["sprintId"] = "sprint-id",
+            ["sprintNumber"] = sprintNumber,
+            ["attempt"] = attempt,
+            ["overallVerdict"] = verdict,
+            ["maxSelfEvalAttempts"] = cap,
+            ["blocked"] = false,
+        };
+        return CreateEvent(ActivityEventType.SelfEvalCompleted,
+            $"Self-evaluation attempt {attempt} for sprint #{sprintNumber}: {verdict}")
+            with
+        { Metadata = metadata };
+    }
+
     #endregion
 
     #region Integration (subscribe + broadcast)
