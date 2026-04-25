@@ -5,6 +5,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
 
@@ -1409,5 +1410,168 @@ public class SprintStageServiceTests : IDisposable
         Assert.Equal("FinalSynthesis", done!.CurrentPhase);
         Assert.Equal("Completed", done.Status);
         Assert.Equal("Validation", live!.CurrentPhase);
+    }
+
+    // ── P1.3: Stage Advance Announcer wiring ─────────────────────
+
+    [Fact]
+    public async Task AdvanceStage_NonSignOffStage_InvokesAnnouncerWithPreviousAndCurrent()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        // Discussion → Validation: no sign-off, no artifact gate.
+        await SeedSprintAsync(stage: "Discussion");
+
+        var sprint = await service.AdvanceStageAsync("sprint-1");
+
+        Assert.Equal("Validation", sprint.CurrentStage);
+        await announcer.Received(1).AnnounceAsync(
+            Arg.Is<SprintEntity>(s => s.Id == "sprint-1" && s.CurrentStage == "Validation"),
+            "Discussion",
+            null,
+            Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AdvanceStage_SignOffRequired_DoesNotInvokeAnnouncer()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        // Intake requires sign-off; seed a RequirementsDocument so the artifact gate passes.
+        await SeedSprintAsync(stage: "Intake");
+        await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
+
+        var sprint = await service.AdvanceStageAsync("sprint-1");
+
+        // Stage didn't actually change yet — sprint is awaiting sign-off.
+        Assert.Equal("Intake", sprint.CurrentStage);
+        Assert.True(sprint.AwaitingSignOff);
+        await announcer.DidNotReceive().AnnounceAsync(
+            Arg.Any<SprintEntity>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AdvanceStage_Forced_PassesForcedTriggerToAnnouncer()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        // Implementation has prerequisites — force=true must skip them and announce as "forced".
+        await SeedSprintAsync(stage: "Implementation");
+
+        await service.AdvanceStageAsync("sprint-1", force: true);
+
+        await announcer.Received(1).AnnounceAsync(
+            Arg.Any<SprintEntity>(), "Implementation", "forced",
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ApproveAdvance_InvokesAnnouncerWithApprovedTrigger()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        await SeedSprintAsync(stage: "Planning", awaitingSignOff: true, pendingStage: "Discussion");
+
+        var sprint = await service.ApproveAdvanceAsync("sprint-1");
+
+        Assert.Equal("Discussion", sprint.CurrentStage);
+        Assert.False(sprint.AwaitingSignOff);
+        await announcer.Received(1).AnnounceAsync(
+            Arg.Is<SprintEntity>(s => s.Id == "sprint-1" && s.CurrentStage == "Discussion"),
+            "Planning",
+            "approved",
+            Arg.Any<IReadOnlyCollection<string>?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RejectAdvance_DoesNotInvokeAnnouncer()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        await SeedSprintAsync(stage: "Planning", awaitingSignOff: true, pendingStage: "Discussion");
+
+        await service.RejectAdvanceAsync("sprint-1");
+
+        await announcer.DidNotReceive().AnnounceAsync(
+            Arg.Any<SprintEntity>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TimeOutSignOff_DoesNotInvokeAnnouncer()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        await SeedSprintAsync(stage: "Planning", awaitingSignOff: true, pendingStage: "Discussion");
+
+        await service.TimeOutSignOffAsync("sprint-1");
+
+        await announcer.DidNotReceive().AnnounceAsync(
+            Arg.Any<SprintEntity>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AdvanceStage_AnnouncerThrows_DoesNotPropagateAndStageIsAlreadyPersisted()
+    {
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        // Simulate a rogue announcer (production SprintStageAdvanceAnnouncer catches its own exceptions —
+        // this contract test guards against future implementations regressing that property).
+        announcer.AnnounceAsync(Arg.Any<SprintEntity>(), Arg.Any<string>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<int>>(_ => throw new InvalidOperationException("announcer down"));
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        await SeedSprintAsync(stage: "Discussion");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.AdvanceStageAsync("sprint-1"));
+
+        // Stage was already persisted before the announcer was invoked.
+        _db.ChangeTracker.Clear();
+        var sprint = await _db.Sprints.FindAsync("sprint-1");
+        Assert.Equal("Validation", sprint!.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_ImplementationToFinalSynthesis_PassesActiveRoomsToAnnouncerEvenAfterSyncMarksThemCompleted()
+    {
+        // Regression for the bug caught by P1.3 adversarial review:
+        // SyncWorkspaceRoomsToStageAsync flips active rooms to Status=Completed when
+        // the new stage is FinalSynthesis. If the announcer queried the workspace
+        // AFTER sync, it would see zero rooms and silently drop the announcement.
+        // SprintStageService must snapshot active room IDs BEFORE sync and pass
+        // them explicitly so the FinalSynthesis transition still announces.
+        var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
+        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        var sprint = await SeedSprintAsync(stage: "Implementation");
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-impl",
+            Name = "main",
+            WorkspacePath = sprint.WorkspacePath,
+            Status = nameof(RoomStatus.Active),
+            CurrentPhase = "Implementation",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+
+        await service.AdvanceStageAsync("sprint-1");
+
+        await announcer.Received(1).AnnounceAsync(
+            Arg.Is<SprintEntity>(s => s.CurrentStage == "FinalSynthesis"),
+            "Implementation",
+            null,
+            Arg.Is<IReadOnlyCollection<string>?>(ids => ids != null && ids.Contains("room-impl")),
+            Arg.Any<CancellationToken>());
+
+        // Sanity: the room was indeed flipped to Completed by the sync.
+        _db.ChangeTracker.Clear();
+        var room = await _db.Rooms.FindAsync("room-impl");
+        Assert.Equal(nameof(RoomStatus.Completed), room!.Status);
+        Assert.Equal("FinalSynthesis", room.CurrentPhase);
     }
 }

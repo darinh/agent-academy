@@ -155,6 +155,14 @@ public static class AgentPipelineExtensions
         // IAgentOrchestrator, which is part of the agent pipeline registration.
         services.AddScoped<SprintKickoffService>();
         services.AddScoped<Contracts.ISprintKickoffService>(sp => sp.GetRequiredService<SprintKickoffService>());
+
+        // Same constraint as kickoff: SprintStageAdvanceAnnouncer depends on
+        // IAgentOrchestrator. SprintStageService accepts it as an optional ctor
+        // parameter so test fixtures that build the stage service directly
+        // (without DI) still work — DI will inject the registered instance in
+        // production. P1.3.
+        services.AddScoped<SprintStageAdvanceAnnouncer>();
+        services.AddScoped<Contracts.ISprintStageAdvanceAnnouncer>(sp => sp.GetRequiredService<SprintStageAdvanceAnnouncer>());
         return services;
     }
 }

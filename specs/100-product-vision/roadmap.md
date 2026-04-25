@@ -207,9 +207,9 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 
 | Item | Status | Started | Completed | Notes |
 |------|--------|---------|-----------|-------|
-| P1.1 | in_progress | 2026-04-25 | — | Kickoff posts a system message in every active workspace room and wakes the orchestrator on `CreateSprintAsync` (manual / scheduled / auto-start paths). |
+| P1.1 | done | 2026-04-25 | 2026-04-25 | Kickoff posts a system message in every active workspace room and wakes the orchestrator on `CreateSprintAsync` (manual / scheduled / auto-start paths). Live-verified: Sprint #2 created → kickoff message at +107ms, Aristotle responded at +44s. |
 | P1.2 | pending | — | — | Design doc required first |
-| P1.3 | pending | — | — | |
+| P1.3 | done | anvil | feat/p1-3-stage-advance-announce | Live-verified 2026-04-25: Sprint #2 Intake→Planning via /approve-advance posted "➡️ Sprint #2 advanced (user-approved)" to 6 active rooms; Aristotle responded in +35s. Includes regression test + targetRoomIds snapshot for FinalSynthesis room-completion edge case (caught by adversarial review). |
 | P1.4 | pending | — | — | Design doc required first |
 | P1.5 | pending | — | — | |
 | P1.6 | pending | — | — | |
