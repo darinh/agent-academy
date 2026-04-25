@@ -138,8 +138,7 @@ public sealed class SprintKickoffService : ISprintKickoffService
         return
             $"🟢 **Sprint #{sprint.Number} started**{triggerLabel} for `{sprint.WorkspacePath}`. " +
             $"Current stage: **{sprint.CurrentStage}**.\n\n" +
-            "Aristotle, please facilitate the kickoff: confirm the sprint goal, list any " +
-            "overflow requirements carried over, and propose the acceptance criteria you'll track. " +
-            "When the team is ready, advance to **Planning**.";
+            "Aristotle, please facilitate the kickoff: confirm the sprint goal and list any " +
+            "overflow requirements carried over. When the team is ready, advance to **Planning**.";
     }
 }

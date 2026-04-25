@@ -78,7 +78,7 @@ public sealed class SprintArtifactServiceTests : IDisposable
     }
 
     private static string ValidRequirements() => JsonSerializer.Serialize(
-        new { Title = "T", Description = "D", InScope = new[] { "a" }, OutOfScope = new[] { "b" }, AcceptanceCriteria = new[] { "c" } });
+        new { Title = "T", Description = "D", InScope = new[] { "a" }, OutOfScope = new[] { "b" } });
 
     private static string ValidSprintPlan() => JsonSerializer.Serialize(
         new { Summary = "S", Phases = new[] { new { Name = "P1", Description = "D1", Deliverables = new[] { "d" } } } });
@@ -313,7 +313,7 @@ public sealed class SprintArtifactServiceTests : IDisposable
             sprint.Id, "Intake", "RequirementsDocument", content1);
 
         var content2 = JsonSerializer.Serialize(
-            new { Title = "Updated", Description = "New", InScope = new[] { "x" }, OutOfScope = new[] { "y" }, AcceptanceCriteria = new[] { "z" } });
+            new { Title = "Updated", Description = "New", InScope = new[] { "x" }, OutOfScope = new[] { "y" } });
 
         var updated = await _sut.StoreArtifactAsync(
             sprint.Id, "Intake", "RequirementsDocument", content2);
@@ -446,7 +446,7 @@ public sealed class SprintArtifactServiceTests : IDisposable
     public void ValidateContent_RequirementsDocument_MissingTitle_Throws()
     {
         var content = JsonSerializer.Serialize(
-            new { Title = "", Description = "D", InScope = new[] { "a" }, OutOfScope = new[] { "b" }, AcceptanceCriteria = new[] { "c" } });
+            new { Title = "", Description = "D", InScope = new[] { "a" }, OutOfScope = new[] { "b" } });
 
         var ex = Assert.Throws<ArgumentException>(
             () => SprintArtifactService.ValidateArtifactContent("RequirementsDocument", content));
@@ -458,7 +458,7 @@ public sealed class SprintArtifactServiceTests : IDisposable
     public void ValidateContent_RequirementsDocument_MissingDescription_Throws()
     {
         var content = JsonSerializer.Serialize(
-            new { Title = "T", Description = (string?)null, InScope = new[] { "a" }, OutOfScope = new[] { "b" }, AcceptanceCriteria = new[] { "c" } });
+            new { Title = "T", Description = (string?)null, InScope = new[] { "a" }, OutOfScope = new[] { "b" } });
 
         var ex = Assert.Throws<ArgumentException>(
             () => SprintArtifactService.ValidateArtifactContent("RequirementsDocument", content));
@@ -469,7 +469,7 @@ public sealed class SprintArtifactServiceTests : IDisposable
     [Fact]
     public void ValidateContent_RequirementsDocument_MissingInScope_Throws()
     {
-        var content = """{"Title":"T","Description":"D","OutOfScope":["b"],"AcceptanceCriteria":["c"]}""";
+        var content = """{"Title":"T","Description":"D","OutOfScope":["b"]}""";
 
         var ex = Assert.Throws<ArgumentException>(
             () => SprintArtifactService.ValidateArtifactContent("RequirementsDocument", content));
@@ -480,23 +480,12 @@ public sealed class SprintArtifactServiceTests : IDisposable
     [Fact]
     public void ValidateContent_RequirementsDocument_MissingOutOfScope_Throws()
     {
-        var content = """{"Title":"T","Description":"D","InScope":["a"],"AcceptanceCriteria":["c"]}""";
+        var content = """{"Title":"T","Description":"D","InScope":["a"]}""";
 
         var ex = Assert.Throws<ArgumentException>(
             () => SprintArtifactService.ValidateArtifactContent("RequirementsDocument", content));
 
         Assert.Contains("OutOfScope", ex.Message);
-    }
-
-    [Fact]
-    public void ValidateContent_RequirementsDocument_MissingAcceptanceCriteria_Throws()
-    {
-        var content = """{"Title":"T","Description":"D","InScope":["a"],"OutOfScope":["b"]}""";
-
-        var ex = Assert.Throws<ArgumentException>(
-            () => SprintArtifactService.ValidateArtifactContent("RequirementsDocument", content));
-
-        Assert.Contains("AcceptanceCriteria", ex.Message);
     }
 
     // ═══════════════════════════════════════════════════════════════

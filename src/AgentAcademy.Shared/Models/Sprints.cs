@@ -59,8 +59,7 @@ public record RequirementsDocument(
     string Title,
     string Description,
     List<string> InScope,
-    List<string> OutOfScope,
-    List<string> AcceptanceCriteria);
+    List<string> OutOfScope);
 
 public record SprintPlanDocument(
     string Summary,
