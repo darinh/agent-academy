@@ -5,6 +5,7 @@ All changes to specifications are documented here.
 ## [Unreleased]
 
 ### Added
+- **100-product-vision §P1.2**: Drafted [`p1-2-self-drive-design.md`](./100-product-vision/p1-2-self-drive-design.md) — design doc for orchestrator self-drive (closes G1). Status: DRAFT pending human review. Roadmap status table updated: P1.2 → `in_progress`. No code changes yet; design must be approved before P1.2 implementation begins. — agent: anvil
 - **100-product-vision (NEW)**: Authoritative product vision, gap analysis, and roadmap. Created from product-design conversation 2026-04-24. Captures the core promise (autonomous dev team via sprint lifecycle), the gap between vision and current code (orchestrator is reactive only; sprint stages do not advance autonomously; no self-evaluation ceremony), and a prioritized roadmap (Phase 1 = end-to-end autonomous loop, with non-negotiable acceptance test). Adds a "READ FIRST" banner to `.github/copilot-instructions.md` enforcing that all future agents read this spec before working. Status field is "Authoritative" — supersedes implicit assumptions in earlier specs where they conflict. — agent: anvil
 - **018-testing-strategy §Test Counts**: Updated test census — backend 6,649 (6,224 Server + 425 Forge) across 245 test files, frontend 3,013 across 144 test files, total 9,662. Updated Coverage Philosophy section and VsTest note with current numbers.
 - **specs/README.md §Coverage Status**: Updated survey date to 2026-04-22, spec line count to ~14,000+.

@@ -56,6 +56,8 @@
 
 **Recommend**: write a brief design doc (1–2 pages) and get a human review before implementing.
 
+**Design doc**: [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) — drafted 2026-04-25, pending human review.
+
 ### P1.3 — Stage Advancement Triggers Next Round [DRAFT]
 
 **Closes gap**: G2 partial, supports G4.
@@ -212,7 +214,7 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 | Item | Status | Started | Completed | Notes |
 |------|--------|---------|-----------|-------|
 | P1.1 | done | 2026-04-25 | 2026-04-25 | Kickoff posts a system message in every active workspace room and wakes the orchestrator on `CreateSprintAsync` (manual / scheduled / auto-start paths). Live-verified: Sprint #2 created → kickoff message at +107ms, Aristotle responded at +44s. |
-| P1.2 | pending | — | — | Design doc required first |
+| P1.2 | in_progress | 2026-04-25 | — | Design doc drafted: [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) — pending human review before implementation. |
 | P1.3 | done | anvil | feat/p1-3-stage-advance-announce | Live-verified 2026-04-25: Sprint #2 Intake→Planning via /approve-advance posted "➡️ Sprint #2 advanced (user-approved)" to 6 active rooms; Aristotle responded in +35s. Includes regression test + targetRoomIds snapshot for FinalSynthesis room-completion edge case (caught by adversarial review). |
 | P1.4 | pending | — | — | Design doc required first |
 | P1.5 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintStageService.RequiredArtifactByStage["Planning"] = "SprintPlan"` (SprintStageService.cs:44) is enforced in `AdvanceStageAsync` (SprintStageService.cs:112-123), even when `force=true`. SprintPlanDocument (Sprints.cs:63-66) IS the tracking artifact: Summary + Phases (Name/Description/Deliverables) + OverflowRequirements. Covered by `SprintServiceTests.AdvanceStage_ThrowsWithoutRequiredArtifact` and the multi-stage `AdvanceStage_ThrowsAtFinalStage` flow. Gap analysis G6 was stale at authoring. |
