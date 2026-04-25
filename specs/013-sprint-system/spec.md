@@ -34,7 +34,7 @@ Stages advance forward only — there is no mechanism to revert to a previous st
 **Stage prerequisites**: Stages may define task-based prerequisites that must be satisfied before advancement. Currently:
 - **Implementation**: All tasks linked to the sprint (`TaskEntity.SprintId`) must be in a terminal status (`Completed` or `Cancelled`). Prevents premature advancement to FinalSynthesis while work is still in progress. The `force` flag on `AdvanceStageAsync` (and the REST endpoint `?force=true`) skips prerequisite checks — artifact gates and sign-off requirements are never skipped. **The `force` flag is restricted to Human role in the command handler** — agents cannot bypass prerequisites autonomously via `ADVANCE_STAGE: Force=true`. Forced advancement records `forced=true` in the activity event metadata for audit.
 
-**Human sign-off**: Intake and Planning stages enter an `AwaitingSignOff` state when agents request advancement. A human must approve (advancing to the next stage) or reject (keeping the sprint at the current stage for revision). Other stages advance immediately.
+**Human sign-off (opt-in)**: Sign-off gates are configured via `Sprint:Stage:SignOffRequiredStages` (default: `[]` — fully autonomous). When a stage is listed in this set, advancement requests transition the sprint to an `AwaitingSignOff` state and a human must approve (advancing to the next stage) or reject (keeping the sprint at the current stage for revision). With the default empty set, all stage advances proceed immediately. To restore the legacy two-gate flow, set `Sprint:Stage:SignOffRequiredStages: ["Intake", "Planning"]` in `appsettings.json`.
 
 **Role roster**: The orchestrator filters agents per stage at **two presentation points** — conversation turn selection (`ConversationRoundRunner` keyed on `sprint.CurrentStage` via `SprintPreambles.FilterByStageRoster`) and room participant snapshots (`RoomSnapshotBuilder.BuildParticipants` keyed on `room.CurrentPhase` via `SprintPreambles.IsRoleAllowedInStage`). Agents whose role is not in the roster are excluded from conversation rounds and hidden from snapshots for that stage/phase. Stages not listed in the roster map (Validation, Implementation, FinalSynthesis) admit all roles. Roster filtering is a presentation-layer contract: `AgentLocations` records are *not* mutated on phase transition — the filter is reapplied on every snapshot/round. See `specs/005-workspace-runtime/spec.md` ("Phase-scoped room membership") for the data-layer semantics.
 
@@ -292,7 +292,7 @@ Owns sprint lifecycle: creation, completion, cancellation, and queries. Stage ad
 | Name | Type | Value |
 |------|------|-------|
 | `RequiredArtifactByStage` | `IReadOnlyDictionary<string, string>` | Intake→RequirementsDocument, Planning→SprintPlan, Validation→ValidationReport, FinalSynthesis→SprintReport |
-| `SignOffRequiredStages` | `IReadOnlySet<string>` | `{"Intake", "Planning"}` |
+| `SignOffRequiredStages` | `IReadOnlySet<string>` | Configurable via `Sprint:Stage:SignOffRequiredStages`. Default: `[]` (fully autonomous). Legacy two-gate flow: `["Intake", "Planning"]`. |
 
 #### Methods
 
@@ -618,7 +618,7 @@ Configuration section: `SprintTimeouts` in `appsettings.json`.
 1. **One active sprint per workspace**: `CreateSprintAsync` enforces this with a read-then-insert check. The index on `(WorkspacePath, Status)` is not unique — concurrent requests could theoretically race and create duplicates. In practice, sprint creation is single-threaded (triggered by one agent or one human via the command pipeline or REST API). The unique index on `(WorkspacePath, Number)` prevents duplicate numbering but not duplicate active status.
 2. **Forward-only advancement**: No API exists to move a sprint backward. `AdvanceStageAsync` only increments the stage index.
 3. **Artifact gates are mandatory**: Cannot advance from a stage that has a required artifact type until that artifact has been stored.
-4. **Sign-off gates are blocking**: Intake and Planning stages enter `AwaitingSignOff` rather than advancing. The sprint cannot advance further until a human approves.
+4. **Sign-off gates are opt-in**: Stages listed in `Sprint:Stage:SignOffRequiredStages` enter `AwaitingSignOff` rather than advancing. Default is `[]` — sprints advance autonomously through all stages. When configured, the sprint cannot advance further from a gated stage until a human approves.
 5. **Upsert semantics for artifacts**: Storing the same artifact type for the same stage of the same sprint overwrites the content (unique index: `SprintId + Stage + Type`).
 6. **Sprint completion requires FinalSynthesis**: Unless `force=true`, the sprint must be in FinalSynthesis stage with a SprintReport artifact.
 7. **Cancellation is always allowed**: An active sprint can be cancelled at any stage without conditions.

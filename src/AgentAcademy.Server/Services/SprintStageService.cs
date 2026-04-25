@@ -5,6 +5,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace AgentAcademy.Server.Services;
 
@@ -52,8 +53,14 @@ public sealed class SprintStageService : ISprintStageService
     /// When an agent triggers ADVANCE_STAGE from one of these stages,
     /// the sprint enters AwaitingSignOff state until a human approves.
     /// </summary>
-    private static readonly IReadOnlySet<string> SignOffRequiredStages =
-        new HashSet<string>(StringComparer.Ordinal) { "Intake", "Planning" };
+    /// <remarks>
+    /// Bound from <see cref="SprintStageOptions.SignOffRequiredStages"/>.
+    /// <b>Defaults to empty</b> — every stage auto-advances once gates pass.
+    /// Operators opt into specific stages via <c>appsettings.json</c>.
+    /// Tests that need a gate construct the service with an explicit
+    /// <c>SprintStageOptions</c> instance.
+    /// </remarks>
+    private readonly IReadOnlySet<string> _signOffRequiredStages;
 
     private readonly AgentAcademyDbContext _db;
     private readonly IActivityBroadcaster _activityBus;
@@ -64,12 +71,16 @@ public sealed class SprintStageService : ISprintStageService
         AgentAcademyDbContext db,
         IActivityBroadcaster activityBus,
         ILogger<SprintStageService> logger,
-        ISprintStageAdvanceAnnouncer? announcer = null)
+        ISprintStageAdvanceAnnouncer? announcer = null,
+        IOptions<SprintStageOptions>? options = null)
     {
         _db = db;
         _activityBus = activityBus;
         _logger = logger;
         _announcer = announcer;
+
+        var configured = options?.Value.SignOffRequiredStages ?? [];
+        _signOffRequiredStages = new HashSet<string>(configured, StringComparer.Ordinal);
     }
 
     // ── Stage Advancement ────────────────────────────────────────
@@ -169,7 +180,7 @@ public sealed class SprintStageService : ISprintStageService
                 throw new InvalidOperationException(prereqResult.Message);
         }
 
-        if (SignOffRequiredStages.Contains(sprint.CurrentStage))
+        if (_signOffRequiredStages.Contains(sprint.CurrentStage))
         {
             sprint.AwaitingSignOff = true;
             sprint.PendingStage = Stages[currentIndex + 1];

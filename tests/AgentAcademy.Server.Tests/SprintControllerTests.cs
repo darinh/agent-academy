@@ -45,7 +45,8 @@ public class SprintControllerTests : IDisposable
         _db.Database.EnsureCreated();
 
         _sprintService = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
-        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
+        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance,
+            options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] }));
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
         _metricsCalculator = new SprintMetricsCalculator(_db);
 

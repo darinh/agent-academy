@@ -38,7 +38,8 @@ public class SprintTimeoutTests : IDisposable
         _db.Database.EnsureCreated();
 
         _sprintService = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
-        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
+        _sprintStageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance,
+            options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] }));
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
     }
 
@@ -387,7 +388,8 @@ public class SprintTimeoutTests : IDisposable
             new SprintStageService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),
                 sp.GetRequiredService<ActivityBroadcaster>(),
-                sp.GetRequiredService<ILogger<SprintStageService>>()));
+                sp.GetRequiredService<ILogger<SprintStageService>>(),
+                options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] })));
         services.AddScoped<ISprintStageService>(sp => sp.GetRequiredService<SprintStageService>());
         var provider = services.BuildServiceProvider();
 

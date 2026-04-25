@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
@@ -34,6 +35,8 @@ public class SprintCommandHandlerTests : IDisposable
         services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
         services.AddScoped<SprintStageService>();
         services.AddScoped<ISprintStageService>(sp => sp.GetRequiredService<SprintStageService>());
+        services.AddSingleton<IOptions<SprintStageOptions>>(
+            Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] }));
         services.AddScoped<SprintArtifactService>();
         services.AddScoped<ISprintArtifactService>(sp => sp.GetRequiredService<SprintArtifactService>());
         services.AddScoped<SystemSettingsService>();

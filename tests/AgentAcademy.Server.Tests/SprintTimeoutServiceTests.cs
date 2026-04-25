@@ -42,7 +42,8 @@ public class SprintTimeoutServiceTests : IDisposable
 
         var broadcaster = new ActivityBroadcaster();
         _sprintService = new SprintService(_db, broadcaster, new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
-        _sprintStageService = new SprintStageService(_db, broadcaster, NullLogger<SprintStageService>.Instance);
+        _sprintStageService = new SprintStageService(_db, broadcaster, NullLogger<SprintStageService>.Instance,
+            options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] }));
         _artifactService = new SprintArtifactService(_db, broadcaster, NullLogger<SprintArtifactService>.Instance);
     }
 
@@ -88,7 +89,8 @@ public class SprintTimeoutServiceTests : IDisposable
             new SprintStageService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),
                 sp.GetRequiredService<ActivityBroadcaster>(),
-                sp.GetRequiredService<ILogger<SprintStageService>>()));
+                sp.GetRequiredService<ILogger<SprintStageService>>(),
+                options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] })));
         var provider = services.BuildServiceProvider();
 
         return new SprintTimeoutService(
@@ -438,7 +440,8 @@ public class SprintTimeoutServiceTests : IDisposable
             new SprintStageService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),
                 sp.GetRequiredService<ActivityBroadcaster>(),
-                sp.GetRequiredService<ILogger<SprintStageService>>()));
+                sp.GetRequiredService<ILogger<SprintStageService>>(),
+                options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] })));
         var provider = services.BuildServiceProvider();
 
         // Close the connection to cause errors on query
@@ -557,7 +560,8 @@ public class SprintTimeoutServiceTests : IDisposable
             new SprintStageService(
                 sp.GetRequiredService<AgentAcademyDbContext>(),
                 sp.GetRequiredService<ActivityBroadcaster>(),
-                sp.GetRequiredService<ILogger<SprintStageService>>()));
+                sp.GetRequiredService<ILogger<SprintStageService>>(),
+                options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] })));
         var provider = services.BuildServiceProvider();
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
