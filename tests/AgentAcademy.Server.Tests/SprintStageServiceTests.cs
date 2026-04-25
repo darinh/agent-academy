@@ -5,6 +5,7 @@ using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
@@ -19,6 +20,7 @@ public class SprintStageServiceTests : IDisposable
     private readonly AgentAcademyDbContext _db;
     private readonly ActivityBroadcaster _broadcaster;
     private readonly SprintStageService _service;
+    private readonly SprintStageService _serviceWithLegacyGates;
 
     public SprintStageServiceTests()
     {
@@ -33,7 +35,20 @@ public class SprintStageServiceTests : IDisposable
         _db.Database.EnsureCreated();
 
         _broadcaster = new ActivityBroadcaster();
-        _service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance);
+
+        // Default service: no sign-off gates → auto-advances every stage.
+        // Mirrors the new production default (autonomy-first).
+        _service = new SprintStageService(
+            _db, _broadcaster, NullLogger<SprintStageService>.Instance);
+
+        // Opt-in legacy behaviour: Intake & Planning require human sign-off.
+        // Used by tests that exercise the sign-off state machine.
+        _serviceWithLegacyGates = new SprintStageService(
+            _db, _broadcaster, NullLogger<SprintStageService>.Instance,
+            options: Options.Create(new SprintStageOptions
+            {
+                SignOffRequiredStages = ["Intake", "Planning"],
+            }));
     }
 
     public void Dispose()
@@ -286,6 +301,10 @@ public class SprintStageServiceTests : IDisposable
     }
 
     // ── AdvanceStageAsync — Sign-off Required (Intake) ──────────
+    // Sign-off gates are opt-in via SprintStageOptions.SignOffRequiredStages.
+    // These tests use _serviceWithLegacyGates which enables Intake + Planning
+    // gates. _service (no opts) auto-advances both stages — see
+    // AdvanceStage_DefaultOptions_* tests below.
 
     [Fact]
     public async Task AdvanceStage_Intake_WithArtifact_EntersSignOff()
@@ -293,7 +312,7 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
 
-        var result = await _service.AdvanceStageAsync("sprint-1");
+        var result = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         Assert.True(result.AwaitingSignOff);
         Assert.Equal("Planning", result.PendingStage);
@@ -307,7 +326,7 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
 
-        await _service.AdvanceStageAsync("sprint-1");
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         _db.ChangeTracker.Clear();
         var reloaded = await _db.Sprints.FindAsync("sprint-1");
@@ -324,7 +343,7 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
 
-        await _service.AdvanceStageAsync("sprint-1");
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         _db.ChangeTracker.Clear();
         var events = await _db.ActivityEvents.ToListAsync();
@@ -341,7 +360,7 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Planning");
         await SeedArtifactAsync("sprint-1", "Planning", "SprintPlan");
 
-        var result = await _service.AdvanceStageAsync("sprint-1");
+        var result = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         Assert.True(result.AwaitingSignOff);
         Assert.Equal("Discussion", result.PendingStage);
@@ -355,13 +374,61 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Planning");
         await SeedArtifactAsync("sprint-1", "Planning", "SprintPlan");
 
-        await _service.AdvanceStageAsync("sprint-1");
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         _db.ChangeTracker.Clear();
         var events = await _db.ActivityEvents.ToListAsync();
         Assert.Single(events);
         Assert.Contains("Planning", events[0].Message);
         Assert.Contains("Discussion", events[0].Message);
+    }
+
+    // ── AdvanceStageAsync — Default options (autonomy-first) ────
+    // With no SignOffRequiredStages configured, every stage auto-advances
+    // once its artifact + prerequisite gates are satisfied.
+
+    [Fact]
+    public async Task AdvanceStage_DefaultOptions_Intake_AutoAdvances()
+    {
+        await SeedSprintAsync(stage: "Intake");
+        await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
+
+        var result = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.False(result.AwaitingSignOff);
+        Assert.Null(result.PendingStage);
+        Assert.Null(result.SignOffRequestedAt);
+        Assert.Equal("Planning", result.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_DefaultOptions_Planning_AutoAdvances()
+    {
+        await SeedSprintAsync(stage: "Planning");
+        await SeedArtifactAsync("sprint-1", "Planning", "SprintPlan");
+
+        var result = await _service.AdvanceStageAsync("sprint-1");
+
+        Assert.False(result.AwaitingSignOff);
+        Assert.Null(result.PendingStage);
+        Assert.Equal("Discussion", result.CurrentStage);
+    }
+
+    [Fact]
+    public async Task AdvanceStage_NullOptions_AutoAdvances()
+    {
+        // Belt-and-braces: the IOptions<T> constructor parameter is nullable;
+        // explicitly passing null must behave the same as default options.
+        var bareService = new SprintStageService(
+            _db, _broadcaster, NullLogger<SprintStageService>.Instance,
+            options: null);
+        await SeedSprintAsync(stage: "Intake");
+        await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
+
+        var result = await bareService.AdvanceStageAsync("sprint-1");
+
+        Assert.False(result.AwaitingSignOff);
+        Assert.Equal("Planning", result.CurrentStage);
     }
 
     // ── AdvanceStageAsync — No Sign-off Required (Discussion) ───
@@ -473,7 +540,7 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
 
-        await _service.AdvanceStageAsync("sprint-1");
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         _db.ChangeTracker.Clear();
         var evt = await _db.ActivityEvents.SingleAsync();
@@ -837,44 +904,44 @@ public class SprintStageServiceTests : IDisposable
     {
         await SeedSprintAsync(stage: "Intake");
 
-        // Intake → needs artifact + sign-off
+        // Intake → needs artifact + sign-off (legacy-gated service)
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
-        var s1 = await _service.AdvanceStageAsync("sprint-1");
+        var s1 = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.True(s1.AwaitingSignOff);
         Assert.Equal("Intake", s1.CurrentStage);
 
         // Approve sign-off
-        var s2 = await _service.ApproveAdvanceAsync("sprint-1");
+        var s2 = await _serviceWithLegacyGates.ApproveAdvanceAsync("sprint-1");
         Assert.Equal("Planning", s2.CurrentStage);
 
         // Planning → needs artifact + sign-off
         await SeedArtifactAsync("sprint-1", "Planning", "SprintPlan");
-        var s3 = await _service.AdvanceStageAsync("sprint-1");
+        var s3 = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.True(s3.AwaitingSignOff);
         Assert.Equal("Planning", s3.CurrentStage);
 
         // Approve sign-off
-        var s4 = await _service.ApproveAdvanceAsync("sprint-1");
+        var s4 = await _serviceWithLegacyGates.ApproveAdvanceAsync("sprint-1");
         Assert.Equal("Discussion", s4.CurrentStage);
 
         // Discussion → no artifact, no sign-off
-        var s5 = await _service.AdvanceStageAsync("sprint-1");
+        var s5 = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.Equal("Validation", s5.CurrentStage);
 
         // Validation → needs artifact, no sign-off
         await SeedArtifactAsync("sprint-1", "Validation", "ValidationReport");
-        var s6 = await _service.AdvanceStageAsync("sprint-1");
+        var s6 = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.Equal("Implementation", s6.CurrentStage);
 
         // Implementation → needs SelfEvaluationReport with AllPass verdict
         await SeedArtifactAsync("sprint-1", "Implementation", "SelfEvaluationReport");
-        var s7 = await _service.AdvanceStageAsync("sprint-1");
+        var s7 = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.Equal("FinalSynthesis", s7.CurrentStage);
 
         // FinalSynthesis is final — can't advance further
         await SeedArtifactAsync("sprint-1", "FinalSynthesis", "SprintReport");
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync("sprint-1"));
+            () => _serviceWithLegacyGates.AdvanceStageAsync("sprint-1"));
     }
 
     [Fact]
@@ -900,16 +967,16 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
 
-        // First advance → enters sign-off
-        await _service.AdvanceStageAsync("sprint-1");
+        // First advance → enters sign-off (legacy-gated)
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         // Reject
-        var rejected = await _service.RejectAdvanceAsync("sprint-1");
+        var rejected = await _serviceWithLegacyGates.RejectAdvanceAsync("sprint-1");
         Assert.Equal("Intake", rejected.CurrentStage);
         Assert.False(rejected.AwaitingSignOff);
 
         // Re-advance → enters sign-off again
-        var reAdvanced = await _service.AdvanceStageAsync("sprint-1");
+        var reAdvanced = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.True(reAdvanced.AwaitingSignOff);
         Assert.Equal("Planning", reAdvanced.PendingStage);
     }
@@ -922,16 +989,16 @@ public class SprintStageServiceTests : IDisposable
         await SeedSprintAsync(stage: "Planning");
         await SeedArtifactAsync("sprint-1", "Planning", "SprintPlan");
 
-        // Advance → enters sign-off
-        await _service.AdvanceStageAsync("sprint-1");
+        // Advance → enters sign-off (legacy-gated)
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         // Timeout
-        var timedOut = await _service.TimeOutSignOffAsync("sprint-1");
+        var timedOut = await _serviceWithLegacyGates.TimeOutSignOffAsync("sprint-1");
         Assert.Equal("Planning", timedOut.CurrentStage);
         Assert.False(timedOut.AwaitingSignOff);
 
         // Re-advance → enters sign-off again
-        var reAdvanced = await _service.AdvanceStageAsync("sprint-1");
+        var reAdvanced = await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
         Assert.True(reAdvanced.AwaitingSignOff);
         Assert.Equal("Discussion", reAdvanced.PendingStage);
     }
@@ -947,10 +1014,10 @@ public class SprintStageServiceTests : IDisposable
 
         // s-1 has no artifact → should fail
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _service.AdvanceStageAsync("s-1"));
+            () => _serviceWithLegacyGates.AdvanceStageAsync("s-1"));
 
-        // s-2 has artifact → should succeed (enter sign-off)
-        var result = await _service.AdvanceStageAsync("s-2");
+        // s-2 has artifact → should succeed (enter sign-off, legacy-gated)
+        var result = await _serviceWithLegacyGates.AdvanceStageAsync("s-2");
         Assert.True(result.AwaitingSignOff);
     }
 
@@ -1336,12 +1403,12 @@ public class SprintStageServiceTests : IDisposable
     [Fact]
     public async Task AdvanceStage_SignOffRequested_DoesNotSyncRooms()
     {
-        // Intake → Planning triggers sign-off; sprint.CurrentStage does not actually change yet.
+        // Intake → Planning triggers sign-off (legacy gates); sprint.CurrentStage does not actually change yet.
         var sprint = await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");
         await SeedRoomAsync("room-1", sprint.WorkspacePath, phase: "Intake");
 
-        await _service.AdvanceStageAsync("sprint-1");
+        await _serviceWithLegacyGates.AdvanceStageAsync("sprint-1");
 
         _db.ChangeTracker.Clear();
         var room = await _db.Rooms.FindAsync("room-1");
@@ -1502,7 +1569,13 @@ public class SprintStageServiceTests : IDisposable
     public async Task AdvanceStage_SignOffRequired_DoesNotInvokeAnnouncer()
     {
         var announcer = NSubstitute.Substitute.For<Server.Services.Contracts.ISprintStageAdvanceAnnouncer>();
-        var service = new SprintStageService(_db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer);
+        // Construct a service with announcer + legacy sign-off gates so Intake triggers sign-off.
+        var service = new SprintStageService(
+            _db, _broadcaster, NullLogger<SprintStageService>.Instance, announcer,
+            options: Options.Create(new SprintStageOptions
+            {
+                SignOffRequiredStages = ["Intake", "Planning"],
+            }));
         // Intake requires sign-off; seed a RequirementsDocument so the artifact gate passes.
         await SeedSprintAsync(stage: "Intake");
         await SeedArtifactAsync("sprint-1", "Intake", "RequirementsDocument");

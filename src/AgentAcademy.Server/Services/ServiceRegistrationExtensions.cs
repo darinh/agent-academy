@@ -85,6 +85,9 @@ public static class ServiceRegistrationExtensions
         // Sprint lifecycle management (creation, stage advancement, artifacts)
         services.AddScoped<SprintService>();
         services.AddScoped<ISprintService>(sp => sp.GetRequiredService<SprintService>());
+        services.AddOptions<SprintStageOptions>()
+            .Configure<Microsoft.Extensions.Configuration.IConfiguration>((opts, cfg) =>
+                cfg.GetSection(SprintStageOptions.SectionName).Bind(opts));
         services.AddScoped<SprintStageService>();
         services.AddScoped<ISprintStageService>(sp => sp.GetRequiredService<SprintStageService>());
         services.AddScoped<SprintArtifactService>();

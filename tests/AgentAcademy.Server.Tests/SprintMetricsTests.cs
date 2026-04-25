@@ -1,6 +1,7 @@
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
+using Microsoft.Extensions.Options;
 using AgentAcademy.Shared.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +35,8 @@ public class SprintMetricsTests : IDisposable
         _db.Database.EnsureCreated();
 
         _service = new SprintService(_db, new ActivityBroadcaster(), new SystemSettingsService(_db), NullLogger<SprintService>.Instance);
-        _stageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance);
+        _stageService = new SprintStageService(_db, new ActivityBroadcaster(), NullLogger<SprintStageService>.Instance,
+            options: Options.Create(new SprintStageOptions { SignOffRequiredStages = ["Intake", "Planning"] }));
         _artifactService = new SprintArtifactService(_db, new ActivityBroadcaster(), NullLogger<SprintArtifactService>.Instance);
         _calculator = new SprintMetricsCalculator(_db);
     }
