@@ -66,7 +66,7 @@ Read from `appsettings.json` under a new `Orchestrator:SelfDrive` section, with 
 | `MaxRoundsPerStage`                  | 20      | —                                  | A sprint stuck spinning in Planning should halt before burning the whole sprint cap. |
 | `MinIntervalBetweenContinuationsMs`  | 2000    | —                                  | Backstop against a bug enqueueing in tight loop. |
 
-Cost caps are **deferred** to a separate item (TBD per roadmap §P1.2). Token/cost tracking does not exist yet; adding it is its own design surface and out of scope here. The design records the hook point (§4.6) so it can be inserted later without restructuring.
+Cost caps are **out of scope for this doc** — see `specs/100-product-vision/cost-tracking-design.md` for the cost-anomaly-detection design that plugs into the §4.6 hook. The cost design intentionally does **not** add a hard `MaxCostUsdPerSprint` cap to this section's table; instead it tracks every sprint's cost (always-on), compares the projected end-of-sprint cost to a baseline learned from clean completed sprints, and triggers a configurable `BreachAction` (Notify | Warn | Block) when a sprint runs anomalously hot. Round-count caps in this section remain the only hard ceilings; cost is observed continuously and acted on relative to history.
 
 ### 3.3 Per-sprint kill switch (no schema change)
 
