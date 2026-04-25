@@ -204,13 +204,13 @@ public class AgentExecutorInterfaceTests
                 NullLogger<CopilotSdkSender>.Instance,
                 new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance),
                 new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
-                new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance), new ActivityBroadcaster()),
+                new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance), new ActivityBroadcaster(), new TestDoubles.NoOpAgentLivenessTracker()),
             sp.GetRequiredService<IServiceScopeFactory>(),
             new NotificationManager(NullLogger<NotificationManager>.Instance),
             NSubstitute.Substitute.For<IAgentToolRegistry>(),
             new AgentErrorTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentErrorTracker>.Instance),
             new AgentQuotaService(sp.GetRequiredService<IServiceScopeFactory>(), new LlmUsageTracker(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<LlmUsageTracker>.Instance), NullLogger<AgentQuotaService>.Instance),
-            new AgentCatalogOptions("main", "Main", []));
+            new AgentCatalogOptions("main", "Main", []), new TestDoubles.NoOpAgentLivenessTracker());
         Assert.IsAssignableFrom<IAgentExecutor>(executor);
         connection.Dispose();
     }

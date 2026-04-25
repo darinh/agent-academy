@@ -1,6 +1,7 @@
 using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Notifications.Contracts;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +54,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
     private readonly IAgentErrorTracker _errorTracker;
     private readonly IAgentQuotaService _quotaService;
     private readonly IAgentCatalog _catalog;
+    private readonly IAgentLivenessTracker _livenessTracker;
     private readonly CopilotCircuitBreaker _circuitBreaker;
     private volatile bool _authFailed;
     private StubExecutor? _fallback;
@@ -71,6 +73,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         IAgentErrorTracker errorTracker,
         IAgentQuotaService quotaService,
         IAgentCatalog catalog,
+        IAgentLivenessTracker livenessTracker,
         CopilotCircuitBreaker? circuitBreaker = null,
         StubExecutor? fallback = null)
         : this(
@@ -84,6 +87,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             errorTracker,
             quotaService,
             catalog,
+            livenessTracker,
             circuitBreaker,
             fallback)
     {
@@ -100,6 +104,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         IAgentErrorTracker errorTracker,
         IAgentQuotaService quotaService,
         IAgentCatalog catalog,
+        IAgentLivenessTracker livenessTracker,
         CopilotCircuitBreaker? circuitBreaker = null,
         StubExecutor? fallback = null)
     {
@@ -113,6 +118,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         _errorTracker = errorTracker;
         _quotaService = quotaService;
         _catalog = catalog;
+        _livenessTracker = livenessTracker;
         _circuitBreaker = circuitBreaker ?? new CopilotCircuitBreaker();
         _fallback = fallback;
     }
@@ -146,7 +152,8 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
         string prompt,
         string? roomId,
         string? workspacePath,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? turnId = null)
     {
         // Quota enforcement: early check before spending resources on session setup.
         // Also checked per-attempt in CopilotSdkSender.SendWithRetryAsync.
@@ -208,7 +215,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             var response = await _sessionPool.UseAsync(
                 sessionKey,
                 ct => CreatePrimedSessionAsync(client, agent, roomId, ct),
-                session => _sender.SendWithRetryAsync(session, agent, prompt, roomId, ct),
+                session => _sender.SendWithRetryAsync(session, agent, prompt, roomId, ct, turnId),
                 ct);
 
             _circuitBreaker.RecordSuccess();
@@ -349,7 +356,7 @@ public sealed class CopilotExecutor : IAgentExecutor, IAsyncDisposable
             Model = agent.Model ?? "claude-opus-4.7",
             Streaming = true,
             Tools = [.. tools],
-            OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger),
+            OnPermissionRequest = AgentPermissionHandler.Create(toolNames, _logger, _livenessTracker),
         };
 
         if (tools.Count > 0)

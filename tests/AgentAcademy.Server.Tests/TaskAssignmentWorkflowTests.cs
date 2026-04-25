@@ -145,7 +145,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(
                 Task.FromResult(assignmentResponse),
                 Task.FromResult("PASS"));
@@ -156,7 +156,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(Task.FromResult(
                 "WORK REPORT:\nStatus: COMPLETE\nFiles: none\nEvidence: Done"));
 
@@ -184,7 +184,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var taskAssignment = new TaskAssignmentHandler(_catalog, _gitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle, NullLogger<TaskAssignmentHandler>.Instance);
         var turnRunner = new AgentTurnRunner(
             _executor, pipeline, taskAssignment, memoryLoader,
-            scopeFactory, NullLogger<AgentTurnRunner>.Instance);
+            scopeFactory, NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
 
         var roundRunner = new ConversationRoundRunner(
             scopeFactory, _catalog, turnRunner,
@@ -240,7 +240,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(
                 Task.FromResult(assignmentResponse),
                 Task.FromResult("PASS"));
@@ -250,7 +250,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
-                Arg.Any<CancellationToken>())
+                Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns(Task.FromResult("Acknowledged"));
 
         // Create a mock GitService whose CreateTaskBranchAsync always throws
@@ -285,7 +285,7 @@ public class TaskAssignmentWorkflowTests : IDisposable
         var taskAssignment2 = new TaskAssignmentHandler(_catalog, mockGitService, new WorktreeService(NullLogger<WorktreeService>.Instance, repositoryRoot: "/tmp/test-repo"), breakoutLifecycle2, NullLogger<TaskAssignmentHandler>.Instance);
         var turnRunner2 = new AgentTurnRunner(
             _executor, pipeline2, taskAssignment2, memoryLoader2,
-            scopeFactory2, NullLogger<AgentTurnRunner>.Instance);
+            scopeFactory2, NullLogger<AgentTurnRunner>.Instance, new TestDoubles.NoOpAgentLivenessTracker());
 
         var roundRunner2 = new ConversationRoundRunner(
             scopeFactory2, _catalog, turnRunner2,

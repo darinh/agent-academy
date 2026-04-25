@@ -418,7 +418,7 @@ public class DiscordNotificationProviderConcurrencyTests
             Substitute.For<ILogger<TaskAssignmentHandler>>());
         var turnRunner = new AgentTurnRunner(
             executor, pipeline, taskAssignmentHandler, memoryLoader, scopeFactory,
-            Substitute.For<ILogger<AgentTurnRunner>>());
+            Substitute.For<ILogger<AgentTurnRunner>>(), new TestDoubles.NoOpAgentLivenessTracker());
         var roundRunner = new ConversationRoundRunner(
             scopeFactory, catalog, turnRunner,
             Substitute.For<ILogger<ConversationRoundRunner>>());

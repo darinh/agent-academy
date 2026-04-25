@@ -1,5 +1,6 @@
 using System.Text;
 using AgentAcademy.Shared.Models;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Server.Services.Contracts;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
@@ -34,19 +35,22 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
     private readonly IAgentErrorTracker _errorTracker;
     private readonly IAgentQuotaService _quotaService;
     private readonly IActivityBroadcaster _activityBus;
+    private readonly IAgentLivenessTracker _livenessTracker;
 
     public CopilotSdkSender(
         ILogger<CopilotSdkSender> logger,
         ILlmUsageTracker usageTracker,
         IAgentErrorTracker errorTracker,
         IAgentQuotaService quotaService,
-        IActivityBroadcaster activityBus)
+        IActivityBroadcaster activityBus,
+        IAgentLivenessTracker livenessTracker)
     {
         _logger = logger;
         _usageTracker = usageTracker;
         _errorTracker = errorTracker;
         _quotaService = quotaService;
         _activityBus = activityBus;
+        _livenessTracker = livenessTracker;
     }
 
     /// <summary>
@@ -58,7 +62,8 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
         AgentDefinition agent,
         string prompt,
         string? roomId,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? turnId = null)
     {
         for (int attempt = 0; ; attempt++)
         {
@@ -67,7 +72,7 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
 
             try
             {
-                return await SendAsync(session, agent, prompt, roomId, ct);
+                return await SendAsync(session, agent, prompt, roomId, ct, turnId);
             }
             catch (CopilotAuthException)
             {
@@ -129,11 +134,26 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
         string prompt,
         string agentId,
         string? roomId,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? turnId = null)
     {
         var sb = new StringBuilder();
         var done = new TaskCompletionSource();
         AssistantUsageEvent? capturedUsage = null;
+
+        // Capture turnId + tracker into the lambda explicitly. AsyncLocal is
+        // not safe across SDK callback threads — the SDK fires events from
+        // its own scheduler and the ExecutionContext may not flow.
+        var capturedTurnId = turnId;
+        var tracker = _livenessTracker;
+
+        // Link the SDK session id → turnId so the permission handler closure
+        // (which only sees invocation.SessionId) can attribute denials/approvals
+        // to the right turn. Cleared in finally so cached sessions reused by
+        // the next turn don't inherit a stale link.
+        var sessionIdForLink = !string.IsNullOrEmpty(capturedTurnId) ? session.SessionId : null;
+        if (sessionIdForLink is not null)
+            tracker.LinkSession(sessionIdForLink, capturedTurnId!);
 
         using var registration = ct.Register(() => done.TrySetCanceled(ct));
 
@@ -143,6 +163,7 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
             {
                 case AssistantMessageDeltaEvent delta:
                     sb.Append(delta.Data.DeltaContent);
+                    if (capturedTurnId is not null) tracker.NoteProgress(capturedTurnId, "delta");
                     break;
                 case AssistantMessageEvent msg:
                     // Final complete message — overwrite streamed content
@@ -152,9 +173,11 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
                         sb.Clear();
                         sb.Append(msg.Data.Content);
                     }
+                    if (capturedTurnId is not null) tracker.NoteProgress(capturedTurnId, "msg");
                     break;
                 case AssistantUsageEvent usage:
                     capturedUsage = usage;
+                    if (capturedTurnId is not null) tracker.NoteProgress(capturedTurnId, "usage");
                     break;
                 case SessionIdleEvent:
                     done.TrySetResult();
@@ -221,6 +244,8 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
         finally
         {
             unsubscribe.Dispose();
+            if (sessionIdForLink is not null)
+                tracker.UnlinkSession(sessionIdForLink);
         }
     }
 
@@ -248,14 +273,15 @@ public sealed class CopilotSdkSender : ICopilotSdkSender
         AgentDefinition agent,
         string prompt,
         string? roomId,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? turnId = null)
     {
         _logger.LogDebug(
             "Sending prompt to {AgentId}: {PromptPreview}...",
             agent.Id,
             prompt.Length > 80 ? prompt[..80] : prompt);
 
-        var response = await CollectResponseAsync(session, prompt, agent.Id, roomId, ct);
+        var response = await CollectResponseAsync(session, prompt, agent.Id, roomId, ct, turnId);
 
         _logger.LogDebug(
             "Received response from {AgentId}: {Length} chars",

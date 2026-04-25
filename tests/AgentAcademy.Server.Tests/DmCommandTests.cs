@@ -7,6 +7,7 @@ using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Notifications;
 using AgentAcademy.Server.Notifications.Contracts;
 using AgentAcademy.Server.Services;
+using AgentAcademy.Server.Services.AgentWatchdog;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
 using Microsoft.AspNetCore.Http;
@@ -139,6 +140,7 @@ public class DmCommandTests : IDisposable
         services.AddSingleton<ITaskAssignmentHandler>(sp => sp.GetRequiredService<TaskAssignmentHandler>());
         services.AddSingleton<AgentTurnRunner>();
         services.AddSingleton<IAgentTurnRunner>(sp => sp.GetRequiredService<AgentTurnRunner>());
+        services.AddSingleton<IAgentLivenessTracker>(_ => new TestDoubles.NoOpAgentLivenessTracker());
         services.AddSingleton<ConversationRoundRunner>();
         services.AddSingleton<IConversationRoundRunner>(sp => sp.GetRequiredService<ConversationRoundRunner>());
         services.AddSingleton<DirectMessageRouter>();

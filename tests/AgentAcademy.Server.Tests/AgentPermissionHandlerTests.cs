@@ -25,7 +25,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_SafeKind_Approved(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, _logger);
+            new HashSet<string> { "some-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -39,7 +39,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_SafeKind_CaseInsensitive_Approved(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, _logger);
+            new HashSet<string> { "some-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -59,7 +59,7 @@ public sealed class AgentPermissionHandlerTests
         // Use a unique session per test to avoid cross-test denial count leakage
         var sessionId = $"unsafe-{kind}-{Guid.NewGuid():N}";
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, _logger);
+            new HashSet<string> { "some-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation(sessionId));
 
@@ -81,7 +81,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_WriteFileRegistered_WriteKindApproved(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "write_file" }, _logger);
+            new HashSet<string> { "write_file" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -93,7 +93,7 @@ public sealed class AgentPermissionHandlerTests
     {
         // write_file does NOT imply shell — only commit_changes does.
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "write_file" }, _logger);
+            new HashSet<string> { "write_file" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest("shell"), MakeInvocation($"isolated-{Guid.NewGuid():N}"));
 
@@ -107,7 +107,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_CommitChangesRegistered_ShellAndWriteApproved(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "commit_changes" }, _logger);
+            new HashSet<string> { "commit_changes" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -131,7 +131,7 @@ public sealed class AgentPermissionHandlerTests
             "remember", "recall",
             "write_file", "commit_changes",
         };
-        var handler = AgentPermissionHandler.Create(hephaestusTools, _logger);
+        var handler = AgentPermissionHandler.Create(hephaestusTools, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         Assert.Equal(
             PermissionRequestResultKind.Approved,
@@ -162,7 +162,7 @@ public sealed class AgentPermissionHandlerTests
             "read_file", "search_code", "list_tasks", "list_rooms",
             "show_agents", "remember", "recall",
         };
-        var handler = AgentPermissionHandler.Create(readOnlyTools, _logger);
+        var handler = AgentPermissionHandler.Create(readOnlyTools, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         Assert.Equal(
             PermissionRequestResultKind.DeniedByRules,
@@ -181,7 +181,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_NoToolsRegistered_ApprovesEverything(string kind)
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string>(), _logger);
+            new HashSet<string>(), _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         var result = await handler(MakeRequest(kind), MakeInvocation());
 
@@ -195,7 +195,7 @@ public sealed class AgentPermissionHandlerTests
     {
         var mockLogger = Substitute.For<ILogger>();
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, mockLogger);
+            new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
 
         // Fire 3 denials
         for (var i = 0; i < 3; i++)
@@ -215,7 +215,7 @@ public sealed class AgentPermissionHandlerTests
         var mockLogger = Substitute.For<ILogger>();
         mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, mockLogger);
+            new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
 
         for (var i = 0; i < 4; i++)
             await handler(MakeRequest("shell"), MakeInvocation());
@@ -235,7 +235,7 @@ public sealed class AgentPermissionHandlerTests
         var mockLogger = Substitute.For<ILogger>();
         mockLogger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, mockLogger);
+            new HashSet<string> { "some-tool" }, mockLogger, new TestDoubles.NoOpAgentLivenessTracker());
 
         for (var i = 0; i < 6; i++)
             await handler(MakeRequest("shell"), MakeInvocation());
@@ -270,9 +270,9 @@ public sealed class AgentPermissionHandlerTests
         loggerB.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
         var handlerA = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, loggerA);
+            new HashSet<string> { "some-tool" }, loggerA, new TestDoubles.NoOpAgentLivenessTracker());
         var handlerB = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, loggerB);
+            new HashSet<string> { "some-tool" }, loggerB, new TestDoubles.NoOpAgentLivenessTracker());
 
         // Fire 4 denials on handler A — should see 4 Warning logs
         // (3 escalating + 1 suppression notice).
@@ -314,7 +314,7 @@ public sealed class AgentPermissionHandlerTests
     public async Task Create_NullSessionId_UsesFallback()
     {
         var handler = AgentPermissionHandler.Create(
-            new HashSet<string> { "some-tool" }, _logger);
+            new HashSet<string> { "some-tool" }, _logger, new TestDoubles.NoOpAgentLivenessTracker());
 
         // Should not throw even with null session ID
         var result = await handler(MakeRequest("shell"), MakeInvocation(null));

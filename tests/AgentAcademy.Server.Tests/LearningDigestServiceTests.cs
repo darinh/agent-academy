@@ -205,7 +205,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Cross-cutting insight discovered.");
 
         var result = await _service.TryGenerateDigestAsync(force: true);
@@ -221,7 +221,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Cross-cutting patterns identified.");
 
         var result = await _service.TryGenerateDigestAsync();
@@ -237,7 +237,7 @@ public class LearningDigestServiceTests : IDisposable
         _executor.RunAsync(
             Arg.Do<AgentDefinition>(a => capturedAgent = a),
             Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Digest summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -257,7 +257,7 @@ public class LearningDigestServiceTests : IDisposable
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(),
             Arg.Do<string?>(r => capturedRoomId = r),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Digest summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -273,7 +273,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Team consistently struggles with error handling.");
 
         var digestId = await _service.TryGenerateDigestAsync(force: true);
@@ -296,7 +296,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: shared
@@ -328,7 +328,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("");
 
         var digestId = await _service.TryGenerateDigestAsync(force: true);
@@ -349,7 +349,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns<string>(x => throw new InvalidOperationException("LLM connection failed"));
 
         var result = await _service.TryGenerateDigestAsync(force: true);
@@ -404,7 +404,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Digest complete.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -421,7 +421,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -437,7 +437,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
@@ -460,7 +460,7 @@ public class LearningDigestServiceTests : IDisposable
         // Planner returns a REMEMBER with category: lesson (not shared)
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("""
                 REMEMBER:
                   category: lesson
@@ -533,7 +533,7 @@ public class LearningDigestServiceTests : IDisposable
 
         _executor.RunAsync(
             Arg.Any<AgentDefinition>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Digest of 5 retrospectives.");
 
         var digestId = await _service.TryGenerateDigestAsync(force: true);
@@ -563,7 +563,7 @@ public class LearningDigestServiceTests : IDisposable
             Arg.Any<AgentDefinition>(),
             Arg.Do<string>(p => capturedPrompt = p),
             Arg.Any<string>(),
-            Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<string?>())
             .Returns("Summary.");
 
         await _service.TryGenerateDigestAsync(force: true);
