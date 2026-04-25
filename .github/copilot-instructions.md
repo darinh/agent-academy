@@ -1,5 +1,23 @@
 # Agent Academy — Copilot Instructions
 
+> ## 🛑 READ FIRST — Product Vision and Active Roadmap
+>
+> Before doing **any** work in this repo, read these three files:
+>
+> 1. **[`specs/100-product-vision/spec.md`](../specs/100-product-vision/spec.md)** — what this product is supposed to be.
+> 2. **[`specs/100-product-vision/gap-analysis.md`](../specs/100-product-vision/gap-analysis.md)** — where the code is vs. that vision.
+> 3. **[`specs/100-product-vision/roadmap.md`](../specs/100-product-vision/roadmap.md)** — the prioritized, active backlog.
+>
+> ### The Three Rules
+>
+> 1. **Work the roadmap, not your imagination.** If you start a session and the human has not given you a specific task, work the next pending item from `roadmap.md`. If you believe a new item belongs on the list, append it to **Proposed Additions** and surface it — do not silently work on it.
+> 2. **"Implemented" means observable behavior, not data shape.** Do not declare a feature done because you wrote the data model and the endpoint returns 200. Done means the acceptance test passes — read it before you start coding. If you cannot demonstrate the acceptance test, the work is not done. Spec status fields must factually describe behavior, never aspirations.
+> 3. **Update the roadmap in the same commit.** When you start an item, mark it `in_progress` in `roadmap.md`'s Status Tracking table. When you finish, mark it `done` and write a one-line note. The roadmap is the at-a-glance truth — keep it accurate or it becomes the next misalignment.
+>
+> ### Why this exists
+>
+> Earlier sessions built features, marked them "Implemented," and moved on. The features didn't actually deliver the product's promise. The human is now stuck with a system that doesn't do what was asked. The vision document is the brake on that drift. **You are responsible for not repeating the pattern.**
+
 ## Project Overview
 Agent Academy is a multi-agent collaboration platform that orchestrates AI agents to work together on software engineering tasks. Built with ASP.NET Core 8, React 19, and the GitHub Copilot SDK.
 
