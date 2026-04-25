@@ -61,6 +61,8 @@ public class ActivityNotificationBroadcasterTests
     [InlineData(ActivityEventType.CommandExecuted, NotificationType.TaskComplete)]
     [InlineData(ActivityEventType.CommandDenied, NotificationType.Error)]
     [InlineData(ActivityEventType.CommandFailed, NotificationType.Error)]
+    [InlineData(ActivityEventType.SprintCompleted, NotificationType.TaskComplete)]
+    [InlineData(ActivityEventType.SprintCancelled, NotificationType.Error)]
     public void MapToNotification_MapsNotifiableEvents(ActivityEventType eventType, NotificationType expectedNotifType)
     {
         var evt = CreateEvent(eventType, "Test message");

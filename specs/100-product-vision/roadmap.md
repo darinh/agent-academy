@@ -107,16 +107,16 @@
 
 **Status**: Already implemented at the time the roadmap was authored. `SprintService.CompleteSprintAsync` (`SprintService.cs:229-241`) refuses to mark a sprint Completed unless a `SprintReport` artifact exists at FinalSynthesis. `force=true` allows human override (intentional — agents cannot bypass).
 
-### P1.7 — Discord Notification on Idle / Blocked / Sprint Complete [DRAFT]
+### P1.7 — Discord Notification on Idle / Blocked / Sprint Complete [PARTIAL — Completed + Idle done; Blocked deferred to P1.4]
 
-**Closes gap**: G7.
+**Closes gap**: G7 (sprint-complete + team-idle paths).
 **Risk**: 🟡.
 **Estimated effort**: ~0.5 day.
 
 **What**: Wire orchestrator state changes to NotificationProvider:
-- Sprint completes → notify "Sprint X completed, report attached".
-- Sprint blocks (self-eval failed N times, or explicit blocker) → notify "Sprint X needs attention".
-- All sprints idle, no work queued → notify "Team is idle, awaiting instructions" (debounce so this fires at most once per idle period).
+- Sprint completes → notify "Sprint X completed, report attached". **[DONE]** — `ActivityNotificationBroadcaster` (`src/AgentAcademy.Server/Notifications/ActivityNotificationBroadcaster.cs`) now includes `SprintCompleted` and `SprintCancelled` in `NotifiableEvents` and maps them through `MapToNotification` to `NotificationType.TaskComplete` / `NotificationType.Error` respectively.
+- Sprint blocks (self-eval failed N times, or explicit blocker) → notify "Sprint X needs attention". **[DEFERRED]** — there is no `Blocked` sprint status today; the heuristic source-of-truth (self-eval failure count) lands with P1.4. Re-open this bullet once P1.4 introduces the blocked signal.
+- All sprints idle, no work queued → notify "Team is idle, awaiting instructions" (debounce so this fires at most once per idle period). **[DONE]** — new `TeamIdleNotificationService` (`src/AgentAcademy.Server/Notifications/TeamIdleNotificationService.cs`) subscribes to `IActivityBroadcaster`. On `SprintCompleted`/`SprintCancelled` it queries `Sprints.Count(s => s.Status == "Active")`; if zero AND a per-process latch is unset, dispatches one `NotificationType.NeedsInput` "Team is idle" message via `INotificationManager.SendToAllAsync`. The latch resets on `SprintStarted`. Idle definition is "no `Active` sprints"; `AwaitingSignOff` sprints are still `Active` and emit their own sign-off notifications, so they are intentionally treated as not-idle to avoid double-notify.
 
 ### P1.8 — Room Lifecycle: Read-Only When Sprint Completes [DRAFT — investigation first]
 
@@ -217,7 +217,7 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 | P1.4 | pending | — | — | Design doc required first |
 | P1.5 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintStageService.RequiredArtifactByStage["Planning"] = "SprintPlan"` (SprintStageService.cs:44) is enforced in `AdvanceStageAsync` (SprintStageService.cs:112-123), even when `force=true`. SprintPlanDocument (Sprints.cs:63-66) IS the tracking artifact: Summary + Phases (Name/Description/Deliverables) + OverflowRequirements. Covered by `SprintServiceTests.AdvanceStage_ThrowsWithoutRequiredArtifact` and the multi-stage `AdvanceStage_ThrowsAtFinalStage` flow. Gap analysis G6 was stale at authoring. |
 | P1.6 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintService.CompleteSprintAsync` (SprintService.cs:229-241) refuses to mark a sprint Completed unless a `SprintReport` artifact exists at FinalSynthesis. The `force=true` override is intentional (humans can override; agents cannot). SprintReport (Sprints.cs:78-82) carries Summary + Delivered + Learnings + OverflowRequirements — i.e., the work-report contract. Gap analysis G6 was stale at authoring. |
-| P1.7 | pending | — | — | |
+| P1.7 | partial | 2026-04-25 | 2026-04-25 | Sprint-complete + idle notifications shipped (`TeamIdleNotificationService` + `ActivityNotificationBroadcaster` extension). Blocked-sprint notification deferred until P1.4 introduces a Blocked signal. 7 unit tests + DI wiring test. |
 | P1.8 | pending | — | — | Investigation first |
 | P1.9 | pending | — | — | Acceptance run, after P1.1–P1.8 |
 | P2.1 | pending | — | — | After Phase 1 |

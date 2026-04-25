@@ -25,6 +25,12 @@ public static class BackgroundServiceExtensions
         // Notification broadcaster — bridges ActivityBroadcaster → NotificationManager
         services.AddHostedService<ActivityNotificationBroadcaster>();
 
+        // Team-idle notifier (P1.7) — fires "team is idle, awaiting instructions"
+        // when the last active sprint wraps up. Debounced via an in-memory latch
+        // that resets on the next SprintStarted event, so it notifies once per
+        // idle period regardless of how many concurrent sprints completed.
+        services.AddHostedService<TeamIdleNotificationService>();
+
         // Notification config restore — restores saved provider configs from DB on startup
         services.AddHostedService<NotificationRestoreService>();
 
