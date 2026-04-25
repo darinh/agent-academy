@@ -21,7 +21,13 @@ namespace AgentAcademy.Server.Services;
 public sealed class SelfDriveDecisionService : ISelfDriveDecisionService, IDisposable
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IAgentOrchestrator _orchestrator;
+    // Lazy to break the DI cycle:
+    //   ConversationRoundRunner → ISelfDriveDecisionService → IAgentOrchestrator
+    //     → IOrchestratorDispatchService → IConversationRoundRunner.
+    // All four are singletons; injecting IAgentOrchestrator directly here
+    // makes .NET DI hang at startup when ConversationRoundRunner is built.
+    // Resolving lazily via IServiceProvider snaps the cycle.
+    private readonly Lazy<IAgentOrchestrator> _orchestrator;
     private readonly ICostGuard _costGuard;
     private readonly SelfDriveOptions _options;
     private readonly ILogger<SelfDriveDecisionService> _logger;
@@ -35,14 +41,16 @@ public sealed class SelfDriveDecisionService : ISelfDriveDecisionService, IDispo
 
     public SelfDriveDecisionService(
         IServiceScopeFactory scopeFactory,
-        IAgentOrchestrator orchestrator,
+        IServiceProvider serviceProvider,
         ICostGuard costGuard,
         IOptions<SelfDriveOptions> options,
         ILogger<SelfDriveDecisionService> logger,
         TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
-        _orchestrator = orchestrator;
+        _orchestrator = new Lazy<IAgentOrchestrator>(
+            () => serviceProvider.GetRequiredService<IAgentOrchestrator>(),
+            LazyThreadSafetyMode.ExecutionAndPublication);
         _costGuard = costGuard;
         _options = options.Value;
         _logger = logger;
@@ -213,7 +221,7 @@ public sealed class SelfDriveDecisionService : ISelfDriveDecisionService, IDispo
             // HumanMessage arrived during the delay and is already
             // queued). If so, the post-round decision after that human
             // turn will re-evaluate.
-            if (!_orchestrator.TryEnqueueSystemContinuation(roomId, sprintId))
+            if (!_orchestrator.Value.TryEnqueueSystemContinuation(roomId, sprintId))
             {
                 _logger.LogDebug(
                     "Self-drive continuation for room {RoomId} (sprint {SprintId}) dropped by dedupe",
