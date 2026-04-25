@@ -35,6 +35,11 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
         ActivityEventType.SprintCompleted,
         ActivityEventType.SprintCancelled,
         ActivityEventType.SprintBlocked,
+        // P1.4 — self-evaluation lifecycle: notify per-attempt verdict so the
+        // human can follow what the team is finding (and acting on) without
+        // having to poll the timeline. The auto-block at attempt-cap reuses
+        // SprintBlocked, so this event surfaces only the verdict signal.
+        ActivityEventType.SelfEvalCompleted,
     };
 
     public ActivityNotificationBroadcaster(
@@ -140,6 +145,12 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
     /// </summary>
     internal static NotificationMessage? MapToNotification(ActivityEvent evt)
     {
+        // SelfEvalCompleted needs verdict-aware mapping: AllPass is positive,
+        // AnyFail/Unverified are low-urgency status updates (the cap-exceeded
+        // halt fires SprintBlocked separately for the actionable surface).
+        if (evt.Type == ActivityEventType.SelfEvalCompleted)
+            return MapSelfEvalCompleted(evt);
+
         var mapped = evt.Type switch
         {
             ActivityEventType.MessagePosted => (
@@ -202,4 +213,66 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
 
     private static string FormatActor(string? actorId) =>
         string.IsNullOrEmpty(actorId) ? "" : $": {actorId}";
+
+    /// <summary>
+    /// Maps a <see cref="ActivityEventType.SelfEvalCompleted"/> event to a
+    /// notification using the verdict in the event metadata. AllPass is a
+    /// positive completion; AnyFail / Unverified are low-urgency status
+    /// signals (the auto-block at cap-exceeded fires SprintBlocked separately
+    /// and that's where the user-actionable NeedsInput surface lives).
+    /// </summary>
+    private static NotificationMessage? MapSelfEvalCompleted(ActivityEvent evt)
+    {
+        var metadata = evt.Metadata;
+        var verdict = MetaString(metadata, "overallVerdict");
+        var sprintNumber = MetaInt(metadata, "sprintNumber");
+        var attempt = MetaInt(metadata, "attempt");
+        var cap = MetaInt(metadata, "maxSelfEvalAttempts");
+
+        var sprintLabel = sprintNumber is null ? "Sprint" : $"Sprint #{sprintNumber}";
+        var attemptSuffix = attempt is null || cap is null
+            ? string.Empty
+            : $" (attempt {attempt}/{cap})";
+
+        // Default to TaskComplete for unknown verdicts so the message still
+        // surfaces; treat the unknown case as benign rather than dropping it.
+        var (type, title) = verdict switch
+        {
+            "AllPass" => (NotificationType.TaskComplete,
+                $"{sprintLabel} passed self-evaluation"),
+            "AnyFail" => (NotificationType.AgentThinking,
+                $"{sprintLabel} self-eval found issues{attemptSuffix}"),
+            "Unverified" => (NotificationType.AgentThinking,
+                $"{sprintLabel} self-eval has unverified items{attemptSuffix}"),
+            _ => (NotificationType.AgentThinking,
+                $"{sprintLabel} self-evaluation completed"),
+        };
+
+        return new NotificationMessage(
+            Type: type,
+            Title: title,
+            Body: evt.Message,
+            RoomId: evt.RoomId,
+            AgentName: evt.ActorId);
+    }
+
+    private static string? MetaString(Dictionary<string, object?>? metadata, string key)
+    {
+        if (metadata is null || !metadata.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        return raw.ToString();
+    }
+
+    private static int? MetaInt(Dictionary<string, object?>? metadata, string key)
+    {
+        if (metadata is null || !metadata.TryGetValue(key, out var raw) || raw is null)
+            return null;
+        return raw switch
+        {
+            int i => i,
+            long l => (int)l,
+            string s when int.TryParse(s, out var parsed) => parsed,
+            _ => int.TryParse(raw.ToString(), out var parsed) ? parsed : null,
+        };
+    }
 }

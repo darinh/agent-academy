@@ -1,13 +1,19 @@
+using System.Text.Json;
+using AgentAcademy.Server.Commands;
+using AgentAcademy.Server.Commands.Handlers;
 using AgentAcademy.Server.Controllers;
 using AgentAcademy.Server.Data;
 using AgentAcademy.Server.Data.Entities;
 using AgentAcademy.Server.Services;
 using AgentAcademy.Server.Services.Contracts;
 using AgentAcademy.Shared.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace AgentAcademy.Server.Tests;
@@ -17,11 +23,13 @@ public class SprintControllerTests : IDisposable
     private const string TestWorkspace = "/tmp/test-workspace";
     private readonly SqliteConnection _connection;
     private readonly AgentAcademyDbContext _db;
+    private readonly ServiceProvider _scopeProvider;
     private readonly SprintService _sprintService;
     private readonly SprintStageService _sprintStageService;
     private readonly SprintArtifactService _artifactService;
     private readonly SprintMetricsCalculator _metricsCalculator;
     private readonly RoomService _roomService;
+    private readonly IAgentOrchestrator _orchestrator;
     private readonly SprintController _controller;
 
     public SprintControllerTests()
@@ -66,14 +74,31 @@ public class SprintControllerTests : IDisposable
 
         var scheduleService = new SprintScheduleService(_db);
 
+        // Scope factory + DI for HumanCommandAuditor (uses scoped DbContext)
+        // and for RunSelfEvalHandler resolution. Register the same instances
+        // we use elsewhere as singletons so tests share state via _db.
+        var scopeServices = new ServiceCollection();
+        scopeServices.AddSingleton<AgentAcademyDbContext>(_db);
+        scopeServices.AddSingleton<IRoomService>(_roomService);
+        scopeServices.AddSingleton<ISprintService>(_sprintService);
+        _scopeProvider = scopeServices.BuildServiceProvider();
+        var scopeFactory = _scopeProvider.GetRequiredService<IServiceScopeFactory>();
+        var auditor = new HumanCommandAuditor(scopeFactory);
+
+        _orchestrator = Substitute.For<IAgentOrchestrator>();
+        var commandHandlers = new ICommandHandler[] { new RunSelfEvalHandler() };
+        var selfEvalOptions = Options.Create(new SelfEvalOptions { MaxSelfEvalAttempts = 3 });
+
         _controller = new SprintController(
             _sprintService, _sprintStageService, _artifactService, _metricsCalculator,
             scheduleService, _roomService, sessionService,
+            _orchestrator, auditor, scopeFactory, commandHandlers, _db, selfEvalOptions,
             NullLogger<SprintController>.Instance);
     }
 
     public void Dispose()
     {
+        _scopeProvider.Dispose();
         _db.Dispose();
         _connection.Dispose();
     }
@@ -745,5 +770,202 @@ public class SprintControllerTests : IDisposable
         var ok = Assert.IsType<OkObjectResult>(result);
         var body = Assert.IsType<SprintMetricsSummary>(ok.Value);
         Assert.Equal(1, body.TotalSprints);
+    }
+
+    // ── Self-Evaluation API (P1.4 §6) ───────────────────────────
+
+    private async Task<SprintEntity> SeedImplementationSprintAsync(string? workspace = null)
+    {
+        workspace ??= TestWorkspace;
+        var sprint = await _sprintService.CreateSprintAsync(workspace);
+        sprint.CurrentStage = "Implementation";
+        _db.Tasks.Add(new TaskEntity
+        {
+            Id = $"task-{Guid.NewGuid():N}",
+            Title = "t1",
+            Description = "test",
+            SuccessCriteria = "criterion",
+            Status = "Completed",
+            Type = "Feature",
+            SprintId = sprint.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+        await _db.SaveChangesAsync();
+        return sprint;
+    }
+
+    [Fact]
+    public async Task StartSelfEval_NoWorkspace_Returns400()
+    {
+        var result = await _controller.StartSelfEval("missing");
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task StartSelfEval_UnknownSprint_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var result = await _controller.StartSelfEval("missing");
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task StartSelfEval_FromWrongStage_ReturnsConflict()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync(TestWorkspace);
+        // Sprint stays at Setup — RUN_SELF_EVAL only valid at Implementation.
+
+        var result = await _controller.StartSelfEval(sprint.Id);
+
+        var status = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status409Conflict, status.StatusCode);
+        var body = Assert.IsType<SelfEvalStartResponse>(status.Value);
+        Assert.Equal(nameof(CommandStatus.Error), body.Status);
+        Assert.Equal(CommandErrorCode.Conflict, body.ErrorCode);
+        _orchestrator.DidNotReceive().HandleHumanMessage(Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task StartSelfEval_HappyPath_FlipsFlagWakesOrchestratorAuditsCommand()
+    {
+        await ActivateWorkspace();
+        // Seed a room in the workspace so the wake path can find it.
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-1",
+            Name = "Main",
+            WorkspacePath = TestWorkspace,
+            Status = nameof(RoomStatus.Active),
+            CreatedAt = DateTime.UtcNow,
+        });
+        var sprint = await SeedImplementationSprintAsync();
+
+        var result = await _controller.StartSelfEval(sprint.Id);
+
+        var ok = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
+        var body = Assert.IsType<SelfEvalStartResponse>(ok.Value);
+        Assert.Equal(nameof(CommandStatus.Success), body.Status);
+        Assert.NotNull(body.CorrelationId);
+
+        _db.ChangeTracker.Clear();
+        var refreshed = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.NotNull(refreshed);
+        Assert.True(refreshed!.SelfEvaluationInFlight,
+            "POST /self-eval/start must flip the in-flight flag.");
+
+        _orchestrator.Received(1).HandleHumanMessage("room-1");
+
+        var audit = await _db.CommandAudits.SingleAsync(a => a.CorrelationId == body.CorrelationId);
+        Assert.Equal("RUN_SELF_EVAL", audit.Command);
+        Assert.Equal("human", audit.AgentId);
+        Assert.Equal(nameof(CommandStatus.Success), audit.Status);
+    }
+
+    [Fact]
+    public async Task StartSelfEval_OrchestratorWakeFailure_StillReturnsSuccess()
+    {
+        await ActivateWorkspace();
+        _db.Rooms.Add(new RoomEntity
+        {
+            Id = "room-1",
+            Name = "Main",
+            WorkspacePath = TestWorkspace,
+            Status = nameof(RoomStatus.Active),
+            CreatedAt = DateTime.UtcNow,
+        });
+        var sprint = await SeedImplementationSprintAsync();
+
+        _orchestrator
+            .When(o => o.HandleHumanMessage(Arg.Any<string>()))
+            .Do(_ => throw new InvalidOperationException("orchestrator down"));
+
+        var result = await _controller.StartSelfEval(sprint.Id);
+
+        var ok = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
+        // Flag must still be flipped — wake is best-effort.
+        _db.ChangeTracker.Clear();
+        var refreshed = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.True(refreshed!.SelfEvaluationInFlight);
+    }
+
+    [Fact]
+    public async Task StartSelfEval_OtherWorkspaceSprint_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.StartSelfEval(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task GetLatestSelfEval_NoReports_ReturnsNoContent()
+    {
+        await ActivateWorkspace();
+        var sprint = await SeedImplementationSprintAsync();
+
+        var result = await _controller.GetLatestSelfEval(sprint.Id);
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task GetLatestSelfEval_ReturnsMostRecentReport()
+    {
+        await ActivateWorkspace();
+        var sprint = await SeedImplementationSprintAsync();
+
+        // Append-only: seed two reports, second is newer and should be returned.
+        var older = new SprintArtifactEntity
+        {
+            SprintId = sprint.Id,
+            Stage = "Implementation",
+            Type = "SelfEvaluationReport",
+            Content = "{}",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
+        };
+        var newer = new SprintArtifactEntity
+        {
+            SprintId = sprint.Id,
+            Stage = "Implementation",
+            Type = "SelfEvaluationReport",
+            Content = "{\"latest\":true}",
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.SprintArtifacts.AddRange(older, newer);
+        // Simulate the verdict-path side effects so attempt counters match.
+        sprint.SelfEvalAttempts = 2;
+        sprint.LastSelfEvalAt = newer.CreatedAt;
+        sprint.LastSelfEvalVerdict = "AllPass";
+        sprint.SelfEvaluationInFlight = false;
+        await _db.SaveChangesAsync();
+
+        var result = await _controller.GetLatestSelfEval(sprint.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = Assert.IsType<SelfEvalLatestResponse>(ok.Value);
+        Assert.Equal(sprint.Id, body.SprintId);
+        Assert.Equal(newer.Id, body.Report.Id);
+        Assert.Equal("{\"latest\":true}", body.Report.Content);
+        Assert.Equal(2, body.Attempts);
+        Assert.Equal(3, body.MaxAttempts);
+        Assert.Equal("AllPass", body.LastVerdict);
+        Assert.False(body.SelfEvaluationInFlight);
+    }
+
+    [Fact]
+    public async Task GetLatestSelfEval_OtherWorkspaceSprint_ReturnsNotFound()
+    {
+        await ActivateWorkspace();
+        var sprint = await _sprintService.CreateSprintAsync("/other-workspace");
+
+        var result = await _controller.GetLatestSelfEval(sprint.Id);
+
+        Assert.IsType<NotFoundResult>(result);
     }
 }

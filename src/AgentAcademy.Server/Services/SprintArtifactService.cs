@@ -148,6 +148,16 @@ public sealed class SprintArtifactService : ISprintArtifactService
             .ToListAsync();
     }
 
+    public async Task<SprintArtifactEntity?> GetLatestSelfEvalReportAsync(string sprintId)
+    {
+        var reportType = nameof(ArtifactType.SelfEvaluationReport);
+        return await _db.SprintArtifacts
+            .Where(a => a.SprintId == sprintId && a.Type == reportType)
+            .OrderByDescending(a => a.CreatedAt)
+            .ThenByDescending(a => a.Id)
+            .FirstOrDefaultAsync();
+    }
+
     // ── Self-Evaluation Verdict Path (P1.4) ─────────────────────
 
     /// <summary>
