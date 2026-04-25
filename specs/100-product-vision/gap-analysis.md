@@ -33,12 +33,12 @@ This document is brutally honest. Where the spec elsewhere in this repo says "Im
 **Evidence**: `src/AgentAcademy.Server/Services/AgentOrchestrator.cs` line 124.
 **Impact**: This is *the* gap. Without it, every other sprint feature is theatre.
 
-### G2 — Sprint Creation Does Not Dispatch (🔴 Blocks vision)
+### G2 — Sprint Creation Does Not Dispatch (✅ CLOSED by P1.1)
 
 **Vision**: Starting a sprint kicks off the team.
-**Code**: `SprintService.CreateSprintAsync` (lines 47–145) inserts the entity, fires an activity event, syncs room phases. **Does not enqueue any agent message.**
-**Evidence**: Read end-to-end in prior session.
-**Impact**: A sprint exists in the DB and nothing acts on it. Combined with G1, scheduled sprints are no-ops.
+**Status**: Closed 2026-04-25. `SprintService.CreateSprintAsync` (line 158-161) now invokes `ISprintKickoffService.PostKickoffAsync`, which posts a system kickoff message in every active workspace room and wakes the orchestrator. Wired for all creation paths (manual / scheduled / auto-start).
+**Evidence**: `src/AgentAcademy.Server/Services/SprintService.cs:158`, `src/AgentAcademy.Server/Services/SprintKickoffService.cs:40` (`PostKickoffAsync`). Live-verified per P1.1 status row: Sprint #2 created → kickoff at +107ms, Aristotle responded at +44s.
+**Residual**: G1 (autonomous wake-up tick) is still open; without P1.2 the kickoff dispatches but the team won't loop back without external messages.
 
 ### G3 — No Intake Pushback (🔴 Blocks vision)
 
@@ -110,8 +110,8 @@ Items in this list are gaps where the code state is *suspected* but not yet veri
 
 - [ ] **G3 verification**: Read agent persona files and orchestrator preambles to confirm absence of scope-pushback prompting.
 - [ ] **G5 verification**: Trace how `SprintSchedulerService` selects which workspace to evaluate; confirm whether multiple workspaces' queues are processed in parallel.
-- [ ] **G7 verification**: Identify whether any orchestrator state event ("queue empty", "sprint complete") is emitted today that could feed a Discord notifier.
-- [ ] **G8 verification**: Read `RoomService` and SignalR hub for room status enforcement on chat send and on agent presence.
+- [x] ~~**G7 verification**~~: Closed 2026-04-25 by P1.7 + P1.4-narrow. `ActivityNotificationBroadcaster.NotifiableEvents` includes `SprintCompleted`, `SprintCancelled`, `TeamIdle`, `SprintBlocked`; mappings in `MapToNotification` produce `NotificationType.NeedsInput` / `Completed` payloads consumed by the Discord provider.
+- [x] ~~**G8 verification**~~: Closed 2026-04-25 by P1.8. `MessageService.AddAgentMessageAsync` / `AddHumanMessageAsync` reject writes to `Completed` / `Archived` rooms with `RoomReadOnlyException` → 409. SignalR hub uses the same service path so the gate applies to live chat.
 - [ ] **G9 verification**: Read `SprintService` Planning stage prompt construction; confirm Forge is or isn't invoked.
 
 Future agent: do NOT skip the verification step. Do NOT take this gap analysis as ground truth and start coding. Verify, then implement.
