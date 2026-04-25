@@ -647,6 +647,50 @@ public sealed class SprintService : Contracts.ISprintService
         return sprint;
     }
 
+    // ── Self-Drive Counters (P1.2 §13 step 3) ────────────────────
+
+    /// <inheritdoc />
+    public async Task<int> IncrementRoundCountersAsync(
+        string sprintId,
+        int innerRoundsExecuted,
+        bool wasSelfDriveContinuation,
+        DateTime completedAt,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sprintId);
+
+        if (innerRoundsExecuted <= 0)
+        {
+            // Trigger ran but produced no inner rounds (no agents available,
+            // immediate exit, etc.). Still update LastRoundCompletedAt so ops
+            // can see the trigger happened, but do not bump round counters
+            // (they should reflect actual agent turns, not trigger arrivals).
+            return await _db.Sprints
+                .Where(s => s.Id == sprintId && s.Status == "Active")
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(s => s.LastRoundCompletedAt, completedAt), ct);
+        }
+
+        // Atomic counter bump: only Active sprints accumulate. Blocked sprints
+        // are still Status="Active" by P1.4 design, so they DO accumulate
+        // counters if a round somehow ran on them — but design principle 7
+        // forbids that, so it should not happen. The counter still increments
+        // here as a defensive paper trail; the decision service is responsible
+        // for not triggering rounds on blocked sprints in the first place.
+        var rowsUpdated = await _db.Sprints
+            .Where(s => s.Id == sprintId && s.Status == "Active")
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.RoundsThisSprint, s => s.RoundsThisSprint + innerRoundsExecuted)
+                .SetProperty(s => s.RoundsThisStage, s => s.RoundsThisStage + innerRoundsExecuted)
+                .SetProperty(s => s.SelfDriveContinuations,
+                    s => wasSelfDriveContinuation
+                        ? s.SelfDriveContinuations + 1
+                        : s.SelfDriveContinuations)
+                .SetProperty(s => s.LastRoundCompletedAt, completedAt), ct);
+
+        return rowsUpdated;
+    }
+
     // ── Event Helpers ────────────────────────────────────────────
 
     /// <summary>

@@ -24,6 +24,19 @@ public class SprintEntity
     public DateTime? BlockedAt { get; set; }
     public string? BlockReason { get; set; }
 
+    // Self-drive accounting (P1.2, p1-2-self-drive-design.md §3.1). All counters
+    // increment by ConversationRoundRunner after each trigger run; RoundsThisStage
+    // and SelfDriveContinuations reset on stage transition. Defaults are zero/null
+    // so existing rows backfill cleanly with no schema migration data step.
+    public int RoundsThisSprint { get; set; }
+    public int RoundsThisStage { get; set; }
+    public int SelfDriveContinuations { get; set; }
+    public DateTime? LastRoundCompletedAt { get; set; }
+
+    // Per-sprint override of Orchestrator:SelfDrive:MaxRoundsPerSprint
+    // (p1-2-self-drive-design.md §6). Null means use the configured default.
+    public int? MaxRoundsOverride { get; set; }
+
     // Navigation
     public SprintEntity? OverflowFromSprint { get; set; }
 }

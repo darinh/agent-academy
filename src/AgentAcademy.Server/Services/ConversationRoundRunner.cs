@@ -36,8 +36,29 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
     /// Runs up to <see cref="MaxRoundsPerTrigger"/> conversation rounds for
     /// the given room. Stops early if all agents PASS or no active task remains.
     /// </summary>
-    public async Task RunRoundsAsync(string roomId, CancellationToken cancellationToken = default)
+    public async Task<RoundRunOutcome> RunRoundsAsync(string roomId, CancellationToken cancellationToken = default)
     {
+        // Outer accumulators: any non-PASS across the inner loop, plus the
+        // count of inner rounds we actually executed. Both feed RoundRunOutcome
+        // so the SelfDriveDecisionService (P1.2 §13 step 5) can decide without
+        // re-querying state.
+        bool anyRoundHadNonPass = false;
+        int innerRoundsExecuted = 0;
+        // Sprint ID captured at the start of the first executed inner round
+        // so the post-run counter bump is credited to the sprint that the
+        // rounds actually ran for, not to whatever sprint happens to be
+        // active when the bump runs (TOCTOU: sprint A could complete and
+        // sprint B could become active mid-trigger; bumping B for A's work
+        // would corrupt B's self-drive accounting).
+        string? sprintIdAtRunStart = null;
+        // We attempt capture exactly once on the first executed round. If
+        // it succeeds (even with a null result — "no sprint at this
+        // workspace") or throws, we don't try again. Retrying would
+        // reintroduce the TOCTOU window: round 1 capture fails, sprint A
+        // completes, sprint B becomes active, round 2 captures B, B gets
+        // credited for A's prior round.
+        bool captureAttempted = false;
+
         for (int round = 1; round <= MaxRoundsPerTrigger; round++)
         {
             if (cancellationToken.IsCancellationRequested) break;
@@ -54,11 +75,57 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             var contextLoader = scope.ServiceProvider.GetRequiredService<RoundContextLoader>();
 
             var room = await roomService.GetRoomAsync(roomId);
-            if (room is null) return;
+            if (room is null)
+            {
+                // Mid-trigger room deletion (rare). Don't early-return —
+                // earlier iterations may have bumped innerRoundsExecuted
+                // and captured a sprint ID. Break to fall through to the
+                // post-loop counter bump and outcome return so prior
+                // accounting + non-PASS signal aren't silently discarded.
+                // The rotation block (next) is wrapped in try/catch so the
+                // missing room doesn't crash it.
+                break;
+            }
 
             _logger.LogInformation(
                 "Conversation round {Round}/{MaxRounds} for room {RoomId}",
                 round, MaxRoundsPerTrigger, roomId);
+
+            // From here on, an inner round IS executing. Count it now so the
+            // sprint-counter bump (after the loop) reflects rounds that
+            // actually ran agents, even if a later step short-circuits.
+            innerRoundsExecuted++;
+
+            // Capture the active sprint exactly once, on the first executed
+            // round. Gated by `captureAttempted` (NOT by `sprintIdAtRunStart
+            // is null`) so a capture that legitimately yields null ("no
+            // sprint here") or throws does not retry on round 2 — retrying
+            // would reintroduce TOCTOU: round 1 capture fails, sprint A
+            // completes, sprint B becomes active, round 2 captures B, B
+            // gets credited for A's already-executed round.
+            if (!captureAttempted)
+            {
+                captureAttempted = true;
+                var roomServiceForSprint = scope.ServiceProvider.GetRequiredService<IRoomService>();
+                var sprintServiceForCapture = scope.ServiceProvider.GetRequiredService<Contracts.ISprintService>();
+                try
+                {
+                    var workspacePathAtStart = await roomServiceForSprint.GetWorkspacePathForRoomAsync(roomId);
+                    if (!string.IsNullOrEmpty(workspacePathAtStart))
+                    {
+                        // Capture is best-effort and runs even if the trigger's
+                        // CT is firing — a stale capture is safer than no capture.
+                        var activeSprint = await sprintServiceForCapture.GetActiveSprintAsync(workspacePathAtStart);
+                        sprintIdAtRunStart = activeSprint?.Id;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Pre-round sprint capture failed for room {RoomId}; counter bump will be skipped",
+                        roomId);
+                }
+            }
 
             var ctx = await contextLoader.LoadAsync(roomId);
 
@@ -137,6 +204,8 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
             _logger.LogInformation(
                 "Conversation round {Round} finished for room {RoomId}", round, roomId);
 
+            if (hadNonPassResponse) anyRoundHadNonPass = true;
+
             if (!hadNonPassResponse || cancellationToken.IsCancellationRequested) break;
 
             var updatedRoom = await roomService.GetRoomAsync(roomId);
@@ -167,6 +236,51 @@ public sealed class ConversationRoundRunner : IConversationRoundRunner
         {
             _logger.LogWarning(ex, "Post-round session rotation check failed for room {RoomId}", roomId);
         }
+
+        // Bump self-drive counters on the sprint that was active when this
+        // trigger STARTED running rounds (P1.2 §13 step 3). Using the
+        // captured sprint ID — not "active sprint right now" — is required
+        // because a sprint A could complete and a sprint B could become
+        // active during a long trigger; bumping B for A's rounds would
+        // corrupt B's self-drive accounting. If A is no longer Active when
+        // this fires, IncrementRoundCountersAsync's WHERE Status='Active'
+        // guard makes the call a no-op (correct: A's totals are frozen at
+        // completion). Fails open: counter-bump failure must not propagate
+        // to the queue dispatcher because the trigger run already
+        // succeeded. The decision service (§13 step 5) is the next caller
+        // and reads the freshly-persisted counters before deciding to
+        // enqueue a continuation. wasSelfDriveContinuation is hard-coded
+        // false here — it will be threaded through from the queue item
+        // when SystemContinuation is introduced in §13 step 7.
+        if (sprintIdAtRunStart is not null)
+        {
+            try
+            {
+                using var counterScope = _scopeFactory.CreateScope();
+                var sprintService = counterScope.ServiceProvider.GetRequiredService<Contracts.ISprintService>();
+                await sprintService.IncrementRoundCountersAsync(
+                    sprintIdAtRunStart,
+                    innerRoundsExecuted,
+                    wasSelfDriveContinuation: false,
+                    completedAt: DateTime.UtcNow,
+                    // Pass CancellationToken.None: rounds already executed
+                    // and counters MUST persist. If we forwarded the trigger
+                    // CT, a cancellation mid-loop would cause EF's
+                    // ExecuteUpdateAsync to throw OperationCanceledException
+                    // before persisting, the catch below would swallow it
+                    // as a warning, and self-drive accounting would
+                    // permanently undercount executed rounds.
+                    ct: CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Post-round sprint counter bump failed for sprint {SprintId} (room {RoomId}, rounds={Rounds})",
+                    sprintIdAtRunStart, roomId, innerRoundsExecuted);
+            }
+        }
+
+        return new RoundRunOutcome(anyRoundHadNonPass, innerRoundsExecuted);
     }
 
     private AgentDefinition? FindPlanner() =>

@@ -144,6 +144,12 @@ public static class AgentPipelineExtensions
         services.AddSingleton<IAgentTurnRunner>(sp => sp.GetRequiredService<AgentTurnRunner>());
         services.AddSingleton<ConversationRoundRunner>();
         services.AddSingleton<IConversationRoundRunner>(sp => sp.GetRequiredService<ConversationRoundRunner>());
+
+        // ICostGuard is the deferred cost-cap hook documented in
+        // p1-2-self-drive-design.md §4.6. Default impl is a no-op so the DI
+        // slot exists for the future cost-tracking implementation to swap in
+        // without touching the decision-tree wiring.
+        services.AddSingleton<Contracts.ICostGuard, NoOpCostGuard>();
         services.AddSingleton<DirectMessageRouter>();
         services.AddSingleton<IDirectMessageRouter>(sp => sp.GetRequiredService<DirectMessageRouter>());
         services.AddSingleton<OrchestratorDispatchService>();
