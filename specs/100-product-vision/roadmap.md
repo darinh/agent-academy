@@ -35,7 +35,7 @@
 - Observe a message appear in the sprint's room within 5 seconds.
 - Observe the orchestrator process that message and queue at least one agent response.
 
-### P1.2 — Orchestrator Tick / Self-Drive [DRAFT — design needed before implementation]
+### P1.2 — Orchestrator Tick / Self-Drive [design RESOLVED — ready for implementation]
 
 **Closes gap**: G1.
 **Risk**: 🔴 (concurrency, scheduler logic — central to product behavior).
@@ -43,20 +43,18 @@
 
 **What**: The orchestrator gains the ability to advance a conversation **without** a human message arriving. After an agent responds, if the sprint is in a phase that expects continued work and there is no pending human input, the orchestrator schedules the next round automatically.
 
-**Design decisions still open**:
-- Round-based loop vs. true tick. Probably round-based: after each agent message, decide whether to enqueue the next round, with a max-rounds-per-sprint cap to prevent runaway.
-- How is "we're done with this round, ready for next" signaled? End of agent turn? Specific command? Stage advance?
-- Backpressure: if the human posts mid-round, does the autonomous loop pause until the human's message is processed?
-- Idle state: when does the orchestrator decide "no more work to do, sleep"?
+**Design decisions** (resolved 2026-04-25 in [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) §12):
+- Round-based loop with per-stage and per-sprint round caps (defaults in `appsettings.json`).
+- "Round complete" signal: end of agent turn with no human input pending.
+- Backpressure: human messages mid-round drop pending continuations and the room re-tick on the human turn.
+- Idle: orchestrator sleeps when no active sprint room has pending work.
 
-**Critical safety requirement**: This loop MUST have:
-- A max-rounds-per-sprint cap (default: 50, configurable per sprint).
-- A max-cost-per-sprint cap. Design landed in [`cost-tracking-design.md`](cost-tracking-design.md) — `LlmUsageTracker` already records per-call cost/tokens; `ICostGuard` plugs into the hook P1.2 §4.6 reserved.
-- An emergency stop that the human can trigger from the UI or API.
+**Critical safety requirements** (all baked into the resolved design):
+- Per-stage and per-sprint round caps (defaults shipped in `appsettings.json`).
+- Cost monitoring via [`cost-tracking-design.md`](cost-tracking-design.md): always-on tracking + anomaly detection + configurable `BreachAction`. Round caps are the hard ceiling; cost is an observation-and-alert mechanism, not a hard cap.
+- Emergency stop available via existing `POST /api/sprints/{id}/block`.
 
-**Recommend**: write a brief design doc (1–2 pages) and get a human review before implementing.
-
-**Design doc**: [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) — drafted 2026-04-25, pending human review.
+**Design doc**: [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) — drafted 2026-04-25, design questions resolved 2026-04-25; ready for implementation per §13.
 
 ### P1.3 — Stage Advancement Triggers Next Round [DRAFT]
 
@@ -70,7 +68,7 @@
 - Trigger a stage advance via the API.
 - Observe an agent message appear in the room reflecting the new stage's intent.
 
-### P1.4 — Self-Evaluation Ceremony at End of Implementation [DRAFT — design needed]
+### P1.4 — Self-Evaluation Ceremony at End of Implementation [design RESOLVED — ready for implementation]
 
 **Closes gap**: G4.
 **Risk**: 🔴 (preamble + state machine wiring; affects sprint completion semantics).
@@ -214,9 +212,9 @@ These items have been considered and explicitly deferred. Future agents: do NOT 
 | Item | Status | Started | Completed | Notes |
 |------|--------|---------|-----------|-------|
 | P1.1 | done | 2026-04-25 | 2026-04-25 | Kickoff posts a system message in every active workspace room and wakes the orchestrator on `CreateSprintAsync` (manual / scheduled / auto-start paths). Live-verified: Sprint #2 created → kickoff message at +107ms, Aristotle responded at +44s. |
-| P1.2 | in_progress | 2026-04-25 | — | Design doc drafted: [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) — pending human review before implementation. |
+| P1.2 | in_progress | 2026-04-25 | — | Design doc resolved: [`p1-2-self-drive-design.md`](./p1-2-self-drive-design.md) — §12 design questions answered 2026-04-25, ready for implementation per §13. |
 | P1.3 | done | anvil | feat/p1-3-stage-advance-announce | Live-verified 2026-04-25: Sprint #2 Intake→Planning via /approve-advance posted "➡️ Sprint #2 advanced (user-approved)" to 6 active rooms; Aristotle responded in +35s. Includes regression test + targetRoomIds snapshot for FinalSynthesis room-completion edge case (caught by adversarial review). |
-| P1.4 | partial | 2026-04-25 | 2026-04-25 | **Blocked-signal subset shipped** (anvil/p1-4-blocked-signal). `SprintEntity.BlockedAt` + `BlockReason` columns; `MarkSprintBlockedAsync`/`UnblockSprintAsync` use atomic `ExecuteUpdateAsync` so concurrent block calls emit at most one `SprintBlocked` event. Sprint stays `Status="Active"` while blocked → workspace-occupancy + idle semantics unchanged. `GetOverdueSprintsAsync` excludes blocked sprints (timeout sweep no longer auto-cancels sprints that are explicitly waiting on a human). `ActivityEventType.SprintBlocked` → `NotificationType.NeedsInput` "Sprint needs attention" (closes the deferred P1.7 bullet). 18 new tests across SprintService + Controller + broadcaster mapping. **Self-evaluation ceremony design drafted** 2026-04-25: [`p1-4-self-evaluation-design.md`](./p1-4-self-evaluation-design.md) — substate-of-Implementation model, `SelfEvaluationReport` artifact with strict per-criterion validation, `RUN_SELF_EVAL` command, verdict path that reuses `MarkSprintBlockedAsync` for the auto-block heuristic. Pending human review of 5 design questions in §9 before implementation per §8 order. |
+| P1.4 | partial | 2026-04-25 | 2026-04-25 | **Blocked-signal subset shipped** (anvil/p1-4-blocked-signal). `SprintEntity.BlockedAt` + `BlockReason` columns; `MarkSprintBlockedAsync`/`UnblockSprintAsync` use atomic `ExecuteUpdateAsync` so concurrent block calls emit at most one `SprintBlocked` event. Sprint stays `Status="Active"` while blocked → workspace-occupancy + idle semantics unchanged. `GetOverdueSprintsAsync` excludes blocked sprints (timeout sweep no longer auto-cancels sprints that are explicitly waiting on a human). `ActivityEventType.SprintBlocked` → `NotificationType.NeedsInput` "Sprint needs attention" (closes the deferred P1.7 bullet). 18 new tests across SprintService + Controller + broadcaster mapping. **Self-evaluation ceremony design drafted** 2026-04-25: [`p1-4-self-evaluation-design.md`](./p1-4-self-evaluation-design.md) — substate-of-Implementation model, `SelfEvaluationReport` artifact with strict per-criterion validation, `RUN_SELF_EVAL` command, verdict path that reuses `MarkSprintBlockedAsync` for the auto-block heuristic. §9 design questions resolved 2026-04-25; ready for implementation per §8 order. |
 | P1.5 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintStageService.RequiredArtifactByStage["Planning"] = "SprintPlan"` (SprintStageService.cs:44) is enforced in `AdvanceStageAsync` (SprintStageService.cs:112-123), even when `force=true`. SprintPlanDocument (Sprints.cs:63-66) IS the tracking artifact: Summary + Phases (Name/Description/Deliverables) + OverflowRequirements. Covered by `SprintServiceTests.AdvanceStage_ThrowsWithoutRequiredArtifact` and the multi-stage `AdvanceStage_ThrowsAtFinalStage` flow. Gap analysis G6 was stale at authoring. |
 | P1.6 | done | 2026-04-25 | 2026-04-25 | **Already implemented** prior to roadmap authoring. `SprintService.CompleteSprintAsync` (SprintService.cs:229-241) refuses to mark a sprint Completed unless a `SprintReport` artifact exists at FinalSynthesis. The `force=true` override is intentional (humans can override; agents cannot). SprintReport (Sprints.cs:78-82) carries Summary + Delivered + Learnings + OverflowRequirements — i.e., the work-report contract. Gap analysis G6 was stale at authoring. |
 | P1.7 | done | 2026-04-25 | 2026-04-25 | Sprint-complete + idle notifications shipped (`TeamIdleNotificationService` + `ActivityNotificationBroadcaster` extension). Blocked-sprint notification wired to `ActivityEventType.SprintBlocked` once P1.4's blocked-signal subset landed (2026-04-25): mapped to `NotificationType.NeedsInput` "Sprint needs attention". 7 unit tests + DI wiring test + broadcaster mapping test. |

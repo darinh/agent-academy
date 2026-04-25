@@ -1,6 +1,6 @@
 # P1.2 — Orchestrator Self-Drive: Design Doc
 
-**Status**: DRAFT — pending human review before implementation.
+**Status**: RESOLVED — design questions in §12 answered 2026-04-25; ready for implementation per §13.
 **Roadmap item**: P1.2 (Orchestrator Tick / Self-Drive).
 **Closes gap**: G1 — "Agents do not continue without a human pressing return."
 **Risk**: 🔴 (concurrency, scheduler logic, runaway-cost potential).
@@ -276,14 +276,14 @@ To keep P1.2 reviewable and shippable:
 
 ---
 
-## 12. Open questions for the reviewer
+## 12. Resolved decisions
 
-These are the calls I'd like a human to weigh in on before implementation starts:
+Resolved 2026-04-25 by the human reviewer. The questions in the prior revision are kept here as decisions so future readers see the rationale.
 
-1. **Per-stage cap default of 20 — too low? Too high?** A stage that legitimately needs 20+ rounds is a yellow flag; the cap forces a human review checkpoint. But if real sprints regularly need 25 in Implementation, the default annoys more than it protects. Suggest revisiting after the first real sprints run.
-2. **Should `Enabled: false` be the production default during initial rollout?** Argument for: gives ops a chance to flip it on per-environment after observing telemetry. Argument against: the whole point of P1.2 is to fix §10 step 5 — shipping it disabled defeats that. Lean: ship `Enabled: true`, with a documented hot-flip procedure.
-3. **Is "no visible system message per continuation" right (§4.5)?** Alternative: post a faded `System` message every Nth continuation as a "still running" heartbeat. Cost: chat noise. Benefit: human glancing at the room sees activity. Lean: silent, with the ActivityEvent paper trail being enough.
-4. **Should the round cap defaults live in `Config/agents.json` with the rest of agent config, or in `appsettings.json`?** I picked `appsettings.json` because they're orchestrator-level, not per-agent. Confirm.
+1. **Per-stage cap default of 20 — confirmed.** A stage that legitimately needs 20+ rounds is a yellow flag worth a human review checkpoint. Revisit after the first real sprints run if 25+ in Implementation turns out to be normal.
+2. **Ship with `Enabled: true` in production from day one — confirmed.** Shipping disabled defeats the purpose of P1.2 (which exists to fix §10 step 5). A documented hot-flip procedure (`appsettings.{Environment}.json` override → restart) is the operator's escape hatch if telemetry looks bad.
+3. **No visible per-continuation system message — confirmed.** Silent operation with the ActivityEvent paper trail is enough; chat noise from per-Nth heartbeats is rejected.
+4. **Round cap defaults live in `appsettings.json` — confirmed.** They are orchestrator-level, not per-agent, so `Config/agents.json` is the wrong home.
 
 ---
 
