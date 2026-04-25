@@ -17,17 +17,34 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     private readonly IBreakoutLifecycleService _breakoutLifecycle;
     private readonly ILogger<AgentOrchestrator> _logger;
 
-    private readonly Queue<QueueItem> _queue = new();
-    private readonly HashSet<string> _queuedRooms = new(StringComparer.Ordinal);
+    private Queue<QueueItem> _queue = new();
+    private readonly Dictionary<string, QueueItemKind> _queuedRoomKinds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _queuedDirectMessages = new(StringComparer.Ordinal);
     private readonly object _lock = new();
     private bool _processing;
     private readonly CancellationTokenSource _cts = new();
 
-    private record QueueItem(string RoomId, string? TargetAgentId = null);
+    private record QueueItem(
+        string RoomId,
+        string? TargetAgentId = null,
+        QueueItemKind Kind = QueueItemKind.HumanMessage,
+        // Captured at enqueue time for SystemContinuation items so the
+        // dispatch path can re-check sprint state (blocked / completed /
+        // awaiting sign-off) before running a stale continuation. Null
+        // for HumanMessage and DM items — those gate elsewhere.
+        string? SprintId = null);
 
     /// <summary>Returns the current number of items in the processing queue (for testing/diagnostics).</summary>
     internal int QueueDepth { get { lock (_lock) { return _queue.Count; } } }
+
+    /// <summary>Test/diagnostics: peek at the kind of the queued item for a room, if any.</summary>
+    internal QueueItemKind? PeekRoomKind(string roomId)
+    {
+        lock (_lock)
+        {
+            return _queuedRoomKinds.TryGetValue(roomId, out var kind) ? kind : null;
+        }
+    }
 
     public AgentOrchestrator(
         IServiceScopeFactory scopeFactory,
@@ -146,8 +163,30 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     {
         lock (_lock)
         {
-            return TryEnqueueRoomLocked(roomId);
+            return TryEnqueueRoomLocked(roomId, QueueItemKind.HumanMessage, sprintId: null);
         }
+    }
+
+    /// <summary>
+    /// P1.2: Enqueue a self-drive continuation for the room. Honours the
+    /// dedupe rules from p1-2-self-drive-design.md §4.4. Returns false if
+    /// the continuation was dropped (e.g., a HumanMessage is already
+    /// queued for the room — the human's trigger will run another
+    /// conversation, and the post-round decision will re-evaluate).
+    /// </summary>
+    public bool TryEnqueueSystemContinuation(string roomId, string sprintId)
+    {
+        if (string.IsNullOrEmpty(roomId)) return false;
+        if (string.IsNullOrEmpty(sprintId)) return false;
+
+        bool enqueued;
+        lock (_lock)
+        {
+            enqueued = TryEnqueueRoomLocked(roomId, QueueItemKind.SystemContinuation, sprintId);
+        }
+
+        if (enqueued) StartProcessingIfNeeded();
+        return enqueued;
     }
 
     private int EnqueueRooms(IReadOnlyCollection<string> roomIds)
@@ -158,7 +197,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         {
             foreach (var roomId in roomIds)
             {
-                if (!TryEnqueueRoomLocked(roomId))
+                if (!TryEnqueueRoomLocked(roomId, QueueItemKind.HumanMessage, sprintId: null))
                 {
                     continue;
                 }
@@ -195,7 +234,7 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
                 }
                 else
                 {
-                    _queuedRooms.Remove(dequeuedItem.RoomId);
+                    _queuedRoomKinds.Remove(dequeuedItem.RoomId);
                 }
 
                 item = dequeuedItem;
@@ -211,11 +250,53 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
     {
         try
         {
-            await _dispatchService.DispatchAsync(item.RoomId, item.TargetAgentId, _cts.Token);
+            // P1.2: Stale SystemContinuation guard. A continuation may have
+            // been enqueued before the sprint was blocked / completed /
+            // cancelled / put into AwaitingSignOff. Honour design
+            // principle 7 ("no round may run while BlockedAt != null") by
+            // re-checking sprint state immediately before dispatch.
+            // HumanMessage items don't need this gate — the message
+            // service rejects writes to terminal-state rooms upstream.
+            if (item.Kind == QueueItemKind.SystemContinuation
+                && item.SprintId is { Length: > 0 } sprintId)
+            {
+                if (!await IsSystemContinuationStillEligibleAsync(sprintId))
+                {
+                    _logger.LogInformation(
+                        "Skipping stale SystemContinuation for room {RoomId} (sprint {SprintId} no longer eligible)",
+                        item.RoomId, sprintId);
+                    return;
+                }
+            }
+
+            await _dispatchService.DispatchAsync(
+                item.RoomId, item.TargetAgentId, item.Kind, _cts.Token);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Orchestrator failed for {Item}", item);
+        }
+    }
+
+    private async Task<bool> IsSystemContinuationStillEligibleAsync(string sprintId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var sprintService = scope.ServiceProvider.GetRequiredService<ISprintService>();
+            var sprint = await sprintService.GetSprintByIdAsync(sprintId);
+            if (sprint is null) return false;
+            if (sprint.BlockedAt is not null) return false;
+            if (sprint.AwaitingSignOff) return false;
+            if (sprint.Status != "Active") return false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "SystemContinuation eligibility check failed for sprint {SprintId}; skipping dispatch",
+                sprintId);
+            return false;
         }
     }
 
@@ -243,15 +324,68 @@ public sealed class AgentOrchestrator : IAgentOrchestrator
         }
     }
 
-    private bool TryEnqueueRoomLocked(string roomId)
+    private bool TryEnqueueRoomLocked(string roomId, QueueItemKind kind, string? sprintId)
     {
-        if (!_queuedRooms.Add(roomId))
+        // P1.2 §4.4 dedupe rules:
+        //
+        //                 NEW kind →
+        //   EXISTING ↓    HumanMessage          SystemContinuation
+        //   (none)        enqueue HM            enqueue SC
+        //   HumanMessage  drop new (existing    drop new (a HM is already
+        //                 already queued)        queued; running it will
+        //                                        produce a fresh decision
+        //                                        afterwards anyway)
+        //   SystemCont.   upgrade in-place      drop new (one SC for this
+        //                 to HumanMessage        room is enough — if the
+        //                 (real human input      decision service runs
+        //                 takes precedence;      again it will re-evaluate
+        //                 same FIFO slot)        from fresh state)
+        if (_queuedRoomKinds.TryGetValue(roomId, out var existingKind))
         {
+            if (existingKind == QueueItemKind.SystemContinuation && kind == QueueItemKind.HumanMessage)
+            {
+                // Upgrade in-place: rewrite the queue with the matching
+                // SystemContinuation entry promoted to HumanMessage.
+                // Preserves FIFO order so the human is processed at the
+                // same scheduling priority as the (pre-empted) continuation.
+                UpgradeQueuedSystemContinuationToHumanMessageLocked(roomId);
+                _queuedRoomKinds[roomId] = QueueItemKind.HumanMessage;
+                return true;
+            }
+            // All other (existing, new) combinations: drop the new item.
             return false;
         }
 
-        _queue.Enqueue(new QueueItem(roomId));
+        _queuedRoomKinds[roomId] = kind;
+        _queue.Enqueue(new QueueItem(roomId, TargetAgentId: null, Kind: kind, SprintId: sprintId));
         return true;
+    }
+
+    private void UpgradeQueuedSystemContinuationToHumanMessageLocked(string roomId)
+    {
+        // Queue<T> doesn't support in-place mutation, so rebuild it.
+        // Linear in queue depth; queue is small in practice (one item per
+        // pending room). The match must be the FIRST SystemContinuation
+        // for the room — there is at most one by construction (dedupe
+        // already prevents two SCs for the same room).
+        var rebuilt = new Queue<QueueItem>(_queue.Count);
+        var upgraded = false;
+        while (_queue.TryDequeue(out var item))
+        {
+            if (!upgraded
+                && item.TargetAgentId is null
+                && item.Kind == QueueItemKind.SystemContinuation
+                && string.Equals(item.RoomId, roomId, StringComparison.Ordinal))
+            {
+                rebuilt.Enqueue(item with { Kind = QueueItemKind.HumanMessage, SprintId = null });
+                upgraded = true;
+            }
+            else
+            {
+                rebuilt.Enqueue(item);
+            }
+        }
+        _queue = rebuilt;
     }
 
     private bool TryEnqueueDirectMessageLocked(string recipientAgentId)

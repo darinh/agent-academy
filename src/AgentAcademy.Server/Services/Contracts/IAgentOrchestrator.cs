@@ -1,5 +1,7 @@
 namespace AgentAcademy.Server.Services.Contracts;
 
+using AgentAcademy.Server.Services;
+
 /// <summary>
 /// Queue-based message processor that serializes agent work. Accepts human
 /// messages and DMs, enqueues them, and dispatches to the appropriate handler
@@ -29,4 +31,17 @@ public interface IAgentOrchestrator
     /// Runs crash recovery for the main room on startup if a crash was detected.
     /// </summary>
     Task HandleStartupRecoveryAsync(string mainRoomId);
+
+    /// <summary>
+    /// P1.2: Enqueues a self-drive continuation for the room (origin:
+    /// <see cref="QueueItemKind.SystemContinuation"/>). Honours the dedupe
+    /// rules from p1-2-self-drive-design.md §4.4 — drops the new item if a
+    /// HumanMessage or another SystemContinuation is already queued for
+    /// the room. Returns true if enqueued, false if dropped.
+    /// <paramref name="sprintId"/> is the sprint that was active when the
+    /// triggering round-loop started; it travels on the queue item so the
+    /// dispatcher can re-check sprint state (blocked/cancelled/completed)
+    /// before running a stale continuation.
+    /// </summary>
+    bool TryEnqueueSystemContinuation(string roomId, string sprintId);
 }

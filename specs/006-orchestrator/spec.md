@@ -53,6 +53,47 @@ Each round in the main collaboration room follows this sequence:
 9. **PASS detection**: Short responses matching PASS/N/A/No comment/Nothing to add are suppressed (via `AgentResponseParser.IsPassResponse`)
 10. **Multi-round continuation**: After a round completes, if non-PASS responses were produced and the room has an active task, another round starts automatically. This repeats up to `MaxRoundsPerTrigger = 3` rounds per human message trigger, preventing infinite loops while allowing multi-step conversations to progress without manual re-prompting.
 
+### Self-Drive Continuation (Sprint-Driven)
+
+> **Source**: `src/AgentAcademy.Server/Services/SelfDriveDecisionService.cs`, `src/AgentAcademy.Server/Services/AgentOrchestrator.cs`, `specs/100-product-vision/p1-2-self-drive-design.md`
+
+Independently of the per-trigger `MaxRoundsPerTrigger` cap above, an active sprint can drive the orchestrator to start a new round on its own when a round completes — without waiting for a human message. This is what makes a sprint *autonomous*: humans set the goal once, then agents converge through the stages on their own.
+
+After every round, `ConversationRoundRunner` invokes `ISelfDriveDecisionService.DecideAsync` (fail-open: any exception is logged and ignored). The decision service walks a 12-step gate tree:
+
+1. Master kill switch — `Orchestrator:SelfDrive:Enabled` must be `true`.
+2. A sprint must have been active when the round started (captured `sprintId`).
+3. Sprint not blocked.
+4. Sprint not awaiting sign-off.
+5. Sprint status is `Active` and the room is neither `Completed` nor `Archived`.
+6. `RoundsThisSprint < MaxRoundsOverride ?? Orchestrator:SelfDrive:MaxRoundsPerSprint` (default 50). Tripping HALTs by marking the sprint blocked with reason `"Round cap reached: N/M"`.
+7. `RoundsThisStage < Orchestrator:SelfDrive:MaxRoundsPerStage` (default 20). Tripping HALTs with reason `"Stage round cap reached for {stage}: N/M"`.
+8. `SelfDriveContinuations < Orchestrator:SelfDrive:MaxConsecutiveSelfDriveContinuations` (default 8). Tripping HALTs with reason `"Continuation cap reached without human checkpoint: N/M"`. The counter resets to 0 on every stage advance and on every human message in the room.
+9. Round produced at least one non-PASS response — if every agent responded with PASS/silence, there's nothing to continue.
+10. Stage-aware idle gate — for `Intake` and `Discussion` stages, an `ActiveTask` must be present in the room. These stages are intentionally human-collaborative; agents idle for human input unless real work has been queued. `Planning`, `Validation`, `Implementation`, and `FinalSynthesis` always proceed if other gates pass.
+11. **Min-interval delay** — `Orchestrator:SelfDrive:MinIntervalBetweenContinuationsMs` (default 5000). Implemented as a *delayed enqueue with re-check*, not an immediate idle. The decision service launches a fire-and-forget `Task.Delay`, then re-runs all gates after waking and only enqueues if they still pass. This lets state changes during the wait (sprint blocked elsewhere, human message arrived, room archived) correctly suppress the continuation.
+12. Cost guard — `ICostGuard.ShouldHaltAsync` is the final check. Tripping HALTs with reason `"Cost cap reached"`.
+
+If all gates pass, the service calls `IAgentOrchestrator.TryEnqueueSystemContinuation(roomId, sprintId)`. This is a distinct queue path from `HandleHumanMessage`:
+
+- **Queue dedupe rules** (`AgentOrchestrator` per design §4.4):
+
+  | Existing in queue ↓ \ New ↓ | `HumanMessage` | `SystemContinuation` |
+  | --- | --- | --- |
+  | (none) | enqueue | enqueue |
+  | `HumanMessage` | drop new (already queued) | drop new |
+  | `SystemContinuation` | **upgrade in-place to `HumanMessage`** | drop new |
+
+  The upgrade path rebuilds the queue under lock so a real human message takes precedence over a self-drive continuation at the same FIFO slot — humans never wait on speculative agent work.
+
+- **Pre-dispatch sprint re-check** — between dequeue and dispatch, if the item is a `SystemContinuation`, the orchestrator re-loads the sprint and aborts dispatch if the sprint is no longer eligible (blocked, awaiting sign-off, completed, or status changed). This catches state changes that happen between enqueue and dispatch.
+
+When a `SystemContinuation` actually runs, `IncrementRoundCountersAsync(... wasSelfDriveContinuation: true)` increments `SelfDriveContinuations`; `HumanMessage` rounds reset it to 0. This is what makes the cap "consecutive without human checkpoint".
+
+Every successful continuation enqueue persists an `ActivityEvent` of type `SprintRoundContinuationScheduled` with severity `Info` (Internal-only — no Discord notification, since this is routine autonomous work). Metadata includes `sprintId`, `currentStage`, `roundsThisSprint`, `roundsThisStage`, `selfDriveContinuations`.
+
+The fire-and-forget `Task.Run` scheduler tasks use the service's internal shutdown CTS so host shutdown cleanly cancels them.
+
 ### Task Assignment Workflow
 
 When an agent's response contains `TASK ASSIGNMENT:` blocks:

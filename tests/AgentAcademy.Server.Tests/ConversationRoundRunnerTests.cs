@@ -301,7 +301,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        await _runner.RunRoundsAsync("main", cts.Token);
+        await _runner.RunRoundsAsync("main", cancellationToken: cts.Token);
 
         Assert.Empty(_turnCalls);
     }
@@ -432,7 +432,7 @@ public sealed class ConversationRoundRunnerTests : IDisposable
             return new AgentTurnResult(agent, "Done", IsNonPass: true);
         });
 
-        await _runner.RunRoundsAsync("main", cts.Token);
+        await _runner.RunRoundsAsync("main", cancellationToken: cts.Token);
 
         // Planner ran, but subsequent agents should be skipped due to cancellation
         var plannerRan = _turnCalls.Any(c => c.Agent.Id == "planner-1");

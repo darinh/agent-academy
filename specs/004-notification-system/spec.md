@@ -142,6 +142,7 @@ The `ActivityNotificationBroadcaster` is an `IHostedService` that subscribes to 
 **Design decisions**:
 - **Human message suppression**: `MessagePosted` events where `ActorId == "human"` are filtered out before forwarding. This prevents Discord from echoing back messages the user just typed (whether from Discord or the web UI). Humans don't need to be notified about their own messages.
 - Noisy events (`AgentThinking`, `AgentFinished`, `PresenceUpdated`, `PhaseChanged`) are excluded
+- **Self-drive continuations are Internal-only**: `SprintRoundContinuationScheduled` is persisted as an `ActivityEvent` (so the Activity Feed in the web UI shows it), but it is *not* in the notifiable-events table — Discord and other external providers do not receive a notification for routine autonomous rounds. Only events that need human eyes route externally; self-drive is by design unattended.
 - Follows the same `IHostedService` pattern as `ActivityHubBroadcaster` (SignalR bridge)
 - Fire-and-forget: exceptions are logged but never propagate to the `ActivityBroadcaster`
 - `MapToNotification()` is `internal static` for direct unit testing

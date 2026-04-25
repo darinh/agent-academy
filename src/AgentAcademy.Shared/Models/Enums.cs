@@ -236,6 +236,7 @@ public enum ActivityEventType
     SprintCancelled,
     SprintBlocked,
     SprintUnblocked,
+    SprintRoundContinuationScheduled,
     TaskUnblocked,
     TaskRetrospectiveCompleted,
     LearningDigestCompleted,
