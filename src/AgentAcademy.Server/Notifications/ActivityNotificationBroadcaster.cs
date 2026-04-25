@@ -34,6 +34,7 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
         // they know to look at the report (or, if cancelled, why it stopped).
         ActivityEventType.SprintCompleted,
         ActivityEventType.SprintCancelled,
+        ActivityEventType.SprintBlocked,
     };
 
     public ActivityNotificationBroadcaster(
@@ -176,6 +177,10 @@ public sealed class ActivityNotificationBroadcaster : IHostedService
             ActivityEventType.SprintCancelled => (
                 Type: NotificationType.Error,
                 Title: "Sprint cancelled"
+            ),
+            ActivityEventType.SprintBlocked => (
+                Type: NotificationType.NeedsInput,
+                Title: "Sprint needs attention"
             ),
             _ => ((NotificationType Type, string Title)?)null
         };

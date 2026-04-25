@@ -40,14 +40,40 @@ public interface ISprintService
     /// <summary>Cancels an active sprint.</summary>
     Task<SprintEntity> CancelSprintAsync(string sprintId);
 
+    // ── Blocked Signal (P1.4 narrow scope) ──────────────────────
+
+    /// <summary>
+    /// Marks an Active sprint as blocked, recording the reason. Sprint status
+    /// remains "Active" — the BlockedAt timestamp signals that the team is
+    /// paused awaiting human intervention. Emits <see cref="ActivityEventType.SprintBlocked"/>
+    /// the first time a sprint enters the blocked state; updates without a
+    /// re-emit if already blocked. Throws if the sprint is not Active.
+    /// </summary>
+    /// <param name="sprintId">Sprint id.</param>
+    /// <param name="reason">Human-readable reason. Must be non-empty.</param>
+    Task<SprintEntity> MarkSprintBlockedAsync(string sprintId, string reason);
+
+    /// <summary>
+    /// Clears the blocked flag on a sprint. Idempotent — if the sprint is not
+    /// blocked, returns it unchanged without emitting an event. Throws if the
+    /// sprint is not Active.
+    /// </summary>
+    Task<SprintEntity> UnblockSprintAsync(string sprintId);
+
     // ── Timeout Queries ──────────────────────────────────────────
 
     /// <summary>
     /// Returns active sprints that have been in AwaitingSignOff longer than the specified timeout.
+    /// Excludes sprints flagged as Blocked — those are explicitly paused
+    /// waiting on a human and must not have sign-off auto-rejected.
     /// </summary>
     Task<List<SprintEntity>> GetTimedOutSignOffSprintsAsync(TimeSpan timeout, CancellationToken ct = default);
 
-    /// <summary>Returns active sprints whose total duration exceeds the specified limit.</summary>
+    /// <summary>
+    /// Returns active sprints whose total duration exceeds the specified limit.
+    /// Blocked sprints (BlockedAt != null) are excluded — they are explicitly
+    /// waiting on a human and must not be auto-cancelled by the timeout sweep.
+    /// </summary>
     Task<List<SprintEntity>> GetOverdueSprintsAsync(TimeSpan maxDuration, CancellationToken ct = default);
 
     /// <summary>Auto-cancels a sprint that has exceeded the maximum duration.</summary>

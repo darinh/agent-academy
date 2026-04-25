@@ -248,6 +248,11 @@ public sealed class SprintService : Contracts.ISprintService
 
         sprint.Status = "Completed";
         sprint.CompletedAt = DateTime.UtcNow;
+        // Terminal transitions clear the blocked flag — a terminated sprint
+        // is no longer "paused waiting on a human"; the snapshot must not
+        // expose contradictory state to API clients.
+        sprint.BlockedAt = null;
+        sprint.BlockReason = null;
 
         QueueEvent(ActivityEventType.SprintCompleted, null, null, null,
             $"Sprint #{sprint.Number} completed for workspace {sprint.WorkspacePath}",
@@ -408,6 +413,9 @@ public sealed class SprintService : Contracts.ISprintService
 
         sprint.Status = "Cancelled";
         sprint.CompletedAt = DateTime.UtcNow;
+        // Terminal transitions clear the blocked flag (see CompleteSprintAsync).
+        sprint.BlockedAt = null;
+        sprint.BlockReason = null;
 
         QueueEvent(ActivityEventType.SprintCancelled, null, null, null,
             $"Sprint #{sprint.Number} cancelled for workspace {sprint.WorkspacePath}",
@@ -428,16 +436,157 @@ public sealed class SprintService : Contracts.ISprintService
         return sprint;
     }
 
+    // ── Blocked Signal ───────────────────────────────────────────
+
+    /// <inheritdoc />
+    public async Task<SprintEntity> MarkSprintBlockedAsync(string sprintId, string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        var now = DateTime.UtcNow;
+
+        // Atomic conditional transition: only set BlockedAt if currently null
+        // AND status is Active. Eliminates the TOCTOU race where two callers
+        // both observe BlockedAt==null and both emit a SprintBlocked event.
+        var rowsTransitioned = await _db.Sprints
+            .Where(s => s.Id == sprintId && s.Status == "Active" && s.BlockedAt == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.BlockedAt, now)
+                .SetProperty(s => s.BlockReason, reason));
+
+        // Re-read after ExecuteUpdate (which bypasses the change tracker).
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+        await _db.Entry(sprint).ReloadAsync();
+
+        if (rowsTransitioned == 0)
+        {
+            // Either not Active, or already blocked.
+            if (sprint.Status != "Active")
+                throw new InvalidOperationException(
+                    $"Cannot block sprint {sprintId} — status is {sprint.Status}.");
+
+            // Already blocked — update the reason silently (no second event)
+            // so reason updates don't spam the human with notifications.
+            // Use a conditional ExecuteUpdate so a concurrent unblock or
+            // terminal transition can't leave us with BlockReason!=null on a
+            // sprint that's no longer blocked (which would resurrect the
+            // contradictory state the terminal-clear logic eliminates).
+            if (sprint.BlockReason != reason)
+            {
+                var rowsReasonUpdated = await _db.Sprints
+                    .Where(s => s.Id == sprintId
+                        && s.Status == "Active"
+                        && s.BlockedAt != null)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(s => s.BlockReason, reason));
+
+                await _db.Entry(sprint).ReloadAsync();
+
+                if (rowsReasonUpdated == 0)
+                {
+                    if (sprint.Status != "Active")
+                        throw new InvalidOperationException(
+                            $"Cannot block sprint {sprintId} — status is {sprint.Status}.");
+                    // Concurrent unblock cleared BlockedAt; nothing to do.
+                    return sprint;
+                }
+
+                _logger.LogInformation(
+                    "Sprint #{Number} ({Id}) blocked-reason updated: {Reason}",
+                    sprint.Number, sprint.Id, reason);
+            }
+            return sprint;
+        }
+
+        // Won the transition race — emit exactly once.
+        QueueEvent(ActivityEventType.SprintBlocked, null, null, null,
+            $"Sprint #{sprint.Number} blocked: {reason}",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["reason"] = reason,
+            });
+        // Persist the queued ActivityEventEntity. ExecuteUpdateAsync above
+        // bypassed the change tracker, so the activity row only lands if we
+        // flush the tracker explicitly. Without this, the audit log misses
+        // SprintBlocked even though the in-memory broadcaster fires.
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogWarning(
+            "Sprint #{Number} ({Id}) marked Blocked: {Reason}",
+            sprint.Number, sprint.Id, reason);
+
+        return sprint;
+    }
+
+    /// <inheritdoc />
+    public async Task<SprintEntity> UnblockSprintAsync(string sprintId)
+    {
+        // Snapshot previous state BEFORE the conditional update so we can
+        // include the previous reason in the event regardless of whether the
+        // entity was already tracked in this DbContext.
+        var preState = await _db.Sprints
+            .AsNoTracking()
+            .Where(s => s.Id == sprintId)
+            .Select(s => new { s.Status, s.BlockReason, s.BlockedAt })
+            .FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+
+        // Atomic conditional clear: only succeeds if currently blocked.
+        var rowsTransitioned = await _db.Sprints
+            .Where(s => s.Id == sprintId && s.Status == "Active" && s.BlockedAt != null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(s => s.BlockedAt, (DateTime?)null)
+                .SetProperty(s => s.BlockReason, (string?)null));
+
+        var sprint = await _db.Sprints.FindAsync(sprintId)
+            ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
+        await _db.Entry(sprint).ReloadAsync();
+
+        if (rowsTransitioned == 0)
+        {
+            // Not blocked OR not Active. Use the freshly-reloaded status so we
+            // correctly throw if the sprint terminated between the snapshot
+            // and the conditional update (TOCTOU).
+            if (sprint.Status != "Active")
+                throw new InvalidOperationException(
+                    $"Cannot unblock sprint {sprintId} — status is {sprint.Status}.");
+            return sprint; // Idempotent no-op (was never blocked).
+        }
+
+        QueueEvent(ActivityEventType.SprintUnblocked, null, null, null,
+            $"Sprint #{sprint.Number} unblocked",
+            new Dictionary<string, object?>
+            {
+                ["sprintId"] = sprintId,
+                ["previousReason"] = preState.BlockReason,
+            });
+        // Persist the queued ActivityEventEntity (see MarkSprintBlockedAsync
+        // for rationale — ExecuteUpdateAsync bypasses the tracker).
+        await _db.SaveChangesAsync();
+        FlushEvents();
+
+        _logger.LogInformation(
+            "Sprint #{Number} ({Id}) unblocked", sprint.Number, sprint.Id);
+
+        return sprint;
+    }
+
     // ── Timeout Queries ──────────────────────────────────────────
 
     /// <summary>
     /// Returns active sprints that have been in AwaitingSignOff longer than the specified timeout.
+    /// Excludes sprints flagged as Blocked — those are explicitly paused waiting
+    /// on a human and must not have their pending sign-off auto-rejected.
     /// </summary>
     public async Task<List<SprintEntity>> GetTimedOutSignOffSprintsAsync(TimeSpan timeout, CancellationToken ct = default)
     {
         var cutoff = DateTime.UtcNow - timeout;
         return await _db.Sprints
             .Where(s => s.Status == "Active"
+                && s.BlockedAt == null
                 && s.AwaitingSignOff
                 && s.SignOffRequestedAt != null
                 && s.SignOffRequestedAt < cutoff)
@@ -446,12 +595,14 @@ public sealed class SprintService : Contracts.ISprintService
 
     /// <summary>
     /// Returns active sprints whose total duration exceeds the specified limit.
+    /// Excludes sprints flagged as Blocked — those are explicitly waiting on a
+    /// human and must not be auto-cancelled by the timeout sweep.
     /// </summary>
     public async Task<List<SprintEntity>> GetOverdueSprintsAsync(TimeSpan maxDuration, CancellationToken ct = default)
     {
         var cutoff = DateTime.UtcNow - maxDuration;
         return await _db.Sprints
-            .Where(s => s.Status == "Active" && s.CreatedAt < cutoff)
+            .Where(s => s.Status == "Active" && s.BlockedAt == null && s.CreatedAt < cutoff)
             .ToListAsync(ct);
     }
 
@@ -472,6 +623,9 @@ public sealed class SprintService : Contracts.ISprintService
         sprint.AwaitingSignOff = false;
         sprint.PendingStage = null;
         sprint.SignOffRequestedAt = null;
+        // Terminal transitions clear the blocked flag (see CompleteSprintAsync).
+        sprint.BlockedAt = null;
+        sprint.BlockReason = null;
 
         QueueEvent(ActivityEventType.SprintCancelled, null, null, null,
             $"Sprint #{sprint.Number} auto-cancelled — exceeded maximum duration",
