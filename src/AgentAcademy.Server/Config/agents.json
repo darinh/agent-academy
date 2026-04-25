@@ -75,6 +75,7 @@
             "ADVANCE_STAGE",
             "STORE_ARTIFACT",
             "COMPLETE_SPRINT",
+      "RUN_SELF_EVAL",
             "SCHEDULE_SPRINT",
             "GENERATE_DIGEST",
             "READ_FILE",

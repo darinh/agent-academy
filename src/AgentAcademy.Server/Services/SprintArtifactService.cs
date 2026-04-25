@@ -5,6 +5,7 @@ using AgentAcademy.Shared.Models;
 using AgentAcademy.Server.Services.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AgentAcademy.Server.Services;
 
@@ -17,15 +18,18 @@ public sealed class SprintArtifactService : ISprintArtifactService
     private readonly AgentAcademyDbContext _db;
     private readonly IActivityBroadcaster _activityBus;
     private readonly ILogger<SprintArtifactService> _logger;
+    private readonly SelfEvalOptions _selfEvalOptions;
 
     public SprintArtifactService(
         AgentAcademyDbContext db,
         IActivityBroadcaster activityBus,
-        ILogger<SprintArtifactService> logger)
+        ILogger<SprintArtifactService> logger,
+        IOptions<SelfEvalOptions>? selfEvalOptions = null)
     {
         _db = db;
         _activityBus = activityBus;
         _logger = logger;
+        _selfEvalOptions = selfEvalOptions?.Value ?? new SelfEvalOptions();
     }
 
     /// <summary>
@@ -49,6 +53,16 @@ public sealed class SprintArtifactService : ISprintArtifactService
 
         ValidateStage(stage);
         ValidateArtifactContent(type, content);
+
+        // P1.4 self-eval verdict path: SelfEvaluationReport is append-only,
+        // gated on RUN_SELF_EVAL having flipped SelfEvaluationInFlight=true,
+        // and atomically updates sprint counters / verdict / blocked state in
+        // a single transaction. Lives in its own method so the legacy upsert
+        // path below stays untouched for every other artifact type.
+        if (string.Equals(type, nameof(ArtifactType.SelfEvaluationReport), StringComparison.Ordinal))
+        {
+            return await StoreSelfEvaluationReportAsync(sprint, stage, content, agentId);
+        }
 
         var existing = await _db.SprintArtifacts
             .Where(a => a.SprintId == sprintId && a.Stage == stage && a.Type == type)
@@ -132,6 +146,207 @@ public sealed class SprintArtifactService : ISprintArtifactService
         return await query
             .OrderBy(a => a.CreatedAt)
             .ToListAsync();
+    }
+
+    // ── Self-Evaluation Verdict Path (P1.4) ─────────────────────
+
+    /// <summary>
+    /// Stores a <see cref="ArtifactType.SelfEvaluationReport"/> artifact and
+    /// processes its verdict. Append-only (every attempt produces a new row).
+    /// Single-transaction: artifact insert + sprint counter bump + verdict
+    /// state update + auto-block-on-cap + activity events all commit together.
+    /// See <c>specs/100-product-vision/p1-4-self-evaluation-design.md §4.3</c>.
+    /// </summary>
+    private async Task<SprintArtifactEntity> StoreSelfEvaluationReportAsync(
+        SprintEntity sprint, string stage, string content, string? agentId)
+    {
+        // Gate: only at Implementation, only when not blocked, only when
+        // RUN_SELF_EVAL has primed the in-flight flag. Without the in-flight
+        // gate, STORE_ARTIFACT bypasses the RUN_SELF_EVAL ceremony.
+        if (!string.Equals(stage, "Implementation", StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"SelfEvaluationReport may only be stored at Implementation stage (got '{stage}').");
+
+        if (!string.Equals(sprint.CurrentStage, "Implementation", StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"Cannot store SelfEvaluationReport: sprint is in stage '{sprint.CurrentStage}', not Implementation.");
+
+        if (sprint.BlockedAt is not null)
+            throw new InvalidOperationException(
+                $"Cannot store SelfEvaluationReport: sprint {sprint.Id} is blocked. Unblock first.");
+
+        if (!sprint.SelfEvaluationInFlight)
+            throw new InvalidOperationException(
+                $"Cannot store SelfEvaluationReport: sprint {sprint.Id} has no self-evaluation in flight. " +
+                "Run RUN_SELF_EVAL first to open an evaluation window.");
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var report = JsonSerializer.Deserialize<SelfEvaluationReport>(content, options)
+            ?? throw new ArgumentException("SelfEvaluationReport content deserialized to null.");
+
+        // DB-aware validation (design §3.2). Static checks (parse-level) ran
+        // in ValidateArtifactContent above; these need the sprint context.
+
+        // 1. Items[*].TaskId set ≡ non-cancelled task set for this sprint.
+        var terminalCancelled = nameof(Shared.Models.TaskStatus.Cancelled);
+        var nonCancelledTasks = await _db.Tasks
+            .Where(t => t.SprintId == sprint.Id && t.Status != terminalCancelled)
+            .Select(t => new { t.Id, t.SuccessCriteria })
+            .ToListAsync();
+
+        var expectedTaskIds = nonCancelledTasks
+            .Select(t => t.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var actualTaskIds = report.Items
+            .Select(i => i.TaskId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (!expectedTaskIds.SetEquals(actualTaskIds))
+        {
+            var missing = expectedTaskIds.Except(actualTaskIds).ToList();
+            var extra = actualTaskIds.Except(expectedTaskIds).ToList();
+            throw new ArgumentException(
+                "SelfEvaluationReport TaskId set does not match the sprint's non-cancelled tasks. "
+                + (missing.Count > 0 ? $"Missing: [{string.Join(", ", missing)}]. " : "")
+                + (extra.Count > 0 ? $"Unexpected: [{string.Join(", ", extra)}]." : ""));
+        }
+
+        // 2. Items[*].SuccessCriteria copied verbatim (Ordinal, whitespace-significant).
+        var taskCriteria = nonCancelledTasks.ToDictionary(
+            t => t.Id, t => t.SuccessCriteria ?? string.Empty, StringComparer.Ordinal);
+        for (var i = 0; i < report.Items.Count; i++)
+        {
+            var item = report.Items[i];
+            if (!taskCriteria.TryGetValue(item.TaskId, out var expected))
+                continue; // already covered by set-equality above
+            if (!string.Equals(item.SuccessCriteria, expected, StringComparison.Ordinal))
+                throw new ArgumentException(
+                    $"Items[{i}].SuccessCriteria does not match TaskEntity.SuccessCriteria for task '{item.TaskId}'. " +
+                    "It must be copied verbatim (case-sensitive, whitespace-significant).");
+        }
+
+        // 3. Attempt == sprint.SelfEvalAttempts + 1 (idempotence + monotonic).
+        var expectedAttempt = sprint.SelfEvalAttempts + 1;
+        if (report.Attempt != expectedAttempt)
+            throw new ArgumentException(
+                $"SelfEvaluationReport.Attempt mismatch: expected {expectedAttempt} " +
+                $"(sprint has {sprint.SelfEvalAttempts} prior attempt(s)), got {report.Attempt}. " +
+                "Stale or duplicate submissions are rejected.");
+
+        // ── Single transaction: artifact insert + sprint state ──
+        var maxAttempts = Math.Max(1, _selfEvalOptions.MaxSelfEvalAttempts);
+        var verdictStr = report.OverallVerdict.ToString();
+        var now = DateTime.UtcNow;
+        var newAttempts = sprint.SelfEvalAttempts + 1;
+        var blockedThisRun = false;
+        string? blockReason = null;
+
+        // Decision tree (design §4.3):
+        //   AllPass    → keep in-flight=true, ADVANCE_STAGE will reset on success.
+        //   AnyFail/Unverified, attempts<cap → re-open: in-flight=false (next RUN_SELF_EVAL).
+        //   AnyFail/Unverified, attempts==cap → block sprint.
+        var keepInFlight = report.OverallVerdict == SelfEvaluationOverallVerdict.AllPass;
+        if (!keepInFlight && newAttempts >= maxAttempts)
+        {
+            blockedThisRun = true;
+            blockReason = $"Self-eval failed {newAttempts} times — human input required";
+        }
+
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
+        try
+        {
+            try { tx = await _db.Database.BeginTransactionAsync(); }
+            catch (InvalidOperationException) { /* in-memory provider — best-effort atomic */ }
+
+            var artifact = new SprintArtifactEntity
+            {
+                SprintId = sprint.Id,
+                Stage = stage,
+                Type = nameof(ArtifactType.SelfEvaluationReport),
+                Content = content,
+                CreatedByAgentId = agentId,
+                CreatedAt = now,
+            };
+            _db.SprintArtifacts.Add(artifact);
+
+            sprint.SelfEvalAttempts = newAttempts;
+            sprint.LastSelfEvalAt = now;
+            sprint.LastSelfEvalVerdict = verdictStr;
+            sprint.SelfEvaluationInFlight = keepInFlight;
+            if (blockedThisRun)
+            {
+                sprint.BlockedAt = now;
+                sprint.BlockReason = blockReason;
+            }
+
+            var storedEvt = EmitEvent(ActivityEventType.SprintArtifactStored, agentId,
+                $"Artifact 'SelfEvaluationReport' stored for sprint stage {stage} (attempt {newAttempts}, {verdictStr})",
+                new Dictionary<string, object?>
+                {
+                    ["sprintId"] = sprint.Id,
+                    ["stage"] = stage,
+                    ["artifactType"] = nameof(ArtifactType.SelfEvaluationReport),
+                    ["createdByAgentId"] = agentId,
+                    ["isUpdate"] = false,
+                    ["attempt"] = newAttempts,
+                    ["overallVerdict"] = verdictStr,
+                });
+
+            var completedEvt = EmitEvent(ActivityEventType.SelfEvalCompleted, agentId,
+                $"Self-evaluation attempt {newAttempts} for sprint #{sprint.Number}: {verdictStr}",
+                new Dictionary<string, object?>
+                {
+                    ["sprintId"] = sprint.Id,
+                    ["sprintNumber"] = sprint.Number,
+                    ["attempt"] = newAttempts,
+                    ["overallVerdict"] = verdictStr,
+                    ["maxSelfEvalAttempts"] = maxAttempts,
+                    ["blocked"] = blockedThisRun,
+                });
+
+            ActivityEvent? blockedEvt = null;
+            if (blockedThisRun)
+            {
+                blockedEvt = EmitEvent(ActivityEventType.SprintBlocked, agentId,
+                    $"Sprint #{sprint.Number} blocked: {blockReason}",
+                    new Dictionary<string, object?>
+                    {
+                        ["sprintId"] = sprint.Id,
+                        ["reason"] = blockReason,
+                    });
+            }
+
+            await _db.SaveChangesAsync();
+            if (tx is not null) await tx.CommitAsync();
+
+            // Post-commit: broadcast queued events. Order: artifact-stored,
+            // then verdict, then (optional) blocked, so subscribers see the
+            // verdict before any block-driven UI surface flips state.
+            _activityBus.Broadcast(storedEvt);
+            _activityBus.Broadcast(completedEvt);
+            if (blockedEvt is not null)
+                _activityBus.Broadcast(blockedEvt);
+
+            _logger.LogInformation(
+                "Stored self-evaluation report for sprint #{Number} ({Id}) attempt {Attempt}: {Verdict}{Block}",
+                sprint.Number, sprint.Id, newAttempts, verdictStr,
+                blockedThisRun ? $" — sprint blocked ({blockReason})" : string.Empty);
+
+            return artifact;
+        }
+        catch
+        {
+            if (tx is not null)
+            {
+                try { await tx.RollbackAsync(); }
+                catch { /* best-effort rollback */ }
+            }
+            throw;
+        }
+        finally
+        {
+            tx?.Dispose();
+        }
     }
 
     // ── Validation ──────────────────────────────────────────────

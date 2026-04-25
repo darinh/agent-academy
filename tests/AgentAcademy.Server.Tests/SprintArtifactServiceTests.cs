@@ -895,10 +895,51 @@ public sealed class SprintArtifactServiceTests : IDisposable
     private static SelfEvaluationItem UnverifiedItem(string taskId = "t1", string crit = "criterion") =>
         new(taskId, crit, SelfEvaluationVerdict.UNVERIFIED, "partial evidence", "verify by running X");
 
+    /// <summary>
+    /// Creates a sprint at Implementation stage with SelfEvaluationInFlight=true
+    /// and seeds <see cref="TaskEntity"/> rows matching the provided
+    /// (taskId, successCriteria) pairs. Use <paramref name="priorAttempts"/> to
+    /// simulate prior failed self-eval attempts.
+    /// </summary>
+    private SprintEntity AddSelfEvalSprint(
+        (string TaskId, string Criterion)[] items,
+        int priorAttempts = 0)
+    {
+        var sprint = new SprintEntity
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Number = 1,
+            WorkspacePath = $"/test/{++_sprintCounter}",
+            Status = "Active",
+            CurrentStage = "Implementation",
+            SelfEvaluationInFlight = true,
+            SelfEvalAttempts = priorAttempts,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.Sprints.Add(sprint);
+        foreach (var (taskId, crit) in items)
+        {
+            _db.Tasks.Add(new TaskEntity
+            {
+                Id = taskId,
+                Title = taskId,
+                Description = "test",
+                SuccessCriteria = crit,
+                Status = "Completed",
+                Type = "Feature",
+                SprintId = sprint.Id,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+        }
+        _db.SaveChanges();
+        return sprint;
+    }
+
     [Fact]
     public async Task StoreArtifact_SelfEvalReport_AllPass_RoundTrips()
     {
-        var sprint = AddActiveSprint();
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "criterion"), ("t2", "another criterion") });
         var content = SelfEvalReportJson(
             overall: SelfEvaluationOverallVerdict.AllPass,
             items: new[] { PassItem("t1"), PassItem("t2", "another criterion") });
@@ -912,12 +953,19 @@ public sealed class SprintArtifactServiceTests : IDisposable
         Assert.Equal(content, loaded.Content);
         Assert.Equal("SelfEvaluationReport", loaded.Type);
         Assert.Equal("Implementation", loaded.Stage);
+
+        var refreshed = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.NotNull(refreshed);
+        Assert.Equal(1, refreshed.SelfEvalAttempts);
+        Assert.True(refreshed.SelfEvaluationInFlight, "AllPass keeps in-flight true until ADVANCE_STAGE.");
+        Assert.Equal("AllPass", refreshed.LastSelfEvalVerdict);
+        Assert.Null(refreshed.BlockedAt);
     }
 
     [Fact]
-    public async Task StoreArtifact_SelfEvalReport_AnyFail_RoundTrips()
+    public async Task StoreArtifact_SelfEvalReport_AnyFail_BelowCap_ReopensWindow()
     {
-        var sprint = AddActiveSprint();
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "criterion"), ("t2", "fail criterion") });
         var content = SelfEvalReportJson(
             overall: SelfEvaluationOverallVerdict.AnyFail,
             items: new[] { PassItem("t1"), FailItem("t2", "fail criterion") });
@@ -926,12 +974,18 @@ public sealed class SprintArtifactServiceTests : IDisposable
             sprint.Id, "Implementation", "SelfEvaluationReport", content);
 
         Assert.NotNull(artifact);
+        var refreshed = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.NotNull(refreshed);
+        Assert.Equal(1, refreshed.SelfEvalAttempts);
+        Assert.False(refreshed.SelfEvaluationInFlight, "AnyFail below cap re-opens the window for the next RUN_SELF_EVAL.");
+        Assert.Equal("AnyFail", refreshed.LastSelfEvalVerdict);
+        Assert.Null(refreshed.BlockedAt);
     }
 
     [Fact]
-    public async Task StoreArtifact_SelfEvalReport_Unverified_RoundTrips()
+    public async Task StoreArtifact_SelfEvalReport_Unverified_BelowCap_ReopensWindow()
     {
-        var sprint = AddActiveSprint();
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "criterion"), ("t2", "unverified criterion") });
         var content = SelfEvalReportJson(
             overall: SelfEvaluationOverallVerdict.Unverified,
             items: new[] { PassItem("t1"), UnverifiedItem("t2", "unverified criterion") });
@@ -940,6 +994,120 @@ public sealed class SprintArtifactServiceTests : IDisposable
             sprint.Id, "Implementation", "SelfEvaluationReport", content);
 
         Assert.NotNull(artifact);
+        var refreshed = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.NotNull(refreshed);
+        Assert.False(refreshed.SelfEvaluationInFlight);
+        Assert.Equal("Unverified", refreshed.LastSelfEvalVerdict);
+        Assert.Null(refreshed.BlockedAt);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_AnyFailAtCap_BlocksSprint()
+    {
+        var sprint = AddSelfEvalSprint(
+            items: new[] { ("t1", "criterion") },
+            priorAttempts: 2); // next attempt is #3, which is the cap default
+        var content = SelfEvalReportJson(
+            attempt: 3,
+            overall: SelfEvaluationOverallVerdict.AnyFail,
+            items: new[] { FailItem("t1", "criterion") });
+
+        await _sut.StoreArtifactAsync(
+            sprint.Id, "Implementation", "SelfEvaluationReport", content);
+
+        var refreshed = await _db.Sprints.FindAsync(sprint.Id);
+        Assert.NotNull(refreshed);
+        Assert.Equal(3, refreshed.SelfEvalAttempts);
+        Assert.False(refreshed.SelfEvaluationInFlight);
+        Assert.NotNull(refreshed.BlockedAt);
+        Assert.NotNull(refreshed.BlockReason);
+        Assert.StartsWith("Self-eval failed", refreshed.BlockReason!);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_AppendOnly_AllowsMultipleRows()
+    {
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "criterion") });
+        var fail = SelfEvalReportJson(
+            attempt: 1,
+            overall: SelfEvaluationOverallVerdict.AnyFail,
+            items: new[] { FailItem("t1", "criterion") });
+
+        await _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", fail);
+
+        // Re-open window (simulates RUN_SELF_EVAL after a failed attempt).
+        var s = await _db.Sprints.FindAsync(sprint.Id);
+        s!.SelfEvaluationInFlight = true;
+        await _db.SaveChangesAsync();
+
+        var pass = SelfEvalReportJson(
+            attempt: 2,
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1", "criterion") });
+        await _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", pass);
+
+        var rows = await _db.SprintArtifacts
+            .Where(a => a.SprintId == sprint.Id && a.Type == "SelfEvaluationReport")
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_NoInFlight_Throws()
+    {
+        var sprint = AddActiveSprint();
+        sprint.CurrentStage = "Implementation";
+        await _db.SaveChangesAsync();
+
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1") });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", content));
+        Assert.Contains("no self-evaluation in flight", ex.Message);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_TaskSetMismatch_Throws()
+    {
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "c1"), ("t2", "c2") });
+        // Submit only t1 — missing t2.
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1", "c1") });
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", content));
+        Assert.Contains("TaskId set does not match", ex.Message);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_CriteriaMismatch_Throws()
+    {
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "Exact Criterion Text") });
+        var content = SelfEvalReportJson(
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1", "exact criterion text") }); // case-different
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", content));
+        Assert.Contains("does not match TaskEntity.SuccessCriteria", ex.Message);
+    }
+
+    [Fact]
+    public async Task StoreArtifact_SelfEvalReport_AttemptMismatch_Throws()
+    {
+        var sprint = AddSelfEvalSprint(items: new[] { ("t1", "criterion") });
+        // Sprint has 0 priors → expected attempt is 1; submitting 2 is rejected.
+        var content = SelfEvalReportJson(
+            attempt: 2,
+            overall: SelfEvaluationOverallVerdict.AllPass,
+            items: new[] { PassItem("t1", "criterion") });
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            _sut.StoreArtifactAsync(sprint.Id, "Implementation", "SelfEvaluationReport", content));
+        Assert.Contains("Attempt mismatch", ex.Message);
     }
 
     [Fact]

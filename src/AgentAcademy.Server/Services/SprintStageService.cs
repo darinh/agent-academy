@@ -43,6 +43,7 @@ public sealed class SprintStageService : ISprintStageService
             ["Intake"] = "RequirementsDocument",
             ["Planning"] = "SprintPlan",
             ["Validation"] = "ValidationReport",
+            ["Implementation"] = "SelfEvaluationReport",
             ["FinalSynthesis"] = "SprintReport",
         };
 
@@ -122,6 +123,44 @@ public sealed class SprintStageService : ISprintStageService
                     $"required artifact '{requiredType}' has not been stored.");
         }
 
+        // P1.4 verdict gate (design §4.4): leaving Implementation requires the
+        // most recent SelfEvaluationReport to have OverallVerdict=AllPass.
+        // Append-only artifact storage means we order by CreatedAt desc and
+        // tie-break by Id desc (same-tick concurrent inserts).
+        if (string.Equals(sprint.CurrentStage, "Implementation", StringComparison.Ordinal))
+        {
+            var latestReport = await _db.SprintArtifacts
+                .Where(a => a.SprintId == sprintId
+                    && a.Type == nameof(ArtifactType.SelfEvaluationReport))
+                .OrderByDescending(a => a.CreatedAt)
+                .ThenByDescending(a => a.Id)
+                .Select(a => a.Content)
+                .FirstOrDefaultAsync();
+
+            if (latestReport is null)
+                throw new InvalidOperationException(
+                    "Cannot advance from Implementation: no SelfEvaluationReport stored. " +
+                    "Run RUN_SELF_EVAL and STORE_ARTIFACT a SelfEvaluationReport first.");
+
+            SelfEvaluationReport? parsed = null;
+            try
+            {
+                parsed = JsonSerializer.Deserialize<SelfEvaluationReport>(
+                    latestReport,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException) { /* fall through to null check */ }
+
+            if (parsed is null)
+                throw new InvalidOperationException(
+                    "Cannot advance from Implementation: latest SelfEvaluationReport is unparseable.");
+
+            if (parsed.OverallVerdict != SelfEvaluationOverallVerdict.AllPass)
+                throw new InvalidOperationException(
+                    $"Cannot advance from Implementation: latest SelfEvaluationReport verdict is " +
+                    $"'{parsed.OverallVerdict}', not 'AllPass'. Run RUN_SELF_EVAL again to re-evaluate.");
+        }
+
         // Stage prerequisites — skipped when force=true
         if (!force)
         {
@@ -165,6 +204,16 @@ public sealed class SprintStageService : ISprintStageService
         // Implementation per-stage cap, causing premature halts.
         sprint.RoundsThisStage = 0;
         sprint.SelfDriveContinuations = 0;
+
+        // P1.4: clear self-eval window state on a successful Implementation→
+        // FinalSynthesis advance. LastSelfEvalAt / LastSelfEvalVerdict are
+        // audit fields kept across the transition; only the in-flight gate
+        // and attempt counter reset.
+        if (string.Equals(previousStage, "Implementation", StringComparison.Ordinal))
+        {
+            sprint.SelfEvaluationInFlight = false;
+            sprint.SelfEvalAttempts = 0;
+        }
 
         QueueEvent(ActivityEventType.SprintStageAdvanced,
             $"Sprint #{sprint.Number} advanced: {previousStage} → {sprint.CurrentStage}" + (force ? " (forced)" : ""),

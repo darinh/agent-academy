@@ -534,12 +534,35 @@ public sealed class SprintService : Contracts.ISprintService
             .FirstOrDefaultAsync()
             ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");
 
+        // P1.4: when unblocking from a self-eval cap-exceeded block, also
+        // reset the self-eval state so the team gets a fresh budget. Branch
+        // BEFORE the update — a single ExecuteUpdateAsync clears blocked
+        // fields AND (conditionally) resets self-eval state, avoiding the
+        // two-step inconsistent state where rows could observe blocked-cleared
+        // but self-eval-still-locked.
+        var resetSelfEval = preState.BlockReason is not null
+            && preState.BlockReason.StartsWith("Self-eval failed", StringComparison.Ordinal);
+
         // Atomic conditional clear: only succeeds if currently blocked.
-        var rowsTransitioned = await _db.Sprints
-            .Where(s => s.Id == sprintId && s.Status == "Active" && s.BlockedAt != null)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(s => s.BlockedAt, (DateTime?)null)
-                .SetProperty(s => s.BlockReason, (string?)null));
+        int rowsTransitioned;
+        if (resetSelfEval)
+        {
+            rowsTransitioned = await _db.Sprints
+                .Where(s => s.Id == sprintId && s.Status == "Active" && s.BlockedAt != null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(s => s.BlockedAt, (DateTime?)null)
+                    .SetProperty(s => s.BlockReason, (string?)null)
+                    .SetProperty(s => s.SelfEvaluationInFlight, false)
+                    .SetProperty(s => s.SelfEvalAttempts, 0));
+        }
+        else
+        {
+            rowsTransitioned = await _db.Sprints
+                .Where(s => s.Id == sprintId && s.Status == "Active" && s.BlockedAt != null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(s => s.BlockedAt, (DateTime?)null)
+                    .SetProperty(s => s.BlockReason, (string?)null));
+        }
 
         var sprint = await _db.Sprints.FindAsync(sprintId)
             ?? throw new InvalidOperationException($"Sprint {sprintId} not found.");

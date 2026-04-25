@@ -135,25 +135,87 @@ public static class SprintPreambles
                 3. Then run: `COMPLETE_SPRINT:` to finalize. The next sprint will auto-start
                    if scheduling is enabled and will inherit any overflow you stored.
                 """,
+
+            ["ImplementationSelfEval"] = """
+                === SPRINT STAGE: IMPLEMENTATION — SELF-EVALUATION ===
+                A self-evaluation has been opened (RUN_SELF_EVAL). Implementation work is
+                paused until you submit a SelfEvaluationReport.
+
+                **What you must do (Planner only — Aristotle):**
+                1. Enumerate every non-cancelled task in this sprint (LIST_TASKS).
+                2. For EACH task, write one Items[] entry verifying the task's success
+                   criterion against concrete evidence:
+                   - `TaskId` — the task ID
+                   - `SuccessCriteria` — copied verbatim from the task (case-sensitive,
+                     whitespace-significant; reworded criteria are rejected)
+                   - `Verdict` — PASS (concrete evidence the criterion is met) /
+                     FAIL (criterion not met) / UNVERIFIED (plausibly met, no evidence)
+                   - `Evidence` — the proof: PR #s, test names, file:line references,
+                     command output, sample data. NO claims without artifacts.
+                   - `FixPlan` — required when Verdict ≠ PASS. What's missing and how to fix it.
+                3. Compute `OverallVerdict` as the rollup:
+                   AllPass (every PASS) | AnyFail (any FAIL) | Unverified (no FAIL but ≥1 UNVERIFIED).
+                4. Set `Attempt` = (sprint.SelfEvalAttempts + 1) — must monotonically increment.
+                5. Submit:
+                   ```
+                   STORE_ARTIFACT:
+                     Type: SelfEvaluationReport
+                     Content: { "Attempt": N, "Items": [...], "OverallVerdict": "...", "Notes": "..." }
+                   ```
+
+                **What happens next:**
+                - AllPass → you may run `ADVANCE_STAGE:` to enter FinalSynthesis.
+                - AnyFail / Unverified, attempts < {MaxSelfEvalAttempts} → window re-opens; fix the gaps,
+                  resume Implementation, then run `RUN_SELF_EVAL` again when ready.
+                - AnyFail / Unverified at attempt {MaxSelfEvalAttempts} → sprint is auto-blocked for
+                  human input.
+
+                Be honest. UNVERIFIED with a clear FixPlan beats PASS without evidence — humans review
+                this and aspirational PASS verdicts are a P0 trust violation.
+                """,
         };
 
     /// <summary>
     /// Returns the preamble text for a sprint stage, including sprint number
     /// and any prior-stage context summaries.
     /// </summary>
+    /// <param name="selfEvaluationInFlight">
+    /// When true and <paramref name="stage"/> is <c>Implementation</c>, the
+    /// self-evaluation preamble is selected instead of the regular
+    /// Implementation preamble. Default false for backward compatibility with
+    /// test fixtures that build preambles directly.
+    /// </param>
+    /// <param name="maxSelfEvalAttempts">
+    /// Configured cap (<c>Orchestrator:SelfEval:MaxSelfEvalAttempts</c>).
+    /// Token-interpolated into the self-eval preamble so the agent sees the
+    /// exact attempt budget.
+    /// </param>
     public static string BuildPreamble(
         int sprintNumber,
         string stage,
         IReadOnlyList<(string Stage, string Summary)>? priorStageContext = null,
-        string? overflowContent = null)
+        string? overflowContent = null,
+        bool selfEvaluationInFlight = false,
+        int maxSelfEvalAttempts = 3)
     {
         var lines = new List<string>
         {
             $"=== SPRINT #{sprintNumber} ===",
         };
 
-        if (StagePreambles.TryGetValue(stage, out var preamble))
-            lines.Add(preamble.Trim());
+        // Self-eval window flips Implementation into a different ceremony.
+        var preambleKey =
+            (selfEvaluationInFlight && string.Equals(stage, "Implementation", StringComparison.Ordinal))
+                ? "ImplementationSelfEval"
+                : stage;
+
+        if (StagePreambles.TryGetValue(preambleKey, out var preamble))
+        {
+            var rendered = preamble.Trim();
+            if (preambleKey == "ImplementationSelfEval")
+                rendered = rendered.Replace("{MaxSelfEvalAttempts}", maxSelfEvalAttempts.ToString());
+            lines.Add(rendered);
+        }
 
         if (overflowContent is not null && stage == "Intake")
         {
